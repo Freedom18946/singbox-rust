@@ -1084,21 +1084,10 @@ async fn install_ntp_task(state: &Arc<RwLock<State>>, cfg: Option<sb_config::ir:
 
 /// Populate endpoint/service managers from the assembled bridge for parity with Go managers.
 async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) {
-    // Register inbounds with InboundManager
-    // InboundManager stores Arc<dyn Any>, inbounds are indexed but not tagged
-    for (idx, ib) in bridge.inbounds.iter().enumerate() {
-        let tag = bridge
-            .inbound_kinds
-            .get(idx)
-            .map(|k| k.to_string())
-            .unwrap_or_else(|| format!("inbound_{}", idx));
-        ctx.inbound_manager
-            .add_handler(
-                tag,
-                Arc::new(ib.clone()) as Arc<dyn std::any::Any + Send + Sync>,
-            )
-            .await;
-    }
+    // Note: Bridge maintains its own `inbounds` vector for legacy InboundService types.
+    // InboundManager now expects Arc<dyn InboundAdapter> with lifecycle support.
+    // New inbound adapters should be registered via InboundManager.add_handler().
+    // Legacy inbounds are started via bridge.inbounds directly, not through InboundManager.
 
     // Register outbounds with OutboundManager
     // Outbounds are stored as (name, kind, connector) tuples

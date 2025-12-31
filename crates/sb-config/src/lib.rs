@@ -254,17 +254,33 @@ pub struct Rule {
     /// \[预埋\] 传输层协议: "tcp" | "udp"
     #[serde(default)]
     pub transport: Option<String>,
-    /// 命中的出站名称（需存在于 outbounds）
-    pub outbound: String,
+    /// 规则动作 (默认 Route)
+    #[serde(default)]
+    pub action: crate::ir::RuleAction,
+    /// 劫持动作的目标地址 override
+    #[serde(default)]
+    pub override_address: Option<String>,
+    /// 劫持动作的目标端口 override
+    #[serde(default)]
+    pub override_port: Option<u16>,
+    /// 命中的出站名称（需存在于 outbounds），对于 Route 动作通常必需
+    #[serde(default)]
+    pub outbound: Option<String>,
 }
 
 fn rule_from_ir(ir_rule: &crate::ir::RuleIR) -> Option<Rule> {
-    let outbound = ir_rule.outbound.clone()?;
+    // If action is Route, we typically expect an outbound, but we can allow empty (fallback to default)
+    // or let runtime handle it.
+    let outbound = ir_rule.outbound.clone();
     Some(Rule {
-        domain_suffix: ir_rule.domain.clone(),
+        // Bug fix: use domain_suffix from IR, not domain (PX-003)
+        domain_suffix: ir_rule.domain_suffix.clone(),
         ip_cidr: ir_rule.ipcidr.clone(),
         port: ir_rule.port.clone(),
         transport: ir_rule.network.first().cloned(),
+        action: ir_rule.action.clone(),
+        override_address: ir_rule.override_address.clone(),
+        override_port: ir_rule.override_port,
         outbound,
     })
 }
@@ -275,6 +291,7 @@ fn rule_from_route_value(rule: &Value) -> Option<Rule> {
         .get("outbound")
         .or_else(|| obj.get("to"))
         .and_then(|v| v.as_str())?;
+    let outbound = Some(outbound.to_string());
     let mut domain_suffix = Vec::new();
     let mut ip_cidr = Vec::new();
     let mut port = Vec::new();
@@ -302,7 +319,10 @@ fn rule_from_route_value(rule: &Value) -> Option<Rule> {
         ip_cidr,
         port,
         transport,
-        outbound: outbound.to_string(),
+        action: crate::ir::RuleAction::Route,
+        override_address: None,
+        override_port: None,
+        outbound,
     })
 }
 
@@ -408,6 +428,26 @@ impl Config {
             Err(_) => serde_yaml::from_str(&text)?,
         };
         let migrated = compat::migrate_to_v2(&raw);
+
+        // Go parity: strict validation - unknown fields are errors (DisallowUnknownFields)
+        let issues = crate::validator::v2::validate_v2(&migrated, false);
+        let errors: Vec<_> = issues
+            .iter()
+            .filter(|i| i.get("kind").and_then(|k| k.as_str()) == Some("error"))
+            .collect();
+        if !errors.is_empty() {
+            let first = &errors[0];
+            let ptr = first
+                .get("ptr")
+                .and_then(|p| p.as_str())
+                .unwrap_or("/");
+            let msg = first
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("validation error");
+            return Err(anyhow!("config validation failed at {}: {}", ptr, msg));
+        }
+
         let cfg = Self::from_value(migrated)?;
         cfg.validate()?;
         Ok(cfg)
@@ -415,8 +455,18 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         use crate::ir::OutboundType;
-        // 1) 出站名称唯一
         let mut names = HashSet::new();
+
+        // Go parity: validate inbound tags are unique and don't conflict with outbound names
+        for ib in &self.ir.inbounds {
+            if let Some(tag) = &ib.tag {
+                if !tag.is_empty() && !names.insert(tag.clone()) {
+                    return Err(anyhow!("duplicate inbound/outbound tag: {}", tag));
+                }
+            }
+        }
+
+        // 1) 出站名称唯一 (and must not conflict with inbound tags)
         for ob in &self.ir.outbounds {
             if let Some(name) = &ob.name {
                 if !names.insert(name.clone()) {
@@ -440,7 +490,7 @@ impl Config {
                 }
             }
         }
-        // 2) 规则指向存在
+        // 3) 规则指向存在
         for r in &self.ir.route.rules {
             if let Some(outbound) = &r.outbound {
                 if !names.contains(outbound) {
@@ -448,7 +498,7 @@ impl Config {
                 }
             }
         }
-        // 3) default_outbound（若存在）必须存在于 outbounds
+        // 4) default_outbound（若存在）必须存在于 outbounds
         if let Some(def) = &self.ir.route.default {
             if !names.contains(def) {
                 return Err(anyhow!("default_outbound not found in outbounds: {}", def));
@@ -461,7 +511,7 @@ impl Config {
     pub fn pick_outbound_for_host<'a>(&'a self, host: &str) -> Option<&'a str> {
         for r in &self.rules {
             if r.domain_suffix.iter().any(|suf| host.ends_with(suf)) {
-                return Some(r.outbound.as_str());
+                return r.outbound.as_deref();
             }
         }
         None
@@ -625,5 +675,186 @@ route:
         let raw: Value = serde_yaml::from_str(y).unwrap();
         let cfg = Config::from_value(raw).unwrap();
         assert!(cfg.build_registry_and_router().is_err());
+    }
+
+    #[test]
+    fn test_schema_field_allowed() {
+        // $schema should not be flagged as unknown field (Go parity)
+        let json = r#"{"$schema": "https://example.com/schema.json", "schema_version": 2}"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let issues = crate::validator::v2::validate_v2(&raw, false);
+        // $schema should not be flagged as unknown
+        assert!(
+            issues.iter().all(|i| {
+                let ptr = i.get("ptr").and_then(|p| p.as_str()).unwrap_or("");
+                ptr != "/$schema"
+            }),
+            "$schema should be allowed"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_inbound_tag_rejected() {
+        let y = r#"
+inbounds:
+  - type: http
+    tag: proxy
+    listen: 127.0.0.1
+    port: 8080
+  - type: socks
+    tag: proxy
+    listen: 127.0.0.1
+    port: 1080
+outbounds:
+  - type: direct
+    name: direct
+        "#;
+        let raw: Value = serde_yaml::from_str(y).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err(), "duplicate inbound tags should be rejected");
+        assert!(
+            result.unwrap_err().to_string().contains("duplicate"),
+            "error should mention 'duplicate'"
+        );
+    }
+
+    #[test]
+    fn test_inbound_outbound_tag_conflict_rejected() {
+        let y = r#"
+inbounds:
+  - type: http
+    tag: direct
+    listen: 127.0.0.1
+    port: 8080
+outbounds:
+  - type: direct
+    name: direct
+        "#;
+        let raw: Value = serde_yaml::from_str(y).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
+        let result = cfg.validate();
+        assert!(
+            result.is_err(),
+            "inbound tag conflicting with outbound name should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_log_disabled_output_parsed() {
+        let json = r#"{"log": {"disabled": true, "output": "/var/log/singbox.log"}}"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let ir = crate::validator::v2::to_ir_v1(&raw);
+        assert_eq!(ir.log.as_ref().and_then(|l| l.disabled), Some(true));
+        assert_eq!(
+            ir.log.as_ref().and_then(|l| l.output.clone()),
+            Some("/var/log/singbox.log".to_string())
+        );
+    }
+
+    #[test]
+    fn test_inbound_tag_parsed() {
+        let json = r#"{"inbounds": [{"type": "http", "tag": "my-proxy", "listen": "127.0.0.1", "port": 8080}]}"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let ir = crate::validator::v2::to_ir_v1(&raw);
+        assert_eq!(ir.inbounds.len(), 1);
+        assert_eq!(ir.inbounds[0].tag, Some("my-proxy".to_string()));
+    }
+
+    #[test]
+    fn test_domain_suffix_mapping_from_ir() {
+        // PX-003 bug fix: verify domain_suffix is correctly mapped, not domain
+        let json = r#"{
+            "outbounds": [{"type": "direct", "tag": "direct"}],
+            "route": {
+                "rules": [{
+                    "domain_suffix": [".example.com", ".google.com"],
+                    "domain": ["exact.com"],
+                    "outbound": "direct"
+                }]
+            }
+        }"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
+        
+        // The Rule struct's domain_suffix should come from IR's domain_suffix, not domain
+        assert_eq!(cfg.rules.len(), 1);
+        assert!(cfg.rules[0].domain_suffix.contains(&".example.com".to_string()));
+        assert!(cfg.rules[0].domain_suffix.contains(&".google.com".to_string()));
+        // domain_suffix should NOT contain "exact.com" (that's from domain field)
+        assert!(!cfg.rules[0].domain_suffix.contains(&"exact.com".to_string()));
+    }
+
+    #[test]
+    fn test_rule_action_reject_parsed() {
+        let json = r#"{
+            "route": {
+                "rules": [
+                    {
+                        "domain": ["reject.com"],
+                        "action": "reject"
+                    },
+                    {
+                        "domain": ["drop.com"],
+                        "action": "reject-drop"
+                    }
+                ]
+            }
+        }"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let ir = crate::validator::v2::to_ir_v1(&raw);
+        assert_eq!(ir.route.rules.len(), 2);
+        assert_eq!(ir.route.rules[0].action, crate::ir::RuleAction::Reject);
+        assert_eq!(ir.route.rules[1].action, crate::ir::RuleAction::RejectDrop);
+    }
+
+    #[test]
+    fn test_rule_action_hijack_with_override() {
+        let json = r#"{
+            "route": {
+                "rules": [
+                    {
+                        "domain": ["hijack.com"],
+                        "action": "hijack",
+                        "override_address": "1.1.1.1",
+                        "override_port": 53
+                    }
+                ]
+            }
+        }"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let ir = crate::validator::v2::to_ir_v1(&raw);
+        assert_eq!(ir.route.rules.len(), 1);
+        assert_eq!(ir.route.rules[0].action, crate::ir::RuleAction::Hijack);
+        assert_eq!(ir.route.rules[0].override_address, Some("1.1.1.1".to_string()));
+        assert_eq!(ir.route.rules[0].override_port, Some(53));
+    }
+
+    #[test]
+    fn test_logical_rule_and_mode() {
+        let json = r#"{
+            "route": {
+                "rules": [
+                    {
+                        "type": "logical",
+                        "mode": "and",
+                        "rules": [
+                            { "domain": ["example.com"] },
+                            { "port": 80 }
+                        ],
+                        "action": "route",
+                        "outbound": "direct"
+                    }
+                ]
+            }
+        }"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+        let ir = crate::validator::v2::to_ir_v1(&raw);
+        assert_eq!(ir.route.rules.len(), 1);
+        let rule = &ir.route.rules[0];
+        assert_eq!(rule.mode.as_deref(), Some("and"));
+        assert_eq!(rule.rules.len(), 2);
+        assert!(rule.rules[0].domain.contains(&"example.com".to_string()));
+        assert!(rule.rules[1].port.contains(&"80".to_string()));
     }
 }

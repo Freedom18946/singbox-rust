@@ -89,6 +89,8 @@ async fn start_socks5_inbound(
         outbounds,
         udp_nat_ttl: Duration::from_secs(60),
         users: None,
+        domain_strategy: None,
+        udp_timeout: None,
     };
 
     tokio::spawn(async move {
@@ -123,6 +125,8 @@ async fn start_http_inbound(
         outbounds: outbounds.clone(),
         tls: None,
         users: None,
+        set_system_proxy: false,
+        allow_private_network: true,
     };
 
     tokio::spawn(async move {

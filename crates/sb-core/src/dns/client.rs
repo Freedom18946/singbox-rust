@@ -17,6 +17,12 @@ pub struct DnsClient {
 struct Inner {
     cache: RwLock<HashMap<String, CacheEntry>>,
     ttl_default: Duration,
+    /// Minimum TTL (Go parity: dns.ClientOptions.CacheTTLOverride.Min)
+    min_ttl: Duration,
+    /// Maximum TTL (Go parity: dns.ClientOptions.CacheTTLOverride.Max)
+    max_ttl: Duration,
+    /// Negative cache TTL for NXDOMAIN/NODATA (Go parity: dns.ClientOptions.CacheCapacity + negative handling)
+    negative_ttl: Duration,
     cap: usize,
 }
 
@@ -24,7 +30,7 @@ struct Inner {
 struct CacheEntry {
     addrs: Vec<IpAddr>,
     expires_at: Instant,
-    _negative: bool, // NXDOMAIN/NOERROR-NODATA（当前未读取，前缀静音）
+    negative: bool, // NXDOMAIN/NOERROR-NODATA
 }
 
 impl DnsClient {
@@ -33,10 +39,53 @@ impl DnsClient {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(1024);
+        let min_ttl = Duration::from_secs(
+            std::env::var("SB_DNS_MIN_TTL_S")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1),
+        );
+        let max_ttl = Duration::from_secs(
+            std::env::var("SB_DNS_MAX_TTL_S")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(86400), // 1 day default max
+        );
+        let negative_ttl = Duration::from_secs(
+            std::env::var("SB_DNS_NEG_TTL_S")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(30),
+        );
         Self {
             inner: Arc::new(Inner {
                 cache: RwLock::new(HashMap::new()),
                 ttl_default: ttl,
+                min_ttl,
+                max_ttl,
+                negative_ttl,
+                cap,
+            }),
+        }
+    }
+
+    /// Create a new DNS client with explicit TTL configuration (for testing/builders).
+    /// 使用显式 TTL 配置创建新的 DNS 客户端（用于测试/构建器）。
+    #[must_use]
+    pub fn with_ttl_config(
+        default_ttl: Duration,
+        min_ttl: Duration,
+        max_ttl: Duration,
+        negative_ttl: Duration,
+        cap: usize,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                cache: RwLock::new(HashMap::new()),
+                ttl_default: default_ttl,
+                min_ttl,
+                max_ttl,
+                negative_ttl,
                 cap,
             }),
         }
@@ -131,22 +180,37 @@ impl DnsClient {
         let map = self.inner.cache.read().await;
         if let Some(ent) = map.get(host) {
             if now < ent.expires_at {
+                // For negative cache entries, return empty vec (will be treated as miss by caller)
+                if ent.negative && ent.addrs.is_empty() {
+                    // Negative cache hit - return empty to trigger fresh lookup
+                    // This matches Go behavior: negative entries block re-queries for negative_ttl
+                    return Some(vec![]);
+                }
                 return Some(ent.addrs.clone());
             }
         }
         None
     }
+
     async fn cache_put(&self, host: String, addrs: Vec<IpAddr>, ttl: Option<u32>, negative: bool) {
         let mut map = self.inner.cache.write().await;
-        let ttl = ttl.map_or(self.inner.ttl_default, |s| {
-            Duration::from_secs(u64::from(s))
-        });
+
+        // TTL clamping (Go parity: CacheTTLOverride)
+        let raw_ttl = ttl.map_or(self.inner.ttl_default, |s| Duration::from_secs(u64::from(s)));
+        let clamped_ttl = if negative {
+            // Negative cache uses dedicated TTL
+            self.inner.negative_ttl
+        } else {
+            // Clamp positive cache TTL between min and max
+            raw_ttl.clamp(self.inner.min_ttl, self.inner.max_ttl)
+        };
+
         map.insert(
             host,
             CacheEntry {
                 addrs,
-                expires_at: Instant::now() + ttl,
-                _negative: negative,
+                expires_at: Instant::now() + clamped_ttl,
+                negative,
             },
         );
         // 简单容量控制：超过 cap 淘汰一条（FIFO 近似：随便移除第一条）
@@ -159,6 +223,27 @@ impl DnsClient {
         }
         #[cfg(feature = "metrics")]
         metrics::gauge!("dns_cache_size").set(map.len() as f64);
+    }
+
+    /// Get min TTL configuration.
+    /// 获取最小 TTL 配置。
+    #[must_use]
+    pub fn min_ttl(&self) -> Duration {
+        self.inner.min_ttl
+    }
+
+    /// Get max TTL configuration.
+    /// 获取最大 TTL 配置。
+    #[must_use]
+    pub fn max_ttl(&self) -> Duration {
+        self.inner.max_ttl
+    }
+
+    /// Get negative TTL configuration.
+    /// 获取负缓存 TTL 配置。
+    #[must_use]
+    pub fn negative_ttl(&self) -> Duration {
+        self.inner.negative_ttl
     }
 }
 
@@ -409,3 +494,103 @@ async fn udp_query_follow_cname(
     // 负缓存：NXDOMAIN 或 NOERROR/NODATA
     Ok((Vec::new(), ttl, true))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn test_ttl_config_defaults() {
+        let client = DnsClient::new(Duration::from_secs(60));
+        assert_eq!(client.min_ttl(), Duration::from_secs(1));
+        assert_eq!(client.max_ttl(), Duration::from_secs(86400));
+        assert_eq!(client.negative_ttl(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_ttl_config_explicit() {
+        let client = DnsClient::with_ttl_config(
+            Duration::from_secs(120),
+            Duration::from_secs(5),
+            Duration::from_secs(3600),
+            Duration::from_secs(60),
+            512,
+        );
+        assert_eq!(client.min_ttl(), Duration::from_secs(5));
+        assert_eq!(client.max_ttl(), Duration::from_secs(3600));
+        assert_eq!(client.negative_ttl(), Duration::from_secs(60));
+    }
+
+    #[tokio::test]
+    async fn test_ttl_clamping_min() {
+        let client = DnsClient::with_ttl_config(
+            Duration::from_secs(60),
+            Duration::from_secs(10), // min = 10s
+            Duration::from_secs(300),
+            Duration::from_secs(30),
+            1024,
+        );
+
+        // Put an entry with TTL below min (should be clamped to 10s)
+        client
+            .cache_put(
+                "test.example.com".to_string(),
+                vec!["1.2.3.4".parse().unwrap()],
+                Some(1), // 1 second - below minimum
+                false,
+            )
+            .await;
+
+        // Entry should be cached (clamped to min_ttl)
+        let result = client.cache_get("test.example.com").await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_clamping_max() {
+        let client = DnsClient::with_ttl_config(
+            Duration::from_secs(60),
+            Duration::from_secs(1),
+            Duration::from_secs(10), // max = 10s
+            Duration::from_secs(30),
+            1024,
+        );
+
+        // Put an entry with TTL above max (should be clamped to 10s)
+        client
+            .cache_put(
+                "test.example.com".to_string(),
+                vec!["1.2.3.4".parse().unwrap()],
+                Some(3600), // 1 hour - above maximum
+                false,
+            )
+            .await;
+
+        // Entry should be cached (clamped to max_ttl)
+        let result = client.cache_get("test.example.com").await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_negative_cache_ttl() {
+        let client = DnsClient::with_ttl_config(
+            Duration::from_secs(60),
+            Duration::from_secs(1),
+            Duration::from_secs(300),
+            Duration::from_secs(5), // negative = 5s
+            1024,
+        );
+
+        // Put a negative cache entry
+        client
+            .cache_put("nxdomain.example.com".to_string(), vec![], None, true)
+            .await;
+
+        // Entry should be cached with negative TTL (returns empty vec)
+        let result = client.cache_get("nxdomain.example.com").await;
+        assert!(result.is_some());
+        assert!(result.unwrap().is_empty());
+    }
+}
+

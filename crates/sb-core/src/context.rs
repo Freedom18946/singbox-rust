@@ -88,6 +88,8 @@ pub struct Context {
 
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
+    pub time_service: Option<Arc<dyn TimeService>>,
+    pub certificate_store: Option<Arc<dyn CertificateStore>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
     pub network_monitor: Arc<sb_platform::monitor::NetworkMonitor>,
 }
@@ -161,6 +163,8 @@ impl Context {
 
             v2ray_server: None,
             ntp_service: None,
+            time_service: Some(Arc::new(crate::services::time::SystemTimeService::new())),
+            certificate_store: Some(Arc::new(crate::tls::global::GlobalCertificateStore::default())),
             process_matcher: match ProcessMatcher::new() {
                 Ok(matcher) => Some(Arc::new(matcher)),
                 Err(e) => {
@@ -188,6 +192,16 @@ impl Context {
         self.ntp_service = Some(ntp_service);
         self
     }
+    
+    pub fn with_time_service(mut self, time_service: Arc<dyn TimeService>) -> Self {
+        self.time_service = Some(time_service);
+        self
+    }
+
+    pub fn with_certificate_store(mut self, certificate_store: Arc<dyn CertificateStore>) -> Self {
+        self.certificate_store = Some(certificate_store);
+        self
+    }
 }
 
 impl Default for Context {
@@ -211,12 +225,12 @@ pub struct RouteOptions {
     pub auto_detect_interface: bool,
     pub default_interface: Option<String>,
     pub mark: Option<u32>,
-    pub default_resolver: Option<String>,
+    pub default_domain_resolver: Option<sb_config::ir::DomainResolveOptionsIR>,
     pub network_strategy: Option<String>,
     pub default_outbound: Option<String>,
     pub final_outbound: Option<String>,
-    pub default_network_type: Option<String>,
-    pub default_fallback_network_type: Option<String>,
+    pub default_network_type: Option<Vec<String>>,
+    pub default_fallback_network_type: Option<Vec<String>>,
     pub default_fallback_delay: Option<String>,
     pub geoip_path: Option<String>,
     pub geoip_download_url: Option<String>,
@@ -233,6 +247,14 @@ pub struct RouteOptions {
 pub struct NetworkManager {
     interfaces: Arc<RwLock<HashMap<String, NetworkInterface>>>,
     route_options: std::sync::RwLock<RouteOptions>,
+    /// Current WiFi SSID (if connected)
+    wifi_ssid: std::sync::RwLock<Option<String>>,
+    /// Current WiFi BSSID (if connected)
+    wifi_bssid: std::sync::RwLock<Option<String>>,
+    /// Whether the network is expensive (e.g., metered cellular)
+    network_is_expensive: std::sync::atomic::AtomicBool,
+    /// Whether the network is constrained (e.g., low data mode)
+    network_is_constrained: std::sync::atomic::AtomicBool,
 }
 
 impl NetworkManager {
@@ -240,6 +262,10 @@ impl NetworkManager {
         Self {
             interfaces: Arc::new(RwLock::new(HashMap::new())),
             route_options: std::sync::RwLock::new(RouteOptions::default()),
+            wifi_ssid: std::sync::RwLock::new(None),
+            wifi_bssid: std::sync::RwLock::new(None),
+            network_is_expensive: std::sync::atomic::AtomicBool::new(false),
+            network_is_constrained: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -274,7 +300,7 @@ impl NetworkManager {
             auto_detect_interface: route.auto_detect_interface.unwrap_or(false),
             default_interface: route.default_interface.clone(),
             mark: route.mark,
-            default_resolver: route.default_resolver.clone(),
+            default_domain_resolver: route.default_domain_resolver.clone(),
             network_strategy: route.network_strategy.clone(),
             default_outbound: route.default.clone(),
             final_outbound: route.final_outbound.clone(),
@@ -305,6 +331,69 @@ impl NetworkManager {
     pub fn route_options(&self) -> RouteOptions {
         self.route_options.read().unwrap().clone()
     }
+
+    // ---- WiFi State APIs (Go parity) ----
+
+    /// Get current WiFi SSID
+    pub fn wifi_ssid(&self) -> Option<String> {
+        self.wifi_ssid.read().unwrap().clone()
+    }
+
+    /// Set current WiFi SSID
+    pub fn set_wifi_ssid(&self, ssid: Option<String>) {
+        *self.wifi_ssid.write().unwrap() = ssid;
+    }
+
+    /// Get current WiFi BSSID
+    pub fn wifi_bssid(&self) -> Option<String> {
+        self.wifi_bssid.read().unwrap().clone()
+    }
+
+    /// Set current WiFi BSSID
+    pub fn set_wifi_bssid(&self, bssid: Option<String>) {
+        *self.wifi_bssid.write().unwrap() = bssid;
+    }
+
+    /// Update WiFi state (SSID + BSSID together)
+    pub fn update_wifi_state(&self, ssid: Option<String>, bssid: Option<String>) {
+        *self.wifi_ssid.write().unwrap() = ssid;
+        *self.wifi_bssid.write().unwrap() = bssid;
+    }
+
+    // ---- Network Status APIs (Go parity) ----
+
+    /// Check if network is expensive (e.g., metered cellular)
+    pub fn is_network_expensive(&self) -> bool {
+        self.network_is_expensive.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Set network expensive status
+    pub fn set_network_expensive(&self, expensive: bool) {
+        self.network_is_expensive.store(expensive, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Check if network is constrained (e.g., low data mode)
+    pub fn is_network_constrained(&self) -> bool {
+        self.network_is_constrained.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Set network constrained status
+    pub fn set_network_constrained(&self, constrained: bool) {
+        self.network_is_constrained.store(constrained, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Update all network state at once
+    pub fn update_network_state(
+        &self,
+        wifi_ssid: Option<String>,
+        wifi_bssid: Option<String>,
+        is_expensive: bool,
+        is_constrained: bool,
+    ) {
+        self.update_wifi_state(wifi_ssid, wifi_bssid);
+        self.set_network_expensive(is_expensive);
+        self.set_network_constrained(is_constrained);
+    }
 }
 
 impl Default for NetworkManager {
@@ -326,7 +415,7 @@ impl Startable for NetworkManager {
                 if opts.auto_detect_interface
                     || opts.default_interface.is_some()
                     || opts.mark.is_some()
-                    || opts.default_resolver.is_some()
+                    || opts.default_domain_resolver.is_some()
                     || opts.network_strategy.is_some()
                     || opts.default_network_type.is_some()
                     || opts.default_fallback_network_type.is_some()
@@ -337,7 +426,7 @@ impl Startable for NetworkManager {
                         auto_detect = opts.auto_detect_interface,
                         default_interface = ?opts.default_interface,
                         mark = ?opts.mark,
-                        default_resolver = ?opts.default_resolver,
+                        default_domain_resolver = ?opts.default_domain_resolver,
                         network_strategy = ?opts.network_strategy,
                         default_network_type = ?opts.default_network_type,
                         default_fallback_network_type = ?opts.default_fallback_network_type,
@@ -648,13 +737,32 @@ impl Startable for PlatformInterface {
 }
 
 // Service traits
-pub trait CacheFile: Send + Sync + std::fmt::Debug {}
+pub trait CacheFile: Send + Sync + std::fmt::Debug {
+    fn set_clash_mode(&self, mode: String);
+}
 
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
 }
 pub trait NtpService: Send + Sync + std::fmt::Debug {}
+
+/// Time service interface for getting current time (Go parity: common.TimeFunc).
+pub trait TimeService: Send + Sync + std::fmt::Debug {
+    /// Return current system time.
+    fn now(&self) -> std::time::SystemTime;
+    
+    /// Return current monotonic time.
+    fn monotonic(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+}
+
+/// Certificate store interface (Go parity: CA pool injection).
+pub trait CertificateStore: Send + Sync + std::fmt::Debug {
+    /// Return the root certificate pool (PEM encoded).
+    fn root_pool(&self) -> Option<Vec<String>>;
+}
 
 #[cfg(test)]
 mod tests {
@@ -757,12 +865,15 @@ mod tests {
             auto_detect_interface: Some(true),
             default_interface: Some("eth0".into()),
             mark: Some(42),
-            default_resolver: Some("dns-local".into()),
+            default_domain_resolver: Some(sb_config::ir::DomainResolveOptionsIR {
+                server: "dns-local".into(),
+                ..Default::default()
+            }),
             network_strategy: Some("prefer_ipv6".into()),
             default: Some("direct".into()),
             final_outbound: Some("block".into()),
-            default_network_type: Some("ipv4_only".into()),
-            default_fallback_network_type: Some("ipv6_only".into()),
+            default_network_type: Some(vec!["ipv4_only".into()]),
+            default_fallback_network_type: Some(vec!["ipv6_only".into()]),
             default_fallback_delay: Some("250ms".into()),
             geoip_path: Some("geoip.db".into()),
             geoip_download_url: Some("http://geoip".into()),
@@ -781,14 +892,14 @@ mod tests {
         assert!(opts.auto_detect_interface);
         assert_eq!(opts.default_interface.as_deref(), Some("eth0"));
         assert_eq!(opts.mark, Some(42));
-        assert_eq!(opts.default_resolver.as_deref(), Some("dns-local"));
+        assert_eq!(opts.default_domain_resolver.as_ref().map(|o| o.server.as_str()), Some("dns-local"));
         assert_eq!(opts.network_strategy.as_deref(), Some("prefer_ipv6"));
         assert_eq!(opts.default_outbound.as_deref(), Some("direct"));
         assert_eq!(opts.final_outbound.as_deref(), Some("block"));
-        assert_eq!(opts.default_network_type.as_deref(), Some("ipv4_only"));
+        assert_eq!(opts.default_network_type, Some(vec!["ipv4_only".to_string()]));
         assert_eq!(
-            opts.default_fallback_network_type.as_deref(),
-            Some("ipv6_only")
+            opts.default_fallback_network_type,
+            Some(vec!["ipv6_only".to_string()])
         );
         assert_eq!(opts.default_fallback_delay.as_deref(), Some("250ms"));
         assert_eq!(opts.geoip_path.as_deref(), Some("geoip.db"));

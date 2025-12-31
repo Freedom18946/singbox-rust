@@ -556,6 +556,80 @@ impl EndpointManager {
         }
         Ok(())
     }
+
+    /// Replace an endpoint, closing the old one if present (Go parity: close-on-replace).
+    /// 替换端点，如果存在则关闭旧的（Go 对等：替换时关闭）。
+    pub async fn replace(&self, tag: String, endpoint: Arc<dyn Endpoint>) {
+        // Close old endpoint if exists
+        if let Some(old) = self.get(&tag).await {
+            tracing::debug!(tag = %tag, "endpoint: closing old endpoint before replace");
+            if let Err(e) = old.close() {
+                tracing::warn!(tag = %tag, error = %e, "endpoint: failed to close old endpoint during replace");
+            }
+        }
+        
+        let mut guard = self.endpoints.write();
+        guard.insert(tag, endpoint);
+    }
+
+    /// Remove with validation (Go parity: ErrInvalid if tag is empty).
+    /// 带验证的移除（Go 对等：标签为空时返回 ErrInvalid）。
+    pub async fn remove_with_check(&self, tag: &str) -> Result<Option<Arc<dyn Endpoint>>, String> {
+        if tag.is_empty() {
+            return Err("empty tag invalid".to_string());
+        }
+        Ok(self.remove(tag).await)
+    }
+
+    /// Get an endpoint as an OutboundConnector (Go parity: Endpoint as Outbound).
+    /// 获取端点作为出站连接器（Go 对等：端点作为出站）。
+    pub async fn as_outbound_connector(&self, tag: &str) -> Option<Arc<dyn crate::adapter::OutboundConnector>> {
+        let ep = self.get(tag).await?;
+        Some(Arc::new(EndpointAsOutbound::new(tag.to_string(), ep)))
+    }
+}
+
+/// Wrapper to expose an Endpoint as an OutboundConnector (Go parity: endpoint as outbound).
+/// 将端点公开为出站连接器的包装器（Go 对等：端点作为出站）。
+pub struct EndpointAsOutbound {
+    tag: String,
+    endpoint: Arc<dyn Endpoint>,
+}
+
+impl EndpointAsOutbound {
+    pub fn new(tag: String, endpoint: Arc<dyn Endpoint>) -> Self {
+        Self { tag, endpoint }
+    }
+    
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+}
+
+impl std::fmt::Debug for EndpointAsOutbound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EndpointAsOutbound")
+            .field("tag", &self.tag)
+            .field("endpoint_type", &self.endpoint.endpoint_type())
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::adapter::OutboundConnector for EndpointAsOutbound {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        // Use dial_context to establish connection through the endpoint
+        let dest = Socksaddr::from_fqdn(host, port);
+        let _stream = self.endpoint.dial_context(Network::Tcp, dest).await?;
+        
+        // Extract underlying TcpStream if possible, otherwise return error
+        // For now, we return an error since IoStream is not directly a TcpStream
+        // Endpoints need to be refactored to return TcpStream directly or use a different API
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!("endpoint {} dial_context returns IoStream, use dial_context directly", self.tag),
+        ))
+    }
 }
 
 impl Default for EndpointManager {

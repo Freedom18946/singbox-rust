@@ -1284,12 +1284,13 @@ pub struct DotUpstream {
     extra_ca_pem: Vec<String>,
     skip_verify: bool,
     ecs: Option<String>,
+    transport: Option<Arc<dyn DnsTransport>>,
 }
 
 impl DotUpstream {
     /// 创建新的 `DoT` 上游
     pub fn new(server: SocketAddr, server_name: String) -> Self {
-        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false, None)
     }
 
     pub fn new_with_tls(
@@ -1298,6 +1299,7 @@ impl DotUpstream {
         extra_ca_paths: Vec<String>,
         extra_ca_pem: Vec<String>,
         skip_verify: bool,
+        transport: Option<Arc<dyn DnsTransport>>,
     ) -> Self {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOT_TIMEOUT_MS")
@@ -1315,6 +1317,7 @@ impl DotUpstream {
             extra_ca_pem,
             skip_verify,
             ecs: None,
+            transport,
         }
     }
 }
@@ -1327,7 +1330,18 @@ impl DnsUpstream for DotUpstream {
         // 实际实现需要使用 rustls 或其他 TLS 库
         #[cfg(feature = "dns_dot")]
         {
-            self.query_dot(domain, record_type).await
+            if let Some(t) = &self.transport {
+                let id = fastrand::u16(..);
+                // Note: We need to use build_dns_query method which is likely private or cfg guarded.
+                // Assuming it is available in this scope or moved to utility.
+                // It is defined in DotUpstream impl, but might be guarded by cfg(feature="dns_dot").
+                // Since this block is guarded by cfg(feature="dns_dot"), we can call methods in that impl block.
+                let req = self.build_dns_query(id, domain, record_type)?;
+                let resp = t.query(&req).await?;
+                self.parse_dns_response(&resp, id)
+             } else {
+                self.query_dot(domain, record_type).await
+             }
         }
         #[cfg(not(feature = "dns_dot"))]
         {
@@ -1613,11 +1627,12 @@ pub struct DoqUpstream {
     extra_ca_pem: Vec<String>,
     skip_verify: bool,
     ecs: Option<String>,
+    transport: Option<Arc<dyn DnsTransport>>,
 }
 
 impl DoqUpstream {
     pub fn new(server: SocketAddr, server_name: String) -> Self {
-        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false, None)
     }
 
     pub fn new_with_tls(
@@ -1626,6 +1641,7 @@ impl DoqUpstream {
         extra_ca_paths: Vec<String>,
         extra_ca_pem: Vec<String>,
         skip_verify: bool,
+        transport: Option<Arc<dyn DnsTransport>>,
     ) -> Self {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOQ_TIMEOUT_MS")
@@ -1642,6 +1658,7 @@ impl DoqUpstream {
             extra_ca_pem,
             skip_verify,
             ecs: None,
+            transport,
         }
     }
 }
@@ -1659,16 +1676,20 @@ impl DnsUpstream for DoqUpstream {
                 let up = UdpUpstream::new(addr).with_client_subnet(self.ecs.clone());
                 up.build_query_packet(domain, record_type)?
             };
-            // Build DoQ transport with per-upstream extras
-            let transport = crate::dns::transport::DoqTransport::new_with_tls(
-                self.server,
-                self.server_name.clone(),
-                self.extra_ca_paths.clone(),
-                self.extra_ca_pem.clone(),
-                self.skip_verify,
-            )?;
-            let resp_bytes =
-                tokio::time::timeout(self.timeout, transport.query(&req_bytes)).await??;
+            // Use shared transport if available, otherwise create temporary one
+            let resp_bytes = if let Some(t) = &self.transport {
+                 t.query(&req_bytes).await?
+            } else {
+                 // Build separate DoQ transport with per-upstream extras
+                 let transport = crate::dns::transport::DoqTransport::new_with_tls(
+                    self.server,
+                    self.server_name.clone(),
+                    self.extra_ca_paths.clone(),
+                    self.extra_ca_pem.clone(),
+                    self.skip_verify,
+                 )?;
+                 tokio::time::timeout(self.timeout, transport.query(&req_bytes)).await??
+            };
             let (ips, ttl) = crate::dns::udp::parse_answers(&resp_bytes, qtype)?;
             let ttl = ttl
                 .map(|s| Duration::from_secs(u64::from(s)))
@@ -2304,7 +2325,7 @@ mod tests {
     fn dot_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.1.1.1:853".parse().unwrap();
         let up =
-            DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false);
+            DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false, None);
         assert!(up.name().contains("cloudflare-dns.com"));
         assert!(up.name().contains("1.1.1.1:853"));
     }
@@ -2313,7 +2334,7 @@ mod tests {
     fn doq_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.0.0.1:853".parse().unwrap();
         let up =
-            DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false);
+            DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false, None);
         assert!(up.name().contains("one.one.one.one"));
         assert!(up.name().contains("1.0.0.1:853"));
     }
@@ -2339,6 +2360,7 @@ mod tests {
             vec!["/etc/ssl/certs/quad9.pem".to_string()],
             vec!["-----BEGIN CERTIFICATE-----...".to_string()],
             true,
+            None,
         );
         // Access private fields within the same module
         assert_eq!(up.server_name, "dns.quad9.net");
@@ -2356,6 +2378,7 @@ mod tests {
             vec!["/etc/ssl/certs/quad9.pem".to_string()],
             vec![],
             true,
+            None,
         );
         assert_eq!(up.server_name, "dns.quad9.net");
         assert_eq!(up.extra_ca_paths.len(), 1);

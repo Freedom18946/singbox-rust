@@ -184,7 +184,9 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
-        RDecision::Reject => return Err(anyhow!("redirect: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("redirect: rejected by rules")),
+        // Sniff/Resolve/Hijack not yet supported in inbound handlers
+        _ => return Err(anyhow!("redirect: unsupported routing action")),
     };
 
     // Bidirectional copy

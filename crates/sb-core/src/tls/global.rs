@@ -140,3 +140,31 @@ pub fn base_root_store() -> RootCertStore {
     }
     roots
 }
+
+/// Global certificate store implementing CertificateStore trait (Go parity).
+#[derive(Debug, Clone, Default)]
+pub struct GlobalCertificateStore;
+
+impl crate::context::CertificateStore for GlobalCertificateStore {
+    fn root_pool(&self) -> Option<Vec<String>> {
+        let ir_guard = TLS_CERT_IR.read();
+        if let Some(ir) = ir_guard.as_ref() {
+            let mut pool = Vec::new();
+            // Read from paths
+            for path in &ir.ca_paths {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    pool.push(content);
+                }
+            }
+            // Add inline PEMs
+            pool.extend(ir.ca_pem.iter().cloned());
+            if pool.is_empty() {
+                None
+            } else {
+                Some(pool)
+            }
+        } else {
+            None
+        }
+    }
+}

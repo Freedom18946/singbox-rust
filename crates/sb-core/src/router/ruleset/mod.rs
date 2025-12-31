@@ -71,8 +71,12 @@ pub struct DefaultRule {
     pub domain_keyword: Vec<String>,
     /// Domain regex
     pub domain_regex: Vec<String>,
+    /// Geosite codes
+    pub geosite: Vec<String>,
     /// IP CIDR rules
     pub ip_cidr: Vec<IpCidr>,
+    /// GeoIP country codes
+    pub geoip: Vec<String>,
     /// Source IP CIDR
     pub source_ip_cidr: Vec<IpCidr>,
     /// Port ranges
@@ -105,6 +109,18 @@ pub struct DefaultRule {
     pub network_is_constrained: bool,
     /// DNS Query Type
     pub query_type: Vec<String>, // simplified as string for matching
+    /// Match private destination IP
+    pub ip_is_private: bool,
+    /// Match private source IP
+    pub source_ip_is_private: bool,
+    /// Match any IP (if rule set IP match enabled)
+    pub ip_accept_any: bool,
+    /// Match source IP against rule set CIDRs
+    pub rule_set_ip_cidr_match_source: bool,
+    /// Accept empty IP when matching against rule set
+    pub rule_set_ip_cidr_accept_empty: bool,
+    /// Clash mode
+    pub clash_mode: Option<String>,
 }
 
 /// Logical rule with AND/OR operations

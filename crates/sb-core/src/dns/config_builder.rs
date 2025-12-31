@@ -18,10 +18,22 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
     let dns = hydrate_dns_ir_from_env(dns);
     // Apply IR-level global knobs to env for compatibility with existing components
     apply_env_from_ir(&dns);
+
+    // Parse strategy
+    let strategy = if let Some(s) = &dns.strategy {
+        s.parse::<crate::dns::DnsStrategy>().unwrap_or_default()
+    } else {
+        crate::dns::DnsStrategy::default()
+    };
+
+    // 0) Initialize TransportRegistry
+    // Note: TransportRegistry is shared across all upstreams to manage shared transports
+    let registry = Arc::new(crate::dns::transport::TransportRegistry::new());
+
     // 1) Build upstream registry
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     for s in &dns.servers {
-        if let Some(up) = build_upstream_from_server(s)? {
+        if let Some(up) = build_upstream_from_server(s, &registry)? {
             upstreams.insert(s.tag.clone(), up);
         }
     }
@@ -46,17 +58,42 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
     if !dns.rules.is_empty() {
         let mut routing_rules: Vec<DnsRoutingRule> = Vec::new();
         for r in &dns.rules {
-            if r.server.trim().is_empty() {
+            use sb_config::ir::RuleAction;
+            use crate::dns::rule_engine::DnsRuleAction;
+
+            let action = match r.action.as_deref() {
+                Some("reject") => DnsRuleAction::Reject,
+                Some("hijack-dns") => DnsRuleAction::HijackDns,
+                _ => DnsRuleAction::Route,
+            };
+
+            // Validation: Route action requires server
+            if action == DnsRuleAction::Route && r.server.is_none() {
+                tracing::warn!("DNS rule with Route action missing server, skipping: {:?}", r);
                 continue;
             }
+
+            let rewrite_ip = r.rewrite_ip.as_ref().map(|ips| {
+                ips.iter()
+                    .filter_map(|s| s.parse::<std::net::IpAddr>().ok())
+                    .collect()
+            });
+
             let rs = build_ruleset_from_rule(r);
             routing_rules.push(DnsRoutingRule {
                 rule_set: rs,
                 upstream_tag: r.server.clone(),
+                action,
                 priority: r.priority.unwrap_or(100),
+                address_limit: r.address_limit,
+                rewrite_ip,
+                rcode: None,
+                answer: None,
+                ns: None,
+                extra: None,
             });
         }
-        let engine = DnsRuleEngine::new(routing_rules, upstreams, default_tag);
+        let engine = DnsRuleEngine::new(routing_rules, upstreams, default_tag, strategy, registry);
         let base: Arc<dyn Resolver> = Arc::new(EngineResolver { engine });
         let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
         return Ok(overlay);
@@ -64,14 +101,21 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
 
     // 3) No rules: use simple DnsResolver over all upstreams
     let list: Vec<Arc<dyn DnsUpstream>> = upstreams.into_values().collect();
-    let base: Arc<dyn Resolver> = Arc::new(DnsResolver::new(list).with_name("dns_ir".to_string()));
+    let base: Arc<dyn Resolver> = Arc::new(
+        DnsResolver::new(list)
+            .with_name("dns_ir".to_string())
+            .with_strategy(strategy),
+    );
     let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
     Ok(overlay)
 }
 
 /// Build a single DNS upstream from address string (e.g., udp://, doh3://, system, local).
 /// Exposed for integration tests and CLI validation.
-pub fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
+pub fn build_upstream(
+    addr: &str,
+    _registry: &crate::dns::transport::TransportRegistry,
+) -> Result<Option<Arc<dyn DnsUpstream>>> {
     let a = addr.trim();
     if a.is_empty() {
         return Ok(None);
@@ -148,6 +192,7 @@ pub fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
 /// Exposed for integration tests and CLI validation.
 pub fn build_upstream_from_server(
     srv: &sb_config::ir::DnsServerIR,
+    _registry: &crate::dns::transport::TransportRegistry,
 ) -> Result<Option<Arc<dyn DnsUpstream>>> {
     // Prefer detailed builder for DoT/DoQ when extras are present
     let a = srv.address.trim();
@@ -198,6 +243,7 @@ pub fn build_upstream_from_server(
             srv.ca_paths.clone(),
             srv.ca_pem.clone(),
             srv.skip_cert_verify.unwrap_or(false),
+            None,
         );
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
@@ -224,6 +270,7 @@ pub fn build_upstream_from_server(
             srv.ca_paths.clone(),
             srv.ca_pem.clone(),
             srv.skip_cert_verify.unwrap_or(false),
+            None,
         );
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
@@ -253,7 +300,7 @@ pub fn build_upstream_from_server(
         return Ok(Some(Arc::new(up)));
     }
     // Fallback to address-only builder
-    build_upstream(a)
+    build_upstream(a, _registry)
 }
 
 #[cfg(feature = "dns_dhcp")]
@@ -340,6 +387,14 @@ impl Resolver for EngineResolver {
 
     async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
         self.engine.explain(domain).await
+    }
+
+    async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        self.engine.start(stage).await
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.engine.close().await
     }
 }
 
@@ -584,6 +639,30 @@ fn build_ruleset_from_rule(
     let mut dr = DefaultRule {
         domain_suffix: r.domain_suffix.clone(),
         domain_keyword: r.keyword.clone(),
+        domain_regex: r.domain_regex.clone(),
+        geosite: r.geosite.clone(),
+        geoip: r.geoip.clone(),
+        source_ip_cidr: parse_cidrs(&r.source_ip_cidr),
+        ip_cidr: parse_cidrs(&r.ip_cidr),
+        port: parse_ports(&r.port),
+        source_port: parse_ports(&r.source_port),
+        process_name: r.process_name.clone(),
+        process_path: r.process_path.clone(),
+        package_name: r.package_name.clone(),
+        wifi_ssid: r.wifi_ssid.clone(),
+        wifi_bssid: r.wifi_bssid.clone(),
+        query_type: r.query_type.clone(),
+        invert: r.invert,
+        
+        ip_is_private: r.ip_is_private.unwrap_or(false),
+        source_ip_is_private: r.source_ip_is_private.unwrap_or(false),
+        ip_accept_any: r.ip_accept_any.unwrap_or(false),
+        rule_set_ip_cidr_match_source: r.rule_set_ip_cidr_match_source.unwrap_or(false),
+        rule_set_ip_cidr_accept_empty: r.rule_set_ip_cidr_accept_empty.unwrap_or(false),
+        clash_mode: r.clash_mode.clone(),
+        network_is_expensive: r.network_is_expensive.unwrap_or(false),
+        network_is_constrained: r.network_is_constrained.unwrap_or(false),
+        
         ..Default::default()
     };
     if !r.domain.is_empty() {
@@ -598,6 +677,18 @@ fn build_ruleset_from_rule(
     #[cfg(not(feature = "suffix_trie"))]
     let suffixes = dr.domain_suffix.clone();
 
+    // Build IP prefix tree for validation
+    let mut ip_tree = IpPrefixTree::new();
+    for cidr in &dr.ip_cidr {
+        ip_tree.insert(cidr);
+    }
+    // Also include source IP CIDRs in tree? 
+    // Wait, ip_tree in RuleSet is usually for destination IP matching optimization.
+    // The Matcher uses it. If we put source IPs in there, it might match destination IPs incorrectly 
+    // if the tree doesn't distinguish. 
+    // The current RuleMatcher::matches_ip_cidrs uses self.ruleset.ip_tree. 
+    // Standard practice: ip_tree is for destination IPs.
+
     StdArc::new(RuleSet {
         source: RuleSetSource::Local(PathBuf::from("dns_rule_ir")),
         format: RuleSetFormat::Binary,
@@ -607,10 +698,23 @@ fn build_ruleset_from_rule(
         domain_trie: StdArc::new(Default::default()),
         #[cfg(not(feature = "suffix_trie"))]
         domain_suffixes: StdArc::new(suffixes),
-        ip_tree: StdArc::new(IpPrefixTree::new()),
+        ip_tree: StdArc::new(ip_tree),
         last_updated: SystemTime::now(),
         etag: None,
     })
+}
+
+fn parse_cidrs(list: &[String]) -> Vec<crate::router::ruleset::IpCidr> {
+    use crate::router::ruleset::IpCidr;
+    list.iter()
+        .filter_map(|s| IpCidr::parse(s).ok())
+        .collect()
+}
+
+fn parse_ports(list: &[String]) -> Vec<u16> {
+    list.iter()
+        .filter_map(|s| s.parse().ok())
+        .collect()
 }
 
 #[cfg(not(feature = "dns_resolved"))]
@@ -637,6 +741,7 @@ mod tests {
             ca_pem: vec![],
             skip_cert_verify: None,
             client_subnet: None,
+            ..Default::default()
         });
         ir.servers.push(sb_config::ir::DnsServerIR {
             tag: "dot1".into(),
@@ -646,6 +751,7 @@ mod tests {
             ca_pem: vec![],
             skip_cert_verify: Some(false),
             client_subnet: None,
+            ..Default::default()
         });
         ir.servers.push(sb_config::ir::DnsServerIR {
             tag: "doq1".into(),
@@ -655,6 +761,7 @@ mod tests {
             ca_pem: vec![],
             skip_cert_verify: Some(false),
             client_subnet: None,
+            ..Default::default()
         });
         ir.default = Some("sys".into());
 
@@ -673,6 +780,7 @@ mod tests {
             ca_pem: vec![],
             skip_cert_verify: None,
             client_subnet: None,
+            ..Default::default()
         });
         let res = resolver_from_ir(&ir);
         assert!(res.is_ok());
@@ -680,7 +788,8 @@ mod tests {
 
     #[test]
     fn build_upstream_returns_local_impl() {
-        let upstream = build_upstream("local")
+        let registry = crate::dns::transport::TransportRegistry::new();
+        let upstream = build_upstream("local", &registry)
             .expect("local upstream builder should not error")
             .expect("local upstream should be built");
 
@@ -689,19 +798,19 @@ mod tests {
 
     #[test]
     fn build_upstream_from_server_sets_local_tag_name() {
+        let registry = crate::dns::transport::TransportRegistry::new();
         let upstream = build_upstream_from_server(&sb_config::ir::DnsServerIR {
-            tag: "loc-tag".into(),
-            address: "local://".into(),
+            tag: "local_tag".into(),
+            address: "local".into(),
             sni: None,
             ca_paths: vec![],
             ca_pem: vec![],
             skip_cert_verify: None,
             client_subnet: None,
-        })
-        .expect("local upstream should be buildable")
-        .expect("local upstream should not be None");
+            ..Default::default()
+        }, &registry).unwrap().unwrap();
 
-        assert_eq!(upstream.name(), "local::loc-tag");
+        assert_eq!(upstream.name(), "local::local_tag");
     }
 
     #[test]

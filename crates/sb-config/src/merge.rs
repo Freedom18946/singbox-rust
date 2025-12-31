@@ -145,7 +145,7 @@ mod tests {
             .outbounds
             .iter()
             .any(|o| matches!(o, Outbound::Direct{name, ..} if name=="direct")));
-        assert!(m.rules.iter().any(|r| r.outbound == "corp"));
+        assert!(m.rules.iter().any(|r| r.outbound.as_deref() == Some("corp")));
         assert_eq!(m.default_outbound.as_deref(), Some("corp"));
         Ok(())
     }

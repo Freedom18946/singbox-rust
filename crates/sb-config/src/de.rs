@@ -1,6 +1,25 @@
 use crate::model::ListenAddr;
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serializer};
 
+/// Helper to deserialize a single value or a list into a Vec.
+pub fn deserialize_string_or_list<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrList<T> {
+        Single(T),
+        List(Vec<T>),
+    }
+
+    match StringOrList::deserialize(deserializer)? {
+        StringOrList::Single(s) => Ok(vec![s]),
+        StringOrList::List(l) => Ok(l),
+    }
+}
+
 /// Serde helpers for (de)serializing [`ListenAddr`] from either string `"ip:port"`
 /// or object form `{"addr"/"address"/"host": "...", "port": N}`.
 ///

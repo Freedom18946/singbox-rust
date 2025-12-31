@@ -70,7 +70,20 @@ pub struct SocksInboundConfig {
     pub udp_nat_ttl: Duration,
     /// User credentials for authentication
     pub users: Option<Vec<Credentials>>,
+    /// UDP Timeout
+    pub udp_timeout: Option<Duration>,
+    /// Domain resolution strategy
+    pub domain_strategy: Option<DomainStrategy>,
 }
+
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum DomainStrategy {
+    AsIs,
+    UseIp,
+    UseIpv4,
+    UseIpv6,
+}
+
 
 /// Serve SOCKS5 proxy with ready signal notification
 /// 运行 SOCKS5 代理服务，并提供就绪信号通知
@@ -155,8 +168,9 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
         let sock = std::sync::Arc::new(sock);
 
         // Spawn UDP handler
+        let timeout = cfg.udp_timeout;
         tokio::spawn(async move {
-            if let Err(e) = udp::serve_udp_datagrams(sock).await {
+            if let Err(e) = udp::serve_udp_datagrams(sock, timeout).await {
                 tracing::warn!("socks/udp serve error: {:?}", e);
             }
         });
@@ -255,15 +269,21 @@ where
             )
         };
 
-    // SOCKS4 doesn't support auth in the standard way (identd is obsolete),
-    // but if users are configured, we might want to reject SOCKS4 or check UserID?
-    // Go implementation: "SOCKS4 does not support authentication."
-    // If auth is required, we should probably reject SOCKS4?
-    // For now, follow Go parity: if users configured, SOCKS4 is allowed but no auth check?
-    // Actually Go's mixed listener might accept SOCKS4.
-    // Let's assume SOCKS4 is allowed without auth for now, or check if we should block it.
-    // If users are configured, usually SOCKS4 is disabled or restricted.
-    // But let's proceed with connection handling.
+    // Go parity: SOCKS4 does not support authentication.
+    // If users are configured (authentication required), reject SOCKS4 connections.
+    if let Some(users) = &cfg.users {
+        if !users.is_empty() {
+            // Reply 91 (Request rejected or failed) - No auth mechanism available
+            let mut resp = [0u8; 8];
+            resp[0] = 0x00;
+            resp[1] = 0x5B; // 91 = Request rejected
+            cli.write_all(&resp).await?;
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "socks4: authentication required but not supported",
+            ));
+        }
+    }
 
     inbound_parse("socks", "ok", "socks4_request");
 
@@ -452,6 +472,38 @@ async fn process_request<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
+    use sb_core::dns::Resolver;
+
+    // Apply domain strategy
+    let mut endpoint = endpoint;
+    if let Some(strategy) = cfg.domain_strategy {
+        if let Endpoint::Domain(ref host, port) = endpoint {
+            if matches!(strategy, DomainStrategy::UseIp | DomainStrategy::UseIpv4 | DomainStrategy::UseIpv6) {
+                if let Some(resolver) = sb_core::dns::global::get() {
+                    match resolver.resolve(host).await {
+                        Ok(ans) => {
+                            let ip = match strategy {
+                                DomainStrategy::UseIpv4 => ans.ips.iter().find(|i| i.is_ipv4()),
+                                DomainStrategy::UseIpv6 => ans.ips.iter().find(|i| i.is_ipv6()),
+                                DomainStrategy::UseIp => ans.ips.first(),
+                                _ => None,
+                            };
+                            if let Some(ip) = ip {
+                                tracing::debug!(host=%host, ip=%ip, "socks domain strategy rewrote target");
+                                endpoint = Endpoint::Ip(SocketAddr::new(*ip, port));
+                            }
+                        }
+                        Err(e) => {
+                            // On resolution failure, continue with domain (or fail? Go usually continues or fails depending on sniff)
+                            // Here we just log and continue
+                            tracing::debug!(host=%host, error=%e, "socks domain strategy resolution failed");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut decision = RDecision::Direct;
     let proxy = default_proxy();
 
@@ -806,9 +858,22 @@ where
                 }
             }
         }
-        RDecision::Reject => {
+        RDecision::Reject | RDecision::RejectDrop => {
             // Should have been filtered earlier; return explicit error to avoid panic.
             return Err(io::Error::other("socks: rejected by rules"));
+        }
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+            // Not handled by SOCKS inbound directly; fall back to direct
+            match &endpoint {
+                Endpoint::Domain(host, port) => {
+                    let s = direct_connect_hostport(host, *port, &opts).await?;
+                    Box::new(s)
+                }
+                Endpoint::Ip(sa) => {
+                    let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                    Box::new(s)
+                }
+            }
         }
     };
 
@@ -988,7 +1053,7 @@ impl SocksInbound {
                     async move {
                         // 这里的 sock 已经是 Arc<UdpSocket>，与新签名匹配
                         // sock here is already Arc<UdpSocket>, matching the new signature
-                        if let Err(e) = udp::serve_udp_datagrams(sock).await {
+                        if let Err(e) = udp::serve_udp_datagrams(sock, None).await {
                             tracing::warn!("socks/udp serve ended: {e}");
                         }
                     }
@@ -1013,7 +1078,7 @@ impl SocksInbound {
                     tokio::spawn({
                         let sock = s.clone();
                         async move {
-                            if let Err(e) = udp::serve_udp_datagrams(sock).await {
+                            if let Err(e) = udp::serve_udp_datagrams(sock, None).await {
                                 tracing::warn!("socks/udp (autostart for TCP) ended: {e}");
                             }
                         }

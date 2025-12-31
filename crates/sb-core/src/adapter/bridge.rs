@@ -18,7 +18,7 @@ use crate::outbound::selector::Selector;
 use crate::outbound::selector_group::{ProxyMember, SelectorGroup};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
-use crate::router::{router_build_index_from_str, RouterHandle};
+use crate::router::RouterHandle;
 use crate::service::{service_registry, ServiceContext};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -37,12 +37,8 @@ fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHand
 
 #[cfg(feature = "router")]
 fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
-    let text = ir_to_router_rules_text(cfg);
-    let max_rules = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100_000usize);
-    match router_build_index_from_str(&text, max_rules) {
+    // Use direct IR builder to support complex/logical rules (P1 parity)
+    match crate::router::builder::build_index_from_ir(cfg).map_err(|e| crate::router::BuildError::Rule(e)) {
         Ok(idx) => {
             let mut handle = RouterHandle::from_index(idx.clone());
 
@@ -313,6 +309,14 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         users_vless,
         users_vmess,
         users_shadowsocks,
+        udp_timeout: ib
+            .udp_timeout
+            .as_ref()
+            .and_then(|s| humantime::parse_duration(s).ok()),
+        domain_strategy: ib.domain_strategy.clone(),
+        set_system_proxy: ib.set_system_proxy,
+        allow_private_network: ib.allow_private_network,
+        ssh_host_key_path: ib.ssh_host_key_path.clone(),
     }
 }
 
@@ -372,6 +376,7 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             tcp_fast_open: ob.tcp_fast_open,
             tcp_multi_path: ob.tcp_multi_path,
             udp_fragment: ob.udp_fragment,
+            domain_strategy: ob.domain_strategy.clone(),
             multiplex: ob.multiplex.clone(),
         },
     )
@@ -595,6 +600,9 @@ pub fn build_bridge<'a>(
     let router_handle = router_handle_from_ir(cfg);
 
     // Step 3: Inbounds
+    // Create shared connection manager for all inbounds (Go parity: route.ConnectionManager)
+    let connection_manager = Arc::new(crate::router::RouteConnectionManager::new());
+
     for ib in &cfg.inbounds {
         let p = to_inbound_param(ib);
         let adapter_ctx = registry::AdapterInboundContext {
@@ -602,6 +610,8 @@ pub fn build_bridge<'a>(
             bridge: Arc::new(br.clone()),
             outbounds: outbound_handle.clone(),
             router: router_handle.clone(),
+            dns_router: None, // TODO: Wire DNS router when available
+            connection_manager: Some(connection_manager.clone()),
             context: ctx_registry.clone(),
         };
 
@@ -670,6 +680,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         let adapter_ctx = registry::AdapterInboundContext {
             bridge: Arc::new(br.clone()),
             outbounds: outbound_handle.clone(),
+            dns_router: None, // TODO: Wire DNS router when available
             context: ctx_registry.clone(),
             _phantom: std::marker::PhantomData,
         };

@@ -938,6 +938,8 @@ fn build_http_inbound(
         outbounds: ctx.outbounds.clone(),
         tls: None,
         users: param.basic_auth.clone().map(|c| vec![c]),
+        set_system_proxy: param.set_system_proxy,
+        allow_private_network: param.allow_private_network,
     };
     Some(Arc::new(HttpInboundAdapter::new(cfg)))
 }
@@ -1261,16 +1263,27 @@ fn build_socks_inbound(
     param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use crate::inbound::socks::SocksInboundConfig;
+    use crate::inbound::socks::{DomainStrategy, SocksInboundConfig};
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
+    
+    let domain_strategy = param.domain_strategy.as_deref().and_then(|s| match s.to_ascii_lowercase().as_str() {
+        "asis" | "as_is" => Some(DomainStrategy::AsIs),
+        "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+        "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+        "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+        _ => None,
+    });
+
     let cfg = SocksInboundConfig {
         listen,
         udp_bind: None,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
         udp_nat_ttl: std::time::Duration::from_secs(60),
-        users: None,
+        users: None, // TODO: map generic users from IR -> Param -> Config
+        udp_timeout: param.udp_timeout,
+        domain_strategy,
     };
     Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(
         cfg,
@@ -1289,16 +1302,29 @@ fn build_mixed_inbound(
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::mixed::MixedInboundConfig;
+    use crate::inbound::socks::DomainStrategy;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
+
+    let domain_strategy = param.domain_strategy.as_deref().and_then(|s| match s.to_ascii_lowercase().as_str() {
+        "asis" | "as_is" => Some(DomainStrategy::AsIs),
+        "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+        "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+        "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+        _ => None,
+    });
+
     let cfg = MixedInboundConfig {
         listen,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
         read_timeout: None,
         tls: None,
-        users: None,
-        set_system_proxy: false,
+        users: param.basic_auth.clone().map(|c| vec![c]),
+        set_system_proxy: param.set_system_proxy,
+        allow_private_network: param.allow_private_network,
+        udp_timeout: param.udp_timeout,
+        domain_strategy,
     };
     Some(Arc::new(MixedInboundAdapter::new(cfg)))
 }

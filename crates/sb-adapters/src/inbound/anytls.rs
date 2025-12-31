@@ -472,7 +472,11 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
             }
         }
         RDecision::Proxy(None) => fallback_connect(proxy, &dest.host, dest.port, &opts).await?,
-        RDecision::Reject => return Err(anyhow!("destination rejected by router")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("destination rejected by router")),
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+            // Not directly handled by AnyTLS inbound; fall back to direct
+            direct_connect_hostport(&dest.host, dest.port, &opts).await?
+        }
     };
 
     Ok(stream)

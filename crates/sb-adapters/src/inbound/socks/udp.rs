@@ -734,9 +734,8 @@ pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
     // 原有逻辑：遍历 listens，逐个 spawn serve_udp_datagrams(...)
     // Original logic: iterate listens, spawn serve_udp_datagrams(...) one by one
     for sock in listens {
-        let sock = sock.clone();
         tokio::spawn(async move {
-            if let Err(e) = serve_udp_datagrams(sock).await {
+            if let Err(e) = serve_udp_datagrams(sock, None).await {
                 tracing::warn!("socks/udp serve error: {e:?}");
             }
         });
@@ -833,7 +832,7 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
     } else {
         // 正常路径：进入完整的 UDP 处理循环（路由/代理/直连/限速等）
         // Normal path: Enter full UDP processing loop (routing/proxy/direct/ratelimit etc.)
-        serve_udp_datagrams(listen).await
+        serve_udp_datagrams(listen, None).await
     }
 }
 
@@ -912,10 +911,12 @@ pub fn spawn_nat_evictor(rt: &UdpRuntime) {
 
 // 改为接收 Arc<UdpSocket>，与调用方保持一致；内部方法调用自动解引用
 // Changed to receive Arc<UdpSocket>, consistent with caller; internal method calls auto-dereference
-pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
+// 改为接收 Arc<UdpSocket>，与调用方保持一致；内部方法调用自动解引用
+// Changed to receive Arc<UdpSocket>, consistent with caller; internal method calls auto-dereference
+pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>) -> Result<()> {
     let fallback_direct = proxy_fallback_direct();
     let upstream_timeout = upstream_timeout_ms();
-    let ttl = nat_ttl_from_env();
+    let ttl = timeout.or_else(nat_ttl_from_env);
     let map = NAT_MAP
         .get_or_init(|| async { Arc::new(UdpNatMap::new(ttl)) })
         .await
@@ -1077,7 +1078,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }).increment(1);
             }
             match d {
-                RDecision::Reject => {
+                RDecision::Reject | RDecision::RejectDrop => {
                     #[cfg(feature = "metrics")]
                     counter!("socks_udp_error_total", "class"=>"reject").increment(1);
                     continue;
@@ -1088,6 +1089,10 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                     _decision_label = "proxy".to_string();
                 }
                 RDecision::Direct => {
+                    _decision_label = "direct".to_string();
+                }
+                // Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
+                RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
                     _decision_label = "direct".to_string();
                 }
             }

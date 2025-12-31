@@ -36,6 +36,9 @@ pub struct MixedInboundConfig {
     pub tls: Option<sb_transport::TlsConfig>,
     pub users: Option<Vec<Credentials>>,
     pub set_system_proxy: bool,
+    pub allow_private_network: bool,
+    pub udp_timeout: Option<Duration>,
+    pub domain_strategy: Option<crate::inbound::socks::DomainStrategy>,
 }
 
 pub async fn serve_mixed(
@@ -228,6 +231,8 @@ async fn handle_socks(
         outbounds: Arc::clone(&cfg.outbounds),
         udp_nat_ttl: Duration::from_secs(60),
         users: cfg.users.clone(),
+        udp_timeout: cfg.udp_timeout,
+        domain_strategy: cfg.domain_strategy.clone(),
     };
 
     let mut stream = PeekedStream::new(cli, first_byte);
@@ -290,6 +295,8 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             outbounds: Arc::clone(&cfg.outbounds),
             udp_nat_ttl: Duration::from_secs(60),
             users: cfg.users.clone(),
+            udp_timeout: cfg.udp_timeout,
+            domain_strategy: cfg.domain_strategy.clone(),
         };
         let mut stream = PeekedStream::new(tls_stream, first);
         crate::inbound::socks::serve_conn(&mut stream, peer, &socks_cfg, None).await
@@ -305,6 +312,8 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             outbounds: Arc::clone(&cfg.outbounds),
             tls: None, // Already unwrapped
             users: cfg.users.clone(),
+            set_system_proxy: cfg.set_system_proxy,
+            allow_private_network: cfg.allow_private_network,
         };
         let stream = PeekedStream::new(tls_stream, first);
         crate::inbound::http::serve_conn(stream, peer, &http_cfg)
@@ -327,6 +336,8 @@ async fn handle_http(
         outbounds: Arc::clone(&cfg.outbounds),
         tls: None,
         users: cfg.users.clone(),
+        set_system_proxy: cfg.set_system_proxy,
+        allow_private_network: cfg.allow_private_network,
     };
 
     let stream = PeekedStream::new(cli, first_byte);

@@ -245,10 +245,10 @@ pub mod dbus_server {
             Ok(())
         }
 
-        /// Flush DNS caches (no-op for now, can integrate with DNS router).
+        /// Flush DNS caches (wired to DNS router).
         async fn flush_caches(&self) -> ZbusResult<()> {
             info!("FlushCaches");
-            // TODO: Integrate with DNS router cache
+            self.state.clear_cache();
             Ok(())
         }
 

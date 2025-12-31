@@ -103,6 +103,8 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
         outbounds,
         udp_nat_ttl: Duration::from_secs(60),
         users: Some(vec![]),
+        domain_strategy: None,
+        udp_timeout: None,
     };
 
     tokio::spawn(async move {

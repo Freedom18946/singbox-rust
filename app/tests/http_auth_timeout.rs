@@ -41,6 +41,8 @@ async fn test_http_auth_timeout() -> Result<()> {
             username_env: None,
             password_env: None,
         }]),
+        set_system_proxy: false,
+        allow_private_network: true,
     };
 
     tokio::spawn(async move {

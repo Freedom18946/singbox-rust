@@ -400,6 +400,23 @@ impl RouterHandle {
         self.resolver.is_some()
     }
 
+    /// FakeIP reverse lookup: get the original domain for a FakeIP address.
+    /// FakeIP 反向查找：获取 FakeIP 地址的原始域名。
+    ///
+    /// Returns `Some(domain)` if the IP is a FakeIP and has a recorded mapping.
+    /// 如果 IP 是 FakeIP 且有记录的映射，返回 `Some(domain)`。
+    #[must_use]
+    pub fn fakeip_lookup_domain(&self, ip: &IpAddr) -> Option<String> {
+        crate::dns::fakeip::to_domain(ip)
+    }
+
+    /// Check if an IP address is within the FakeIP range.
+    /// 检查 IP 地址是否在 FakeIP 范围内。
+    #[must_use]
+    pub fn is_fakeip(&self, ip: &IpAddr) -> bool {
+        crate::dns::fakeip::is_fake_ip(ip)
+    }
+
     #[inline]
     fn cache_try_get(&self, host_norm: &str) -> Option<String> {
         #[cfg(feature = "router_cache_lru_demo")]
@@ -1125,7 +1142,64 @@ impl RouterHandle {
     }
 }
 
-// Explain-only: export a read-only JSON view of rules (real snapshot)
+// ============================================================================
+// ConnectionRouter Implementation for RouterHandle (Go parity: route.Router)
+// ============================================================================
+
+#[async_trait::async_trait]
+impl super::route_connection::ConnectionRouter for RouterHandle {
+    /// Route a TCP connection based on the routing context.
+    /// 根据路由上下文路由 TCP 连接。
+    async fn route_connection<'a>(&self, ctx: &super::RouteCtx<'a>) -> super::route_connection::RouteResult {
+        let decision = self.decide(ctx);
+        decision_to_route_result(decision)
+    }
+
+    /// Route a UDP packet based on the routing context.
+    /// 根据路由上下文路由 UDP 包。
+    async fn route_packet<'a>(&self, ctx: &super::RouteCtx<'a>) -> super::route_connection::RouteResult {
+        let decision = self.decide(ctx);
+        decision_to_route_result(decision)
+    }
+
+    /// Pre-match hook for connection acceptance checks.
+    /// 连接接受检查的预匹配钩子。
+    fn pre_match(&self, _ctx: &super::RouteCtx<'_>) -> bool {
+        // Default: accept all connections
+        // Future: can check source IP rules, inbound-specific filters, etc.
+        true
+    }
+}
+
+/// Convert Decision to RouteResult
+/// 将 Decision 转换为 RouteResult
+fn decision_to_route_result(decision: crate::router::rules::Decision) -> super::route_connection::RouteResult {
+    use crate::router::rules::Decision;
+    use super::route_connection::RouteResult;
+
+    match decision {
+        Decision::Direct => RouteResult::direct(),
+        Decision::Proxy(outbound) => {
+            if let Some(tag) = outbound {
+                RouteResult::proxy(tag)
+            } else {
+                RouteResult::direct()
+            }
+        }
+        Decision::Reject => RouteResult::reject(),
+        Decision::RejectDrop => RouteResult::new(Decision::RejectDrop),
+        Decision::Hijack { address, port } => {
+            let addr = address.as_deref().unwrap_or("*");
+            let p = port.unwrap_or(0);
+            let mut result = RouteResult::new(Decision::Hijack { address: address.clone(), port });
+            result.outbound = Some(format!("hijack:{}:{}", addr, p));
+            result
+        }
+        Decision::Sniff => RouteResult::new(Decision::Sniff),
+        Decision::Resolve => RouteResult::new(Decision::Resolve),
+    }
+}
+
 #[cfg(feature = "explain")]
 impl RouterHandle {
     /// Export a stable JSON snapshot of routing rules for offline explain.

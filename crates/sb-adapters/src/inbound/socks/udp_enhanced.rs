@@ -236,7 +236,7 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         // Apply routing rules
         let decision = apply_routing_rules(&target);
         match decision {
-            RDecision::Reject => {
+            RDecision::Reject | RDecision::RejectDrop => {
                 #[cfg(feature = "metrics")]
                 counter!("socks_udp_error_total", "class" => "rejected").increment(1);
                 continue;
@@ -274,6 +274,8 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 }
             }
             RDecision::Direct => {}
+            // Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
+            RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {}
         }
 
         let payload = &buffer[header_len..bytes_received];

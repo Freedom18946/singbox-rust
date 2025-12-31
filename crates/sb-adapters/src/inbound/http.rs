@@ -158,6 +158,8 @@ pub struct HttpProxyConfig {
     pub tls: Option<sb_transport::TlsConfig>,
     /// User credentials for authentication
     pub users: Option<Vec<Credentials>>,
+    pub set_system_proxy: bool,
+    pub allow_private_network: bool,
 }
 
 /// Ready signal notifier - sends when socket binding completes
@@ -172,6 +174,10 @@ pub async fn serve_http(
     info!(addr=?cfg.listen, actual=?actual, "HTTP CONNECT bound");
     if let Some(tx) = ready_tx {
         let _ = tx.send(());
+    }
+
+    if cfg.set_system_proxy {
+        warn!("http: system proxy setting requested but not implemented");
     }
 
     // Add watcher task for accept loop heartbeat
@@ -368,6 +374,17 @@ where
     // Parse host:port (keep original parsing function/error handling in project)
     // 解析 host:port（保持项目里原有的解析函数/错误处理）
     let (host, port) = split_host_port(&target).ok_or_else(|| anyhow!("bad CONNECT target"))?;
+
+    // Check private network access
+    if !cfg.allow_private_network {
+         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+             if is_private_ip(ip) {
+                 use tokio::io::AsyncWriteExt;
+                 warn!(?peer, target=%target, "http: blocked private network access");
+                 return respond_403(&mut cli).await.map_err(|e| anyhow::anyhow!(e));
+             }
+         }
+    }
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
 
     let mut decision = RDecision::Direct;
@@ -597,9 +614,14 @@ where
                 }
             }
         }
-        RDecision::Reject => {
+        RDecision::Reject | RDecision::RejectDrop => {
             // Should be filtered earlier; return explicit error to avoid panic paths.
             return Err(anyhow!("unexpected reject decision in http inbound"));
+        }
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+            // Not directly handled by HTTP inbound; fall back to direct
+            let s = direct_connect_hostport(host, port, &opts).await?;
+            Box::new(s)
         }
     };
     // Respond 200, then tunnel forwarding
@@ -801,6 +823,33 @@ where
     Ok(())
 }
 
+async fn respond_403<S>(mut s: S) -> std::io::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let resp = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    use tokio::io::AsyncWriteExt;
+    s.write_all(resp).await?;
+    s.flush().await
+}
+
+fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ipv4) => {
+            let octets = ipv4.octets();
+            octets[0] == 10
+                || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 168)
+                || ipv4.is_loopback()
+                || ipv4.is_link_local()
+                || ipv4.is_unspecified() // 0.0.0.0
+        }
+        std::net::IpAddr::V6(ipv6) => {
+            ipv6.is_loopback() || (ipv6.segments()[0] & 0xfe00) == 0xfc00 || ipv6.is_unspecified()
+        }
+    }
+}
+
 async fn respond_400<S>(stream: &mut S, msg: &str) -> anyhow::Result<()>
 where
     S: tokio::io::AsyncWrite + Unpin,
@@ -854,7 +903,7 @@ where
 }
 
 #[allow(dead_code)] // Reserved for auth failures
-async fn respond_403(cli: &mut TcpStream) -> Result<()> {
+async fn respond_403_tcp(cli: &mut TcpStream) -> Result<()> {
     let body = b"Forbidden";
     let resp = format!(
         "HTTP/1.1 403 Forbidden\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

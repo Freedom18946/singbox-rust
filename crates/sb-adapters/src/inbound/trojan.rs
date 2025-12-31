@@ -813,7 +813,9 @@ async fn handle_tcp_connect(
                 socks5_connect_through_socks5(addr, host, port, &opts).await?
             }
         },
-        RDecision::Reject => return Err(anyhow!("trojan: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("trojan: rejected by rules")),
+        // Sniff/Resolve/Hijack not yet supported in inbound handlers
+        _ => return Err(anyhow!("trojan: unsupported routing action")),
     };
 
     // Relay bidirectionally

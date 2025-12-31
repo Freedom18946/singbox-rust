@@ -52,6 +52,10 @@ pub mod udp;
 /// DNS rule actions for extended routing (rewrite, reject, proxy, ECS).
 pub mod rule_action;
 
+/// DNS Router interface (Go parity: adapter.DNSRouter).
+pub mod dns_router;
+pub use dns_router::{DnsQueryContext, DnsRouter, NullDnsRouter};
+
 /// DNS 解析结果：包含 IP 列表和 TTL 信息
 #[derive(Clone, Debug)]
 pub struct DnsAnswer {
@@ -121,6 +125,16 @@ pub trait Resolver: Send + Sync {
             "message": "explain not supported by this resolver"
         }))
     }
+
+    /// 启动解析器
+    async fn start(&self, _stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        Ok(())
+    }
+
+    /// 关闭解析器
+    async fn close(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// DNS 上游服务器抽象
@@ -134,6 +148,16 @@ pub trait DnsUpstream: Send + Sync {
 
     /// 检查上游是否可用
     async fn health_check(&self) -> bool;
+
+    /// 启动上游
+    async fn start(&self, _stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        Ok(())
+    }
+
+    /// 关闭上游
+    async fn close(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// DNS 记录类型
@@ -159,6 +183,29 @@ impl RecordType {
             15 => Some(Self::MX),
             16 => Some(Self::TXT),
             _ => None,
+        }
+    }
+}
+
+/// DNS resolution strategy
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DnsStrategy {
+    #[default]
+    PreferIpv4,
+    PreferIpv6,
+    Ipv4Only,
+    Ipv6Only,
+}
+
+impl std::str::FromStr for DnsStrategy {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "prefer_ipv4" => Ok(Self::PreferIpv4),
+            "prefer_ipv6" => Ok(Self::PreferIpv6),
+            "ipv4_only" => Ok(Self::Ipv4Only),
+            "ipv6_only" => Ok(Self::Ipv6Only),
+            _ => Err(anyhow::anyhow!("Invalid DNS strategy: {}", s)),
         }
     }
 }
@@ -1289,5 +1336,219 @@ mod tests {
         drop(b);
         assert_eq!(g.available_permits(), 2);
         assert_eq!(h.available_permits(), 2);
+    }
+}
+
+// =============================================================================
+// DnsTransportManager (Go parity: adapter.DNSTransportManager)
+// =============================================================================
+
+use std::sync::RwLock;
+
+/// DNS Transport Manager (Go parity: adapter.DNSTransportManager).
+///
+/// Manages registration and lookup of DNS transports by tag.
+/// Provides lifecycle management and transport selection for DNS routing.
+///
+/// DNS 传输管理器（Go 对齐：adapter.DNSTransportManager）。
+/// 管理按标签注册和查找 DNS 传输。
+/// 为 DNS 路由提供生命周期管理和传输选择。
+#[derive(Default)]
+pub struct DnsTransportManager {
+    /// Registered transports by tag.
+    /// 按标签注册的传输。
+    transports: RwLock<HashMap<String, Arc<dyn transport::DnsTransport>>>,
+    /// Default transport tag (used when no rule matches).
+    /// 默认传输标签（规则无匹配时使用）。
+    default_tag: RwLock<Option<String>>,
+    /// FakeIP-only transport tags (cannot be used for non-fakeip queries).
+    /// FakeIP 专用传输标签（不能用于非 fakeip 查询）。
+    fakeip_only_tags: RwLock<std::collections::HashSet<String>>,
+}
+
+impl DnsTransportManager {
+    /// Create a new empty transport manager.
+    /// 创建一个新的空传输管理器。
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            transports: RwLock::new(HashMap::new()),
+            default_tag: RwLock::new(None),
+            fakeip_only_tags: RwLock::new(std::collections::HashSet::new()),
+        }
+    }
+
+    /// Register a DNS transport with a tag.
+    /// 使用标签注册 DNS 传输。
+    ///
+    /// Returns the previous transport if the tag was already registered.
+    /// 如果标签已注册，返回之前的传输。
+    pub fn register(
+        &self,
+        tag: impl Into<String>,
+        transport: Arc<dyn transport::DnsTransport>,
+    ) -> Option<Arc<dyn transport::DnsTransport>> {
+        let tag = tag.into();
+        tracing::debug!(target: "sb_core::dns", tag = %tag, "registering DNS transport");
+        self.transports.write().ok()?.insert(tag, transport)
+    }
+
+    /// Get a DNS transport by tag.
+    /// 按标签获取 DNS 传输。
+    #[must_use]
+    pub fn get(&self, tag: &str) -> Option<Arc<dyn transport::DnsTransport>> {
+        self.transports.read().ok()?.get(tag).cloned()
+    }
+
+    /// Remove a DNS transport by tag.
+    /// 按标签移除 DNS 传输。
+    pub fn remove(&self, tag: &str) -> Option<Arc<dyn transport::DnsTransport>> {
+        self.transports.write().ok()?.remove(tag)
+    }
+
+    /// Set the default transport tag.
+    /// 设置默认传输标签。
+    pub fn set_default(&self, tag: impl Into<String>) {
+        if let Ok(mut guard) = self.default_tag.write() {
+            *guard = Some(tag.into());
+        }
+    }
+
+    /// Get the default transport.
+    /// 获取默认传输。
+    #[must_use]
+    pub fn get_default(&self) -> Option<Arc<dyn transport::DnsTransport>> {
+        let tag = self.default_tag.read().ok()?.clone()?;
+        self.get(&tag)
+    }
+
+    /// Mark a transport as FakeIP-only.
+    /// 将传输标记为仅限 FakeIP。
+    pub fn mark_fakeip_only(&self, tag: impl Into<String>) {
+        if let Ok(mut guard) = self.fakeip_only_tags.write() {
+            guard.insert(tag.into());
+        }
+    }
+
+    /// Check if a transport is FakeIP-only.
+    /// 检查传输是否仅限 FakeIP。
+    #[must_use]
+    pub fn is_fakeip_only(&self, tag: &str) -> bool {
+        self.fakeip_only_tags
+            .read()
+            .ok()
+            .map(|g| g.contains(tag))
+            .unwrap_or(false)
+    }
+
+    /// Get all registered transport tags.
+    /// 获取所有已注册的传输标签。
+    #[must_use]
+    pub fn tags(&self) -> Vec<String> {
+        self.transports
+            .read()
+            .ok()
+            .map(|g| g.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Start all transports at a specific lifecycle stage.
+    /// 在特定生命周期阶段启动所有传输。
+    pub async fn start_all(&self, stage: transport::DnsStartStage) -> Result<()> {
+        let transports: Vec<_> = self
+            .transports
+            .read()
+            .ok()
+            .map(|g| g.values().cloned().collect())
+            .unwrap_or_default();
+        for t in transports {
+            t.start(stage).await?;
+        }
+        Ok(())
+    }
+
+    /// Close all transports.
+    /// 关闭所有传输。
+    pub async fn close_all(&self) -> Result<()> {
+        let transports: Vec<_> = self
+            .transports
+            .read()
+            .ok()
+            .map(|g| g.values().cloned().collect())
+            .unwrap_or_default();
+        for t in transports {
+            t.close().await?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for DnsTransportManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tags = self.tags();
+        f.debug_struct("DnsTransportManager")
+            .field("transports", &tags)
+            .field("default", &self.default_tag.read().ok())
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod transport_manager_tests {
+    use super::*;
+    use async_trait::async_trait;
+
+    struct MockTransport {
+        name: &'static str,
+    }
+
+    #[async_trait]
+    impl transport::DnsTransport for MockTransport {
+        async fn query(&self, _packet: &[u8]) -> Result<Vec<u8>> {
+            Ok(vec![])
+        }
+        fn name(&self) -> &'static str {
+            self.name
+        }
+    }
+
+    #[test]
+    fn test_transport_manager_register_get() {
+        let mgr = DnsTransportManager::new();
+        let t1 = Arc::new(MockTransport { name: "test1" });
+        let t2 = Arc::new(MockTransport { name: "test2" });
+
+        assert!(mgr.register("t1", t1.clone()).is_none());
+        assert!(mgr.register("t2", t2.clone()).is_none());
+
+        let got = mgr.get("t1").unwrap();
+        assert_eq!(got.name(), "test1");
+
+        let got = mgr.get("t2").unwrap();
+        assert_eq!(got.name(), "test2");
+
+        assert!(mgr.get("t3").is_none());
+    }
+
+    #[test]
+    fn test_transport_manager_default() {
+        let mgr = DnsTransportManager::new();
+        let t1 = Arc::new(MockTransport { name: "default" });
+        mgr.register("default", t1);
+        mgr.set_default("default");
+
+        let got = mgr.get_default().unwrap();
+        assert_eq!(got.name(), "default");
+    }
+
+    #[test]
+    fn test_transport_manager_fakeip_only() {
+        let mgr = DnsTransportManager::new();
+        let t1 = Arc::new(MockTransport { name: "fakeip" });
+        mgr.register("fakeip", t1);
+        mgr.mark_fakeip_only("fakeip");
+
+        assert!(mgr.is_fakeip_only("fakeip"));
+        assert!(!mgr.is_fakeip_only("other"));
     }
 }

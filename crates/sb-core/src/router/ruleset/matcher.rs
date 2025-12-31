@@ -22,6 +22,10 @@ pub struct MatchContext {
     pub process_path: Option<String>,
     pub source_ip: Option<IpAddr>,
     pub source_port: Option<u16>,
+    pub query_type: Option<String>,
+    pub geosite_codes: Vec<String>,
+    pub geoip_code: Option<String>,
+    pub clash_mode: Option<String>,
 }
 
 /// Compiled regex cache
@@ -45,6 +49,8 @@ struct MatchKey {
     ip: Option<IpAddr>,
     port: Option<u16>,
     network: Option<String>,
+    query_type: Option<String>,
+    clash_mode: Option<String>,
 }
 
 impl RuleMatcher {
@@ -67,6 +73,8 @@ impl RuleMatcher {
             ip: ctx.destination_ip,
             port: Some(ctx.destination_port),
             network: ctx.network.clone(),
+            query_type: ctx.query_type.clone(),
+            clash_mode: ctx.clash_mode.clone(),
         };
 
         // Check cache
@@ -181,10 +189,35 @@ impl RuleMatcher {
             }
         }
 
+        if !rule.geosite.is_empty() {
+            if !ctx.geosite_codes.iter().any(|c| rule.geosite.contains(c)) {
+                return false;
+            }
+        }
+
         // IP CIDR matching
         if !rule.ip_cidr.is_empty() {
-            if let Some(ip) = ctx.destination_ip {
+            let target_ip = if rule.rule_set_ip_cidr_match_source {
+                ctx.source_ip
+            } else {
+                ctx.destination_ip
+            };
+
+            if let Some(ip) = target_ip {
                 if !self.matches_ip_cidrs(&rule.ip_cidr, &ip) {
+                    return false;
+                }
+            } else {
+                // Check accept_empty behavior
+                if !rule.rule_set_ip_cidr_accept_empty {
+                    return false;
+                }
+            }
+        }
+
+        if !rule.geoip.is_empty() {
+            if let Some(ref code) = ctx.geoip_code {
+                if !rule.geoip.iter().any(|c| c.eq_ignore_ascii_case(code)) {
                     return false;
                 }
             } else {
@@ -256,6 +289,58 @@ impl RuleMatcher {
             } else {
                 return false;
             }
+        }
+
+        // Query type matching
+        if !rule.query_type.is_empty() {
+            if let Some(ref qt) = ctx.query_type {
+                if !rule.query_type.iter().any(|t| t.eq_ignore_ascii_case(qt)) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // Clash Mode matching
+        if let Some(ref mode) = rule.clash_mode {
+            if let Some(ref ctx_mode) = ctx.clash_mode {
+                if mode != ctx_mode {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // IP Is Private matching
+        if rule.ip_is_private {
+            if let Some(ip) = ctx.destination_ip {
+                if !is_private_ip(&ip) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // Source IP Is Private matching
+        if rule.source_ip_is_private {
+            if let Some(ip) = ctx.source_ip {
+                if !is_private_ip(&ip) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // IP Accept Any matching
+        if rule.ip_accept_any {
+             if ctx.destination_ip.is_none() {
+                 return false;
+             }
+             // matches any valid IP
         }
 
         true // All conditions matched
@@ -409,6 +494,10 @@ mod tests {
             process_path: None,
             source_ip: None,
             source_port: None,
+            query_type: None,
+            geosite_codes: Vec::new(),
+            geoip_code: None,
+            clash_mode: None,
         };
 
         assert!(matcher.matches(&ctx));
@@ -428,6 +517,10 @@ mod tests {
             process_path: None,
             source_ip: None,
             source_port: None,
+            query_type: None,
+            geosite_codes: Vec::new(),
+            geoip_code: None,
+            clash_mode: None,
         };
 
         assert!(matcher.matches(&ctx));
@@ -447,6 +540,10 @@ mod tests {
             process_path: None,
             source_ip: None,
             source_port: None,
+            query_type: None,
+            geosite_codes: Vec::new(),
+            geoip_code: None,
+            clash_mode: None,
         };
 
         assert!(!matcher.matches(&ctx));
@@ -466,6 +563,10 @@ mod tests {
             process_path: None,
             source_ip: None,
             source_port: None,
+            query_type: None,
+            geosite_codes: Vec::new(),
+            geoip_code: None,
+            clash_mode: None,
         };
 
         // First match (cache miss)
@@ -476,5 +577,17 @@ mod tests {
 
         let (size, _cap) = matcher.cache_stats();
         assert_eq!(size, 1);
+    }
+}
+
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private() || ip.is_loopback() || ip.is_link_local()
+        }
+        IpAddr::V6(ip) => {
+            // IPv6 unique local: fc00::/7
+            (ip.segments()[0] & 0xfe00) == 0xfc00 || ip.is_loopback() || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
     }
 }

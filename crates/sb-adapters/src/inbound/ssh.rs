@@ -105,7 +105,7 @@ impl SshInboundAdapter {
         let config = SshInboundConfig {
             listen: param.listen.clone(),
             port: param.port,
-            host_key_path: None, // TODO: Add host_key_path to InboundParam
+            host_key_path: param.ssh_host_key_path.clone(),
             authorized_keys: HashMap::new(),
             passwords,
         };

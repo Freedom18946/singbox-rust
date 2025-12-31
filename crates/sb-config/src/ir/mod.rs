@@ -391,10 +391,18 @@ pub struct MasqueradeStringIR {
     pub status_code: u16,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Inbound listener configuration.
 /// 入站监听器配置。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct InboundIR {
+    /// Inbound tag (unique identifier for routing rules, Go parity).
+    /// 入站标签（用于路由规则的唯一标识符，Go 对齐）。
+    #[serde(default)]
+    pub tag: Option<String>,
     /// Inbound type.
     /// 入站类型。
     pub ty: InboundType,
@@ -412,6 +420,14 @@ pub struct InboundIR {
     /// 启用 UDP 支持。
     #[serde(default)]
     pub udp: bool,
+    /// UDP timeout (e.g. "5m").
+    /// UDP 超时（例如 "5m"）。
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
+    /// Domain/IP resolution strategy for Socks inbound.
+    /// Socks 入站的域名/IP 解析策略。
+    #[serde(default)]
+    pub domain_strategy: Option<String>,
     /// Basic authentication for HTTP inbound (optional).
     /// HTTP 入站的基本认证（可选）。
     #[serde(default)]
@@ -428,6 +444,16 @@ pub struct InboundIR {
     /// 覆盖目标端口（用于直接入站）。
     #[serde(default)]
     pub override_port: Option<u16>,
+
+    /// Set system proxy.
+    /// 设置系统代理。
+    #[serde(default)]
+    pub set_system_proxy: bool,
+
+    /// Allow private network access.
+    /// 允许访问私有网络。
+    #[serde(default = "default_true")]
+    pub allow_private_network: bool,
 
     // Protocol-specific fields (Shadowsocks)
     /// Shadowsocks encryption method (e.g., "aes-256-gcm", "chacha20-poly1305").
@@ -627,6 +653,12 @@ pub struct InboundIR {
     /// Tun interface configuration.
     #[serde(default)]
     pub tun: Option<TunOptionsIR>,
+
+    // SSH options
+    /// SSH server host key file path (PEM format).
+    /// SSH 服务器主机密钥文件路径（PEM 格式）。
+    #[serde(default)]
+    pub ssh_host_key_path: Option<String>,
 }
 
 /// Tun inbound options.
@@ -664,6 +696,12 @@ pub struct TunOptionsIR {
     pub include_routes: Option<Vec<String>>,
     #[serde(default)]
     pub exclude_uids: Option<Vec<u32>>,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub endpoint_independent_nat: Option<bool>,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
     #[serde(default)]
     pub exclude_processes: Option<Vec<String>>,
 }
@@ -738,6 +776,8 @@ pub struct OutboundIR {
     pub tcp_multi_path: Option<bool>,
     #[serde(default)]
     pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_strategy: Option<String>,
     /// Multiplex options
     #[serde(default)]
     pub multiplex: Option<MultiplexOptionsIR>,
@@ -1103,6 +1143,76 @@ pub struct HeaderEntry {
     pub value: String,
 }
 
+/// Rule action type (Go parity: option/rule_action.go).
+/// 规则动作类型（Go 对齐：option/rule_action.go）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuleAction {
+    /// Route traffic to specified outbound (default).
+    /// 将流量路由到指定出站（默认）。
+    #[default]
+    Route,
+    /// Reject connection (send RST/ICMP unreachable).
+    /// 拒绝连接（发送 RST/ICMP 不可达）。
+    Reject,
+    /// Reject by dropping packets silently.
+    /// 通过静默丢弃数据包拒绝。
+    RejectDrop,
+    /// DNS hijack action.
+    /// DNS 劫持动作。
+    Hijack,
+    /// DNS hijack action (explicit).
+    /// DNS 劫持动作（显式）。
+    HijackDns,
+    /// Sniff protocol to override destination.
+    /// 嗅探协议以覆盖目标。
+    Sniff,
+    /// Resolve domain to IP address.
+    /// 将域名解析为 IP 地址。
+    Resolve,
+    /// Apply route options (e.g. override Android VPN, mark).
+    /// 应用路由选项（例如覆盖 Android VPN，标记）。
+    RouteOptions,
+    /// Sniff protocol and override destination (explicit).
+    /// 嗅探协议并覆盖目标（显式）。
+    SniffOverride,
+}
+
+impl RuleAction {
+    /// Returns the string representation for config serialization.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RuleAction::Route => "route",
+            RuleAction::Reject => "reject",
+            RuleAction::RejectDrop => "reject-drop",
+            RuleAction::Hijack => "hijack",
+            RuleAction::HijackDns => "hijack-dns",
+            RuleAction::Sniff => "sniff",
+            RuleAction::Resolve => "resolve",
+            RuleAction::RouteOptions => "route-options",
+            RuleAction::SniffOverride => "sniff-override",
+        }
+    }
+
+    /// Parse from string (case-insensitive).
+    #[must_use]
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "route" => Some(RuleAction::Route),
+            "reject" => Some(RuleAction::Reject),
+            "reject-drop" | "reject_drop" => Some(RuleAction::RejectDrop),
+            "hijack" => Some(RuleAction::Hijack),
+            "hijack-dns" | "hijack_dns" => Some(RuleAction::HijackDns),
+            "sniff" => Some(RuleAction::Sniff),
+            "sniff-override" | "sniff_override" => Some(RuleAction::SniffOverride),
+            "resolve" => Some(RuleAction::Resolve),
+            "route-options" | "route_options" => Some(RuleAction::RouteOptions),
+            _ => None,
+        }
+    }
+}
+
 /// Routing rule intermediate representation.
 /// 路由规则中间表示。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -1110,43 +1220,43 @@ pub struct RuleIR {
     // Positive match conditions
     /// Domain exact match list.
     /// 域名精确匹配列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain: Vec<String>,
     /// Domain suffix match list (e.g., ".google.com").
     /// 域名后缀匹配列表（例如 ".google.com"）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_suffix: Vec<String>,
     /// Domain keyword match list.
     /// 域名关键字匹配列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_keyword: Vec<String>,
     /// Domain regex match list.
     /// 域名正则表达式匹配列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_regex: Vec<String>,
     /// Geosite category list.
     /// Geosite 分类列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub geosite: Vec<String>,
     /// GeoIP country code list.
     /// GeoIP 国家代码列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub geoip: Vec<String>,
     /// IP CIDR list.
     /// IP CIDR 列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub ipcidr: Vec<String>,
     /// Port or port range (e.g., `"80"`, `"80-90"`).
     /// 端口或端口范围（例如 `"80"`, `"80-90"`）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub port: Vec<String>,
     /// Process name list.
     /// 进程名称列表。
-    #[serde(default, alias = "process")]
+    #[serde(default, alias = "process", deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_name: Vec<String>,
     /// Process path list.
     /// 进程路径列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_path: Vec<String>,
     /// Network type: `"tcp"` or `"udp"`.
     /// 网络类型：`"tcp"` 或 `"udp"`。
@@ -1174,19 +1284,19 @@ pub struct RuleIR {
     pub user_agent: Vec<String>,
     /// WiFi SSID list.
     /// WiFi SSID 列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_ssid: Vec<String>,
     /// WiFi BSSID list.
     /// WiFi BSSID 列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_bssid: Vec<String>,
     /// Rule set list.
     /// 规则集列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub rule_set: Vec<String>,
     /// IP-based rule set list.
     /// 基于 IP 的规则集列表。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub rule_set_ipcidr: Vec<String>,
     /// User ID list (UID-based matching, Linux/macOS).
     /// 用户 ID 列表（基于 UID 的匹配，Linux/macOS）。
@@ -1194,7 +1304,7 @@ pub struct RuleIR {
     pub user_id: Vec<u32>,
     /// User name list (resolved to UID, Linux/macOS).
     /// 用户名列表（解析为 UID，Linux/macOS）。
-    #[serde(default, alias = "uid")]
+    #[serde(default, alias = "uid", deserialize_with = "crate::de::deserialize_string_or_list")]
     pub user: Vec<String>,
     /// Group ID list (GID-based matching, Linux/macOS).
     /// 组 ID 列表（基于 GID 的匹配，Linux/macOS）。
@@ -1202,25 +1312,25 @@ pub struct RuleIR {
     pub group_id: Vec<u32>,
     /// Group name list (resolved to GID, Linux/macOS).
     /// 组名列表（解析为 GID，Linux/macOS）。
-    #[serde(default, alias = "gid")]
+    #[serde(default, alias = "gid", deserialize_with = "crate::de::deserialize_string_or_list")]
     pub group: Vec<String>,
 
     // P1 Parity: Additional routing rule fields (Go compatibility)
     /// Clash API mode (e.g., "rule", "global", "direct").
     /// Clash API 模式（例如 "rule", "global", "direct"）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub clash_mode: Vec<String>,
     /// Client name or version patterns.
     /// 客户端名称或版本模式。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub client: Vec<String>,
     /// Android package names (for Android TUN mode).
     /// Android 包名（用于 Android TUN 模式）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub package_name: Vec<String>,
     /// Network type (e.g., "wifi", "cellular", "ethernet").
     /// 网络类型（例如 "wifi", "cellular", "ethernet"）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub network_type: Vec<String>,
     /// Metered/expensive network flag.
     /// 计费/昂贵网络标志。
@@ -1252,55 +1362,55 @@ pub struct RuleIR {
     // Negative match conditions (exclusions)
     /// Exclude domains.
     /// 排除域名。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_domain: Vec<String>,
     /// Exclude domain suffixes.
     /// 排除域名后缀。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_domain_suffix: Vec<String>,
     /// Exclude domain keywords.
     /// 排除域名关键字。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_domain_keyword: Vec<String>,
     /// Exclude domain regex.
     /// 排除域名正则表达式。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_domain_regex: Vec<String>,
     /// Exclude geosite categories.
     /// 排除 Geosite 分类。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_geosite: Vec<String>,
     /// Exclude GeoIP countries.
     /// 排除 GeoIP 国家。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_geoip: Vec<String>,
     /// Exclude IP CIDRs.
     /// 排除 IP CIDR。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_ipcidr: Vec<String>,
     /// Exclude ports.
     /// 排除端口。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_port: Vec<String>,
     /// Exclude process names.
     /// 排除进程名称。
-    #[serde(default, alias = "not_process")]
+    #[serde(default, alias = "not_process", deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_process_name: Vec<String>,
     /// Exclude process paths.
     /// 排除进程路径。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_process_path: Vec<String>,
     /// Exclude network types.
     /// 排除网络类型。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_network: Vec<String>,
     /// Exclude protocols.
     /// 排除协议。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_protocol: Vec<String>,
     /// Exclude ALPN.
     /// 排除 ALPN。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_alpn: Vec<String>,
     /// Exclude source addresses.
     /// 排除源地址。
@@ -1382,14 +1492,88 @@ pub struct RuleIR {
     pub rules: Vec<Box<RuleIR>>,
 
     // Actions
+    /// Rule action type (Go parity: route/reject/hijack/sniff/resolve).
+    /// 规则动作类型（Go 对齐：route/reject/hijack/sniff/resolve）。
+    #[serde(default)]
+    pub action: RuleAction,
     /// Target outbound tag.
     /// 目标出站标签。
     #[serde(default)]
     pub outbound: Option<String>,
+    /// Override destination address (for hijack action).
+    /// 覆盖目标地址（用于 hijack 动作）。
+    #[serde(default)]
+    pub override_address: Option<String>,
+    /// Override destination port (for hijack action).
+    /// 覆盖目标端口（用于 hijack 动作）。
+    #[serde(default)]
+    pub override_port: Option<u16>,
+
+    // DNS specific action fields
+    /// DNS query type match (e.g. A, AAAA).
+    #[serde(default)]
+    pub query_type: Vec<String>,
+    /// Rewrite DNS TTL.
+    #[serde(default)]
+    pub rewrite_ttl: Option<u32>,
+    /// Client subnet prefix (for ECS).
+    #[serde(default)]
+    pub client_subnet: Option<String>,
+
     /// Invert match result.
     /// 反转匹配结果。
     #[serde(default)]
     pub invert: bool,
+
+    // Route Options Action Fields
+    /// Override Android VPN (bypass VPN for this route).
+    #[serde(default)]
+    pub override_android_vpn: Option<bool>,
+    /// Enable process name/path detection.
+    #[serde(default)]
+    pub find_process: Option<bool>,
+    /// Automatically detect the default network interface.
+    #[serde(default)]
+    pub auto_detect_interface: Option<bool>,
+    /// SO_MARK value for routing.
+    #[serde(default)]
+    pub mark: Option<u32>,
+    /// Network selection strategy.
+    #[serde(default)]
+    pub network_strategy: Option<String>,
+    /// Fallback network types.
+    #[serde(default)]
+    pub fallback_network_type: Option<Vec<String>>,
+    /// Delay before using fallback network type.
+    #[serde(default)]
+    pub fallback_delay: Option<String>,
+
+    // Sniff Action Fields
+    /// Sniffer protocol (e.g. "http", "tls", "quic").
+    #[serde(default)]
+    pub sniffer: Option<String>,
+    /// Sniffing timeout (e.g. "300ms").
+    #[serde(default)]
+    pub sniff_timeout: Option<String>,
+}
+
+/// Domain resolution options (Go parity: option/domain_resolve.go).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct DomainResolveOptionsIR {
+    /// DNS server address.
+    pub server: String,
+    /// Domain resolution strategy.
+    #[serde(default)]
+    pub strategy: Option<String>,
+    /// Disable DNS cache.
+    #[serde(default)]
+    pub disable_cache: Option<bool>,
+    /// Rewrite TTL.
+    #[serde(default)]
+    pub rewrite_ttl: Option<u32>,
+    /// Client subnet (ECS).
+    #[serde(default)]
+    pub client_subnet: Option<String>,
 }
 
 /// Routing table configuration.
@@ -1445,6 +1629,11 @@ pub struct RouteIR {
     // ──────────────────────────────────────────────────────────────────
     // Process and Interface Options
     // ──────────────────────────────────────────────────────────────────
+    /// Override Android VPN (bypass VPN for this route).
+    /// 覆盖 Android VPN（此路由绕过 VPN）。
+    #[serde(default)]
+    pub override_android_vpn: Option<bool>,
+
     /// Enable process name/path detection for routing rules.
     /// 启用路由规则的进程名称/路径检测。
     #[serde(default)]
@@ -1471,10 +1660,10 @@ pub struct RouteIR {
     // ──────────────────────────────────────────────────────────────────
     // DNS and Network Strategy
     // ──────────────────────────────────────────────────────────────────
-    /// Default DNS resolver tag.
-    /// 默认 DNS 解析器标签。
+    /// Default DNS resolver options.
+    /// 默认 DNS 解析器选项。
     #[serde(default)]
-    pub default_resolver: Option<String>,
+    pub default_domain_resolver: Option<DomainResolveOptionsIR>,
 
     /// Network selection strategy: "ipv4_only" | "ipv6_only" | "prefer_ipv4" | "prefer_ipv6".
     /// 网络选择策略："ipv4_only" | "ipv6_only" | "prefer_ipv4" | "prefer_ipv6"。
@@ -1483,10 +1672,10 @@ pub struct RouteIR {
 
     /// Default network type(s) for outbound connections.
     #[serde(default)]
-    pub default_network_type: Option<String>,
+    pub default_network_type: Option<Vec<String>>,
     /// Fallback network type(s) for outbound connections.
     #[serde(default)]
-    pub default_fallback_network_type: Option<String>,
+    pub default_fallback_network_type: Option<Vec<String>>,
     /// Delay before using fallback network type.
     #[serde(default)]
     pub default_fallback_delay: Option<String>,
@@ -1515,6 +1704,12 @@ pub struct RuleSetIR {
     /// Update interval (e.g., "24h").
     #[serde(default)]
     pub update_interval: Option<String>,
+    /// Inline rules (for type "inline").
+    #[serde(default)]
+    pub rules: Option<Vec<RuleIR>>,
+    /// Rule set version (for source format).
+    #[serde(default)]
+    pub version: Option<u8>,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -2393,6 +2588,14 @@ pub struct LogIR {
     /// Optional output format (non-standard extension): json|compact
     #[serde(default)]
     pub format: Option<String>,
+    /// Disable logging entirely (Go parity: log.disabled)
+    /// 完全禁用日志（Go 对齐：log.disabled）
+    #[serde(default)]
+    pub disabled: Option<bool>,
+    /// Output destination: stdout/stderr/path (Go parity: log.output)
+    /// 输出目标：stdout/stderr/路径（Go 对齐：log.output）
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 /// NTP service configuration (IR)
@@ -2449,6 +2652,21 @@ pub struct DnsServerIR {
     /// Skip certificate verification (testing only)
     #[serde(default)]
     pub skip_cert_verify: Option<bool>,
+    /// Address resolver (server tag for resolving this server's address)
+    #[serde(default)]
+    pub address_resolver: Option<String>,
+    /// Address resolution strategy (prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only)
+    #[serde(default)]
+    pub address_strategy: Option<String>,
+    /// Address resolution fallback delay (e.g., "300ms")
+    #[serde(default)]
+    pub address_fallback_delay: Option<String>,
+    /// Query strategy for this server (prefer_ipv4, prefer_ipv6, ipv4_only, ipv6_only)
+    #[serde(default)]
+    pub strategy: Option<String>,
+    /// Outbound detour for this server
+    #[serde(default)]
+    pub detour: Option<String>,
 }
 
 /// DNS routing rule (IR)
@@ -2464,10 +2682,89 @@ pub struct DnsRuleIR {
     #[serde(default)]
     pub keyword: Vec<String>,
     /// Target upstream tag
-    pub server: String,
+    #[serde(default)]
+    pub server: Option<String>,
     /// Optional rule priority (lower = higher priority)
     #[serde(default)]
     pub priority: Option<u32>,
+
+    // Additional Match Fields
+    #[serde(default)]
+    pub query_type: Vec<String>,
+    #[serde(default)]
+    pub rule_set: Vec<String>,
+    #[serde(default)]
+    pub domain_regex: Vec<String>,
+    #[serde(default)]
+    pub geosite: Vec<String>,
+    #[serde(default)]
+    pub geoip: Vec<String>,
+    #[serde(default)]
+    pub source_ip_cidr: Vec<String>,
+    #[serde(default)]
+    pub ip_cidr: Vec<String>,
+    #[serde(default)]
+    pub port: Vec<String>,
+    #[serde(default)]
+    pub source_port: Vec<String>,
+    #[serde(default)]
+    pub process_name: Vec<String>,
+    #[serde(default)]
+    pub process_path: Vec<String>,
+    #[serde(default)]
+    pub package_name: Vec<String>,
+    #[serde(default)]
+    pub wifi_ssid: Vec<String>,
+    #[serde(default)]
+    pub wifi_bssid: Vec<String>,
+    #[serde(default)]
+    pub invert: bool,
+
+    // New Matching Fields for Parity
+    #[serde(default)]
+    pub ip_is_private: Option<bool>,
+    #[serde(default)]
+    pub source_ip_is_private: Option<bool>,
+    #[serde(default)]
+    pub ip_accept_any: Option<bool>,
+    #[serde(default)]
+    pub rule_set_ip_cidr_match_source: Option<bool>,
+    #[serde(default)]
+    pub rule_set_ip_cidr_accept_empty: Option<bool>,
+    #[serde(default)]
+    pub clash_mode: Option<String>,
+    #[serde(default)]
+    pub network_is_expensive: Option<bool>,
+    #[serde(default)]
+    pub network_is_constrained: Option<bool>,
+
+    // Actions
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub rewrite_ttl: Option<u32>,
+    #[serde(default)]
+    pub client_subnet: Option<String>,
+    #[serde(default)]
+    pub disable_cache: Option<bool>,
+    /// Limit the number of addresses returned
+    #[serde(default)]
+    pub address_limit: Option<u32>,
+    /// Predefined answer IPs (hijacks traffic if match)
+    #[serde(default)]
+    pub rewrite_ip: Option<Vec<String>>,
+    /// Predefined answer RCode
+    #[serde(default)]
+    pub rcode: Option<String>,
+    /// Predefined Answer Records
+    #[serde(default)]
+    pub answer: Option<Vec<String>>,
+    /// Predefined Authority Records
+    #[serde(default)]
+    pub ns: Option<Vec<String>>,
+    /// Predefined Additional Records
+    #[serde(default)]
+    pub extra: Option<Vec<String>>,
 }
 
 /// DNS configuration (IR)
@@ -2482,6 +2779,12 @@ pub struct DnsIR {
     /// Default upstream tag (fallback)
     #[serde(default)]
     pub default: Option<String>,
+    /// Final/fallback server tag (Go parity: "final" field)
+    #[serde(default, rename = "final")]
+    pub final_server: Option<String>,
+    /// Disable caching globally
+    #[serde(default)]
+    pub disable_cache: Option<bool>,
     /// Global timeout for DNS queries (ms)
     #[serde(default)]
     pub timeout_ms: Option<u64>,
@@ -2498,6 +2801,18 @@ pub struct DnsIR {
     /// When set, an OPT(EDNS0) record with ECS will be attached to queries (backend permitting).
     #[serde(default)]
     pub client_subnet: Option<String>,
+    /// Reverse mapping override (true to enable reverse mapping for all responses).
+    /// 反向映射覆盖（true 为所有响应启用反向映射）。
+    #[serde(default)]
+    pub reverse_mapping: Option<bool>,
+    /// Resolution strategy: "prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only".
+    /// 解析策略："prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only"。
+    #[serde(default)]
+    pub strategy: Option<String>,
+    /// Use independent cache for this server/config.
+    /// 为此服务器/配置使用独立缓存。
+    #[serde(default)]
+    pub independent_cache: Option<bool>,
     /// FakeIP settings
     #[serde(default)]
     pub fakeip_enabled: Option<bool>,

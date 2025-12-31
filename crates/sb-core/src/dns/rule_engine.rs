@@ -18,25 +18,41 @@ use crate::router::ruleset::{RuleSet, RuleSetFormat, RuleSetSource};
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct RoutingCacheKey {
     domain: String,
+    query_type: String,
 }
 
 /// DNS routing decision
 #[derive(Debug, Clone)]
 struct RoutingDecision {
-    /// Upstream server tag to use
-    upstream_tag: String,
+    /// Upstream server tag to use (None if action is Reject/Hijack)
+    upstream_tag: Option<String>,
     /// Matched rule metadata (None when using default)
     matched_rule: Option<MatchedRuleInfo>,
     /// Whether the decision came from cache
     from_cache: bool,
+    /// Helper to fail fast if action is Reject
+    action: Option<DnsRuleAction>,
+    /// Address limit (truncate IPs)
+    address_limit: Option<u32>,
+    /// Predefined Answer IPs (for HijackDns)
+    rewrite_ip: Option<Vec<std::net::IpAddr>>,
+    /// Predefined RCode
+    rcode: Option<String>,
+    /// Predefined Answer Records
+    answer: Option<Vec<String>>,
+    /// Predefined Authority Records
+    ns: Option<Vec<String>>,
+    /// Predefined Additional Records
+    extra: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
 struct MatchedRuleInfo {
-    upstream_tag: String,
+    upstream_tag: Option<String>,
     priority: u32,
     source: RuleSetSource,
     format: RuleSetFormat,
+    action: DnsRuleAction,
 }
 
 struct CompiledRule {
@@ -44,15 +60,37 @@ struct CompiledRule {
     matcher: RuleMatcher,
 }
 
+/// DNS rule action
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsRuleAction {
+    Route,
+    Reject,
+    HijackDns,
+}
+
 /// DNS routing rule configuration
 #[derive(Debug, Clone)]
 pub struct DnsRoutingRule {
     /// Rule-Set to match against
     pub rule_set: Arc<RuleSet>,
-    /// Upstream server tag to route to
-    pub upstream_tag: String,
+    /// Upstream server tag to route to (optional for some actions)
+    pub upstream_tag: Option<String>,
+    /// Rule action
+    pub action: DnsRuleAction,
     /// Rule priority (lower = higher priority)
     pub priority: u32,
+    /// Address limit
+    pub address_limit: Option<u32>,
+    /// Predefined IPs
+    pub rewrite_ip: Option<Vec<std::net::IpAddr>>,
+    /// Predefined RCode
+    pub rcode: Option<String>,
+    /// Predefined Answer Records
+    pub answer: Option<Vec<String>>,
+    /// Predefined Authority Records
+    pub ns: Option<Vec<String>>,
+    /// Predefined Additional Records
+    pub extra: Option<Vec<String>>,
 }
 
 /// DNS Rule Engine with Rule-Set routing
@@ -65,6 +103,10 @@ pub struct DnsRuleEngine {
     default_upstream_tag: String,
     /// Routing decision cache
     cache: Arc<parking_lot::Mutex<lru::LruCache<RoutingCacheKey, RoutingDecision>>>,
+    /// Resolution strategy
+    strategy: super::DnsStrategy,
+    /// Transport registry for lifecycle management
+    registry: Arc<crate::dns::transport::TransportRegistry>,
 }
 
 impl DnsRuleEngine {
@@ -73,6 +115,8 @@ impl DnsRuleEngine {
         rules: Vec<DnsRoutingRule>,
         upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
         default_upstream_tag: String,
+        strategy: super::DnsStrategy,
+        registry: Arc<crate::dns::transport::TransportRegistry>,
     ) -> Self {
         // Sort rules by priority
         let mut sorted_rules = rules;
@@ -97,19 +141,104 @@ impl DnsRuleEngine {
             upstreams,
             default_upstream_tag,
             cache,
+            strategy,
+            registry,
         }
     }
 
     /// Route a DNS query to the appropriate upstream
     pub async fn resolve(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let qt = format!("{:?}", record_type);
         // Get routing decision (cached or fresh)
-        let decision = self.route_domain(domain);
+        let decision = self.route_domain(domain, &qt);
+
+        if let Some(action) = &decision.action {
+            match action {
+                DnsRuleAction::Reject => {
+                    tracing::debug!(
+                        "DNS routing: domain={}, type={:?}, action=Reject",
+                        domain,
+                        record_type
+                    );
+                    return Ok(DnsAnswer::new(
+                        Vec::new(),
+                        std::time::Duration::from_secs(0),
+                        crate::dns::cache::Source::System,
+                        crate::dns::cache::Rcode::Refused,
+                    ));
+                }
+                DnsRuleAction::HijackDns => {
+                    let mut answer_ips = Vec::new();
+                    // Merge rewrite_ip and answer fields
+                    if let Some(ips) = &decision.rewrite_ip {
+                        answer_ips.extend(ips.clone());
+                    }
+                    if let Some(answers) = &decision.answer {
+                        for ans in answers {
+                            if let Ok(ip) = ans.parse::<std::net::IpAddr>() {
+                                answer_ips.push(ip);
+                            }
+                        }
+                    }
+
+                    let rcode = if let Some(rcode_str) = &decision.rcode {
+                        match rcode_str.to_ascii_uppercase().as_str() {
+                            "NXDOMAIN" => crate::dns::cache::Rcode::NxDomain,
+                            "REFUSED" => crate::dns::cache::Rcode::Refused,
+                            _ => crate::dns::cache::Rcode::NoError, 
+                        }
+                    } else {
+                        crate::dns::cache::Rcode::NoError
+                    };
+
+                    if !answer_ips.is_empty() || decision.rcode.is_some() {
+                       tracing::debug!(
+                            "DNS routing: domain={}, type={:?}, action=HijackDns (ips={:?}, rcode={:?})",
+                            domain,
+                            record_type,
+                            answer_ips,
+                            rcode
+                        );
+
+                        answer_ips.retain(|ip| match record_type {
+                            RecordType::A => ip.is_ipv4(),
+                            RecordType::AAAA => ip.is_ipv6(),
+                            _ => true,
+                        });
+                        
+                        return Ok(DnsAnswer::new(
+                            answer_ips,
+                            std::time::Duration::from_secs(10), 
+                            crate::dns::cache::Source::System,
+                            rcode,
+                        )); 
+                    }
+
+                    tracing::debug!(
+                        "DNS routing: domain={}, type={:?}, action=HijackDns (empty, returning Refused)",
+                        domain,
+                        record_type
+                    );
+                     return Ok(DnsAnswer::new(
+                        Vec::new(),
+                        std::time::Duration::from_secs(0),
+                        crate::dns::cache::Source::System,
+                        crate::dns::cache::Rcode::Refused,
+                    ));
+                }
+                DnsRuleAction::Route => {
+                    // fallthrough to upstream query
+                }
+            }
+        }
+
+        let tag = decision.upstream_tag.as_deref().unwrap_or(&self.default_upstream_tag);
 
         // Get upstream server
-        let upstream = self.upstreams.get(&decision.upstream_tag).ok_or_else(|| {
+        let upstream = self.upstreams.get(tag).ok_or_else(|| {
             anyhow::anyhow!(
                 "Upstream '{}' not found for domain '{}'",
-                decision.upstream_tag,
+                tag,
                 domain
             )
         })?;
@@ -118,16 +247,24 @@ impl DnsRuleEngine {
         tracing::debug!(
             "DNS routing: domain={}, upstream={}, type={:?}",
             domain,
-            decision.upstream_tag,
+            tag,
             record_type
         );
 
-        upstream.query(domain, record_type).await
+        let mut answer = upstream.query(domain, record_type).await?;
+
+        if let Some(limit) = decision.address_limit {
+             if answer.ips.len() > limit as usize {
+                 answer.ips.truncate(limit as usize);
+             }
+        }
+        Ok(answer)
     }
 
     /// Explain routing decision for a domain
     pub async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
-        let decision = self.route_domain(domain);
+        // Default to A record for explanation if not specified
+        let decision = self.route_domain(domain, "A");
 
         let matched_rule = decision
             .matched_rule
@@ -145,6 +282,7 @@ impl DnsRuleEngine {
                 };
                 serde_json::json!({
                     "upstream": m.upstream_tag,
+                    "action": format!("{:?}", m.action),
                     "priority": m.priority,
                     "rule_set": {
                         "source": source,
@@ -161,6 +299,7 @@ impl DnsRuleEngine {
             "domain": domain,
             "resolver": "dns_rule_engine",
             "upstream": decision.upstream_tag,
+            "action": decision.action.map(|a| format!("{:?}", a)),
             "decision": if decision.matched_rule.is_some() { "rule" } else { "default" },
             "cache": if decision.from_cache { "hit" } else { "miss" },
             "matched_rule": matched_rule
@@ -168,10 +307,11 @@ impl DnsRuleEngine {
     }
 
     /// Determine which upstream to use for a domain
-    fn route_domain(&self, domain: &str) -> RoutingDecision {
+    fn route_domain(&self, domain: &str, query_type: &str) -> RoutingDecision {
         // Check cache first
         let cache_key = RoutingCacheKey {
             domain: domain.to_string(),
+            query_type: query_type.to_string(),
         };
 
         {
@@ -197,6 +337,10 @@ impl DnsRuleEngine {
             process_path: None,
             source_ip: None,
             source_port: None,
+            query_type: Some(query_type.to_string()),
+            clash_mode: None,
+            geosite_codes: Vec::new(), // TODO: Implement geosite lookup
+            geoip_code: None,          // TODO: Implement geoip lookup
         };
 
         for compiled in &self.rules {
@@ -206,11 +350,19 @@ impl DnsRuleEngine {
                     priority: compiled.rule.priority,
                     source: compiled.rule.rule_set.source.clone(),
                     format: compiled.rule.rule_set.format,
+                    action: compiled.rule.action.clone(),
                 };
                 let decision = RoutingDecision {
                     upstream_tag: compiled.rule.upstream_tag.clone(),
                     matched_rule: Some(matched_rule),
                     from_cache: false,
+                    action: Some(compiled.rule.action.clone()),
+                    address_limit: compiled.rule.address_limit,
+                    rewrite_ip: compiled.rule.rewrite_ip.clone(),
+                    rcode: compiled.rule.rcode.clone(),
+                    answer: compiled.rule.answer.clone(),
+                    ns: compiled.rule.ns.clone(),
+                    extra: compiled.rule.extra.clone(),
                 };
 
                 // Cache decision
@@ -218,16 +370,17 @@ impl DnsRuleEngine {
                 cache.put(cache_key, decision.clone());
 
                 tracing::debug!(
-                    "DNS rule matched: domain={}, upstream={}, rule_set={:?}",
+                    "DNS rule matched: domain={}, type={}, action={:?}, upstream={:?}",
                     domain,
-                    decision.upstream_tag,
-                    compiled.rule.rule_set.source
+                    query_type,
+                    decision.action,
+                    decision.upstream_tag
                 );
 
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "dns_rule_match_total",
-                    "upstream" => decision.upstream_tag.clone(),
+                    "upstream" => decision.upstream_tag.clone().unwrap_or_default(),
                     "matched" => "true"
                 )
                 .increment(1);
@@ -238,9 +391,16 @@ impl DnsRuleEngine {
 
         // No rule matched, use default upstream
         let decision = RoutingDecision {
-            upstream_tag: self.default_upstream_tag.clone(),
+            upstream_tag: Some(self.default_upstream_tag.clone()),
             matched_rule: None,
             from_cache: false,
+            action: None,
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
         };
 
         // Cache decision
@@ -248,15 +408,16 @@ impl DnsRuleEngine {
         cache.put(cache_key, decision.clone());
 
         tracing::debug!(
-            "DNS no rule matched: domain={}, using default upstream={}",
+            "DNS no rule matched: domain={}, type={}, using default upstream={}",
             domain,
-            decision.upstream_tag
+            query_type,
+            decision.upstream_tag.as_ref().unwrap()
         );
 
         #[cfg(feature = "metrics")]
         metrics::counter!(
             "dns_rule_match_total",
-            "upstream" => decision.upstream_tag.clone(),
+            "upstream" => decision.upstream_tag.clone().unwrap_or_default(),
             "matched" => "false"
         )
         .increment(1);
@@ -264,27 +425,65 @@ impl DnsRuleEngine {
         decision
     }
 
+    /// Start the rule engine (and all upstreams)
+    pub async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        for (tag, up) in &self.upstreams {
+            up.start(stage).await.map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", tag, e))?;
+        }
+        self.registry.start_all(stage).await?;
+        Ok(())
+    }
+
+    /// Close the rule engine
+    pub async fn close(&self) -> Result<()> {
+        for (tag, up) in &self.upstreams {
+            up.close().await.map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", tag, e))?;
+        }
+        self.registry.close_all().await?;
+        Ok(())
+    }
+
     /// Resolve both A and AAAA records (dual-stack)
     pub async fn resolve_dual_stack(&self, domain: &str) -> Result<DnsAnswer> {
         let mut all_ips = Vec::new();
         let mut min_ttl: Option<std::time::Duration> = None;
 
-        // Concurrent A and AAAA queries
-        let (a_result, aaaa_result) = tokio::join!(
-            self.resolve(domain, RecordType::A),
-            self.resolve(domain, RecordType::AAAA)
-        );
+        use super::DnsStrategy;
 
-        // Merge A records
-        if let Ok(a_answer) = a_result {
-            all_ips.extend(a_answer.ips);
-            min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
-        }
+        let (a_result, aaaa_result) = match self.strategy {
+            DnsStrategy::Ipv4Only => (
+                self.resolve(domain, RecordType::A).await,
+                Err(anyhow::anyhow!("IPv4 only")),
+            ),
+            DnsStrategy::Ipv6Only => (
+                Err(anyhow::anyhow!("IPv6 only")),
+                self.resolve(domain, RecordType::AAAA).await,
+            ),
+            _ => tokio::join!(
+                self.resolve(domain, RecordType::A),
+                self.resolve(domain, RecordType::AAAA)
+            ),
+        };
 
-        // Merge AAAA records
-        if let Ok(aaaa_answer) = aaaa_result {
-            all_ips.extend(aaaa_answer.ips);
-            min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+        // PreferIPv6: AAAA first, then A
+        if self.strategy == DnsStrategy::PreferIpv6 {
+            if let Ok(aaaa_answer) = &aaaa_result {
+                all_ips.extend(aaaa_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+            }
+            if let Ok(a_answer) = &a_result {
+                all_ips.extend(a_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
+            }
+        } else {
+             if let Ok(a_answer) = &a_result {
+                all_ips.extend(a_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
+            }
+             if let Ok(aaaa_answer) = &aaaa_result {
+                all_ips.extend(aaaa_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+            }
         }
 
         if all_ips.is_empty() {
@@ -368,8 +567,15 @@ mod tests {
 
         let routing_rule = DnsRoutingRule {
             rule_set: ruleset,
-            upstream_tag: "google_dns".to_string(),
+            upstream_tag: Some("google_dns".to_string()),
+            action: DnsRuleAction::Route,
             priority: 10,
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
         };
 
         let mut upstreams = HashMap::new();
@@ -386,7 +592,13 @@ mod tests {
             }) as Arc<dyn DnsUpstream>,
         );
 
-        let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "default_dns".to_string());
+        let engine = DnsRuleEngine::new(
+            vec![routing_rule],
+            upstreams,
+            "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+        );
 
         // Test: google.com should route to google_dns
         let result = engine.resolve("www.google.com", RecordType::A).await;
@@ -462,17 +674,33 @@ mod tests {
             vec![
                 DnsRoutingRule {
                     rule_set: high_priority_ruleset,
-                    upstream_tag: "high_dns".to_string(),
+                    upstream_tag: Some("high_dns".to_string()),
+                    action: DnsRuleAction::Route,
                     priority: 10,
+                    address_limit: None,
+                    rewrite_ip: None,
+                    rcode: None,
+                    answer: None,
+                    ns: None,
+                    extra: None,
                 },
                 DnsRoutingRule {
                     rule_set: low_priority_ruleset,
-                    upstream_tag: "low_dns".to_string(),
+                    upstream_tag: Some("low_dns".to_string()),
+                    action: DnsRuleAction::Route,
                     priority: 20,
+                    address_limit: None,
+                    rewrite_ip: None,
+                    rcode: None,
+                    answer: None,
+                    ns: None,
+                    extra: None,
                 },
             ],
             upstreams,
             "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
         );
 
         // High priority rule should win
@@ -516,11 +744,20 @@ mod tests {
         let engine = DnsRuleEngine::new(
             vec![DnsRoutingRule {
                 rule_set: ruleset,
-                upstream_tag: "test_dns".to_string(),
+                upstream_tag: Some("test_dns".to_string()),
+                action: DnsRuleAction::Route,
                 priority: 10,
+                address_limit: None,
+                rewrite_ip: None,
+                rcode: None,
+                answer: None,
+                ns: None,
+                extra: None,
             }],
             upstreams,
             "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
         );
 
         // First query
@@ -564,8 +801,15 @@ mod tests {
 
         let routing_rule = DnsRoutingRule {
             rule_set: ruleset,
-            upstream_tag: "google_dns".to_string(),
+            upstream_tag: Some("google_dns".to_string()),
+            action: DnsRuleAction::Route,
             priority: 10,
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
         };
 
         let mut upstreams = HashMap::new();
@@ -582,7 +826,13 @@ mod tests {
             }) as Arc<dyn DnsUpstream>,
         );
 
-        let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "default_dns".to_string());
+        let engine = DnsRuleEngine::new(
+            vec![routing_rule],
+            upstreams,
+            "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+        );
 
         let first = engine.explain("www.google.com").await.unwrap();
         assert_eq!(first["upstream"], serde_json::json!("google_dns"));

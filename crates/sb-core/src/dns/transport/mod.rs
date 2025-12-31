@@ -110,8 +110,11 @@ pub trait DnsTransport: Send + Sync {
 
 pub mod enhanced_udp;
 pub mod local;
+pub mod registry;
 pub mod tcp;
 mod udp;
+
+pub use registry::TransportRegistry;
 
 #[cfg(feature = "dns_dhcp")]
 pub mod dhcp;

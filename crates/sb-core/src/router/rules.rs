@@ -8,12 +8,41 @@ use std::{net::IpAddr, str::FromStr};
 // Re-export RecordType from DNS module for routing use
 pub use crate::dns::RecordType as DnsRecordType;
 
+/// Route decision (Go parity: route.RuleAction).
+///
+/// Represents the action to take for a matched routing rule.
+/// 表示匹配路由规则时要采取的动作。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Decision {
+    /// Route to default/direct outbound.
+    /// 路由到默认/直连出站。
     #[default]
     Direct,
-    Proxy(Option<String>), // Support named proxy pools with "proxy:name" syntax
+    /// Route to a named proxy/outbound.
+    /// 路由到命名代理/出站。
+    Proxy(Option<String>),
+    /// Reject connection with response (RST for TCP, ICMP for UDP).
+    /// 拒绝连接并响应（TCP 的 RST，UDP 的 ICMP）。
     Reject,
+    /// Reject connection without response (drop silently).
+    /// 静默丢弃连接（不响应）。
+    RejectDrop,
+    /// Hijack connection to override address/port.
+    /// 劫持连接以覆盖地址/端口。
+    Hijack {
+        /// Override destination address.
+        /// 覆盖目标地址。
+        address: Option<String>,
+        /// Override destination port.
+        /// 覆盖目标端口。
+        port: Option<u16>,
+    },
+    /// Trigger protocol sniffing before routing.
+    /// 在路由前触发协议嗅探。
+    Sniff,
+    /// Require DNS resolution before continuing.
+    /// 在继续前需要 DNS 解析。
+    Resolve,
 }
 
 impl Decision {
@@ -23,6 +52,60 @@ impl Decision {
             Decision::Proxy(Some(name)) => name,
             Decision::Proxy(None) => "proxy",
             Decision::Reject => "reject",
+            Decision::RejectDrop => "reject-drop",
+            Decision::Hijack { .. } => "hijack",
+            Decision::Sniff => "sniff",
+            Decision::Resolve => "resolve",
+        }
+    }
+
+    /// Check if this decision is terminal (stops rule processing).
+    /// 检查此决策是否为终端（停止规则处理）。
+    #[must_use]
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Decision::Direct
+                | Decision::Proxy(_)
+                | Decision::Reject
+                | Decision::RejectDrop
+                | Decision::Hijack { .. }
+        )
+    }
+
+    /// Convert from sb-config RuleAction.
+    /// 从 sb-config RuleAction 转换。
+    #[must_use]
+    pub fn from_rule_action(
+        action: &sb_config::ir::RuleAction,
+        outbound: Option<String>,
+        override_address: Option<String>,
+        override_port: Option<u16>,
+    ) -> Self {
+        use sb_config::ir::RuleAction;
+        match action {
+            RuleAction::Route => {
+                if let Some(ref ob) = outbound {
+                    if ob == "direct" {
+                        Decision::Direct
+                    } else {
+                        Decision::Proxy(Some(ob.clone()))
+                    }
+                } else {
+                    Decision::Direct
+                }
+            }
+            RuleAction::Reject => Decision::Reject,
+            RuleAction::RejectDrop => Decision::RejectDrop,
+            RuleAction::Hijack => Decision::Hijack {
+                address: override_address,
+                port: override_port,
+            },
+            RuleAction::HijackDns => Decision::Reject, // DNS hijack not applicable for generic routing
+            RuleAction::Sniff => Decision::Sniff,
+            RuleAction::Resolve => Decision::Resolve,
+            RuleAction::RouteOptions => Decision::Direct, // TODO: Support route options
+            RuleAction::SniffOverride => Decision::Sniff, // TODO: Support sniff override details
         }
     }
 }
@@ -56,6 +139,170 @@ impl PartialEq for DomainRegexMatcher {
 }
 
 impl Eq for DomainRegexMatcher {}
+
+impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
+    type Error = String;
+
+    fn try_from(ir: &sb_config::ir::RuleIR) -> Result<Self, Self::Error> {
+        let rule_type = match ir.rule_type.as_deref().unwrap_or("default") {
+            "logical" => RuleType::Logical,
+            _ => RuleType::Default,
+        };
+
+        let mode = match ir.mode.as_deref().unwrap_or("and") {
+            "or" => LogicalMode::Or,
+            _ => LogicalMode::And,
+        };
+
+        let mut sub_rules = Vec::new();
+        if rule_type == RuleType::Logical {
+            for sub_ir in &ir.rules {
+                sub_rules.push(CompositeRule::try_from(sub_ir.as_ref())?);
+            }
+        }
+
+        let mut domain_regex = Vec::new();
+        for s in &ir.domain_regex {
+            domain_regex.push(DomainRegexMatcher::new(s.clone()).map_err(|e| e.to_string())?);
+        }
+        let mut not_domain_regex = Vec::new();
+        for s in &ir.not_domain_regex {
+            not_domain_regex.push(DomainRegexMatcher::new(s.clone()).map_err(|e| e.to_string())?);
+        }
+
+        let process_path_regex = Vec::new();
+        // ir.process_path_regex not in RuleIR
+
+        let mut not_process_path_regex = Vec::new();
+        // ir.not_process_path_regex not in RuleIR
+
+        let decision = Decision::from_rule_action(
+            &ir.action,
+            ir.outbound.clone(),
+            ir.override_address.clone(),
+            ir.override_port,
+        );
+
+        let mut rule = CompositeRule {
+            rule_type,
+            mode,
+            sub_rules,
+            decision,
+            domain: ir.domain.clone(),
+            domain_suffix: ir.domain_suffix.clone(),
+            domain_keyword: ir.domain_keyword.clone(),
+            domain_regex,
+            geosite: ir.geosite.clone(),
+            ip_cidr: ir.ipcidr.iter().filter_map(|s| s.parse().ok()).collect(),
+            geoip: ir.geoip.clone(),
+            source_ip_cidr: ir.source.iter().filter_map(|s| s.parse().ok()).collect(),
+            source_geoip: Vec::new(), // ir.source_geoip not available
+            port: ir.port.iter().filter_map(|s| s.parse().ok()).collect(), 
+            port_range: ir.port.iter().filter_map(|s| {
+                if let Some((start, end)) = s.split_once('-') {
+                     let start = start.parse().ok()?;
+                     let end = end.parse().ok()?;
+                     Some((start, end))
+                } else {
+                    None
+                }
+            }).collect(),
+            source_port: Vec::new(), 
+            source_port_range: Vec::new(),
+            network: ir.network.clone(),
+            protocol: ir.protocol.clone(),
+            process_name: ir.process_name.clone(),
+            process_path: ir.process_path.clone(),
+            process_path_regex,
+            wifi_ssid: ir.wifi_ssid.clone(),
+            wifi_bssid: ir.wifi_bssid.clone(),
+            rule_set: ir.rule_set.clone(),
+            user_agent: ir.user_agent.clone(),
+            inbound_tag: Vec::new(),
+            auth_user: Vec::new(),
+            query_type: Vec::new(), // RuleIR doesn't typically have query_type for routing
+            ip_is_private: false, // Default
+            ip_version: Vec::new(),
+            clash_mode: ir.clash_mode.clone(),
+            client: ir.client.clone(),
+            package_name: ir.package_name.clone(),
+            network_type: ir.network_type.clone(),
+            network_is_expensive: ir.network_is_expensive,
+            network_is_constrained: ir.network_is_constrained,
+            // Action-related fields not mapped here (descision logic handles them or we assume decision is enough)
+            // But wait, what about invert? RuleIR has invert. CompositeRule doesn't seem to support top-level invert?
+            // Existing matchers have negation lists. CompositeRule logic is: if negation matches -> false; all positive matches -> true.
+            // If invert is true, result = !result.
+            // CompositeRule matches() returns bool.
+            
+            // Wait, does CompositeRule have an `invert` field? It does NOT.
+            // RuleIR's `invert` field inverts the FINAL result.
+            // We should add `invert` to CompositeRule or handle it in `matches`.
+            // Let's add `invert` to CompositeRule.
+            // ...
+            
+            outbound_tag: ir.outbound_tag.clone(),
+            user: ir.user.clone(),
+            user_id: ir.user_id.clone(),
+            group: ir.group.clone(),
+            group_id: ir.group_id.clone(),
+            adguard: Vec::new(), // Todo: Parse adguard strings? IR uses `adguard` field? RuleIR doesn't seem to have adguard field in the snippet I saw.
+            
+            // Negation fields
+            not_domain: ir.not_domain.clone(),
+            not_domain_suffix: ir.not_domain_suffix.clone(),
+            not_domain_keyword: ir.not_domain_keyword.clone(),
+            // not_domain_regex: ... (handled by regex set if applicable, or we use vec)
+            not_domain_regex,
+            not_geosite: ir.not_geosite.clone(),
+            not_ip_cidr: ir.not_ipcidr.iter().filter_map(|s| s.parse().ok()).collect(),
+            not_geoip: ir.not_geoip.clone(),
+            not_source_ip_cidr: ir.not_source.iter().filter_map(|s| s.parse().ok()).collect(),
+            not_source_geoip: Vec::new(), // ir.not_source_geoip doesn't exist?
+            not_port: ir.not_port.iter().filter_map(|s| s.parse().ok()).collect(),
+            not_port_range: ir.not_port.iter().filter_map(|s| {
+                if let Some((start, end)) = s.split_once('-') {
+                    let start = start.parse().ok()?;
+                    let end = end.parse().ok()?;
+                    Some((start, end))
+                } else {
+                    None
+                }
+            }).collect(),
+            not_source_port: Vec::new(),
+            not_source_port_range: Vec::new(),
+            not_network: ir.not_network.clone(),
+            not_protocol: ir.not_protocol.clone(),
+            not_process_name: ir.not_process_name.clone(),
+            not_process_path: ir.not_process_path.clone(),
+            not_process_path_regex,
+            not_wifi_ssid: ir.not_wifi_ssid.clone(),
+            not_wifi_bssid: ir.not_wifi_bssid.clone(),
+            not_rule_set: ir.not_rule_set.clone(),
+            not_user_agent: ir.not_user_agent.clone(),
+            not_inbound_tag: Vec::new(), // ir.not_inbound_tag missing
+            not_auth_user: ir.not_user.clone(), // Map not_user to auth_user?
+            not_ip_is_private: false,
+            not_clash_mode: ir.not_clash_mode.clone(),
+            not_client: ir.not_client.clone(),
+            not_package_name: ir.not_package_name.clone(),
+            not_network_type: ir.not_network_type.clone(),
+            not_outbound_tag: ir.not_outbound_tag.clone(),
+            not_user: ir.not_user.clone(),
+            not_user_id: ir.not_user_id.clone(),
+            not_group: ir.not_group.clone(),
+            not_group_id: ir.not_group_id.clone(),
+            not_adguard: Vec::new(),
+            
+            // Missing fields from CompositeRule definition I saw?
+            // ip_accept_any?
+            ip_accept_any: false, // Default
+            invert: ir.invert,
+        };
+
+        Ok(rule)
+    }
+}
 
 /// Regex matcher for process paths with structural equality on the pattern
 #[derive(Debug, Clone)]
@@ -230,6 +477,7 @@ pub enum RuleKind {
     IpVersionV4,                               // ipversion:ipv4
     IpVersionV6,                               // ipversion:ipv6
     IpIsPrivate,                               // ip_is_private
+    ClashMode(String),                         // clash_mode:rule
     Default,                                   // default
 }
 
@@ -239,10 +487,33 @@ pub struct Rule {
     pub decision: Decision,
 }
 
+/// Logical rule type
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RuleType {
+    #[default]
+    Default,
+    Logical,
+}
+
+/// Logical mode for combined rules
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum LogicalMode {
+    #[default]
+    And,
+    Or,
+}
+
 /// Composite rule that matches multiple criteria (AND logic).
 /// Mirrors `RuleIR` but uses optimized matchers where possible.
+/// Now supports nested logical rules.
 #[derive(Debug, Clone, Default)]
 pub struct CompositeRule {
+    // Logical support
+    pub rule_type: RuleType,
+    pub mode: LogicalMode,
+    pub sub_rules: Vec<CompositeRule>,
+    pub invert: bool,
+
     // Positive matchers
     pub domain: Vec<String>,
     pub domain_suffix: Vec<String>,
@@ -388,6 +659,15 @@ pub struct RouteCtx<'a> {
 
 impl CompositeRule {
     pub fn matches(&self, ctx: &RouteCtx) -> bool {
+        // Handle logical rules
+        if self.rule_type == RuleType::Logical {
+            let result = match self.mode {
+                LogicalMode::And => self.sub_rules.iter().all(|r| r.matches(ctx)),
+                LogicalMode::Or => self.sub_rules.iter().any(|r| r.matches(ctx)),
+            };
+            return if self.invert { !result } else { result };
+        }
+        
         // 1. Negation checks (if any match, rule fails)
         if !self.not_domain.is_empty() {
             if let Some(domain) = ctx.domain {
@@ -978,12 +1258,12 @@ impl CompositeRule {
         // P1 Parity: Additional positive checks
         // ─────────────────────────────────────────────────────────────────────
         if !self.clash_mode.is_empty() {
-            let matched = if let Some(mode) = ctx.clash_mode {
-                self.clash_mode.iter().any(|m| m.eq_ignore_ascii_case(mode))
+            let mode = if let Some(m) = &ctx.clash_mode {
+                m.to_string()
             } else {
-                false
+                crate::adapter::clash::get_mode().to_string()
             };
-            if !matched {
+            if !self.clash_mode.iter().any(|m| m.eq_ignore_ascii_case(&mode)) {
                 return false;
             }
         }
@@ -1186,6 +1466,7 @@ pub struct Engine {
     query_type: Vec<Rule>,  // QueryType (DNS record type)
     ipversion: Vec<Rule>,   // IpVersionV4/IpVersionV6
     ipisprivate: Vec<Rule>, // IpIsPrivate
+    clash_mode: Vec<Rule>,  // ClashMode
     default: Option<Rule>,
 }
 
@@ -1216,6 +1497,7 @@ impl Engine {
                 RuleKind::QueryType(_) => e.query_type.push(r),
                 RuleKind::IpVersionV4 | RuleKind::IpVersionV6 => e.ipversion.push(r),
                 RuleKind::IpIsPrivate => e.ipisprivate.push(r),
+                RuleKind::ClashMode(_) => e.clash_mode.push(r),
                 RuleKind::Default => e.default = Some(r),
             }
         }
@@ -1372,6 +1654,14 @@ impl Engine {
                     false
                 }
             }
+            RuleKind::ClashMode(m) => {
+                let mode = if let Some(vals) = &ctx.clash_mode {
+                    vals.to_string()
+                } else {
+                    crate::adapter::clash::get_mode().to_string()
+                };
+                mode.eq_ignore_ascii_case(m)
+            }
             RuleKind::Default => true,
         }
     }
@@ -1391,6 +1681,11 @@ impl Engine {
             }
             d.clone()
         };
+        for r in &self.clash_mode {
+            if Self::hit(r, ctx) {
+                return record("clash_mode", &r.decision);
+            }
+        }
         for r in &self.exact {
             if Self::hit(r, ctx) {
                 return record("exact", &r.decision);
@@ -1476,6 +1771,10 @@ fn decision_label(d: &Decision) -> &'static str {
         Decision::Direct => "direct",
         Decision::Proxy(_) => "proxy",
         Decision::Reject => "reject",
+        Decision::RejectDrop => "reject-drop",
+        Decision::Hijack { .. } => "hijack",
+        Decision::Sniff => "sniff",
+        Decision::Resolve => "resolve",
     }
 }
 
@@ -1601,6 +1900,8 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
                 }
             } else if tok == "ip_is_private" {
                 kinds.push(RuleKind::IpIsPrivate);
+            } else if let Some(v) = tok.strip_prefix("clash_mode:") {
+                kinds.push(RuleKind::ClashMode(v.to_string()));
             } else if tok == "default" {
                 kinds.push(RuleKind::Default);
             }

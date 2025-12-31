@@ -206,7 +206,8 @@ where
             }
         }
         RDecision::Proxy(None) => fallback_connect(proxy, &host, port, &opts).await?,
-        RDecision::Reject => return Err(anyhow!("shadowtls: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("shadowtls: rejected by rules")),
+        _ => return Err(anyhow!("shadowtls: unsupported routing action")),
     };
 
     // Bidirectional relay

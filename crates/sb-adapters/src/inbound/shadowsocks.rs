@@ -1107,6 +1107,8 @@ where
             }
         },
         RDecision::Reject => return Err(anyhow!("ss: rejected by rules")),
+        // Handle other variants (Hijack, Sniff, Resolve) as direct for now
+        _ => direct_connect_hostport(&host, port, &opts).await?,
     };
 
     // Step 4: Relay

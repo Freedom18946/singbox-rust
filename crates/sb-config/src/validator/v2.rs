@@ -21,6 +21,7 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
                             Some(trimmed.to_string())
                         }
                     }
+                    Value::Number(n) => Some(n.to_string()),
                     Value::Object(obj) => obj
                         .get("value")
                         .or_else(|| obj.get("address"))
@@ -45,6 +46,7 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
                 Some(vec![trimmed.to_string()])
             }
         }
+        Value::Number(n) => Some(vec![n.to_string()]),
         Value::Object(obj) => obj
             .get("value")
             .or_else(|| obj.get("address"))
@@ -506,6 +508,10 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
         schema.get("properties").and_then(|p| p.as_object()),
     ) {
         for k in obj.keys() {
+            // Allow $schema (Go optional field for JSON Schema tooling)
+            if k == "$schema" {
+                continue;
+            }
             if !props.contains_key(k) {
                 let kind = if allow_unknown { "warning" } else { "error" };
                 issues.push(emit_issue(
@@ -612,7 +618,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             if let Some(map) = ib.as_object() {
                 for k in map.keys() {
                     match k.as_str() {
-                        "name" | "type" | "listen" | "port" | "udp" | "network" | "sniff"
+                        // Go parity: include 'tag' for inbound identification
+                        "tag" | "name" | "type" | "listen" | "port" | "udp" | "network" | "sniff"
                         | "override_address" | "override_host" | "override_port"
                         | "interface_name" | "inet4_address" | "inet6_address" | "auto_route"
                         | "auth" | "users" | "cert" | "key" | "congestion_control"
@@ -700,6 +707,67 @@ pub fn pack_output(issues: Vec<Value>) -> Value {
     json!({ "issues": issues, "fingerprint": env!("CARGO_PKG_VERSION") })
 }
 
+fn parse_rule_entry(val: &Value) -> crate::ir::RuleIR {
+    let mut r = crate::ir::RuleIR::default();
+    if let Some(obj) = val.as_object() {
+        // Parse type/mode/sub-rules for logical rules
+        let rule_type = obj.get("type").and_then(|v| v.as_str());
+        if rule_type == Some("logical") {
+            r.mode = obj.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+            if let Some(rules) = obj.get("rules").and_then(|v| v.as_array()) {
+                r.rules = rules.iter().map(parse_rule_entry).map(Box::new).collect();
+            }
+        }
+
+        r.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
+        r.domain_suffix = extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
+        r.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
+        r.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
+        r.ipcidr = extract_string_list(obj.get("ipcidr")).unwrap_or_default();
+        r.port = extract_string_list(obj.get("port")).unwrap_or_default();
+        r.process_name = extract_string_list(obj.get("process_name").or(obj.get("process"))).unwrap_or_default();
+        r.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
+        r.network = extract_string_list(obj.get("network")).unwrap_or_default();
+        r.protocol = extract_string_list(obj.get("protocol")).unwrap_or_default();
+        r.source = extract_string_list(obj.get("source")).unwrap_or_default();
+        r.dest = extract_string_list(obj.get("dest")).unwrap_or_default();
+        r.user_agent = extract_string_list(obj.get("user_agent")).unwrap_or_default();
+        r.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
+        r.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
+        r.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
+        
+        r.query_type = extract_string_list(obj.get("query_type")).unwrap_or_default();
+
+        r.not_domain = extract_string_list(obj.get("not_domain")).unwrap_or_default();
+        r.not_geosite = extract_string_list(obj.get("not_geosite")).unwrap_or_default();
+        r.not_geoip = extract_string_list(obj.get("not_geoip")).unwrap_or_default();
+        r.not_ipcidr = extract_string_list(obj.get("not_ipcidr")).unwrap_or_default();
+        r.not_port = extract_string_list(obj.get("not_port")).unwrap_or_default();
+        r.not_process_name = extract_string_list(obj.get("not_process_name").or(obj.get("not_process"))).unwrap_or_default();
+        r.not_process_path = extract_string_list(obj.get("not_process_path")).unwrap_or_default();
+        r.not_network = extract_string_list(obj.get("not_network")).unwrap_or_default();
+        r.not_protocol = extract_string_list(obj.get("not_protocol")).unwrap_or_default();
+        r.not_wifi_ssid = extract_string_list(obj.get("not_wifi_ssid")).unwrap_or_default();
+        r.not_wifi_bssid = extract_string_list(obj.get("not_wifi_bssid")).unwrap_or_default();
+        r.not_rule_set = extract_string_list(obj.get("not_rule_set")).unwrap_or_default();
+
+        // Parse action
+        r.action = match obj.get("action").and_then(|v| v.as_str()) {
+            Some(s) => crate::ir::RuleAction::from_str_opt(s).unwrap_or_default(),
+            None => crate::ir::RuleAction::default(),
+        };
+
+        r.override_address = obj.get("override_address").and_then(|v| v.as_str()).map(|s| s.to_string());
+        r.override_port = parse_u16_field(obj.get("override_port"));
+        r.rewrite_ttl = parse_u32_field(obj.get("rewrite_ttl"));
+        r.client_subnet = obj.get("client_subnet").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+        r.outbound = obj.get("outbound").and_then(|v| v.as_str()).map(|s| s.to_string());
+        r.invert = obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
+    }
+    r
+}
+
 /// Convert V1/V2 raw JSON to IR (excerpt; V1 unknown fields ignored but warning optional).
 /// 将 v1/v2 原始 JSON 转 IR（节选；v1 未知字段忽略但告警可选）。
 pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
@@ -772,11 +840,16 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             };
 
             ir.inbounds.push(crate::ir::InboundIR {
+                tag: i.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 ty,
                 listen,
                 port,
                 sniff,
                 udp,
+                udp_timeout: i.get("udp_timeout").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                domain_strategy: i.get("domain_strategy").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                set_system_proxy: i.get("set_system_proxy").and_then(|v| v.as_bool()).unwrap_or(false),
+                allow_private_network: i.get("allow_private_network").and_then(|v| v.as_bool()).unwrap_or(true),
                 basic_auth,
                 override_host,
                 override_port,
@@ -874,6 +947,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 tun: None,
+                ssh_host_key_path: i
+                    .get("ssh_host_key_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
     }
@@ -924,6 +1001,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .map(|s| s.to_string()),
                 members: None,
                 default_member: None,
+                domain_strategy: o
+                    .get("domain_strategy")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 method: None,
                 credentials: o.get("credentials").map(|c| Credentials {
                     username: c
@@ -1711,54 +1792,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
 
         if let Some(rules) = route.get("rules").and_then(|v| v.as_array()) {
-            for rr in rules {
-                let mut r = crate::ir::RuleIR::default();
-                macro_rules! arrs {
-                    ($k:literal, $dst:expr) => {
-                        if let Some(a) = rr.get($k).and_then(|v| v.as_array()) {
-                            for x in a {
-                                if let Some(s) = x.as_str() {
-                                    $dst.push(s.to_string());
-                                }
-                            }
-                        }
-                    };
-                }
-                arrs!("domain", r.domain);
-                arrs!("domain_suffix", r.domain_suffix);
-                arrs!("geosite", r.geosite);
-                arrs!("geoip", r.geoip);
-                arrs!("ipcidr", r.ipcidr);
-                arrs!("port", r.port);
-                arrs!("process", r.process_name);
-                arrs!("process_path", r.process_path);
-                arrs!("network", r.network);
-                arrs!("protocol", r.protocol);
-                arrs!("source", r.source);
-                arrs!("dest", r.dest);
-                arrs!("user_agent", r.user_agent);
-                arrs!("wifi_ssid", r.wifi_ssid);
-                arrs!("wifi_bssid", r.wifi_bssid);
-                arrs!("rule_set", r.rule_set);
-                arrs!("not_domain", r.not_domain);
-                arrs!("not_geosite", r.not_geosite);
-                arrs!("not_geoip", r.not_geoip);
-                arrs!("not_ipcidr", r.not_ipcidr);
-                arrs!("not_port", r.not_port);
-                arrs!("not_process", r.not_process_name);
-                arrs!("not_process_path", r.not_process_path);
-                arrs!("not_network", r.not_network);
-                arrs!("not_protocol", r.not_protocol);
-                arrs!("not_wifi_ssid", r.not_wifi_ssid);
-                arrs!("not_wifi_bssid", r.not_wifi_bssid);
-                arrs!("not_rule_set", r.not_rule_set);
-                r.invert = rr.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
-                r.outbound = rr
-                    .get("outbound")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                ir.route.rules.push(r);
-            }
+            ir.route.rules = rules.iter().map(parse_rule_entry).collect();
         }
         if let Some(rule_sets) = route.get("rule_set").and_then(|v| v.as_array()) {
             for rs in rule_sets {
@@ -1773,11 +1807,6 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .and_then(|v| v.as_str())
                         .unwrap_or("local")
                         .to_string();
-                    let format = obj
-                        .get("format")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("binary")
-                        .to_string();
                     let path = obj
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -1786,6 +1815,45 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .get("url")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
+                    
+                    // Format inference
+                    let format = obj
+                        .get("format")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| {
+                            // Infer from path extension (Go parity: .json=source, .srs=binary)
+                            let infer_from_ext = |p: &str| -> Option<String> {
+                                if p.ends_with(".json") {
+                                    Some("source".to_string())
+                                } else if p.ends_with(".srs") {
+                                    Some("binary".to_string())
+                                } else {
+                                    None
+                                }
+                            };
+                            
+                            if let Some(p) = &path {
+                                if let Some(fmt) = infer_from_ext(p) {
+                                    return fmt;
+                                }
+                            }
+                            if let Some(u) = &url {
+                                // Simple extension check on URL (without url crate)
+                                // Remove query params for extension check
+                                let path_part = u.split('?').next().unwrap_or(u);
+                                if let Some(fmt) = infer_from_ext(path_part) {
+                                    return fmt;
+                                }
+                            }
+                            // Default to binary for non-inline types
+                            if ty != "inline" {
+                                "binary".to_string()
+                            } else {
+                                String::new()
+                            }
+                        });
+
                     let download_detour = obj
                         .get("download_detour")
                         .and_then(|v| v.as_str())
@@ -1794,6 +1862,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .get("update_interval")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
+                    
+                    let rules = if ty == "inline" {
+                         obj.get("rules").and_then(|v| v.as_array()).map(|arr| {
+                             arr.iter().map(parse_rule_entry).collect()
+                         })
+                    } else {
+                        None
+                    };
 
                     if !tag.is_empty() {
                         ir.route.rule_set.push(crate::ir::RuleSetIR {
@@ -1804,6 +1880,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             url,
                             download_detour,
                             update_interval,
+                            rules,
+                            version: obj.get("version")
+                                .and_then(|v| v.as_u64())
+                                .and_then(|v| u8::try_from(v).ok()),
                         });
                     }
                 }
@@ -1824,6 +1904,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
 
         ir.route.find_process = route.get("find_process").and_then(|v| v.as_bool());
+        ir.route.override_android_vpn = route.get("override_android_vpn").and_then(|v| v.as_bool());
         ir.route.auto_detect_interface =
             route.get("auto_detect_interface").and_then(|v| v.as_bool());
         ir.route.default_interface = route
@@ -1835,26 +1916,38 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             .or_else(|| route.get("default_mark"))
             .and_then(|v| v.as_u64())
             .and_then(|v| u32::try_from(v).ok());
-        ir.route.default_resolver = route
-            .get("default_domain_resolver")
-            .or_else(|| route.get("default_resolver"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        // Parse default_domain_resolver (polymorphic: string or object)
+        let default_resolver_val = route.get("default_domain_resolver").or_else(|| route.get("default_resolver"));
+        if let Some(val) = default_resolver_val {
+            if let Some(s) = val.as_str() {
+                ir.route.default_domain_resolver = Some(crate::ir::DomainResolveOptionsIR {
+                    server: s.to_string(),
+                    ..Default::default()
+                });
+            } else if let Some(obj) = val.as_object() {
+                // Manual parsing or serde? Manual to control defaults/optionality
+                 ir.route.default_domain_resolver = Some(crate::ir::DomainResolveOptionsIR {
+                    server: obj.get("server").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    strategy: obj.get("strategy").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    disable_cache: obj.get("disable_cache").and_then(|v| v.as_bool()),
+                    rewrite_ttl: parse_u32_field(obj.get("rewrite_ttl")),
+                    client_subnet: obj.get("client_subnet").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                });
+            }
+        } else {
+             ir.route.default_domain_resolver = None;
+        }
         ir.route.network_strategy = route
             .get("default_network_strategy")
             .or_else(|| route.get("network_strategy"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        ir.route.default_network_type = route
-            .get("default_network_type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        ir.route.default_fallback_network_type = route
-            .get("default_fallback_network_type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        ir.route.default_network_type = extract_string_list(route.get("default_network_type"));
+        ir.route.default_fallback_network_type =
+            extract_string_list(route.get("default_fallback_network_type"));
         ir.route.default_fallback_delay = route
             .get("default_fallback_delay")
+            .or_else(|| route.get("fallback_delay"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
     }
@@ -1875,6 +1968,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             // Non-standard extension for rust build: allow format override
             format: log
                 .get("format")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            // Go parity: log.disabled
+            disabled: log.get("disabled").and_then(|v| v.as_bool()),
+            // Go parity: log.output (stdout/stderr/path)
+            output: log
+                .get("output")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
         };
@@ -2055,6 +2155,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             ca_pem,
                             skip_cert_verify: map.get("skip_cert_verify").and_then(|v| v.as_bool()),
                             client_subnet,
+                            address_resolver: map.get("address_resolver").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            address_strategy: map.get("address_strategy").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            address_fallback_delay: map.get("address_fallback_delay").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            strategy: map.get("strategy").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            detour: map.get("detour").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         });
                     }
                 }
@@ -2066,89 +2171,74 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     let server = obj
                         .get("server")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .trim()
-                        .to_string();
-                    if server.is_empty() {
+                        .map(|s| s.trim().to_string());
+                    let action = obj
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    // If neither server nor action is present/valid (and action is not "reject" etc which might work without server? 
+                    // actually if action is missing, server MUST be present. If action is present, server might be optional depending on action.
+                    // For now, if both are missing, skip.
+                    if server.is_none() && action.is_none() {
                         continue;
                     }
+
                     let mut dr = crate::ir::DnsRuleIR {
                         server,
+                        action,
                         priority: Some(idx as u32 + 1),
+                        rewrite_ttl: parse_u32_field(obj.get("rewrite_ttl")),
+                        client_subnet: obj.get("client_subnet").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        disable_cache: obj.get("disable_cache").and_then(|v| v.as_bool()),
+                        invert: obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false),
+                        
+                        // New Matching Fields
+                        ip_is_private: obj.get("ip_is_private").and_then(|v| v.as_bool()),
+                        source_ip_is_private: obj.get("source_ip_is_private").and_then(|v| v.as_bool()),
+                        ip_accept_any: obj.get("ip_accept_any").and_then(|v| v.as_bool()),
+                        rule_set_ip_cidr_match_source: obj.get("rule_set_ip_cidr_match_source").and_then(|v| v.as_bool()),
+                        rule_set_ip_cidr_accept_empty: obj.get("rule_set_ip_cidr_accept_empty").and_then(|v| v.as_bool()),
+                        clash_mode: obj.get("clash_mode").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        network_is_expensive: obj.get("network_is_expensive").and_then(|v| v.as_bool()),
+                        network_is_constrained: obj.get("network_is_constrained").and_then(|v| v.as_bool()),
+
+                        // New Action Fields
+                        rewrite_ip: extract_string_list(obj.get("rewrite_ip")),
+                        rcode: obj.get("rcode").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        answer: extract_string_list(obj.get("answer")),
+                        ns: extract_string_list(obj.get("ns")),
+                        extra: extract_string_list(obj.get("extra")),
+
                         ..Default::default()
                     };
 
-                    // Accept both array and single-string forms for match fields.
-                    if let Some(ds_val) = obj.get("domain_suffix") {
-                        match ds_val {
-                            Value::Array(arr) => {
-                                for d in arr {
-                                    if let Some(s) = d.as_str() {
-                                        let s = s.trim();
-                                        if !s.is_empty() {
-                                            dr.domain_suffix.push(s.to_string());
-                                        }
-                                    }
-                                }
-                            }
-                            Value::String(s) => {
-                                let s = s.trim();
-                                if !s.is_empty() {
-                                    dr.domain_suffix.push(s.to_string());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    if let Some(de_val) = obj.get("domain") {
-                        match de_val {
-                            Value::Array(arr) => {
-                                for d in arr {
-                                    if let Some(s) = d.as_str() {
-                                        let s = s.trim();
-                                        if !s.is_empty() {
-                                            dr.domain.push(s.to_string());
-                                        }
-                                    }
-                                }
-                            }
-                            Value::String(s) => {
-                                let s = s.trim();
-                                if !s.is_empty() {
-                                    dr.domain.push(s.to_string());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    if let Some(kw_val) = obj.get("keyword") {
-                        match kw_val {
-                            Value::Array(arr) => {
-                                for d in arr {
-                                    if let Some(s) = d.as_str() {
-                                        let s = s.trim();
-                                        if !s.is_empty() {
-                                            dr.keyword.push(s.to_string());
-                                        }
-                                    }
-                                }
-                            }
-                            Value::String(s) => {
-                                let s = s.trim();
-                                if !s.is_empty() {
-                                    dr.keyword.push(s.to_string());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    // Note: geosite/geolocation matching is not directly mapped here.
-                    if !(dr.domain_suffix.is_empty()
-                        && dr.domain.is_empty()
-                        && dr.keyword.is_empty())
-                    {
-                        dd.rules.push(dr);
-                    }
+                    // String list matchers
+                    dr.domain_suffix = extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
+                    dr.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
+                    dr.domain_regex = extract_string_list(obj.get("domain_regex")).unwrap_or_default();
+                    dr.keyword = extract_string_list(obj.get("domain_keyword").or(obj.get("keyword"))).unwrap_or_default();
+                    dr.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
+                    dr.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
+                    dr.source_ip_cidr = extract_string_list(obj.get("source_ip_cidr")).unwrap_or_default();
+                    dr.ip_cidr = extract_string_list(obj.get("ip_cidr")).unwrap_or_default();
+                    dr.port = extract_string_list(obj.get("port")).unwrap_or_default();
+                    dr.source_port = extract_string_list(obj.get("source_port")).unwrap_or_default();
+                    dr.process_name = extract_string_list(obj.get("process_name").or(obj.get("process"))).unwrap_or_default();
+                    dr.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
+                    dr.package_name = extract_string_list(obj.get("package_name")).unwrap_or_default();
+                    dr.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
+                    dr.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
+                    dr.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
+                    dr.query_type = extract_string_list(obj.get("query_type")).unwrap_or_default();
+
+                    // Note: keywords were previously named 'keyword' in IR but 'domain_keyword' in generic RuleIR. 
+                                                            // Wait, struct has `keyword`, I removed `keyword` field? No.
+                                                            // Line 2566 says `keyword: Vec<String>`.
+                                                            // I should map both `domain_keyword` and `keyword` config to `keyword` IR field.
+                    // Correcting logic below:
+
+                    dd.rules.push(dr);
                 }
             }
         }
@@ -2157,6 +2247,15 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             .or_else(|| dns.get("default"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        dd.final_server = dns
+            .get("final")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        dd.disable_cache = dns.get("disable_cache").and_then(|v| v.as_bool());
+        dd.reverse_mapping = dns.get("reverse_mapping").and_then(|v| v.as_bool());
+        dd.strategy = dns.get("strategy").and_then(|v| v.as_str()).map(|s| s.to_string());
+        dd.client_subnet = dns.get("client_subnet").and_then(|v| v.as_str()).map(|s| s.to_string());
+        dd.independent_cache = dns.get("independent_cache").and_then(|v| v.as_bool());
         // Global knobs
         if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) {
             dd.timeout_ms = Some(v);

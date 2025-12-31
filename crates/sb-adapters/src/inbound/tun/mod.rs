@@ -144,6 +144,12 @@ pub struct TunInboundConfig {
     /// Processes to exclude from TUN routing
     #[serde(default)]
     pub exclude_processes: Vec<String>,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub endpoint_independent_nat: bool,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
 }
 
 impl Default for TunInboundConfig {
@@ -166,6 +172,9 @@ impl Default for TunInboundConfig {
             include_routes: Vec::new(),
             exclude_uids: Vec::new(),
             exclude_processes: Vec::new(),
+            stack: None,
+            endpoint_independent_nat: false,
+            udp_timeout: None,
         }
     }
 }

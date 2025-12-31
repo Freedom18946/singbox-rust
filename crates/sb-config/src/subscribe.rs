@@ -264,7 +264,7 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                 let ob = parts[2];
                 rules.push(Rule {
                     domain_suffix: vec![suf.to_string()],
-                    outbound: ob.to_string(),
+                    outbound: Some(ob.to_string()),
                     ..Default::default()
                 });
             }
@@ -410,7 +410,7 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
                 if !ds.is_empty() {
                     rules.push(Rule {
                         domain_suffix: ds,
-                        outbound: ob.to_string(),
+                        outbound: Some(ob.to_string()),
                         ..Default::default()
                     });
                 }

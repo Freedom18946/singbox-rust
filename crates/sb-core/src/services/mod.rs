@@ -14,6 +14,7 @@ pub mod dns_forwarder;
 
 #[cfg(feature = "service_ssmapi")]
 pub mod ssmapi;
+pub mod time;
 pub mod tailscale;
 pub mod v2ray_api;
 

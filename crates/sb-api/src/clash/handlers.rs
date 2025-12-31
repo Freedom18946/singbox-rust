@@ -97,12 +97,6 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
             OutboundImpl::Block => PROXY_TYPE_REJECT.to_string(),
             OutboundImpl::Socks5(_) => PROXY_TYPE_SOCKS5.to_string(),
             OutboundImpl::HttpProxy(_) => PROXY_TYPE_HTTP.to_string(),
-            OutboundImpl::Shadowsocks(_) => PROXY_TYPE_SHADOWSOCKS.to_string(),
-            OutboundImpl::Vless(_) => PROXY_TYPE_VLESS.to_string(),
-            OutboundImpl::Vmess(_) => PROXY_TYPE_VMESS.to_string(),
-            OutboundImpl::Trojan(_) => PROXY_TYPE_TROJAN.to_string(),
-            OutboundImpl::Hysteria2(_) => "Hysteria2".to_string(),
-            OutboundImpl::Tuic(_) => "Tuic".to_string(),
             OutboundImpl::Connector(c) => {
                  if c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()).is_some() {
                      "Selector".to_string()
@@ -110,6 +104,7 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
                      "Unknown".to_string()
                  }
             }
+            // Feature-gated protocol variants handled by wildcard
             _ => PROXY_TYPE_UNKNOWN.to_string(),
         };
     }

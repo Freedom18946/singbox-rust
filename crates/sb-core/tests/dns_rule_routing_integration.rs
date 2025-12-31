@@ -112,16 +112,34 @@ async fn test_dns_rule_routing_integration() {
             rule_set: google_rules,
             upstream_tag: "google_dns".to_string(),
             priority: 10, // High priority
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
         },
         DnsRoutingRule {
             rule_set: cn_rules,
             upstream_tag: "cn_dns".to_string(),
             priority: 20, // Lower priority
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
         },
     ];
 
     // Create DNS rule engine
-    let engine = DnsRuleEngine::new(routing_rules, upstreams, "default_dns".to_string());
+    let engine = DnsRuleEngine::new(
+        routing_rules,
+        upstreams,
+        "default_dns".to_string(),
+        sb_core::dns::DnsStrategy::default(),
+        Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+    );
 
     // Test Case 1: Google domain should route to Google DNS (8.8.8.8)
     let result = engine

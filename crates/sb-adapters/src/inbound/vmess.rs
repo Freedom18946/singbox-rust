@@ -323,7 +323,9 @@ async fn handle_conn(
             }
         }
         RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
-        RDecision::Reject => return Err(anyhow!("vmess: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vmess: rejected by rules")),
+        // Sniff/Resolve/Hijack not yet supported in inbound handlers
+        _ => return Err(anyhow!("vmess: unsupported routing action")),
     };
 
     // Step 7: Bidirectional relay

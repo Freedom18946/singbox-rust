@@ -24,6 +24,8 @@ pub struct DnsResolver {
     name: String,
     /// 统计信息
     stats: Arc<DnsStats>,
+    /// 解析策略
+    strategy: super::DnsStrategy,
 }
 
 /// DNS 解析器统计信息
@@ -54,7 +56,14 @@ impl DnsResolver {
             default_ttl,
             name: "dns_resolver".to_string(),
             stats: Arc::new(DnsStats::default()),
+            strategy: super::DnsStrategy::default(),
         }
+    }
+
+    /// 设置解析策略
+    pub fn with_strategy(mut self, strategy: super::DnsStrategy) -> Self {
+        self.strategy = strategy;
+        self
     }
 
     /// 创建带名称的 DNS 解析器
@@ -69,24 +78,47 @@ impl DnsResolver {
         let mut min_ttl: Option<std::time::Duration> = None;
 
         // 并发查询 A 和 AAAA 记录
-        let (a_result, aaaa_result) = tokio::join!(
-            self.resolve_record_type(domain, RecordType::A),
-            self.resolve_record_type(domain, RecordType::AAAA)
-        );
+        use super::DnsStrategy;
 
-        // 合并 A 记录结果
-        if let Ok(a_answer) = a_result {
-            all_ips.extend(a_answer.ips);
-            min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
-        }
+        let (a_result, aaaa_result) = match self.strategy {
+            DnsStrategy::Ipv4Only => (
+                self.resolve_record_type(domain, RecordType::A).await,
+                Err(anyhow::anyhow!("IPv4 only")),
+            ),
+            DnsStrategy::Ipv6Only => (
+                Err(anyhow::anyhow!("IPv6 only")),
+                self.resolve_record_type(domain, RecordType::AAAA).await,
+            ),
+            _ => tokio::join!(
+                self.resolve_record_type(domain, RecordType::A),
+                self.resolve_record_type(domain, RecordType::AAAA)
+            ),
+        };
 
-        // 合并 AAAA 记录结果
-        if let Ok(aaaa_answer) = aaaa_result {
-            all_ips.extend(aaaa_answer.ips);
-            min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+        // PreferIPv6: AAAA first, then A
+        if self.strategy == DnsStrategy::PreferIpv6 {
+             if let Ok(aaaa_answer) = &aaaa_result {
+                all_ips.extend(aaaa_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+            }
+            if let Ok(a_answer) = &a_result {
+                all_ips.extend(a_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
+            }
+        } else {
+            // Default (PreferIPv4) or fallback
+             if let Ok(a_answer) = &a_result {
+                all_ips.extend(a_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
+            }
+             if let Ok(aaaa_answer) = &aaaa_result {
+                all_ips.extend(aaaa_answer.ips.clone());
+                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+            }
         }
 
         if all_ips.is_empty() {
+             // Return validation error compatible with existing tests
             return Err(anyhow::Error::from(SbError::dns(format!(
                 "No DNS records for domain: {domain}"
             ))));
@@ -261,11 +293,25 @@ impl Resolver for DnsResolver {
         Ok(serde_json::json!({
             "domain": domain,
             "resolver": self.name,
-            "strategy": "sequential",
+            "strategy": format!("{:?}", self.strategy),
             "upstreams": upstream_names,
             "default_ttl_secs": self.default_ttl.as_secs(),
             "cache": "none"
         }))
+    }
+
+    async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        for up in &self.upstreams {
+            up.start(stage).await.map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", up.name(), e))?;
+        }
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<()> {
+        for up in &self.upstreams {
+            up.close().await.map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", up.name(), e))?;
+        }
+        Ok(())
     }
 }
 

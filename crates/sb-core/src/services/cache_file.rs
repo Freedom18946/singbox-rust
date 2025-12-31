@@ -7,7 +7,7 @@
 //!
 //! Reference: Go sing-box `experimental/cachefile/`
 
-use crate::context::CacheFile;
+
 use parking_lot::RwLock;
 use sb_config::ir::CacheFileIR;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,14 @@ pub struct CacheData {
     pub rdrc_entries: HashMap<String, RdrcEntry>,
     /// Last save timestamp
     pub last_saved: u64,
+    /// Clash mode
+    pub clash_mode: Option<String>,
+    /// Selector selected outbound tags
+    pub selected: HashMap<String, String>,
+    /// Selector group expand state
+    pub expand: HashMap<String, bool>,
+    /// Compiled rule-set binary cache
+    pub rule_sets: HashMap<String, Vec<u8>>,
 }
 
 /// RDRC cache entry
@@ -46,7 +54,7 @@ pub struct RdrcEntry {
 }
 
 impl CacheData {
-    pub const CURRENT_VERSION: u32 = 1;
+    pub const CURRENT_VERSION: u32 = 2;
 
     pub fn new() -> Self {
         Self {
@@ -318,6 +326,54 @@ impl CacheFileService {
         })
     }
 
+    pub fn set_clash_mode(&self, mode: String) {
+        if !self.enabled { return; }
+        let mut data = self.data.write();
+        data.clash_mode = Some(mode);
+        *self.dirty.write() = true;
+    }
+
+    pub fn get_clash_mode(&self) -> Option<String> {
+        if !self.enabled { return None; }
+        self.data.read().clash_mode.clone()
+    }
+
+    pub fn set_selected(&self, group: &str, selected: &str) {
+        if !self.enabled { return; }
+        let mut data = self.data.write();
+        data.selected.insert(group.to_string(), selected.to_string());
+        *self.dirty.write() = true;
+    }
+
+    pub fn get_selected(&self, group: &str) -> Option<String> {
+        if !self.enabled { return None; }
+        self.data.read().selected.get(group).cloned()
+    }
+
+    pub fn set_expand(&self, group: &str, expand: bool) {
+        if !self.enabled { return; }
+        let mut data = self.data.write();
+        data.expand.insert(group.to_string(), expand);
+        *self.dirty.write() = true;
+    }
+
+    pub fn get_expand(&self, group: &str) -> Option<bool> {
+        if !self.enabled { return None; }
+        self.data.read().expand.get(group).copied()
+    }
+
+    pub fn store_rule_set(&self, tag: &str, content: Vec<u8>) {
+        if !self.enabled { return; }
+        let mut data = self.data.write();
+        data.rule_sets.insert(tag.to_string(), content);
+        *self.dirty.write() = true;
+    }
+
+    pub fn get_rule_set(&self, tag: &str) -> Option<Vec<u8>> {
+        if !self.enabled { return None; }
+        self.data.read().rule_sets.get(tag).cloned()
+    }
+
     /// Flush cache to disk (for shutdown)
     pub fn flush(&self) {
         if let Err(e) = self.save() {
@@ -326,7 +382,11 @@ impl CacheFileService {
     }
 }
 
-impl CacheFile for CacheFileService {}
+impl crate::context::CacheFile for CacheFileService {
+    fn set_clash_mode(&self, mode: String) {
+        self.set_clash_mode(mode);
+    }
+}
 
 impl Drop for CacheFileService {
     fn drop(&mut self) {
@@ -468,5 +528,37 @@ mod tests {
         assert_eq!(parse_duration("100ms"), Some(Duration::from_millis(100)));
         assert_eq!(parse_duration("60"), Some(Duration::from_secs(60)));
         assert_eq!(parse_duration(""), None);
+    }
+    #[test]
+    fn test_clash_persistence() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_clash.json");
+
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        // Store data
+        {
+            let svc = CacheFileService::new(&config);
+            svc.set_clash_mode("Global".to_string());
+            svc.set_selected("proxy", "us");
+            svc.set_expand("group1", true);
+            svc.store_rule_set("geoip", vec![1, 2, 3]);
+            svc.flush();
+        }
+
+        // Reload and verify
+        {
+            let svc = CacheFileService::new(&config);
+            assert_eq!(svc.get_clash_mode(), Some("Global".to_string()));
+            assert_eq!(svc.get_selected("proxy"), Some("us".to_string()));
+            assert_eq!(svc.get_expand("group1"), Some(true));
+            assert_eq!(svc.get_rule_set("geoip"), Some(vec![1, 2, 3]));
+        }
     }
 }

@@ -262,6 +262,8 @@ async fn test_socks5_to_direct_chain() {
         outbounds: outbounds.clone(),
         udp_nat_ttl: Duration::from_secs(60),
         users: Some(vec![]),
+        domain_strategy: None,
+        udp_timeout: None,
     };
 
     tokio::spawn(async move {
@@ -370,6 +372,8 @@ async fn test_http_to_socks5_chain() {
         outbounds: outbounds.clone(),
         users: Some(vec![]),
         tls: None,
+        set_system_proxy: false,
+        allow_private_network: true,
     };
 
     tokio::spawn(async move {

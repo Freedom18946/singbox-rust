@@ -25,6 +25,8 @@ use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
+pub mod clash;
+pub mod handler;
 pub mod registry;
 
 /// Helper to parse socket address from listen and port
@@ -198,6 +200,16 @@ pub struct InboundParam {
     pub users_vmess: Option<String>,
     /// Shadowsocks multi-user authentication (JSON-encoded for now)
     pub users_shadowsocks: Option<String>,
+    /// UDP Timeout
+    pub udp_timeout: Option<std::time::Duration>,
+    /// Domain resolution strategy
+    pub domain_strategy: Option<String>,
+    pub set_system_proxy: bool,
+    pub allow_private_network: bool,
+
+    // SSH-specific fields
+    /// SSH server host key file path (PEM format)
+    pub ssh_host_key_path: Option<String>,
 }
 
 impl Default for InboundParam {
@@ -246,6 +258,11 @@ impl Default for InboundParam {
             users_vless: None,
             users_vmess: None,
             users_shadowsocks: None,
+            udp_timeout: None,
+            domain_strategy: None,
+            set_system_proxy: false,
+            allow_private_network: true,
+            ssh_host_key_path: None,
         }
     }
 }
@@ -289,6 +306,7 @@ pub struct OutboundParam {
     pub tcp_fast_open: Option<bool>,
     pub tcp_multi_path: Option<bool>,
     pub udp_fragment: Option<bool>,
+    pub domain_strategy: Option<String>,
     /// Multiplex options
     pub multiplex: Option<MultiplexOptionsIR>,
 }
@@ -322,6 +340,7 @@ impl Default for OutboundParam {
             tcp_fast_open: None,
             tcp_multi_path: None,
             udp_fragment: None,
+            domain_strategy: None,
             multiplex: None,
         }
     }

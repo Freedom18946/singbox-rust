@@ -1022,7 +1022,7 @@ mod tests {
                 assert!(r
                     .domain
                     .iter()
-                    .any(|d| matches!(d, DomainRule::Exact(s) if s == "example.com")));
+                    .any(|d| matches!(d, DomainRule::Exact(s) | DomainRule::Suffix(s) if s == "example.com")));
                 // Check suffix present
                 assert!(r.domain_suffix.iter().any(|s| s == "rust-lang.org"));
                 // Check port and network

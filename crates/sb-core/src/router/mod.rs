@@ -22,7 +22,12 @@ pub mod json_bridge;
 pub mod process_router;
 pub mod rule_set;
 pub mod rules;
+pub mod builder;
 pub mod runtime;
+/// Route connection interface (Go parity: route.Router)
+pub mod route_connection;
+/// Connection manager (Go parity: route/conn.go)
+pub mod conn;
 /// Protocol sniffing (stage 1: no-op stubs)
 pub mod sniff;
 // R13：导出 analyze（离线分析，不影响运行路径）
@@ -98,6 +103,11 @@ pub use self::engine::{DnsResolve, DnsResult, Router, RouterHandle, Transport};
 pub use self::hot_reload::{HotReloadConfig, HotReloadError, HotReloadEvent, HotReloadManager};
 pub use self::hot_reload_cli::{
     show_rule_stats, start_hot_reload_cli, validate_rule_files, HotReloadCliConfig,
+};
+pub use self::route_connection::{ConnectionRouter, DirectRouter, RouteResult};
+pub use self::conn::{
+    ConnectionManager as RouteConnectionManager, Dialer, DirectDialer, InboundContext,
+    CloseHandler, TCP_CONNECT_TIMEOUT, UDP_TIMEOUT, port_protocol, protocol_timeout,
 };
 pub use crate::outbound::RouteTarget;
 pub use crate::routing::engine::Input;
@@ -465,6 +475,8 @@ pub enum BuildError {
     Io(#[from] std::io::Error),
     #[error("glob error: {0}")]
     Glob(String),
+    #[error("rule build error: {0}")]
+    Rule(String),
 }
 
 /// IPv4/6 Net 简易封装（不引入额外 crate）
@@ -2011,6 +2023,7 @@ pub async fn spawn_rules_hot_reload(
                                         BuildError::Invalid(InvalidReason::DupDefault) => metrics::counter!("router_rules_invalid_total", "reason"=>"dup_default").increment(1),
                                         BuildError::Io(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"io").increment(1),
                                         BuildError::Glob(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"glob").increment(1),
+                                        BuildError::Rule(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"rule_error").increment(1),
                                         BuildError::Invalid(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"other").increment(1),
                                     };
                                     metrics::counter!("router_rules_reload_total", "result"=>"error").increment(1);

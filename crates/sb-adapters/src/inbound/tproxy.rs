@@ -198,7 +198,8 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
-        RDecision::Reject => return Err(anyhow!("tproxy: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("tproxy: rejected by rules")),
+        _ => return Err(anyhow!("tproxy: unsupported routing action")),
     };
 
     let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;

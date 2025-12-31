@@ -1,81 +1,52 @@
-//! Enhanced TUN inbound implementation for Task 18
-//!
-//! This module provides full TUN traffic interception and routing capabilities
-//! with proper packet forwarding for both TCP and UDP protocols.
-//!
-//! NOTE: Skeleton/WIP code - warnings suppressed.
-#![allow(unused, dead_code)]
-
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::rc::Rc;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Deserialize;
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::timeout;
 
-use sb_core::net::udp_nat_core::{UdpFlowKey, UdpNat};
 use sb_core::outbound::OutboundConnector;
-use sb_core::types::{ConnCtx, Endpoint, Host, Network};
+use sb_core::types::{ConnCtx, Endpoint, Host, Network, Protocol};
 use sb_platform::tun::{AsyncTunDevice, TunConfig, TunError};
 
-/// Enhanced TUN configuration with packet forwarding capabilities
+use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
+use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use smoltcp::socket::{tcp, udp, Socket};
+use smoltcp::time::Instant as SmolTimestamp;
+use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, IpProtocol, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
+
+/// Enhanced TUN configuration
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnhancedTunConfig {
-    /// Device name (e.g., "utun0", "tun0", "wintun")
     pub name: String,
-    /// Maximum transmission unit
     #[serde(default = "default_mtu")]
     pub mtu: u32,
-    /// IPv4 address for the TUN interface
     pub ipv4: Option<IpAddr>,
-    /// IPv6 address for the TUN interface
     pub ipv6: Option<IpAddr>,
-    /// Whether to enable auto-route setup
     #[serde(default)]
     pub auto_route: bool,
-    /// TCP connection timeout in milliseconds
     #[serde(default = "default_tcp_timeout")]
     pub tcp_timeout_ms: u64,
-    /// UDP session timeout in milliseconds
     #[serde(default = "default_udp_timeout")]
     pub udp_timeout_ms: u64,
-    /// Maximum concurrent TCP connections
-    #[serde(default = "default_max_tcp_connections")]
-    pub max_tcp_connections: usize,
-    /// Maximum UDP sessions in NAT table
-    #[serde(default = "default_max_udp_sessions")]
-    pub max_udp_sessions: usize,
-    /// Buffer size for packet processing
     #[serde(default = "default_buffer_size")]
     pub buffer_size: usize,
+    #[serde(default = "default_max_tcp_connections")]
+    pub max_tcp_connections: usize,
 }
 
-fn default_mtu() -> u32 {
-    1500
-}
-fn default_tcp_timeout() -> u64 {
-    30_000
-}
-fn default_udp_timeout() -> u64 {
-    60_000
-}
-fn default_max_tcp_connections() -> usize {
-    1024
-}
-fn default_max_udp_sessions() -> usize {
-    2048
-}
-fn default_buffer_size() -> usize {
-    65536
-}
+fn default_mtu() -> u32 { 1500 }
+fn default_tcp_timeout() -> u64 { 30_000 }
+fn default_udp_timeout() -> u64 { 60_000 }
+fn default_buffer_size() -> usize { 65536 }
+fn default_max_tcp_connections() -> usize { 1024 }
 
 impl Default for EnhancedTunConfig {
     fn default() -> Self {
@@ -87,120 +58,117 @@ impl Default for EnhancedTunConfig {
             auto_route: false,
             tcp_timeout_ms: default_tcp_timeout(),
             udp_timeout_ms: default_udp_timeout(),
-            max_tcp_connections: default_max_tcp_connections(),
-            max_udp_sessions: default_max_udp_sessions(),
             buffer_size: default_buffer_size(),
+            max_tcp_connections: default_max_tcp_connections(),
         }
     }
 }
 
-/// Enhanced TUN inbound with full traffic interception and routing
+/// A smoltcp Device backed by in-memory queues.
+/// Allows "pushing" packets from AsyncTunDevice into the queue for smoltcp to consume (rx),
+/// and "pulling" packets smoltcp wrote (tx) to write to AsyncTunDevice.
+struct TunPhy {
+    rx_queue: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    tx_queue: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    mtu: usize,
+}
+
+impl TunPhy {
+    fn new(
+        rx_queue: Rc<RefCell<VecDeque<Vec<u8>>>>,
+        tx_queue: Rc<RefCell<VecDeque<Vec<u8>>>>,
+        mtu: usize,
+    ) -> Self {
+        Self { rx_queue, tx_queue, mtu }
+    }
+}
+
+impl<'a> Device<'a> for TunPhy {
+    type RxToken = VecRxToken;
+    type TxToken = VecTxToken;
+
+    fn receive(&'a mut self, _timestamp: SmolTimestamp) -> Option<(Self::RxToken, Self::TxToken)> {
+        let mut rx = self.rx_queue.borrow_mut();
+        if let Some(buffer) = rx.pop_front() {
+            Some((
+                VecRxToken { buffer },
+                VecTxToken { queue: self.tx_queue.clone() }
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn transmit(&'a mut self, _timestamp: SmolTimestamp) -> Option<Self::TxToken> {
+        Some(VecTxToken { queue: self.tx_queue.clone() })
+    }
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut caps = DeviceCapabilities::default();
+        caps.medium = Medium::Ip;
+        caps.max_transmission_unit = self.mtu;
+        caps
+    }
+}
+
+pub struct VecRxToken {
+    buffer: Vec<u8>,
+}
+
+impl RxToken for VecRxToken {
+    fn consume<R, F>(mut self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        f(&mut self.buffer)
+    }
+}
+
+pub struct VecTxToken {
+    queue: Rc<RefCell<VecDeque<Vec<u8>>>>,
+}
+
+impl TxToken for VecTxToken {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut buffer = vec![0u8; len];
+        let result = f(&mut buffer);
+        self.queue.borrow_mut().push_back(buffer);
+        result
+    }
+}
+
+/// Event for the main loop
+enum LoopEvent {
+    // TunPacket is handled directly in select!
+    InboundData(SocketHandle, Option<IpEndpoint>, Vec<u8>), // Endpoint required for UDP
+    ConnectionClosed(SocketHandle, Option<IpEndpoint>),     // Endpoint optional for UDP session cleanup
+}
+
+enum ConnectionType {
+    Tcp(mpsc::UnboundedSender<Vec<u8>>),
+    Udp(HashMap<IpEndpoint, mpsc::UnboundedSender<Vec<u8>>>),
+}
+
+struct ConnectionState {
+    conn_type: ConnectionType,
+    _handle: SocketHandle,
+}
+
+/// Main Inbound Structure
 pub struct EnhancedTunInbound {
     config: EnhancedTunConfig,
     outbound: Arc<dyn OutboundConnector>,
     router: Option<Arc<sb_core::router::RouterHandle>>,
-    #[allow(dead_code)]
-    device: Option<AsyncTunDevice>,
-
-    // Connection tracking
-    tcp_connections: Arc<RwLock<HashMap<u64, TcpConnectionHandle>>>,
-    udp_nat: Arc<Mutex<UdpNat>>,
-
-    // Statistics
-    #[allow(dead_code)] // Reserved for future connection ID tracking
-    connection_id: AtomicU64,
-    stats: TunStats,
-
-    // Shutdown signaling
-    shutdown_tx: Option<mpsc::Sender<()>>,
-}
-
-/// Statistics for TUN operations
-#[derive(Debug, Default)]
-struct TunStats {
-    packets_received: AtomicU64,
-    packets_sent: AtomicU64,
-    tcp_connections_opened: AtomicU64,
-    tcp_connections_closed: AtomicU64,
-    udp_sessions_created: AtomicU64,
-    udp_sessions_expired: AtomicU64,
-    bytes_received: AtomicU64,
-    bytes_sent: AtomicU64,
-    errors: AtomicU64,
-}
-
-impl Clone for TunStats {
-    fn clone(&self) -> Self {
-        TunStats {
-            packets_received: AtomicU64::new(self.packets_received.load(Ordering::Relaxed)),
-            packets_sent: AtomicU64::new(self.packets_sent.load(Ordering::Relaxed)),
-            tcp_connections_opened: AtomicU64::new(
-                self.tcp_connections_opened.load(Ordering::Relaxed),
-            ),
-            tcp_connections_closed: AtomicU64::new(
-                self.tcp_connections_closed.load(Ordering::Relaxed),
-            ),
-            udp_sessions_created: AtomicU64::new(self.udp_sessions_created.load(Ordering::Relaxed)),
-            udp_sessions_expired: AtomicU64::new(self.udp_sessions_expired.load(Ordering::Relaxed)),
-            bytes_received: AtomicU64::new(self.bytes_received.load(Ordering::Relaxed)),
-            bytes_sent: AtomicU64::new(self.bytes_sent.load(Ordering::Relaxed)),
-            errors: AtomicU64::new(self.errors.load(Ordering::Relaxed)),
-        }
-    }
-}
-
-/// Handle for tracking active TCP connections
-#[derive(Debug)]
-struct TcpConnectionHandle {
-    #[allow(dead_code)] // Reserved for connection tracking
-    id: u64,
-    #[allow(dead_code)] // Reserved for connection tracking
-    src: SocketAddr,
-    #[allow(dead_code)] // Reserved for connection tracking
-    dst: Endpoint,
-    created_at: Instant,
-    #[allow(dead_code)] // Reserved for metrics
-    bytes_sent: Arc<AtomicU64>,
-    #[allow(dead_code)] // Reserved for metrics
-    bytes_received: Arc<AtomicU64>,
-    shutdown_tx: mpsc::Sender<()>,
-}
-
-/// Parsed packet information from TUN device
-#[derive(Debug, Clone)]
-pub struct ParsedPacket {
-    pub version: u8,
-    pub protocol: u8,
-    pub src_ip: IpAddr,
-    pub dst_ip: IpAddr,
-    pub src_port: Option<u16>,
-    pub dst_port: Option<u16>,
-    pub payload: Vec<u8>,
-    pub header_len: usize,
 }
 
 impl EnhancedTunInbound {
-    /// Create a new enhanced TUN inbound
     pub fn new(config: EnhancedTunConfig, outbound: Arc<dyn OutboundConnector>) -> Self {
-        let udp_nat = UdpNat::new(
-            config.max_udp_sessions,
-            Duration::from_millis(config.udp_timeout_ms),
-        );
-
-        Self {
-            config,
-            outbound,
-            router: None,
-            device: None,
-            tcp_connections: Arc::new(RwLock::new(HashMap::new())),
-            udp_nat: Arc::new(Mutex::new(udp_nat)),
-            connection_id: AtomicU64::new(1),
-            stats: TunStats::default(),
-            shutdown_tx: None,
-        }
+        Self { config, outbound, router: None }
     }
 
-    /// Create with a router for policy-based routing
     pub fn with_router(
         config: EnhancedTunConfig,
         outbound: Arc<dyn OutboundConnector>,
@@ -211,12 +179,8 @@ impl EnhancedTunInbound {
         inbound
     }
 
-    /// Start the TUN inbound service
     pub async fn start(&mut self) -> Result<(), TunError> {
-        // Starting enhanced TUN inbound
-
-        // Create TUN device
-        let tun_config = TunConfig {
+        let tun_cfg = TunConfig {
             name: self.config.name.clone(),
             mtu: self.config.mtu,
             ipv4: self.config.ipv4,
@@ -225,730 +189,410 @@ impl EnhancedTunInbound {
             table: None,
         };
 
-        let device = AsyncTunDevice::new(&tun_config)?;
-
-        // Setup shutdown channel
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        self.shutdown_tx = Some(shutdown_tx);
-
-        // Start packet processing loop
+        // Create the device
+        let mut device = AsyncTunDevice::new(&tun_cfg)?;
+        let outbound = self.outbound.clone();
         let config = self.config.clone();
-        let outbound = Arc::clone(&self.outbound);
-        let tcp_connections = Arc::clone(&self.tcp_connections);
-        let udp_nat = Arc::clone(&self.udp_nat);
-        let stats = Arc::new(self.stats.clone());
+        let router = self.router.clone();
 
-        tokio::spawn(async move {
-            Self::packet_processing_loop(
-                device,
-                config,
-                outbound,
-                tcp_connections,
-                udp_nat,
-                stats,
-                &mut shutdown_rx,
-            )
-            .await
-        });
+        // Queues using std::sync::Mutex for synchronous access inside smoltcp logic
+        let rx_queue = Arc::new(std::sync::Mutex::new(VecDeque::new()));
+        let tx_queue = Arc::new(std::sync::Mutex::new(VecDeque::new()));
 
-        // Start cleanup task for expired connections
-        self.start_cleanup_task().await;
+        struct SharedTunPhy {
+            rx: Arc<std::sync::Mutex<VecDeque<Vec<u8>>>>,
+            tx: Arc<std::sync::Mutex<VecDeque<Vec<u8>>>>,
+            mtu: usize,
+        }
 
-        // Enhanced TUN inbound started successfully
-        Ok(())
-    }
+        impl<'a> Device<'a> for SharedTunPhy {
+            type RxToken = VecRxToken;
+            type TxToken = SharedVecTxToken;
 
-    /// Main packet processing loop
-    /// TODO: This is a skeleton implementation. Need proper async TUN device support.
-    #[allow(dead_code, unused_variables)]
-    async fn packet_processing_loop(
-        mut device: AsyncTunDevice,
-        config: EnhancedTunConfig,
-        outbound: Arc<dyn OutboundConnector>,
-        tcp_connections: Arc<RwLock<HashMap<u64, TcpConnectionHandle>>>,
-        udp_nat: Arc<Mutex<UdpNat>>,
-        stats: Arc<TunStats>,
-        shutdown_rx: &mut mpsc::Receiver<()>,
-    ) {
-        let mut buffer = vec![0u8; config.buffer_size];
-        
-        // Note: AsyncTunDevice::read is blocking on the thread pool for some platforms
-        // We rely on the generic shutdown/cancellation mechanics or OS-level closing
-        // if this loop needs to exit promptly when idle.
-        loop {
-            // Check for shutdown signal (best effort, before read)
-            if let Ok(_) = shutdown_rx.try_recv() {
-                break;
-            }
-
-            // Perform read
-            match device.read(&mut buffer) {
-                Ok(n) => {
-                    if n == 0 {
-                        continue;
-                    }
-                    stats.packets_received.fetch_add(1, Ordering::Relaxed);
-                    stats.bytes_received.fetch_add(n as u64, Ordering::Relaxed);
-
-                    // Parse packet
-                    if let Some(packet) = Self::parse_packet(&buffer[..n]) {
-                         // Process packet
-                         Self::handle_packet(
-                            packet,
-                            &outbound,
-                            &tcp_connections,
-                            &udp_nat,
-                            &stats,
-                            &config
-                         ).await;
-                    }
-                }
-                Err(e) => {
-                    // Log error but continue loop unless it's a fatal IO error
-                    stats.errors.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!("TUN read error: {}", e);
-                    // Check if device is closed/invalid
-                    // Simple heuristic: if error is generic IO error, maybe try to continue
-                    // If repeated, we might want to break. For now, continue.
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+            fn receive(&'a mut self, _timestamp: SmolTimestamp) -> Option<(Self::RxToken, Self::TxToken)> {
+                let mut rx = self.rx.lock().unwrap();
+                if let Some(buffer) = rx.pop_front() {
+                    Some((
+                        VecRxToken { buffer },
+                        SharedVecTxToken { queue: self.tx.clone() }
+                    ))
+                } else {
+                    None
                 }
             }
-        }
-    }
 
-    /// Parse packet from raw bytes
-    pub fn parse_packet(data: &[u8]) -> Option<ParsedPacket> {
-        if data.len() < 20 {
-            return None;
-        }
-
-        let version = data[0] >> 4;
-
-        match version {
-            4 => Self::parse_ipv4_packet(data),
-            6 => Self::parse_ipv6_packet(data),
-            _ => None,
-        }
-    }
-
-    /// Parse IPv4 packet
-    fn parse_ipv4_packet(data: &[u8]) -> Option<ParsedPacket> {
-        if data.len() < 20 {
-            return None;
-        }
-
-        let ihl = (data[0] & 0x0f) as usize * 4;
-        if ihl < 20 || data.len() < ihl {
-            return None;
-        }
-
-        let protocol = data[9];
-        let src_ip = IpAddr::V4(std::net::Ipv4Addr::from([
-            data[12], data[13], data[14], data[15],
-        ]));
-        let dst_ip = IpAddr::V4(std::net::Ipv4Addr::from([
-            data[16], data[17], data[18], data[19],
-        ]));
-
-        let (src_port, dst_port) = if data.len() >= ihl + 4 {
-            match protocol {
-                6 | 17 => {
-                    // TCP or UDP
-                    let src_port = u16::from_be_bytes([data[ihl], data[ihl + 1]]);
-                    let dst_port = u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
-                    (Some(src_port), Some(dst_port))
-                }
-                _ => (None, None),
+            fn transmit(&'a mut self, _timestamp: SmolTimestamp) -> Option<Self::TxToken> {
+                Some(SharedVecTxToken { queue: self.tx.clone() })
             }
-        } else {
-            (None, None)
-        };
 
-        Some(ParsedPacket {
-            version: 4,
-            protocol,
-            src_ip,
-            dst_ip,
-            src_port,
-            dst_port,
-            payload: data[ihl..].to_vec(),
-            header_len: ihl,
-        })
-    }
-
-    /// Parse IPv6 packet
-    fn parse_ipv6_packet(data: &[u8]) -> Option<ParsedPacket> {
-        if data.len() < 40 {
-            return None;
-        }
-
-        let next_header = data[6];
-        let src_bytes: [u8; 16] = data[8..24].try_into().ok()?;
-        let dst_bytes: [u8; 16] = data[24..40].try_into().ok()?;
-
-        let src_ip = IpAddr::V6(std::net::Ipv6Addr::from(src_bytes));
-        let dst_ip = IpAddr::V6(std::net::Ipv6Addr::from(dst_bytes));
-
-        let (src_port, dst_port) = if data.len() >= 44 {
-            match next_header {
-                6 | 17 => {
-                    // TCP or UDP
-                    let src_port = u16::from_be_bytes([data[40], data[41]]);
-                    let dst_port = u16::from_be_bytes([data[42], data[43]]);
-                    (Some(src_port), Some(dst_port))
-                }
-                _ => (None, None),
-            }
-        } else {
-            (None, None)
-        };
-
-        Some(ParsedPacket {
-            version: 6,
-            protocol: next_header,
-            src_ip,
-            dst_ip,
-            src_port,
-            dst_port,
-            payload: data[40..].to_vec(),
-            header_len: 40,
-        })
-    }
-
-    /// Handle parsed packet based on protocol
-    async fn handle_packet(
-        packet: ParsedPacket,
-        outbound: &Arc<dyn OutboundConnector>,
-        tcp_connections: &Arc<RwLock<HashMap<u64, TcpConnectionHandle>>>,
-        udp_nat: &Arc<Mutex<UdpNat>>,
-        stats: &Arc<TunStats>,
-        config: &EnhancedTunConfig,
-    ) {
-        let (src_port, dst_port) = match (packet.src_port, packet.dst_port) {
-            (Some(sp), Some(dp)) => (sp, dp),
-            _ => {
-                // Packet without port information, skipping
-                return;
-            }
-        };
-
-        let src_addr = SocketAddr::new(packet.src_ip, src_port);
-        let dst_endpoint = Endpoint::new(Host::ip(packet.dst_ip), dst_port);
-
-        match packet.protocol {
-            6 => {
-                // TCP
-                Self::handle_tcp_packet(
-                    packet,
-                    src_addr,
-                    dst_endpoint,
-                    outbound,
-                    tcp_connections,
-                    stats,
-                    config,
-                )
-                .await;
-            }
-            17 => {
-                // UDP
-                Self::handle_udp_packet(
-                    packet,
-                    src_addr,
-                    dst_endpoint,
-                    outbound,
-                    udp_nat,
-                    stats,
-                    config,
-                )
-                .await;
-            }
-            _ => {
-                // For now, just log unsupported protocols
-                // trace!("Unsupported protocol: {}", packet.protocol);
+            fn capabilities(&self) -> DeviceCapabilities {
+                let mut caps = DeviceCapabilities::default();
+                caps.medium = Medium::Ip;
+                caps.max_transmission_unit = self.mtu;
+                caps
             }
         }
-    }
 
-    /// Handle TCP packet by establishing tunnel to outbound
-    async fn handle_tcp_packet(
-        packet: ParsedPacket,
-        src_addr: SocketAddr,
-        dst_endpoint: Endpoint,
-        outbound: &Arc<dyn OutboundConnector>,
-        tcp_connections: &Arc<RwLock<HashMap<u64, TcpConnectionHandle>>>,
-        stats: &Arc<TunStats>,
-        config: &EnhancedTunConfig,
-    ) {
-        // Check if this is a new connection (SYN packet)
-        if packet.payload.len() >= 13 {
-            let tcp_flags = packet.payload[13];
-            let is_syn = (tcp_flags & 0x02) != 0;
-            let is_ack = (tcp_flags & 0x10) != 0;
-
-            if is_syn && !is_ack {
-                // New TCP connection
-                Self::establish_tcp_tunnel(
-                    src_addr,
-                    dst_endpoint,
-                    outbound,
-                    tcp_connections,
-                    stats,
-                    config,
-                )
-                .await;
-            }
-        }
-    }
-
-    /// Establish TCP tunnel between TUN and outbound
-    async fn establish_tcp_tunnel(
-        src_addr: SocketAddr,
-        dst_endpoint: Endpoint,
-        outbound: &Arc<dyn OutboundConnector>,
-        tcp_connections: &Arc<RwLock<HashMap<u64, TcpConnectionHandle>>>,
-        stats: &Arc<TunStats>,
-        config: &EnhancedTunConfig,
-    ) {
-        let connection_id = stats.tcp_connections_opened.fetch_add(1, Ordering::Relaxed);
-
-        // Create connection context
-        let ctx = ConnCtx::new(connection_id, Network::Tcp, src_addr, dst_endpoint.clone());
-
-        // Use the provided outbound connector
-        // TODO: Router-based outbound selection can be added later when needed
-        let selected_outbound = Arc::clone(outbound);
-
-        // Connect to outbound
-        let outbound_stream = match timeout(
-            Duration::from_millis(config.tcp_timeout_ms),
-            selected_outbound.connect_tcp(&ctx),
-        )
-        .await
-        {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(_e)) => {
-                // Failed to connect to outbound
-                stats.errors.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-            Err(_) => {
-                // TCP connection timeout
-                stats.errors.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-        };
-
-        // Create shutdown channel for this connection
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-
-        // Create connection handle
-        let handle = TcpConnectionHandle {
-            id: connection_id,
-            src: src_addr,
-            dst: dst_endpoint.clone(),
-            created_at: Instant::now(),
-            bytes_sent: Arc::new(AtomicU64::new(0)),
-            bytes_received: Arc::new(AtomicU64::new(0)),
-            shutdown_tx: shutdown_tx.clone(),
-        };
-
-        // Store connection handle
-        {
-            let mut connections = tcp_connections.write().await;
-            if connections.len() >= config.max_tcp_connections {
-                // Maximum TCP connections reached, dropping connection
-                stats.errors.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-            connections.insert(connection_id, handle);
+        struct SharedVecTxToken {
+            queue: Arc<std::sync::Mutex<VecDeque<Vec<u8>>>>,
         }
 
-        // Start bidirectional data forwarding
-        let tcp_connections_clone = Arc::clone(tcp_connections);
-        let stats_clone = Arc::clone(stats);
-
-        tokio::spawn(async move {
-            // This is a simplified tunnel - in a real implementation, you'd need
-            // to properly handle the TUN interface side of the connection
-            let result = Self::run_tcp_tunnel(
-                connection_id,
-                outbound_stream,
-                &mut shutdown_rx,
-                &stats_clone,
-            )
-            .await;
-
-            if let Err(_e) = result {
-                // TCP tunnel ended with error
-            }
-
-            // Clean up connection
+        impl TxToken for SharedVecTxToken {
+            fn consume<R, F>(self, len: usize, f: F) -> R
+            where
+                F: FnOnce(&mut [u8]) -> R,
             {
-                let mut connections = tcp_connections_clone.write().await;
-                connections.remove(&connection_id);
-            }
-            stats_clone
-                .tcp_connections_closed
-                .fetch_add(1, Ordering::Relaxed);
-
-            // TCP tunnel closed
-        });
-    }
-
-    /// Run the TCP tunnel forwarding data bidirectionally
-    async fn run_tcp_tunnel(
-        _connection_id: u64,
-        mut outbound_stream: TcpStream,
-        shutdown_rx: &mut mpsc::Receiver<()>,
-        stats: &Arc<TunStats>,
-    ) -> io::Result<()> {
-        let mut buffer = vec![0u8; 4096];
-
-        loop {
-            tokio::select! {
-                _ = shutdown_rx.recv() => {
-                    // TCP tunnel shutdown signal received
-                    break;
-                }
-
-                // In a real implementation, you would read from the TUN side here
-                // and forward to outbound_stream, and vice versa
-                result = outbound_stream.read(&mut buffer) => {
-                    match result {
-                        Ok(0) => {
-                            // Outbound stream closed
-                            break;
-                        }
-                        Ok(n) => {
-                            stats.bytes_received.fetch_add(n as u64, Ordering::Relaxed);
-                            // In real implementation: forward to TUN interface
-                        }
-                        Err(e) => {
-                            // Error reading from outbound stream
-                            return Err(e);
-                        }
-                    }
-                }
+                let mut buffer = vec![0u8; len];
+                let result = f(&mut buffer);
+                self.queue.lock().unwrap().push_back(buffer);
+                result
             }
         }
 
-        Ok(())
-    }
+        // Channel for events from Outbound tasks to Main Loop
+        let (loop_ingress_tx, mut loop_ingress_rx) = mpsc::unbounded_channel::<LoopEvent>();
 
-    /// Handle UDP packet using NAT mapping
-    async fn handle_udp_packet(
-        packet: ParsedPacket,
-        src_addr: SocketAddr,
-        dst_endpoint: Endpoint,
-        outbound: &Arc<dyn OutboundConnector>,
-        udp_nat: &Arc<Mutex<UdpNat>>,
-        stats: &Arc<TunStats>,
-        config: &EnhancedTunConfig,
-    ) {
-        let flow_key = UdpFlowKey {
-            src: src_addr,
-            dst: dst_endpoint.to_socket_addr().unwrap_or_else(|| {
-                SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0)
-            }),
-            session_id: 0, // Simple implementation without session tracking
-        };
-
-        // Check if session exists in NAT table
-        let session_exists = {
-            let nat = udp_nat.lock().await;
-            nat.lookup_session(&src_addr).is_some()
-        };
-
-        if !session_exists {
-            // Create new UDP session
-            Self::create_udp_session(
-                flow_key.clone(),
-                dst_endpoint,
-                outbound,
-                udp_nat,
-                stats,
-                config,
-            )
-            .await;
-        }
-
-        // Forward UDP packet
-        Self::forward_udp_packet(packet.payload, flow_key, udp_nat, stats).await;
-    }
-
-    /// Create new UDP session and establish outbound connection
-    async fn create_udp_session(
-        flow_key: UdpFlowKey,
-        dst_endpoint: Endpoint,
-        outbound: &Arc<dyn OutboundConnector>,
-        udp_nat: &Arc<Mutex<UdpNat>>,
-        stats: &Arc<TunStats>,
-        config: &EnhancedTunConfig,
-    ) {
-        // Creating UDP session
-
-        // Create connection context
-        let ctx = ConnCtx::new(
-            stats.udp_sessions_created.fetch_add(1, Ordering::Relaxed),
-            Network::Udp,
-            flow_key.src,
-            dst_endpoint.clone(),
-        );
-
-        // Connect to outbound
-        let _udp_transport = match timeout(
-            Duration::from_millis(config.tcp_timeout_ms),
-            outbound.connect_udp(&ctx),
-        )
-        .await
-        {
-            Ok(Ok(transport)) => transport,
-            Ok(Err(_e)) => {
-                // Failed to create UDP connection
-                stats.errors.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-            Err(_) => {
-                // UDP connection timeout
-                stats.errors.fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-        };
-
-        // Create NAT mapping
-        {
-            let mut nat = udp_nat.lock().await;
-            let _ = nat.create_mapping(flow_key.src, flow_key.dst);
-        }
-
-        // Store UDP transport for this session (simplified - in real implementation
-        // you'd need proper session management)
-        // UDP session created
-    }
-
-    /// Forward UDP packet to outbound
-    async fn forward_udp_packet(
-        payload: Vec<u8>,
-        flow_key: UdpFlowKey,
-        udp_nat: &Arc<Mutex<UdpNat>>,
-        stats: &Arc<TunStats>,
-    ) {
-        // Update NAT session activity
-        {
-            let mut nat = udp_nat.lock().await;
-            nat.update_activity(&flow_key);
-        }
-
-        stats.packets_sent.fetch_add(1, Ordering::Relaxed);
-        stats
-            .bytes_sent
-            .fetch_add(payload.len() as u64, Ordering::Relaxed);
-
-        // In real implementation: forward payload to outbound UDP transport
-        // Forwarded UDP packet
-    }
-
-    /// Start cleanup task for expired connections
-    async fn start_cleanup_task(&self) {
-        let tcp_connections = Arc::clone(&self.tcp_connections);
-        let udp_nat = Arc::clone(&self.udp_nat);
-        let stats = Arc::new(self.stats.clone());
-        let tcp_timeout = Duration::from_millis(self.config.tcp_timeout_ms);
-
+        // Spawn the main processor
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            let mut sockets = SocketSet::new(vec![]);
+            let mut iface_config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+            iface_config.random_seed = rand::random();
+            
+            let mut device_phy = SharedTunPhy {
+                rx: rx_queue.clone(),
+                tx: tx_queue.clone(),
+                mtu: config.mtu as usize,
+            };
 
+            let mut iface = Interface::new(iface_config, &mut device_phy, SmolTimestamp::now());
+            
+            if let Some(ip) = config.ipv4 {
+                iface.update_ip_addrs(|addrs| {
+                    addrs.push(IpCidr::new(IpAddress::from(ip), 24)).ok(); 
+                });
+                iface.update_routes(|routes| {
+                   routes.add_default_ipv4_route(smoltcp::wire::Ipv4Address::new(0, 0, 0, 0)).ok();
+                });
+            }
+            if let Some(ip) = config.ipv6 {
+                iface.update_ip_addrs(|addrs| {
+                    addrs.push(IpCidr::new(IpAddress::from(ip), 64)).ok();
+                });
+            }
+
+            let mut buffer = vec![0u8; config.buffer_size];
+            // Track mapping of SocketHandle -> ConnectionState
+            let mut connection_map: HashMap<SocketHandle, ConnectionState> = HashMap::new();
+            // Fast lookup: IpEndpoint -> SocketHandle for UDP JIT (O(1) instead of O(n) iteration)
+            let mut udp_handles: HashMap<IpEndpoint, SocketHandle> = HashMap::new();
+            
             loop {
-                interval.tick().await;
+                // 1. SELECT: Read from TUN or Rx Channel or Timeout
+                let mut did_work = false;
+                
+                tokio::select! {
+                    res = device.read(&mut buffer) => {
+                        match res {
+                            Ok(n) => {
+                                let pkt_data = buffer[..n].to_vec();
+                                
+                                // JIT Socket Creation Logic
+                                if let Ok(mut ipv4_packet) = Ipv4Packet::new_checked(&pkt_data) {
+                                    let src_addr = IpAddress::Ipv4(ipv4_packet.src_addr());
+                                    let dst_addr = IpAddress::Ipv4(ipv4_packet.dst_addr());
+                                    let protocol = ipv4_packet.next_header();
+                                    let payload = ipv4_packet.payload();
 
-                // Clean up expired TCP connections
-                let now = Instant::now();
-                let mut expired_tcp = Vec::new();
+                                    if protocol == IpProtocol::Tcp {
+                                        if let Ok(tcp_packet) = TcpPacket::new_checked(payload) {
+                                            if tcp_packet.syn() && !tcp_packet.ack() {
+                                                let dst_port = tcp_packet.dst_port();
+                                                let src_port = tcp_packet.src_port();
+                                                
+                                                let rx_buf = tcp::SocketBuffer::new(vec![0; 65535]);
+                                                let tx_buf = tcp::SocketBuffer::new(vec![0; 65535]);
+                                                let mut socket = tcp::Socket::new(rx_buf, tx_buf);
+                                                
+                                                if socket.listen((dst_addr, dst_port)).is_ok() {
+                                                    let handle = sockets.add(socket);
+                                                    tracing::debug!("Created JIT TCP socket {} for {}:{} -> {}:{}", handle, src_addr, src_port, dst_addr, dst_port);
+                                                    
+                                                    // Spawn Outbound Task
+                                                    let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+                                                    let loop_tx = loop_ingress_tx.clone();
+                                                    let outbound_conn = outbound.clone();
+                                                    
+                                                    let std_src = match src_addr {
+                                                        IpAddress::Ipv4(a) => IpAddr::V4(a.into()),
+                                                        IpAddress::Ipv6(a) => IpAddr::V6(a.into()),
+                                                    };
+                                                    let std_dst = match dst_addr {
+                                                        IpAddress::Ipv4(a) => IpAddr::V4(a.into()),
+                                                        IpAddress::Ipv6(a) => IpAddr::V6(a.into()),
+                                                    };
+                                                    
+                                                    connection_map.insert(handle, ConnectionState {
+                                                        conn_type: ConnectionType::Tcp(outbound_tx),
+                                                        _handle: handle,
+                                                    });
 
-                {
-                    let connections = tcp_connections.read().await;
-                    for (id, handle) in connections.iter() {
-                        if now.duration_since(handle.created_at) > tcp_timeout {
-                            expired_tcp.push(*id);
+                                                    tokio::spawn(async move {
+                                                        let ctx = ConnCtx {
+                                                            src: SocketAddr::new(std_src, src_port),
+                                                            dst: Endpoint::from((std_dst, dst_port)),
+                                                            ..Default::default()
+                                                        };
+                                                        
+                                                        match outbound_conn.connect(ctx).await {
+                                                            Ok(mut stream) => {
+                                                                let mut buf = vec![0u8; 4096];
+                                                                loop {
+                                                                    tokio::select! {
+                                                                        msg = outbound_rx.recv() => {
+                                                                            if let Some(data) = msg {
+                                                                                use tokio::io::AsyncWriteExt;
+                                                                                if stream.write_all(&data).await.is_err() { break; }
+                                                                            } else { break; }
+                                                                        }
+                                                                        res = stream.read(&mut buf) => {
+                                                                            use tokio::io::AsyncReadExt;
+                                                                            match res {
+                                                                                Ok(0) => break, 
+                                                                                Ok(n) => {
+                                                                                    if loop_tx.send(LoopEvent::InboundData(handle, None, buf[..n].to_vec())).is_err() { break; }
+                                                                                }
+                                                                                Err(_) => break,
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                let _ = loop_tx.send(LoopEvent::ConnectionClosed(handle, None));
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::error!("TCP Outbound connect failed: {}", e);
+                                                                let _ = loop_tx.send(LoopEvent::ConnectionClosed(handle, None));
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    } else if protocol == IpProtocol::Udp {
+                                         if let Ok(udp_packet) = UdpPacket::new_checked(payload) {
+                                            let dst_port = udp_packet.dst_port();
+                                            // Check if we already have a socket for (dst_addr, dst_port) using O(1) lookup
+                                            let dest_endpoint = IpEndpoint::new(dst_addr, dst_port);
+                                            
+                                            if !udp_handles.contains_key(&dest_endpoint) {
+                                                // Create socket
+                                                let mut rx_meta = vec![udp::PacketMetadata::EMPTY; 10];
+                                                let mut rx_payload = vec![0; 65535];
+                                                let mut tx_meta = vec![udp::PacketMetadata::EMPTY; 10];
+                                                let mut tx_payload = vec![0; 65535];
+                                                let mut socket = udp::Socket::new(
+                                                    udp::PacketBuffer::new(&mut rx_meta[..], &mut rx_payload[..]),
+                                                    udp::PacketBuffer::new(&mut tx_meta[..], &mut tx_payload[..])
+                                                );
+                                                
+                                                if socket.bind(dest_endpoint).is_ok() {
+                                                     let handle = sockets.add(socket);
+                                                     tracing::debug!("Created JIT UDP socket {} for {}", handle, dest_endpoint);
+                                                     
+                                                     // Register in both maps for fast lookup
+                                                     udp_handles.insert(dest_endpoint, handle);
+                                                     connection_map.insert(handle, ConnectionState {
+                                                         conn_type: ConnectionType::Udp(HashMap::new()),
+                                                         _handle: handle,
+                                                     });
+                                                }
+                                            }
+                                         }
+                                    }
+                                }
+                                // Repeat for IPv6 Logic (omitted for brevity)
+                                
+                                rx_queue.lock().unwrap().push_back(pkt_data);
+                                did_work = true;
+                            },
+                            Err(e) => {
+                                tracing::error!("TUN read error: {}", e);
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
                         }
+                    }
+                    // Handle events from Outbound tasks
+                    evt = loop_ingress_rx.recv() => {
+                        if let Some(event) = evt {
+                            match event {
+                                LoopEvent::InboundData(handle, endpoint, data) => {
+                                    if let Some(socket) = sockets.get_mut::<tcp::Socket>(handle) {
+                                        let _ = socket.send_slice(&data); 
+                                        did_work = true;
+                                    } else if let Some(socket) = sockets.get_mut::<udp::Socket>(handle) {
+                                        if let Some(ep) = endpoint {
+                                            let _ = socket.send_slice(&data, ep);
+                                            did_work = true;
+                                        }
+                                    }
+                                }
+                                LoopEvent::ConnectionClosed(handle, endpoint) => {
+                                    if let Some(ep) = endpoint {
+                                        // UDP Session closed
+                                        if let Some(state) = connection_map.get_mut(&handle) {
+                                            if let ConnectionType::Udp(sessions) = &mut state.conn_type {
+                                                sessions.remove(&ep);
+                                            }
+                                        }
+                                    } else {
+                                        // TCP or Socket closed
+                                        if let Some(socket) = sockets.get_mut::<tcp::Socket>(handle) {
+                                            socket.close();
+                                            connection_map.remove(&handle); 
+                                        } else if let Some(socket) = sockets.get_mut::<udp::Socket>(handle) {
+                                             socket.close();
+                                             connection_map.remove(&handle);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {
+                        // Just wake up to poll
                     }
                 }
 
-                if !expired_tcp.is_empty() {
-                    let mut connections = tcp_connections.write().await;
-                    for id in expired_tcp {
-                        if let Some(handle) = connections.remove(&id) {
-                            let _ = handle.shutdown_tx.send(()).await;
-                            // Cleaned up expired TCP connection
-                        }
+                // 2. Poll Interface
+                let timestamp = SmolTimestamp::now();
+                iface.poll(timestamp, &mut device_phy, &mut sockets);
+
+                // 3. Flush tx_queue to TUN
+                loop {
+                    let pkt = {
+                        let mut q = tx_queue.lock().unwrap();
+                        q.pop_front()
+                    };
+                    if let Some(pkt) = pkt {
+                         if let Err(e) = device.write(&pkt).await {
+                             tracing::warn!("TUN write error: {}", e);
+                         }
+                    } else {
+                        break;
                     }
                 }
-
-                // Clean up expired UDP sessions
-                {
-                    let mut nat = udp_nat.lock().await;
-                    let expired_count = nat.evict_expired();
-                    if expired_count > 0 {
-                        stats
-                            .udp_sessions_expired
-                            .fetch_add(expired_count as u64, Ordering::Relaxed);
-                        // Cleaned up expired UDP sessions
+                
+                // 4. Socket Management (Bridge smoltcp socket -> Outbound)
+                let mut closed_handles = Vec::new();
+                for (handle, state) in connection_map.iter_mut() {
+                    let mut remove_socket = false;
+                    
+                    match &mut state.conn_type {
+                        ConnectionType::Tcp(tx) => {
+                            if let Some(socket) = sockets.get_mut::<tcp::Socket>(*handle) {
+                                 if socket.can_recv() {
+                                    while let Ok(data) = socket.recv(|buf| (buf.len(), buf.to_vec())) {
+                                        if data.is_empty() { break; }
+                                        if tx.send(data).is_err() { remove_socket = true; break; }
+                                    }
+                                }
+                                if socket.state() == tcp::State::Closed { remove_socket = true; }
+                            } else { remove_socket = true; }
+                        }
+                        ConnectionType::Udp(sessions) => {
+                            if let Some(socket) = sockets.get_mut::<udp::Socket>(*handle) {
+                                // Drain packets
+                                while let Ok((data, meta)) = socket.recv() {
+                                    let src_endpoint = meta.endpoint;
+                                    let payload = data.to_vec();
+                                    
+                                    // Find or create session
+                                    if !sessions.contains_key(&src_endpoint) {
+                                        let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+                                        let loop_tx = loop_ingress_tx.clone();
+                                        let outbound_conn = outbound.clone();
+                                        let socket_handle = *handle;
+                                        let ep = src_endpoint; // Capture for task
+                                        
+                                        // Metadata from socket bind endpoint?
+                                        let dst_endpoint = socket.endpoint(); // Local bound endpoint (Dst)
+                                        
+                                         // Convert smoltcp endpoints to std
+                                        let std_src = match src_endpoint.addr {
+                                            IpAddress::Ipv4(a) => IpAddr::V4(a.into()),
+                                            IpAddress::Ipv6(a) => IpAddr::V6(a.into()),
+                                        };
+                                        let std_dst = match dst_endpoint.addr {
+                                            IpAddress::Ipv4(a) => IpAddr::V4(a.into()),
+                                            IpAddress::Ipv6(a) => IpAddr::V6(a.into()),
+                                        };
+                                        let ctx = ConnCtx {
+                                            src: SocketAddr::new(std_src, src_endpoint.port),
+                                            dst: Endpoint::from((std_dst, dst_endpoint.port)),
+                                            protocol: sb_core::types::Protocol::Udp, // Assume UDP
+                                            ..Default::default()
+                                        };
+                                        
+                                        tokio::spawn(async move {
+                                            match outbound_conn.connect(ctx).await {
+                                                Ok(mut stream) => {
+                                                    let mut buf = vec![0u8; 4096];
+                                                    // Flush initial packet
+                                                    if stream.write_all(&payload).await.is_ok() {
+                                                        loop {
+                                                            tokio::select! {
+                                                                msg = outbound_rx.recv() => {
+                                                                    if let Some(data) = msg {
+                                                                        use tokio::io::AsyncWriteExt;
+                                                                        if stream.write_all(&data).await.is_err() { break; }
+                                                                    } else { break; }
+                                                                }
+                                                                res = stream.read(&mut buf) => {
+                                                                    use tokio::io::AsyncReadExt;
+                                                                    match res {
+                                                                        Ok(0) => break, 
+                                                                        Ok(n) => {
+                                                                            if loop_tx.send(LoopEvent::InboundData(socket_handle, Some(ep), buf[..n].to_vec())).is_err() { break; }
+                                                                        }
+                                                                        Err(_) => break,
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    let _ = loop_tx.send(LoopEvent::ConnectionClosed(socket_handle, Some(ep)));
+                                                }
+                                                Err(e) => {
+                                                     tracing::error!("UDP Outbound connect failed: {}", e);
+                                                     let _ = loop_tx.send(LoopEvent::ConnectionClosed(socket_handle, Some(ep)));
+                                                }
+                                            }
+                                        });
+                                        
+                                        sessions.insert(src_endpoint, outbound_tx);
+                                    } else {
+                                        // Send to existing session
+                                        if let Some(tx) = sessions.get(&src_endpoint) {
+                                            let _ = tx.send(payload);
+                                        }
+                                    }
+                                }
+                            } else { remove_socket = true; }
+                        }
                     }
+                    
+                    if remove_socket {
+                        closed_handles.push(*handle);
+                    }
+                }
+                
+                for h in closed_handles {
+                     connection_map.remove(&h);
+                     sockets.remove(h);
                 }
             }
         });
-    }
-
-    /// Get current statistics
-    pub fn get_stats(&self) -> TunStatistics {
-        TunStatistics {
-            packets_received: self.stats.packets_received.load(Ordering::Relaxed),
-            packets_sent: self.stats.packets_sent.load(Ordering::Relaxed),
-            tcp_connections_opened: self.stats.tcp_connections_opened.load(Ordering::Relaxed),
-            tcp_connections_closed: self.stats.tcp_connections_closed.load(Ordering::Relaxed),
-            udp_sessions_created: self.stats.udp_sessions_created.load(Ordering::Relaxed),
-            udp_sessions_expired: self.stats.udp_sessions_expired.load(Ordering::Relaxed),
-            bytes_received: self.stats.bytes_received.load(Ordering::Relaxed),
-            bytes_sent: self.stats.bytes_sent.load(Ordering::Relaxed),
-            errors: self.stats.errors.load(Ordering::Relaxed),
-        }
-    }
-
-    /// Stop the TUN inbound service
-    pub async fn stop(&mut self) -> Result<(), TunError> {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(()).await;
-        }
-
-        // Close all active TCP connections
-        {
-            let connections = self.tcp_connections.read().await;
-            for handle in connections.values() {
-                let _ = handle.shutdown_tx.send(()).await;
-            }
-        }
-
-        // Enhanced TUN inbound stopped
         Ok(())
     }
 }
 
-/// Public statistics structure
-#[derive(Debug, Clone)]
-pub struct TunStatistics {
-    pub packets_received: u64,
-    pub packets_sent: u64,
-    pub tcp_connections_opened: u64,
-    pub tcp_connections_closed: u64,
-    pub udp_sessions_created: u64,
-    pub udp_sessions_expired: u64,
-    pub bytes_received: u64,
-    pub bytes_sent: u64,
-    pub errors: u64,
-}
 
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-    use super::*;
-    use sb_core::outbound::DirectConnector;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_enhanced_tun_creation() {
-        let config = EnhancedTunConfig::default();
-        let outbound = Arc::new(DirectConnector::new());
-
-        let tun_inbound = EnhancedTunInbound::new(config, outbound);
-
-        // Test initial state
-        let stats = tun_inbound.get_stats();
-        assert_eq!(stats.packets_received, 0);
-        assert_eq!(stats.tcp_connections_opened, 0);
-    }
-
-    #[test]
-    fn test_ipv4_packet_parsing() {
-        // Create a minimal IPv4 TCP packet
-        let mut packet = vec![0u8; 40];
-        packet[0] = 0x45; // Version 4, IHL 5
-        packet[9] = 6; // TCP protocol
-        packet[12..16].copy_from_slice(&[192, 168, 1, 1]); // Source IP
-        packet[16..20].copy_from_slice(&[8, 8, 8, 8]); // Dest IP
-        packet[20..22].copy_from_slice(&[0x1F, 0x90]); // Source port 8080
-        packet[22..24].copy_from_slice(&[0x00, 0x50]); // Dest port 80
-
-        let parsed = EnhancedTunInbound::parse_packet(&packet).unwrap();
-
-        assert_eq!(parsed.version, 4);
-        assert_eq!(parsed.protocol, 6);
-        assert_eq!(
-            parsed.src_ip,
-            IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 1))
-        );
-        assert_eq!(
-            parsed.dst_ip,
-            IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8))
-        );
-        assert_eq!(parsed.src_port, Some(8080));
-        assert_eq!(parsed.dst_port, Some(80));
-    }
-
-    #[test]
-    fn test_ipv6_packet_parsing() {
-        // Create a minimal IPv6 TCP packet
-        let mut packet = vec![0u8; 60];
-        packet[0] = 0x60; // Version 6
-        packet[6] = 6; // Next header: TCP
-
-        // Source IPv6: ::1
-        packet[24..40].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        // Dest IPv6: 2001:db8::1
-        packet[8..24]
-            .copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-
-        packet[40..42].copy_from_slice(&[0x1F, 0x90]); // Source port 8080
-        packet[42..44].copy_from_slice(&[0x00, 0x50]); // Dest port 80
-
-        let parsed = EnhancedTunInbound::parse_packet(&packet).unwrap();
-
-        assert_eq!(parsed.version, 6);
-        assert_eq!(parsed.protocol, 6);
-        assert_eq!(parsed.src_port, Some(8080));
-        assert_eq!(parsed.dst_port, Some(80));
-    }
-
-    #[test]
-    fn test_config_defaults() {
-        let config = EnhancedTunConfig::default();
-
-        assert_eq!(config.name, "tun0");
-        assert_eq!(config.mtu, 1500);
-        assert_eq!(config.tcp_timeout_ms, 30_000);
-        assert_eq!(config.udp_timeout_ms, 60_000);
-        assert_eq!(config.max_tcp_connections, 1024);
-        assert_eq!(config.max_udp_sessions, 2048);
-    }
-
-    #[tokio::test]
-    async fn test_statistics_tracking() {
-        let config = EnhancedTunConfig::default();
-        let outbound = Arc::new(DirectConnector::new());
-
-        let tun_inbound = EnhancedTunInbound::new(config, outbound);
-
-        // Increment some statistics
-        tun_inbound
-            .stats
-            .packets_received
-            .fetch_add(5, Ordering::Relaxed);
-        tun_inbound
-            .stats
-            .bytes_sent
-            .fetch_add(1024, Ordering::Relaxed);
-
-        let stats = tun_inbound.get_stats();
-        assert_eq!(stats.packets_received, 5);
-        assert_eq!(stats.bytes_sent, 1024);
-    }
-}

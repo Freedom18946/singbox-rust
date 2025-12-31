@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use socket2::{Domain, Protocol, Socket, Type};
 
 /// Go-parity cache structure: per-endpoint traffic + users.
 /// Go reference: `service/ssmapi/cache.go`
@@ -103,10 +104,23 @@ pub struct SsmapiService {
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
     /// Optional path for cache persistence.
     cache_path: Option<PathBuf>,
+    
+    // TLS Configuration
     /// TLS certificate path (enables HTTPS + HTTP/2).
     tls_cert_path: Option<PathBuf>,
     /// TLS private key path.
     tls_key_path: Option<PathBuf>,
+    /// Inline TLS certificate (PEM).
+    tls_cert_pem: Option<Vec<u8>>,
+    /// Inline TLS private key (PEM).
+    tls_key_pem: Option<Vec<u8>>,
+
+    // Listen Options
+    bind_interface: Option<String>,
+    routing_mark: Option<u32>,
+    reuse_addr: bool,
+    tcp_fast_open: bool,
+    tcp_multi_path: bool,
 }
 
 impl SsmapiService {
@@ -168,25 +182,42 @@ impl SsmapiService {
             "SSMAPI service initialized"
         );
 
+        // Parse ListenOptions
+        let bind_interface = ir.bind_interface.clone();
+        let routing_mark = ir.routing_mark;
+        let reuse_addr = ir.reuse_addr.unwrap_or(true); // Default true for server
+        let tcp_fast_open = ir.tcp_fast_open.unwrap_or(false);
+        let tcp_multi_path = ir.tcp_multi_path.unwrap_or(false);
+
         // Parse cache path
         let cache_path = ir.cache_path.as_ref().map(PathBuf::from);
 
-        // Parse TLS config (Go parity: `tls.enabled` + `certificate_path` + `key_path`)
-        let (tls_cert_path, tls_key_path) = if ir.tls.as_ref().is_some_and(|t| t.enabled) {
-            let tls = ir.tls.as_ref().expect("checked above");
-            let cert = tls.certificate_path.as_ref().map(PathBuf::from);
-            let key = tls.key_path.as_ref().map(PathBuf::from);
-            if cert.is_some() != key.is_some() {
-                return Err(
-                    "ssm-api: both tls.certificate_path and tls.key_path must be specified".into(),
-                );
-            }
-            (cert, key)
-        } else {
-            (None, None)
-        };
+        // Parse TLS config (Go parity: `tls.enabled` + `certificate_path`/`certificate` + `key_path`/`key`)
+        let (tls_cert_path, tls_key_path, tls_cert_pem, tls_key_pem) =
+            if ir.tls.as_ref().is_some_and(|t| t.enabled) {
+                let tls = ir.tls.as_ref().expect("checked above");
+                
+                let cert_path = tls.certificate_path.as_ref().map(PathBuf::from);
+                let key_path = tls.key_path.as_ref().map(PathBuf::from);
+                
+                let cert_pem = tls.certificate.as_ref().map(|lines| lines.join("\n").into_bytes());
+                let key_pem = tls.key.as_ref().map(|lines| lines.join("\n").into_bytes());
 
-        if tls_cert_path.is_some() {
+                let has_path = cert_path.is_some() && key_path.is_some();
+                let has_pem = cert_pem.is_some() && key_pem.is_some();
+
+                if !has_path && !has_pem {
+                     return Err(
+                        "ssm-api: tls enabled but missing certificate/key (path or inline)".into(),
+                    );
+                }
+
+                (cert_path, key_path, cert_pem, key_pem)
+            } else {
+                (None, None, None, None)
+            };
+
+        if tls_cert_path.is_some() || tls_cert_pem.is_some() {
             tracing::info!(
                 service = "ssm-api",
                 tag = tag,
@@ -204,7 +235,60 @@ impl SsmapiService {
             cache_path,
             tls_cert_path,
             tls_key_path,
+            tls_cert_pem,
+            tls_key_pem,
+            bind_interface,
+            routing_mark,
+            reuse_addr,
+            tcp_fast_open,
+            tcp_multi_path,
         }))
+    }
+
+    /// Create a customized TCP listener with options (socket2).
+    fn create_listener(&self) -> std::io::Result<tokio::net::TcpListener> {
+        let domain = if self.listen_addr.is_ipv4() {
+             Domain::IPV4
+        } else {
+             Domain::IPV6
+        };
+        let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+        if self.reuse_addr {
+            #[cfg(not(windows))]
+            socket.set_reuse_address(true)?;
+            #[cfg(not(windows))]
+            socket.set_reuse_port(true)?;
+        }
+        
+        // Apply routing mark (Linux only)
+        #[cfg(target_os = "linux")]
+        if let Some(mark) = self.routing_mark {
+            socket.set_mark(mark)?;
+        }
+
+        // Apply bind interface (Linux/Android/Darwin?)
+        // Note: socket2 bind_device_by_index_v4 is available, but string binding requires unsafe or libc
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if let Some(ref iface) = self.bind_interface {
+             socket.bind_to_device(Some(iface.as_bytes()))?;
+        }
+
+        // Apply TCP Fast Open
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if self.tcp_fast_open {
+             // 256 is a common backlog size for TFO
+             socket.set_tcp_fastopen(256)?;
+        }
+
+        // Bind and listen
+        socket.bind(&self.listen_addr.into())?;
+        socket.listen(128)?;
+        
+        // Convert to tokio TcpListener
+        socket.set_nonblocking(true)?;
+        let std_listener: std::net::TcpListener = socket.into();
+        tokio::net::TcpListener::from_std(std_listener)
     }
 
     /// Load cached traffic stats from disk (Go parity).
@@ -443,7 +527,7 @@ impl Service for SsmapiService {
                     service = "ssm-api",
                     tag = self.tag,
                     listen = %listen_addr,
-                    tls = self.tls_cert_path.is_some(),
+                    tls = self.tls_cert_path.is_some() || self.tls_cert_pem.is_some(),
                     "Starting SSMAPI server"
                 );
 
@@ -453,23 +537,43 @@ impl Service for SsmapiService {
                 // Store shutdown sender
                 *self.shutdown_tx.lock() = Some(shutdown_tx);
 
+                // Clone config for background task
                 let tls_cert_path = self.tls_cert_path.clone();
                 let tls_key_path = self.tls_key_path.clone();
+                let tls_cert_pem = self.tls_cert_pem.clone();
+                let tls_key_pem = self.tls_key_pem.clone();
+                
+                // Create listener using options
+                let listener = match self.create_listener() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        tracing::error!(
+                            service = "ssm-api",
+                            error = %e,
+                            "Failed to bind SSMAPI server"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 tokio::spawn(async move {
-                    if let (Some(cert_path), Some(key_path)) = (tls_cert_path, tls_key_path) {
-                        // HTTPS with TLS (auto HTTP/2)
-                        use axum_server::tls_rustls::RustlsConfig;
+                    // Check if TLS is configured
+                    let tls_config_res = if let (Some(cert_path), Some(key_path)) = (&tls_cert_path, &tls_key_path) {
+                         Some(axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await)
+                    } else if let (Some(cert_pem), Some(key_pem)) = (&tls_cert_pem, &tls_key_pem) {
+                         Some(axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem.clone(), key_pem.clone()).await)
+                    } else {
+                         None
+                    };
 
-                        let config = match RustlsConfig::from_pem_file(&cert_path, &key_path).await
-                        {
+                    if let Some(config_res) = tls_config_res {
+                        // HTTPS with TLS
+                        let config = match config_res {
                             Ok(c) => c,
                             Err(e) => {
                                 tracing::error!(
                                     service = "ssm-api",
                                     error = %e,
-                                    cert = ?cert_path,
-                                    key = ?key_path,
                                     "Failed to load TLS config"
                                 );
                                 return;
@@ -490,8 +594,20 @@ impl Service for SsmapiService {
                             tracing::info!(service = "ssm-api", "Received shutdown signal");
                             handle_clone.shutdown();
                         });
+                        
+                        // Convert back to std::net::TcpListener for axum_server
+                        let std_listener = match listener.into_std() {
+                            Ok(l) => {
+                                let _ = l.set_nonblocking(true); // axum_server expects this IIRC or handles it
+                                l
+                            }
+                            Err(e) => {
+                                tracing::error!(service = "ssm-api", error = %e, "Failed to convert listener");
+                                return;
+                            }
+                        };
 
-                        if let Err(e) = axum_server::bind_rustls(listen_addr, config)
+                        if let Err(e) = axum_server::from_tcp_rustls(std_listener, config)
                             .handle(handle)
                             .serve(router.into_make_service())
                             .await
@@ -500,18 +616,6 @@ impl Service for SsmapiService {
                         }
                     } else {
                         // Plain HTTP
-                        let listener = match tokio::net::TcpListener::bind(listen_addr).await {
-                            Ok(l) => l,
-                            Err(e) => {
-                                tracing::error!(
-                                    service = "ssm-api",
-                                    error = %e,
-                                    "Failed to bind SSMAPI server"
-                                );
-                                return;
-                            }
-                        };
-
                         tracing::info!(
                             service = "ssm-api",
                             listen = %listen_addr,
@@ -528,7 +632,7 @@ impl Service for SsmapiService {
                         }
                     }
                 });
-
+                
                 Ok(())
             }
             StartStage::PostStart => {

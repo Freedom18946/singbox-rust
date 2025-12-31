@@ -101,6 +101,8 @@ pub struct Resolve1ManagerState {
     pub default_route_sequence: RwLock<Vec<i32>>,
     pub update_callback: RwLock<Option<UpdateCallback>>,
     pub delete_callback: RwLock<Option<DeleteCallback>>,
+    /// DNS router for cache management (wired by supervisor).
+    pub dns_router: RwLock<Option<Arc<dyn crate::dns::DnsRouter>>>,
 }
 
 impl Default for Resolve1ManagerState {
@@ -116,6 +118,19 @@ impl Resolve1ManagerState {
             default_route_sequence: RwLock::new(Vec::new()),
             update_callback: RwLock::new(None),
             delete_callback: RwLock::new(None),
+            dns_router: RwLock::new(None),
+        }
+    }
+
+    /// Set the DNS router for cache management.
+    pub fn set_dns_router(&self, router: Arc<dyn crate::dns::DnsRouter>) {
+        *self.dns_router.write() = Some(router);
+    }
+
+    /// Clear the DNS cache if router is wired.
+    pub fn clear_cache(&self) {
+        if let Some(router) = self.dns_router.read().as_ref() {
+            router.clear_cache();
         }
     }
 

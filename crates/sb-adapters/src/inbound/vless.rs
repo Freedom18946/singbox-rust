@@ -491,7 +491,8 @@ async fn handle_conn_impl(
             }
         }
         RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
-        RDecision::Reject => return Err(anyhow!("vless: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vless: rejected by rules")),
+        _ => return Err(anyhow!("vless: unsupported routing action")),
     };
 
     // Step 9: Bidirectional relay (plain)

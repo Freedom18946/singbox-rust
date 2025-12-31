@@ -10,7 +10,8 @@ use sb_config::ir::DnsServerIR;
 #[cfg(feature = "dns_udp")]
 #[test]
 fn test_udp_url_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test UDP URL parsing
     let upstream = build_upstream("udp://8.8.8.8:53")?;
@@ -26,7 +27,8 @@ fn test_udp_url_parsing() -> Result<()> {
 #[cfg(feature = "dns_dot")]
 #[test]
 fn test_dot_url_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoT URL parsing with dot:// scheme
     let upstream = build_upstream("dot://1.1.1.1:853")?;
@@ -42,7 +44,8 @@ fn test_dot_url_parsing() -> Result<()> {
 #[cfg(feature = "dns_doh")]
 #[test]
 fn test_doh_url_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoH URL parsing
     let upstream = build_upstream("https://dns.google/dns-query")?;
@@ -58,7 +61,8 @@ fn test_doh_url_parsing() -> Result<()> {
 #[cfg(feature = "dns_doq")]
 #[test]
 fn test_doq_url_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoQ URL parsing with doq:// scheme
     let upstream = build_upstream("doq://9.9.9.9:853")?;
@@ -74,7 +78,8 @@ fn test_doq_url_parsing() -> Result<()> {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_url_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoH3 URL parsing with doh3:// scheme
     let upstream = build_upstream("doh3://1.1.1.1:443/dns-query")?;
@@ -94,7 +99,8 @@ fn test_doh3_url_parsing() -> Result<()> {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_url_parsing_with_default_port() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoH3 URL parsing without explicit port (should default to 443)
     let upstream = build_upstream("doh3://cloudflare-dns.com/dns-query")?;
@@ -106,7 +112,8 @@ fn test_doh3_url_parsing_with_default_port() -> Result<()> {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_url_parsing_with_default_path() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test DoH3 URL parsing without explicit path (should default to /dns-query)
     let upstream = build_upstream("doh3://1.1.1.1:443")?;
@@ -138,7 +145,8 @@ fn test_doh3_server_ir_parsing() -> Result<()> {
         skip_cert_verify: Some(false),
     };
 
-    let upstream = build_upstream_from_server(&server_ir)?;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let upstream = build_upstream_from_server(&server_ir, &registry)?;
     assert!(upstream.is_some(), "DoH3 server IR should be parsed");
 
     Ok(())
@@ -160,7 +168,8 @@ fn test_doh3_server_ir_with_tls_options() -> Result<()> {
         skip_cert_verify: Some(false),
     };
 
-    let upstream = build_upstream_from_server(&server_ir)?;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let upstream = build_upstream_from_server(&server_ir, &registry)?;
     assert!(upstream.is_some(), "DoH3 with TLS options should be parsed");
 
     Ok(())
@@ -168,7 +177,8 @@ fn test_doh3_server_ir_with_tls_options() -> Result<()> {
 
 #[test]
 fn test_system_resolver_parsing() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test system resolver parsing
     let upstream = build_upstream("system")?;
@@ -199,7 +209,8 @@ fn test_all_dns_transports_available() {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_config_roundtrip() -> Result<()> {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // Test that DoH3 config can be parsed and used
     let urls = vec![
@@ -233,7 +244,8 @@ fn test_doh3_config_roundtrip() -> Result<()> {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_vs_doh_url_schemes() {
-    use sb_core::dns::config_builder::build_upstream;
+    let registry = sb_core::dns::transport::TransportRegistry::new();
+    let build_upstream = |u| sb_core::dns::config_builder::build_upstream(u, &registry);
 
     // DoH uses https://
     let doh_result = build_upstream("https://1.1.1.1/dns-query");
