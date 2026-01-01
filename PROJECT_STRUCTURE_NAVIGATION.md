@@ -8,7 +8,7 @@
 > 3. 📋 Plan development paths based on this document
 >
 > **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: December 28, 2025 (Validated against current repository structure)
+> **Last Updated**: January 1, 2026 (Validated against current repository structure)
 
 ## Project Overview
 
@@ -368,4 +368,4 @@ When updating, please follow this format:
 
 **⚠️ Important Reminder**: The accuracy of this document directly impacts development efficiency and code quality. Please strictly abide by the maintenance guidelines to ensure the document stays in sync with the actual project structure.
 
-*Document Version: v1.5 | Last Updated: December 28, 2025 | Last Verified: December 28, 2025*
+*Document Version: v1.6 | Last Updated: January 1, 2026 | Last Verified: January 1, 2026*

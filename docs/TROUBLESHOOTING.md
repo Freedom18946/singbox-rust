@@ -2,7 +2,7 @@
 
 **Version**: 1.0.0  
 **Protocols**: Trojan, Shadowsocks (Phase 1)  
-**Last Updated**: 2025-11-27
+**Last Updated**: 2026-01-01
 
 ---
 
@@ -602,4 +602,4 @@ tar -czf singbox-debug-$(date +%Y%m%d-%H%M%S).tar.gz \
 ---
 
 **Document Version**: 1.0.0  
-**Last Updated**: 2025-11-27
+**Last Updated**: 2026-01-01

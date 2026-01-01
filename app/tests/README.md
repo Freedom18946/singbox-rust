@@ -414,4 +414,4 @@ This test suite is actively maintained. When adding new features:
 
 ---
 
-Last updated: 2025-10-19
+Last updated: 2026-01-01

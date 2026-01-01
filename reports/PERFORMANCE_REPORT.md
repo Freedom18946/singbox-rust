@@ -2,7 +2,7 @@
 
 **Baseline**: Go sing-box 1.12.12  
 **Comparison**: Rust singbox-rust  
-**Last Updated**: 2025-11-26  
+**Last Updated**: 2026-01-01  
 **Test Environment**: Apple M1 Pro, macOS 14.5
 
 ---

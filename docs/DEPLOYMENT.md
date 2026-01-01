@@ -3,7 +3,7 @@
 **Version**: v1.0.0 Phase 1  
 **Protocols**: Trojan, Shadowsocks  
 **Status**: Production Ready  
-**Last Updated**: 2025-11-27
+**Last Updated**: 2026-01-01
 
 ---
 

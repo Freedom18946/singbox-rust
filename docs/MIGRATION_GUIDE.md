@@ -2,7 +2,7 @@
 
 This guide helps users migrate from sing-box Go version 1.12.12 to the Rust implementation, documenting feature parity, configuration compatibility, and known limitations.
 
-**Last Updated:** 2025-12-07  
+**Last Updated:** 2026-01-01  
 **Baseline:** sing-box 1.12.12 (Go)  
 **Target:** singbox-rust v0.2.0+
 

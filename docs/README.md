@@ -172,6 +172,6 @@ See [Documentation Contributing Guide](04-development/contributing/documentation
 
 **Documentation Version**: v2.0 (restructured)  
 **Project Version**: v0.2.0+  
-**Last Updated**: 2025-11-23
+**Last Updated**: 2026-01-01
 
 > _Never break userspace_ — we add, we don't remove.

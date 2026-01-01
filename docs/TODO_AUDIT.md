@@ -190,31 +190,49 @@ _No blocking TODOs found - all critical functionality is complete._
 
 ---
 
-## Appendix: TODO Locations by File
+## Appendix: TODO Locations by File (Updated 2026-01-01)
 
 ### Test Files
-- `app/tests/tuic_outbound_e2e.rs`: 24 TODOs (E2E placeholders)
-- `app/tests/bench_p0_protocols.rs`: 6 TODOs (benchmark placeholders)
-- `app/tests/protocol_chain_e2e.rs`: 3 TODOs (chain test placeholders)
-- `app/tests/bench_socks5_performance.rs`: 3 TODOs (SOCKS5 server setup)
-- `app/tests/http_auth_timeout.rs`: 1 TODO (legacy rewrite)
-- `fuzz/targets/`: 4 TODOs (protocol parsing placeholders)
+- `app/tests/`: 0 TODOs ✅ (all resolved)
+- `fuzz/targets/`: 0 TODOs ✅ (all resolved)
 
 ### Core Crates
-- `crates/sb-adapters/src/inbound/router_connector.rs`: 7 TODOs (future router integration)
-- `crates/sb-config/src/lib.rs`: 4 TODOs (circular dependency)
-- `crates/sb-adapters/src/inbound/trojan.rs`: 3 TODOs (TLS wrapper)
-- `crates/sb-adapters/src/inbound/hysteria2.rs`: 3 TODOs (shutdown/metrics/routing)
-- `crates/sb-adapters/src/inbound/hysteria.rs`: 0 TODOs (resolved)
-- `crates/sb-adapters/src/inbound/naive.rs`: 1 TODO (tracking)
-- `crates/sb-platform/src/process/native_macos.rs`: 2 TODOs (optimization)
-- `crates/sb-adapters/src/inbound/vless.rs`: 1 TODO (TLS wrapper)
-- `crates/sb-adapters/src/inbound/tun_enhanced.rs`: 1 TODO (router selection)
-- `crates/sb-adapters/src/outbound/anytls.rs`: 0 TODOs (resolved)
-- `crates/sb-adapters/src/service_stubs.rs`: 1 TODO (cross-platform test)
-- `crates/sb-tls/src/lib.rs`: 1 TODO (browser fingerprint)
-- `crates/sb-transport/src/pool/circuit_breaker.rs`: 0 TODOs (resolved)
-- `crates/sb-transport/src/tls.rs`: 1 TODO (ECH payload)
-- `crates/sb-transport/src/grpc.rs`: 1 TODO (server-side)
 
-**Total**: 70+ TODOs across test and core files, none blocking protocol coverage milestone.
+#### Active TODOs (28 total)
+
+| File | Count | Category |
+|------|-------|----------|
+| `sb-adapters/src/outbound/shadowsocksr/*.rs` | 3 | ⊘ De-scoped (ShadowsocksR deprecated) |
+| `sb-adapters/src/inbound/tun/mod.rs` | 4 | Active development (session management) |
+| `sb-adapters/src/register.rs` | 3 | Config mapping (transport/reality/users) |
+| `sb-core/src/router/engine.rs` | 1 | Protocol inference |
+| `sb-core/src/router/sniff.rs` | 1 | SNI extraction enhancement |
+| `sb-core/src/router/context_pop.rs` | 2 | Process/package lookup |
+| `sb-core/src/router/rules.rs` | 2 | Route options/sniff override |
+| `sb-core/src/dns/transport/resolved.rs` | 1 | Parallel optimization |
+| `sb-core/src/dns/rule_engine.rs` | 1 | Parallel queries |
+| `sb-core/src/adapter/bridge.rs` | 1 | DNS router wiring |
+| `sb-transport/src/tls.rs` | 1 | ECH (library limitation) |
+| `sb-transport/src/tailscale_dns.rs` | 5 | ⊘ Tailscale de-scoped |
+| `sb-transport/src/dialer.rs` | 1 | Interface binding |
+| `app/src/bootstrap.rs` | 1 | Service wiring |
+| `app/src/cli/dns_cli.rs` | 1 | Cache statistics |
+
+#### Resolved (0 TODOs remaining)
+- `sb-adapters/src/inbound/trojan.rs` ✅
+- `sb-adapters/src/inbound/hysteria.rs` ✅
+- `sb-adapters/src/inbound/hysteria2.rs` ✅
+- `sb-adapters/src/inbound/naive.rs` ✅
+- `sb-adapters/src/inbound/vless.rs` ✅
+- `sb-adapters/src/inbound/tun_enhanced.rs` ✅
+- `sb-adapters/src/outbound/anytls.rs` ✅
+- `sb-adapters/src/service_stubs.rs` ✅
+- `sb-config/src/lib.rs` ✅
+- `sb-platform/src/process/native_macos.rs` ✅
+- `sb-tls/src/lib.rs` ✅
+- `sb-transport/src/pool/circuit_breaker.rs` ✅
+- `sb-transport/src/grpc.rs` ✅
+
+**Total**: ~28 TODOs in core crates (down from 70+), none blocking protocol coverage milestone.
+- 8 are de-scoped (ShadowsocksR + Tailscale)
+- 20 are active enhancements/optimizations

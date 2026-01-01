@@ -404,4 +404,4 @@ cargo run -p app -- run -c config.json --admin-impl debug
 
 ---
 
-**Last Updated**: 2025-10-18
+**Last Updated**: 2026-01-01

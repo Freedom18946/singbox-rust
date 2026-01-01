@@ -71,5 +71,5 @@ Documents are archived when:
 
 ---
 
-**Last Updated**: 2025-10-18  
+**Last Updated**: 2026-01-01  
 **Archive Start Date**: v0.2.0+ (October 2025)

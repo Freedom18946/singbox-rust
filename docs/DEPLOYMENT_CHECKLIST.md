@@ -328,5 +328,5 @@ ssh rust-singbox-1 "systemctl restart singbox"
 ---
 
 **Deployment Status:** ✅ READY  
-**Last Updated:** 2025-11-28  
+**Last Updated:** 2026-01-01  
 **Version:** 1.0.0-rc1

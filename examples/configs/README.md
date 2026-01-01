@@ -308,5 +308,5 @@ RUST_LOG=sb_core=debug,app=info cargo run -p app -- run -c CONFIG
 
 ---
 
-**Last Updated**: 2025-10-18  
+**Last Updated**: 2026-01-01  
 **Config Version**: v0.2.0+

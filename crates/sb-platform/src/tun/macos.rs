@@ -32,6 +32,7 @@ impl MacOsTun {
         // SAFETY: fd is valid
         let ret = unsafe { libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) };
         if ret < 0 {
+        // SAFETY: fd is a valid file descriptor obtained from the socket call above
              unsafe { libc::close(fd); }
              return Err(TunError::IoError(std::io::Error::last_os_error()));
         }

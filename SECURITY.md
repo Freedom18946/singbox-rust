@@ -319,5 +319,5 @@ RUSTFLAGS="-Z sanitizer=address" cargo test
 
 ---
 
-*Last updated: 2025-09-28*
-*Next review: 2025-12-28*
+*Last updated: 2026-01-01*
+*Next review: 2026-04-01*

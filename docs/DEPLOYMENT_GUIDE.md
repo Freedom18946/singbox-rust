@@ -2,7 +2,7 @@
 
 **Version**: 1.0.0  
 **Target Protocols**: Trojan, Shadowsocks (Phase 1)  
-**Last Updated**: 2025-11-27
+**Last Updated**: 2026-01-01
 
 ---
 
@@ -520,4 +520,4 @@ kubectl set image deployment/singbox-rust \
 ---
 
 **Document Version**: 1.0.0  
-**Last Updated**: 2025-11-27
+**Last Updated**: 2026-01-01
