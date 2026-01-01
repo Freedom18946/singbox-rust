@@ -121,6 +121,8 @@ pub struct DefaultRule {
     pub rule_set_ip_cidr_accept_empty: bool,
     /// Clash mode
     pub clash_mode: Option<String>,
+    /// Inbound tag
+    pub inbound: Vec<String>,
 }
 
 /// Logical rule with AND/OR operations

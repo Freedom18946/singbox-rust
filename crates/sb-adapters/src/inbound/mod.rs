@@ -80,5 +80,5 @@ pub mod tun_session;
 #[cfg(feature = "tun")]
 pub mod tun_packet;
 
-#[cfg(feature = "tun")]
-pub mod tun_enhanced;
+// #[cfg(feature = "tun")]
+// pub mod tun_enhanced;

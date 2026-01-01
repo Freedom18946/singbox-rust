@@ -354,7 +354,7 @@ impl SwitchboardBuilder {
                 #[cfg(feature = "out_ssh")]
                 {
                     use crate::outbound::crypto_types::{HostPort as Hp, OutboundTcp};
-                    use crate::outbound::ssh_stub::{SshConfig, SshOutbound};
+                    use crate::outbound::ssh::{SshConfig, SshOutbound};
 
                     // Map IR → SSH config
                     let server = ir
@@ -405,7 +405,7 @@ impl SwitchboardBuilder {
                     };
 
                     let outbound = SshOutbound::new(cfg)
-                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e)))?;
+                        .map_err(|e| AdapterError::Other(e))?;
                     #[derive(Debug, Clone)]
                     struct SshConn {
                         inner: std::sync::Arc<SshOutbound>,

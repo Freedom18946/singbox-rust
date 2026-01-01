@@ -9,98 +9,18 @@ use std::num::NonZeroUsize;
 // FakeIP Store/Storage/Metadata Traits (Go parity)
 // ============================================================================
 
-/// Metadata for a FakeIP mapping (Go parity: fakeip.Metadata)
-#[derive(Debug, Clone)]
-pub struct FakeIPMetadata {
-    /// The domain name mapped to this IP
-    pub domain: String,
-    /// Creation timestamp (Unix seconds)
-    pub created_at: u64,
-    /// Last access timestamp (Unix seconds)
-    pub last_access: u64,
-}
-
-/// FakeIP store interface for in-memory operations (Go parity: adapter.FakeIPStore)
-pub trait FakeIPStore: Send + Sync {
-    /// Check if FakeIP is enabled
-    fn is_enabled(&self) -> bool;
-    
-    /// Allocate a FakeIP for a domain (v4)
-    fn allocate_v4(&self, domain: &str) -> IpAddr;
-    
-    /// Allocate a FakeIP for a domain (v6)
-    fn allocate_v6(&self, domain: &str) -> IpAddr;
-    
-    /// Check if an IP is a FakeIP
-    fn is_fake_ip(&self, ip: &IpAddr) -> bool;
-    
-    /// Look up the domain for a FakeIP
-    fn lookup(&self, ip: &IpAddr) -> Option<String>;
-    
-    /// Get metadata for a FakeIP
-    fn get_metadata(&self, ip: &IpAddr) -> Option<FakeIPMetadata>;
-    
-    /// Reset the store (clear all mappings)
-    fn reset(&self);
-}
+// ============================================================================
+// FakeIP Store/Storage/Metadata Traits (Go parity)
+// ============================================================================
 
 /// FakeIP storage interface for persistence (Go parity: adapter.FakeIPStorage)
-#[async_trait::async_trait]
-pub trait FakeIPStorage: Send + Sync {
-    /// Load all FakeIP mappings from storage
-    async fn load(&self) -> anyhow::Result<Vec<(IpAddr, FakeIPMetadata)>>;
-    
-    /// Save a FakeIP mapping to storage
-    async fn save(&self, ip: IpAddr, metadata: &FakeIPMetadata) -> anyhow::Result<()>;
-    
-    /// Delete a FakeIP mapping from storage
-    async fn delete(&self, ip: &IpAddr) -> anyhow::Result<()>;
-    
-    /// Clear all mappings
-    async fn clear(&self) -> anyhow::Result<()>;
-    
-    /// Flush pending writes to disk
-    async fn flush(&self) -> anyhow::Result<()>;
-}
+/// Note: Synchronous to match allocate_v4/allocate_v6 APIs which are called in sync contexts.
+pub trait FakeIpStorage: Send + Sync + std::fmt::Debug {
+    /// Get the fake IP for a domain if it exists in storage
+    fn get_by_domain(&self, domain: &str) -> Option<IpAddr>;
 
-/// Combined FakeIP store with optional persistence backing (Go parity)
-pub struct PersistentFakeIPStore {
-    store: Arc<dyn FakeIPStore>,
-    storage: Option<Arc<dyn FakeIPStorage>>,
-}
-
-impl PersistentFakeIPStore {
-    pub fn new(store: Arc<dyn FakeIPStore>, storage: Option<Arc<dyn FakeIPStorage>>) -> Self {
-        Self { store, storage }
-    }
-    
-    pub fn store(&self) -> &Arc<dyn FakeIPStore> {
-        &self.store
-    }
-    
-    pub fn storage(&self) -> Option<&Arc<dyn FakeIPStorage>> {
-        self.storage.as_ref()
-    }
-    
-    /// Restore state from persistent storage
-    pub async fn restore(&self) -> anyhow::Result<usize> {
-        if let Some(storage) = &self.storage {
-            let entries = storage.load().await?;
-            // In a real implementation, we'd restore these to the store
-            // For now, we just return the count
-            Ok(entries.len())
-        } else {
-            Ok(0)
-        }
-    }
-    
-    /// Persist current state to storage
-    pub async fn persist(&self) -> anyhow::Result<()> {
-        if let Some(storage) = &self.storage {
-            storage.flush().await?;
-        }
-        Ok(())
-    }
+    /// Store a new mapping
+    fn store(&self, domain: &str, ip: IpAddr);
 }
 
 // ============================================================================
@@ -139,6 +59,8 @@ struct State {
     by_ip: LruCache<IpAddr, String>,
     #[allow(dead_code)]
     cap: usize,
+    // Persistence
+    storage: Option<Arc<dyn FakeIpStorage>>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -178,6 +100,7 @@ fn state() -> &'static Mutex<State> {
             by_domain_v6: LruCache::new(cap_nz),
             by_ip: LruCache::new(cap_nz),
             cap,
+            storage: None,
         })
     })
 }
@@ -213,19 +136,29 @@ fn refresh_from_env(st: &mut State) {
         return;
     }
 
+    // Preserve existing mappings and storage when resizing
     let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
-    *st = State {
-        v4_base,
-        v4_mask,
-        v4_current: start_v4(v4_base),
-        v6_base,
-        v6_mask,
-        v6_current: start_v6(v6_base),
-        by_domain_v4: LruCache::new(cap_nz),
-        by_domain_v6: LruCache::new(cap_nz),
-        by_ip: LruCache::new(cap_nz),
-        cap,
-    };
+    
+    // Create new caches with new capacity
+    let mut new_v4 = LruCache::new(cap_nz);
+    let mut new_v6 = LruCache::new(cap_nz);
+    let mut new_ip = LruCache::new(cap_nz);
+
+    // Copy over existing items (LRU order might be reset but data preserved)
+    for (k, v) in st.by_domain_v4.iter() { new_v4.put(k.clone(), *v); }
+    for (k, v) in st.by_domain_v6.iter() { new_v6.put(k.clone(), *v); }
+    for (k, v) in st.by_ip.iter() { new_ip.put(*k, v.clone()); }
+
+    st.v4_base = v4_base;
+    st.v4_mask = v4_mask;
+    // v4_current should ideally check against new base but for simplicity keeping logic
+    st.v6_base = v6_base;
+    st.v6_mask = v6_mask;
+    st.cap = cap;
+    st.by_domain_v4 = new_v4;
+    st.by_domain_v6 = new_v6;
+    st.by_ip = new_ip;
+    // storage is preserved in `st` (we modify mutable ref)
 }
 
 pub fn enabled() -> bool {
@@ -234,12 +167,28 @@ pub fn enabled() -> bool {
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
+pub fn set_storage(storage: Arc<dyn FakeIpStorage>) {
+    let mut st = state().lock();
+    st.storage = Some(storage);
+}
+
 pub fn allocate_v4(domain: &str) -> IpAddr {
     let mut st = state().lock();
     refresh_from_env(&mut st);
     if let Some(ip) = st.by_domain_v4.get(domain) {
         return IpAddr::V4(*ip);
     }
+    
+    // Check persistence
+    if let Some(storage) = st.storage.clone() {
+        if let Some(IpAddr::V4(ip)) = storage.get_by_domain(domain) {
+            st.by_domain_v4.put(domain.to_string(), ip);
+            st.by_ip.put(IpAddr::V4(ip), domain.to_string());
+            // Update current pointer loosely if needed, but not strictly required for correctness
+            return IpAddr::V4(ip);
+        }
+    }
+
     let candidate = ipv4_add(st.v4_current, 1);
     let ip = if is_fake_v4(candidate, st.v4_base, st.v4_mask) {
         candidate
@@ -250,6 +199,11 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
     st.by_domain_v4.put(domain.to_string(), ip);
     let ipaddr = IpAddr::V4(ip);
     st.by_ip.put(ipaddr, domain.to_string());
+    
+    if let Some(storage) = st.storage.clone() {
+        storage.store(domain, ipaddr);
+    }
+    
     ipaddr
 }
 
@@ -259,6 +213,16 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     if let Some(ip) = st.by_domain_v6.get(domain) {
         return IpAddr::V6(*ip);
     }
+
+    // Check persistence
+    if let Some(storage) = st.storage.clone() {
+        if let Some(IpAddr::V6(ip)) = storage.get_by_domain(domain) {
+            st.by_domain_v6.put(domain.to_string(), ip);
+            st.by_ip.put(IpAddr::V6(ip), domain.to_string());
+            return IpAddr::V6(ip);
+        }
+    }
+
     let candidate = ipv6_add(st.v6_current, 1);
     let ip = if is_fake_v6(candidate, st.v6_base, st.v6_mask) {
         candidate
@@ -269,6 +233,11 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     st.by_domain_v6.put(domain.to_string(), ip);
     let ipaddr = IpAddr::V6(ip);
     st.by_ip.put(ipaddr, domain.to_string());
+    
+    if let Some(storage) = st.storage.clone() {
+        storage.store(domain, ipaddr);
+    }
+    
     ipaddr
 }
 

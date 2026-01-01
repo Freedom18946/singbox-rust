@@ -44,81 +44,64 @@ impl Service for StubService {
 /// Build a Resolved service stub.
 ///
 /// Returns `Some` and logs a warning that Resolved is not implemented.
+/// Build a Resolved service stub.
+///
+/// Returns `Some` and logs a warning that Resolved is not implemented.
 pub fn build_resolved_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
-    #[cfg(all(target_os = "linux", feature = "service_resolved"))]
-    {
-        // Prefer the systemd-resolved D-Bus implementation when available.
-        crate::service::resolved_impl::build_resolved_service(ir, ctx)
-    }
-
-    #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
-    {
-        let _ = ctx;
-        let tag = ir.tag.as_deref().unwrap_or("resolved");
-        tracing::warn!(
-            service_type = "resolved",
-            tag = tag,
-            "Resolved service requires Linux + `service_resolved`; falling back to stub"
-        );
-        Some(Arc::new(StubService {
-            ty_str: "resolved",
-            tag: tag.to_string(),
-        }))
-    }
+    let _ = ctx;
+    let tag = ir.tag.as_deref().unwrap_or("resolved");
+    tracing::warn!(
+        service_type = "resolved",
+        tag = tag,
+        "Resolved service requires Linux + `service_resolved`; falling back to stub"
+    );
+    Some(Arc::new(StubService {
+        ty_str: "resolved",
+        tag: tag.to_string(),
+    }))
 }
 
 /// Build a SSM API service stub.
 ///
 /// Returns `Some` with the full SSMAPI implementation.
+/// Build a SSM API service stub.
+///
+/// Returns `Some` and logs a warning that SSM API is not implemented.
 pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
-    // Delegate to the full implementation in sb-core
-    #[cfg(feature = "service_ssmapi")]
-    {
-        sb_core::services::ssmapi::build_ssmapi_service(ir, ctx)
-    }
+    let _ = ctx;
+    let tag = ir.tag.as_deref().unwrap_or("ssm-api");
+    tracing::warn!(
+        service_type = "ssm-api",
+        tag = tag,
+        "Shadowsocks Manager API service requires the `service_ssmapi` feature; rebuild with `--features service_ssmapi`"
+    );
 
-    #[cfg(not(feature = "service_ssmapi"))]
-    {
-        let _ = ctx;
-        let tag = ir.tag.as_deref().unwrap_or("ssm-api");
-        tracing::warn!(
-            service_type = "ssm-api",
-            tag = tag,
-            "Shadowsocks Manager API service requires the `service_ssmapi` feature; rebuild with `--features service_ssmapi`"
-        );
-
-        // Return stub that will error when start() is called
-        Some(Arc::new(StubService {
-            ty_str: "ssm-api",
-            tag: tag.to_string(),
-        }))
-    }
+    // Return stub that will error when start() is called
+    Some(Arc::new(StubService {
+        ty_str: "ssm-api",
+        tag: tag.to_string(),
+    }))
 }
 
 /// Build a DERP service stub.
 ///
 /// Returns `Some` and logs a warning that DERP is not implemented.
+/// Build a DERP service stub.
+///
+/// Returns `Some` and logs a warning that DERP is not implemented.
 pub fn build_derp_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
-    #[cfg(feature = "service_derp")]
-    {
-        sb_core::services::derp::build_derp_service(ir, ctx)
-    }
+    let _ = ctx;
+    let tag = ir.tag.as_deref().unwrap_or("derp");
+    tracing::warn!(
+        service_type = "derp",
+        tag = tag,
+        "DERP service requires the `service_derp` feature; rebuild with `--features service_derp`"
+    );
 
-    #[cfg(not(feature = "service_derp"))]
-    {
-        let _ = ctx;
-        let tag = ir.tag.as_deref().unwrap_or("derp");
-        tracing::warn!(
-            service_type = "derp",
-            tag = tag,
-            "DERP service requires the `service_derp` feature; rebuild with `--features service_derp`"
-        );
-
-        Some(Arc::new(StubService {
-            ty_str: "derp",
-            tag: tag.to_string(),
-        }))
-    }
+    Some(Arc::new(StubService {
+        ty_str: "derp",
+        tag: tag.to_string(),
+    }))
 }
 
 /// Register all service stubs.
@@ -126,8 +109,28 @@ pub fn build_derp_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dy
 /// This should be called during adapter initialization to register
 /// Resolved, SSM API, and DERP service stubs.
 pub fn register_service_stubs() {
+    #[cfg(all(target_os = "linux", feature = "service_resolved"))]
+    sb_core::service::register_service(
+        ServiceType::Resolved,
+        crate::service::resolved_impl::build_resolved_service,
+    );
+    #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
     sb_core::service::register_service(ServiceType::Resolved, build_resolved_service);
+
+    #[cfg(feature = "service_ssmapi")]
+    sb_core::service::register_service(
+        ServiceType::Ssmapi,
+        sb_core::services::ssmapi::build_ssmapi_service,
+    );
+    #[cfg(not(feature = "service_ssmapi"))]
     sb_core::service::register_service(ServiceType::Ssmapi, build_ssmapi_service);
+
+    #[cfg(feature = "service_derp")]
+    sb_core::service::register_service(
+        ServiceType::Derp,
+        sb_core::services::derp::build_derp_service,
+    );
+    #[cfg(not(feature = "service_derp"))]
     sb_core::service::register_service(ServiceType::Derp, build_derp_service);
 }
 

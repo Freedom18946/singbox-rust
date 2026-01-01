@@ -739,6 +739,7 @@ impl Startable for PlatformInterface {
 // Service traits
 pub trait CacheFile: Send + Sync + std::fmt::Debug {
     fn set_clash_mode(&self, mode: String);
+    fn set_selected(&self, group: &str, selected: &str);
 }
 
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {

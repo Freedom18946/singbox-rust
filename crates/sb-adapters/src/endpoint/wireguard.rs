@@ -244,6 +244,102 @@ impl Endpoint for WireGuardEndpoint {
         }
         Ok(())
     }
+
+    /// Dial a connection through the WireGuard tunnel.
+    ///
+    /// This implementation uses OS-level routing through the TUN device.
+    /// When the TUN device is configured with proper routes, connections
+    /// will automatically flow through the WireGuard tunnel.
+    fn dial_context(
+        &self,
+        network: sb_core::endpoint::Network,
+        destination: sb_core::endpoint::Socksaddr,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<sb_core::endpoint::EndpointStream>> + Send + '_>> {
+        let tag = self.inner.tag.clone();
+        
+        Box::pin(async move {
+            use sb_core::endpoint::{Network, SocksaddrHost};
+            
+            match network {
+                Network::Tcp => {
+                    // For TCP, connect through the tunnel using OS routing
+                    // The TUN device routes traffic through WireGuard
+                    let addr = match &destination.host {
+                        SocksaddrHost::Ip(ip) => {
+                            std::net::SocketAddr::new(*ip, destination.port)
+                        }
+                        SocksaddrHost::Fqdn(domain) => {
+                            // Resolve FQDN using system DNS (which may also route through tunnel)
+                            use tokio::net::lookup_host;
+                            let addr_str = format!("{}:{}", domain, destination.port);
+                            let mut addrs = lookup_host(&addr_str).await?;
+                            addrs.next().ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::NotFound,
+                                    format!("DNS resolution failed for {}", domain),
+                                )
+                            })?
+                        }
+                    };
+                    
+                    tracing::debug!(
+                        endpoint = %tag,
+                        destination = %addr,
+                        "WireGuard dial_context: connecting via TUN routing"
+                    );
+                    
+                    let stream = tokio::net::TcpStream::connect(addr).await?;
+                    Ok(Box::new(stream) as sb_core::endpoint::EndpointStream)
+                }
+                Network::Udp => {
+                    // UDP connections through endpoint dial_context are less common
+                    // Return unsupported for now - use listen_packet for UDP
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "UDP dial_context not supported; use listen_packet instead",
+                    ))
+                }
+            }
+        })
+    }
+
+    /// Listen for UDP packets through the WireGuard tunnel.
+    ///
+    /// Creates a UDP socket that routes through the TUN interface.
+    fn listen_packet(
+        &self,
+        _destination: sb_core::endpoint::Socksaddr,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<std::sync::Arc<tokio::net::UdpSocket>>> + Send + '_>> {
+        let tag = self.inner.tag.clone();
+        
+        Box::pin(async move {
+            tracing::debug!(
+                endpoint = %tag,
+                "WireGuard listen_packet: creating UDP socket via TUN routing"
+            );
+            
+            // Bind to any available port - OS routing will send through TUN
+            // Try IPv6 first (dual-stack), fallback to IPv4
+            let socket = match tokio::net::UdpSocket::bind("[::]:0").await {
+                Ok(s) => s,
+                Err(_) => tokio::net::UdpSocket::bind("0.0.0.0:0").await?,
+            };
+            
+            Ok(std::sync::Arc::new(socket))
+        })
+    }
+
+    /// Get local addresses assigned to this WireGuard interface.
+    fn local_addresses(&self) -> Vec<ipnet::IpNet> {
+        self.inner.ir.wireguard_address
+            .as_ref()
+            .map(|addrs| {
+                addrs.iter()
+                    .filter_map(|s| s.parse::<ipnet::IpNet>().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 pub fn build_wireguard_endpoint(

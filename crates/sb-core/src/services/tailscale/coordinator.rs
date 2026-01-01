@@ -8,6 +8,8 @@ use tracing::{debug, info};
 
 use crate::services::tailscale::crypto::TailscaleNoise;
 
+use std::path::PathBuf;
+
 /// Tailscale Coordination Client.
 ///
 /// Handles interaction with the Tailscale control plane:
@@ -32,6 +34,15 @@ pub struct Coordinator {
     netmap_tx: watch::Sender<Option<NetworkMap>>,
     /// Network Map receiver (retained for initial clone).
     netmap_rx: watch::Receiver<Option<NetworkMap>>,
+    /// Path to persisted state
+    #[allow(dead_code)]
+    state_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct State {
+    machine_key: String,
+    server_public_key: String,
 }
 
 /// Simplified Network Map response structure.
@@ -90,8 +101,22 @@ pub struct DerpNode {
 
 impl Coordinator {
     /// Create a new Coordinator.
-    pub fn new(control_url: impl Into<String>) -> Self {
+    pub fn new(control_url: impl Into<String>, state_path: impl Into<PathBuf>) -> Self {
         let (netmap_tx, netmap_rx) = watch::channel(None);
+        let state_path = state_path.into();
+
+        // Load or initialize state
+        let state = Self::load_state(&state_path).unwrap_or_else(|| {
+            let s = State {
+                machine_key: generate_machine_key(),
+                server_public_key: generate_machine_key(),
+            };
+            if let Err(e) = Self::save_state(&state_path, &s) {
+                tracing::warn!("Failed to save tailscale state: {}", e);
+            }
+            s
+        });
+
         Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -99,11 +124,33 @@ impl Coordinator {
                 .expect("Failed to build HTTP client"),
             control_url: control_url.into(),
             auth_key: None,
-            machine_key: generate_machine_key(), // TODO: persist this
-            server_public_key: generate_machine_key(), // TODO: config
+            machine_key: state.machine_key,
+            server_public_key: state.server_public_key,
             netmap_tx,
             netmap_rx,
+            state_path,
         }
+    }
+
+    fn load_state(path: &PathBuf) -> Option<State> {
+        if path.exists() {
+            match std::fs::read_to_string(path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(state) => return Some(state),
+                    Err(e) => tracing::warn!("Failed to parse tailscale state: {}", e),
+                },
+                Err(e) => tracing::warn!("Failed to read tailscale state: {}", e),
+            }
+        }
+        None
+    }
+
+    fn save_state(path: &PathBuf, state: &State) -> io::Result<()> {
+        let content = serde_json::to_string_pretty(state).map_err(io::Error::other)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)
     }
 
     /// Subscribe to Network Map updates.

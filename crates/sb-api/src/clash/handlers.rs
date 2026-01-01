@@ -356,6 +356,9 @@ pub async fn select_proxy(
              if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
                   if group.select_by_name(&request.name).await.is_ok() {
                       log::info!("Selected proxy '{}' for group '{}'", request.name, proxy_name);
+                      if let Some(cache) = &state.cache_file {
+                          cache.set_selected(&proxy_name, &request.name);
+                      }
                       return StatusCode::NO_CONTENT;
                   }
              }
@@ -673,6 +676,13 @@ pub async fn update_configs(
     // 2. Apply changes to runtime configuration
     // 3. Reload affected components (inbounds, outbounds, router, DNS)
     // 4. Handle graceful degradation if reload fails
+    
+    // Persist mode change if present
+    if let Some(mode) = obj.get("mode").and_then(|v| v.as_str()) {
+        if let Some(cache) = &_state.cache_file {
+            cache.set_clash_mode(mode.to_string());
+        }
+    }
 
     log::info!("Configuration validation passed. Runtime reload would be triggered here.");
 

@@ -10,7 +10,6 @@
 //! - Tracks active connections for management
 //! - Performs bidirectional copy between inbound and outbound
 
-use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

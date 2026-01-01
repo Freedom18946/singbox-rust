@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Match context for rule evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MatchContext {
     pub domain: Option<String>,
     pub destination_ip: Option<IpAddr>,
@@ -26,6 +26,7 @@ pub struct MatchContext {
     pub geosite_codes: Vec<String>,
     pub geoip_code: Option<String>,
     pub clash_mode: Option<String>,
+    pub inbound_tag: Option<String>,
 }
 
 /// Compiled regex cache
@@ -51,6 +52,7 @@ struct MatchKey {
     network: Option<String>,
     query_type: Option<String>,
     clash_mode: Option<String>,
+    inbound_tag: Option<String>,
 }
 
 impl RuleMatcher {
@@ -75,6 +77,7 @@ impl RuleMatcher {
             network: ctx.network.clone(),
             query_type: ctx.query_type.clone(),
             clash_mode: ctx.clash_mode.clone(),
+            inbound_tag: ctx.inbound_tag.clone(),
         };
 
         // Check cache
@@ -302,6 +305,17 @@ impl RuleMatcher {
             }
         }
 
+        // Inbound matching
+        if !rule.inbound.is_empty() {
+            if let Some(ref tag) = ctx.inbound_tag {
+                if !rule.inbound.iter().any(|t| t == tag) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
         // Clash Mode matching
         if let Some(ref mode) = rule.clash_mode {
             if let Some(ref ctx_mode) = ctx.clash_mode {
@@ -498,6 +512,7 @@ mod tests {
             geosite_codes: Vec::new(),
             geoip_code: None,
             clash_mode: None,
+            inbound_tag: None,
         };
 
         assert!(matcher.matches(&ctx));
@@ -521,6 +536,7 @@ mod tests {
             geosite_codes: Vec::new(),
             geoip_code: None,
             clash_mode: None,
+            inbound_tag: None,
         };
 
         assert!(matcher.matches(&ctx));
@@ -544,6 +560,7 @@ mod tests {
             geosite_codes: Vec::new(),
             geoip_code: None,
             clash_mode: None,
+            inbound_tag: None,
         };
 
         assert!(!matcher.matches(&ctx));
@@ -567,6 +584,7 @@ mod tests {
             geosite_codes: Vec::new(),
             geoip_code: None,
             clash_mode: None,
+            inbound_tag: None,
         };
 
         // First match (cache miss)

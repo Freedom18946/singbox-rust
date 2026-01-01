@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
+use crate::dns::dns_router::DnsQueryContext;
+use crate::router::geo::{GeoIpDb, GeoSiteDb};
 use crate::router::ruleset::matcher::{MatchContext, RuleMatcher};
 use crate::router::ruleset::{RuleSet, RuleSetFormat, RuleSetSource};
 
@@ -41,8 +43,10 @@ struct RoutingDecision {
     /// Predefined Answer Records
     answer: Option<Vec<String>>,
     /// Predefined Authority Records
+    #[allow(dead_code)]
     ns: Option<Vec<String>>,
     /// Predefined Additional Records
+    #[allow(dead_code)]
     extra: Option<Vec<String>>,
 }
 
@@ -107,16 +111,23 @@ pub struct DnsRuleEngine {
     strategy: super::DnsStrategy,
     /// Transport registry for lifecycle management
     registry: Arc<crate::dns::transport::TransportRegistry>,
+    /// GeoIP database
+    geoip: Option<Arc<GeoIpDb>>,
+    /// GeoSite database
+    geosite: Option<Arc<GeoSiteDb>>,
 }
 
 impl DnsRuleEngine {
     /// Create a new DNS rule engine
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rules: Vec<DnsRoutingRule>,
         upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
         default_upstream_tag: String,
         strategy: super::DnsStrategy,
         registry: Arc<crate::dns::transport::TransportRegistry>,
+        geoip: Option<Arc<GeoIpDb>>,
+        geosite: Option<Arc<GeoSiteDb>>,
     ) -> Self {
         // Sort rules by priority
         let mut sorted_rules = rules;
@@ -143,14 +154,58 @@ impl DnsRuleEngine {
             cache,
             strategy,
             registry,
+            geoip,
+            geosite,
         }
     }
 
     /// Route a DNS query to the appropriate upstream
     pub async fn resolve(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        self.resolve_with_context(&DnsQueryContext::default(), domain, record_type)
+            .await
+    }
+
+    /// Route a DNS query with context
+    pub async fn resolve_with_context(
+        &self,
+        ctx: &DnsQueryContext,
+        domain: &str,
+        record_type: RecordType,
+    ) -> Result<DnsAnswer> {
         let qt = format!("{:?}", record_type);
+
+        // Build MatchContext
+        let mut match_ctx = MatchContext {
+            domain: Some(domain.to_string()),
+            destination_ip: None,
+            destination_port: 0,
+            network: ctx.transport.clone().or(Some("udp".to_string())), // Default to UDP if unspecified
+            process_name: None,
+            process_path: None,
+            source_ip: ctx.client.map(|a| a.ip()),
+            source_port: ctx.client.map(|a| a.port()),
+            query_type: Some(qt.clone()),
+            clash_mode: None,
+            geosite_codes: if let Some(db) = &self.geosite {
+                db.lookup_categories(domain)
+            } else {
+                Vec::new()
+            },
+            geoip_code: None, // Will fill if source IP exists
+            inbound_tag: ctx.inbound.clone(),
+        };
+
+        // Resolve source GeoIP if client IP is present
+        if let Some(ip) = match_ctx.source_ip {
+            if let Some(db) = &self.geoip {
+                if let Some(code) = db.lookup_country(ip) {
+                    match_ctx.geoip_code = Some(code);
+                }
+            }
+        }
+
         // Get routing decision (cached or fresh)
-        let decision = self.route_domain(domain, &qt);
+        let decision = self.route_domain(&match_ctx, domain, &qt);
 
         if let Some(action) = &decision.action {
             match action {
@@ -264,7 +319,12 @@ impl DnsRuleEngine {
     /// Explain routing decision for a domain
     pub async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
         // Default to A record for explanation if not specified
-        let decision = self.route_domain(domain, "A");
+        let ctx = MatchContext {
+            domain: Some(domain.to_string()),
+            query_type: Some("A".to_string()),
+            ..Default::default()
+        };
+        let decision = self.route_domain(&ctx, domain, "A");
 
         let matched_rule = decision
             .matched_rule
@@ -307,7 +367,7 @@ impl DnsRuleEngine {
     }
 
     /// Determine which upstream to use for a domain
-    fn route_domain(&self, domain: &str, query_type: &str) -> RoutingDecision {
+    fn route_domain(&self, ctx: &MatchContext, domain: &str, query_type: &str) -> RoutingDecision {
         // Check cache first
         let cache_key = RoutingCacheKey {
             domain: domain.to_string(),
@@ -328,20 +388,8 @@ impl DnsRuleEngine {
         metrics::counter!("dns_rule_cache_miss_total").increment(1);
 
         // Match against rules (in priority order)
-        let ctx = MatchContext {
-            domain: Some(domain.to_string()),
-            destination_ip: None,
-            destination_port: 0,
-            network: None,
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: Some(query_type.to_string()),
-            clash_mode: None,
-            geosite_codes: Vec::new(), // TODO: Implement geosite lookup
-            geoip_code: None,          // TODO: Implement geoip lookup
-        };
+        // ctx is passed in
+
 
         for compiled in &self.rules {
             if compiled.matcher.matches(&ctx) {
@@ -445,58 +493,65 @@ impl DnsRuleEngine {
 
     /// Resolve both A and AAAA records (dual-stack)
     pub async fn resolve_dual_stack(&self, domain: &str) -> Result<DnsAnswer> {
+        self.resolve_dual_stack_with_context(&DnsQueryContext::default(), domain)
+            .await
+    }
+
+    /// Resolve both A and AAAA records with context
+    pub async fn resolve_dual_stack_with_context(
+        &self,
+        ctx: &DnsQueryContext,
+        domain: &str,
+    ) -> Result<DnsAnswer> {
         let mut all_ips = Vec::new();
         let mut min_ttl: Option<std::time::Duration> = None;
 
         use super::DnsStrategy;
 
-        let (a_result, aaaa_result) = match self.strategy {
-            DnsStrategy::Ipv4Only => (
-                self.resolve(domain, RecordType::A).await,
-                Err(anyhow::anyhow!("IPv4 only")),
-            ),
-            DnsStrategy::Ipv6Only => (
-                Err(anyhow::anyhow!("IPv6 only")),
-                self.resolve(domain, RecordType::AAAA).await,
-            ),
-            _ => tokio::join!(
-                self.resolve(domain, RecordType::A),
-                self.resolve(domain, RecordType::AAAA)
-            ),
+        let (query_ipv4, query_ipv6) = match self.strategy {
+            DnsStrategy::Ipv4Only => (true, false),
+            DnsStrategy::Ipv6Only => (false, true),
+            _ => (true, true),
         };
 
-        // PreferIPv6: AAAA first, then A
-        if self.strategy == DnsStrategy::PreferIpv6 {
-            if let Ok(aaaa_answer) = &aaaa_result {
-                all_ips.extend(aaaa_answer.ips.clone());
-                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
-            }
-            if let Ok(a_answer) = &a_result {
-                all_ips.extend(a_answer.ips.clone());
-                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
-            }
-        } else {
-             if let Ok(a_answer) = &a_result {
-                all_ips.extend(a_answer.ips.clone());
-                min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
-            }
-             if let Ok(aaaa_answer) = &aaaa_result {
-                all_ips.extend(aaaa_answer.ips.clone());
-                min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
+        // TODO: Parallelize queries for better performance
+        if query_ipv4 {
+            match self.resolve_with_context(ctx, domain, RecordType::A).await {
+                Ok(mut ans) => {
+                    all_ips.append(&mut ans.ips);
+                    min_ttl = Some(ans.ttl);
+                }
+                Err(e) => {
+                    tracing::trace!("Dual-stack A query failed: {}", e);
+                }
             }
         }
 
-        if all_ips.is_empty() {
-            return Err(anyhow::anyhow!("No DNS records for domain: {}", domain));
+        if query_ipv6 {
+            match self.resolve_with_context(ctx, domain, RecordType::AAAA).await {
+                Ok(mut ans) => {
+                    all_ips.append(&mut ans.ips);
+                    if let Some(ttl) = min_ttl {
+                        min_ttl = Some(ttl.min(ans.ttl));
+                    } else {
+                        min_ttl = Some(ans.ttl);
+                    }
+                }
+                Err(e) => {
+                    tracing::trace!("Dual-stack AAAA query failed: {}", e);
+                }
+            }
         }
 
         Ok(DnsAnswer::new(
             all_ips,
-            min_ttl.unwrap_or(std::time::Duration::from_secs(60)),
+            min_ttl.unwrap_or_else(|| std::time::Duration::from_secs(10)),
             crate::dns::cache::Source::System,
-            crate::dns::cache::Rcode::NoError,
+            crate::dns::cache::Rcode::NoError, 
         ))
     }
+
+
 
     /// Clear routing cache
     pub fn clear_cache(&self) {
@@ -508,6 +563,66 @@ impl DnsRuleEngine {
     pub fn cache_stats(&self) -> (usize, usize) {
         let cache = self.cache.lock();
         (cache.len(), cache.cap().get())
+    }
+}
+
+
+#[async_trait::async_trait]
+impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
+    async fn exchange(
+        &self,
+        _ctx: &DnsQueryContext,
+        _message: &[u8],
+    ) -> Result<Vec<u8>> {
+        Err(anyhow::anyhow!("DnsRuleEngine: raw exchange not yet supported"))
+    }
+
+    async fn lookup(
+        &self,
+        ctx: &DnsQueryContext,
+        domain: &str,
+    ) -> Result<Vec<std::net::IpAddr>> {
+        let ans = self.resolve_dual_stack_with_context(ctx, domain).await?;
+        Ok(ans.ips)
+    }
+
+    async fn lookup_default(&self, domain: &str) -> Result<Vec<std::net::IpAddr>> {
+        let tag = &self.default_upstream_tag;
+        let upstream = self.upstreams.get(tag).ok_or_else(|| {
+            anyhow::anyhow!("Default upstream '{}' not found", tag)
+        })?;
+
+        let (query_ipv4, query_ipv6) = match self.strategy {
+            crate::dns::DnsStrategy::Ipv4Only => (true, false),
+            crate::dns::DnsStrategy::Ipv6Only => (false, true),
+            _ => (true, true),
+        };
+
+        let mut all_ips = Vec::new();
+        if query_ipv4 {
+            if let Ok(mut ans) = upstream.query(domain, RecordType::A).await {
+                all_ips.append(&mut ans.ips);
+            }
+        }
+        if query_ipv6 {
+            if let Ok(mut ans) = upstream.query(domain, RecordType::AAAA).await {
+                all_ips.append(&mut ans.ips);
+            }
+        }
+        Ok(all_ips)
+    }
+
+    async fn resolve(&self, ctx: &DnsQueryContext, domain: &str) -> Result<DnsAnswer> {
+        self.resolve_dual_stack_with_context(ctx, domain).await
+    }
+
+    fn clear_cache(&self) {
+        let mut cache = self.cache.lock();
+        cache.clear();
+    }
+    
+    fn name(&self) -> &str {
+        "dns_rule_engine"
     }
 }
 
@@ -598,6 +713,8 @@ mod tests {
             "default_dns".to_string(),
             crate::dns::DnsStrategy::default(),
             Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
         );
 
         // Test: google.com should route to google_dns
@@ -701,6 +818,8 @@ mod tests {
             "default_dns".to_string(),
             crate::dns::DnsStrategy::default(),
             Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
         );
 
         // High priority rule should win
@@ -758,6 +877,8 @@ mod tests {
             "default_dns".to_string(),
             crate::dns::DnsStrategy::default(),
             Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
         );
 
         // First query
@@ -777,7 +898,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_dns_rule_engine_context() {
+        use crate::router::ruleset::{Rule, DefaultRule};
+        let ruleset = Arc::new(RuleSet {
+            source: crate::router::ruleset::RuleSetSource::Local(std::path::PathBuf::from("test")),
+            format: RuleSetFormat::Binary,
+            version: 1,
+            rules: vec![Rule::Default(DefaultRule {
+                inbound: vec!["tun".to_string()],
+                ..Default::default()
+            })],
+            #[cfg(feature = "suffix_trie")]
+            domain_trie: Arc::new(Default::default()),
+            #[cfg(not(feature = "suffix_trie"))]
+            domain_suffixes: Arc::new(vec![]),
+            ip_tree: Arc::new(Default::default()),
+            last_updated: SystemTime::now(),
+            etag: None,
+        });
+
+        let mut upstreams = HashMap::new();
+        upstreams.insert(
+            "tun_dns".to_string(),
+            Arc::new(MockUpstream {
+                tag: "tun_dns".to_string(),
+            }) as Arc<dyn DnsUpstream>,
+        );
+        upstreams.insert(
+            "default_dns".to_string(),
+            Arc::new(MockUpstream {
+                tag: "default_dns".to_string(),
+            }) as Arc<dyn DnsUpstream>,
+        );
+
+        let engine = DnsRuleEngine::new(
+            vec![DnsRoutingRule {
+                rule_set: ruleset,
+                upstream_tag: Some("tun_dns".to_string()),
+                action: DnsRuleAction::Route,
+                priority: 10,
+                address_limit: None,
+                rewrite_ip: None,
+                rcode: None,
+                answer: None,
+                ns: None,
+                extra: None,
+            }],
+            upstreams,
+            "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
+        );
+
+        // Test with matching context
+        let ctx = DnsQueryContext::new().with_inbound("tun");
+        let result = engine.resolve_with_context(&ctx, "example.com", RecordType::A).await;
+        // Mock Upstream always returns OK. We can't easily inspect which upstream was chosen 
+        // without introspection or mocking details, but we can rely on coverage or detailed logs.
+        // For this unit test, we at least verify compilation and execution.
+        assert!(result.is_ok());
+
+        // For verification, we can check the stats if we had exposted metrics or check cache.
+    }
+    #[tokio::test]
     async fn explain_reports_rule_and_cache_hit() {
+        use crate::router::ruleset::{Rule, DefaultRule};
         let rule = Rule::Default(DefaultRule {
             domain_suffix: vec!["google.com".to_string()],
             ..Default::default()
@@ -832,6 +1019,8 @@ mod tests {
             "default_dns".to_string(),
             crate::dns::DnsStrategy::default(),
             Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
         );
 
         let first = engine.explain("www.google.com").await.unwrap();

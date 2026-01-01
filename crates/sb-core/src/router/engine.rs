@@ -975,7 +975,7 @@ impl RouterHandle {
             (host, None)
         };
 
-        let started = Instant::now();
+        let _started = Instant::now();
         let _budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())

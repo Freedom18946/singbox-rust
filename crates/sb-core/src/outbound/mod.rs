@@ -19,14 +19,15 @@
 //! Data structures and external interfaces remain compatible: No changes needed for Router/Inbound side.
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
-#[cfg(feature = "scaffold")]
+#[cfg(any(feature = "out_socks", feature = "out_http", feature = "out_trojan", feature = "out_ss", feature = "out_vmess", feature = "out_vless", feature = "out_hysteria", feature = "out_hysteria2", feature = "out_tuic", feature = "out_shadowtls", feature = "out_naive", feature = "out_wireguard"))]
 pub mod block_connector;
 pub mod direct_connector;
-#[cfg(feature = "scaffold")]
+#[cfg(feature = "out_http")] // direct_simple currently used by http connector specifically? Check usage. Assuming general utility for non-complex outbounds.
+#[cfg(any(feature = "out_socks", feature = "out_http"))]
 pub mod direct_simple;
 pub mod endpoint;
 pub mod health;
-#[cfg(feature = "scaffold")]
+#[cfg(feature = "out_http")]
 pub mod http_upstream;
 pub mod manager;
 pub mod observe;
@@ -34,7 +35,7 @@ pub mod registry;
 pub mod selector;
 pub mod selector_group;
 pub mod socks5_udp;
-#[cfg(feature = "scaffold")]
+#[cfg(feature = "out_socks")]
 pub mod socks_upstream;
 pub mod tcp;
 pub mod traits;
@@ -89,7 +90,7 @@ pub mod hysteria;
 #[cfg(feature = "out_hysteria2")]
 pub mod hysteria2;
 #[cfg(feature = "out_ssh")]
-pub mod ssh_stub;
+pub mod ssh;
 #[cfg(feature = "out_tuic")]
 pub mod tuic;
 #[cfg(feature = "out_wireguard")]
@@ -258,7 +259,7 @@ pub enum OutboundImpl {
     #[cfg(feature = "out_wireguard")]
     WireGuard(wireguard::WireGuardConfig),
     #[cfg(feature = "out_ssh")]
-    Ssh(ssh_stub::SshConfig),
+    Ssh(ssh::SshConfig),
     /// Generic trait-based connector (e.g., `SelectorGroup`)
     Connector(Arc<dyn AdapterConnector>),
 }
@@ -476,12 +477,34 @@ impl OutboundRegistryHandle {
                         Ok(stream)
                     }
                     #[cfg(feature = "out_shadowtls")]
-                    Some(OutboundImpl::ShadowTls(_cfg)) => {
-                        Err(io::Error::other("ShadowTls boxed IO not implemented"))
+                    Some(OutboundImpl::ShadowTls(cfg)) => {
+                        use crate::outbound::shadowtls::ShadowTlsOutbound;
+                        use crate::outbound::types::{HostPort, OutboundTcp};
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = ShadowTlsOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("ShadowTLS setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_naive")]
-                    Some(OutboundImpl::Naive(_cfg)) => {
-                        Err(io::Error::other("Naive HTTP/2 boxed IO not implemented"))
+                    Some(OutboundImpl::Naive(cfg)) => {
+                        use crate::outbound::naive_h2::NaiveH2Outbound;
+                        use crate::outbound::types::{HostPort, OutboundTcp};
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = NaiveH2Outbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
                     Some(OutboundImpl::Vless(cfg)) => {
@@ -554,20 +577,64 @@ impl OutboundRegistryHandle {
                         Ok(stream)
                     }
                     #[cfg(feature = "out_tuic")]
-                    Some(OutboundImpl::Tuic(_cfg)) => {
-                        Err(io::Error::other("TUIC boxed IO not implemented"))
+                    Some(OutboundImpl::Tuic(cfg)) => {
+                        use crate::outbound::tuic::TuicOutbound;
+                        use crate::outbound::types::{HostPort, OutboundTcp};
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = TuicOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("TUIC setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_hysteria2")]
-                    Some(OutboundImpl::Hysteria2(_cfg)) => {
-                        Err(io::Error::other("Hysteria2 boxed IO not implemented"))
+                    Some(OutboundImpl::Hysteria2(cfg)) => {
+                        use crate::outbound::hysteria2::Hysteria2Outbound;
+                        use crate::outbound::types::{HostPort, OutboundTcp};
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = Hysteria2Outbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_wireguard")]
-                    Some(OutboundImpl::WireGuard(_cfg)) => {
-                        Err(io::Error::other("WireGuard boxed IO not implemented"))
+                    Some(OutboundImpl::WireGuard(cfg)) => {
+                        use crate::outbound::crypto_types::{HostPort, OutboundTcp};
+                        use crate::outbound::wireguard::WireGuardOutbound;
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = WireGuardOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("WireGuard setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_ssh")]
-                    Some(OutboundImpl::Ssh(_cfg)) => {
-                        Err(io::Error::other("SSH boxed IO not implemented"))
+                    Some(OutboundImpl::Ssh(cfg)) => {
+                        use crate::outbound::crypto_types::{HostPort, OutboundTcp};
+                        use crate::outbound::ssh::SshOutbound;
+
+                        let hp = match ep {
+                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => HostPort::new(host, port),
+                        };
+
+                        let outbound = SshOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("SSH setup failed: {}", e)))?;
+                        let stream = outbound.connect(&hp).await?;
+                        Ok(Box::new(stream))
                     }
                     None => Err(io::Error::new(
                         io::ErrorKind::NotFound,
@@ -1202,7 +1269,7 @@ async fn wireguard_connect(
 }
 
 #[cfg(feature = "out_ssh")]
-async fn ssh_connect(cfg: &ssh_stub::SshConfig, ep: Endpoint) -> io::Result<TcpStream> {
+async fn ssh_connect(cfg: &ssh::SshConfig, ep: Endpoint) -> io::Result<TcpStream> {
     use crypto_types::{HostPort, OutboundTcp};
 
     let target = match ep {
@@ -1210,7 +1277,7 @@ async fn ssh_connect(cfg: &ssh_stub::SshConfig, ep: Endpoint) -> io::Result<TcpS
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = ssh_stub::SshOutbound::new(cfg.clone())
+    let outbound = ssh::SshOutbound::new(cfg.clone())
         .map_err(|e| io::Error::other(format!("SSH setup failed: {}", e)))?;
 
     outbound.connect(&target).await.map_err(|e| {

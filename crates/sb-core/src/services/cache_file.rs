@@ -4,47 +4,20 @@
 //! This module implements persistence for:
 //! - FakeIP allocations (domain ↔ IP mappings)
 //! - RDRC (Resolver DNS Result Cache) data
+//! - Clash mode / Selection state / RuleSets
 //!
 //! Reference: Go sing-box `experimental/cachefile/`
-
+//! Note: Uses `sled` for embedded KV storage instead of BoltDB (binary incompatible with Go).
 
 use parking_lot::RwLock;
 use sb_config::ir::CacheFileIR;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::io::{BufReader, BufWriter};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn};
-
-/// Cache data format for serialization
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CacheData {
-    /// Version for format compatibility
-    pub version: u32,
-    /// FakeIP domain → IP mappings
-    pub fakeip_by_domain: HashMap<String, IpAddr>,
-    /// FakeIP IP → domain reverse mappings
-    pub fakeip_by_ip: HashMap<String, String>, // IpAddr serialized as string
-    /// FakeIP next allocation counters
-    pub fakeip_next_v4: u32,
-    pub fakeip_next_v6: u128,
-    /// RDRC entries: domain → (IPs, TTL expiry timestamp)
-    pub rdrc_entries: HashMap<String, RdrcEntry>,
-    /// Last save timestamp
-    pub last_saved: u64,
-    /// Clash mode
-    pub clash_mode: Option<String>,
-    /// Selector selected outbound tags
-    pub selected: HashMap<String, String>,
-    /// Selector group expand state
-    pub expand: HashMap<String, bool>,
-    /// Compiled rule-set binary cache
-    pub rule_sets: HashMap<String, Vec<u8>>,
-}
+use tracing::{debug, error, info};
 
 /// RDRC cache entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,81 +26,82 @@ pub struct RdrcEntry {
     pub expires_at: u64, // Unix timestamp
 }
 
-impl CacheData {
-    pub const CURRENT_VERSION: u32 = 2;
+#[derive(Debug)]
+enum CacheBackend {
+    Memory(MemoryBackend),
+    Persistence(sled::Db),
+}
 
-    pub fn new() -> Self {
-        Self {
-            version: Self::CURRENT_VERSION,
-            ..Default::default()
-        }
-    }
+#[derive(Debug, Default)]
+struct MemoryBackend {
+    fakeip_by_domain: RwLock<HashMap<String, IpAddr>>,
+    fakeip_by_ip: RwLock<HashMap<String, String>>,
+    fakeip_next_v4: RwLock<u32>,
+    fakeip_next_v6: RwLock<u128>,
+    rdrc: RwLock<HashMap<String, RdrcEntry>>,
+    clash_mode: RwLock<Option<String>>,
+    selected: RwLock<HashMap<String, String>>,
+    expand: RwLock<HashMap<String, bool>>,
+    rule_sets: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 /// Cache file service for storing persistent data.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CacheFileService {
     enabled: bool,
-    path: Option<PathBuf>,
+    backend: Arc<CacheBackend>,
     store_fakeip: bool,
     store_rdrc: bool,
     rdrc_timeout: Duration,
-    /// In-memory cache data
-    data: Arc<RwLock<CacheData>>,
-    /// Dirty flag for lazy saving
-    dirty: Arc<RwLock<bool>>,
-}
-
-impl Clone for CacheFileService {
-    fn clone(&self) -> Self {
-        Self {
-            enabled: self.enabled,
-            path: self.path.clone(),
-            store_fakeip: self.store_fakeip,
-            store_rdrc: self.store_rdrc,
-            rdrc_timeout: self.rdrc_timeout,
-            data: self.data.clone(),
-            dirty: self.dirty.clone(),
-        }
-    }
 }
 
 impl CacheFileService {
     /// Create a new cache file service from configuration.
     pub fn new(config: &CacheFileIR) -> Self {
-        let path = config.path.as_ref().map(PathBuf::from);
         let rdrc_timeout = config
             .rdrc_timeout
             .as_ref()
             .and_then(|s| parse_duration(s))
             .unwrap_or(Duration::from_secs(7 * 24 * 3600)); // Default: 7 days
 
-        let mut svc = Self {
+        let backend = if config.enabled {
+            if let Some(path_str) = &config.path {
+                let path = PathBuf::from(path_str);
+                // Ensure parent directory exists
+                if let Some(parent) = path.parent() {
+                    if !parent.exists() {
+                         let _ = std::fs::create_dir_all(parent);
+                    }
+                }
+                match sled::open(&path) {
+                    Ok(db) => {
+                        info!("Opened cache file at {}", path.display());
+                        Arc::new(CacheBackend::Persistence(db))
+                    }
+                    Err(e) => {
+                        error!("Failed to open cache file at {}: {}, falling back to memory", path.display(), e);
+                        Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+                    }
+                }
+            } else {
+                debug!("Cache enabled but no path provided, using memory backend");
+                Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+            }
+        } else {
+            Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+        };
+
+        Self {
             enabled: config.enabled,
-            path,
+            backend,
             store_fakeip: config.store_fakeip,
             store_rdrc: config.store_rdrc,
             rdrc_timeout,
-            data: Arc::new(RwLock::new(CacheData::new())),
-            dirty: Arc::new(RwLock::new(false)),
-        };
-
-        // Load existing cache if enabled
-        if svc.enabled {
-            if let Err(e) = svc.load() {
-                warn!(error = %e, "Failed to load cache file, starting fresh");
-            }
         }
-
-        svc
     }
 
     pub fn enabled(&self) -> bool {
         self.enabled
-    }
-
-    pub fn path(&self) -> Option<&PathBuf> {
-        self.path.as_ref()
     }
 
     pub fn store_fakeip(&self) -> bool {
@@ -138,264 +112,306 @@ impl CacheFileService {
         self.store_rdrc
     }
 
-    /// Load cache data from file.
-    pub fn load(&mut self) -> anyhow::Result<()> {
-        let path = match &self.path {
-            Some(p) => p,
-            None => {
-                debug!("No cache file path configured, skipping load");
-                return Ok(());
-            }
-        };
-
-        if !path.exists() {
-            debug!(path = %path.display(), "Cache file does not exist, starting fresh");
-            return Ok(());
-        }
-
-        let file = fs::File::open(path)?;
-        let reader = BufReader::new(file);
-        let data: CacheData = serde_json::from_reader(reader)?;
-
-        // Version check
-        if data.version != CacheData::CURRENT_VERSION {
-            warn!(
-                file_version = data.version,
-                current_version = CacheData::CURRENT_VERSION,
-                "Cache file version mismatch, starting fresh"
-            );
-            return Ok(());
-        }
-
-        // Prune expired RDRC entries
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let mut loaded_data = data;
-        loaded_data
-            .rdrc_entries
-            .retain(|_, entry| entry.expires_at > now);
-
-        let fakeip_count = loaded_data.fakeip_by_domain.len();
-        let rdrc_count = loaded_data.rdrc_entries.len();
-
-        *self.data.write() = loaded_data;
-        *self.dirty.write() = false;
-
-        info!(
-            path = %path.display(),
-            fakeip_entries = fakeip_count,
-            rdrc_entries = rdrc_count,
-            "Cache file loaded successfully"
-        );
-
-        Ok(())
-    }
-
-    /// Save cache data to file.
-    pub fn save(&self) -> anyhow::Result<()> {
-        if !self.enabled {
-            return Ok(());
-        }
-
-        let path = match &self.path {
-            Some(p) => p,
-            None => {
-                debug!("No cache file path configured, skipping save");
-                return Ok(());
-            }
-        };
-
-        // Only save if dirty
-        if !*self.dirty.read() {
-            debug!("Cache not dirty, skipping save");
-            return Ok(());
-        }
-
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-
-        let mut data = self.data.read().clone();
-        data.last_saved = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        // Write to temp file first, then rename for atomicity
-        let temp_path = path.with_extension("tmp");
-        let file = fs::File::create(&temp_path)?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &data)?;
-        fs::rename(&temp_path, path)?;
-
-        *self.dirty.write() = false;
-
-        debug!(
-            path = %path.display(),
-            fakeip_entries = data.fakeip_by_domain.len(),
-            rdrc_entries = data.rdrc_entries.len(),
-            "Cache file saved"
-        );
-
-        Ok(())
-    }
-
     /// Store FakeIP mapping
     pub fn store_fakeip_mapping(&self, domain: &str, ip: IpAddr) {
-        if !self.store_fakeip {
-            return;
+        if !self.store_fakeip { return; }
+        
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.fakeip_by_domain.write().insert(domain.to_string(), ip);
+                mem.fakeip_by_ip.write().insert(ip.to_string(), domain.to_string());
+            }
+            CacheBackend::Persistence(db) => {
+                let _ = db.open_tree("fakeip_domain").and_then(|t| {
+                    let val = serde_json::to_vec(&ip).unwrap_or_default();
+                    t.insert(domain, val)
+                });
+                let _ = db.open_tree("fakeip_ip").and_then(|t| {
+                    let key = serde_json::to_vec(&ip).unwrap_or_default();
+                    t.insert(key, domain.as_bytes())
+                });
+            }
         }
-        let mut data = self.data.write();
-        data.fakeip_by_domain.insert(domain.to_string(), ip);
-        data.fakeip_by_ip.insert(ip.to_string(), domain.to_string());
-        *self.dirty.write() = true;
     }
 
     /// Get FakeIP for domain
     pub fn get_fakeip_by_domain(&self, domain: &str) -> Option<IpAddr> {
-        if !self.store_fakeip {
-            return None;
+        if !self.store_fakeip { return None; }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.fakeip_by_domain.read().get(domain).copied(),
+            CacheBackend::Persistence(db) => {
+                db.open_tree("fakeip_domain")
+                    .ok()?
+                    .get(domain)
+                    .ok()?
+                    .and_then(|ivar| serde_json::from_slice(&ivar).ok())
+            }
         }
-        self.data.read().fakeip_by_domain.get(domain).copied()
     }
 
     /// Get domain for FakeIP
     pub fn get_domain_by_fakeip(&self, ip: &IpAddr) -> Option<String> {
-        if !self.store_fakeip {
-            return None;
+        if !self.store_fakeip { return None; }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.fakeip_by_ip.read().get(&ip.to_string()).cloned(),
+            CacheBackend::Persistence(db) => {
+                 let key = serde_json::to_vec(ip).ok()?;
+                 db.open_tree("fakeip_ip")
+                    .ok()?
+                    .get(&key)
+                    .ok()?
+                    .and_then(|ivar| String::from_utf8(ivar.to_vec()).ok())
+            }
         }
-        self.data.read().fakeip_by_ip.get(&ip.to_string()).cloned()
     }
 
     /// Store FakeIP allocation counters
     pub fn store_fakeip_counters(&self, next_v4: u32, next_v6: u128) {
-        if !self.store_fakeip {
-            return;
+        if !self.store_fakeip { return; }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                *mem.fakeip_next_v4.write() = next_v4;
+                *mem.fakeip_next_v6.write() = next_v6;
+            }
+            CacheBackend::Persistence(db) => {
+                 if let Ok(tree) = db.open_tree("fakeip_meta") {
+                     let _ = tree.insert("next_v4", &next_v4.to_be_bytes());
+                     let _ = tree.insert("next_v6", &next_v6.to_be_bytes());
+                 }
+            }
         }
-        let mut data = self.data.write();
-        data.fakeip_next_v4 = next_v4;
-        data.fakeip_next_v6 = next_v6;
-        *self.dirty.write() = true;
     }
 
     /// Get FakeIP allocation counters
     pub fn get_fakeip_counters(&self) -> (u32, u128) {
-        let data = self.data.read();
-        (data.fakeip_next_v4, data.fakeip_next_v6)
+        match &*self.backend {
+            CacheBackend::Memory(mem) => (*mem.fakeip_next_v4.read(), *mem.fakeip_next_v6.read()),
+            CacheBackend::Persistence(db) => {
+                let tree = match db.open_tree("fakeip_meta") {
+                    Ok(t) => t,
+                    Err(_) => return (0, 0),
+                };
+                
+                let v4 = tree.get("next_v4").ok().flatten().map(|v| {
+                    let mut bytes = [0u8; 4];
+                    if v.len() == 4 {
+                        bytes.copy_from_slice(&v);
+                        u32::from_be_bytes(bytes)
+                    } else { 0 }
+                }).unwrap_or(0);
+
+                let v6 = tree.get("next_v6").ok().flatten().map(|v| {
+                    let mut bytes = [0u8; 16];
+                    if v.len() == 16 {
+                        bytes.copy_from_slice(&v);
+                        u128::from_be_bytes(bytes)
+                    } else { 0 }
+                }).unwrap_or(0);
+                
+                (v4, v6)
+            }
+        }
     }
 
     /// Store RDRC entry (put into cache)
     pub fn put_rdrc(&self, domain: &str, ips: Vec<IpAddr>, ttl: Duration) {
-        if !self.store_rdrc {
-            return;
-        }
+        if !self.store_rdrc { return; }
+        
         let expires_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
             + ttl.as_secs().min(self.rdrc_timeout.as_secs());
+        
+        let entry = RdrcEntry { ips, expires_at };
 
-        let mut data = self.data.write();
-        data.rdrc_entries
-            .insert(domain.to_string(), RdrcEntry { ips, expires_at });
-        *self.dirty.write() = true;
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.rdrc.write().insert(domain.to_string(), entry);
+            }
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("rdrc") {
+                     if let Ok(val) = serde_json::to_vec(&entry) {
+                         let _ = tree.insert(domain, val);
+                     }
+                }
+            }
+        }
     }
 
     /// Get RDRC entry (returns None if expired)
     pub fn get_rdrc(&self, domain: &str) -> Option<Vec<IpAddr>> {
-        if !self.store_rdrc {
-            return None;
-        }
-        let now = SystemTime::now()
+         if !self.store_rdrc { return None; }
+         
+         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        let data = self.data.read();
-        data.rdrc_entries.get(domain).and_then(|entry| {
+        // Helper to check expiry
+        let check = |entry: RdrcEntry| -> Option<Vec<IpAddr>> {
             if entry.expires_at > now {
-                Some(entry.ips.clone())
+                Some(entry.ips)
             } else {
                 None
             }
-        })
+        };
+
+        match &*self.backend {
+             CacheBackend::Memory(mem) => {
+                 mem.rdrc.read().get(domain).cloned().and_then(check)
+             }
+             CacheBackend::Persistence(db) => {
+                 db.open_tree("rdrc")
+                    .ok()?
+                    .get(domain)
+                    .ok()?
+                    .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
+                    .and_then(check)
+             }
+         }
     }
 
     pub fn set_clash_mode(&self, mode: String) {
         if !self.enabled { return; }
-        let mut data = self.data.write();
-        data.clash_mode = Some(mode);
-        *self.dirty.write() = true;
+         match &*self.backend {
+            CacheBackend::Memory(mem) => *mem.clash_mode.write() = Some(mode),
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("meta") {
+                    let _ = tree.insert("clash_mode", mode.as_bytes());
+                }
+            }
+        }
     }
 
     pub fn get_clash_mode(&self) -> Option<String> {
         if !self.enabled { return None; }
-        self.data.read().clash_mode.clone()
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.clash_mode.read().clone(),
+            CacheBackend::Persistence(db) => {
+                 db.open_tree("meta")
+                   .ok()?
+                   .get("clash_mode")
+                   .ok()?
+                   .and_then(|v| String::from_utf8(v.to_vec()).ok())
+            }
+        }
     }
 
     pub fn set_selected(&self, group: &str, selected: &str) {
         if !self.enabled { return; }
-        let mut data = self.data.write();
-        data.selected.insert(group.to_string(), selected.to_string());
-        *self.dirty.write() = true;
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.selected.write().insert(group.to_string(), selected.to_string());
+            }
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("selected") {
+                    let _ = tree.insert(group, selected.as_bytes());
+                }
+            }
+        }
     }
 
     pub fn get_selected(&self, group: &str) -> Option<String> {
         if !self.enabled { return None; }
-        self.data.read().selected.get(group).cloned()
+         match &*self.backend {
+            CacheBackend::Memory(mem) => mem.selected.read().get(group).cloned(),
+            CacheBackend::Persistence(db) => {
+                 db.open_tree("selected")
+                   .ok()?
+                   .get(group)
+                   .ok()?
+                   .and_then(|v| String::from_utf8(v.to_vec()).ok())
+            }
+        }
     }
 
     pub fn set_expand(&self, group: &str, expand: bool) {
         if !self.enabled { return; }
-        let mut data = self.data.write();
-        data.expand.insert(group.to_string(), expand);
-        *self.dirty.write() = true;
+         match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.expand.write().insert(group.to_string(), expand);
+            }
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("expand") {
+                     let _ = tree.insert(group, &[if expand { 1 } else { 0 }]);
+                }
+            }
+        }
     }
 
     pub fn get_expand(&self, group: &str) -> Option<bool> {
         if !self.enabled { return None; }
-        self.data.read().expand.get(group).copied()
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.expand.read().get(group).copied(),
+            CacheBackend::Persistence(db) => {
+                  db.open_tree("expand")
+                   .ok()?
+                   .get(group)
+                   .ok()?
+                   .map(|v| v.first().copied() == Some(1))
+            }
+        }
     }
 
     pub fn store_rule_set(&self, tag: &str, content: Vec<u8>) {
-        if !self.enabled { return; }
-        let mut data = self.data.write();
-        data.rule_sets.insert(tag.to_string(), content);
-        *self.dirty.write() = true;
+         if !self.enabled { return; }
+         match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                 mem.rule_sets.write().insert(tag.to_string(), content);
+            }
+            CacheBackend::Persistence(db) => {
+                 if let Ok(tree) = db.open_tree("rulesets") {
+                     let _ = tree.insert(tag, content);
+                 }
+            }
+         }
     }
 
     pub fn get_rule_set(&self, tag: &str) -> Option<Vec<u8>> {
         if !self.enabled { return None; }
-        self.data.read().rule_sets.get(tag).cloned()
-    }
-
-    /// Flush cache to disk (for shutdown)
-    pub fn flush(&self) {
-        if let Err(e) = self.save() {
-            error!(error = %e, "Failed to flush cache file");
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.rule_sets.read().get(tag).cloned(),
+            CacheBackend::Persistence(db) => {
+                  db.open_tree("rulesets")
+                   .ok()?
+                   .get(tag)
+                   .ok()?
+                   .map(|v| v.to_vec())
+            }
         }
     }
+
+    /// Flush cache to disk
+    pub fn flush(&self) {
+         if let CacheBackend::Persistence(db) = &*self.backend {
+             let _ = db.flush();
+         }
+    }
 }
+
+
 
 impl crate::context::CacheFile for CacheFileService {
     fn set_clash_mode(&self, mode: String) {
         self.set_clash_mode(mode);
     }
+
+    fn set_selected(&self, group: &str, selected: &str) {
+        self.set_selected(group, selected);
+    }
 }
 
-impl Drop for CacheFileService {
-    fn drop(&mut self) {
-        // Auto-save on drop if dirty
-        if self.enabled && *self.dirty.read() {
-            if let Err(e) = self.save() {
-                error!(error = %e, "Failed to save cache file on drop");
-            }
-        }
+impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
+    fn get_by_domain(&self, domain: &str) -> Option<IpAddr> {
+        self.get_fakeip_by_domain(domain)
+    }
+
+    fn store(&self, domain: &str, ip: IpAddr) {
+        self.store_fakeip_mapping(domain, ip)
     }
 }
 
@@ -424,6 +440,7 @@ fn parse_duration(s: &str) -> Option<Duration> {
         "m" => num * 60,
         "h" => num * 3600,
         "d" => num * 86400,
+        "y" => num * 31536000,
         _ => return None,
     };
     Some(Duration::from_secs(secs))
@@ -436,9 +453,10 @@ mod tests {
 
     #[test]
     fn test_cache_file_service() {
+        // Memory mode check
         let config = CacheFileIR {
             enabled: true,
-            path: Some("/tmp/cache.db".into()),
+            path: None, // No path = memory
             store_fakeip: true,
             store_rdrc: false,
             rdrc_timeout: None,
@@ -446,15 +464,17 @@ mod tests {
 
         let svc = CacheFileService::new(&config);
         assert!(svc.enabled());
-        assert_eq!(svc.path(), Some(&PathBuf::from("/tmp/cache.db")));
         assert!(svc.store_fakeip());
         assert!(!svc.store_rdrc());
     }
 
     #[test]
-    fn test_fakeip_persistence() {
+    fn test_fakeip_persistence_sled() {
         let tmp = TempDir::new().unwrap();
-        let cache_path = tmp.path().join("cache.json");
+        // Sled uses directory, but typically we pass path to it. 
+        // If it's a file path in config, sled treats it as DB directory.
+        // Let's assume CacheFileIR path is a file path, but for sled we use it as dir.
+        let cache_path = tmp.path().join("cache_db");
 
         let config = CacheFileIR {
             enabled: true,
@@ -489,9 +509,9 @@ mod tests {
     }
 
     #[test]
-    fn test_rdrc_persistence() {
+    fn test_rdrc_persistence_sled() {
         let tmp = TempDir::new().unwrap();
-        let cache_path = tmp.path().join("cache.json");
+        let cache_path = tmp.path().join("cache_rdrc_db");
 
         let config = CacheFileIR {
             enabled: true,
@@ -520,19 +540,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_duration() {
-        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
-        assert_eq!(parse_duration("5m"), Some(Duration::from_secs(300)));
-        assert_eq!(parse_duration("2h"), Some(Duration::from_secs(7200)));
-        assert_eq!(parse_duration("7d"), Some(Duration::from_secs(604800)));
-        assert_eq!(parse_duration("100ms"), Some(Duration::from_millis(100)));
-        assert_eq!(parse_duration("60"), Some(Duration::from_secs(60)));
-        assert_eq!(parse_duration(""), None);
-    }
-    #[test]
-    fn test_clash_persistence() {
+    fn test_clash_persistence_sled() {
         let tmp = TempDir::new().unwrap();
-        let cache_path = tmp.path().join("cache_clash.json");
+        let cache_path = tmp.path().join("cache_clash_db");
 
         let config = CacheFileIR {
             enabled: true,

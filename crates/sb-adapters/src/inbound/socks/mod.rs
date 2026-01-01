@@ -472,7 +472,7 @@ async fn process_request<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
-    use sb_core::dns::Resolver;
+    // use sb_core::dns::Resolver; // Unused
 
     // Apply domain strategy
     let mut endpoint = endpoint;

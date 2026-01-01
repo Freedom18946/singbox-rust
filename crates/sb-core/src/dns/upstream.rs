@@ -71,6 +71,7 @@ fn mask_prefix(bytes: &mut [u8], prefix: u8) {
     }
 }
 
+#[cfg(feature = "dns_dhcp")]
 fn parse_dhcp_spec(spec: &str) -> (Option<String>, PathBuf) {
     let mut path = std::env::var("SB_DNS_DHCP_RESOLV_CONF")
         .map(PathBuf::from)
@@ -126,6 +127,7 @@ fn parse_dhcp_spec(spec: &str) -> (Option<String>, PathBuf) {
     (None, path)
 }
 
+#[cfg(feature = "dns_resolved")]
 fn parse_resolved_spec(spec: &str) -> PathBuf {
     let mut path = std::env::var("SB_DNS_RESOLVED_STUB")
         .map(PathBuf::from)
@@ -1320,6 +1322,11 @@ impl DotUpstream {
             transport,
         }
     }
+
+    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
+        self.ecs = ecs;
+        self
+    }
 }
 
 #[async_trait]
@@ -1610,11 +1617,7 @@ impl DotUpstream {
         }
     }
 
-    /// Attach per-upstream ECS string
-    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
-        self.ecs = ecs;
-        self
-    }
+
 }
 
 /// DNS-over-QUIC (`DoQ`) 上游实现
@@ -1888,6 +1891,9 @@ impl DohUpstream {
         temp_upstream.parse_response(&response_body, record_type)
     }
 
+}
+
+impl DohUpstream {
     /// Attach per-upstream ECS string
     pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
         self.ecs = ecs;

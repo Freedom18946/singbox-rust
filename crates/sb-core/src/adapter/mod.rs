@@ -69,6 +69,11 @@ pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
     fn udp_sessions_estimate(&self) -> Option<u64> {
         None
     }
+
+    /// Allow downcasting to concrete type
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
 }
 
 /// Outbound connector trait for establishing TCP connections to targets.

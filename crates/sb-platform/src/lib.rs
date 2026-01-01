@@ -76,6 +76,8 @@
 pub mod monitor;
 /// Network utilities for MAC address retrieval and interface queries.
 pub mod network;
+/// WiFi information retrieval (SSID, BSSID).
+pub mod wifi;
 pub mod process;
 pub mod system_proxy;
 pub mod tun;

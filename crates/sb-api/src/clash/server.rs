@@ -54,6 +54,8 @@ pub struct ApiState {
     pub provider_manager: Option<Arc<ProviderManager>>,
     /// Global configuration IR
     pub global_config: Option<Arc<ConfigIR>>,
+    /// Cache file service for persistence
+    pub cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
 }
 
 impl ApiState {
@@ -79,6 +81,7 @@ impl ApiState {
             dns_resolver: None,
             provider_manager: None,
             global_config: None,
+            cache_file: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -107,6 +110,7 @@ impl ApiState {
             dns_resolver: None,
             provider_manager: None,
             global_config: None,
+            cache_file: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -158,6 +162,12 @@ impl ClashApiServer {
     /// Set global configuration IR
     pub fn with_config_ir(mut self, config: Arc<ConfigIR>) -> Self {
         self.state.global_config = Some(config);
+        self
+    }
+
+    /// Set cache file service
+    pub fn with_cache_file(mut self, cache_file: Arc<dyn sb_core::context::CacheFile>) -> Self {
+        self.state.cache_file = Some(cache_file);
         self
     }
 

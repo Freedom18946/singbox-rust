@@ -154,8 +154,8 @@ impl Supervisor {
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
         // Configure DNS resolver from IR (if provided)
-        if let Some(dns_ir) = ir.dns.as_ref() {
-            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(dns_ir) {
+        if ir.dns.is_some() {
+            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&ir) {
                 crate::dns::global::set(resolver);
             }
         }
@@ -462,8 +462,8 @@ impl Supervisor {
         tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
         // Update DNS resolver from IR if present
-        if let Some(dns_ir) = new_ir.dns.as_ref() {
-            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(dns_ir) {
+        if new_ir.dns.is_some() {
+            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&new_ir) {
                 crate::dns::global::set(resolver);
             }
         }

@@ -28,6 +28,14 @@ impl MacOsTun {
             return Err(TunError::IoError(std::io::Error::last_os_error()));
         }
 
+        // Set non-blocking mode
+        // SAFETY: fd is valid
+        let ret = unsafe { libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK) };
+        if ret < 0 {
+             unsafe { libc::close(fd); }
+             return Err(TunError::IoError(std::io::Error::last_os_error()));
+        }
+
         // Get the control ID for utun
         let mut ctl_info = CtlInfo {
             ctl_id: 0,

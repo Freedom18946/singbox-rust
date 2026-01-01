@@ -412,11 +412,12 @@ impl Socks5Connector {
             .socks5_udp_associate(&mut control_stream, opts.connect_timeout)
             .await?;
 
-        // Create UDP socket
-        // 创建 UDP socket
-        let udp_socket = UdpSocket::bind("0.0.0.0:0")
-            .await
-            .map_err(AdapterError::Io)?;
+        // Create UDP socket (dual-stack to support IPv6 relay addresses)
+        // 创建 UDP socket（双栈以支持 IPv6 中继地址）
+        let udp_socket = match UdpSocket::bind("[::]:0").await {
+            Ok(s) => s,
+            Err(_) => UdpSocket::bind("0.0.0.0:0").await.map_err(AdapterError::Io)?,
+        };
 
         // Connect to relay address
         // 连接到中继地址

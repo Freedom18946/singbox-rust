@@ -181,6 +181,75 @@ impl TunStack {
         None
     }
 
+    /// Create a new TCP socket and initiate connection to the specified remote address.
+    /// Returns the socket handle which can be polled for connection completion.
+    pub fn connect_tcp(
+        &mut self,
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+    ) -> std::io::Result<SocketHandle> {
+        let rx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
+        let tx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
+        let socket = tcp::Socket::new(rx_buffer, tx_buffer);
+
+        let handle = self.socket_set.add(socket);
+
+        let local_endpoint = smoltcp::wire::IpEndpoint {
+            addr: match local_addr.ip() {
+                IpAddr::V4(v4) => IpAddress::v4(v4.octets()[0], v4.octets()[1], v4.octets()[2], v4.octets()[3]),
+                IpAddr::V6(v6) => IpAddress::v6(
+                    v6.segments()[0], v6.segments()[1], v6.segments()[2], v6.segments()[3],
+                    v6.segments()[4], v6.segments()[5], v6.segments()[6], v6.segments()[7],
+                ),
+            },
+            port: local_addr.port(),
+        };
+
+        let remote_endpoint = smoltcp::wire::IpEndpoint {
+            addr: match remote_addr.ip() {
+                IpAddr::V4(v4) => IpAddress::v4(v4.octets()[0], v4.octets()[1], v4.octets()[2], v4.octets()[3]),
+                IpAddr::V6(v6) => IpAddress::v6(
+                    v6.segments()[0], v6.segments()[1], v6.segments()[2], v6.segments()[3],
+                    v6.segments()[4], v6.segments()[5], v6.segments()[6], v6.segments()[7],
+                ),
+            },
+            port: remote_addr.port(),
+        };
+
+        let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
+        socket.connect(self.interface.context(), remote_endpoint, local_endpoint)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("smoltcp connect: {e:?}")))?;
+
+        debug!("Initiated TCP connection from {} to {}", local_addr, remote_addr);
+        Ok(handle)
+    }
+
+    /// Check if a TCP socket has completed its connection.
+    pub fn is_tcp_connected(&mut self, handle: SocketHandle) -> bool {
+        let socket: &tcp::Socket<'_> = self.socket_set.get(handle);
+        socket.is_active() && socket.may_send()
+    }
+
+    /// Check if a TCP socket can send data.
+    pub fn can_send(&mut self, handle: SocketHandle) -> bool {
+        let socket: &tcp::Socket<'_> = self.socket_set.get(handle);
+        socket.can_send()
+    }
+
+    /// Send data on a TCP socket.
+    pub fn tcp_send(&mut self, handle: SocketHandle, data: &[u8]) -> std::io::Result<usize> {
+        let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
+        socket.send_slice(data)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("tcp send: {e:?}")))
+    }
+
+    /// Receive data from a TCP socket.
+    pub fn tcp_recv(&mut self, handle: SocketHandle, buf: &mut [u8]) -> std::io::Result<usize> {
+        let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
+        socket.recv_slice(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("tcp recv: {e:?}")))
+    }
+
     pub fn get_socket_mut<T: smoltcp::socket::AnySocket<'static>>(
         &mut self,
         handle: SocketHandle,

@@ -173,7 +173,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
         let process_path_regex = Vec::new();
         // ir.process_path_regex not in RuleIR
 
-        let mut not_process_path_regex = Vec::new();
+        let not_process_path_regex = Vec::new();
         // ir.not_process_path_regex not in RuleIR
 
         let decision = Decision::from_rule_action(
@@ -183,7 +183,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             ir.override_port,
         );
 
-        let mut rule = CompositeRule {
+        let rule = CompositeRule {
             rule_type,
             mode,
             sub_rules,

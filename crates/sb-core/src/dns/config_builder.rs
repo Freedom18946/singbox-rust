@@ -9,13 +9,13 @@ use super::{
     DnsUpstream, Resolver,
 };
 
-/// Build a DNS resolver from sb-config IR (DnsIR).
-///
-/// - Creates upstreams from `servers`
-/// - When `rules` are present, builds a DnsRuleEngine and wraps it as a Resolver
-/// - Otherwise falls back to a simple DnsResolver over all upstreams
-pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>> {
-    let dns = hydrate_dns_ir_from_env(dns);
+/// Build DNS components (Resolver and Router) from sb-config IR.
+pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<(Arc<dyn Resolver>, Option<Arc<dyn crate::dns::dns_router::DnsRouter>>)> {
+    let dns_ir = ir
+        .dns
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("DNS configuration missing"))?;
+    let dns = hydrate_dns_ir_from_env(dns_ir);
     // Apply IR-level global knobs to env for compatibility with existing components
     apply_env_from_ir(&dns);
 
@@ -54,11 +54,36 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
         );
     }
 
+    // Load GeoIP
+    let geoip_db = if let Some(path) = &ir.route.geoip_path {
+        match crate::router::geo::GeoIpDb::load_from_file(std::path::Path::new(path)) {
+            Ok(db) => Some(Arc::new(db)),
+            Err(e) => {
+                tracing::warn!("Failed to load GeoIP database: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Load GeoSite
+    let geosite_db = if let Some(path) = &ir.route.geosite_path {
+        match crate::router::geo::GeoSiteDb::load_from_file(std::path::Path::new(path)) {
+            Ok(db) => Some(Arc::new(db)),
+            Err(e) => {
+                tracing::warn!("Failed to load GeoSite database: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // 2) If rules defined, build rule engine
     if !dns.rules.is_empty() {
         let mut routing_rules: Vec<DnsRoutingRule> = Vec::new();
         for r in &dns.rules {
-            use sb_config::ir::RuleAction;
             use crate::dns::rule_engine::DnsRuleAction;
 
             let action = match r.action.as_deref() {
@@ -93,10 +118,31 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
                 extra: None,
             });
         }
-        let engine = DnsRuleEngine::new(routing_rules, upstreams, default_tag, strategy, registry);
-        let base: Arc<dyn Resolver> = Arc::new(EngineResolver { engine });
+
+        let engine = DnsRuleEngine::new(
+            routing_rules,
+            upstreams,
+            default_tag,
+            strategy,
+            registry,
+            geoip_db,
+            geosite_db,
+        );
+        let engine_arc = Arc::new(engine);
+        // EngineResolver clones the engine (cheap clone if Arc fields, but DnsRuleEngine fields are expensive to clone? 
+        // DnsRuleEngine struct fields are Vecs and Maps. Cloning DnsRuleEngine is somewhat expensive.
+        // We should wrap DnsRuleEngine in Arc for EngineResolver too, or EngineResolver should allow cloning field?
+        // Let's modify EngineResolver to hold Arc<DnsRuleEngine> or just clone it if it's acceptable.
+        // DnsRuleEngine derives Clone? Let's check. 
+        // If not, we might need to change EngineResolver to use Arc.
+        
+        let base: Arc<dyn Resolver> = Arc::new(EngineResolver { engine: engine_arc.clone() });
         let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-        return Ok(overlay);
+        
+        // engine_arc implements DnsRouter
+        let router: Arc<dyn crate::dns::dns_router::DnsRouter> = engine_arc;
+        
+        return Ok((overlay, Some(router)));
     }
 
     // 3) No rules: use simple DnsResolver over all upstreams
@@ -107,8 +153,15 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
             .with_strategy(strategy),
     );
     let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-    Ok(overlay)
+    Ok((overlay, None))
 }
+
+/// Build a DNS resolver from sb-config IR (DnsIR).
+pub fn resolver_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Arc<dyn Resolver>> {
+    let (resolver, _) = build_dns_components(ir)?;
+    Ok(resolver)
+}
+
 
 /// Build a single DNS upstream from address string (e.g., udp://, doh3://, system, local).
 /// Exposed for integration tests and CLI validation.
@@ -371,7 +424,7 @@ fn split_host_port(rest: &str, default_port: u16) -> Result<(String, u16)> {
 
 /// Simple Resolver adapter wrapping DnsRuleEngine
 struct EngineResolver {
-    engine: DnsRuleEngine,
+    engine: Arc<DnsRuleEngine>,
 }
 
 #[async_trait::async_trait]
@@ -765,7 +818,13 @@ mod tests {
         });
         ir.default = Some("sys".into());
 
-        let res = resolver_from_ir(&ir);
+
+
+        let config = sb_config::ir::ConfigIR {
+            dns: Some(ir),
+            ..Default::default()
+        };
+        let res = resolver_from_ir(&config);
         assert!(res.is_ok());
     }
 
@@ -782,7 +841,12 @@ mod tests {
             client_subnet: None,
             ..Default::default()
         });
-        let res = resolver_from_ir(&ir);
+
+        let config = sb_config::ir::ConfigIR {
+            dns: Some(ir),
+            ..Default::default()
+        };
+        let res = resolver_from_ir(&config);
         assert!(res.is_ok());
     }
 

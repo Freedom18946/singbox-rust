@@ -101,6 +101,11 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Convert/Get RouterHandle for legacy/compat usage
+    pub fn handle(&self) -> std::sync::Arc<crate::router::RouterHandle> {
+        std::sync::Arc::new(crate::router::RouterHandle::from_env())
+    }
+
     fn host_is_ip(host: &str) -> Option<IpAddr> {
         host.parse::<IpAddr>().ok()
     }

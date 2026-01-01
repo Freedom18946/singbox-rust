@@ -250,6 +250,13 @@ impl AsyncTunDevice {
     }
 }
 
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for AsyncTunDevice {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.inner.as_raw_fd()
+    }
+}
+
 /// Create a platform-specific TUN device
 ///
 /// # Errors

@@ -111,7 +111,7 @@ impl RuleSetDb {
     }
 
     /// Synchronous rule-set loading (for spawn_blocking)
-    fn load_rule_set_sync(tag: &str, path: &str, format_str: &str) -> Result<RuleMatcher, String> {
+    fn load_rule_set_sync(_tag: &str, path: &str, format_str: &str) -> Result<RuleMatcher, String> {
         let path_buf = PathBuf::from(path);
         if !path_buf.exists() {
             return Err(format!("RuleSet file not found: {}", path));
@@ -183,6 +183,7 @@ impl RuleSetDb {
             query_type: None,
             geosite_codes: Vec::new(),
             geoip_code: None,
+            inbound_tag: None,
         };
 
         for (tag, matcher) in matchers.iter() {
@@ -206,6 +207,7 @@ impl RuleSetDb {
             source_port: None,
             query_type: None,
             clash_mode: None,
+            inbound_tag: None,
             geosite_codes: Vec::new(),
             geoip_code: None,
         };

@@ -17,6 +17,7 @@ pub mod ssmapi;
 pub mod time;
 pub mod tailscale;
 pub mod v2ray_api;
+pub mod v2ray;
 
 use std::io::Error;
 use std::time::Instant;

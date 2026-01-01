@@ -94,6 +94,7 @@ fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
 }
 
 #[cfg(feature = "router")]
+#[allow(dead_code)]
 fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
     fn rule_outbound(rule: &sb_config::ir::RuleIR, cfg: &ConfigIR) -> String {
         rule.outbound
@@ -603,6 +604,10 @@ pub fn build_bridge<'a>(
     // Create shared connection manager for all inbounds (Go parity: route.ConnectionManager)
     let connection_manager = Arc::new(crate::router::RouteConnectionManager::new());
 
+    // Build DNS components for inbound context
+    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg).ok().unzip();
+    let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
+
     for ib in &cfg.inbounds {
         let p = to_inbound_param(ib);
         let adapter_ctx = registry::AdapterInboundContext {
@@ -610,7 +615,7 @@ pub fn build_bridge<'a>(
             bridge: Arc::new(br.clone()),
             outbounds: outbound_handle.clone(),
             router: router_handle.clone(),
-            dns_router: None, // TODO: Wire DNS router when available
+            dns_router: dns_router.clone(),
             connection_manager: Some(connection_manager.clone()),
             context: ctx_registry.clone(),
         };

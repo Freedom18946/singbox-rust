@@ -91,7 +91,11 @@ thrussh-keys = { version = "=0.22.1", optional = true }
 loom = { version = "0.7", optional = true }
 axum = { version = "0.7", optional = true }
 axum-server = { version = "0.6", features = ["tls-rustls"], optional = true }
-prost = { version = "0.14.1", features = ["derive"] }
+prost = { version = "0.12", features = ["derive"] }
+tonic = { version = "0.11", optional = true, default-features = false, features = ["transport", "codegen", "prost"] }
+prost-types = "0.12"
+sled = "0.34.7"
+
 
 [dev-dependencies]
 # Test dependencies
@@ -100,9 +104,13 @@ tempfile = "3"
 tokio = { version = "1.47", features = ["full", "test-util"] }
 rcgen = "0.13"
 criterion = "0.5"
-prost = "0.14.1"
+prost = "0.12"
+
+[build-dependencies]
+tonic-build = { version = "0.11", optional = true, default-features = false, features = ["transport", "prost"] }
 
 [features]
+
 # 默认开启 DNS 相关功能，开箱即用（udp/doh/dot/doq + rustls）
 default = [
     "dns_udp",
@@ -113,6 +121,13 @@ default = [
     "dns_resolved",
     "dns_tailscale",
     "tls_rustls",
+    "in_tun",
+    "in_socks",
+    "in_http",
+    "in_mixed",
+    "in_direct",
+    "out_socks",
+    "out_http",
 ]
 
 # 历史/代码中出现过的功能位（按字母序归并；全部先落空数组，行为不变）
@@ -141,6 +156,15 @@ explain            = []
 fuzzing            = []
 handshake_alpha    = []
 http_exporter      = []
+# Inbound features
+in_tun             = ["router", "sb-platform/tun"]
+in_socks           = []
+in_http            = []
+in_mixed           = ["in_socks", "in_http"]
+in_direct          = []
+# Outbound features
+out_socks          = []
+out_http           = []
 labels             = []
 metrics            = []
 minijson           = []
@@ -166,7 +190,15 @@ routing            = ["router"]  # routing as alias for router
 rules_capture      = []
 sbcore_analyze_json= []
 sbcore_rules_tool  = []
-scaffold           = []  # 满足 app 依赖
+scaffold           = [
+    "in_socks",
+    "in_http",
+    "in_mixed",
+    "in_tun",
+    "in_direct",
+    "out_socks",
+    "out_http",
+]  # 满足 app 依赖 (Deprecated: use specific in_*/out_* features)
 schema-v2          = []
 selector_p3        = []
 socks              = []
@@ -196,7 +228,7 @@ v2ray_transport    = []
 service_ntp        = []
 service_ssmapi     = ["dep:axum", "dep:axum-server"]
 service_clash_api  = ["dep:axum"]
-service_v2ray_api  = ["dep:axum"]
+service_v2ray_api  = ["dep:axum", "dep:tonic", "dep:tonic-build"]
 service_derp       = ["dep:tokio-tungstenite"]
 service_resolved   = []
 # Network monitor for tracking network changes (Linux netlink)

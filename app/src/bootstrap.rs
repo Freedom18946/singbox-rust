@@ -769,6 +769,32 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Convert to IR once
     let cfg_ir = Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
 
+    // Initialize CacheFile service (Experiment)
+    let cache_service = if let Some(ref exp) = cfg_ir.experimental {
+        if let Some(ref cache_cfg) = exp.cache_file {
+            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(
+                cache_cfg,
+            ));
+            
+            // Wire to FakeIP persistence
+            sb_core::dns::fakeip::set_storage(svc.clone());
+            
+            Some(svc as Arc<dyn sb_core::context::CacheFile>)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Global Context
+    let mut ctx = sb_core::context::Context::new();
+    if let Some(c) = cache_service.clone() {
+        ctx = ctx.with_cache_file(c);
+    }
+    // TODO: Wire other services into context
+    sb_core::context::install_context_registry(&ctx);
+
     // Optionally configure DNS via config (env bridge for sb-core)
     apply_dns_from_config(&cfg);
 
@@ -821,6 +847,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
                     rh.clone(),
                     oh.clone(),
                     cfg_ir.clone(),
+                    cache_service.clone(),
                 ) {
                     service_handles.push(handle);
                 }
@@ -875,6 +902,7 @@ fn start_clash_api_server(
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
     config_ir: Arc<sb_config::ir::ConfigIR>,
+    cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
 ) -> Option<ServiceHandle> {
     use std::net::SocketAddr;
 
@@ -899,9 +927,13 @@ fn start_clash_api_server(
 
     match sb_api::clash::ClashApiServer::new(config) {
         Ok(server) => {
-            let server = server
+            let mut server = server
                 .with_outbound_registry(outbounds)
                 .with_config_ir(config_ir);
+
+            if let Some(c) = cache_file {
+                server = server.with_cache_file(c);
+            }
 
             #[cfg(feature = "router")]
             let server = server.with_router(router.clone());

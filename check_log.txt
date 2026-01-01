@@ -1,0 +1,1525 @@
+warning: missing documentation for a module
+  --> crates/sb-platform/src/lib.rs:79:1
+   |
+79 | pub mod wifi;
+   | ^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/sb-platform/src/lib.rs:67:9
+   |
+67 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+ --> crates/sb-platform/src/wifi.rs:5:1
+  |
+5 | pub struct WifiInfo {
+  | ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+ --> crates/sb-platform/src/wifi.rs:6:5
+  |
+6 |     pub ssid: String,
+  |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+ --> crates/sb-platform/src/wifi.rs:7:5
+  |
+7 |     pub bssid: String,
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: `sb-platform` (lib) generated 4 warnings
+    Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+warning: unused import: `crate::adapter::OutboundConnector`
+  --> crates/sb-core/src/inbound/tun.rs:31:5
+   |
+31 | use crate::adapter::OutboundConnector;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `SniffOutcome`
+   --> crates/sb-core/src/inbound/tun.rs:403:58
+    |
+403 | use crate::router::sniff::{sniff_stream, sniff_datagram, SniffOutcome};
+    |                                                          ^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/sb-core/src/router/conn.rs:13:5
+   |
+13 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `sb_config::ir::RuleAction`
+  --> crates/sb-core/src/dns/config_builder.rs:91:17
+   |
+91 |             use sb_config::ir::RuleAction;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> crates/sb-core/src/services/cache_file.rs:20:35
+   |
+20 | use tracing::{debug, error, info, warn};
+   |                                   ^^^^
+
+warning: unused import: `StatsConfig`
+  --> crates/sb-core/src/services/v2ray_api.rs:31:5
+   |
+31 |     StatsConfig, SysStatsRequest, SysStatsResponse,
+   |     ^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/services/v2ray_api.rs:305:24
+    |
+305 |                 if let Ok(counters) = self.stats.counters.read().await {
+    |                        ^^^^^^^^^^^^   -------------------------------- this expression has type `tokio::sync::RwLockReadGuard<'_, HashMap<std::string::String, std::sync::Arc<StatCounter>>>`
+    |                        |
+    |                        expected `RwLockReadGuard<'_, HashMap<..., ...>>`, found `Result<_, _>`
+    |
+    = note: expected struct `tokio::sync::RwLockReadGuard<'_, HashMap<std::string::String, std::sync::Arc<StatCounter>>>`
+                 found enum `std::result::Result<_, _>`
+
+error[E0282]: type annotations needed
+   --> crates/sb-core/src/services/v2ray_api.rs:307:24
+    |
+307 |                        c.reset();
+    |                        ^ cannot infer type
+
+error[E0277]: the trait bound `GetStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:221:40
+    |
+221 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:221:40
+    |
+221 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:217:30
+    |
+217 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:217:30
+    |
+217 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:213:30
+    |
+213 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:213:30
+    |
+213 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:212:65
+    |
+212 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:212:65
+    |
+212 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `GetStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:221:35
+    |
+221 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:22:1
+    |
+ 22 | pub struct GetStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+
+error[E0277]: the trait bound `GetStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:221:35
+    |
+221 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `GetStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:4:1
+    |
+  4 | pub struct GetStatsRequest {
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<GetStatsResponse, GetStatsRequest>` to implement `tonic::codec::Codec`
+
+error[E0277]: the trait bound `QueryStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:267:40
+    |
+267 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ----------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:267:40
+    |
+267 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ---------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:263:30
+    |
+263 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ----------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:263:30
+    |
+263 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ---------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:259:30
+    |
+259 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ----------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:259:30
+    |
+259 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ---------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:258:65
+    |
+258 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ----------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:258:65
+    |
+258 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ---------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `QueryStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:267:35
+    |
+267 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:38:1
+    |
+ 38 | pub struct QueryStatsResponse {
+    | ----------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+
+error[E0277]: the trait bound `QueryStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:267:35
+    |
+267 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `QueryStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:28:1
+    |
+ 28 | pub struct QueryStatsRequest {
+    | ---------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<QueryStatsResponse, QueryStatsRequest>` to implement `tonic::codec::Codec`
+
+error[E0277]: the trait bound `SysStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:313:40
+    |
+313 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:313:40
+    |
+313 |                         let res = grpc.unary(method, req).await;
+    |                                        ^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::unary`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::unary`
+...
+221 |     pub async fn unary<S, B>(
+    |                  ----- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:309:30
+    |
+309 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:309:30
+    |
+309 | ...                   .apply_max_message_size_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_max_message_size_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_max_message_size_config`
+...
+203 |     pub fn apply_max_message_size_config(
+    |            ----------------------------- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:305:30
+    |
+305 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:305:30
+    |
+305 | ...                   .apply_compression_config(
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::apply_compression_config`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::apply_compression_config`
+...
+183 |     pub fn apply_compression_config(
+    |            ------------------------ required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:304:65
+    |
+304 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:304:65
+    |
+304 |                         let mut grpc = tonic::server::Grpc::new(codec)
+    |                                        ------------------------ ^^^^^ unsatisfied trait bound
+    |                                        |
+    |                                        required by a bound introduced by this call
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+note: required by a bound in `tonic::server::Grpc::<T>::new`
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-0.11.0/src/server/grpc.rs:46:8
+    |
+ 46 |     T: Codec,
+    |        ^^^^^ required by this bound in `Grpc::<T>::new`
+...
+ 49 |     pub fn new(codec: T) -> Self {
+    |            --- required by a bound in this associated function
+
+error[E0277]: the trait bound `SysStatsResponse: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:313:35
+    |
+313 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsResponse`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:47:1
+    |
+ 47 | pub struct SysStatsResponse {
+    | --------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+
+error[E0277]: the trait bound `SysStatsRequest: prost::message::Message` is not satisfied
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:313:35
+    |
+313 |                         let res = grpc.unary(method, req).await;
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `prost::message::Message` is not implemented for `SysStatsRequest`
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: there are multiple different versions of crate `prost` in the dependency graph
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.12.6/src/message.rs:17:1
+    |
+ 17 | pub trait Message: Debug + Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: crates/sb-core/src/services/v2ray_api.rs:25:5
+    |
+ 25 | use tonic::{transport::Server, Request, Response, Status};
+    |     ----- one version of crate `prost` used here, as a dependency of crate `tonic`
+    |
+   ::: crates/sb-core/src/router/geo.rs:288:13
+    |
+288 |         use prost::Message;
+    |             ----- one version of crate `prost` used here, as a direct dependency of the current crate
+    |
+   ::: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/build/sb-core-55d957edc50c2e16/out/v2ray.core.app.stats.command.rs:44:1
+    |
+ 44 | pub struct SysStatsRequest {}
+    | -------------------------- this type doesn't implement the required trait
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.1/src/message.rs:15:1
+    |
+ 15 | pub trait Message: Send + Sync {
+    | ------------------------------ this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for `ProstCodec<SysStatsResponse, SysStatsRequest>` to implement `tonic::codec::Codec`
+
+warning: unused import: `AsyncReadExt`
+   --> crates/sb-core/src/inbound/tun.rs:605:25
+    |
+605 |         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    |                         ^^^^^^^^^^^^
+
+warning: unused import: `AsyncWriteExt`
+   --> crates/sb-core/src/inbound/tun.rs:605:39
+    |
+605 |         use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    |                                       ^^^^^^^^^^^^^
+
+warning: variable `packet_received` is assigned to, but never used
+   --> crates/sb-core/src/inbound/tun.rs:664:17
+    |
+664 |             let mut packet_received = false;
+    |                 ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_packet_received` instead
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `packet_received` is never read
+   --> crates/sb-core/src/inbound/tun.rs:689:38
+    |
+689 | ...                   packet_received = true;
+    |                       ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `started`
+   --> crates/sb-core/src/router/engine.rs:978:13
+    |
+978 |         let started = Instant::now();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_started`
+
+warning: unused variable: `tag`
+   --> crates/sb-core/src/router/rule_set.rs:114:27
+    |
+114 |     fn load_rule_set_sync(tag: &str, path: &str, format_str: &str) -> Result<RuleMatcher, String> {
+    |                           ^^^ help: if this is intentional, prefix it with an underscore: `_tag`
+
+warning: variable does not need to be mutable
+   --> crates/sb-core/src/router/rules.rs:176:13
+    |
+176 |         let mut not_process_path_regex = Vec::new();
+    |             ----^^^^^^^^^^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/sb-core/src/router/rules.rs:186:13
+    |
+186 |         let mut rule = CompositeRule {
+    |             ----^^^^
+    |             |
+    |             help: remove this `mut`
+
+Some errors have detailed explanations: E0277, E0282, E0308.
+For more information about an error, try `rustc --explain E0277`.
+warning: `sb-core` (lib) generated 14 warnings
+error: could not compile `sb-core` (lib) due to 32 previous errors; 14 warnings emitted

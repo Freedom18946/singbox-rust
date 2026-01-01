@@ -63,27 +63,18 @@ pub fn build_tailscale_endpoint(
     ir: &EndpointIR,
     _ctx: &EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
-    // If the real adapter is compiled in, delegate to it.
-    #[cfg(feature = "adapter-tailscale-endpoint")]
-    {
-        return crate::endpoint::tailscale::build_tailscale_endpoint(ir, _ctx);
-    }
+    let tag = ir.tag.as_deref().unwrap_or("tailscale");
+    tracing::warn!(
+        endpoint_type = "tailscale",
+        tag = tag,
+        "Tailscale endpoint is not implemented; requires tailscale-go bindings or tsnet integration"
+    );
 
-    #[cfg(not(feature = "adapter-tailscale-endpoint"))]
-    {
-        let tag = ir.tag.as_deref().unwrap_or("tailscale");
-        tracing::warn!(
-            endpoint_type = "tailscale",
-            tag = tag,
-            "Tailscale endpoint is not implemented; requires tailscale-go bindings or tsnet integration"
-        );
-
-        // Return stub that will error when start() is called
-        Some(Arc::new(StubEndpoint {
-            ty_str: "tailscale",
-            tag: tag.to_string(),
-        }))
-    }
+    // Return stub that will error when start() is called
+    Some(Arc::new(StubEndpoint {
+        ty_str: "tailscale",
+        tag: tag.to_string(),
+    }))
 }
 
 /// Register all endpoint stubs.
@@ -100,6 +91,13 @@ pub fn register_endpoint_stubs() {
     #[cfg(not(feature = "adapter-wireguard-endpoint"))]
     sb_core::endpoint::register_endpoint(EndpointType::Wireguard, build_wireguard_endpoint);
 
+    #[cfg(feature = "adapter-tailscale-endpoint")]
+    sb_core::endpoint::register_endpoint(
+        EndpointType::Tailscale,
+        crate::endpoint::tailscale::build_tailscale_endpoint,
+    );
+
+    #[cfg(not(feature = "adapter-tailscale-endpoint"))]
     sb_core::endpoint::register_endpoint(EndpointType::Tailscale, build_tailscale_endpoint);
 }
 

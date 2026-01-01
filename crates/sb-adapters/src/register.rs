@@ -1855,7 +1855,11 @@ fn build_tun_inbound(
     };
 
     tracing::info!("Initializing TunInbound: {}", config.name);
-    Some(Arc::new(TunInbound::new(config, ctx.router.clone())))
+    Some(Arc::new(TunInbound::new(
+        config,
+        ctx.router.clone(),
+        ctx.outbounds.clone(),
+    )))
 }
 
 #[allow(dead_code)]

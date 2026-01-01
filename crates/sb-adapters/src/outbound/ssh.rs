@@ -47,7 +47,7 @@ pub struct SshConnector {
     #[allow(dead_code)]
     config: SshAdapterConfig,
     #[cfg(feature = "adapter-ssh")]
-    core: std::sync::Arc<sb_core::outbound::ssh_stub::SshOutbound>,
+    core: std::sync::Arc<sb_core::outbound::ssh::SshOutbound>,
 }
 
 impl std::fmt::Debug for SshConnector {
@@ -66,26 +66,26 @@ impl SshConnector {
             // This allows creating the connector with invalid config for testing
             if config.server.is_empty() || config.username.is_empty() {
                 // Create a dummy core that will fail validation in start()
-                let dummy_config = sb_core::outbound::ssh_stub::SshConfig {
+                let dummy_config = sb_core::outbound::ssh::SshConfig {
                     server: "invalid".to_string(),
                     port: 22,
                     username: "invalid".to_string(),
                     password: Some("invalid".to_string()),
                     ..Default::default()
                 };
-                let core = match sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config) {
+                let core = match sb_core::outbound::ssh::SshOutbound::new(dummy_config) {
                     Ok(c) => std::sync::Arc::new(c),
                     Err(e) => {
                         tracing::error!(error=%e, "Failed to create dummy SSH core; using safe fallback config");
                         // Safe fallback config to satisfy constructor validation
-                        let fb = sb_core::outbound::ssh_stub::SshConfig {
+                        let fb = sb_core::outbound::ssh::SshConfig {
                             server: "127.0.0.1".to_string(),
                             port: 22,
                             username: "dummy".to_string(),
                             password: Some("dummy".to_string()),
                             ..Default::default()
                         };
-                        let c = sb_core::outbound::ssh_stub::SshOutbound::new(fb)
+                        let c = sb_core::outbound::ssh::SshOutbound::new(fb)
                             .map_err(|e2| {
                                 tracing::error!(error=%e2, "SSH fallback core creation failed");
                                 e2
@@ -98,7 +98,7 @@ impl SshConnector {
             }
 
             // Convert adapter config to core config
-            let core_config = sb_core::outbound::ssh_stub::SshConfig {
+            let core_config = sb_core::outbound::ssh::SshConfig {
                 server: config.server.clone(),
                 port: config.port,
                 username: config.username.clone(),
@@ -114,30 +114,30 @@ impl SshConnector {
             };
 
             // Create core SSH outbound
-            let core = match sb_core::outbound::ssh_stub::SshOutbound::new(core_config) {
+            let core = match sb_core::outbound::ssh::SshOutbound::new(core_config) {
                 Ok(outbound) => std::sync::Arc::new(outbound),
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to create SSH outbound");
                     // Create a dummy core that will fail validation in start()
-                    let dummy_config = sb_core::outbound::ssh_stub::SshConfig {
+                    let dummy_config = sb_core::outbound::ssh::SshConfig {
                         server: "invalid".to_string(),
                         port: 22,
                         username: "invalid".to_string(),
                         password: Some("invalid".to_string()),
                         ..Default::default()
                     };
-                    match sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config) {
+                    match sb_core::outbound::ssh::SshOutbound::new(dummy_config) {
                         Ok(c) => std::sync::Arc::new(c),
                         Err(e2) => {
                             tracing::error!(error=%e2, "Failed to create dummy SSH core; using safe fallback config");
-                            let fb = sb_core::outbound::ssh_stub::SshConfig {
+                            let fb = sb_core::outbound::ssh::SshConfig {
                                 server: "127.0.0.1".to_string(),
                                 port: 22,
                                 username: "dummy".to_string(),
                                 password: Some("dummy".to_string()),
                                 ..Default::default()
                             };
-                            let c = sb_core::outbound::ssh_stub::SshOutbound::new(fb)
+                            let c = sb_core::outbound::ssh::SshOutbound::new(fb)
                                 .expect("SSH fallback core must construct");
                             std::sync::Arc::new(c)
                         }

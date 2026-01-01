@@ -1,16 +1,13 @@
 //! V2Ray API Server Implementation
 //!
-//! Provides V2Ray-compatible API for statistics and management.
+//! Provides V2Ray-compatible API for statistics and management via gRPC.
 //! This module bridges the sb-core context with sb-api's V2Ray implementation.
 //!
 //! ## Services
 //! - Stats Service: Query traffic statistics
-//! - Handler Service: Manage inbound/outbound handlers
-//! - Logger Service: Log streaming
 //!
 //! ## Endpoints
-//! Stats are exposed via JSON over HTTP for simplicity.
-//! Full gRPC support requires the `tonic` dependency.
+//! Exposed via gRPC on the configured listen address.
 
 use crate::context::V2RayServer;
 use sb_config::ir::V2RayApiIR;
@@ -22,15 +19,17 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[cfg(feature = "service_v2ray_api")]
-use axum::{
-    extract::{Query, State},
-    response::Json,
-    routing::get,
-    Router,
-};
+use tokio::sync::oneshot;
 
 #[cfg(feature = "service_v2ray_api")]
-use tokio::sync::oneshot;
+use tonic::{transport::Server, Request, Response, Status};
+
+#[cfg(feature = "service_v2ray_api")]
+use crate::services::v2ray::stats::command::{
+    stats_service_server::{StatsService, StatsServiceServer},
+    GetStatsRequest, GetStatsResponse, QueryStatsRequest, QueryStatsResponse, Stat,
+    StatsConfig, SysStatsRequest, SysStatsResponse,
+};
 
 /// Statistics counter
 #[derive(Debug, Default)]
@@ -191,29 +190,6 @@ impl V2RayApiServer {
     fn listen_addr(&self) -> Option<SocketAddr> {
         self.cfg.listen.as_ref().and_then(|addr| addr.parse().ok())
     }
-
-    /// Create the Axum router with V2Ray API endpoints
-    #[cfg(feature = "service_v2ray_api")]
-    fn create_router(&self) -> Router {
-        Router::new()
-            .route(
-                "/v2ray.core.app.stats.command.StatsService/GetStats",
-                get(handlers::get_stats),
-            )
-            .route(
-                "/v2ray.core.app.stats.command.StatsService/QueryStats",
-                get(handlers::query_stats),
-            )
-            .route(
-                "/v2ray.core.app.stats.command.StatsService/GetSysStats",
-                get(handlers::get_sys_stats),
-            )
-            // Simplified HTTP endpoints
-            .route("/api/stats", get(handlers::api_stats))
-            .route("/api/stats/query", get(handlers::api_query_stats))
-            .route("/api/sys", get(handlers::api_sys_stats))
-            .with_state(self.state.clone())
-    }
 }
 
 impl V2RayServer for V2RayApiServer {
@@ -246,49 +222,42 @@ impl V2RayServer for V2RayApiServer {
             self.started.store(true, Ordering::SeqCst);
 
             // Initialize standard counters
-            let stats = self.state.stats.clone();
+            let stats_manager = self.state.stats.clone();
             tokio::spawn(async move {
-                stats.init_standard_counters().await;
+                stats_manager.init_standard_counters().await;
             });
-
-            let router = self.create_router();
 
             tracing::info!(
                 target: "sb_core::services::v2ray",
                 listen = %listen_addr,
                 stats_enabled = self.state.enabled,
-                "Starting V2Ray API HTTP server"
+                "Starting V2Ray API gRPC server"
             );
 
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
             *self.shutdown_tx.lock() = Some(shutdown_tx);
 
+            // Create service implementation
+            let stats_service = StatsServiceImpl {
+                stats: self.state.stats.clone(),
+            };
+
             tokio::spawn(async move {
-                let listener = match tokio::net::TcpListener::bind(listen_addr).await {
-                    Ok(l) => l,
-                    Err(e) => {
-                        tracing::error!(
-                            target: "sb_core::services::v2ray",
-                            error = %e,
-                            "Failed to bind V2Ray API server"
-                        );
-                        return;
-                    }
-                };
+                let serve = Server::builder()
+                    .add_service(StatsServiceServer::new(stats_service))
+                    .serve_with_shutdown(listen_addr, async {
+                        let _ = shutdown_rx.await;
+                        tracing::info!(target: "sb_core::services::v2ray", "Received shutdown signal");
+                    });
 
-                tracing::info!(
-                    target: "sb_core::services::v2ray",
-                    listen = %listen_addr,
-                    "V2Ray API HTTP server started"
-                );
-
-                let server = axum::serve(listener, router).with_graceful_shutdown(async {
-                    let _ = shutdown_rx.await;
-                    tracing::info!(target: "sb_core::services::v2ray", "Received shutdown signal");
-                });
-
-                if let Err(e) = server.await {
-                    tracing::error!(target: "sb_core::services::v2ray", error = %e, "V2Ray API server error");
+                if let Err(e) = serve.await {
+                    tracing::error!(
+                        target: "sb_core::services::v2ray",
+                        error = %e,
+                        "V2Ray API server error"
+                    );
+                } else {
+                     tracing::info!(target: "sb_core::services::v2ray", "V2Ray API server stopped");
                 }
             });
 
@@ -306,87 +275,34 @@ impl V2RayServer for V2RayApiServer {
             }
         }
 
-        tracing::info!(target: "sb_core::services::v2ray", "V2Ray API server stopped");
         Ok(())
     }
 }
 
-/// HTTP handlers for V2Ray API endpoints
+// ─────────────────────────────────────────────────────────────────────────
+// gRPC Handler Implementation
+// ─────────────────────────────────────────────────────────────────────────
+
 #[cfg(feature = "service_v2ray_api")]
-mod handlers {
-    use super::*;
-    use serde::{Deserialize, Serialize};
+#[derive(Debug)]
+pub struct StatsServiceImpl {
+    stats: Arc<StatsManager>,
+}
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Response Types (V2Ray compatible)
-    // ─────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "service_v2ray_api")]
+#[tonic::async_trait]
+impl StatsService for StatsServiceImpl {
+    async fn get_stats(
+        &self,
+        request: Request<GetStatsRequest>,
+    ) -> Result<Response<GetStatsResponse>, Status> {
+        let req = request.into_inner();
+        let name = req.name;
+        let reset = req.reset;
 
-    #[derive(Serialize)]
-    pub struct Stat {
-        pub name: String,
-        pub value: i64,
-    }
-
-    #[derive(Serialize)]
-    pub struct GetStatsResponse {
-        pub stat: Option<Stat>,
-    }
-
-    #[derive(Serialize)]
-    pub struct QueryStatsResponse {
-        pub stat: Vec<Stat>,
-    }
-
-    #[derive(Serialize)]
-    pub struct SysStatsResponse {
-        #[serde(rename = "NumGoroutine")]
-        pub num_goroutine: u32,
-        #[serde(rename = "NumGC")]
-        pub num_gc: u32,
-        #[serde(rename = "Alloc")]
-        pub alloc: u64,
-        #[serde(rename = "TotalAlloc")]
-        pub total_alloc: u64,
-        #[serde(rename = "Sys")]
-        pub sys: u64,
-        #[serde(rename = "Mallocs")]
-        pub mallocs: u64,
-        #[serde(rename = "Frees")]
-        pub frees: u64,
-        #[serde(rename = "LiveObjects")]
-        pub live_objects: u64,
-        #[serde(rename = "PauseTotalNs")]
-        pub pause_total_ns: u64,
-        #[serde(rename = "Uptime")]
-        pub uptime: u32,
-    }
-
-    #[derive(Deserialize)]
-    pub struct StatsQuery {
-        name: Option<String>,
-        reset: Option<bool>,
-    }
-
-    #[derive(Deserialize)]
-    pub struct QueryStatsQuery {
-        pattern: Option<String>,
-        reset: Option<bool>,
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Handler Implementations
-    // ─────────────────────────────────────────────────────────────────────────
-
-    pub async fn get_stats(
-        State(state): State<V2RayApiState>,
-        Query(params): Query<StatsQuery>,
-    ) -> Json<GetStatsResponse> {
-        let name = params.name.unwrap_or_default();
-        let reset = params.reset.unwrap_or(false);
-
-        let stat = if let Some(value) = state.stats.get_stat(&name).await {
+        let stat = if let Some(value) = self.stats.get_stat(&name).await {
             if reset {
-                let counter = state.stats.get_counter(&name).await;
+                let counter = self.stats.get_counter(&name).await;
                 counter.reset();
             }
             Some(Stat {
@@ -397,18 +313,19 @@ mod handlers {
             None
         };
 
-        Json(GetStatsResponse { stat })
+        Ok(Response::new(GetStatsResponse { stat }))
     }
 
-    pub async fn query_stats(
-        State(state): State<V2RayApiState>,
-        Query(params): Query<QueryStatsQuery>,
-    ) -> Json<QueryStatsResponse> {
-        let pattern = params.pattern.unwrap_or_default();
-        let reset = params.reset.unwrap_or(false);
+    async fn query_stats(
+        &self,
+        request: Request<QueryStatsRequest>,
+    ) -> Result<Response<QueryStatsResponse>, Status> {
+        let req = request.into_inner();
+        let pattern = req.pattern;
+        let reset = req.reset;
 
-        let stats = state.stats.query_stats(&pattern, reset).await;
-        let stat = stats
+        let stats = self.stats.query_stats(&pattern, reset).await;
+        let stat_list = stats
             .into_iter()
             .map(|(name, value)| Stat {
                 name,
@@ -416,15 +333,18 @@ mod handlers {
             })
             .collect();
 
-        Json(QueryStatsResponse { stat })
+        Ok(Response::new(QueryStatsResponse { stat: stat_list }))
     }
 
-    pub async fn get_sys_stats() -> Json<SysStatsResponse> {
-        // Simulate Go runtime stats with Rust equivalents
-        Json(SysStatsResponse {
+    async fn get_sys_stats(
+        &self,
+        _request: Request<SysStatsRequest>,
+    ) -> Result<Response<SysStatsResponse>, Status> {
+        // Simulate Go runtime stats
+        let resp = SysStatsResponse {
             num_goroutine: tokio::runtime::Handle::current().metrics().num_workers() as u32,
-            num_gc: 0, // No GC in Rust
-            alloc: 0,  // Would need allocator tracking
+            num_gc: 0,
+            alloc: 0,
             total_alloc: 0,
             sys: 0,
             mallocs: 0,
@@ -435,26 +355,8 @@ mod handlers {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as u32)
                 .unwrap_or(0),
-        })
-    }
-
-    // Simplified API endpoints
-    pub async fn api_stats(
-        State(state): State<V2RayApiState>,
-        Query(params): Query<StatsQuery>,
-    ) -> Json<GetStatsResponse> {
-        get_stats(State(state), Query(params)).await
-    }
-
-    pub async fn api_query_stats(
-        State(state): State<V2RayApiState>,
-        Query(params): Query<QueryStatsQuery>,
-    ) -> Json<QueryStatsResponse> {
-        query_stats(State(state), Query(params)).await
-    }
-
-    pub async fn api_sys_stats() -> Json<SysStatsResponse> {
-        get_sys_stats().await
+        };
+        Ok(Response::new(resp))
     }
 }
 
@@ -506,3 +408,4 @@ mod tests {
         );
     }
 }
+
