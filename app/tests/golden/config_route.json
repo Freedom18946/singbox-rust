@@ -18,7 +18,7 @@
   ],
   "rules": [
     {
-      "domain_suffix": ["example.com"],
+      "domain": ["example.com"],
       "outbound": "direct"
     }
   ],

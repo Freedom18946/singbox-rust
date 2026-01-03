@@ -31,20 +31,18 @@ fn bench_tcp_direct_throughput(c: &mut Criterion) {
     };
 
     thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                thread::spawn(move || {
-                    let mut buf = [0u8; 8192];
-                    loop {
-                        match s.read(&mut buf) {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => {
-                                let _ = s.write_all(&buf[..n]);
-                            }
+        for mut s in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+                loop {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = s.write_all(&buf[..n]);
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 
@@ -89,20 +87,18 @@ fn bench_latency_echo(c: &mut Criterion) {
     };
 
     thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                thread::spawn(move || {
-                    let mut buf = [0u8; 128];
-                    loop {
-                        match s.read(&mut buf) {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => {
-                                let _ = s.write_all(&buf[..n]);
-                            }
+        for mut s in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buf = [0u8; 128];
+                loop {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = s.write_all(&buf[..n]);
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 
@@ -147,20 +143,18 @@ fn bench_concurrent_connections(c: &mut Criterion) {
     };
 
     thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                thread::spawn(move || {
-                    let mut buf = [0u8; 1024];
-                    loop {
-                        match s.read(&mut buf) {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => {
-                                let _ = s.write_all(&buf[..n]);
-                            }
+        for mut s in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = s.write_all(&buf[..n]);
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 
@@ -170,7 +164,6 @@ fn bench_concurrent_connections(c: &mut Criterion) {
         b.iter(|| {
             let handles: Vec<_> = (0..100)
                 .map(|_| {
-                    let addr = addr;
                     thread::spawn(move || {
                         let Ok(mut stream) = TcpStream::connect(addr) else {
                             return;

@@ -377,13 +377,12 @@ where
 
     // Check private network access
     if !cfg.allow_private_network {
-         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-             if is_private_ip(ip) {
-                 use tokio::io::AsyncWriteExt;
-                 warn!(?peer, target=%target, "http: blocked private network access");
-                 return respond_403(&mut cli).await.map_err(|e| anyhow::anyhow!(e));
-             }
-         }
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            if is_private_ip(ip) {
+                warn!(?peer, target=%target, "http: blocked private network access");
+                return respond_403(&mut cli).await.map_err(|e| anyhow::anyhow!(e));
+            }
+        }
     }
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
 

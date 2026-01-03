@@ -41,7 +41,6 @@ async fn test_http_to_direct() {
 #[tokio::test]
 async fn test_socks5_to_http_proxy() {
     // Smoke test for protocol chain: SOCKS5 → HTTP Proxy
-    assert!(true, "Protocol chain test placeholder");
 }
 
 /// Test that Mixed inbound can detect and route both protocols
@@ -49,28 +48,24 @@ async fn test_socks5_to_http_proxy() {
 #[cfg(all(feature = "http", feature = "socks"))]
 async fn test_mixed_inbound_dual_protocol() {
     // Test both HTTP and SOCKS5 through Mixed inbound
-    assert!(true, "Mixed protocol routing test placeholder");
 }
 
 /// Test error handling when upstream is unreachable
 #[tokio::test]
 async fn test_upstream_unreachable_error_handling() {
     // Verify proper error codes are returned when upstream fails
-    assert!(true, "Error handling test placeholder");
 }
 
 /// Test timeout handling for slow upstreams
 #[tokio::test]
 async fn test_upstream_timeout_handling() {
     // Verify timeout configuration works correctly
-    assert!(true, "Timeout handling test placeholder");
 }
 
 /// Test concurrent connections through different protocols
 #[tokio::test]
 async fn test_concurrent_protocol_connections() {
     // Verify thread-safety and concurrent connection handling
-    assert!(true, "Concurrency test placeholder");
 }
 
 /// Helper to create a simple echo server for testing
@@ -103,7 +98,6 @@ fn test_framework_metrics_availability() {
     #[cfg(feature = "metrics")]
     {
         // Metrics should be available when feature is enabled
-        assert!(true, "Metrics feature enabled");
     }
 }
 

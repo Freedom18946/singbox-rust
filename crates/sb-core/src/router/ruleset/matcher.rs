@@ -192,10 +192,10 @@ impl RuleMatcher {
             }
         }
 
-        if !rule.geosite.is_empty() {
-            if !ctx.geosite_codes.iter().any(|c| rule.geosite.contains(c)) {
-                return false;
-            }
+        if !rule.geosite.is_empty()
+            && !ctx.geosite_codes.iter().any(|c| rule.geosite.contains(c))
+        {
+            return false;
         }
 
         // IP CIDR matching
@@ -350,11 +350,8 @@ impl RuleMatcher {
         }
 
         // IP Accept Any matching
-        if rule.ip_accept_any {
-             if ctx.destination_ip.is_none() {
-                 return false;
-             }
-             // matches any valid IP
+        if rule.ip_accept_any && ctx.destination_ip.is_none() {
+            return false;
         }
 
         true // All conditions matched

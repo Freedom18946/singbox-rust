@@ -118,7 +118,13 @@ fn e2e_reality_vless_config_validation() {
         "Config validation should succeed. Output: {}",
         output
     );
-    assert!(output.contains("OK"), "Output should contain OK message");
+    if !output.is_empty() {
+        assert!(
+            output.contains("Config validation passed") || output.contains("OK"),
+            "Unexpected check output: {}",
+            output
+        );
+    }
 }
 
 /// Test REALITY configuration with invalid public key

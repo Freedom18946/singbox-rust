@@ -34,7 +34,7 @@ pub struct TlsConf {
 
 impl TlsConf {
     #[must_use]
-    pub fn disabled() -> Self {
+    pub const fn disabled() -> Self {
         Self {
             enabled: false,
             cert: PathBuf::new(),

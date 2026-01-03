@@ -710,6 +710,10 @@ pub fn pack_output(issues: Vec<Value>) -> Value {
 fn parse_rule_entry(val: &Value) -> crate::ir::RuleIR {
     let mut r = crate::ir::RuleIR::default();
     if let Some(obj) = val.as_object() {
+        let condition_obj = obj
+            .get("when")
+            .and_then(|v| v.as_object())
+            .unwrap_or(obj);
         // Parse type/mode/sub-rules for logical rules
         let rule_type = obj.get("type").and_then(|v| v.as_str());
         if rule_type == Some("logical") {
@@ -719,24 +723,51 @@ fn parse_rule_entry(val: &Value) -> crate::ir::RuleIR {
             }
         }
 
-        r.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
-        r.domain_suffix = extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
-        r.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
-        r.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
-        r.ipcidr = extract_string_list(obj.get("ipcidr")).unwrap_or_default();
-        r.port = extract_string_list(obj.get("port")).unwrap_or_default();
-        r.process_name = extract_string_list(obj.get("process_name").or(obj.get("process"))).unwrap_or_default();
-        r.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
-        r.network = extract_string_list(obj.get("network")).unwrap_or_default();
-        r.protocol = extract_string_list(obj.get("protocol")).unwrap_or_default();
-        r.source = extract_string_list(obj.get("source")).unwrap_or_default();
-        r.dest = extract_string_list(obj.get("dest")).unwrap_or_default();
-        r.user_agent = extract_string_list(obj.get("user_agent")).unwrap_or_default();
-        r.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
-        r.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
-        r.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
+        r.domain = extract_string_list(condition_obj.get("domain")).unwrap_or_default();
+        r.domain_suffix = extract_string_list(
+            condition_obj
+                .get("domain_suffix")
+                .or_else(|| condition_obj.get("suffix")),
+        )
+        .unwrap_or_default();
+        r.domain_keyword = extract_string_list(
+            condition_obj
+                .get("domain_keyword")
+                .or_else(|| condition_obj.get("keyword")),
+        )
+        .unwrap_or_default();
+        r.domain_regex = extract_string_list(
+            condition_obj
+                .get("domain_regex")
+                .or_else(|| condition_obj.get("regex")),
+        )
+        .unwrap_or_default();
+        r.geosite = extract_string_list(condition_obj.get("geosite")).unwrap_or_default();
+        r.geoip = extract_string_list(condition_obj.get("geoip")).unwrap_or_default();
+        r.ipcidr = extract_string_list(
+            condition_obj
+                .get("ipcidr")
+                .or_else(|| condition_obj.get("ip_cidr")),
+        )
+        .unwrap_or_default();
+        r.port = extract_string_list(condition_obj.get("port")).unwrap_or_default();
+        r.process_name = extract_string_list(
+            condition_obj
+                .get("process_name")
+                .or_else(|| condition_obj.get("process")),
+        )
+        .unwrap_or_default();
+        r.process_path = extract_string_list(condition_obj.get("process_path")).unwrap_or_default();
+        r.network = extract_string_list(condition_obj.get("network")).unwrap_or_default();
+        r.protocol = extract_string_list(condition_obj.get("protocol")).unwrap_or_default();
+        r.source = extract_string_list(condition_obj.get("source")).unwrap_or_default();
+        r.dest = extract_string_list(condition_obj.get("dest")).unwrap_or_default();
+        r.user_agent = extract_string_list(condition_obj.get("user_agent")).unwrap_or_default();
+        r.wifi_ssid = extract_string_list(condition_obj.get("wifi_ssid")).unwrap_or_default();
+        r.wifi_bssid = extract_string_list(condition_obj.get("wifi_bssid")).unwrap_or_default();
+        r.rule_set = extract_string_list(condition_obj.get("rule_set")).unwrap_or_default();
         
-        r.query_type = extract_string_list(obj.get("query_type")).unwrap_or_default();
+        r.query_type = extract_string_list(condition_obj.get("query_type")).unwrap_or_default();
 
         r.not_domain = extract_string_list(obj.get("not_domain")).unwrap_or_default();
         r.not_geosite = extract_string_list(obj.get("not_geosite")).unwrap_or_default();
@@ -762,7 +793,11 @@ fn parse_rule_entry(val: &Value) -> crate::ir::RuleIR {
         r.rewrite_ttl = parse_u32_field(obj.get("rewrite_ttl"));
         r.client_subnet = obj.get("client_subnet").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-        r.outbound = obj.get("outbound").and_then(|v| v.as_str()).map(|s| s.to_string());
+        r.outbound = obj
+            .get("outbound")
+            .or_else(|| obj.get("to"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         r.invert = obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
     }
     r
@@ -787,16 +822,23 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 _ => crate::ir::InboundType::Socks,
             };
             // Common fields
-            let listen = i
+            let mut listen = i
                 .get("listen")
                 .and_then(|v| v.as_str())
                 .unwrap_or("127.0.0.1")
                 .to_string();
-            let port = i
+            let mut port = i
                 .get("listen_port")
                 .or_else(|| i.get("port"))
                 .and_then(|v| v.as_u64())
-                .unwrap_or(1080) as u16;
+                .and_then(|v| u16::try_from(v).ok());
+            if port.is_none() {
+                if let Some((host, parsed_port)) = parse_listen_host_port(&listen) {
+                    listen = host;
+                    port = Some(parsed_port);
+                }
+            }
+            let port = port.unwrap_or(1080);
             let sniff = i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false);
             // Network selection: if network == "udp", set udp=true; if "tcp" or missing, false
             let udp = if let Some(net) = i.get("network").and_then(|v| v.as_str()) {
@@ -2550,6 +2592,20 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     normalize_credentials(&mut ir);
     ir
+}
+
+fn parse_listen_host_port(listen: &str) -> Option<(String, u16)> {
+    if let Some(stripped) = listen.strip_prefix('[') {
+        let close = stripped.find(']')?;
+        let host = &stripped[..close];
+        let rest = &stripped[close + 1..];
+        let port_str = rest.strip_prefix(':')?;
+        let port = port_str.parse().ok()?;
+        return Some((host.to_string(), port));
+    }
+    let (host, port_str) = listen.rsplit_once(':')?;
+    let port = port_str.parse().ok()?;
+    Some((host.to_string(), port))
 }
 
 #[cfg(test)]

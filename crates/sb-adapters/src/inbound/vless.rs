@@ -316,10 +316,10 @@ async fn prepare_tls_layer(
             return Ok(None);
         }
 
-        return Ok(Some(Box::new(tls_stream)));
+        Ok(Some(Box::new(tls_stream)))
     } else {
         // No TLS
-        return Ok(Some(Box::new(stream)));
+        Ok(Some(Box::new(stream)))
     }
 }
 

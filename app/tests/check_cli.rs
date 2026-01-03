@@ -1,5 +1,4 @@
 // app/tests/check_cli.rs
-use assert_cmd::Command as AssertCommand;
 use std::fs;
 use tempfile::NamedTempFile;
 
@@ -14,13 +13,13 @@ fn good_config_ok() {
     let good = r#"
 schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18081 } ]
-outbounds: [ { type: direct } ]
+outbounds: [ { type: direct, name: direct } ]
 route: { rules: [ { domain: ["example.com"], outbound: "direct" } ] }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), good).unwrap();
 
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     cmd.args(["--config", temp_file.path().to_str().unwrap()])
         .assert()
         .success();
@@ -36,7 +35,7 @@ dns: { mode: bad }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     cmd.args([
         "--config",
         temp_file.path().to_str().unwrap(),
@@ -59,7 +58,7 @@ dns: { mode: system }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     cmd.args([
         "--config",
         temp_file.path().to_str().unwrap(),
@@ -82,7 +81,7 @@ unknown_field: "should_fail"
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     cmd.args([
         "--config",
         temp_file.path().to_str().unwrap(),
@@ -105,7 +104,7 @@ unknown_field: "should_fail"
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     cmd.args([
         "--config",
         temp_file.path().to_str().unwrap(),
@@ -126,7 +125,7 @@ dns: { mode: system }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     let output = cmd
         .args([
             "--config",
@@ -157,7 +156,7 @@ unknown_field: "should_fail"
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     let out = cmd
         .args([
             "--config",
@@ -204,7 +203,7 @@ unknown_field_2: "error2"
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad_config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     let out = cmd
         .args([
             "--config",
@@ -230,7 +229,7 @@ unknown_field_2: "error2"
     assert!(!issues.is_empty());
 
     // Verify that running the same config produces the same fingerprint
-    let mut cmd2 = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd2 = assert_cmd::cargo::cargo_bin_cmd!("check");
     let out2 = cmd2
         .args([
             "--config",
@@ -266,7 +265,7 @@ dns: { mode: system }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), type_error_config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     let out = cmd
         .args([
             "--config",
@@ -313,7 +312,7 @@ invalid_field: "test"
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad_config).unwrap();
-    let mut cmd = AssertCommand::cargo_bin("check").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("check");
     let out = cmd
         .args([
             "--config",

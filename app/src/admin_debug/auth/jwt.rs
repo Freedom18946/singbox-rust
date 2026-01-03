@@ -513,7 +513,26 @@ impl AuthProvider for JwtProvider {
 
         let token = self.extract_token(auth_header.trim())?;
 
-        // Since we're in a sync context, we need to use a runtime
+        // Since we're in a sync context, we need to use a runtime.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+                return tokio::task::block_in_place(|| handle.block_on(self.verify_token(&token)));
+            }
+
+            let provider = self.clone();
+            let join = std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    AuthError::internal(format!("Failed to create async runtime: {e}"))
+                })?;
+                rt.block_on(provider.verify_token(&token))
+            });
+
+            return match join.join() {
+                Ok(result) => result,
+                Err(_) => Err(AuthError::internal("JWT verification thread panicked")),
+            };
+        }
+
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| AuthError::internal(format!("Failed to create async runtime: {e}")))?;
 

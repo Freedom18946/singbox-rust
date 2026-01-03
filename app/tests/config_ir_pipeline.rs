@@ -1,5 +1,4 @@
 #![cfg(feature = "dev-cli")]
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -17,8 +16,7 @@ fn normalize_write_out() {
     }"#;
     let tmp = write_cfg(cfg);
     let out = format!("{}.normalized.json", tmp.path().to_str().unwrap());
-    let _ = Command::cargo_bin("app")
-        .unwrap()
+    let _ = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -41,8 +39,7 @@ fn minimize_guard_works() {
     let cfg =
         r#"{"route":{"rules":[{"not_domain":["x.com"],"domain":["A.COM","a.com"],"outbound":"direct"}]}}"#;
     let tmp = write_cfg(cfg);
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

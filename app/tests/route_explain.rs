@@ -1,6 +1,5 @@
 #[cfg(feature = "router")]
 mod route_explain_tests {
-    use assert_cmd::Command;
     use serde_json::Value;
     use std::fs;
 
@@ -20,8 +19,7 @@ mod route_explain_tests {
     #[test]
     fn explain_json_shape() {
         let tmp = write_cfg(CFG);
-        let out = Command::cargo_bin("app")
-            .unwrap()
+        let out = assert_cmd::cargo::cargo_bin_cmd!("app")
             .args([
                 "route",
                 "-c",
@@ -53,8 +51,7 @@ mod route_explain_tests {
     #[test]
     fn explain_with_trace_includes_trace() {
         let tmp = write_cfg(CFG);
-        let out = Command::cargo_bin("app")
-            .unwrap()
+        let out = assert_cmd::cargo::cargo_bin_cmd!("app")
             .args([
                 "route",
                 "-c",

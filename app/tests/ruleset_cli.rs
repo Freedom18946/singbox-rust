@@ -1,6 +1,5 @@
 #![cfg(feature = "router")]
 
-use assert_cmd::Command;
 use predicates::str::contains;
 use serde_json::json;
 use std::fs;
@@ -32,15 +31,13 @@ fn write_ruleset_file() -> NamedTempFile {
 #[test]
 fn ruleset_validate_and_info() {
     let file = write_ruleset_file();
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["ruleset", "validate", file.path().to_str().unwrap()])
         .assert()
         .success()
         .stdout(contains("Rule-set is valid"));
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["ruleset", "info", file.path().to_str().unwrap()])
         .assert()
         .success()
@@ -51,8 +48,7 @@ fn ruleset_validate_and_info() {
 #[test]
 fn ruleset_format_outputs_pretty_json() {
     let file = write_ruleset_file();
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["ruleset", "format", file.path().to_str().unwrap()])
         .assert()
         .success()
@@ -62,8 +58,7 @@ fn ruleset_format_outputs_pretty_json() {
 #[test]
 fn ruleset_match_bool_output() {
     let file = write_ruleset_file();
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "match",
@@ -77,8 +72,7 @@ fn ruleset_match_bool_output() {
         .success()
         .stdout(contains("matched: true"));
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "match",
@@ -101,8 +95,7 @@ fn ruleset_compile_and_convert_roundtrip() {
         .expect("temp json output");
 
     // compile JSON -> SRS
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "compile",
@@ -117,8 +110,7 @@ fn ruleset_compile_and_convert_roundtrip() {
     assert!(!srs_bytes.is_empty());
 
     // convert SRS -> JSON and ensure fields survive
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "convert",
@@ -161,8 +153,7 @@ fn ruleset_merge_combines_inputs() {
         .tempfile()
         .expect("merged output");
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "merge",
@@ -189,8 +180,7 @@ fn ruleset_upgrade_sets_target_version() {
         .expect("upgraded output");
 
     // compile JSON to SRS version 1
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "compile",
@@ -203,8 +193,7 @@ fn ruleset_upgrade_sets_target_version() {
         .success();
 
     // upgrade to version 5 and write JSON
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "ruleset",
             "upgrade",

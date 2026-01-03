@@ -36,7 +36,6 @@ use tracing::{debug, info, warn};
 use crate::transport_config::InboundStream;
 
 #[cfg(feature = "tls_reality")]
-#[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
 #[cfg(feature = "tls_reality")]
@@ -378,10 +377,10 @@ async fn prepare_tls_layer(
             return Ok(None);
         }
 
-        return Ok(Some(Box::new(tls_stream)));
+        Ok(Some(Box::new(tls_stream)))
     } else {
         // No TLS
-        return Ok(Some(Box::new(stream)));
+        Ok(Some(Box::new(stream)))
     }
 }
 

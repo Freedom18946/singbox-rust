@@ -4,18 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Clash operating mode (Go parity: constant.Mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ClashMode {
     Global,
+    #[default]
     Rule,
     Direct,
-}
-
-impl Default for ClashMode {
-    fn default() -> Self {
-        Self::Rule
-    }
 }
 
 impl fmt::Display for ClashMode {

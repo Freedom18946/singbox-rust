@@ -70,8 +70,10 @@ impl ServiceHandle {
 }
 
 impl Runtime {
+    /// # Errors
+    /// Returns an error if shutdown exceeds the provided timeout.
     pub async fn shutdown(self, timeout: Duration) -> Result<()> {
-        let Runtime {
+        let Self {
             inbounds,
             #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
             services,
@@ -92,7 +94,7 @@ impl Runtime {
 
         tokio::time::timeout(timeout, shutdown)
             .await
-            .map_err(|_| anyhow!("shutdown timeout after {:?}", timeout))?;
+            .map_err(|_| anyhow!("shutdown timeout after {timeout:?}"))?;
         Ok(())
     }
 }
@@ -770,22 +772,16 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     let cfg_ir = Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
 
     // Initialize CacheFile service (Experiment)
-    let cache_service = if let Some(ref exp) = cfg_ir.experimental {
-        if let Some(ref cache_cfg) = exp.cache_file {
-            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(
-                cache_cfg,
-            ));
-            
+    let cache_service = cfg_ir.experimental.as_ref().and_then(|exp| {
+        exp.cache_file.as_ref().map(|cache_cfg| {
+            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(cache_cfg));
+
             // Wire to FakeIP persistence
             sb_core::dns::fakeip::set_storage(svc.clone());
-            
-            Some(svc as Arc<dyn sb_core::context::CacheFile>)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+
+            svc as Arc<dyn sb_core::context::CacheFile>
+        })
+    });
 
     // Global Context
     let mut ctx = sb_core::context::Context::new();
@@ -827,10 +823,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     let inbound_handles = start_inbounds_from_ir(
         &cfg_ir.inbounds,
         #[cfg(feature = "router")]
-        rh.clone(),
-        oh.clone(),
-    )
-    .await;
+        &rh,
+        &oh,
+    );
 
     // 3) Start experimental services if configured
     // 3) 如果配置了实验性服务则启动
@@ -841,7 +836,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         if let Some(ref clash) = exp.clash_api {
             if let Some(ref listen) = clash.external_controller {
                 if let Some(handle) = start_clash_api_server(
-                    listen.clone(),
+                    listen.as_str(),
                     clash.secret.clone(),
                     #[cfg(feature = "router")]
                     rh.clone(),
@@ -859,7 +854,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref v2ray) = exp.v2ray_api {
             if let Some(ref listen) = v2ray.listen {
-                if let Some(handle) = start_v2ray_api_server(listen.clone()) {
+                if let Some(handle) = start_v2ray_api_server(listen.as_str()) {
                     service_handles.push(handle);
                 }
             }
@@ -878,11 +873,10 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 /// Delegates to `inbound_starter` module to reduce complexity
-#[allow(clippy::unused_async)]
-async fn start_inbounds_from_ir(
+fn start_inbounds_from_ir(
     inbounds: &[sb_config::ir::InboundIR],
-    #[cfg(feature = "router")] router: Arc<RouterHandle>,
-    outbounds: Arc<OutboundRegistryHandle>,
+    #[cfg(feature = "router")] router: &Arc<RouterHandle>,
+    outbounds: &Arc<OutboundRegistryHandle>,
 ) -> Vec<app::inbound_starter::InboundHandle> {
     app::inbound_starter::start_inbounds_from_ir(
         inbounds,
@@ -890,14 +884,13 @@ async fn start_inbounds_from_ir(
         router,
         outbounds,
     )
-    .await
 }
 
 /// Start Clash API server in background task.
 /// 在后台任务中启动 Clash API 服务器。
 #[cfg(feature = "clash_api")]
 fn start_clash_api_server(
-    listen: String,
+    listen: &str,
     secret: Option<String>,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
@@ -936,7 +929,7 @@ fn start_clash_api_server(
             }
 
             #[cfg(feature = "router")]
-            let server = server.with_router(router.clone());
+            let server = server.with_router(router);
 
             info!(listen = %listen_addr, "Starting Clash API server");
             let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
@@ -961,7 +954,7 @@ fn start_clash_api_server(
 /// Start `V2Ray` API server in background task.
 /// 在后台任务中启动 `V2Ray` API 服务器。
 #[cfg(feature = "v2ray_api")]
-fn start_v2ray_api_server(listen: String) -> Option<ServiceHandle> {
+fn start_v2ray_api_server(listen: &str) -> Option<ServiceHandle> {
     use std::net::SocketAddr;
 
     let listen_addr: SocketAddr = match listen.parse() {

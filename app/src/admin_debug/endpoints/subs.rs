@@ -268,7 +268,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     let t0 = Instant::now();
 
     // Rate limiting - acquire permits for both concurrency and RPS
-    let _permit = acquire_permits().await.map_err(|e| {
+    let permit = acquire_permits().await.map_err(|e| {
         crate::admin_debug::security_metrics::inc_rate_limited();
         set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {e}"));
         e
@@ -618,7 +618,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         Ok(out)
     }
     .await;
-    drop(_permit);
+    drop(permit);
     result
 }
 

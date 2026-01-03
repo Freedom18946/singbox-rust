@@ -1,5 +1,4 @@
 #![cfg(feature = "schema-v2")]
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -15,8 +14,7 @@ fn schema_v2_unknown_field_has_ptr_and_code() {
     {"schema_version":2,"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080,"__unknown__":true}]}
     "#;
     let tmp = write_tmp(cfg);
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

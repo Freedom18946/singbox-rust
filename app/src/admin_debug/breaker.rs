@@ -78,19 +78,14 @@ pub fn clear_thread_local_clock() {
     });
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 enum State {
+    #[default]
     Closed,
     Open { until: Instant, _backoff: Duration },
     // probes: number of successful probes required to fully close the circuit
     // permits: number of probe attempts allowed while half-open
     HalfOpen { probes: u32, permits: u32 },
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::Closed
-    }
 }
 
 struct HostStat {

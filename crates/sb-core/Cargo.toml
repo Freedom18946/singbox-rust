@@ -90,7 +90,7 @@ thrussh = { version = "0.35", optional = true }
 thrussh-keys = { version = "=0.22.1", optional = true }
 loom = { version = "0.7", optional = true }
 axum = { version = "0.7", optional = true }
-axum-server = { version = "0.6", features = ["tls-rustls"], optional = true }
+axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 prost = { version = "0.12", features = ["derive"] }
 tonic = { version = "0.11", optional = true, default-features = false, features = ["transport", "codegen", "prost"] }
 prost-types = "0.12"

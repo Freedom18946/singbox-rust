@@ -229,6 +229,17 @@ async fn prefetch_once(
 #[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        match ENV_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(err) => err.into_inner(),
+        }
+    }
 
     #[test]
     fn test_prefetch_job_creation() {
@@ -247,19 +258,29 @@ mod tests {
 
     #[test]
     fn test_enqueue_when_disabled() {
+        let _guard = env_lock();
+        let prev = std::env::var("SB_PREFETCH_ENABLE").ok();
         std::env::set_var("SB_PREFETCH_ENABLE", "0");
         let result = enqueue_prefetch("https://example.com", None);
         assert!(!result);
-        std::env::remove_var("SB_PREFETCH_ENABLE");
+        match prev {
+            Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
+            None => std::env::remove_var("SB_PREFETCH_ENABLE"),
+        }
     }
 
     #[test]
     fn test_enqueue_when_enabled() {
+        let _guard = env_lock();
+        let prev = std::env::var("SB_PREFETCH_ENABLE").ok();
         std::env::set_var("SB_PREFETCH_ENABLE", "1");
         // Note: This test might succeed or fail depending on queue capacity
         // In a real test, we'd want to mock the underlying components
         let _result = enqueue_prefetch("https://example.com", None);
-        std::env::remove_var("SB_PREFETCH_ENABLE");
+        match prev {
+            Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
+            None => std::env::remove_var("SB_PREFETCH_ENABLE"),
+        }
     }
 
     #[tokio::test]

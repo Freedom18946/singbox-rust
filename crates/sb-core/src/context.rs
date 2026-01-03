@@ -164,7 +164,7 @@ impl Context {
             v2ray_server: None,
             ntp_service: None,
             time_service: Some(Arc::new(crate::services::time::SystemTimeService::new())),
-            certificate_store: Some(Arc::new(crate::tls::global::GlobalCertificateStore::default())),
+            certificate_store: Some(Arc::new(crate::tls::global::GlobalCertificateStore)),
             process_matcher: match ProcessMatcher::new() {
                 Ok(matcher) => Some(Arc::new(matcher)),
                 Err(e) => {

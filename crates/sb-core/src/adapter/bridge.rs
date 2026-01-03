@@ -38,7 +38,9 @@ fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHand
 #[cfg(feature = "router")]
 fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
-    match crate::router::builder::build_index_from_ir(cfg).map_err(|e| crate::router::BuildError::Rule(e)) {
+    match crate::router::builder::build_index_from_ir(cfg)
+        .map_err(crate::router::BuildError::Rule)
+    {
         Ok(idx) => {
             let mut handle = RouterHandle::from_index(idx.clone());
 

@@ -1,12 +1,19 @@
-use assert_cmd::prelude::*;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpListener;
-use std::process::Command;
 use std::thread;
 
-fn serve_once(addr: &str) {
-    let listener = TcpListener::bind(addr).expect("bind");
+fn serve_once(addr: &str) -> Option<()> {
+    let listener = match TcpListener::bind(addr) {
+        Ok(listener) => listener,
+        Err(err) => {
+            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+                eprintln!("Skipping report health test: cannot bind {addr} ({err})");
+                return None;
+            }
+            panic!("bind: {err}");
+        }
+    };
     thread::spawn(move || {
         if let Ok((mut s, _)) = listener.accept() {
             let mut buf = [0u8; 1024];
@@ -20,17 +27,20 @@ fn serve_once(addr: &str) {
             let _ = s.write_all(resp.as_bytes());
         }
     });
+    Some(())
 }
 
 #[test]
 fn report_with_health_snapshot_if_portfile_present() {
     // fake admin on 127.0.0.1:19090
-    serve_once("127.0.0.1:19090");
+    if serve_once("127.0.0.1:19090").is_none() {
+        return;
+    }
     // write a temp portfile
     let pf = tempfile::NamedTempFile::new().unwrap();
     fs::write(pf.path(), "19090").unwrap();
     // run report with --with-health and env SB_ADMIN_PORTFILE
-    let mut cmd = Command::cargo_bin("report").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("report");
     let out = cmd
         .arg("--with-health")
         .env("SB_ADMIN_PORTFILE", pf.path())

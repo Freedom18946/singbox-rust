@@ -74,22 +74,27 @@ async fn test_jwt_provider_creation_and_config_validation() {
     assert!(JwtProvider::new(config).is_err());
 
     // Test 4: Valid config with JWKS URL should succeed
-    let mut config = JwtConfig::default();
-    config.jwks_url = Some("https://example.com/.well-known/jwks.json".to_string());
+    let config = JwtConfig {
+        jwks_url: Some("https://example.com/.well-known/jwks.json".to_string()),
+        ..Default::default()
+    };
     assert!(JwtProvider::new(config).is_ok());
 
     // Test 5: Valid config with JWKS file should succeed
     let jwks_file = create_mock_jwks_file().expect("Failed to create mock JWKS file");
-    let mut config = JwtConfig::default();
-    config.jwks_file = Some(jwks_file.path().to_string_lossy().to_string());
-    config.jwks_url = None;
+    let config = JwtConfig {
+        jwks_file: Some(jwks_file.path().to_string_lossy().to_string()),
+        ..Default::default()
+    };
     assert!(JwtProvider::new(config).is_ok());
 
     // Test 6: HS256 with secret should succeed
-    let mut config = JwtConfig::default();
-    config.algo_allowlist = vec![JwtAlgorithm::HS256];
-    config.hmac_secret = Some("test-secret-at-least-32-characters".to_string());
-    config.jwks_url = Some("https://example.com/.well-known/jwks.json".to_string());
+    let config = JwtConfig {
+        algo_allowlist: vec![JwtAlgorithm::HS256],
+        hmac_secret: Some("test-secret-at-least-32-characters".to_string()),
+        jwks_url: Some("https://example.com/.well-known/jwks.json".to_string()),
+        ..Default::default()
+    };
     assert!(JwtProvider::new(config).is_ok());
 }
 
@@ -183,7 +188,6 @@ async fn test_jwks_file_loading() {
     let _provider = JwtProvider::new(config).unwrap();
 
     // File should load successfully (tested implicitly by provider creation)
-    assert!(true);
 
     // Test invalid JWKS file
     let invalid_file = create_invalid_jwks_file().expect("Failed to create invalid JWKS file");
@@ -444,7 +448,6 @@ async fn test_clock_skew_tolerance_configuration() {
 
     // This test verifies that the clock skew tolerance is configured
     // The actual behavior would require real JWT tokens, but we test configuration
-    assert!(true); // Configuration test passed
 }
 
 #[test]

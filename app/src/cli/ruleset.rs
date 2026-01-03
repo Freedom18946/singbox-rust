@@ -467,10 +467,7 @@ async fn match_ruleset(
         destination_ip: dest_ip,
         destination_port: port,
         network,
-        process_name: None,
-        process_path: None,
-        source_ip: None,
-        source_port: None,
+        ..Default::default()
     };
     let is_matched = matcher.matches(&ctx);
     println!("matched: {is_matched}");

@@ -5,6 +5,7 @@
 //! Ensures that the system fails gracefully with proper error codes and diagnostics.
 
 use serde_json::Value;
+use std::path::Path;
 use std::process::Command;
 use std::str;
 
@@ -18,15 +19,16 @@ fn route_explain_binary_path() -> String {
     env!("CARGO_BIN_EXE_route-explain").to_string()
 }
 
+fn geo_fixture_path(rel: &str) -> String {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/geo");
+    base.join(rel).to_string_lossy().to_string()
+}
+
 #[tokio::test]
 async fn test_missing_geoip_database() {
+    let cfg_path = geo_fixture_path("missing/config.yaml");
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/missing/config.yaml",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
@@ -62,13 +64,9 @@ async fn test_missing_geoip_database() {
 
 #[tokio::test]
 async fn test_corrupt_geoip_database() {
+    let cfg_path = geo_fixture_path("corrupt/config.yaml");
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/corrupt/config.yaml",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
@@ -98,13 +96,9 @@ async fn test_corrupt_geoip_database() {
 
 #[tokio::test]
 async fn test_legacy_geoip_database() {
+    let cfg_path = geo_fixture_path("legacy/config.yaml");
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/legacy/config.yaml",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
@@ -134,15 +128,9 @@ async fn test_legacy_geoip_database() {
 
 #[tokio::test]
 async fn test_route_explain_missing_database() {
+    let cfg_path = geo_fixture_path("missing/config.yaml");
     let output = Command::new(route_explain_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/missing/config.yaml",
-            "--destination",
-            "8.8.8.8",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--destination", "8.8.8.8", "--format", "json"])
         .output()
         .expect("Failed to execute route-explain command");
 
@@ -168,15 +156,9 @@ async fn test_route_explain_missing_database() {
 
 #[tokio::test]
 async fn test_route_explain_corrupt_database() {
+    let cfg_path = geo_fixture_path("corrupt/config.yaml");
     let output = Command::new(route_explain_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/corrupt/config.yaml",
-            "--destination",
-            "8.8.8.8",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--destination", "8.8.8.8", "--format", "json"])
         .output()
         .expect("Failed to execute route-explain command");
 
@@ -201,16 +183,12 @@ async fn test_route_explain_corrupt_database() {
 
 #[tokio::test]
 async fn test_error_logging_rate_limiting() {
+    let cfg_path = geo_fixture_path("missing/config.yaml");
     // Test that repeated access to the same broken resource doesn't spam logs
 
     for _i in 0..5 {
         let _output = Command::new(check_binary_path())
-            .args([
-                "--config",
-                "app/tests/fixtures/geo/missing/config.yaml",
-                "--format",
-                "json",
-            ])
+            .args(["--config", &cfg_path, "--format", "json"])
             .output()
             .expect("Failed to execute check command");
 
@@ -221,13 +199,9 @@ async fn test_error_logging_rate_limiting() {
 
 #[tokio::test]
 async fn test_json_output_structure() {
+    let cfg_path = geo_fixture_path("missing/config.yaml");
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/missing/config.yaml",
-            "--format",
-            "json",
-        ])
+        .args(["--config", &cfg_path, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 

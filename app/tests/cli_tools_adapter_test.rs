@@ -4,7 +4,6 @@
 //! instantiate configured outbounds from config files.
 
 #[cfg(feature = "tools")]
-use assert_cmd::Command;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -16,7 +15,6 @@ fn test_adapter_registration_in_tests() {
     sb_adapters::register_all();
 
     // If this passes, adapter registration is working in test context
-    assert!(true, "Adapter registration succeeded");
 }
 
 /// Helper to create a minimal config with specified outbound type
@@ -69,7 +67,7 @@ fn create_direct_config() -> NamedTempFile {
 #[test]
 #[cfg(feature = "tools")]
 fn tools_help_smoke() {
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.arg("--help");
     cmd.assert().success();
 }
@@ -81,7 +79,7 @@ fn tools_connect_direct_parse() {
     // We don't actually connect, just verify the command line parsing works
     let config = create_direct_config();
 
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args([
         "connect",
         "127.0.0.1:80",
@@ -115,7 +113,7 @@ fn tools_connect_socks_adapter_registration() {
     // Verify that SOCKS outbound can be registered and found via adapter path
     let config = create_test_config("socks", "proxy");
 
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args([
         "connect",
         "127.0.0.1:80",
@@ -142,7 +140,7 @@ fn tools_connect_http_adapter_registration() {
     // Verify that HTTP outbound can be registered and found via adapter path
     let config = create_test_config("http", "http-proxy");
 
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args([
         "connect",
         "127.0.0.1:80",
@@ -169,7 +167,7 @@ fn tools_connect_unknown_outbound_error() {
     // Verify proper error when requesting non-existent outbound
     let config = create_direct_config();
 
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args([
         "connect",
         "127.0.0.1:80",
@@ -222,7 +220,7 @@ fn tools_connect_shadowsocks_adapter() {
     .expect("write config");
     file.flush().expect("flush config");
 
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args([
         "connect",
         "127.0.0.1:80",
@@ -276,7 +274,7 @@ fn tools_connect_multiple_outbounds() {
 
     // Test each outbound can be found
     for outbound_name in &["direct", "block", "socks"] {
-        let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
         cmd.args([
             "connect",
             "127.0.0.1:80",
@@ -302,7 +300,7 @@ fn tools_connect_multiple_outbounds() {
 #[cfg(feature = "tools")]
 fn tools_geodata_update_help() {
     // Verify geodata-update subcommand exists
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args(["geodata-update", "--help"]);
     cmd.assert().success();
 }
@@ -311,7 +309,7 @@ fn tools_geodata_update_help() {
 #[cfg(all(feature = "tools", feature = "tools_http3"))]
 fn tools_fetch_http3_help() {
     // Verify fetch-http3 subcommand exists when feature enabled
-    let mut cmd = Command::cargo_bin("tools").expect("tools bin");
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("tools");
     cmd.args(["fetch-http3", "--help"]);
     cmd.assert().success();
 }

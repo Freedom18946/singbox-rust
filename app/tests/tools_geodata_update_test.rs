@@ -1,6 +1,5 @@
 #![cfg(feature = "tools")]
 
-use assert_cmd::Command;
 use sha2::{Digest, Sha256};
 use tempfile::{tempdir, NamedTempFile};
 
@@ -30,8 +29,7 @@ fn tools_geodata_update_handles_file_urls() {
     let geoip_url = format!("file://{}", geoip_file.path().display());
     let geosite_url = format!("file://{}", geosite_file.path().display());
 
-    Command::cargo_bin("tools")
-        .expect("tools bin")
+    assert_cmd::cargo::cargo_bin_cmd!("tools")
         .args([
             "geodata-update",
             "--dest",

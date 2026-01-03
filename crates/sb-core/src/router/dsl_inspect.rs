@@ -173,14 +173,13 @@ pub fn analyze_dsl(dsl_text: &str) -> Analysis {
         match l.kind {
             Kind::Suffix => prior_suffixes.push((l.lineno, l.key.clone(), l.decision.clone())),
             Kind::Default => {
-                if seen_default_at.is_none() {
-                    seen_default_at = Some(l.lineno);
-                } else {
+                if let Some(prev) = seen_default_at {
                     a.duplicates.push(format!(
                         "default at L{} duplicated (earlier default at L{})",
-                        l.lineno,
-                        seen_default_at.unwrap()
+                        l.lineno, prev
                     ));
+                } else {
+                    seen_default_at = Some(l.lineno);
                 }
             }
             _ => {}

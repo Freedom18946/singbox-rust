@@ -22,7 +22,6 @@ async fn test_mixed_inbound_protocol_detection() {
     // - Starting the mixed inbound server
     // - Making actual connections
 
-    assert!(true, "Mixed inbound protocol detection test placeholder");
 }
 
 #[cfg(all(feature = "http", feature = "socks"))]

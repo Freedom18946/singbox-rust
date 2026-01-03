@@ -189,7 +189,14 @@ async fn test_udp_echo_server_basic() {
         Err(e) => panic!("bind udp: {e}"),
     };
 
-    let client = UdpSocket::bind("127.0.0.1:0").await.expect("bind client");
+    let client = match UdpSocket::bind("127.0.0.1:0").await {
+        Ok(client) => client,
+        Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+            eprintln!("skipping UDP echo test: bind permission denied ({e})");
+            return;
+        }
+        Err(e) => panic!("bind client: {e}"),
+    };
     let test_data = b"UDP test message";
 
     client.send_to(test_data, echo_addr).await.expect("send");
@@ -222,7 +229,14 @@ async fn test_udp_relay_session_management() {
 
     for i in 0..num_sessions {
         let handle = tokio::spawn(async move {
-            let client = UdpSocket::bind("127.0.0.1:0").await.expect("bind");
+            let client = match UdpSocket::bind("127.0.0.1:0").await {
+                Ok(client) => client,
+                Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+                    eprintln!("skipping UDP relay session: bind permission denied ({e})");
+                    return false;
+                }
+                Err(e) => panic!("bind udp client: {e}"),
+            };
             let test_data = format!("Session {}", i);
 
             client

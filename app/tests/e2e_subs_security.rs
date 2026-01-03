@@ -1,6 +1,7 @@
 #![allow(unused_imports, dead_code)]
 use serial_test::serial;
 use std::collections::HashSet;
+use std::io;
 use std::time::{Duration, Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -29,6 +30,25 @@ const SUBS_ENV_KEYS: [&str; 18] = [
 ];
 
 const ADMIN_ENV_KEYS: [&str; 2] = ["SB_ADMIN_NO_AUTH", "SB_ADMIN_TOKEN"];
+
+fn should_skip_local_network_tests() -> bool {
+    match std::net::TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => {
+            drop(listener);
+            false
+        }
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) =>
+        {
+            eprintln!("Skipping subs security tests: {}", err);
+            true
+        }
+        Err(err) => panic!("Failed to bind test listener: {}", err),
+    }
+}
 
 struct EnvGuard {
     saved: Vec<(String, Option<String>)>,
@@ -135,6 +155,9 @@ async fn serve_once_large_body(port: u16, bytes: usize) {
 #[tokio::test]
 #[serial]
 async fn subs_block_private_redirect() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[]);
@@ -149,6 +172,9 @@ async fn subs_block_private_redirect() {
 #[tokio::test]
 #[serial]
 async fn subs_size_limit() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -166,6 +192,9 @@ async fn subs_size_limit() {
 #[tokio::test]
 #[serial]
 async fn subs_timeout_limit() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -196,6 +225,9 @@ async fn subs_timeout_limit() {
 #[tokio::test]
 #[serial]
 async fn subs_allowlist_pass() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // 直连到 127.0.0.1，但通过 allowlist 放行（仅示例：真实灰度请谨慎配置）
@@ -228,6 +260,9 @@ async fn subs_allowlist_pass() {
 #[tokio::test]
 #[serial]
 async fn subs_ipv6_block_loopback() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[]);
@@ -241,6 +276,9 @@ async fn subs_ipv6_block_loopback() {
 #[tokio::test]
 #[serial]
 async fn subs_redirect_loop() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -278,6 +316,9 @@ async fn subs_redirect_loop() {
 #[tokio::test]
 #[serial]
 async fn subs_slow_loris_timeout() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -309,6 +350,9 @@ async fn subs_slow_loris_timeout() {
 #[tokio::test]
 #[serial]
 async fn subs_mime_allow() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -341,6 +385,9 @@ async fn subs_mime_allow() {
 #[tokio::test]
 #[serial]
 async fn subs_allowlist_cidr_pass() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // 直连 127.0.0.1，CIDR 允许 127.0.0.0/8
@@ -372,6 +419,9 @@ async fn subs_allowlist_cidr_pass() {
 #[tokio::test]
 #[serial]
 async fn metrics_endpoint_prometheus_format() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "observe")]
     {
         use std::io::Cursor;
@@ -396,6 +446,9 @@ async fn metrics_endpoint_prometheus_format() {
 #[tokio::test]
 #[serial]
 async fn security_metrics_error_ringbuffer() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // Generate some errors to populate the ring buffer
@@ -424,6 +477,9 @@ async fn security_metrics_error_ringbuffer() {
 #[tokio::test]
 #[serial]
 async fn subs_rate_limiting_concurrency() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -484,6 +540,9 @@ async fn subs_rate_limiting_concurrency() {
 #[tokio::test]
 #[serial]
 async fn subs_mime_denylist() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -524,6 +583,9 @@ async fn subs_mime_denylist() {
 #[tokio::test]
 #[serial]
 async fn subs_mime_denylist_overrides_allowlist() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -563,6 +625,9 @@ async fn subs_mime_denylist_overrides_allowlist() {
 #[tokio::test]
 #[serial]
 async fn idna_normalization_punycode() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // Test IDNA normalization with internationalized domain
@@ -579,6 +644,9 @@ async fn idna_normalization_punycode() {
 #[tokio::test]
 #[serial]
 async fn idna_normalization_trailing_dot() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // Test trailing dot removal
@@ -596,6 +664,9 @@ async fn idna_normalization_trailing_dot() {
 #[tokio::test]
 #[serial]
 async fn idna_invalid_domain_rejection() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // Test invalid domain names are properly rejected
@@ -617,6 +688,9 @@ async fn idna_invalid_domain_rejection() {
 #[tokio::test]
 #[serial]
 async fn comprehensive_security_integration() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -670,6 +744,9 @@ async fn comprehensive_security_integration() {
 #[tokio::test]
 #[serial]
 async fn subs_cache_etag_flow() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -733,6 +810,9 @@ async fn subs_cache_etag_flow() {
 #[tokio::test]
 #[serial]
 async fn circuit_breaker_trips_and_blocks() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         let _env = subs_env_guard(&[
@@ -784,6 +864,9 @@ async fn circuit_breaker_trips_and_blocks() {
 #[tokio::test]
 #[serial]
 async fn admin_auth_bearer_token() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "admin_debug")]
     {
         let _env = admin_env_guard(&[
@@ -819,6 +902,9 @@ async fn admin_auth_bearer_token() {
 #[tokio::test]
 #[serial]
 async fn admin_auth_disabled() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "admin_debug")]
     {
         let _env = admin_env_guard(&[
@@ -838,6 +924,9 @@ async fn admin_auth_disabled() {
 #[tokio::test]
 #[serial]
 async fn config_hot_reload() {
+    if should_skip_local_network_tests() {
+        return;
+    }
     #[cfg(feature = "subs_http")]
     {
         // Set initial config

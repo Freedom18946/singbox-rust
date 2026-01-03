@@ -196,7 +196,7 @@ pub fn detect_tls(data: &[u8]) -> bool {
     }
     matches!(
         u16::from_be_bytes([data[1], data[2]]),
-        0x0301 | 0x0302 | 0x0303 | 0x0304
+        0x0301..=0x0304
     )
 }
 
@@ -232,7 +232,7 @@ async fn handle_socks(
         udp_nat_ttl: Duration::from_secs(60),
         users: cfg.users.clone(),
         udp_timeout: cfg.udp_timeout,
-        domain_strategy: cfg.domain_strategy.clone(),
+        domain_strategy: cfg.domain_strategy,
     };
 
     let mut stream = PeekedStream::new(cli, first_byte);
@@ -296,7 +296,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             udp_nat_ttl: Duration::from_secs(60),
             users: cfg.users.clone(),
             udp_timeout: cfg.udp_timeout,
-            domain_strategy: cfg.domain_strategy.clone(),
+            domain_strategy: cfg.domain_strategy,
         };
         let mut stream = PeekedStream::new(tls_stream, first);
         crate::inbound::socks::serve_conn(&mut stream, peer, &socks_cfg, None).await

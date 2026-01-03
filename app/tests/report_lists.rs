@@ -1,9 +1,6 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
-
 #[test]
 fn report_includes_file_lists_and_bin_gates() {
-    let mut cmd = Command::cargo_bin("report").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("report");
     let out = cmd.arg("--root").arg(".").output().expect("run report");
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");

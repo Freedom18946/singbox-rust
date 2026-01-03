@@ -1,6 +1,7 @@
 #![cfg(feature = "net_e2e")]
 //! E2E: Hysteria2 UDP session round-trip using core inbound server.
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +16,20 @@ use sb_core::adapter::UdpOutboundFactory;
 use sb_core::outbound::hysteria2::Hysteria2Config as OutCfg;
 use sb_core::outbound::hysteria2::Hysteria2Outbound as Out;
 
-async fn start_udp_echo() -> SocketAddr {
-    let sock = UdpSocket::bind("127.0.0.1:0").await.expect("bind echo");
+async fn start_udp_echo() -> Option<SocketAddr> {
+    let sock = match UdpSocket::bind("127.0.0.1:0").await {
+        Ok(sock) => sock,
+        Err(err) => {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
+                eprintln!("Skipping hysteria2 udp test: cannot bind echo ({err})");
+                return None;
+            }
+            panic!("bind echo: {err}");
+        }
+    };
     let addr = sock.local_addr().unwrap();
     tokio::spawn(async move {
         let mut buf = [0u8; 4096];
@@ -27,7 +40,7 @@ async fn start_udp_echo() -> SocketAddr {
         }
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
-    addr
+    Some(addr)
 }
 
 #[cfg(feature = "out_hysteria2")]
@@ -39,7 +52,9 @@ async fn hysteria2_udp_roundtrip() {
     }
     // Skip if no TLS certs; use self-signed minimal files if present.
     // For CI environments, this test remains opt-in via net_e2e feature.
-    let echo = start_udp_echo().await;
+    let Some(echo) = start_udp_echo().await else {
+        return;
+    };
 
     let server_addr: SocketAddr = "127.0.0.1:44443".parse().unwrap();
     let server_cfg = Hysteria2ServerConfig {

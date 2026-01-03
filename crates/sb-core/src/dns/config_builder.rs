@@ -9,8 +9,11 @@ use super::{
     DnsUpstream, Resolver,
 };
 
+type DnsComponents =
+    (Arc<dyn Resolver>, Option<Arc<dyn crate::dns::dns_router::DnsRouter>>);
+
 /// Build DNS components (Resolver and Router) from sb-config IR.
-pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<(Arc<dyn Resolver>, Option<Arc<dyn crate::dns::dns_router::DnsRouter>>)> {
+pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponents> {
     let dns_ir = ir
         .dns
         .as_ref()

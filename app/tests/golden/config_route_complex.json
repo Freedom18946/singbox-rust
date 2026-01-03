@@ -12,13 +12,17 @@
             "name": "my_direct"
         },
         {
+            "type": "direct",
+            "name": "direct"
+        },
+        {
             "type": "block",
             "name": "block"
         }
     ],
     "rules": [
         {
-            "domain_suffix": [
+            "domain": [
                 "google.com"
             ],
             "outbound": "my_direct"

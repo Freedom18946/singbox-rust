@@ -404,8 +404,7 @@ impl SwitchboardBuilder {
                         known_hosts_path: ir.ssh_known_hosts_path.clone(),
                     };
 
-                    let outbound = SshOutbound::new(cfg)
-                        .map_err(|e| AdapterError::Other(e))?;
+                    let outbound = SshOutbound::new(cfg).map_err(AdapterError::Other)?;
                     #[derive(Debug, Clone)]
                     struct SshConn {
                         inner: std::sync::Arc<SshOutbound>,

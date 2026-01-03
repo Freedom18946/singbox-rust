@@ -71,7 +71,7 @@ pub fn write_temp_config(content: &str) -> NamedTempFile {
 pub fn run_check(cfg_path: &str) -> Option<(bool, String)> {
     let bin = workspace_bin("check").to_string_lossy().to_string();
     let out = Command::new(bin)
-        .args(["--config", cfg_path])
+        .args(["--config", cfg_path, "--format", "json"])
         .output()
         .ok()?;
     let success = out.status.success();

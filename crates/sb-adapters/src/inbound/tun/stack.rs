@@ -218,7 +218,7 @@ impl TunStack {
 
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
         socket.connect(self.interface.context(), remote_endpoint, local_endpoint)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("smoltcp connect: {e:?}")))?;
+            .map_err(|e| std::io::Error::other(format!("smoltcp connect: {e:?}")))?;
 
         debug!("Initiated TCP connection from {} to {}", local_addr, remote_addr);
         Ok(handle)
@@ -240,14 +240,14 @@ impl TunStack {
     pub fn tcp_send(&mut self, handle: SocketHandle, data: &[u8]) -> std::io::Result<usize> {
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
         socket.send_slice(data)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("tcp send: {e:?}")))
+            .map_err(|e| std::io::Error::other(format!("tcp send: {e:?}")))
     }
 
     /// Receive data from a TCP socket.
     pub fn tcp_recv(&mut self, handle: SocketHandle, buf: &mut [u8]) -> std::io::Result<usize> {
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
         socket.recv_slice(buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("tcp recv: {e:?}")))
+            .map_err(|e| std::io::Error::other(format!("tcp recv: {e:?}")))
     }
 
     pub fn get_socket_mut<T: smoltcp::socket::AnySocket<'static>>(

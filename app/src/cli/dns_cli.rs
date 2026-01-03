@@ -61,13 +61,11 @@ fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
     // Build DNS resolver from config IR
     let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
 
-    let dns_ir = cfg
-        .ir()
-        .dns
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No DNS configuration found in config"))?;
+    if cfg.ir().dns.is_none() {
+        anyhow::bail!("No DNS configuration found in config");
+    }
 
-    let resolver = sb_core::dns::config_builder::resolver_from_ir(dns_ir)
+    let resolver = sb_core::dns::config_builder::resolver_from_ir(cfg.ir())
         .context("build DNS resolver from config")?;
 
     // Query DNS

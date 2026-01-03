@@ -1022,7 +1022,7 @@ fn convert_multiplex_config(
 
     let mut config = sb_transport::multiplex::MultiplexServerConfig::default();
     if let Some(n) = ir.max_streams {
-        config.max_num_streams = n as usize;
+        config.max_num_streams = n;
     }
     if let Some(p) = ir.padding {
         config.enable_padding = p;
@@ -1056,17 +1056,8 @@ fn build_vmess_inbound(
         }
     };
 
-    let uuid_str = param.uuid.clone().or_else(|| {
-        // Try fallback to single user from users list if needed?
-        // Or requiring uuid field for single user
-        // Users parsing for mult-user not fully implemented in InboundConfig yet (VMessInboundConfig takes single uuid?)
-        // Let's check VmessInboundConfig definition.
-        // It has `pub uuid: Uuid`. It seems to be single-user focused or primary user.
-        // If users_vmess is present, we might need a MultiUser config?
-        // But VmessInboundConfig has `pub uuid: Uuid`.
-        // For now, let's allow parsing from param.uuid.
-        None
-    });
+    // TODO: consider fallback to users list when multi-user VMess is supported.
+    let uuid_str = param.uuid.clone();
 
     let uuid = match uuid_str {
         Some(s) => match Uuid::parse_str(&s) {

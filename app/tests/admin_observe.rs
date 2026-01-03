@@ -6,6 +6,7 @@ mod observe_tests {
     use base64::Engine;
     use serde_json::Value;
     use std::fs;
+    use std::io;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::time::Duration;
@@ -70,10 +71,33 @@ mod observe_tests {
         bin
     }
 
+    fn should_skip_network_tests() -> bool {
+        match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => {
+                drop(listener);
+                false
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+                ) =>
+            {
+                eprintln!("Skipping admin observe tests: {}", err);
+                true
+            }
+            Err(err) => panic!("Failed to bind test listener: {}", err),
+        }
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn test_admin_endpoints_with_features() {
         use std::process::Stdio;
+
+        if should_skip_network_tests() {
+            return;
+        }
 
         let bin = build_app("admin_debug,sbcore_rules_tool");
 
@@ -97,7 +121,7 @@ mod observe_tests {
         let base_url = wait_for_server_ready(&mut child, portfile.path()).await;
         if base_url.is_none() {
             let _ = child.kill();
-            assert!(false, "Server did not become ready within timeout");
+            panic!("Server did not become ready within timeout");
         }
         let base_url = base_url.unwrap();
 
@@ -202,6 +226,10 @@ mod observe_tests {
     async fn test_feature_gating() {
         use std::process::Stdio;
 
+        if should_skip_network_tests() {
+            return;
+        }
+
         let bin = build_app("admin_debug");
 
         let portfile = NamedTempFile::new().expect("create admin portfile");
@@ -224,7 +252,7 @@ mod observe_tests {
         let base_url = wait_for_server_ready(&mut child, portfile.path()).await;
         if base_url.is_none() {
             let _ = child.kill();
-            assert!(false, "Server did not become ready within timeout");
+            panic!("Server did not become ready within timeout");
         }
         let base_url = base_url.unwrap();
 

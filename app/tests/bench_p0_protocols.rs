@@ -20,9 +20,29 @@
 
 use std::net::SocketAddr;
 use std::env;
+use std::io;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+
+fn should_skip_local_bench() -> bool {
+    match std::net::TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => {
+            drop(listener);
+            false
+        }
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) =>
+        {
+            eprintln!("Skipping local TCP benchmarks: {}", err);
+            true
+        }
+        Err(err) => panic!("Failed to bind local test listener: {}", err),
+    }
+}
 
 /// Benchmark result structure
 #[derive(Debug, Clone)]
@@ -172,6 +192,10 @@ fn estimate_memory_usage() -> f64 {
 /// Benchmark direct TCP connection (baseline)
 #[tokio::test]
 async fn bench_direct_tcp() {
+    if should_skip_local_bench() {
+        return;
+    }
+
     let echo_addr = start_echo_server().await;
 
     let connect_fn = || async move { TcpStream::connect(echo_addr).await };

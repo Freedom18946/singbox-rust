@@ -119,7 +119,7 @@ async fn geosite_lookup(path: &PathBuf, category: Option<String>, domain: String
                     DomainRule::Exact(_) => format!("domain={domain}"),
                     DomainRule::Suffix(s) => format!("domain_suffix={s}"),
                     DomainRule::Keyword(k) => format!("domain_keyword={k}"),
-                    DomainRule::Regex(r) => format!("domain_regex={r}"),
+                    DomainRule::Regex(r, _) => format!("domain_regex={r}"),
                 };
                 println!("Match code ({cat}) {desc}");
             }
@@ -142,7 +142,7 @@ async fn geosite_lookup(path: &PathBuf, category: Option<String>, domain: String
                 DomainRule::Exact(_) => format!("domain={domain}"),
                 DomainRule::Suffix(s) => format!("domain_suffix={s}"),
                 DomainRule::Keyword(k) => format!("domain_keyword={k}"),
-                DomainRule::Regex(r) => format!("domain_regex={r}"),
+                DomainRule::Regex(r, _) => format!("domain_regex={r}"),
             };
             println!("Match code ({cat}) {desc}");
         }
@@ -203,9 +203,10 @@ fn first_match_rule_from_file(
                 }
             }
             "regex" => {
-                // Treat regex as substring test for now
-                if domain.to_lowercase().contains(&pattern.to_lowercase()) && best.is_none() {
-                    best = Some(DomainRule::Regex(pattern.to_string()));
+                if let Ok(re) = regex::Regex::new(pattern) {
+                    if re.is_match(domain) && best.is_none() {
+                        best = Some(DomainRule::Regex(pattern.to_string(), re));
+                    }
                 }
             }
             _ => {}
@@ -476,10 +477,12 @@ impl GeositeBin {
                 return Ok(Some(DomainRule::Keyword(k.clone())));
             }
         }
-        // regex (treated as substring)
+        // regex
         for r in &rules.domain_regex {
-            if domain_name.to_lowercase().contains(&r.to_lowercase()) {
-                return Ok(Some(DomainRule::Regex(r.clone())));
+            if let Ok(re) = regex::Regex::new(r) {
+                if re.is_match(domain_name) {
+                    return Ok(Some(DomainRule::Regex(r.clone(), re)));
+                }
             }
         }
         Ok(None)

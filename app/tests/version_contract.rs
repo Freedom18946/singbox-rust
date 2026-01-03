@@ -1,12 +1,10 @@
-use assert_cmd::Command;
 use serde_json::Value;
 
 const EXPECTED_VERSION_OUTPUT: &str = include_str!("golden/version_output.json");
 
 #[test]
 fn version_json_contract() {
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["version", "--format", "json"])
         .assert()
         .success()
@@ -54,8 +52,7 @@ fn version_json_contract() {
 #[test]
 fn version_human_format() {
     // Also test that human format works
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["version", "--format", "human"])
         .assert()
         .success()

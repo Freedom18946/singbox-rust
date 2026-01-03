@@ -411,10 +411,13 @@ pub async fn get_proxy_delay(
     let delay = match outbound {
         OutboundImpl::Connector(c) => {
              let start = std::time::Instant::now();
-             if let Ok(_) = tokio::time::timeout(
+             if tokio::time::timeout(
                  std::time::Duration::from_millis(timeout_ms),
-                 c.connect(host, port)
-             ).await {
+                 c.connect(host, port),
+             )
+             .await
+             .is_ok()
+             {
                  start.elapsed().as_millis() as i32
              } else {
                  -1

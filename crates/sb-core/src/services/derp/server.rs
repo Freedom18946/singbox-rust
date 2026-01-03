@@ -1635,6 +1635,7 @@ impl DerpService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_derp_client<S>(
         stream: S,
         peer: SocketAddr,
@@ -1915,6 +1916,7 @@ impl DerpService {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_mesh_client(
         peer_addr_str: String,
         psk: String,

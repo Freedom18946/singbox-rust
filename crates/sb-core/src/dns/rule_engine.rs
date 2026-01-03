@@ -392,7 +392,7 @@ impl DnsRuleEngine {
 
 
         for compiled in &self.rules {
-            if compiled.matcher.matches(&ctx) {
+            if compiled.matcher.matches(ctx) {
                 let matched_rule = MatchedRuleInfo {
                     upstream_tag: compiled.rule.upstream_tag.clone(),
                     priority: compiled.rule.priority,

@@ -123,7 +123,6 @@ async fn test_connection_flood_protection() {
     for _ in 0..100 {
         let success_count = success_count.clone();
         let blocked_count = blocked_count.clone();
-        let server_addr = server_addr;
 
         handles.push(tokio::spawn(async move {
             match TcpStream::connect(server_addr).await {

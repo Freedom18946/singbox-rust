@@ -113,6 +113,7 @@ pub fn load_config(entries: &[ConfigEntry]) -> Result<sb_config::Config> {
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn entry_files(entries: &[ConfigEntry]) -> Vec<PathBuf> {
     entries
         .iter()
@@ -154,7 +155,7 @@ fn parse_config_value(data: &[u8], path: &str) -> Result<Value> {
     match serde_json::from_slice(data) {
         Ok(v) => Ok(v),
         Err(json_err) => serde_yaml::from_slice(data)
-            .with_context(|| format!("parse config {} (json error: {json_err})", path)),
+            .with_context(|| format!("parse config {path} (json error: {json_err})")),
     }
 }
 
@@ -183,6 +184,6 @@ fn merge_values(base: Value, next: Value) -> Value {
 fn is_stdin_path(path: &Path) -> bool {
     matches!(
         path.to_str(),
-        Some("stdin") | Some("-")
+        Some("stdin" | "-")
     )
 }

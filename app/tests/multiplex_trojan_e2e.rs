@@ -8,21 +8,24 @@ use sb_transport::multiplex::MultiplexConfig;
 
 #[test]
 fn trojan_multiplex_config_creation() {
-    let client_config = TrojanConfig {
-        server: "127.0.0.1:443".to_string(),
-        tag: Some("trojan-mux".to_string()),
-        password: "test-trojan-password".to_string(),
-        connect_timeout_sec: Some(10),
-        sni: Some("example.com".to_string()),
-        alpn: None,
-        skip_cert_verify: true,
-        transport_layer: TransportConfig::Tcp,
-        reality: None,
-        multiplex: Some(MultiplexConfig::default()),
-    };
+    let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+    rt.block_on(async {
+        let client_config = TrojanConfig {
+            server: "127.0.0.1:443".to_string(),
+            tag: Some("trojan-mux".to_string()),
+            password: "test-trojan-password".to_string(),
+            connect_timeout_sec: Some(10),
+            sni: Some("example.com".to_string()),
+            alpn: None,
+            skip_cert_verify: true,
+            transport_layer: TransportConfig::Tcp,
+            reality: None,
+            multiplex: Some(MultiplexConfig::default()),
+        };
 
-    let connector = TrojanConnector::new(client_config);
-    assert_eq!(connector.name(), "trojan");
+        let connector = TrojanConnector::new(client_config);
+        assert_eq!(connector.name(), "trojan");
+    });
 }
 
 #[test]

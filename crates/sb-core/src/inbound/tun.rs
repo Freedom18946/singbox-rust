@@ -497,8 +497,7 @@ impl TunInboundService {
     }
 
     /// Handle an incoming packet
-
-
+    ///
     /// Main packet processing loop using smoltcp
     async fn process_packets(&self) -> io::Result<()> {
         use smoltcp::socket::{tcp, udp};
@@ -580,7 +579,7 @@ impl TunInboundService {
                              let read_res = device.get_mut().read(&mut buf).map_err(|e| {
                                  match e {
                                      TunError::IoError(io) => io,
-                                     _ => io::Error::new(io::ErrorKind::Other, e.to_string()),
+                                     _ => io::Error::other(e.to_string()),
                                  }
                              });
 
@@ -727,13 +726,15 @@ impl TunInboundService {
                                  }
 
                                  // 3. Populate Route Context
-                                 let mut ctx = RouteCtx::default();
-                                 ctx.network = "tcp";
-                                 ctx.transport = Transport::Tcp;
-                                 ctx.source_ip = Some(src_ip);
-                                 ctx.source_port = Some(key_clone.src.port());
-                                 ctx.ip = Some(dst_ip);
-                                 ctx.port = Some(key_clone.dst.port());
+                                 let mut ctx = RouteCtx {
+                                     network: "tcp",
+                                     transport: Transport::Tcp,
+                                     source_ip: Some(src_ip),
+                                     source_port: Some(key_clone.src.port()),
+                                     ip: Some(dst_ip),
+                                     port: Some(key_clone.dst.port()),
+                                     ..Default::default()
+                                 };
                                  
                                  if let Some(ref info) = process_info {
                                      ctx.process_name = Some(&info.name);
@@ -897,13 +898,15 @@ impl TunInboundService {
                                          }
                                     }
 
-                                    let mut ctx = RouteCtx::default();
-                                    ctx.network = "udp";
-                                    ctx.transport = Transport::Udp;
-                                    ctx.source_ip = Some(src_ip);
-                                    ctx.source_port = Some(key_clone.src.port());
-                                    ctx.ip = Some(dst_ip);
-                                    ctx.port = Some(key_clone.dst.port());
+                                    let mut ctx = RouteCtx {
+                                        network: "udp",
+                                        transport: Transport::Udp,
+                                        source_ip: Some(src_ip),
+                                        source_port: Some(key_clone.src.port()),
+                                        ip: Some(dst_ip),
+                                        port: Some(key_clone.dst.port()),
+                                        ..Default::default()
+                                    };
                                     
                                     if let Some(ref info) = process_info {
                                        ctx.process_name = Some(&info.name);
@@ -1016,7 +1019,7 @@ impl TunInboundService {
             }
 
             cleanup_counter += 1;
-            if cleanup_counter % 1000 == 0 {
+            if cleanup_counter.is_multiple_of(1000) {
                  let evicted = self.sessions.cleanup_expired();
                  if evicted > 0 { debug!("TUN: cleanup {}", evicted); }
             }

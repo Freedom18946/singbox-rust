@@ -248,7 +248,14 @@ async fn test_socks5_to_direct_chain() {
     let (ready_tx, ready_rx) = oneshot::channel();
 
     // Bind to get a free port
-    let temp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let temp_listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("Skipping test due to permission denied: {}", e);
+            return;
+        }
+        Err(e) => panic!("Failed to bind: {}", e),
+    };
     let socks_addr = temp_listener.local_addr().unwrap();
     drop(temp_listener);
 
@@ -360,7 +367,14 @@ async fn test_http_to_socks5_chain() {
     let (_stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
 
-    let temp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let temp_listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("Skipping test due to permission denied: {}", e);
+            return;
+        }
+        Err(e) => panic!("Failed to bind: {}", e),
+    };
     let http_addr = temp_listener.local_addr().unwrap();
     drop(temp_listener);
 

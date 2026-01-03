@@ -1,4 +1,3 @@
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -13,8 +12,7 @@ fn check_sarif_minimal_keys() {
     let f = tempfile::NamedTempFile::new().unwrap();
     fs::write(f.path(), bad.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

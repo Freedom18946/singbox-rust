@@ -118,7 +118,7 @@ impl CloseMonitor {
         let (stop, mut stop_rx) = oneshot::channel();
         let join = tokio::spawn(async move {
             tokio::select! {
-                _ = tokio::time::sleep(FATAL_STOP_TIMEOUT) => {
+                () = tokio::time::sleep(FATAL_STOP_TIMEOUT) => {
                     error!("sing-box did not close!");
                     std::process::exit(1);
                 }
@@ -294,7 +294,7 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
                 loop {
                     tokio::select! {
                         _ = &mut stop_rx => break,
-                        _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                        () = tokio::time::sleep(Duration::from_secs(2)) => {
                             let current_entries = match config_loader::collect_config_entries(&config_paths, &config_dirs) {
                                 Ok(entries) => entries,
                                 Err(e) => {
@@ -355,7 +355,6 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
                     Ok(()) => break true,
                     Err(e) => {
                         error!(error=%e, "reload service");
-                        continue;
                     }
                 },
                 RunSignal::Terminate => break false,

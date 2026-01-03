@@ -388,7 +388,7 @@ impl ConnectionManager {
             }
             (Err(e), _) | (_, Err(e)) => {
                 error!(conn_id, "task join error: {}", e);
-                Some(io::Error::new(ErrorKind::Other, e.to_string()))
+                Some(io::Error::other(e.to_string()))
             }
         };
 
@@ -561,7 +561,7 @@ impl ConnectionManager {
             }
             (Err(e), _) | (_, Err(e)) => {
                 warn!(conn_id, "UDP task error: {}", e);
-                Some(io::Error::new(ErrorKind::Other, e.to_string()))
+                Some(io::Error::other(e.to_string()))
             }
         };
 
@@ -574,6 +574,7 @@ impl ConnectionManager {
 
     /// Dial with network strategy/fallback (Go parity: dialer.DialSerialNetwork).
     /// 使用网络策略/回退进行拨号。
+    #[allow(clippy::too_many_arguments)]
     async fn dial_serial_network(
         &self,
         dialer: &dyn Dialer,

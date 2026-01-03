@@ -608,12 +608,13 @@ async fn dns_lookup(
     let cfg = load_config_for_tools(global)?;
     let resolver: Arc<dyn Resolver> = if let Some(s) = server {
         // Build single upstream resolver
-        let up = sb_core::dns::config_builder::build_upstream(&s)?
+        let registry = sb_core::dns::transport::TransportRegistry::new();
+        let up = sb_core::dns::config_builder::build_upstream(&s, &registry)?
             .ok_or_else(|| anyhow::anyhow!("invalid upstream address: {s}"))?;
         Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![up]))
     } else if let Some(cfg) = cfg.as_ref() {
-        if let Some(dns_ir) = cfg.ir().dns.as_ref() {
-            sb_core::dns::config_builder::resolver_from_ir(&dns_ir)?
+        if cfg.ir().dns.is_some() {
+            sb_core::dns::config_builder::resolver_from_ir(cfg.ir())?
         } else {
             // No DNS config, fallback to system
             Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![Arc::new(

@@ -158,7 +158,7 @@ mod tuic_tests {
 
         // This test validates the command enum additions
         // Actual TuicCommand enum is private, but we verify the supported command codes
-        let supported_commands = vec![
+        let supported_commands = [
             0x01, // Auth
             0x02, // Connect (TCP)
             0x03, // Packet (UDP) - NEW in Sprint 19
@@ -179,7 +179,7 @@ mod tuic_tests {
         // Test that TUIC supports IPv4, IPv6, and Domain address types
         // Address types: IPv4 (0x01), Domain (0x03), IPv6 (0x04)
 
-        let address_types = vec![
+        let address_types = [
             0x01, // IPv4
             0x03, // Domain
             0x04, // IPv6

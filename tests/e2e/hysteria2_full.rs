@@ -9,6 +9,7 @@
 
 #[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
 mod tests {
+    use std::io;
     use std::net::SocketAddr;
     use std::sync::Arc;
     use std::time::Duration;
@@ -40,8 +41,20 @@ mod tests {
         (cert_pem, key_pem)
     }
 
-    async fn start_tcp_echo() -> SocketAddr {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn start_tcp_echo() -> Option<SocketAddr> {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) => {
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+                ) {
+                    eprintln!("Skipping hysteria2 e2e: cannot bind tcp echo ({err})");
+                    return None;
+                }
+                panic!("Failed to bind tcp echo: {err}");
+            }
+        };
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             loop {
@@ -59,11 +72,23 @@ mod tests {
             }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
-        addr
+        Some(addr)
     }
 
-    async fn start_udp_echo() -> SocketAddr {
-        let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    async fn start_udp_echo() -> Option<SocketAddr> {
+        let sock = match UdpSocket::bind("127.0.0.1:0").await {
+            Ok(sock) => sock,
+            Err(err) => {
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+                ) {
+                    eprintln!("Skipping hysteria2 e2e: cannot bind udp echo ({err})");
+                    return None;
+                }
+                panic!("Failed to bind udp echo: {err}");
+            }
+        };
         let addr = sock.local_addr().unwrap();
         tokio::spawn(async move {
             let mut buf = [0u8; 4096];
@@ -74,15 +99,27 @@ mod tests {
             }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
-        addr
+        Some(addr)
     }
 
     async fn start_hysteria2_server(
         password: &str,
         salamander: Option<String>,
         obfs: Option<String>,
-    ) -> (SocketAddr, Hysteria2Inbound, mpsc::Sender<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    ) -> Option<(SocketAddr, Hysteria2Inbound, mpsc::Sender<()>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) => {
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+                ) {
+                    eprintln!("Skipping hysteria2 e2e: cannot bind server ({err})");
+                    return None;
+                }
+                panic!("Failed to bind hysteria2 server: {err}");
+            }
+        };
         let addr = listener.local_addr().unwrap();
         drop(listener);
 
@@ -114,7 +151,7 @@ mod tests {
             }
         });
         tokio::time::sleep(Duration::from_millis(200)).await;
-        (addr, inbound, stop_tx)
+        Some((addr, inbound, stop_tx))
     }
 
     fn make_outbound(server_addr: SocketAddr, password: &str) -> Outbound {
@@ -142,9 +179,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_tcp_proxy_chain() {
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("test_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("test_password", None, None).await
+        else {
+            return;
+        };
 
         let outbound = make_outbound(server_addr, "test_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
@@ -163,9 +205,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_udp_relay() {
-        let echo_addr = start_udp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("udp_password", None, None).await;
+        let Some(echo_addr) = start_udp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("udp_password", None, None).await
+        else {
+            return;
+        };
 
         let outbound = make_outbound(server_addr, "udp_password");
         let session = outbound.open_session().await.expect("udp session");
@@ -213,9 +260,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_auth_failure() {
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("correct_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("correct_password", None, None).await
+        else {
+            return;
+        };
 
         let outbound = make_outbound(server_addr, "wrong_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
@@ -316,8 +368,11 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_connection_pooling() {
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("pool_password", None, None).await;
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("pool_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "pool_password");
 
         let conn1 = outbound.get_connection().await.expect("first connection");
@@ -331,9 +386,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_graceful_close() {
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("close_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("close_password", None, None).await
+        else {
+            return;
+        };
 
         let outbound = make_outbound(server_addr, "close_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
@@ -426,9 +486,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_concurrent_connections() {
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("concurrent_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("concurrent_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "concurrent_password");
 
         let mut tasks = Vec::new();
@@ -455,9 +520,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_large_transfer() {
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("large_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("large_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "large_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
         let mut stream = outbound.connect(&target).await.expect("connect");
@@ -475,9 +545,14 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires running server
     async fn test_hysteria2_udp_session_management() {
-        let echo_addr = start_udp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("udp_session_password", None, None).await;
+        let Some(echo_addr) = start_udp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("udp_session_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "udp_session_password");
 
         let session1 = outbound.open_session().await.expect("session1");
@@ -509,9 +584,14 @@ mod tests {
             return;
         }
 
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("routing_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("routing_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "routing_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
         let mut stream = outbound.connect(&target).await.expect("connect");
@@ -532,9 +612,14 @@ mod tests {
             return;
         }
 
-        let echo_addr = start_tcp_echo().await;
-        let (server_addr, _inbound, stop_tx) =
-            start_hysteria2_server("selector_password", None, None).await;
+        let Some(echo_addr) = start_tcp_echo().await else {
+            return;
+        };
+        let Some((server_addr, _inbound, stop_tx)) =
+            start_hysteria2_server("selector_password", None, None).await
+        else {
+            return;
+        };
         let outbound = make_outbound(server_addr, "selector_password");
         let target = HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
         let mut stream = outbound.connect(&target).await.expect("connect");

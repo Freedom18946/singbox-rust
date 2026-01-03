@@ -73,6 +73,7 @@ pub fn supported_kinds() -> Vec<&'static str> {
 ///
 /// # Panics
 /// Panics if the registry mutex is poisoned
+#[allow(dead_code)]
 pub fn build_by_kind(kind: &str, input: &Value) -> Result<Value> {
     let registry = ensure_registry();
     let g = registry.lock().expect("registry lock poisoned");
@@ -109,6 +110,7 @@ pub fn supported_async_kinds() -> Vec<&'static str> {
 ///
 /// # Panics
 /// Panics if the async registry mutex is poisoned
+#[allow(dead_code)]
 pub async fn build_by_kind_async(kind: &str, input: &Value) -> Result<Value> {
     if let Some(cell) = ASYNC_REGISTRY.get() {
         let f = {

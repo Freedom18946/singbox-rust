@@ -1,9 +1,6 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
-
 #[test]
 fn version_json_shape_ok() {
-    let mut cmd = Command::cargo_bin("version").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("version");
     let output = cmd.output().expect("run version");
     assert!(output.status.success());
     let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");

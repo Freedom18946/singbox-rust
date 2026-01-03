@@ -116,10 +116,14 @@ pub struct SsmapiService {
     tls_key_pem: Option<Vec<u8>>,
 
     // Listen Options
+    #[allow(dead_code)]
     bind_interface: Option<String>,
+    #[allow(dead_code)]
     routing_mark: Option<u32>,
     reuse_addr: bool,
+    #[allow(dead_code)]
     tcp_fast_open: bool,
+    #[allow(dead_code)]
     tcp_multi_path: bool,
 }
 
@@ -607,7 +611,19 @@ impl Service for SsmapiService {
                             }
                         };
 
-                        if let Err(e) = axum_server::from_tcp_rustls(std_listener, config)
+                        let server = match axum_server::from_tcp_rustls(std_listener, config) {
+                            Ok(server) => server,
+                            Err(e) => {
+                                tracing::error!(
+                                    service = "ssm-api",
+                                    error = %e,
+                                    "Failed to create HTTPS server"
+                                );
+                                return;
+                            }
+                        };
+
+                        if let Err(e) = server
                             .handle(handle)
                             .serve(router.into_make_service())
                             .await

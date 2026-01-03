@@ -26,6 +26,8 @@ use hyper::{Body, Response, StatusCode};
 use std::io::Write;
 
 #[allow(dead_code)]
+/// # Errors
+/// Returns an error if writing to the stream fails.
 pub fn write_200_json(
     s: &mut std::net::TcpStream,
     body: &serde_json::Value,
@@ -40,6 +42,8 @@ pub fn write_200_json(
 }
 
 #[allow(dead_code)]
+/// # Errors
+/// Returns an error if writing to the stream fails.
 pub fn write_503_json(
     s: &mut std::net::TcpStream,
     body: &serde_json::Value,
@@ -50,6 +54,8 @@ pub fn write_503_json(
 }
 
 #[allow(dead_code)]
+/// # Errors
+/// Returns an error if writing to the stream fails.
 pub fn write_200_octet(s: &mut std::net::TcpStream, mime: &str, buf: &[u8]) -> std::io::Result<()> {
     write!(
         s,
@@ -61,6 +67,8 @@ pub fn write_200_octet(s: &mut std::net::TcpStream, mime: &str, buf: &[u8]) -> s
 }
 
 #[allow(dead_code)]
+/// # Errors
+/// Returns an error if writing to the stream fails.
 pub fn write_400(s: &mut std::net::TcpStream, msg: &str) -> std::io::Result<()> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
@@ -80,6 +88,8 @@ pub fn write_400(s: &mut std::net::TcpStream, msg: &str) -> std::io::Result<()> 
 }
 
 #[allow(dead_code)]
+/// # Errors
+/// Returns an error if writing to the stream fails.
 pub fn write_404(s: &mut std::net::TcpStream) -> std::io::Result<()> {
     write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 }

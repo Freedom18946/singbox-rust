@@ -28,7 +28,7 @@ pub struct RdrcEntry {
 
 #[derive(Debug)]
 enum CacheBackend {
-    Memory(MemoryBackend),
+    Memory(Box<MemoryBackend>),
     Persistence(sled::Db),
 }
 
@@ -80,15 +80,15 @@ impl CacheFileService {
                     }
                     Err(e) => {
                         error!("Failed to open cache file at {}: {}, falling back to memory", path.display(), e);
-                        Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+                        Arc::new(CacheBackend::Memory(Box::default()))
                     }
                 }
             } else {
                 debug!("Cache enabled but no path provided, using memory backend");
-                Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+                Arc::new(CacheBackend::Memory(Box::default()))
             }
         } else {
-            Arc::new(CacheBackend::Memory(MemoryBackend::default()))
+            Arc::new(CacheBackend::Memory(Box::default()))
         };
 
         Self {

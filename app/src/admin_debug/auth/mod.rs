@@ -236,7 +236,7 @@ mod tests {
             assert_eq!(algorithm, "HS256");
             assert_eq!(expiry_seconds, 3600);
         } else {
-            assert!(false, "Expected JWT config, got: {:?}", config);
+            panic!("Expected JWT config, got: {:?}", config);
         }
     }
 

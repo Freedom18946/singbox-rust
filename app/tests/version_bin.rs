@@ -1,10 +1,8 @@
-use assert_cmd::Command;
 use serde_json::Value;
 
 #[test]
 fn sb_version_json_shape() {
-    let out = Command::cargo_bin("version")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("version")
         .assert()
         .success()
         .get_output()

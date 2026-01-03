@@ -1,5 +1,4 @@
 #![cfg(feature = "dev-cli")]
-use assert_cmd::Command;
 use predicates::str::contains;
 use serde_json::Value;
 use std::fs;
@@ -12,14 +11,9 @@ fn write_tmp(content: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn minimize_is_degraded_when_negation_present_text() {
-    let cfg = r#"
-    {"route":{"rules":[
-      {"domain":["a.com"]},
-      {"not_geoip":["CN"],"outbound":"proxy"}
-    ]}}
-    "#;
+    let cfg = r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
     let tmp = write_tmp(cfg);
-    let mut cmd = Command::cargo_bin("app").unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("app");
     cmd.args([
         "check",
         "-c",
@@ -31,12 +25,9 @@ fn minimize_is_degraded_when_negation_present_text() {
 
 #[test]
 fn minimize_is_degraded_when_negation_present_json() {
-    let cfg = r#"
-    {"route":{"rules":[{"not_domain":["x.com"]}]}}
-    "#;
+    let cfg = r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
     let tmp = write_tmp(cfg);
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

@@ -21,7 +21,6 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
-// use std::path::Path; // Unused
 
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, IssueKind};
@@ -311,7 +310,7 @@ pub(crate) fn check_config(cfg: &sb_config::Config) -> Result<()> {
         let cfg_ir = sb_config::present::to_ir(cfg)?;
         sb_core::runtime::Runtime::from_config_ir(&cfg_ir)
             .map_err(|e| anyhow::anyhow!("runtime init failed: {e}"))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(feature = "router"))]
@@ -493,7 +492,7 @@ fn value_has_content(value: &Value) -> bool {
     }
 }
 
-fn rules_array<'a>(config: &'a Value) -> Option<&'a Vec<Value>> {
+fn rules_array(config: &Value) -> Option<&Vec<Value>> {
     if let Some(route) = config.get("route") {
         if let Some(rules) = route.get("rules").and_then(|v| v.as_array()) {
             return Some(rules);
@@ -502,7 +501,7 @@ fn rules_array<'a>(config: &'a Value) -> Option<&'a Vec<Value>> {
     config.get("rules").and_then(|v| v.as_array())
 }
 
-fn rules_array_mut<'a>(config: &'a mut Value) -> Option<&'a mut Vec<Value>> {
+fn rules_array_mut(config: &mut Value) -> Option<&mut Vec<Value>> {
     if let Value::Object(obj) = config {
         if obj.contains_key("route") {
             if let Some(Value::Object(route_obj)) = obj.get_mut("route") {
@@ -570,6 +569,7 @@ fn validate_geo_resources(config: &Value, issues: &mut Vec<CheckIssue>) {
     #[cfg(feature = "router")]
     {
         use sb_core::router::geo::{GeoIpDb, GeoSiteDb};
+        use std::path::Path;
 
         if let Some(path) = config
             .pointer("/route/geoip/path")
@@ -615,7 +615,16 @@ fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Re
         || rule.get("ip_cidr").is_some()
         || rule.get("source_ip_cidr").is_some()
         || rule.get("port").is_some()
-        || rule.get("source_port").is_some();
+        || rule.get("port_range").is_some()
+        || rule.get("source_port").is_some()
+        || rule.get("source_port_range").is_some()
+        || rule.get("process_name").is_some()
+        || rule.get("process_path").is_some()
+        || rule.get("process").is_some()
+        || rule.get("protocol").is_some()
+        || rule.get("network").is_some()
+        || rule.get("geoip").is_some()
+        || rule.get("geosite").is_some();
 
     if !has_match {
         push_warn(

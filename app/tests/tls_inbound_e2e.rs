@@ -29,7 +29,6 @@ fn test_http_inbound_with_standard_tls() {
     eprintln!("- HTTP CONNECT protocol over TLS");
     eprintln!("- Data relay through TLS tunnel");
 
-    assert!(true, "HTTP inbound with Standard TLS placeholder");
 }
 
 #[test]
@@ -49,7 +48,6 @@ fn test_http_inbound_with_reality() {
     // 3. Connect with REALITY client
     // 4. Verify handshake and data transfer
 
-    assert!(true, "HTTP inbound with REALITY placeholder");
 }
 
 #[test]
@@ -68,7 +66,6 @@ fn test_mixed_inbound_with_tls_detection() {
     eprintln!("Mixed inbound TLS detection test requires protocol detection logic");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "Mixed inbound TLS detection placeholder");
 }
 
 #[test]
@@ -87,7 +84,6 @@ fn test_shadowtls_with_new_infrastructure() {
     eprintln!("4. Send CONNECT request");
     eprintln!("5. Verify relay works");
 
-    assert!(true, "Shadowtls with new infrastructure placeholder");
 }
 
 #[test]
@@ -103,7 +99,6 @@ fn test_tls_handshake_error_handling() {
     eprintln!("TLS error handling test requires error injection");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "TLS error handling placeholder");
 }
 
 #[test]
@@ -119,7 +114,6 @@ fn test_tls_alpn_negotiation() {
     eprintln!("ALPN negotiation test requires TLS client with ALPN support");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "ALPN negotiation placeholder");
 }
 
 #[test]
@@ -135,7 +129,6 @@ fn test_tls_sni_handling() {
     eprintln!("SNI handling test requires TLS client with SNI support");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "SNI handling placeholder");
 }
 
 /// Integration test: HTTP inbound with TLS + routing
@@ -148,7 +141,6 @@ fn test_http_tls_with_routing() {
     eprintln!("Full integration test requires complete TLS client/server setup");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "HTTP TLS with routing placeholder");
 }
 
 /// Integration test: Mixed inbound with TLS detection + protocol routing
@@ -163,5 +155,4 @@ fn test_mixed_tls_protocol_detection() {
     eprintln!("Mixed TLS protocol detection requires full protocol stack");
     eprintln!("Marking as placeholder for now");
 
-    assert!(true, "Mixed TLS protocol detection placeholder");
 }

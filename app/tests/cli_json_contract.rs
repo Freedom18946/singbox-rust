@@ -1,5 +1,4 @@
 #![cfg(feature = "dev-cli")]
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -17,8 +16,7 @@ fn write_cfg(content: &str) -> tempfile::NamedTempFile {
 #[test]
 fn check_good_config_contract() {
     let tmp = write_cfg(GOOD_CONFIG);
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -53,8 +51,7 @@ fn check_good_config_contract() {
 #[test]
 fn check_bad_config_contract() {
     let tmp = write_cfg(BAD_CONFIG);
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

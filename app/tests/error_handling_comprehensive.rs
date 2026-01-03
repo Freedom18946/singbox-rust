@@ -91,7 +91,6 @@ fn test_authentication_failures() {
     // - Unsupported auth method
 
     // Placeholder for authentication error handling
-    assert!(true, "Authentication error handling verified");
 }
 
 /// Test resource exhaustion handling
@@ -103,7 +102,6 @@ async fn test_resource_exhaustion() {
     // - File descriptor limits
 
     // Placeholder - actual implementation would attempt to exhaust resources
-    assert!(true, "Resource exhaustion handling verified");
 }
 
 /// Test malformed protocol data
@@ -153,7 +151,6 @@ async fn test_concurrent_error_handling() {
 fn test_error_metrics_recording() {
     // Verify that errors are properly counted in metrics
     // This would check that counter increments happen on errors
-    assert!(true, "Error metrics recording verified");
 }
 
 /// Test graceful degradation
@@ -162,7 +159,6 @@ async fn test_graceful_degradation() {
     // Verify system continues operating when non-critical errors occur
     // - Continue accepting new connections when one fails
     // - Proper cleanup of failed connections
-    assert!(true, "Graceful degradation verified");
 }
 
 /// Test error message clarity

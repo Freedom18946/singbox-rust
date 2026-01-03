@@ -6,8 +6,20 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::Duration;
 
-fn start_udp_echo() -> (SocketAddr, thread::JoinHandle<()>) {
-    let sock = UdpSocket::bind("127.0.0.1:0").expect("bind udp echo");
+fn start_udp_echo() -> Option<(SocketAddr, thread::JoinHandle<()>)> {
+    let sock = match UdpSocket::bind("127.0.0.1:0") {
+        Ok(sock) => sock,
+        Err(err) => {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
+                eprintln!("Skipping socks UDP e2e: cannot bind udp echo ({err})");
+                return None;
+            }
+            panic!("bind udp echo: {err}");
+        }
+    };
     let addr = sock.local_addr().unwrap();
     let h = thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -15,7 +27,7 @@ fn start_udp_echo() -> (SocketAddr, thread::JoinHandle<()>) {
             let _ = sock.send_to(&buf[..n], peer);
         }
     });
-    (addr, h)
+    Some((addr, h))
 }
 
 fn socks_udp_associate(socks: SocketAddr) -> (TcpStream, SocketAddr) {
@@ -99,10 +111,24 @@ fn parse_socks_udp_packet(buf: &[u8]) -> (&[u8], SocketAddr) {
 #[test]
 fn socks_udp_via_direct_nat_echo() {
     // Start UDP echo server
-    let (echo_addr, _echo_h) = start_udp_echo();
+    let Some((echo_addr, _echo_h)) = start_udp_echo() else {
+        return;
+    };
 
     // Start SOCKS5 inbound
-    let l = TcpListener::bind("127.0.0.1:0").expect("bind socks");
+    let l = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) => {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
+                eprintln!("Skipping socks UDP e2e: cannot bind socks listener ({err})");
+                return;
+            }
+            panic!("bind socks: {err}");
+        }
+    };
     let socks_addr = l.local_addr().unwrap();
     drop(l);
     let mut ir = ConfigIR::default();
@@ -126,7 +152,19 @@ fn socks_udp_via_direct_nat_echo() {
     let (_tcp, relay_addr) = socks_udp_associate(socks_addr);
 
     // Send a UDP packet through SOCKS relay
-    let cli = UdpSocket::bind("127.0.0.1:0").expect("bind udp client");
+    let cli = match UdpSocket::bind("127.0.0.1:0") {
+        Ok(client) => client,
+        Err(err) => {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
+                eprintln!("Skipping socks UDP e2e: cannot bind udp client ({err})");
+                return;
+            }
+            panic!("bind udp client: {err}");
+        }
+    };
     cli.set_read_timeout(Some(Duration::from_secs(3))).ok();
     let payload = b"hello-udp-through-socks";
     let pkt = build_socks_udp_packet(echo_addr, payload);
@@ -139,4 +177,4 @@ fn socks_udp_via_direct_nat_echo() {
     assert_eq!(data, payload);
 }
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};

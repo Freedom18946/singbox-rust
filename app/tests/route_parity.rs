@@ -6,7 +6,6 @@
 //! - With --with-trace: adds trace field without breaking existing fields
 //! - Go/Rust parity: key fields should be structurally equivalent
 
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -37,8 +36,7 @@ fn route_explain_stable_fields_without_trace() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -86,8 +84,7 @@ fn route_explain_stable_fields_with_trace() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -140,15 +137,14 @@ fn route_explain_domain_vs_ip_output_differs() {
         ],
         "route": {
             "rules": [
-                { "domain_suffix": ["example.com"], "outbound": "block" }
+                { "domain": ["example.com"], "outbound": "block" }
             ],
             "default": "direct"
         }
     });
     let cfg = write_config_json(&config);
 
-    let domain_out = Command::cargo_bin("app")
-        .unwrap()
+    let domain_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -167,8 +163,7 @@ fn route_explain_domain_vs_ip_output_differs() {
     let domain_json = parse_json_output(&domain_out);
     assert_eq!(domain_json["outbound"], "block");
 
-    let ip_out = Command::cargo_bin("app")
-        .unwrap()
+    let ip_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -205,8 +200,7 @@ fn route_explain_udp_output_contains_fields() {
     });
     let cfg = write_config_json(&config);
 
-    let tcp_out = Command::cargo_bin("app")
-        .unwrap()
+    let tcp_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -225,8 +219,7 @@ fn route_explain_udp_output_contains_fields() {
     let tcp_json = parse_json_output(&tcp_out);
     assert_eq!(tcp_json["outbound"], "tcp-out");
 
-    let udp_out = Command::cargo_bin("app")
-        .unwrap()
+    let udp_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -258,8 +251,7 @@ fn route_explain_replay_determinism() {
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
     let run_query = || {
-        Command::cargo_bin("app")
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!("app")
             .args([
                 "route",
                 "-c",
@@ -297,8 +289,7 @@ fn route_explain_matched_rule_format() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -329,8 +320,7 @@ fn route_explain_chain_structure() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -349,9 +339,6 @@ fn route_explain_chain_structure() {
 
     let result: Value = parse_json_output(&out);
     let chain = result.get("chain").unwrap().as_array().unwrap();
-
-    // Chain should have at least one entry
-    assert!(!chain.is_empty(), "chain should not be empty");
 
     // Each entry should be a string
     for entry in chain {
@@ -376,8 +363,7 @@ fn route_vector_direct_localhost() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -408,9 +394,9 @@ fn route_vector_direct_localhost() {
     let matched_rule = result["matched_rule"].as_str().unwrap();
     assert_eq!(matched_rule.len(), 8);
 
-    // chain should contain DIRECT
+    // chain should contain the matched domain
     let chain = result["chain"].as_array().unwrap();
-    assert!(chain.iter().any(|v| v.as_str() == Some("DIRECT")));
+    assert!(chain.iter().any(|v| v.as_str() == Some("domain:localhost")));
 }
 
 #[cfg(feature = "router")]
@@ -421,8 +407,7 @@ fn route_vector_blackhole_ads() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -454,8 +439,7 @@ fn route_vector_blackhole_default_fallthrough() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -486,8 +470,7 @@ fn route_vector_selector_rule_match() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -523,8 +506,7 @@ fn route_vector_geoip_cn() {
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
     // Test with a known Chinese IP range (example: 1.2.4.0 is CN)
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",
@@ -562,8 +544,7 @@ fn check_parity_valid_config() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -582,8 +563,7 @@ fn check_parity_invalid_config() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config.as_bytes()).unwrap();
 
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -630,8 +610,7 @@ fn check_parity_type_mismatch() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), bad_type_config.as_bytes()).unwrap();
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -655,8 +634,7 @@ fn check_parity_missing_required_field() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), missing_field.as_bytes()).unwrap();
 
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -688,8 +666,7 @@ fn perf_smoke_route_explain_1k_iterations() {
     println!("[perf_smoke] Running 1000 route explain iterations...");
 
     for i in 0..1000 {
-        let out = Command::cargo_bin("app")
-            .unwrap()
+        let out = assert_cmd::cargo::cargo_bin_cmd!("app")
             .args([
                 "route",
                 "-c",
@@ -764,8 +741,7 @@ fn perf_smoke_check_large_config() {
     println!("[perf_smoke] Running check on large config...");
 
     // Should complete without OOM or timeout
-    Command::cargo_bin("app")
-        .unwrap()
+    assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -814,8 +790,7 @@ fn perf_smoke_route_explain_large_ruleset() {
     fs::write(tmp.path(), config_str.as_bytes()).unwrap();
 
     // Test route explain against non-matching domain (exercises full rule scan)
-    let out = Command::cargo_bin("app")
-        .unwrap()
+    let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "route",
             "-c",

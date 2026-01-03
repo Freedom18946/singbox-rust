@@ -1,10 +1,8 @@
-use assert_cmd::Command;
 use serde_json::Value;
 
 #[test]
 fn version_json_shape_and_types() {
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args(["version", "--format", "json"])
         .assert()
         .success()

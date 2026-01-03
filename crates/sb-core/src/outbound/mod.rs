@@ -488,7 +488,7 @@ impl OutboundRegistryHandle {
 
                         let outbound = ShadowTlsOutbound::new(cfg.clone())
                             .map_err(|e| io::Error::other(format!("ShadowTLS setup failed: {}", e)))?;
-                        let stream = outbound.connect(&hp).await?;
+                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_naive")]
@@ -503,7 +503,7 @@ impl OutboundRegistryHandle {
 
                         let outbound = NaiveH2Outbound::new(cfg.clone())
                             .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
-                        let stream = outbound.connect(&hp).await?;
+                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
                     #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
@@ -588,7 +588,7 @@ impl OutboundRegistryHandle {
 
                         let outbound = TuicOutbound::new(cfg.clone())
                             .map_err(|e| io::Error::other(format!("TUIC setup failed: {}", e)))?;
-                        let stream = outbound.connect(&hp).await?;
+                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_hysteria2")]
@@ -603,7 +603,7 @@ impl OutboundRegistryHandle {
 
                         let outbound = Hysteria2Outbound::new(cfg.clone())
                             .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
-                        let stream = outbound.connect(&hp).await?;
+                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
                     #[cfg(feature = "out_wireguard")]

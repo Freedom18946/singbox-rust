@@ -290,6 +290,7 @@ clap        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 regex       = { workspace = true }
+humantime   = "2.1"
 sb-admin-contract = { workspace = true, optional = true }
 tokio       = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"], optional = true }

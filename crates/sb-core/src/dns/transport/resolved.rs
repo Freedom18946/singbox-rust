@@ -624,12 +624,9 @@ impl DnsTransport for ResolvedTransport {
     }
 
     async fn start(&self, stage: DnsStartStage) -> Result<()> {
-        match stage {
-            DnsStartStage::Start => {
-                self.started.store(true, Ordering::Relaxed);
-                info!(name = %self.name, "Resolved DNS transport started");
-            }
-            _ => {}
+        if stage == DnsStartStage::Start {
+            self.started.store(true, Ordering::Relaxed);
+            info!(name = %self.name, "Resolved DNS transport started");
         }
         Ok(())
     }

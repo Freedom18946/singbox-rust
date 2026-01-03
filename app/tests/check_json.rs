@@ -1,4 +1,3 @@
-use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;
 
@@ -39,8 +38,7 @@ fn check_ok_warn_bad_with_exit_codes() {
     let badf = write_file(bad);
 
     // ok
-    let ok_out = Command::cargo_bin("app")
-        .unwrap()
+    let ok_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -59,8 +57,7 @@ fn check_ok_warn_bad_with_exit_codes() {
     assert_eq!(s_ok.get("warnings").and_then(|x| x.as_u64()), Some(0));
 
     // warn: allow unknown downgrades unknown_field to warning; expect exit code 1
-    let warn_out = Command::cargo_bin("app")
-        .unwrap()
+    let warn_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -80,8 +77,7 @@ fn check_ok_warn_bad_with_exit_codes() {
     assert!(s_warn.get("warnings").and_then(|x| x.as_u64()).unwrap_or(0) > 0);
 
     // bad: expect exit code 2
-    let bad_out = Command::cargo_bin("app")
-        .unwrap()
+    let bad_out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",

@@ -1,15 +1,23 @@
+#[cfg(feature = "adapters")]
 use anyhow::{Context, Result};
+#[cfg(any(feature = "router", feature = "adapters"))]
 use sb_config::ir::{InboundIR, InboundType};
 #[cfg(feature = "router")]
 use sb_core::adapter::InboundService;
 #[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
+#[cfg(feature = "adapters")]
 use std::net::SocketAddr;
+#[cfg(any(feature = "router", feature = "adapters"))]
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+#[cfg(feature = "adapters")]
 use tokio::time::Duration;
-use tracing::{info, warn};
+#[cfg(feature = "router")]
+use tracing::info;
+#[cfg(any(feature = "router", feature = "adapters"))]
+use tracing::warn;
 
 #[cfg(feature = "router")]
 use sb_core::router::RouterHandle;
@@ -66,6 +74,7 @@ impl InboundHandle {
 }
 
 /// Convert string like "127.0.0.1:8080" to `SocketAddr` with friendly error.
+#[cfg(feature = "adapters")]
 fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
     s.parse::<SocketAddr>()
         .or_else(|_| {
@@ -75,6 +84,7 @@ fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
         .with_context(|| format!("invalid listen addr in config: '{s}'"))
 }
 
+#[cfg(feature = "adapters")]
 fn socks_udp_should_start() -> bool {
     // 显式开关优先；其次只要配置了监听地址也启动
     let enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
@@ -86,6 +96,7 @@ fn socks_udp_should_start() -> bool {
             .unwrap_or(false)
 }
 
+#[cfg(feature = "adapters")]
 fn parse_udp_bind_from_env() -> Option<SocketAddr> {
     if let Ok(list) = std::env::var("SB_SOCKS_UDP_LISTEN") {
         let first = list
@@ -103,10 +114,10 @@ fn parse_udp_bind_from_env() -> Option<SocketAddr> {
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 #[cfg(feature = "router")]
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
-pub async fn start_inbounds_from_ir(
+pub fn start_inbounds_from_ir(
     inbounds: &[InboundIR],
-    #[cfg(feature = "router")] router: Arc<RouterHandle>,
-    outbounds: Arc<OutboundRegistryHandle>,
+    #[cfg(feature = "router")] router: &Arc<RouterHandle>,
+    outbounds: &Arc<OutboundRegistryHandle>,
 ) -> Vec<InboundHandle> {
     info!("start_inbounds_from_ir: count={}", inbounds.len());
     let mut handles = Vec::new();
@@ -235,33 +246,38 @@ fn start_http_inbound(
     } else {
         format!("{}:{}", ib.listen, ib.port)
     };
-    if let Ok(addr) = parse_listen_addr(&listen_str) {
-        let (tx, rx) = mpsc::channel::<()>(1);
-        let cfg = HttpProxyConfig {
-            listen: addr,
-            #[cfg(feature = "router")]
-            router,
-            #[cfg(not(feature = "router"))]
-            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-            outbounds,
-            tls: None,
-            users: ib.users.clone(),
-        };
-        let listen_str_log = listen_str.clone();
-        let join = tokio::spawn(async move {
-            if let Err(e) = serve_http(cfg, rx, None).await {
-                warn!(addr=%listen_str_log, error=%e, "http inbound failed");
-            }
-        });
-        Some(InboundHandle {
-            name: "http".to_string(),
-            stop: InboundStop::Channel(tx),
-            join,
-        })
-    } else {
-        warn!(%listen_str, "http inbound: invalid listen address");
-        None
-    }
+    parse_listen_addr(&listen_str).map_or_else(
+        |_| {
+            warn!(%listen_str, "http inbound: invalid listen address");
+            None
+        },
+        |addr| {
+            let (tx, rx) = mpsc::channel::<()>(1);
+            let cfg = HttpProxyConfig {
+                listen: addr,
+                #[cfg(feature = "router")]
+                router,
+                #[cfg(not(feature = "router"))]
+                router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                outbounds,
+                tls: None,
+                users: ib.users.clone(),
+                set_system_proxy: ib.set_system_proxy,
+                allow_private_network: ib.allow_private_network,
+            };
+            let listen_str_log = listen_str.clone();
+            let join = tokio::spawn(async move {
+                if let Err(e) = serve_http(cfg, rx, None).await {
+                    warn!(addr=%listen_str_log, error=%e, "http inbound failed");
+                }
+            });
+            Some(InboundHandle {
+                name: "http".to_string(),
+                stop: InboundStop::Channel(tx),
+                join,
+            })
+        },
+    )
 }
 
 #[cfg(feature = "adapters")]
@@ -277,6 +293,23 @@ fn start_socks_inbound(
         format!("{}:{}", ib.listen, ib.port)
     };
     if let Ok(addr) = parse_listen_addr(&listen_str) {
+        use sb_adapters::inbound::socks::DomainStrategy;
+
+        let udp_timeout = ib
+            .udp_timeout
+            .as_deref()
+            .and_then(|s| humantime::parse_duration(s).ok());
+        let domain_strategy =
+            ib.domain_strategy
+                .as_deref()
+                .and_then(|s| match s.to_ascii_lowercase().as_str() {
+                    "asis" | "as_is" => Some(DomainStrategy::AsIs),
+                    "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+                    "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+                    "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+                    _ => None,
+                });
+
         let (tx, rx) = mpsc::channel::<()>(1);
         let cfg = SocksInboundConfig {
             listen: addr,
@@ -288,6 +321,8 @@ fn start_socks_inbound(
             outbounds,
             udp_nat_ttl: Duration::from_secs(60),
             users: ib.users.clone(),
+            udp_timeout,
+            domain_strategy,
         };
         let listen_str_log = listen_str.clone();
         let join = tokio::spawn(async move {
@@ -330,35 +365,58 @@ fn start_mixed_inbound(
     } else {
         format!("{}:{}", ib.listen, ib.port)
     };
-    if let Ok(addr) = parse_listen_addr(&listen_str) {
-        let (tx, rx) = mpsc::channel::<()>(1);
-        let cfg = MixedInboundConfig {
-            listen: addr,
-            #[cfg(feature = "router")]
-            router,
-            #[cfg(not(feature = "router"))]
-            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-            outbounds,
-            read_timeout: None,
-            tls: None,
-            users: ib.users.clone(),
-            set_system_proxy: false,
-        };
-        let listen_str_log = listen_str.clone();
-        let join = tokio::spawn(async move {
-            if let Err(e) = serve_mixed(cfg, rx, None).await {
-                warn!(addr=%listen_str_log, error=%e, "mixed inbound failed");
-            }
-        });
-        Some(InboundHandle {
-            name: "mixed".to_string(),
-            stop: InboundStop::Channel(tx),
-            join,
-        })
-    } else {
-        warn!(%listen_str, "mixed inbound: invalid listen address");
-        None
-    }
+    parse_listen_addr(&listen_str).map_or_else(
+        |_| {
+            warn!(%listen_str, "mixed inbound: invalid listen address");
+            None
+        },
+        |addr| {
+            use sb_adapters::inbound::socks::DomainStrategy;
+
+            let udp_timeout = ib
+                .udp_timeout
+                .as_deref()
+                .and_then(|s| humantime::parse_duration(s).ok());
+            let domain_strategy =
+                ib.domain_strategy
+                    .as_deref()
+                    .and_then(|s| match s.to_ascii_lowercase().as_str() {
+                        "asis" | "as_is" => Some(DomainStrategy::AsIs),
+                        "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+                        "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+                        "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+                        _ => None,
+                    });
+
+            let (tx, rx) = mpsc::channel::<()>(1);
+            let cfg = MixedInboundConfig {
+                listen: addr,
+                #[cfg(feature = "router")]
+                router,
+                #[cfg(not(feature = "router"))]
+                router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                outbounds,
+                read_timeout: None,
+                tls: None,
+                users: ib.users.clone(),
+                set_system_proxy: ib.set_system_proxy,
+                allow_private_network: ib.allow_private_network,
+                udp_timeout,
+                domain_strategy,
+            };
+            let listen_str_log = listen_str.clone();
+            let join = tokio::spawn(async move {
+                if let Err(e) = serve_mixed(cfg, rx, None).await {
+                    warn!(addr=%listen_str_log, error=%e, "mixed inbound failed");
+                }
+            });
+            Some(InboundHandle {
+                name: "mixed".to_string(),
+                stop: InboundStop::Channel(tx),
+                join,
+            })
+        },
+    )
 }
 
 #[cfg(all(feature = "tun", feature = "adapters"))]

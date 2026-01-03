@@ -1,4 +1,3 @@
-use assert_cmd::Command;
 use std::fs;
 
 fn write_file(p: &str, s: &str) {
@@ -19,8 +18,7 @@ fn subs_merge_and_diff() {
         a.to_str().unwrap(),
         r#"{"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080}],"route":{"rules":[{"domain":["a.com"]}]}}"#,
     );
-    let _ = Command::cargo_bin("subs")
-        .unwrap()
+    let _ = assert_cmd::cargo::cargo_bin_cmd!("subs")
         .args([
             "merge",
             base.to_str().unwrap(),
@@ -33,8 +31,7 @@ fn subs_merge_and_diff() {
     let merged = fs::read_to_string(out).unwrap();
     assert!(merged.contains("inbounds"));
     // diff self -> should be empty
-    let d = Command::cargo_bin("subs")
-        .unwrap()
+    let d = assert_cmd::cargo::cargo_bin_cmd!("subs")
         .args(["diff", a.to_str().unwrap(), a.to_str().unwrap()])
         .assert()
         .success()

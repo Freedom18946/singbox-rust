@@ -312,14 +312,14 @@ impl OutboundManager {
         // Initialize in-degree for all nodes
         for tag in &all_tags {
             in_degree.entry(tag.clone()).or_insert(0);
-            graph.entry(tag.clone()).or_insert_with(Vec::new);
+            graph.entry(tag.clone()).or_default();
         }
 
         // Build graph (reverse: if A depends on B, add edge B -> A)
         for (tag, dep_list) in deps.iter() {
             for dep in dep_list {
                 if all_tags.contains(dep) {
-                    graph.entry(dep.clone()).or_insert_with(Vec::new).push(tag.clone());
+                    graph.entry(dep.clone()).or_default().push(tag.clone());
                     *in_degree.entry(tag.clone()).or_insert(0) += 1;
                 }
             }

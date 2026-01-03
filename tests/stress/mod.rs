@@ -167,25 +167,20 @@ pub async fn start_echo_server() -> std::io::Result<std::net::SocketAddr> {
     let addr = listener.local_addr()?;
 
     tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((mut stream, _)) => {
-                    tokio::spawn(async move {
-                        let mut buf = vec![0u8; 8192];
-                        loop {
-                            match stream.read(&mut buf).await {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => {
-                                    if stream.write_all(&buf[..n]).await.is_err() {
-                                        break;
-                                    }
-                                }
+        while let Ok((mut stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                loop {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            if stream.write_all(&buf[..n]).await.is_err() {
+                                break;
                             }
                         }
-                    });
+                    }
                 }
-                Err(_) => break,
-            }
+            });
         }
     });
 

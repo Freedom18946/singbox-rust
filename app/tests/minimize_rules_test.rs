@@ -1,5 +1,4 @@
 #![cfg(feature = "dev-cli")]
-use assert_cmd::Command;
 use serde_json::{from_str, Value};
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -36,8 +35,7 @@ outbound:
         .expect("Failed to write to temp file");
 
     // Run minimize-rules command
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -114,8 +112,7 @@ outbound:
         .expect("Failed to write to temp file");
 
     // Run minimize-rules command
-    let output = Command::cargo_bin("app")
-        .unwrap()
+    let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([
             "check",
             "-c",
@@ -201,8 +198,7 @@ outbound:
             .expect("Failed to write to temp file");
 
         // Run minimize-rules command
-        let output = Command::cargo_bin("app")
-            .unwrap()
+        let output = assert_cmd::cargo::cargo_bin_cmd!("app")
             .args([
                 "check",
                 "-c",

@@ -1,6 +1,7 @@
 #![cfg(feature = "net_e2e")]
 //! E2E: TUIC UDP session round-trip using adapters inbound server.
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +31,19 @@ async fn tuic_udp_roundtrip() {
     }
     // Start UDP echo server
     let echo = {
-        let sock = UdpSocket::bind("127.0.0.1:0").await.expect("bind echo");
+        let sock = match UdpSocket::bind("127.0.0.1:0").await {
+            Ok(sock) => sock,
+            Err(err) => {
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+                ) {
+                    eprintln!("Skipping tuic_udp_roundtrip: cannot bind echo ({err})");
+                    return;
+                }
+                panic!("bind echo: {err}");
+            }
+        };
         let addr = sock.local_addr().unwrap();
         tokio::spawn(async move {
             let mut buf = [0u8; 4096];
