@@ -195,6 +195,42 @@ pub struct HandlerServiceImpl {
     outbound_manager: OutboundManager,
 }
 
+/// Stub inbound adapter for V2Ray API placeholder handlers.
+/// V2Ray API 占位处理程序的存根入站适配器。
+struct StubInboundAdapter {
+    tag: String,
+    inbound_type: String,
+}
+
+impl StubInboundAdapter {
+    fn new(tag: String) -> Self {
+        Self {
+            tag,
+            inbound_type: "stub".to_string(),
+        }
+    }
+}
+
+impl sb_core::service::Lifecycle for StubInboundAdapter {
+    fn start(&self, _stage: sb_core::service::StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+
+    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+}
+
+impl sb_core::inbound::manager::InboundAdapter for StubInboundAdapter {
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn inbound_type(&self) -> &str {
+        &self.inbound_type
+    }
+}
+
 impl Default for HandlerServiceImpl {
     fn default() -> Self {
         Self::new()
@@ -242,7 +278,7 @@ impl HandlerService for HandlerServiceImpl {
 
         // Create a placeholder handler (in production, this would parse inbound_config and create actual handler)
         let handler: sb_core::inbound::manager::InboundHandler =
-            Arc::new(inbound_config.tag.clone());
+            Arc::new(StubInboundAdapter::new(inbound_config.tag.clone()));
         self.inbound_manager
             .add_handler(inbound_config.tag, handler)
             .await;

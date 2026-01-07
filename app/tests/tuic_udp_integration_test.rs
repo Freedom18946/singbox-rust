@@ -48,6 +48,8 @@ mod tuic_tests {
             congestion_control: Some("bbr".to_string()),
             router: router.clone(),
             outbounds: outbounds.clone(),
+            tag: None,
+            stats: None,
         };
 
         // Verify configuration
@@ -75,6 +77,8 @@ mod tuic_tests {
             congestion_control: Some("cubic".to_string()),
             router: router.clone(),
             outbounds: outbounds.clone(),
+            tag: None,
+            stats: None,
         };
         assert_eq!(config_cubic.congestion_control.as_ref().unwrap(), "cubic");
 
@@ -87,6 +91,8 @@ mod tuic_tests {
             congestion_control: Some("bbr".to_string()),
             router: router.clone(),
             outbounds: outbounds.clone(),
+            tag: None,
+            stats: None,
         };
         assert_eq!(config_bbr.congestion_control.as_ref().unwrap(), "bbr");
 
@@ -99,6 +105,8 @@ mod tuic_tests {
             congestion_control: Some("new_reno".to_string()),
             router: router.clone(),
             outbounds: outbounds.clone(),
+            tag: None,
+            stats: None,
         };
         assert_eq!(
             config_new_reno.congestion_control.as_ref().unwrap(),
@@ -114,6 +122,8 @@ mod tuic_tests {
             congestion_control: None,
             router,
             outbounds,
+            tag: None,
+            stats: None,
         };
         assert!(config_default.congestion_control.is_none());
     }

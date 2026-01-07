@@ -87,10 +87,18 @@ pub struct DebugIR {
 pub struct StatsIR {
     #[serde(default)]
     pub enabled: bool,
+    /// Inbound tags to track.
     #[serde(default)]
-    pub inbound: bool,
+    pub inbounds: Vec<String>,
+    /// Outbound tags to track.
     #[serde(default)]
-    pub outbound: bool,
+    pub outbounds: Vec<String>,
     #[serde(default)]
     pub users: Vec<String>,
+    /// Deprecated boolean flags (kept for compatibility with older configs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbound: Option<bool>,
+    /// Deprecated boolean flags (kept for compatibility with older configs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outbound: Option<bool>,
 }

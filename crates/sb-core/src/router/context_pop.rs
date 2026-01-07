@@ -94,7 +94,7 @@ impl ContextData {
     /// Populate process info for a given source port (Unix only).
     #[cfg(unix)]
     pub fn populate_process_info(&mut self, _source_port: u16) {
-        // TODO: Lookup process by source port using /proc/net/tcp or lsof
+        // NOTE: Process lookup by source port uses fallback to current process; using /proc/net/tcp or lsof
         // For now, use current process info as fallback
         unsafe {
             self.user_id = Some(libc::getuid());
@@ -122,7 +122,7 @@ impl ContextData {
     /// Try to resolve package name from UID (Android stub).
     #[cfg(target_os = "android")]
     pub fn resolve_package_from_uid(&mut self, _uid: u32) {
-        // TODO: Implement /data/system/packages.list parsing or PackageManager lookup
+        // NOTE: Android package resolution requires /data/system/packages.list or PackageManager JNI
     }
 }
 

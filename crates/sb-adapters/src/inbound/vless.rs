@@ -49,16 +49,20 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 
 #[derive(Clone, Debug)]
 pub struct VlessInboundConfig {
     pub listen: SocketAddr,
     pub uuid: Uuid,
     pub router: Arc<router::RouterHandle>,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
     /// Optional REALITY TLS configuration for inbound
     /// 可选的 REALITY TLS 入站配置
     #[cfg(feature = "tls_reality")]
@@ -448,8 +452,11 @@ async fn handle_conn_impl(
     // 步骤 8: 连接上游
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&target_host, target_port, &opts).await?,
+    let (mut upstream, outbound_tag) = match decision {
+        RDecision::Direct => {
+            let s = direct_connect_hostport(&target_host, target_port, &opts).await?;
+            (s, Some("direct".to_string()))
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("vless".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -462,42 +469,86 @@ async fn handle_conn_impl(
                     ) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let s = http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &target_host,
                                     target_port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let s = socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &target_host,
                                     target_port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     } else {
-                        fallback_connect(proxy, &target_host, target_port, &opts).await?
+                        let stream =
+                            fallback_connect(proxy, &target_host, target_port, &opts).await?;
+                        let tag = match &proxy {
+                            ProxyChoice::Direct => "direct",
+                            ProxyChoice::Http(_) => "http",
+                            ProxyChoice::Socks5(_) => "socks5",
+                        };
+                        (stream, Some(tag.to_string()))
                     }
                 } else {
-                    fallback_connect(proxy, &target_host, target_port, &opts).await?
+                    let stream =
+                        fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                    let tag = match &proxy {
+                        ProxyChoice::Direct => "direct",
+                        ProxyChoice::Http(_) => "http",
+                        ProxyChoice::Socks5(_) => "socks5",
+                    };
+                    (stream, Some(tag.to_string()))
                 }
             } else {
-                fallback_connect(proxy, &target_host, target_port, &opts).await?
+                let stream =
+                    fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                let tag = match &proxy {
+                    ProxyChoice::Direct => "direct",
+                    ProxyChoice::Http(_) => "http",
+                    ProxyChoice::Socks5(_) => "socks5",
+                };
+                (stream, Some(tag.to_string()))
             }
         }
-        RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
+        RDecision::Proxy(None) => {
+            let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
+            let tag = match &proxy {
+                ProxyChoice::Direct => "direct",
+                ProxyChoice::Http(_) => "http",
+                ProxyChoice::Socks5(_) => "socks5",
+            };
+            (stream, Some(tag.to_string()))
+        }
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vless: rejected by rules")),
         _ => return Err(anyhow!("vless: unsupported routing action")),
     };
 
     // Step 9: Bidirectional relay (plain)
     // 步骤 9: 双向转发 (普通)
-    let _ = tokio::io::copy_bidirectional(cli, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        cli,
+        &mut upstream,
+        "vless",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
 
     Ok(())
 }

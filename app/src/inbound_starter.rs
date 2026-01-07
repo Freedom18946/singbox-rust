@@ -260,6 +260,8 @@ fn start_http_inbound(
                 #[cfg(not(feature = "router"))]
                 router: Arc::new(sb_core::router::RouterHandle::from_env()),
                 outbounds,
+                tag: None,
+                stats: None,
                 tls: None,
                 users: ib.users.clone(),
                 set_system_proxy: ib.set_system_proxy,
@@ -319,6 +321,8 @@ fn start_socks_inbound(
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
             outbounds,
+            tag: None,
+            stats: None,
             udp_nat_ttl: Duration::from_secs(60),
             users: ib.users.clone(),
             udp_timeout,
@@ -396,6 +400,8 @@ fn start_mixed_inbound(
                 #[cfg(not(feature = "router"))]
                 router: Arc::new(sb_core::router::RouterHandle::from_env()),
                 outbounds,
+                tag: None,
+                stats: None,
                 read_timeout: None,
                 tls: None,
                 users: ib.users.clone(),
@@ -536,6 +542,8 @@ fn start_trojan_inbound(
             router,
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
+            tag: None,
+            stats: None,
             #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
@@ -598,6 +606,8 @@ fn start_vless_inbound(
             router,
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
+            tag: None,
+            stats: None,
             #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
@@ -662,6 +672,8 @@ fn start_vmess_inbound(
             router,
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
+            tag: None,
+            stats: None,
             multiplex: None,
             transport_layer: None,
             fallback,

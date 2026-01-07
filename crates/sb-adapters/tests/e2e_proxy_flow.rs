@@ -83,6 +83,7 @@ async fn start_socks5_inbound(
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let cfg = SocksInboundConfig {
+        tag: None,
         listen: addr,
         udp_bind: None,
         router,
@@ -91,6 +92,7 @@ async fn start_socks5_inbound(
         users: None,
         domain_strategy: None,
         udp_timeout: None,
+        stats: None,
     };
 
     tokio::spawn(async move {
@@ -120,6 +122,7 @@ async fn start_http_inbound(
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let cfg = HttpProxyConfig {
+        tag: None,
         listen: addr,
         router,
         outbounds: outbounds.clone(),
@@ -127,6 +130,7 @@ async fn start_http_inbound(
         users: None,
         set_system_proxy: false,
         allow_private_network: true,
+        stats: None,
     };
 
     tokio::spawn(async move {

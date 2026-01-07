@@ -636,7 +636,8 @@ impl RouterHandle {
             ip: ctx.ip,
             port: ctx.port,
             network: Some(ctx.network),
-            protocol: None, // TODO: Add protocol to mod::RouteCtx if needed, or infer
+            // NOTE: Protocol can be inferred from sniffing if needed (ctx.protocol)
+            protocol: None,
             user_agent: ctx.user_agent,
             geosite_codes: vec![],
             geoip_code: None,
@@ -844,11 +845,12 @@ impl RouterHandle {
         }
 
         let started = Instant::now();
-        let _budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+        // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
+        let _budget_ms = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(100);
-        let _idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
 
@@ -894,14 +896,14 @@ impl RouterHandle {
 
         // 1) Domain-first decision (FakeIP resolves to original domain here)
         let host_for_domain = fake_domain_norm.as_deref().unwrap_or(&host_norm);
-        if let Some(d) = super::router_index_decide_exact_suffix(&_idx, host_for_domain) {
+        if let Some(d) = super::router_index_decide_exact_suffix(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         #[cfg(feature = "router_keyword")]
-        if let Some(d) = super::router_index_decide_keyword(&_idx, host_for_domain) {
+        if let Some(d) = super::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -914,7 +916,7 @@ impl RouterHandle {
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
             }
-            if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+            if let Some(d) = super::router_index_decide_ip(&idx, ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -942,7 +944,7 @@ impl RouterHandle {
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
                     }
-                    if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+                    if let Some(d) = super::router_index_decide_ip(&idx, ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -952,14 +954,14 @@ impl RouterHandle {
         }
 
         // 4) Transport/port fallback (UDP)
-        if let Some(d) = super::router_index_decide_transport_port(&_idx, None, Some("udp")) {
+        if let Some(d) = super::router_index_decide_transport_port(&idx, None, Some("udp")) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         // 5) Default
-        let d_str = _idx.default.to_string();
+        let d_str = idx.default.to_string();
         self.cache_put(&cache_key, &d_str);
         #[cfg(feature = "metrics")]
         metrics::histogram!("router_decide_latency_ms_bucket")
@@ -975,12 +977,14 @@ impl RouterHandle {
             (host, None)
         };
 
-        let _started = Instant::now();
-        let _budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+        #[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
+        let started = Instant::now();
+        // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
+        let _budget_ms = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(100);
-        let _idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host_raw);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
 
@@ -1027,14 +1031,14 @@ impl RouterHandle {
         }
 
         let host_for_domain = fake_domain_norm.as_deref().unwrap_or(&host_norm);
-        if let Some(d) = super::router_index_decide_exact_suffix(&_idx, host_for_domain) {
+        if let Some(d) = super::router_index_decide_exact_suffix(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         #[cfg(feature = "router_keyword")]
-        if let Some(d) = super::router_index_decide_keyword(&_idx, host_for_domain) {
+        if let Some(d) = super::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1046,7 +1050,7 @@ impl RouterHandle {
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
             }
-            if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+            if let Some(d) = super::router_index_decide_ip(&idx, ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -1073,7 +1077,7 @@ impl RouterHandle {
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
                     }
-                    if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+                    if let Some(d) = super::router_index_decide_ip(&idx, ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -1082,13 +1086,13 @@ impl RouterHandle {
             }
         }
 
-        if let Some(d) = super::router_index_decide_transport_port(&_idx, port_opt, Some("tcp")) {
+        if let Some(d) = super::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
-        let d_str = _idx.default.to_string();
+        let d_str = idx.default.to_string();
         self.cache_put(&cache_key, &d_str);
         #[cfg(feature = "metrics")]
         metrics::histogram!("router_decide_latency_ms_bucket")

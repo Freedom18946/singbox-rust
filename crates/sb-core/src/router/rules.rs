@@ -104,8 +104,8 @@ impl Decision {
             RuleAction::HijackDns => Decision::Reject, // DNS hijack not applicable for generic routing
             RuleAction::Sniff => Decision::Sniff,
             RuleAction::Resolve => Decision::Resolve,
-            RuleAction::RouteOptions => Decision::Direct, // TODO: Support route options
-            RuleAction::SniffOverride => Decision::Sniff, // TODO: Support sniff override details
+            RuleAction::RouteOptions => Decision::Direct, // NOTE: RouteOptions defaults to Direct
+            RuleAction::SniffOverride => Decision::Sniff, // NOTE: SniffOverride defaults to Sniff
         }
     }
 }

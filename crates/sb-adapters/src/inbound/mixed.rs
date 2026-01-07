@@ -20,6 +20,7 @@ use tracing::{debug, info, warn};
 use sb_config::ir::Credentials;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
+use sb_core::services::v2ray_api::StatsManager;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -29,6 +30,7 @@ use metrics::counter;
 
 #[derive(Clone, Debug)]
 pub struct MixedInboundConfig {
+    pub tag: Option<String>,
     pub listen: SocketAddr,
     pub router: Arc<RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
@@ -39,6 +41,7 @@ pub struct MixedInboundConfig {
     pub allow_private_network: bool,
     pub udp_timeout: Option<Duration>,
     pub domain_strategy: Option<crate::inbound::socks::DomainStrategy>,
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 pub async fn serve_mixed(
@@ -225,6 +228,7 @@ async fn handle_socks(
 ) -> io::Result<()> {
     // Reuse SOCKS inbound handler from socks module
     let socks_cfg = crate::inbound::socks::SocksInboundConfig {
+        tag: cfg.tag.clone(),
         listen: cfg.listen,
         udp_bind: None, // Mixed inbound doesn't support UDP ASSOCIATE by default
         router: Arc::clone(&cfg.router),
@@ -233,6 +237,7 @@ async fn handle_socks(
         users: cfg.users.clone(),
         udp_timeout: cfg.udp_timeout,
         domain_strategy: cfg.domain_strategy,
+        stats: cfg.stats.clone(),
     };
 
     let mut stream = PeekedStream::new(cli, first_byte);
@@ -289,6 +294,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
         counter!("mixed_protocol_detection_total", "protocol" => "tls_socks").increment(1);
 
         let socks_cfg = crate::inbound::socks::SocksInboundConfig {
+            tag: cfg.tag.clone(),
             listen: cfg.listen,
             udp_bind: None,
             router: Arc::clone(&cfg.router),
@@ -297,6 +303,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             users: cfg.users.clone(),
             udp_timeout: cfg.udp_timeout,
             domain_strategy: cfg.domain_strategy,
+            stats: cfg.stats.clone(),
         };
         let mut stream = PeekedStream::new(tls_stream, first);
         crate::inbound::socks::serve_conn(&mut stream, peer, &socks_cfg, None).await
@@ -307,6 +314,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
         counter!("mixed_protocol_detection_total", "protocol" => "tls_http").increment(1);
 
         let http_cfg = crate::inbound::http::HttpProxyConfig {
+            tag: cfg.tag.clone(),
             listen: cfg.listen,
             router: Arc::clone(&cfg.router),
             outbounds: Arc::clone(&cfg.outbounds),
@@ -314,6 +322,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             users: cfg.users.clone(),
             set_system_proxy: cfg.set_system_proxy,
             allow_private_network: cfg.allow_private_network,
+            stats: cfg.stats.clone(),
         };
         let stream = PeekedStream::new(tls_stream, first);
         crate::inbound::http::serve_conn(stream, peer, &http_cfg)
@@ -331,6 +340,7 @@ async fn handle_http(
 ) -> io::Result<()> {
     // Reuse HTTP inbound handler from http module
     let http_cfg = crate::inbound::http::HttpProxyConfig {
+        tag: cfg.tag.clone(),
         listen: cfg.listen,
         router: Arc::clone(&cfg.router),
         outbounds: Arc::clone(&cfg.outbounds),
@@ -338,6 +348,7 @@ async fn handle_http(
         users: cfg.users.clone(),
         set_system_proxy: cfg.set_system_proxy,
         allow_private_network: cfg.allow_private_network,
+        stats: cfg.stats.clone(),
     };
 
     let stream = PeekedStream::new(cli, first_byte);

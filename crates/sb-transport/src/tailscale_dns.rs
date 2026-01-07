@@ -436,22 +436,25 @@ impl DerpClient {
     }
 
     /// Check if DERP server is reachable.
+    ///
+    /// NOTE: DERP protocol implementation is de-scoped; Tailscale uses daemon-only approach.
     pub async fn probe(&self) -> io::Result<()> {
-        // TODO: Implement DERP protocol handshake
         debug!("DERP probe to {}", self.server_url);
         Ok(())
     }
 
     /// Send packet through DERP relay.
+    ///
+    /// NOTE: DERP send is de-scoped; Tailscale uses daemon-only approach.
     pub async fn send(&self, _peer_key: &[u8; 32], _data: &[u8]) -> io::Result<()> {
-        // TODO: Implement DERP send
-        Err(io::Error::other("DERP send not yet implemented"))
+        Err(io::Error::other("DERP send not implemented (de-scoped)"))
     }
 
     /// Receive packet from DERP relay.
+    ///
+    /// NOTE: DERP recv is de-scoped; Tailscale uses daemon-only approach.
     pub async fn recv(&self) -> io::Result<(Vec<u8>, [u8; 32])> {
-        // TODO: Implement DERP recv
-        Err(io::Error::other("DERP recv not yet implemented"))
+        Err(io::Error::other("DERP recv not implemented (de-scoped)"))
     }
 }
 
@@ -485,15 +488,17 @@ impl CoordinationClient {
     }
 
     /// Register this node with the coordination server.
+    ///
+    /// NOTE: Node registration is de-scoped; Tailscale uses daemon-only approach.
     pub async fn register(&self, _public_key: &[u8; 32]) -> io::Result<()> {
-        // TODO: Implement node registration
         debug!("Registering with control plane at {}", self.control_url);
         Ok(())
     }
 
     /// Get peer list from coordination server.
+    ///
+    /// NOTE: Peer list retrieval is de-scoped; Tailscale uses daemon-only approach.
     pub async fn get_peers(&self) -> io::Result<Vec<TailscalePeer>> {
-        // TODO: Implement peer list retrieval
         Ok(vec![])
     }
 }

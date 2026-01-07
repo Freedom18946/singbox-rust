@@ -251,7 +251,9 @@ impl TailscaleConnector {
                 .as_deref()
                 .expect("Managed mode requires auth_key");
 
-            let coord = Arc::new(Coordinator::new(url).with_auth_key(key));
+            let state_path = std::env::var("SB_TAILSCALE_STATE_PATH")
+                .unwrap_or_else(|_| "/tmp/singbox-tailscale-state.json".to_string());
+            let coord = Arc::new(Coordinator::new(url, state_path).with_auth_key(key));
             let c = coord.clone();
 
             #[cfg(feature = "adapter-wireguard-outbound")]

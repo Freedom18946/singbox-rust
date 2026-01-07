@@ -638,6 +638,15 @@ impl Default for EndpointManager {
     }
 }
 
+fn stage_rank(stage: StartStage) -> u8 {
+    match stage {
+        StartStage::Initialize => 0,
+        StartStage::Start => 1,
+        StartStage::PostStart => 2,
+        StartStage::Started => 3,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,14 +755,5 @@ mod tests {
 
         mgr.shutdown().unwrap();
         assert_eq!(ep.closes.load(Ordering::SeqCst), 1);
-    }
-}
-
-fn stage_rank(stage: StartStage) -> u8 {
-    match stage {
-        StartStage::Initialize => 0,
-        StartStage::Start => 1,
-        StartStage::PostStart => 2,
-        StartStage::Started => 3,
     }
 }

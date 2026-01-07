@@ -17,6 +17,8 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 use crate::adapter::InboundService;
+use crate::net::metered;
+use crate::services::v2ray_api::StatsManager;
 
 #[derive(Debug, Clone)]
 pub struct DirectConfig {
@@ -49,6 +51,8 @@ pub struct DirectForward {
     dst_port: u16,
     udp_enabled: bool,
     cfg: DirectConfig,
+    tag: Option<String>,
+    stats: Option<Arc<StatsManager>>,
     shutdown: Arc<AtomicBool>,
     udp_sessions: Arc<Mutex<HashMap<SocketAddr, UdpSession>>>,
     active: Arc<AtomicU64>,
@@ -63,6 +67,8 @@ impl DirectForward {
             dst_port,
             udp_enabled,
             cfg: DirectConfig::default(),
+            tag: None,
+            stats: None,
             shutdown: Arc::new(AtomicBool::new(false)),
             udp_sessions: Arc::new(Mutex::new(HashMap::new())),
             active: Arc::new(AtomicU64::new(0)),
@@ -80,6 +86,16 @@ impl DirectForward {
         self
     }
 
+    pub fn with_tag(mut self, tag: Option<String>) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    pub fn with_stats(mut self, stats: Option<Arc<StatsManager>>) -> Self {
+        self.stats = stats;
+        self
+    }
+
     async fn handle_tcp(&self, mut cli: TcpStream) -> io::Result<()> {
         // Establish upstream connection to fixed target
         let addr = format!("{}:{}", self.dst_host, self.dst_port);
@@ -90,8 +106,20 @@ impl DirectForward {
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "connect timeout"))??;
 
-        // Bi-directional copy
-        let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
+        });
+        let _ = metered::copy_bidirectional_streaming_ctl(
+            &mut cli,
+            &mut upstream,
+            "direct",
+            Duration::from_secs(1),
+            None,
+            None,
+            None,
+            traffic,
+        )
+        .await;
         Ok(())
     }
 
@@ -143,6 +171,10 @@ impl DirectForward {
             "direct inbound UDP listening"
         );
 
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
+        });
+
         let mut buf = vec![0u8; 65536];
         let cleanup_interval = Duration::from_secs(30);
         let mut last_cleanup = Instant::now();
@@ -168,6 +200,10 @@ impl DirectForward {
                     }
                     Err(_) => continue, // timeout, check shutdown flag
                 };
+
+            if let Some(ref recorder) = traffic {
+                recorder.record_up(n as u64);
+            }
 
             let packet = &buf[..n];
             tracing::trace!(src=%src_addr, len=n, "direct inbound UDP: received packet");
@@ -206,9 +242,17 @@ impl DirectForward {
         // Spawn task to relay packets from upstream back to client
         let me = self.clone_for_spawn();
         let upstream_clone = upstream.clone();
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
+        });
         tokio::spawn(async move {
-            me.relay_udp_upstream_to_client(upstream_clone, client_addr, listen_socket)
-                .await;
+            me.relay_udp_upstream_to_client(
+                upstream_clone,
+                client_addr,
+                listen_socket,
+                traffic,
+            )
+            .await;
         });
 
         sessions.insert(
@@ -231,6 +275,7 @@ impl DirectForward {
         upstream: Arc<UdpSocket>,
         client_addr: SocketAddr,
         listen_socket: Arc<UdpSocket>,
+        traffic: Option<Arc<dyn crate::net::metered::TrafficRecorder>>,
     ) {
         let mut buf = vec![0u8; 65536];
         loop {
@@ -252,6 +297,9 @@ impl DirectForward {
                     if let Err(e) = listen_socket.send_to(&buf[..n], client_addr).await {
                         tracing::debug!(error=%e, "direct inbound UDP: send to client failed");
                         break;
+                    }
+                    if let Some(ref recorder) = traffic {
+                        recorder.record_down(n as u64);
                     }
                 }
                 Ok(Err(e)) => {
@@ -340,6 +388,8 @@ impl DirectForward {
             dst_port: self.dst_port,
             udp_enabled: self.udp_enabled,
             cfg: self.cfg.clone(),
+            tag: self.tag.clone(),
+            stats: self.stats.clone(),
             shutdown: self.shutdown.clone(),
             udp_sessions: self.udp_sessions.clone(),
             active: self.active.clone(),

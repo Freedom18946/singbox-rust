@@ -97,6 +97,7 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
     let (stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
     let cfg = SocksInboundConfig {
+        tag: None,
         listen: socks_addr,
         udp_bind: None,
         router,
@@ -105,6 +106,7 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
         users: Some(vec![]),
         domain_strategy: None,
         udp_timeout: None,
+        stats: None,
     };
 
     tokio::spawn(async move {

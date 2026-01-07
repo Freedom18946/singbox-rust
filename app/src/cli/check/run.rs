@@ -30,6 +30,7 @@ use crate::cli::output;
 use crate::cli::Format;
 use app::util;
 use sb_config::compat as cfg_compat;
+#[cfg(feature = "schema-v2")]
 use sb_config::validator::v2;
 
 /// Main check function
@@ -96,6 +97,7 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
     }
 
     // Schema v2 validation if enabled
+    #[cfg(feature = "schema-v2")]
     if args.schema_v2 || args.deny_unknown {
         // Determine if unknown fields should be warnings instead of errors
         let allow_unknown_validation = args.allow_unknown.is_some();
@@ -124,6 +126,18 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
                 issues.push(converted_issue);
             }
         }
+    }
+
+    // When schema-v2 feature is disabled, emit a warning if the flag was requested
+    #[cfg(not(feature = "schema-v2"))]
+    if args.schema_v2 {
+        push_warn(
+            &mut issues,
+            IssueCode::SchemaInvalid,
+            "/",
+            "schema-v2 feature disabled at build",
+            Some("rebuild with --features schema-v2"),
+        );
     }
 
     // Schema dump if requested (early return)
@@ -564,7 +578,12 @@ fn validate_basic_config(
     Ok(())
 }
 
-#[allow(unused_variables)]
+#[allow(
+    unused_variables,
+    clippy::ptr_arg,
+    clippy::needless_pass_by_ref_mut,
+    clippy::missing_const_for_fn
+)]
 fn validate_geo_resources(config: &Value, issues: &mut Vec<CheckIssue>) {
     #[cfg(feature = "router")]
     {
@@ -868,6 +887,7 @@ fn fingerprint_of(v: &Value) -> String {
 }
 
 /// Convert v2 validator output to `CheckIssue` format
+#[cfg(feature = "schema-v2")]
 fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     let kind_str = v2_issue.get("kind")?.as_str()?;
     let kind = match kind_str {

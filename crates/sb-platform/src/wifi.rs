@@ -86,6 +86,7 @@ fn fetch_wifi_info_platform() -> Option<WifiInfo> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

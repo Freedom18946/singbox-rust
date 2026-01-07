@@ -514,32 +514,64 @@ impl DnsRuleEngine {
             _ => (true, true),
         };
 
-        // TODO: Parallelize queries for better performance
-        if query_ipv4 {
-            match self.resolve_with_context(ctx, domain, RecordType::A).await {
-                Ok(mut ans) => {
-                    all_ips.append(&mut ans.ips);
-                    min_ttl = Some(ans.ttl);
-                }
-                Err(e) => {
-                    tracing::trace!("Dual-stack A query failed: {}", e);
-                }
-            }
-        }
+        // Parallel execution of A and AAAA queries using tokio::join!
+        match (query_ipv4, query_ipv6) {
+            (true, true) => {
+                // Both queries in parallel for improved latency
+                let (a_result, aaaa_result) = tokio::join!(
+                    self.resolve_with_context(ctx, domain, RecordType::A),
+                    self.resolve_with_context(ctx, domain, RecordType::AAAA)
+                );
 
-        if query_ipv6 {
-            match self.resolve_with_context(ctx, domain, RecordType::AAAA).await {
-                Ok(mut ans) => {
-                    all_ips.append(&mut ans.ips);
-                    if let Some(ttl) = min_ttl {
-                        min_ttl = Some(ttl.min(ans.ttl));
-                    } else {
+                // Process A record result
+                match a_result {
+                    Ok(mut ans) => {
+                        all_ips.append(&mut ans.ips);
                         min_ttl = Some(ans.ttl);
                     }
+                    Err(e) => {
+                        tracing::trace!("Dual-stack A query failed: {}", e);
+                    }
                 }
-                Err(e) => {
-                    tracing::trace!("Dual-stack AAAA query failed: {}", e);
+
+                // Process AAAA record result
+                match aaaa_result {
+                    Ok(mut ans) => {
+                        all_ips.append(&mut ans.ips);
+                        min_ttl = Some(min_ttl.map_or(ans.ttl, |t| t.min(ans.ttl)));
+                    }
+                    Err(e) => {
+                        tracing::trace!("Dual-stack AAAA query failed: {}", e);
+                    }
                 }
+            }
+            (true, false) => {
+                // IPv4 only
+                match self.resolve_with_context(ctx, domain, RecordType::A).await {
+                    Ok(mut ans) => {
+                        all_ips.append(&mut ans.ips);
+                        min_ttl = Some(ans.ttl);
+                    }
+                    Err(e) => {
+                        tracing::trace!("IPv4-only A query failed: {}", e);
+                    }
+                }
+            }
+            (false, true) => {
+                // IPv6 only
+                match self.resolve_with_context(ctx, domain, RecordType::AAAA).await {
+                    Ok(mut ans) => {
+                        all_ips.append(&mut ans.ips);
+                        min_ttl = Some(ans.ttl);
+                    }
+                    Err(e) => {
+                        tracing::trace!("IPv6-only AAAA query failed: {}", e);
+                    }
+                }
+            }
+            (false, false) => {
+                // No queries (shouldn't happen in practice)
+                tracing::warn!("DNS dual-stack called with no query types enabled");
             }
         }
 

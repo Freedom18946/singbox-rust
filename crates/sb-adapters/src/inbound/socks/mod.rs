@@ -36,6 +36,7 @@ use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::router::{RouteCtx, RouterHandle, Transport};
+use sb_core::services::v2ray_api::StatsManager;
 use sb_transport::IoStream;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
@@ -53,6 +54,8 @@ pub mod udp;
 /// SOCKS5 入站配置
 #[derive(Clone, Debug)]
 pub struct SocksInboundConfig {
+    /// Inbound tag for stats
+    pub tag: Option<String>,
     /// Listen address
     /// 监听地址
     pub listen: SocketAddr,
@@ -74,6 +77,8 @@ pub struct SocksInboundConfig {
     pub udp_timeout: Option<Duration>,
     /// Domain resolution strategy
     pub domain_strategy: Option<DomainStrategy>,
+    /// Optional V2Ray stats manager
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
@@ -169,8 +174,10 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
 
         // Spawn UDP handler
         let timeout = cfg.udp_timeout;
+        let inbound_tag = cfg.tag.clone();
+        let stats = cfg.stats.clone();
         tokio::spawn(async move {
-            if let Err(e) = udp::serve_udp_datagrams(sock, timeout).await {
+            if let Err(e) = udp::serve_udp_datagrams(sock, timeout, inbound_tag, stats).await {
                 tracing::warn!("socks/udp serve error: {:?}", e);
             }
         });
@@ -295,7 +302,7 @@ where
                     // Port/IP ignored by client usually, but we send 0
     cli.write_all(&resp).await?;
 
-    process_request(cli, peer, cfg, endpoint).await
+    process_request(cli, peer, cfg, endpoint, None).await
 }
 
 async fn handle_socks5<S>(
@@ -312,6 +319,7 @@ where
     cli.read_exact(&mut methods).await?;
 
     let mut method = 0xFF; // No acceptable methods
+    let mut auth_user: Option<String> = None;
 
     if let Some(users) = &cfg.users {
         if !users.is_empty() {
@@ -365,6 +373,7 @@ where
                     .unwrap_or("");
                 if u == uname && p == pass {
                     authenticated = true;
+                    auth_user = Some(u.to_string());
                     break;
                 }
             }
@@ -434,7 +443,7 @@ where
             // 握手阶段（greeting/auth/req）完成
             // Handshake phase (greeting/auth/req) completed
             inbound_parse("socks", "ok", "greeting+request");
-            process_request(cli, peer, cfg, endpoint).await
+            process_request(cli, peer, cfg, endpoint, auth_user).await
         }
         0x03 => {
             // UDP ASSOCIATE
@@ -468,6 +477,7 @@ async fn process_request<S>(
     peer: SocketAddr,
     cfg: &SocksInboundConfig,
     endpoint: Endpoint,
+    auth_user: Option<String>,
 ) -> io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
@@ -525,7 +535,7 @@ where
         let d = eng.decide(&ctx);
         #[cfg(feature = "metrics")]
         {
-            metrics::counter!("router_decide_total", "decision"=> match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }).increment(1);
+            metrics::counter!("router_decide_total", "decision"=> match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
         }
         if matches!(d, RDecision::Reject) {
             // SOCKS5: REP=0x02 (connection not allowed by ruleset)
@@ -538,7 +548,7 @@ where
     #[cfg(feature="metrics")]
     metrics::counter!("router_route_total",
         "inbound"=>"socks5",
-        "decision"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" },
+        "decision"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" },
         "proxy_kind"=>proxy.label()
     ).increment(1);
 
@@ -567,6 +577,7 @@ where
     }
 
     let opts = ConnectOpts::default();
+    let mut outbound_tag: Option<String>;
 
     // Fast path: if router decided a named outbound, try OutboundRegistry first
     if let RDecision::Proxy(Some(name)) = &decision {
@@ -581,6 +592,7 @@ where
         {
             // Success: reply and start piping
             reply(cli, 0x00, None).await?;
+            outbound_tag = Some(name.clone());
 
             fn dur_from_env(key: &str) -> Option<std::time::Duration> {
                 std::env::var(key)
@@ -596,6 +608,13 @@ where
             }
             let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
             let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+            let traffic = cfg.stats.as_ref().and_then(|stats| {
+                stats.traffic_recorder(
+                    cfg.tag.as_deref(),
+                    outbound_tag.as_deref(),
+                    auth_user.as_deref(),
+                )
+            });
             let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
                 cli,
                 &mut s,
@@ -604,6 +623,7 @@ where
                 rt,
                 wt,
                 None,
+                traffic,
             )
             .await?;
             return Ok(());
@@ -613,18 +633,23 @@ where
     // 与上游建立连接（根据决策与默认代理）
     // Establish connection with upstream (based on decision and default proxy)
     let mut srv: IoStream = match decision {
-        RDecision::Direct => match &endpoint {
-            Endpoint::Domain(host, port) => {
-                let s = direct_connect_hostport(host, *port, &opts).await?;
-                Box::new(s)
+        RDecision::Direct => {
+            outbound_tag = Some("direct".to_string());
+            match &endpoint {
+                Endpoint::Domain(host, port) => {
+                    let s = direct_connect_hostport(host, *port, &opts).await?;
+                    Box::new(s)
+                }
+                Endpoint::Ip(sa) => {
+                    let s =
+                        direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                    Box::new(s)
+                }
             }
-            Endpoint::Ip(sa) => {
-                let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
-                Box::new(s)
-            }
-        },
+        }
         RDecision::Proxy(pool_name) => {
             if let Some(name) = pool_name {
+                outbound_tag = Some(name.clone());
                 // Named proxy pool selection
                 let sel = SELECTOR.get_or_init(|| {
                     let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
@@ -694,6 +719,7 @@ where
                                 true => {
                                     #[cfg(feature = "metrics")]
                                     metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
+                                    outbound_tag = Some("direct".to_string());
                                     match &endpoint {
                                         Endpoint::Domain(host, port) => Box::new(
                                             direct_connect_hostport(host, *port, &opts).await?,
@@ -717,50 +743,135 @@ where
                     } else {
                         // Pool not found - fallback to default proxy
                         match proxy {
-                            ProxyChoice::Direct => match &endpoint {
-                                Endpoint::Domain(host, port) => {
-                                    Box::new(direct_connect_hostport(host, *port, &opts).await?)
+                            ProxyChoice::Direct => {
+                                outbound_tag = Some("direct".to_string());
+                                match &endpoint {
+                                    Endpoint::Domain(host, port) => Box::new(
+                                        direct_connect_hostport(host, *port, &opts).await?,
+                                    ),
+                                    Endpoint::Ip(sa) => Box::new(
+                                        direct_connect_hostport(
+                                            &sa.ip().to_string(),
+                                            sa.port(),
+                                            &opts,
+                                        )
+                                        .await?,
+                                    ),
                                 }
-                                Endpoint::Ip(sa) => Box::new(
-                                    direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
+                            }
+                            ProxyChoice::Http(addr) => {
+                                outbound_tag = Some("http".to_string());
+                                match &endpoint {
+                                    Endpoint::Domain(host, port) => Box::new(
+                                        http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                            .await?,
+                                    ),
+                                    Endpoint::Ip(sa) => Box::new(
+                                        http_proxy_connect_through_proxy(
+                                            addr,
+                                            &sa.ip().to_string(),
+                                            sa.port(),
+                                            &opts,
+                                        )
                                         .await?,
-                                ),
-                            },
-                            ProxyChoice::Http(addr) => match &endpoint {
-                                Endpoint::Domain(host, port) => Box::new(
-                                    http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                    ),
+                                }
+                            }
+                            ProxyChoice::Socks5(addr) => {
+                                outbound_tag = Some("socks5".to_string());
+                                match &endpoint {
+                                    Endpoint::Domain(host, port) => Box::new(
+                                        socks5_connect_through_socks5(addr, host, *port, &opts)
+                                            .await?,
+                                    ),
+                                    Endpoint::Ip(sa) => Box::new(
+                                        socks5_connect_through_socks5(
+                                            addr,
+                                            &sa.ip().to_string(),
+                                            sa.port(),
+                                            &opts,
+                                        )
                                         .await?,
-                                ),
-                                Endpoint::Ip(sa) => Box::new(
-                                    http_proxy_connect_through_proxy(
-                                        addr,
-                                        &sa.ip().to_string(),
-                                        sa.port(),
-                                        &opts,
-                                    )
-                                    .await?,
-                                ),
-                            },
-                            ProxyChoice::Socks5(addr) => match &endpoint {
-                                Endpoint::Domain(host, port) => Box::new(
-                                    socks5_connect_through_socks5(addr, host, *port, &opts).await?,
-                                ),
-                                Endpoint::Ip(sa) => Box::new(
-                                    socks5_connect_through_socks5(
-                                        addr,
-                                        &sa.ip().to_string(),
-                                        sa.port(),
-                                        &opts,
-                                    )
-                                    .await?,
-                                ),
-                            },
+                                    ),
+                                }
+                            }
                         }
                     }
                 } else {
                     // No registry - fallback to default proxy
                     match proxy {
-                        ProxyChoice::Direct => match &endpoint {
+                        ProxyChoice::Direct => {
+                            outbound_tag = Some("direct".to_string());
+                            match &endpoint {
+                                Endpoint::Domain(host, port) => {
+                                    let s = direct_connect_hostport(host, *port, &opts).await?;
+                                    Box::new(s)
+                                }
+                                Endpoint::Ip(sa) => {
+                                    let s = direct_connect_hostport(
+                                        &sa.ip().to_string(),
+                                        sa.port(),
+                                        &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                            }
+                        }
+                        ProxyChoice::Http(addr) => {
+                            outbound_tag = Some("http".to_string());
+                            match &endpoint {
+                                Endpoint::Domain(host, port) => {
+                                    let s =
+                                        http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                            .await?;
+                                    Box::new(s)
+                                }
+                                Endpoint::Ip(sa) => {
+                                    let s = http_proxy_connect_through_proxy(
+                                        addr,
+                                        &sa.ip().to_string(),
+                                        sa.port(),
+                                        &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                            }
+                        }
+                        ProxyChoice::Socks5(addr) => {
+                            outbound_tag = Some("socks5".to_string());
+                            match &endpoint {
+                                Endpoint::Domain(host, port) => {
+                                    let s = socks5_connect_through_socks5(
+                                        addr,
+                                        host,
+                                        *port,
+                                        &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                                Endpoint::Ip(sa) => {
+                                    let s = socks5_connect_through_socks5(
+                                        addr,
+                                        &sa.ip().to_string(),
+                                        sa.port(),
+                                        &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Default proxy (no named pool)
+                match proxy {
+                    ProxyChoice::Direct => {
+                        outbound_tag = Some("direct".to_string());
+                        match &endpoint {
                             Endpoint::Domain(host, port) => {
                                 let s = direct_connect_hostport(host, *port, &opts).await?;
                                 Box::new(s)
@@ -771,11 +882,19 @@ where
                                         .await?;
                                 Box::new(s)
                             }
-                        },
-                        ProxyChoice::Http(addr) => match &endpoint {
+                        }
+                    }
+                    ProxyChoice::Http(addr) => {
+                        outbound_tag = Some("http".to_string());
+                        match &endpoint {
                             Endpoint::Domain(host, port) => {
-                                let s = http_proxy_connect_through_proxy(addr, host, *port, &opts)
-                                    .await?;
+                                let s = http_proxy_connect_through_proxy(
+                                    addr,
+                                    host,
+                                    *port,
+                                    &opts,
+                                )
+                                .await?;
                                 Box::new(s)
                             }
                             Endpoint::Ip(sa) => {
@@ -788,8 +907,11 @@ where
                                 .await?;
                                 Box::new(s)
                             }
-                        },
-                        ProxyChoice::Socks5(addr) => match &endpoint {
+                        }
+                    }
+                    ProxyChoice::Socks5(addr) => {
+                        outbound_tag = Some("socks5".to_string());
+                        match &endpoint {
                             Endpoint::Domain(host, port) => {
                                 let s =
                                     socks5_connect_through_socks5(addr, host, *port, &opts).await?;
@@ -805,56 +927,8 @@ where
                                 .await?;
                                 Box::new(s)
                             }
-                        },
+                        }
                     }
-                }
-            } else {
-                // Default proxy (no named pool)
-                match proxy {
-                    ProxyChoice::Direct => match &endpoint {
-                        Endpoint::Domain(host, port) => {
-                            let s = direct_connect_hostport(host, *port, &opts).await?;
-                            Box::new(s)
-                        }
-                        Endpoint::Ip(sa) => {
-                            let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
-                                .await?;
-                            Box::new(s)
-                        }
-                    },
-                    ProxyChoice::Http(addr) => match &endpoint {
-                        Endpoint::Domain(host, port) => {
-                            let s =
-                                http_proxy_connect_through_proxy(addr, host, *port, &opts).await?;
-                            Box::new(s)
-                        }
-                        Endpoint::Ip(sa) => {
-                            let s = http_proxy_connect_through_proxy(
-                                addr,
-                                &sa.ip().to_string(),
-                                sa.port(),
-                                &opts,
-                            )
-                            .await?;
-                            Box::new(s)
-                        }
-                    },
-                    ProxyChoice::Socks5(addr) => match &endpoint {
-                        Endpoint::Domain(host, port) => {
-                            let s = socks5_connect_through_socks5(addr, host, *port, &opts).await?;
-                            Box::new(s)
-                        }
-                        Endpoint::Ip(sa) => {
-                            let s = socks5_connect_through_socks5(
-                                addr,
-                                &sa.ip().to_string(),
-                                sa.port(),
-                                &opts,
-                            )
-                            .await?;
-                            Box::new(s)
-                        }
-                    },
                 }
             }
         }
@@ -864,6 +938,7 @@ where
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
             // Not handled by SOCKS inbound directly; fall back to direct
+            outbound_tag = Some("direct".to_string());
             match &endpoint {
                 Endpoint::Domain(host, port) => {
                     let s = direct_connect_hostport(host, *port, &opts).await?;
@@ -899,6 +974,9 @@ where
 
     let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), auth_user.as_deref())
+    });
     let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         cli,
         &mut srv,
@@ -907,6 +985,7 @@ where
         rt,
         wt,
         None,
+        traffic,
     )
     .await?;
     Ok(())
@@ -1053,7 +1132,7 @@ impl SocksInbound {
                     async move {
                         // 这里的 sock 已经是 Arc<UdpSocket>，与新签名匹配
                         // sock here is already Arc<UdpSocket>, matching the new signature
-                        if let Err(e) = udp::serve_udp_datagrams(sock, None).await {
+                        if let Err(e) = udp::serve_udp_datagrams(sock, None, None, None).await {
                             tracing::warn!("socks/udp serve ended: {e}");
                         }
                     }
@@ -1078,7 +1157,7 @@ impl SocksInbound {
                     tokio::spawn({
                         let sock = s.clone();
                         async move {
-                            if let Err(e) = udp::serve_udp_datagrams(sock, None).await {
+                            if let Err(e) = udp::serve_udp_datagrams(sock, None, None, None).await {
                                 tracing::warn!("socks/udp (autostart for TCP) ended: {e}");
                             }
                         }

@@ -42,7 +42,7 @@ pub async fn spawn_socks_udp_inbound() -> Result<SocketAddr> {
     let addr = first.local_addr()?;
     for s in socks {
         tokio::spawn(async move {
-            let _ = serve_udp_datagrams(s, None).await;
+            let _ = serve_udp_datagrams(s, None, None, None).await;
         });
     }
     Ok(addr)

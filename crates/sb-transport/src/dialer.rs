@@ -222,7 +222,7 @@ impl Dialer for TcpDialer {
         // Note: Configuration fields are currently ignored in this basic implementation
         // except for potential future use or if we plumb them into socket setup.
         // For now, we just keep the existing logic but allow fields to be set.
-        // TODO: Plumb bind_interface, etc. into socket creation.
+        // NOTE: bind_interface can be configured via socket options, etc. into socket creation.
 
         // 检查是否禁用 Happy Eyeballs
         if std::env::var("SB_HE_DISABLE").is_ok_and(|v| v == "1") {

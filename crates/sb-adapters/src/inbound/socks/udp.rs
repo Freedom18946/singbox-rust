@@ -32,6 +32,8 @@ use sb_core::outbound::udp::{direct_sendto, direct_udp_socket_for};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::services::v2ray_api::StatsManager;
+use sb_core::net::metered::TrafficRecorder;
 use std::env;
 
 static NAT_MAP: OnceCell<Arc<UdpNatMap>> = OnceCell::const_new();
@@ -355,7 +357,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]
             {
-                counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }).increment(1);
+                counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
             }
             if matches!(d, RDecision::Reject) {
                 #[cfg(feature = "metrics")]
@@ -501,6 +503,7 @@ async fn forward_via_proxy(
     up_map: Arc<UdpUpstreamMap>,
     pool: Option<String>,
     timeout_ms: u64,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> ProxyOutcome {
     let (ip, port) = match dst {
         UdpTargetAddr::Ip(sa) => (sa.ip(), sa.port()),
@@ -528,6 +531,7 @@ async fn forward_via_proxy(
         &target_label,
         pool,
         timeout_ms,
+        traffic.clone(),
     )
     .await
     {
@@ -570,6 +574,9 @@ async fn forward_via_proxy(
                     counter!("socks_udp_error_total", "class" => "return_fail").increment(1);
                     break;
                 }
+                if let Some(ref recorder) = traffic {
+                    recorder.record_down(reply_payload.len() as u64);
+                }
             }
             Ok(None) => break,
             Err(e) => {
@@ -592,6 +599,7 @@ async fn ensure_upstream_session(
     target: &str,
     pool: Option<String>,
     timeout_ms: u64,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Option<Arc<UpSocksSession>> {
     if let Some(sess) = up_map.get(&key).await {
         return Some(sess);
@@ -637,6 +645,7 @@ async fn ensure_upstream_session(
             // 启动后台接收器，将回复转发给客户端
             let listen_sock = Arc::clone(&listen);
             let sess_clone = arc.clone();
+            let traffic_clone = traffic.clone();
             tokio::spawn(async move {
                 let per_ms = std::env::var("SB_SOCKS_UDP_UP_BG_RECV_MS")
                     .ok()
@@ -648,7 +657,11 @@ async fn ensure_upstream_session(
                         Ok(Some((reply_addr, payload))) => {
                             let reply =
                                 encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), &payload);
-                            let _ = listen_sock.send_to(&reply, client).await;
+                            if listen_sock.send_to(&reply, client).await.is_ok() {
+                                if let Some(ref recorder) = traffic_clone {
+                                    recorder.record_down(payload.len() as u64);
+                                }
+                            }
                         }
                         Ok(None) => continue,
                         Err(_) => break,
@@ -735,7 +748,7 @@ pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
     // Original logic: iterate listens, spawn serve_udp_datagrams(...) one by one
     for sock in listens {
         tokio::spawn(async move {
-            if let Err(e) = serve_udp_datagrams(sock, None).await {
+            if let Err(e) = serve_udp_datagrams(sock, None, None, None).await {
                 tracing::warn!("socks/udp serve error: {e:?}");
             }
         });
@@ -832,7 +845,7 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
     } else {
         // 正常路径：进入完整的 UDP 处理循环（路由/代理/直连/限速等）
         // Normal path: Enter full UDP processing loop (routing/proxy/direct/ratelimit etc.)
-        serve_udp_datagrams(listen, None).await
+        serve_udp_datagrams(listen, None, None, None).await
     }
 }
 
@@ -913,7 +926,12 @@ pub fn spawn_nat_evictor(rt: &UdpRuntime) {
 // Changed to receive Arc<UdpSocket>, consistent with caller; internal method calls auto-dereference
 // 改为接收 Arc<UdpSocket>，与调用方保持一致；内部方法调用自动解引用
 // Changed to receive Arc<UdpSocket>, consistent with caller; internal method calls auto-dereference
-pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>) -> Result<()> {
+pub async fn serve_udp_datagrams(
+    sock: Arc<UdpSocket>,
+    timeout: Option<Duration>,
+    inbound_tag: Option<String>,
+    stats: Option<Arc<StatsManager>>,
+) -> Result<()> {
     let fallback_direct = proxy_fallback_direct();
     let upstream_timeout = upstream_timeout_ms();
     let ttl = timeout.or_else(nat_ttl_from_env);
@@ -1019,7 +1037,16 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
         {
             // 不做任何解析，直接把收到的帧回射给来源地址。
             // Do not parse, directly echo received frame to source address.
+            let traffic = stats.as_ref().and_then(|stats| {
+                stats.traffic_recorder(inbound_tag.as_deref(), None, None)
+            });
+            if let Some(ref recorder) = traffic {
+                recorder.record_up(n as u64);
+            }
             let _ = sock.send_to(pkt, src).await?;
+            if let Some(ref recorder) = traffic {
+                recorder.record_down(pkt.len() as u64);
+            }
             #[cfg(feature = "metrics")]
             {
                 metrics::counter!("udp_pkts_out_total").increment(1);
@@ -1075,7 +1102,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]
             {
-                counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }).increment(1);
+                counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
             }
             match d {
                 RDecision::Reject | RDecision::RejectDrop => {
@@ -1118,8 +1145,19 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false)
         {
-            let reply = encode_udp_datagram(&dst, &buf[header_len..n]);
-            let _ = sock.send_to(&reply, src).await;
+            let payload = &buf[header_len..n];
+            let traffic = stats.as_ref().and_then(|stats| {
+                stats.traffic_recorder(inbound_tag.as_deref(), Some("direct"), None)
+            });
+            if let Some(ref recorder) = traffic {
+                recorder.record_up(payload.len() as u64);
+            }
+            let reply = encode_udp_datagram(&dst, payload);
+            if sock.send_to(&reply, src).await.is_ok() {
+                if let Some(ref recorder) = traffic {
+                    recorder.record_down(payload.len() as u64);
+                }
+            }
             #[cfg(feature = "metrics")]
             {
                 metrics::counter!("udp_pkts_out_total").increment(1);
@@ -1141,7 +1179,15 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
             continue;
         }
 
+        let direct_traffic = stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(inbound_tag.as_deref(), Some("direct"), None)
+        });
+
         if use_proxy {
+            let proxy_tag = proxy_pool.clone().unwrap_or_else(|| "proxy".to_string());
+            let proxy_traffic = stats.as_ref().and_then(|stats| {
+                stats.traffic_recorder(inbound_tag.as_deref(), Some(proxy_tag.as_str()), None)
+            });
             match forward_via_proxy(
                 Arc::clone(&sock),
                 src,
@@ -1150,10 +1196,16 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
                 Arc::clone(&upstream_map),
                 proxy_pool.clone(),
                 upstream_timeout,
+                proxy_traffic.clone(),
             )
             .await
             {
-                ProxyOutcome::Handled => continue,
+                ProxyOutcome::Handled => {
+                    if let Some(ref recorder) = proxy_traffic {
+                        recorder.record_up(body.len() as u64);
+                    }
+                    continue;
+                }
                 ProxyOutcome::NeedFallback => {
                     if !fallback_direct {
                         continue;
@@ -1184,6 +1236,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
                     let key_clone = key.clone();
                     let map_clone = map.clone();
                     let s_cloned = Arc::clone(&s);
+                    let traffic = direct_traffic.clone();
                     tokio::spawn(async move {
                         let mut rbuf = vec![0u8; 64 * 1024];
                         loop {
@@ -1201,6 +1254,9 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
                             if let Err(e) = listen.send_to(&out, key_clone.client).await {
                                 tracing::debug!("socks5 udp send back err: {e}");
                                 break;
+                            }
+                            if let Some(ref recorder) = traffic {
+                                recorder.record_down(rn as u64);
                             }
                             #[cfg(feature = "metrics")]
                             {
@@ -1231,13 +1287,20 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>, timeout: Option<Duration>
 
         match send_res {
             Ok(_) => {
+                if let Some(ref recorder) = direct_traffic {
+                    recorder.record_up(body.len() as u64);
+                }
                 if std::env::var("SB_TEST_ECHO_GLUE")
                     .ok()
                     .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                     .unwrap_or(false)
                 {
                     let reply = encode_udp_datagram(&dst, body);
-                    let _ = sock.send_to(&reply, src).await;
+                    if sock.send_to(&reply, src).await.is_ok() {
+                        if let Some(ref recorder) = direct_traffic {
+                            recorder.record_down(body.len() as u64);
+                        }
+                    }
                 }
                 #[cfg(feature = "metrics")]
                 {

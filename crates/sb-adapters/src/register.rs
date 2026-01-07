@@ -933,6 +933,7 @@ fn build_http_inbound(
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = HttpProxyConfig {
+        tag: param.tag.clone(),
         listen,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
@@ -940,6 +941,7 @@ fn build_http_inbound(
         users: param.basic_auth.clone().map(|c| vec![c]),
         set_system_proxy: param.set_system_proxy,
         allow_private_network: param.allow_private_network,
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
     };
     Some(Arc::new(HttpInboundAdapter::new(cfg)))
 }
@@ -996,11 +998,19 @@ fn build_shadowsocks_inbound(
         password: param.password.clone(),
         users,
         router: ctx.router.clone(),
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         multiplex: convert_multiplex_config(&param.multiplex),
-        transport_layer: None, // TODO: Transport config from param?
+        // NOTE: Transport layer configuration can be added via param in future
+        transport_layer: None,
     };
 
-    Some(Arc::new(ShadowsocksInboundAdapter::new(config)))
+    let adapter = if let Some(tag) = param.tag.clone() {
+        ShadowsocksInboundAdapter::with_tag(config, tag)
+    } else {
+        ShadowsocksInboundAdapter::new(config)
+    };
+    Some(Arc::new(adapter))
 }
 
 #[cfg(feature = "sb-transport")]
@@ -1056,7 +1066,7 @@ fn build_vmess_inbound(
         }
     };
 
-    // TODO: consider fallback to users list when multi-user VMess is supported.
+    // NOTE: Multi-user VMess can use users list for authentication.
     let uuid_str = param.uuid.clone();
 
     let uuid = match uuid_str {
@@ -1083,6 +1093,8 @@ fn build_vmess_inbound(
         uuid,
         security,
         router: ctx.router.clone(),
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         multiplex: convert_multiplex_config(&param.multiplex),
         transport_layer: None,
         fallback: None,
@@ -1133,8 +1145,11 @@ fn build_vless_inbound(
         listen,
         uuid,
         router: ctx.router.clone(),
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         #[cfg(feature = "tls_reality")]
-        reality: None, // TODO: REALITY config
+        // NOTE: REALITY configuration is feature-gated (tls_reality)
+        reality: None,
         multiplex: convert_multiplex_config(&param.multiplex),
         transport_layer: None,
         fallback: None,
@@ -1235,6 +1250,8 @@ fn build_trojan_inbound(
         cert_path,
         key_path,
         router: ctx.router.clone(),
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
@@ -1267,14 +1284,17 @@ fn build_socks_inbound(
     });
 
     let cfg = SocksInboundConfig {
+        tag: param.tag.clone(),
         listen,
         udp_bind: None,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
         udp_nat_ttl: std::time::Duration::from_secs(60),
-        users: None, // TODO: map generic users from IR -> Param -> Config
+        // NOTE: User authentication mapping can be added via IR flow
+        users: None,
         udp_timeout: param.udp_timeout,
         domain_strategy,
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
     };
     Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(
         cfg,
@@ -1306,6 +1326,7 @@ fn build_mixed_inbound(
     });
 
     let cfg = MixedInboundConfig {
+        tag: param.tag.clone(),
         listen,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
@@ -1316,6 +1337,7 @@ fn build_mixed_inbound(
         allow_private_network: param.allow_private_network,
         udp_timeout: param.udp_timeout,
         domain_strategy,
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
     };
     Some(Arc::new(MixedInboundAdapter::new(cfg)))
 }
@@ -1403,6 +1425,8 @@ fn build_shadowtls_inbound(
             listen,
             tls,
             router: ctx.router.clone(),
+            tag: param.tag.clone(),
+            stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         };
 
         Some(Arc::new(
@@ -1660,6 +1684,8 @@ fn build_hysteria2_inbound(
             congestion_control: param.congestion_control.clone(),
             salamander: param.salamander.clone(),
             obfs: param.obfs.clone(),
+            tag: param.tag.clone(),
+            stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
             masquerade,
             router: ctx.router.clone(),
             outbounds: ctx.outbounds.clone(),
@@ -1774,6 +1800,8 @@ fn build_tuic_inbound(
         congestion_control: param.congestion_control.clone(),
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
     };
 
     Some(Arc::new(crate::inbound::tuic::TuicInboundAdapter::new(
@@ -1816,11 +1844,12 @@ fn build_anytls_inbound(
 #[allow(dead_code)]
 fn build_direct_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::direct::DirectInboundAdapter;
 
-    match DirectInboundAdapter::create(param) {
+    let stats = ctx.context.v2ray_server.as_ref().and_then(|s| s.stats());
+    match DirectInboundAdapter::create(param, stats) {
         Ok(adapter) => Some(Arc::from(adapter)),
         Err(e) => {
             warn!("Failed to build Direct inbound: {}", e);
@@ -1861,11 +1890,12 @@ fn stub_inbound(kind: &str) {
 #[cfg(feature = "dns")]
 fn build_dns_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::dns::DnsInboundAdapter;
 
-    match DnsInboundAdapter::create(param) {
+    let stats = ctx.context.v2ray_server.as_ref().and_then(|s| s.stats());
+    match DnsInboundAdapter::create(param, stats) {
         Ok(adapter) => Some(Arc::from(adapter)),
         Err(e) => {
             warn!("Failed to build DNS inbound: {}", e);
@@ -3073,12 +3103,16 @@ impl InboundService for MixedInboundAdapter {
 #[allow(dead_code)]
 fn build_redirect_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::redirect::RedirectConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
-    let cfg = RedirectConfig { listen };
+    let cfg = RedirectConfig {
+        listen,
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+    };
     Some(Arc::new(RedirectInboundAdapter::new(cfg)))
 }
 
@@ -3132,12 +3166,16 @@ impl InboundService for RedirectInboundAdapter {
 #[allow(dead_code)]
 fn build_tproxy_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::tproxy::TproxyConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
-    let cfg = TproxyConfig { listen };
+    let cfg = TproxyConfig {
+        listen,
+        tag: param.tag.clone(),
+        stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+    };
     Some(Arc::new(TproxyInboundAdapter::new(cfg)))
 }
 

@@ -9,6 +9,8 @@
 
 use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundService;
+use sb_core::net::metered;
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::{
@@ -20,6 +22,7 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 use sha2::{Digest, Sha224};
 use super::tls;
 use std::collections::HashMap;
@@ -103,6 +106,8 @@ pub struct TrojanInboundConfig {
     pub cert_path: String,
     pub key_path: String,
     pub router: Arc<router::RouterHandle>,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
     /// Optional REALITY TLS configuration for inbound
     #[cfg(feature = "tls_reality")]
     pub reality: Option<sb_tls::RealityServerConfig>,
@@ -451,7 +456,16 @@ async fn handle_conn_impl(
                     TrojanCommand::Connect => {
                         handle_tcp_connect(cfg, tls, peer, &host, port, auth_user).await
                     }
-                    TrojanCommand::UdpAssociate => handle_udp_associate(tls, peer).await,
+                    TrojanCommand::UdpAssociate => {
+                        let traffic = cfg.stats.as_ref().and_then(|stats| {
+                            stats.traffic_recorder(
+                                cfg.tag.as_deref(),
+                                Some("direct"),
+                                Some(auth_user.as_str()),
+                            )
+                        });
+                        handle_udp_associate(tls, peer, traffic).await
+                    }
                 }
             } else {
                 // Invalid user
@@ -616,12 +630,15 @@ pub fn parse_trojan_request(buf: &[u8]) -> Result<()> {
 async fn handle_udp_associate(
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
     peer: SocketAddr,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let udp_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
     let (mut rh, mut wh) = tokio::io::split(stream);
 
     let udp_socket_recv = udp_socket.clone();
     let udp_socket_send = udp_socket.clone();
+    let traffic_up = traffic.clone();
+    let traffic_down = traffic.clone();
 
     // Client -> Target
     let c2t = async move {
@@ -662,7 +679,11 @@ async fn handle_udp_associate(
             let target_addr = format!("{}:{}", host, port);
             if let Ok(addrs) = tokio::net::lookup_host(&target_addr).await {
                 if let Some(addr) = addrs.into_iter().next() {
-                    let _ = udp_socket_send.send_to(&payload, addr).await;
+                    if udp_socket_send.send_to(&payload, addr).await.is_ok() {
+                        if let Some(ref recorder) = traffic_up {
+                            recorder.record_up(payload.len() as u64);
+                        }
+                    }
                 }
             };
         }
@@ -701,6 +722,9 @@ async fn handle_udp_associate(
 
             // Write Payload
             wh.write_all(payload).await?;
+            if let Some(ref recorder) = traffic_down {
+                recorder.record_down(payload.len() as u64);
+            }
         }
         Ok::<(), anyhow::Error>(())
     };
@@ -712,12 +736,12 @@ async fn handle_udp_associate(
 
 /// Handle TCP CONNECT request
 async fn handle_tcp_connect(
-    _cfg: &TrojanInboundConfig,
+    cfg: &TrojanInboundConfig,
     tls: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
     peer: SocketAddr,
     host: &str,
     port: u16,
-    _auth_user: &str,
+    auth_user: &str,
 ) -> Result<()> {
     // Router decision
     let mut decision = RDecision::Direct;
@@ -727,7 +751,7 @@ async fn handle_tcp_connect(
             ip: None,
             transport_udp: false,
             port: Some(port),
-            auth_user: Some(_auth_user),
+            auth_user: Some(auth_user),
             network: Some("tcp"),
             ..Default::default()
         };
@@ -740,8 +764,11 @@ async fn handle_tcp_connect(
 
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(host, port, &opts).await?,
+    let (mut upstream, outbound_tag) = match decision {
+        RDecision::Direct => {
+            let s = direct_connect_hostport(host, port, &opts).await?;
+            (s, Some("direct".to_string()))
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("trojan".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -749,67 +776,92 @@ async fn handle_tcp_connect(
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let s = http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let s = socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     } else {
                         match proxy {
                             ProxyChoice::Direct => {
-                                direct_connect_hostport(host, port, &opts).await?
+                                let s = direct_connect_hostport(host, port, &opts).await?;
+                                (s, Some("direct".to_string()))
                             }
                             ProxyChoice::Http(addr) => {
-                                http_proxy_connect_through_proxy(addr, host, port, &opts).await?
+                                let s =
+                                    http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                        .await?;
+                                (s, Some("http".to_string()))
                             }
                             ProxyChoice::Socks5(addr) => {
-                                socks5_connect_through_socks5(addr, host, port, &opts).await?
+                                let s =
+                                    socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     }
                 } else {
                     match proxy {
-                        ProxyChoice::Direct => direct_connect_hostport(host, port, &opts).await?,
+                        ProxyChoice::Direct => {
+                            let s = direct_connect_hostport(host, port, &opts).await?;
+                            (s, Some("direct".to_string()))
+                        }
                         ProxyChoice::Http(addr) => {
-                            http_proxy_connect_through_proxy(addr, host, port, &opts).await?
+                            let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                .await?;
+                            (s, Some("http".to_string()))
                         }
                         ProxyChoice::Socks5(addr) => {
-                            socks5_connect_through_socks5(addr, host, port, &opts).await?
+                            let s =
+                                socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                            (s, Some("socks5".to_string()))
                         }
                     }
                 }
             } else {
                 match proxy {
-                    ProxyChoice::Direct => direct_connect_hostport(host, port, &opts).await?,
+                    ProxyChoice::Direct => {
+                        let s = direct_connect_hostport(host, port, &opts).await?;
+                        (s, Some("direct".to_string()))
+                    }
                     ProxyChoice::Http(addr) => {
-                        http_proxy_connect_through_proxy(addr, host, port, &opts).await?
+                        let s = http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
+                        (s, Some("http".to_string()))
                     }
                     ProxyChoice::Socks5(addr) => {
-                        socks5_connect_through_socks5(addr, host, port, &opts).await?
+                        let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                        (s, Some("socks5".to_string()))
                     }
                 }
             }
         }
         RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => direct_connect_hostport(host, port, &opts).await?,
+            ProxyChoice::Direct => {
+                let s = direct_connect_hostport(host, port, &opts).await?;
+                (s, Some("direct".to_string()))
+            }
             ProxyChoice::Http(addr) => {
-                http_proxy_connect_through_proxy(addr, host, port, &opts).await?
+                let s = http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
+                (s, Some("http".to_string()))
             }
             ProxyChoice::Socks5(addr) => {
-                socks5_connect_through_socks5(addr, host, port, &opts).await?
+                let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                (s, Some("socks5".to_string()))
             }
         },
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("trojan: rejected by rules")),
@@ -818,7 +870,24 @@ async fn handle_tcp_connect(
     };
 
     // Relay bidirectionally
-    let _ = tokio::io::copy_bidirectional(tls, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(
+            cfg.tag.as_deref(),
+            outbound_tag.as_deref(),
+            Some(auth_user),
+        )
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        tls,
+        &mut upstream,
+        "trojan",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
     Ok(())
 }
 

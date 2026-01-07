@@ -788,7 +788,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(c) = cache_service.clone() {
         ctx = ctx.with_cache_file(c);
     }
-    // TODO: Wire other services into context
+    // NOTE: Additional services can be wired here using ctx.with_*()
     sb_core::context::install_context_registry(&ctx);
 
     // Optionally configure DNS via config (env bridge for sb-core)

@@ -7,6 +7,12 @@ use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadB
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+/// Optional traffic recorder for per-connection byte accounting (e.g. V2Ray stats).
+pub trait TrafficRecorder: Send + Sync {
+    fn record_up(&self, bytes: u64);
+    fn record_down(&self, bytes: u64);
+}
+
 #[cfg(feature = "metrics")]
 fn err_kind_local(e: &io::Error) -> &'static str {
     use io::ErrorKind::*;
@@ -27,8 +33,8 @@ pub async fn copy_bidirectional_metered<A, B>(
     _label: &'static str,
 ) -> io::Result<()>
 where
-    A: AsyncRead + AsyncWrite + Unpin,
-    B: AsyncRead + AsyncWrite + Unpin,
+    A: AsyncRead + AsyncWrite + Unpin + ?Sized,
+    B: AsyncRead + AsyncWrite + Unpin + ?Sized,
 {
     // 新实现：直接转调流式实现（1s）
     let _ = copy_bidirectional_streaming(a, b, _label, Duration::from_secs(1)).await?;
@@ -44,10 +50,10 @@ pub async fn copy_bidirectional_streaming<A, B>(
     interval_dur: Duration,
 ) -> io::Result<(u64, u64)>
 where
-    A: AsyncRead + AsyncWrite + Unpin,
-    B: AsyncRead + AsyncWrite + Unpin,
+    A: AsyncRead + AsyncWrite + Unpin + ?Sized,
+    B: AsyncRead + AsyncWrite + Unpin + ?Sized,
 {
-    copy_bidirectional_streaming_ctl(a, b, _label, interval_dur, None, None, None).await
+    copy_bidirectional_streaming_ctl(a, b, _label, interval_dur, None, None, None, None).await
 }
 
 /// 双向拷贝（带可选读/写超时与取消传播）。
@@ -62,10 +68,11 @@ pub async fn copy_bidirectional_streaming_ctl<A, B>(
     read_timeout: Option<Duration>,
     write_timeout: Option<Duration>,
     cancel: Option<CancellationToken>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> io::Result<(u64, u64)>
 where
-    A: AsyncRead + AsyncWrite + Unpin,
-    B: AsyncRead + AsyncWrite + Unpin,
+    A: AsyncRead + AsyncWrite + Unpin + ?Sized,
+    B: AsyncRead + AsyncWrite + Unpin + ?Sized,
 {
     // 拆分读写半部
     let (mut ar, mut aw) = split(a);
@@ -129,6 +136,8 @@ where
         read_timeout: Option<Duration>,
         write_timeout: Option<Duration>,
         cancel: Option<CancellationToken>,
+        traffic: Option<Arc<dyn TrafficRecorder>>,
+        is_up: bool,
     ) -> io::Result<u64>
     where
         R: AsyncRead + Unpin,
@@ -195,6 +204,13 @@ where
             }
             total += n as u64;
             counter.fetch_add(n as u64, Ordering::Relaxed);
+            if let Some(ref recorder) = traffic {
+                if is_up {
+                    recorder.record_up(n as u64);
+                } else {
+                    recorder.record_down(n as u64);
+                }
+            }
         }
         // 主动 flush 一下（忽略错误，让写侧决定）
         let _ = w.flush().await;
@@ -211,6 +227,8 @@ where
         read_timeout,
         write_timeout,
         cancel.clone(),
+        traffic.clone(),
+        true,
     );
     let down_fut = pump(
         &mut br,
@@ -219,6 +237,8 @@ where
         read_timeout,
         write_timeout,
         cancel.clone(),
+        traffic,
+        false,
     );
 
     let res = tokio::try_join!(up_fut, down_fut);
@@ -357,6 +377,7 @@ mod tests_timeouts {
             Some(Duration::from_millis(30)),
             None,
             None,
+            None,
         )
         .await;
         assert!(r.is_err());
@@ -383,6 +404,7 @@ mod tests_timeouts {
             None,
             Some(Duration::from_millis(30)),
             None,
+            None,
         )
         .await;
         assert!(r.is_err());
@@ -402,6 +424,7 @@ mod tests_timeouts {
             None,
             None,
             Some(tok),
+            None,
         );
         let j = tokio::spawn(async move {
             // 短暂等待再取消
@@ -430,6 +453,7 @@ mod tests_timeouts {
                 &mut b1,
                 "test",
                 Duration::from_millis(50),
+                None,
                 None,
                 None,
                 None,

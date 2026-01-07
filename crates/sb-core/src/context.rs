@@ -2,6 +2,7 @@ use crate::service::StartStage;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::RouteIR;
+use crate::services::v2ray_api::StatsManager;
 use sb_platform::process::ProcessMatcher;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -745,6 +746,9 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
+    fn stats(&self) -> Option<Arc<StatsManager>> {
+        None
+    }
 }
 pub trait NtpService: Send + Sync + std::fmt::Debug {}
 

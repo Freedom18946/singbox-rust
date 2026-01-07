@@ -5,7 +5,6 @@
 #![cfg(feature = "router")]
 
 use anyhow::Result;
-use sb_config::ir::DnsServerIR;
 
 #[cfg(feature = "dns_udp")]
 #[test]

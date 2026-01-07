@@ -89,6 +89,8 @@ async fn test_shadowsocks_aes_256_gcm_config() {
             password: "secure-password-aes256".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -113,6 +115,8 @@ async fn test_shadowsocks_aes_128_gcm_config() {
             password: "secure-password-aes128".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -137,6 +141,8 @@ async fn test_shadowsocks_chacha20_poly1305_config() {
             password: "secure-password-chacha".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -162,6 +168,8 @@ async fn test_shadowsocks_all_supported_ciphers() {
                 password: format!("password-{}", method),
             }],
             router: router.clone(),
+            tag: None,
+            stats: None,
             multiplex: None,
             transport_layer: None,
         };
@@ -308,6 +316,8 @@ async fn test_password_based_authentication() {
             password: "user-password-123".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -334,6 +344,8 @@ async fn test_multi_user_different_passwords() {
             password: "user1-password".to_string(),
         }],
         router: router.clone(),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -347,6 +359,8 @@ async fn test_multi_user_different_passwords() {
             password: "user2-password".to_string(),
         }],
         router: router.clone(),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

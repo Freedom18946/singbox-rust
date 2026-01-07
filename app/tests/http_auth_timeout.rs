@@ -54,6 +54,7 @@ async fn test_http_auth_timeout() -> Result<()> {
     let (stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
     let cfg = HttpProxyConfig {
+        tag: None,
         listen: http_addr,
         router,
         outbounds,
@@ -66,6 +67,7 @@ async fn test_http_auth_timeout() -> Result<()> {
         }]),
         set_system_proxy: false,
         allow_private_network: true,
+        stats: None,
     };
 
     tokio::spawn(async move {

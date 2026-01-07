@@ -118,6 +118,8 @@ mod tuic_tests {
             congestion_control: Some("bbr".to_string()),
             router,
             outbounds,
+            tag: None,
+            stats: None,
         };
 
         tokio::spawn(async move {

@@ -52,6 +52,8 @@ async fn start_ss_server(method: &str) -> std::net::SocketAddr {
         method: method.to_string(),
         password: Some("benchmark-pass".to_string()),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
         users: vec![],

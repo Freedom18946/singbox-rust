@@ -17,10 +17,13 @@ pub trait SsrCipher: Send + Sync {
 pub struct Cipher;
 
 impl Cipher {
+    /// Create a cipher by method name.
+    ///
+    /// NOTE: ShadowsocksR is de-scoped (feature-gated OFF in Go reference).
+    /// Only 'plain' cipher is implemented; other ciphers fall back to plain.
     pub fn create(method: &str, _password: &str) -> Box<dyn SsrCipher> {
         match method.to_lowercase().as_str() {
             "none" | "plain" => Box::new(PlainCipher),
-            // TODO: Implement other ciphers (rc4-md5, aes-128-cfb, etc.)
             _ => {
                 tracing::warn!("Unsupported SSR cipher: {}, falling back to plain", method);
                 Box::new(PlainCipher)

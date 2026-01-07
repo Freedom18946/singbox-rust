@@ -163,6 +163,7 @@ fn upstream_http_basic_auth_sent() {
             ty: InboundType::Http,
             listen: http_in.ip().to_string(),
             port: http_in.port(),
+            allow_private_network: true,
             ..Default::default()
         }],
         outbounds: vec![OutboundIR {

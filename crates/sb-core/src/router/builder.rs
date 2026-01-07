@@ -5,6 +5,8 @@ use sb_config::ir::ConfigIR;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
+#[cfg(feature = "metrics")]
+use std::time::Instant;
 
 /// Build RouterIndex directly from ConfigIR.
 /// This replaces the legacy text-based builder for IR configurations,
@@ -85,9 +87,9 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
     let default = decision_intern::intern_decision(default_dec);
 
     // Calc checksum (simplified, using Default for now as we don't have text representation)
-    let checksum = [0u8; 32]; 
+    let checksum = [0u8; 32];
 
-    Ok(Arc::new(RouterIndex {
+    let idx = RouterIndex {
         exact,
         suffix,
         suffix_map,
@@ -119,5 +121,15 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
         default,
         gen: 1,
         checksum,
-    }))
+    };
+
+    // Record build time metrics
+    #[cfg(feature = "metrics")]
+    {
+        metrics::gauge!("router_rules_size", "kind" => "composite").set(idx.rules.len() as f64);
+        let elapsed = build_start.elapsed().as_millis() as f64;
+        metrics::histogram!("router_ir_build_ms_bucket").record(elapsed);
+    }
+
+    Ok(Arc::new(idx))
 }

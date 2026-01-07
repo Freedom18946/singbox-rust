@@ -240,6 +240,7 @@ fn outbound_scaffold_socks_and_http_connect() {
             basic_auth: None,
             override_host: None,
             override_port: None,
+            allow_private_network: true,
             ..Default::default()
         }],
         outbounds: vec![

@@ -53,6 +53,8 @@ async fn test_shadowsocks_inbound_with_websocket_transport() {
             password: "test-password-123".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::WebSocket(ws_config)),
     };
@@ -80,6 +82,8 @@ async fn test_shadowsocks_inbound_tcp_fallback() {
             password: "test-password-123".to_string(),
         }],
         router,
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None, // No transport specified - should default to TCP
     };

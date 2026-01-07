@@ -90,6 +90,7 @@ fn http_inbound_basic_auth_required() {
             }),
             override_host: None,
             override_port: None,
+            allow_private_network: true,
             ..Default::default()
         }],
         outbounds: vec![OutboundIR {

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use sb_core::adapter::{InboundParam, InboundService};
 use sb_core::inbound::direct::DirectForward;
+use sb_core::services::v2ray_api::StatsManager;
 
 /// Direct inbound adapter that wraps the core DirectForward implementation.
 #[derive(Debug)]
@@ -23,7 +24,10 @@ impl DirectInboundAdapter {
     ///
     /// # Returns
     /// A boxed InboundService or an error if parameters are invalid.
-    pub fn create(param: &InboundParam) -> std::io::Result<Box<dyn InboundService>> {
+    pub fn create(
+        param: &InboundParam,
+        stats: Option<Arc<StatsManager>>,
+    ) -> std::io::Result<Box<dyn InboundService>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
         let listen: SocketAddr = listen_str.parse().map_err(|e| {
@@ -61,7 +65,9 @@ impl DirectInboundAdapter {
             true // Default: support both TCP and UDP
         };
 
-        let forward = DirectForward::new(listen, dst_host, dst_port, udp_enabled);
+        let forward = DirectForward::new(listen, dst_host, dst_port, udp_enabled)
+            .with_tag(param.tag.clone())
+            .with_stats(stats);
 
         Ok(Box::new(DirectInboundAdapter {
             inner: Arc::new(forward),

@@ -17,10 +17,12 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -38,6 +40,8 @@ pub struct ShadowTlsInboundConfig {
     /// TLS configuration using sb-tls infrastructure (Standard, REALITY, ECH)
     pub tls: sb_transport::TlsConfig,
     pub router: Arc<router::RouterHandle>,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
@@ -96,7 +100,7 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     Ok(())
 }
 
-async fn handle_conn<S>(_cfg: &ShadowTlsInboundConfig, mut tls: S, peer: SocketAddr) -> Result<()>
+async fn handle_conn<S>(cfg: &ShadowTlsInboundConfig, mut tls: S, peer: SocketAddr) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
@@ -168,8 +172,10 @@ where
 
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
+    let (mut upstream, outbound_tag) = match decision {
+        RDecision::Direct => {
+            (direct_connect_hostport(&host, port, &opts).await?, Some("direct".to_string()))
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("shadowtls".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -177,41 +183,82 @@ where
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let stream = http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (stream, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let stream = socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (stream, Some("socks5".to_string()))
                             }
                         }
                     } else {
-                        fallback_connect(proxy, &host, port, &opts).await?
+                        let stream = fallback_connect(proxy, &host, port, &opts).await?;
+                        let tag = match proxy {
+                            ProxyChoice::Direct => "direct",
+                            ProxyChoice::Http(_) => "http",
+                            ProxyChoice::Socks5(_) => "socks5",
+                        };
+                        (stream, Some(tag.to_string()))
                     }
                 } else {
-                    fallback_connect(proxy, &host, port, &opts).await?
+                    let stream = fallback_connect(proxy, &host, port, &opts).await?;
+                    let tag = match proxy {
+                        ProxyChoice::Direct => "direct",
+                        ProxyChoice::Http(_) => "http",
+                        ProxyChoice::Socks5(_) => "socks5",
+                    };
+                    (stream, Some(tag.to_string()))
                 }
             } else {
-                fallback_connect(proxy, &host, port, &opts).await?
+                let stream = fallback_connect(proxy, &host, port, &opts).await?;
+                let tag = match proxy {
+                    ProxyChoice::Direct => "direct",
+                    ProxyChoice::Http(_) => "http",
+                    ProxyChoice::Socks5(_) => "socks5",
+                };
+                (stream, Some(tag.to_string()))
             }
         }
-        RDecision::Proxy(None) => fallback_connect(proxy, &host, port, &opts).await?,
+        RDecision::Proxy(None) => {
+            let stream = fallback_connect(proxy, &host, port, &opts).await?;
+            let tag = match proxy {
+                ProxyChoice::Direct => "direct",
+                ProxyChoice::Http(_) => "http",
+                ProxyChoice::Socks5(_) => "socks5",
+            };
+            (stream, Some(tag.to_string()))
+        }
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("shadowtls: rejected by rules")),
         _ => return Err(anyhow!("shadowtls: unsupported routing action")),
     };
 
     // Bidirectional relay
-    let _ = tokio::io::copy_bidirectional(&mut tls, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        &mut tls,
+        &mut upstream,
+        "shadowtls",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
     Ok(())
 }
 

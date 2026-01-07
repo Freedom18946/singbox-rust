@@ -554,7 +554,7 @@ impl ResolvedTransport {
     /// this currently uses sequential execution. A fully parallel
     /// implementation would require Arc<Self> or similar refactoring.
     async fn exchange_parallel(&self, servers: &LinkServers, packet: &[u8]) -> Result<Vec<u8>> {
-        // For now, use sequential execution (parallel optimization TODO)
+        // NOTE: Sequential execution used; parallel requires Arc<Self> refactoring
         // The Go implementation uses goroutines which don't have the same
         // lifetime constraints as Rust's async tasks.
         self.exchange_sequential(servers, packet).await

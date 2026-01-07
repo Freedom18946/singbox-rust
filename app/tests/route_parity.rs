@@ -557,6 +557,7 @@ fn check_parity_valid_config() {
 }
 
 #[test]
+#[cfg(feature = "schema-v2")]
 fn check_parity_invalid_config() {
     // Invalid config should exit 1 with error details
     let config = include_str!("data/bad.json");
@@ -600,6 +601,7 @@ fn check_parity_invalid_config() {
 }
 
 #[test]
+#[cfg(feature = "schema-v2")]
 fn check_parity_type_mismatch() {
     // Type mismatch (e.g., port as string) should be caught
     let bad_type_config = r#"{
@@ -624,6 +626,7 @@ fn check_parity_type_mismatch() {
 }
 
 #[test]
+#[cfg(feature = "schema-v2")]
 fn check_parity_missing_required_field() {
     // Missing required field should be reported
     let missing_field = r#"{

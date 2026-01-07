@@ -54,6 +54,8 @@ async fn start_trojan_server() -> std::net::SocketAddr {
         cert_path: "app/tests/cli/fixtures/pems/cert.pem".to_string(),
         key_path: "app/tests/cli/fixtures/pems/key.pem".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         reality: None,

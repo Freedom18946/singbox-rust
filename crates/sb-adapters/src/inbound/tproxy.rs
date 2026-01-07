@@ -10,9 +10,11 @@ use sb_core::outbound::{
     ConnectOpts,
 };
 use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
+use sb_core::net::metered;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;
@@ -20,6 +22,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio::time::Duration;
 use tracing::{info, warn};
 
 /// Build a transparent TcpListener bound to `listen` with IP_TRANSPARENT set.
@@ -60,6 +63,8 @@ fn build_transparent_listener(listen: SocketAddr) -> std::io::Result<TcpListener
 #[derive(Clone, Debug)]
 pub struct TproxyConfig {
     pub listen: SocketAddr,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 pub async fn serve(cfg: TproxyConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
@@ -80,8 +85,9 @@ pub async fn serve(cfg: TproxyConfig, mut stop_rx: mpsc::Receiver<()>) -> Result
                         continue;
                     }
                 };
+                let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(cli, peer).await {
+                    if let Err(e) = handle_conn(&cfg_clone, cli, peer).await {
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("tproxy", &e);
                         warn!(%peer, error=%e, "tproxy: session error");
@@ -93,7 +99,7 @@ pub async fn serve(cfg: TproxyConfig, mut stop_rx: mpsc::Receiver<()>) -> Result
     Ok(())
 }
 
-async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
     let orig = super::redirect::get_original_dst(&cli)?;
     info!(%peer, ?orig, "tproxy: original destination");
 
@@ -126,8 +132,12 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
     }
 
     let opts = ConnectOpts::default();
+    let mut outbound_tag: Option<String> = None;
     let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
+        RDecision::Direct => {
+            outbound_tag = Some("direct".to_string());
+            direct_connect_hostport(&host, port, &opts).await?
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("tproxy".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -135,6 +145,7 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
+                                outbound_tag = Some("http".to_string());
                                 http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &host,
@@ -144,6 +155,7 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                                 .await?
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
+                                outbound_tag = Some("socks5".to_string());
                                 socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &host,
@@ -156,45 +168,63 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                     } else {
                         match proxy {
                             ProxyChoice::Direct => {
+                                outbound_tag = Some("direct".to_string());
                                 direct_connect_hostport(&host, port, &opts).await?
                             }
                             ProxyChoice::Http(addr) => {
+                                outbound_tag = Some("http".to_string());
                                 http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                             }
                             ProxyChoice::Socks5(addr) => {
+                                outbound_tag = Some("socks5".to_string());
                                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
                             }
                         }
                     }
                 } else {
                     match proxy {
-                        ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                        ProxyChoice::Direct => {
+                            outbound_tag = Some("direct".to_string());
+                            direct_connect_hostport(&host, port, &opts).await?
+                        }
                         ProxyChoice::Http(addr) => {
+                            outbound_tag = Some("http".to_string());
                             http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                         }
                         ProxyChoice::Socks5(addr) => {
+                            outbound_tag = Some("socks5".to_string());
                             socks5_connect_through_socks5(addr, &host, port, &opts).await?
                         }
                     }
                 }
             } else {
                 match proxy {
-                    ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                    ProxyChoice::Direct => {
+                        outbound_tag = Some("direct".to_string());
+                        direct_connect_hostport(&host, port, &opts).await?
+                    }
                     ProxyChoice::Http(addr) => {
+                        outbound_tag = Some("http".to_string());
                         http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                     }
                     ProxyChoice::Socks5(addr) => {
+                        outbound_tag = Some("socks5".to_string());
                         socks5_connect_through_socks5(addr, &host, port, &opts).await?
                     }
                 }
             }
         }
         RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+            ProxyChoice::Direct => {
+                outbound_tag = Some("direct".to_string());
+                direct_connect_hostport(&host, port, &opts).await?
+            }
             ProxyChoice::Http(addr) => {
+                outbound_tag = Some("http".to_string());
                 http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
             }
             ProxyChoice::Socks5(addr) => {
+                outbound_tag = Some("socks5".to_string());
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
@@ -202,6 +232,19 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
         _ => return Err(anyhow!("tproxy: unsupported routing action")),
     };
 
-    let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        &mut cli,
+        &mut upstream,
+        "tproxy",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
     Ok(())
 }

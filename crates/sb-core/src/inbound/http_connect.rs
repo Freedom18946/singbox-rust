@@ -10,6 +10,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::adapter::Bridge;
 use crate::adapter::InboundService;
 use crate::log::Level;
+use crate::net::metered;
 // Stage 2: HTTP Host sniff is inline; stream sniff stubs live in router::sniff
 
 #[cfg(feature = "router")]
@@ -323,7 +324,23 @@ pub(crate) async fn handle(
         .await?;
 
     // 使用 tokio 的高性能双向复制
-    let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+    let traffic = br
+        .context
+        .v2ray_server
+        .as_ref()
+        .and_then(|s| s.stats())
+        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        &mut cli,
+        &mut upstream,
+        "http-connect",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
 
     Ok(())
 }

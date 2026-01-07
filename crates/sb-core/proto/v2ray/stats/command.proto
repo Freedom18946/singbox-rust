@@ -26,6 +26,10 @@ message QueryStatsRequest {
   string pattern = 1;
   // Whether or not to reset the counter to fetching its value.
   bool reset = 2;
+  // Pattern list (preferred).
+  repeated string patterns = 3;
+  // Interpret patterns as regular expressions.
+  bool regexp = 4;
 }
 
 message QueryStatsResponse {

@@ -46,10 +46,12 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 
 #[derive(Clone, Debug)]
 pub struct VmessInboundConfig {
@@ -57,6 +59,8 @@ pub struct VmessInboundConfig {
     pub uuid: Uuid,
     pub security: String, // "aes-128-gcm" or "chacha20-poly1305"
     pub router: Arc<router::RouterHandle>,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
     /// Optional Multiplex configuration
     /// 可选的多路复用配置
     pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
@@ -277,8 +281,11 @@ async fn handle_conn(
     // 步骤 6: 连接上游
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&target_host, target_port, &opts).await?,
+    let (mut upstream, outbound_tag) = match decision {
+        RDecision::Direct => {
+            let s = direct_connect_hostport(&target_host, target_port, &opts).await?;
+            (s, Some("direct".to_string()))
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("vmess".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -294,35 +301,66 @@ async fn handle_conn(
                     ) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let s = http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &target_host,
                                     target_port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let s = socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &target_host,
                                     target_port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     } else {
-                        fallback_connect(proxy, &target_host, target_port, &opts).await?
+                        let stream =
+                            fallback_connect(proxy, &target_host, target_port, &opts).await?;
+                        let tag = match &proxy {
+                            ProxyChoice::Direct => "direct",
+                            ProxyChoice::Http(_) => "http",
+                            ProxyChoice::Socks5(_) => "socks5",
+                        };
+                        (stream, Some(tag.to_string()))
                     }
                 } else {
-                    fallback_connect(proxy, &target_host, target_port, &opts).await?
+                    let stream =
+                        fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                    let tag = match &proxy {
+                        ProxyChoice::Direct => "direct",
+                        ProxyChoice::Http(_) => "http",
+                        ProxyChoice::Socks5(_) => "socks5",
+                    };
+                    (stream, Some(tag.to_string()))
                 }
             } else {
-                fallback_connect(proxy, &target_host, target_port, &opts).await?
+                let stream =
+                    fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                let tag = match &proxy {
+                    ProxyChoice::Direct => "direct",
+                    ProxyChoice::Http(_) => "http",
+                    ProxyChoice::Socks5(_) => "socks5",
+                };
+                (stream, Some(tag.to_string()))
             }
         }
-        RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
+        RDecision::Proxy(None) => {
+            let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
+            let tag = match &proxy {
+                ProxyChoice::Direct => "direct",
+                ProxyChoice::Http(_) => "http",
+                ProxyChoice::Socks5(_) => "socks5",
+            };
+            (stream, Some(tag.to_string()))
+        }
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vmess: rejected by rules")),
         // Sniff/Resolve/Hijack not yet supported in inbound handlers
         _ => return Err(anyhow!("vmess: unsupported routing action")),
@@ -334,7 +372,20 @@ async fn handle_conn(
     // 步骤 7: 双向转发
     // 注意：VMess AEAD 加密/解密在协议层处理
     // 这里的流已经被 VMess 协议处理程序解密
-    let _ = tokio::io::copy_bidirectional(cli, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        cli,
+        &mut upstream,
+        "vmess",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
 
     Ok(())
 }

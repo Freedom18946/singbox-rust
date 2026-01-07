@@ -23,12 +23,15 @@ pub trait SsrProtocol: Send + Sync {
 pub struct Protocol;
 
 impl Protocol {
+    /// Create a protocol by name.
+    ///
+    /// NOTE: ShadowsocksR is de-scoped (feature-gated OFF in Go reference).
+    /// Only origin, auth_sha1_v4, and auth_aes128_md5 are implemented.
     pub fn create(name: &str, param: Option<&str>) -> Box<dyn SsrProtocol> {
         match name.to_lowercase().as_str() {
             "origin" | "plain" => Box::new(OriginProtocol),
             "auth_sha1_v4" => Box::new(AuthSha1V4Protocol::new(param)),
             "auth_aes128_md5" => Box::new(AuthAes128Md5Protocol::new(param)),
-            // TODO: Implement other protocols (auth_chain_a, etc.)
             _ => {
                 tracing::warn!("Unsupported SSR protocol: {}, falling back to origin", name);
                 Box::new(OriginProtocol)

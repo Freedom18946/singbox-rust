@@ -1,6 +1,9 @@
+#[cfg(feature = "schema-v2")]
 use serde_json::Value;
+#[cfg(feature = "schema-v2")]
 use std::fs;
 
+#[cfg(feature = "schema-v2")]
 fn write_file(contents: &str) -> tempfile::NamedTempFile {
     let f = tempfile::NamedTempFile::new().unwrap();
     fs::write(f.path(), contents.as_bytes()).unwrap();
@@ -8,6 +11,7 @@ fn write_file(contents: &str) -> tempfile::NamedTempFile {
 }
 
 #[test]
+#[cfg(feature = "schema-v2")]
 fn check_ok_warn_bad_with_exit_codes() {
     // ok.json: minimal valid config
     let ok = r#"{

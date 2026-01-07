@@ -20,11 +20,10 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
 
     // Parse to IR
     let ir = sb_config::validator::v2::to_ir_v1(&json);
-    let dns_ir = ir.dns.expect("dns ir expected");
 
     // Build resolver from IR
     let resolver =
-        sb_core::dns::config_builder::resolver_from_ir(&dns_ir).expect("build resolver from ir");
+        sb_core::dns::config_builder::resolver_from_ir(&ir).expect("build resolver from ir");
 
     // Hosts overlay should resolve without using network
     let ans = resolver
@@ -43,8 +42,7 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
         }
     });
     let ir2 = sb_config::validator::v2::to_ir_v1(&json_rules);
-    let dns_ir2 = ir2.dns.expect("dns ir expected");
-    let resolver2 = sb_core::dns::config_builder::resolver_from_ir(&dns_ir2)
+    let resolver2 = sb_core::dns::config_builder::resolver_from_ir(&ir2)
         .expect("build resolver from ir with rules");
     // name() should be "dns_rule_engine" per EngineResolver
     assert_eq!(resolver2.name(), "dns_rule_engine");
@@ -104,8 +102,7 @@ async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
     });
 
     let ir = sb_config::validator::v2::to_ir_v1(&json);
-    let dns_ir = ir.dns.expect("dns ir expected");
-    let resolver = sb_core::dns::config_builder::resolver_from_ir(&dns_ir)
+    let resolver = sb_core::dns::config_builder::resolver_from_ir(&ir)
         .expect("build resolver with dhcp/resolved/tailscale upstreams");
 
     // With no rules, resolver should be the base dns_ir resolver.

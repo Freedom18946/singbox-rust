@@ -73,6 +73,7 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::services::v2ray_api::StatsManager;
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
@@ -142,6 +143,8 @@ const READ_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 /// HTTP 代理配置
 #[derive(Clone, Debug)]
 pub struct HttpProxyConfig {
+    /// Inbound tag for stats
+    pub tag: Option<String>,
     /// Listen address
     /// 监听地址
     pub listen: SocketAddr,
@@ -160,6 +163,8 @@ pub struct HttpProxyConfig {
     pub users: Option<Vec<Credentials>>,
     pub set_system_proxy: bool,
     pub allow_private_network: bool,
+    /// Optional V2Ray stats manager
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 /// Ready signal notifier - sends when socket binding completes
@@ -323,6 +328,7 @@ where
     }
 
     // Handle Authentication
+    let mut auth_user: Option<String> = None;
     if let Some(users) = &cfg.users {
         if !users.is_empty() {
             let mut authenticated = false;
@@ -348,6 +354,7 @@ where
                                             .unwrap_or("");
                                         if u == expected_u && p == expected_p {
                                             authenticated = true;
+                                            auth_user = Some(u.to_string());
                                             break;
                                         }
                                     }
@@ -405,7 +412,7 @@ where
         {
             metrics::counter!(
                 "router_decide_total",
-                "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }
+                "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }
             ).increment(1);
         }
         if matches!(d, RDecision::Reject) {
@@ -423,7 +430,7 @@ where
     #[cfg(feature="metrics")]
     metrics::counter!("router_route_total",
         "inbound"=>"http",
-        "decision"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" },
+        "decision"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" },
         "proxy_kind"=>proxy.label()
     ).increment(1);
 
@@ -455,13 +462,16 @@ where
 
     // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）
+    let mut outbound_tag: Option<String>;
     let mut upstream: IoStream = match decision {
         RDecision::Direct => {
+            outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;
             Box::new(s)
         }
         RDecision::Proxy(pool_name) => {
             if let Some(name) = pool_name {
+                outbound_tag = Some(name.clone());
                 // Named proxy pool selection
                 let sel = SELECTOR.get_or_init(|| {
                     let _ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
@@ -503,38 +513,7 @@ where
                                     Box::new(s)
                                 }
                             }
-                        } else {
-                            // Pool empty or all endpoints down - try OutboundRegistry named connector
-                            if let Ok(s) = cfg
-                                .outbounds
-                                .connect_io(
-                                    &OutRouteTarget::Named(name.clone()),
-                                    OutEndpoint::Domain(host.to_string(), port),
-                                )
-                                .await
-                            {
-                                s
-                            } else {
-                                // Fallback to direct or default proxy
-                                match fallback_enabled {
-                                    true => {
-                                        #[cfg(feature = "metrics")]
-                                        metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
-                                        let s = direct_connect_hostport(host, port, &opts).await?;
-                                        Box::new(s)
-                                    }
-                                    false => {
-                                        return Err(anyhow!(
-                                            "proxy pool '{}' has no available endpoints",
-                                            name
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // Pool not found - try OutboundRegistry named connector
-                        if let Ok(s) = cfg
+                        } else if let Ok(s) = cfg
                             .outbounds
                             .connect_io(
                                 &OutRouteTarget::Named(name.clone()),
@@ -544,29 +523,24 @@ where
                         {
                             s
                         } else {
-                            // Fallback to default proxy or direct
-                            match proxy {
-                                ProxyChoice::Direct => {
+                            // Pool empty or all endpoints down - fallback to direct or default proxy
+                            match fallback_enabled {
+                                true => {
+                                    #[cfg(feature = "metrics")]
+                                    metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
+                                    outbound_tag = Some("direct".to_string());
                                     let s = direct_connect_hostport(host, port, &opts).await?;
                                     Box::new(s)
                                 }
-                                ProxyChoice::Http(addr) => {
-                                    let s =
-                                        http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                            .await?;
-                                    Box::new(s)
-                                }
-                                ProxyChoice::Socks5(addr) => {
-                                    let s = socks5_connect_through_socks5(addr, host, port, &opts)
-                                        .await?;
-                                    Box::new(s)
+                                false => {
+                                    return Err(anyhow!(
+                                        "proxy pool '{}' has no available endpoints",
+                                        name
+                                    ));
                                 }
                             }
                         }
-                    }
-                } else {
-                    // No proxy pool registry - try OutboundRegistry named connector
-                    if let Ok(s) = cfg
+                    } else if let Ok(s) = cfg
                         .outbounds
                         .connect_io(
                             &OutRouteTarget::Named(name.clone()),
@@ -576,22 +550,55 @@ where
                     {
                         s
                     } else {
-                        // Fallback to default proxy
+                        // Pool not found - fallback to default proxy or direct
                         match proxy {
                             ProxyChoice::Direct => {
+                                outbound_tag = Some("direct".to_string());
                                 let s = direct_connect_hostport(host, port, &opts).await?;
                                 Box::new(s)
                             }
                             ProxyChoice::Http(addr) => {
-                                let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                    .await?;
+                                outbound_tag = Some("http".to_string());
+                                let s =
+                                    http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                        .await?;
                                 Box::new(s)
                             }
                             ProxyChoice::Socks5(addr) => {
-                                let s =
-                                    socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                                outbound_tag = Some("socks5".to_string());
+                                let s = socks5_connect_through_socks5(addr, host, port, &opts)
+                                    .await?;
                                 Box::new(s)
                             }
+                        }
+                    }
+                } else if let Ok(s) = cfg
+                    .outbounds
+                    .connect_io(
+                        &OutRouteTarget::Named(name.clone()),
+                        OutEndpoint::Domain(host.to_string(), port),
+                    )
+                    .await
+                {
+                    s
+                } else {
+                    // No proxy pool registry - fallback to default proxy
+                    match proxy {
+                        ProxyChoice::Direct => {
+                            outbound_tag = Some("direct".to_string());
+                            let s = direct_connect_hostport(host, port, &opts).await?;
+                            Box::new(s)
+                        }
+                        ProxyChoice::Http(addr) => {
+                            outbound_tag = Some("http".to_string());
+                            let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                .await?;
+                            Box::new(s)
+                        }
+                        ProxyChoice::Socks5(addr) => {
+                            outbound_tag = Some("socks5".to_string());
+                            let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                            Box::new(s)
                         }
                     }
                 }
@@ -599,14 +606,17 @@ where
                 // Default proxy (no named pool)
                 match proxy {
                     ProxyChoice::Direct => {
+                        outbound_tag = Some("direct".to_string());
                         let s = direct_connect_hostport(host, port, &opts).await?;
                         Box::new(s)
                     }
                     ProxyChoice::Http(addr) => {
+                        outbound_tag = Some("http".to_string());
                         let s = http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
                         Box::new(s)
                     }
                     ProxyChoice::Socks5(addr) => {
+                        outbound_tag = Some("socks5".to_string());
                         let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
                         Box::new(s)
                     }
@@ -619,6 +629,7 @@ where
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
             // Not directly handled by HTTP inbound; fall back to direct
+            outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;
             Box::new(s)
         }
@@ -633,6 +644,9 @@ where
     // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
     let rt = opt_duration_ms_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = opt_duration_ms_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), auth_user.as_deref())
+    });
     let _ = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,
@@ -641,6 +655,7 @@ where
         rt,
         wt,
         None,
+        traffic,
     )
     .await?;
     Ok(())

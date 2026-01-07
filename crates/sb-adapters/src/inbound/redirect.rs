@@ -13,10 +13,12 @@ use sb_core::outbound::{
     ConnectOpts,
 };
 use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
+use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
@@ -30,6 +32,8 @@ use tracing::{info, warn};
 #[derive(Clone, Debug)]
 pub struct RedirectConfig {
     pub listen: SocketAddr,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
@@ -54,8 +58,9 @@ pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Resu
                         continue;
                     }
                 };
+                let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(cli, peer).await {
+                    if let Err(e) = handle_conn(&cfg_clone, cli, peer).await {
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("redirect", &e);
                         warn!(%peer, error=%e, "redirect: session error");
@@ -67,7 +72,7 @@ pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Resu
     Ok(())
 }
 
-async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
     // Obtain original destination (IPv4 only)
     let orig = get_original_dst(&cli)?;
     info!(%peer, ?orig, "redirect: original destination");
@@ -108,8 +113,12 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
     }
 
     let opts = ConnectOpts::default();
+    let mut outbound_tag: Option<String> = None;
     let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
+        RDecision::Direct => {
+            outbound_tag = Some("direct".to_string());
+            direct_connect_hostport(&host, port, &opts).await?
+        }
         RDecision::Proxy(Some(name)) => {
             // Resolve named pool from registry; fallback to default proxy choice
             let sel = PoolSelector::new("redirect".into(), "default".into());
@@ -118,6 +127,7 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
+                                outbound_tag = Some("http".to_string());
                                 http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &host,
@@ -127,6 +137,7 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                                 .await?
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
+                                outbound_tag = Some("socks5".to_string());
                                 socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &host,
@@ -140,12 +151,15 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                         // Pool exhausted: fallback
                         match proxy {
                             ProxyChoice::Direct => {
+                                outbound_tag = Some("direct".to_string());
                                 direct_connect_hostport(&host, port, &opts).await?
                             }
                             ProxyChoice::Http(addr) => {
+                                outbound_tag = Some("http".to_string());
                                 http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                             }
                             ProxyChoice::Socks5(addr) => {
+                                outbound_tag = Some("socks5".to_string());
                                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
                             }
                         }
@@ -153,11 +167,16 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                 } else {
                     // Pool not found: default proxy
                     match proxy {
-                        ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                        ProxyChoice::Direct => {
+                            outbound_tag = Some("direct".to_string());
+                            direct_connect_hostport(&host, port, &opts).await?
+                        }
                         ProxyChoice::Http(addr) => {
+                            outbound_tag = Some("http".to_string());
                             http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                         }
                         ProxyChoice::Socks5(addr) => {
+                            outbound_tag = Some("socks5".to_string());
                             socks5_connect_through_socks5(addr, &host, port, &opts).await?
                         }
                     }
@@ -165,22 +184,32 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
             } else {
                 // No registry: default proxy
                 match proxy {
-                    ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                    ProxyChoice::Direct => {
+                        outbound_tag = Some("direct".to_string());
+                        direct_connect_hostport(&host, port, &opts).await?
+                    }
                     ProxyChoice::Http(addr) => {
+                        outbound_tag = Some("http".to_string());
                         http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
                     }
                     ProxyChoice::Socks5(addr) => {
+                        outbound_tag = Some("socks5".to_string());
                         socks5_connect_through_socks5(addr, &host, port, &opts).await?
                     }
                 }
             }
         }
         RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+            ProxyChoice::Direct => {
+                outbound_tag = Some("direct".to_string());
+                direct_connect_hostport(&host, port, &opts).await?
+            }
             ProxyChoice::Http(addr) => {
+                outbound_tag = Some("http".to_string());
                 http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
             }
             ProxyChoice::Socks5(addr) => {
+                outbound_tag = Some("socks5".to_string());
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
@@ -190,7 +219,20 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
     };
 
     // Bidirectional copy
-    let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        &mut cli,
+        &mut upstream,
+        "redirect",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
     Ok(())
 }
 

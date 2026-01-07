@@ -74,6 +74,8 @@ async fn tuic_udp_roundtrip() {
         congestion_control: Some("bbr".into()),
         router: router.clone(),
         outbounds: outbounds.clone(),
+        tag: None,
+        stats: None,
     };
     tokio::spawn(async move {
         let _ = tuic_serve(cfg, stop_rx).await;

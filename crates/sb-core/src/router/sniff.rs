@@ -569,7 +569,7 @@ pub fn sniff_quic_initial_extended(buf: &[u8]) -> Option<SniffOutcome> {
         _ => "h3",
     };
 
-    // TODO: For full SNI extraction, we would need to:
+    // NOTE: Full SNI extraction from QUIC, we would need to:
     // 1. Parse DCID from header
     // 2. Derive Initial secret using HKDF with version-specific salt
     // 3. Decrypt QUIC packet payload

@@ -101,18 +101,41 @@ fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_cache(_cfg: &sb_config::Config, _args: CacheArgs) -> Result<()> {
-    // TODO: Implement cache statistics
-    // For now, return stub response
-    let stats = serde_json::json!({
-        "cache_size": 0,
-        "cache_hits": 0,
-        "cache_misses": 0,
-        "hit_ratio": 0.0,
-        "note": "Cache statistics not yet implemented"
-    });
+fn run_cache(cfg: &sb_config::Config, args: CacheArgs) -> Result<()> {
+    // Build DNS resolver and get cache statistics
+    let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
 
-    output::emit(_args.format, || "DNS cache stats".to_string(), &stats);
+    let stats = if cfg.ir().dns.is_some() {
+        match sb_core::dns::config_builder::resolver_from_ir(cfg.ir()) {
+            Ok(resolver) => {
+                let (cache_size, cache_cap) = resolver.cache_stats();
+                serde_json::json!({
+                    "cache_size": cache_size,
+                    "cache_capacity": cache_cap,
+                    "usage_percent": if cache_cap > 0 { (cache_size as f64 / cache_cap as f64 * 100.0).round() } else { 0.0 },
+                    "resolver": resolver.name(),
+                })
+            }
+            Err(e) => {
+                serde_json::json!({
+                    "error": format!("Failed to build resolver: {}", e),
+                    "cache_size": 0,
+                    "cache_capacity": 0,
+                })
+            }
+        }
+    } else {
+        serde_json::json!({
+            "note": "No DNS configuration found",
+            "cache_size": 0,
+            "cache_capacity": 0,
+        })
+    };
+
+    // Silence unused warning for runtime (resolver is sync constructed)
+    drop(rt);
+
+    output::emit(args.format, || "DNS cache stats".to_string(), &stats);
 
     Ok(())
 }

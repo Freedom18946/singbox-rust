@@ -12,7 +12,6 @@
 mod common;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -263,6 +262,7 @@ async fn test_socks5_to_direct_chain() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let cfg = SocksInboundConfig {
+        tag: None,
         listen: socks_addr,
         udp_bind: None,
         router: router_handle.clone(),
@@ -271,6 +271,7 @@ async fn test_socks5_to_direct_chain() {
         users: Some(vec![]),
         domain_strategy: None,
         udp_timeout: None,
+        stats: None,
     };
 
     tokio::spawn(async move {
@@ -381,6 +382,7 @@ async fn test_http_to_socks5_chain() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let http_config = HttpProxyConfig {
+        tag: None,
         listen: http_addr,
         router: router_handle.clone(),
         outbounds: outbounds.clone(),
@@ -388,6 +390,7 @@ async fn test_http_to_socks5_chain() {
         tls: None,
         set_system_proxy: false,
         allow_private_network: true,
+        stats: None,
     };
 
     tokio::spawn(async move {

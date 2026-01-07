@@ -117,6 +117,8 @@ pub trait UdpOutboundFactory: Send + Sync + std::fmt::Debug + 'static {
 pub struct InboundParam {
     /// Protocol kind: "socks", "http", "tun", etc.
     pub kind: String,
+    /// Inbound tag for tracking/routing metadata.
+    pub tag: Option<String>,
     pub listen: String,
     pub port: u16,
     pub basic_auth: Option<Credentials>,
@@ -221,6 +223,7 @@ impl Default for InboundParam {
     fn default() -> Self {
         Self {
             kind: String::new(),
+            tag: None,
             listen: "127.0.0.1".to_string(),
             port: 0,
             basic_auth: None,
@@ -487,7 +490,16 @@ impl Bridge {
                         let dst_port = inbound.override_port.ok_or_else(|| {
                             anyhow::anyhow!("direct inbound requires override_port")
                         })?;
-                        Arc::new(DirectForward::new(addr, host, dst_port, inbound.udp))
+                        let stats = bridge
+                            .context
+                            .v2ray_server
+                            .as_ref()
+                            .and_then(|s| s.stats());
+                        Arc::new(
+                            DirectForward::new(addr, host, dst_port, inbound.udp)
+                                .with_tag(inbound.tag.clone())
+                                .with_stats(stats),
+                        )
                             as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Redirect => {

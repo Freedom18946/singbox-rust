@@ -1,6 +1,6 @@
 #![cfg(feature = "router")]
 use sb_config::ir::{DnsIR, DnsRuleIR};
-use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType, Resolver};
+use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,7 +54,11 @@ async fn test_dns_rule_query_type_matching() {
     // AND test `rule_engine` logic by constructing it manually like `resolver_from_ir` does, but with mocks.
     
     // 1. Verify Config Builder Mapping
-    let resolver = sb_core::dns::config_builder::resolver_from_ir(&ir);
+    let ir = sb_config::ir::ConfigIR {
+        dns: Some(ir),
+        ..Default::default()
+    };
+    let _resolver = sb_core::dns::config_builder::resolver_from_ir(&ir);
     // If this errors, it means builder failed (e.g. valid checks).
     // Note: It will try to build udp://1.1.1.1, which is fine, it doesn't connect immediately usually?
     // UdpUpstream creation might bind socket? Ideally we don't bind ports in tests.
@@ -102,9 +106,9 @@ async fn test_dns_rule_query_type_matching() {
     
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
-    
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()));
-    
+
+    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+
     // Test AAAA -> Reject
     let res: DnsAnswer = engine.resolve("example.com", RecordType::AAAA).await.unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::Refused);
@@ -151,9 +155,9 @@ async fn test_dns_rule_action_hijack() {
     
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
-    
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()));
-    
+
+    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+
     let res: DnsAnswer = engine.resolve("www.google.com", RecordType::A).await.unwrap();
     // HijackDns currently returns Refused in our implementation if no rewrite_ip
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::Refused);
@@ -196,9 +200,9 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
     
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
-    
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()));
-    
+
+    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+
     let res: DnsAnswer = engine.resolve("www.hijack.com", RecordType::A).await.unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::NoError);
     assert_eq!(res.ips.len(), 1);
@@ -262,9 +266,9 @@ async fn test_dns_rule_action_address_limit() {
     
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("multi".into(), Arc::new(MultiIpUpstream));
-    
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "multi".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()));
-    
+
+    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "multi".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+
     let res: DnsAnswer = engine.resolve("www.limit.com", RecordType::A).await.unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::NoError);
     assert_eq!(res.ips.len(), 1);

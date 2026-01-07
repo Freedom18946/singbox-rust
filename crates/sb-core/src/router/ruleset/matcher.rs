@@ -450,6 +450,18 @@ impl RuleMatcher {
     }
 }
 
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private() || ip.is_loopback() || ip.is_link_local()
+        }
+        IpAddr::V6(ip) => {
+            // IPv6 unique local: fc00::/7
+            (ip.segments()[0] & 0xfe00) == 0xfc00 || ip.is_loopback() || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,17 +604,5 @@ mod tests {
 
         let (size, _cap) = matcher.cache_stats();
         assert_eq!(size, 1);
-    }
-}
-
-fn is_private_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => {
-            ip.is_private() || ip.is_loopback() || ip.is_link_local()
-        }
-        IpAddr::V6(ip) => {
-            // IPv6 unique local: fc00::/7
-            (ip.segments()[0] & 0xfe00) == 0xfc00 || ip.is_loopback() || (ip.segments()[0] & 0xffc0) == 0xfe80
-        }
     }
 }

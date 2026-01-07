@@ -544,8 +544,7 @@ mod tests {
 
         let result = connector.resolve_endpoint(&endpoint).await;
         // This might fail in some environments, but should work in most cases
-        if result.is_ok() {
-            let addrs = result.unwrap();
+        if let Ok(addrs) = result {
             assert!(!addrs.is_empty());
             let addr = addrs[0];
             assert_eq!(addr.port(), 8080);

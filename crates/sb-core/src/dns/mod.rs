@@ -135,6 +135,11 @@ pub trait Resolver: Send + Sync {
     async fn close(&self) -> Result<()> {
         Ok(())
     }
+
+    /// 获取缓存统计信息 (size, capacity)
+    fn cache_stats(&self) -> (usize, usize) {
+        (0, 0)
+    }
 }
 
 /// DNS 上游服务器抽象

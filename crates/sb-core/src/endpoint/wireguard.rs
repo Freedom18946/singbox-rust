@@ -3,7 +3,7 @@ use super::{
     SocksaddrHost, StartStage,
 };
 use ipnet::IpNet;
-use sb_config::ir::{EndpointIR, EndpointType};
+use sb_config::ir::{EndpointIR, EndpointType, WireGuardPeerIR};
 use sb_transport::wireguard::{WireGuardConfig, WireGuardTransport};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -16,7 +16,10 @@ use tracing::{debug, info, warn};
 /// WireGuard endpoint backed by sb-transport's userspace WireGuard.
 pub struct WireGuardEndpoint {
     tag: String,
-    peers: Vec<PeerConfig>,
+    private_key: String,
+    mtu: u16,
+    local_addr: Option<SocketAddr>,
+    peers: parking_lot::RwLock<Vec<PeerConfig>>,
     transports: parking_lot::Mutex<Vec<PeerTransport>>,
     /// Local addresses assigned to this WireGuard interface (for loopback detection).
     local_addresses: Vec<IpNet>,
@@ -30,14 +33,59 @@ pub struct WireGuardEndpoint {
 }
 
 #[derive(Clone)]
+enum PeerEndpoint {
+    Socket(SocketAddr),
+    Domain { host: String, port: u16 },
+}
+
+#[derive(Clone)]
 struct PeerConfig {
-    transport: WireGuardConfig,
+    endpoint: PeerEndpoint,
+    peer_public_key: String,
+    pre_shared_key: Option<String>,
+    persistent_keepalive: Option<u16>,
     allowed_ips: Vec<IpNet>,
 }
 
 struct PeerTransport {
     allowed_ips: Vec<IpNet>,
     transport: Arc<WireGuardTransport>,
+}
+
+fn parse_peer_endpoint(peer: &WireGuardPeerIR) -> Result<PeerEndpoint, String> {
+    let addr = peer
+        .address
+        .as_ref()
+        .ok_or_else(|| "wireguard peer address missing".to_string())?;
+
+    if let Some(port) = peer.port {
+        if let Ok(ip) = addr.parse::<IpAddr>() {
+            return Ok(PeerEndpoint::Socket(SocketAddr::new(ip, port)));
+        }
+        return Ok(PeerEndpoint::Domain {
+            host: addr.to_string(),
+            port,
+        });
+    }
+
+    if let Ok(socket) = addr.parse::<SocketAddr>() {
+        return Ok(PeerEndpoint::Socket(socket));
+    }
+
+    if let Some((host, port_str)) = addr.rsplit_once(':') {
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| format!("invalid peer address: {addr}"))?;
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Ok(PeerEndpoint::Socket(SocketAddr::new(ip, port)));
+        }
+        return Ok(PeerEndpoint::Domain {
+            host: host.to_string(),
+            port,
+        });
+    }
+
+    Err(format!("invalid peer address: {addr}"))
 }
 
 impl WireGuardEndpoint {
@@ -73,18 +121,8 @@ impl WireGuardEndpoint {
         let peers = peers_ir
             .into_iter()
             .map(|peer| {
-                let peer_addr: SocketAddr = match (&peer.address, peer.port) {
-                    (Some(addr), Some(port)) => {
-                        let socket = format!("{addr}:{port}");
-                        socket
-                            .parse()
-                            .map_err(|_| format!("invalid peer address: {socket}"))?
-                    }
-                    (Some(addr), None) => addr
-                        .parse()
-                        .map_err(|_| format!("invalid peer address: {addr}"))?,
-                    (None, _) => return Err("wireguard peer address missing".to_string()),
-                };
+                let endpoint = parse_peer_endpoint(&peer)
+                    .map_err(|e| format!("wireguard endpoint '{tag}' {e}"))?;
 
                 let peer_public_key = peer
                     .public_key
@@ -94,26 +132,25 @@ impl WireGuardEndpoint {
                 let pre_shared_key = peer.pre_shared_key.clone();
                 let keepalive = peer.persistent_keepalive_interval;
 
-                let allowed_ips: Vec<IpNet> = peer
-                    .allowed_ips
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|cidr| cidr.parse().ok())
-                    .collect();
-
-                let transport = WireGuardConfig {
-                    private_key: private_key.clone(),
-                    peer_public_key,
-                    pre_shared_key,
-                    peer_endpoint: peer_addr,
-                    local_addr,
-                    persistent_keepalive: keepalive,
-                    mtu,
-                    connect_timeout: Duration::from_secs(10),
-                };
+                let allowed_raw = peer.allowed_ips.clone().unwrap_or_default();
+                if allowed_raw.is_empty() {
+                    return Err(format!(
+                        "wireguard endpoint '{tag}' missing allowed_ips for peer"
+                    ));
+                }
+                let mut allowed_ips = Vec::with_capacity(allowed_raw.len());
+                for cidr in allowed_raw {
+                    let net: IpNet = cidr.parse().map_err(|_| {
+                        format!("wireguard endpoint '{tag}' invalid allowed ip: {cidr}")
+                    })?;
+                    allowed_ips.push(net);
+                }
 
                 Ok(PeerConfig {
-                    transport,
+                    endpoint,
+                    peer_public_key,
+                    pre_shared_key,
+                    persistent_keepalive: keepalive,
                     allowed_ips,
                 })
             })
@@ -122,7 +159,10 @@ impl WireGuardEndpoint {
 
         Ok(Self {
             tag,
-            peers,
+            private_key,
+            mtu,
+            local_addr,
+            peers: parking_lot::RwLock::new(peers),
             transports: parking_lot::Mutex::new(Vec::new()),
             local_addresses,
 
@@ -133,22 +173,74 @@ impl WireGuardEndpoint {
         })
     }
 
-    fn ensure_started(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn ensure_started(&self, resolve: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let handle = Handle::try_current()
             .map_err(|e| format!("WireGuard endpoint requires Tokio runtime: {e}"))?;
 
-        let mut guard = self.transports.lock();
-        if !guard.is_empty() {
+        if !self.transports.lock().is_empty() {
             return Ok(());
         }
 
-        for peer in &self.peers {
-            let transport = handle.block_on(WireGuardTransport::new(peer.transport.clone()))?;
-            guard.push(PeerTransport {
-                allowed_ips: peer.allowed_ips.clone(),
-                transport: Arc::new(transport),
-            });
+        let needs_resolution = {
+            let peers = self.peers.read();
+            peers.iter().any(|peer| matches!(peer.endpoint, PeerEndpoint::Domain { .. }))
+        };
+
+        if resolve {
+            if !needs_resolution {
+                return Ok(());
+            }
+        } else if needs_resolution {
+            return Ok(());
         }
+
+        let resolver = self.dns_resolver.clone();
+        let mut transports = Vec::new();
+
+        {
+            let mut peers = self.peers.write();
+            for peer in peers.iter_mut() {
+                let endpoint = match &peer.endpoint {
+                    PeerEndpoint::Socket(addr) => *addr,
+                    PeerEndpoint::Domain { host, port } => {
+                        let resolver = resolver.as_ref().ok_or_else(|| {
+                            format!("wireguard endpoint '{}' requires DNS resolver", self.tag)
+                        })?;
+                        let answer = handle
+                            .block_on(resolver.resolve(host))
+                            .map_err(|e| format!("wireguard endpoint '{}' resolve {host}: {e}", self.tag))?;
+                        let ip = answer.ips.first().copied().ok_or_else(|| {
+                            format!(
+                                "wireguard endpoint '{}' resolve {host}: empty result",
+                                self.tag
+                            )
+                        })?;
+                        let addr = SocketAddr::new(ip, *port);
+                        peer.endpoint = PeerEndpoint::Socket(addr);
+                        addr
+                    }
+                };
+
+                let transport = handle.block_on(WireGuardTransport::new(WireGuardConfig {
+                    private_key: self.private_key.clone(),
+                    peer_public_key: peer.peer_public_key.clone(),
+                    pre_shared_key: peer.pre_shared_key.clone(),
+                    peer_endpoint: endpoint,
+                    local_addr: self.local_addr,
+                    persistent_keepalive: peer.persistent_keepalive,
+                    mtu: self.mtu,
+                    connect_timeout: Duration::from_secs(10),
+                }))?;
+
+                transports.push(PeerTransport {
+                    allowed_ips: peer.allowed_ips.clone(),
+                    transport: Arc::new(transport),
+                });
+            }
+        }
+
+        let mut guard = self.transports.lock();
+        *guard = transports;
         Ok(())
     }
 
@@ -203,11 +295,20 @@ impl Endpoint for WireGuardEndpoint {
 
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match stage {
-            StartStage::Initialize | StartStage::Start => {
-                self.ensure_started()?;
-                info!(tag = %self.tag, "WireGuard endpoint started");
+            StartStage::Initialize => {}
+            StartStage::Start => {
+                self.ensure_started(false)?;
+                if !self.transports.lock().is_empty() {
+                    info!(tag = %self.tag, "WireGuard endpoint started");
+                }
             }
-            StartStage::PostStart | StartStage::Started => {}
+            StartStage::PostStart => {
+                self.ensure_started(true)?;
+                if !self.transports.lock().is_empty() {
+                    info!(tag = %self.tag, "WireGuard endpoint started");
+                }
+            }
+            StartStage::Started => {}
         }
         Ok(())
     }

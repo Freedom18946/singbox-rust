@@ -452,6 +452,10 @@ impl Resolver for EngineResolver {
     async fn close(&self) -> Result<()> {
         self.engine.close().await
     }
+
+    fn cache_stats(&self) -> (usize, usize) {
+        self.engine.cache_stats()
+    }
 }
 
 /// If IR contains hosts mapping, wrap the base resolver with a hosts overlay.

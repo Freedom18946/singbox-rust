@@ -11,6 +11,8 @@ use std::sync::Arc;
 
 use sb_core::adapter::InboundService;
 use sb_core::dns::ResolverHandle;
+use sb_core::net::metered::TrafficRecorder;
+use sb_core::services::v2ray_api::StatsManager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::Notify;
@@ -25,6 +27,10 @@ pub struct DnsInboundAdapter {
     tcp_enabled: bool,
     /// DNS resolver handle for query resolution (uses configurable upstream)
     resolver: Arc<ResolverHandle>,
+    /// Inbound tag for stats tracking
+    tag: Option<String>,
+    /// Optional V2Ray stats manager
+    stats: Option<Arc<StatsManager>>,
     /// Shutdown signal
     shutdown: Arc<AtomicBool>,
     /// Shutdown notification
@@ -44,6 +50,10 @@ pub struct DnsInboundConfig {
     pub tcp_enabled: bool,
     /// Optional custom resolver (uses env-based default if None)
     pub resolver: Option<Arc<ResolverHandle>>,
+    /// Inbound tag for stats tracking
+    pub tag: Option<String>,
+    /// Optional V2Ray stats manager
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 impl DnsInboundAdapter {
@@ -72,6 +82,8 @@ impl DnsInboundAdapter {
             listen,
             tcp_enabled: config.tcp_enabled,
             resolver,
+            tag: config.tag,
+            stats: config.stats,
             shutdown: Arc::new(AtomicBool::new(false)),
             shutdown_notify: Arc::new(Notify::new()),
             active_queries: Arc::new(AtomicU64::new(0)),
@@ -87,6 +99,7 @@ impl DnsInboundAdapter {
     /// A boxed InboundService or an error if parameters are invalid
     pub fn create(
         param: &sb_core::adapter::InboundParam,
+        stats: Option<Arc<StatsManager>>,
     ) -> std::io::Result<Box<dyn InboundService>> {
         let config = DnsInboundConfig {
             listen: param.listen.clone(),
@@ -97,6 +110,8 @@ impl DnsInboundAdapter {
                 .map(|n| n.to_lowercase().contains("tcp"))
                 .unwrap_or(true), // Default: enable both UDP and TCP
             resolver: None, // Use env-based default
+            tag: param.tag.clone(),
+            stats,
         };
 
         let adapter = Self::new(config)?;
@@ -114,6 +129,10 @@ impl DnsInboundAdapter {
         let socket = Arc::new(UdpSocket::bind(self.listen).await?);
         info!(addr = ?self.listen, "DNS UDP server listening");
 
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.tag.as_deref(), None, None)
+        });
+
         let mut buf = vec![0u8; 4096]; // DNS messages are typically < 512 bytes, but EDNS can be larger
 
         loop {
@@ -127,14 +146,26 @@ impl DnsInboundAdapter {
                     match result {
                         Ok((len, src)) => {
                             self.active_queries.fetch_add(1, Ordering::Relaxed);
+                            if let Some(ref recorder) = traffic {
+                                recorder.record_up(len as u64);
+                            }
                             let query = buf[..len].to_vec();
                             let socket_ref = socket.clone();
                             let active_queries = self.active_queries.clone();
                             let resolver = self.resolver.clone();
+                            let traffic = traffic.clone();
 
                             // Spawn task with resolver
                             tokio::spawn(async move {
-                                if let Err(e) = Self::handle_udp_query(&socket_ref, src, &query, resolver).await {
+                                if let Err(e) = Self::handle_udp_query(
+                                    &socket_ref,
+                                    src,
+                                    &query,
+                                    resolver,
+                                    traffic,
+                                )
+                                .await
+                                {
                                     debug!(error = %e, src = %src, "DNS query handling failed");
                                 }
                                 active_queries.fetch_sub(1, Ordering::Relaxed);
@@ -163,17 +194,26 @@ impl DnsInboundAdapter {
         src: SocketAddr,
         query: &[u8],
         resolver: Arc<ResolverHandle>,
+        traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> std::io::Result<()> {
         // Forward to DNS resolver and get response
         match Self::resolve_query(query, &resolver).await {
             Ok(response) => {
-                socket.send_to(&response, src).await?;
+                if socket.send_to(&response, src).await.is_ok() {
+                    if let Some(ref recorder) = traffic {
+                        recorder.record_down(response.len() as u64);
+                    }
+                }
                 debug!(src = %src, query_len = query.len(), response_len = response.len(), "DNS query handled");
             }
             Err(e) => {
                 // Send SERVFAIL response
                 if let Some(response) = Self::create_servfail_response(query) {
-                    let _ = socket.send_to(&response, src).await;
+                    if socket.send_to(&response, src).await.is_ok() {
+                        if let Some(ref recorder) = traffic {
+                            recorder.record_down(response.len() as u64);
+                        }
+                    }
                 }
                 debug!(src = %src, error = %e, "DNS query resolution failed");
             }
@@ -358,6 +398,9 @@ impl DnsInboundAdapter {
     async fn run_tcp_server(&self) -> std::io::Result<()> {
         let listener = TcpListener::bind(self.listen).await?;
         info!(addr = ?self.listen, "DNS TCP server listening");
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.tag.as_deref(), None, None)
+        });
 
         loop {
             if self.shutdown.load(Ordering::Relaxed) {
@@ -372,6 +415,7 @@ impl DnsInboundAdapter {
                             self.active_queries.fetch_add(1, Ordering::Relaxed);
                             let active_queries = self.active_queries.clone();
                             let resolver = self.resolver.clone();
+                            let traffic = traffic.clone();
 
                             tokio::spawn(async move {
                                 // Read 2-byte length prefix
@@ -388,20 +432,36 @@ impl DnsInboundAdapter {
                                     active_queries.fetch_sub(1, Ordering::Relaxed);
                                     return;
                                 }
+                                if let Some(ref recorder) = traffic {
+                                    recorder.record_up((2 + msg_len) as u64);
+                                }
 
                                 // Resolve and send response
                                 match Self::resolve_query(&query, &resolver).await {
                                     Ok(response) => {
                                         let resp_len = (response.len() as u16).to_be_bytes();
-                                        let _ = stream.write_all(&resp_len).await;
-                                        let _ = stream.write_all(&response).await;
+                                        if stream.write_all(&resp_len).await.is_ok()
+                                            && stream.write_all(&response).await.is_ok()
+                                        {
+                                            if let Some(ref recorder) = traffic {
+                                                recorder
+                                                    .record_down((2 + response.len()) as u64);
+                                            }
+                                        }
                                         debug!(peer = %peer_addr, "DNS TCP query handled");
                                     }
                                     Err(_) => {
                                         if let Some(response) = Self::create_servfail_response(&query) {
                                             let resp_len = (response.len() as u16).to_be_bytes();
-                                            let _ = stream.write_all(&resp_len).await;
-                                            let _ = stream.write_all(&response).await;
+                                            if stream.write_all(&resp_len).await.is_ok()
+                                                && stream.write_all(&response).await.is_ok()
+                                            {
+                                                if let Some(ref recorder) = traffic {
+                                                    recorder.record_down(
+                                                        (2 + response.len()) as u64,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -452,6 +512,8 @@ impl InboundService for DnsInboundAdapter {
                 listen,
                 tcp_enabled,
                 resolver: resolver.clone(),
+                tag: None,
+                stats: None,
                 shutdown: shutdown.clone(),
                 shutdown_notify: shutdown_notify.clone(),
                 active_queries,
@@ -463,6 +525,8 @@ impl InboundService for DnsInboundAdapter {
                     listen,
                     tcp_enabled,
                     resolver: resolver.clone(),
+                    tag: None,
+                    stats: None,
                     shutdown: shutdown.clone(),
                     shutdown_notify: shutdown_notify.clone(),
                     active_queries: adapter.active_queries.clone(),

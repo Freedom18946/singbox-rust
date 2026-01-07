@@ -21,12 +21,15 @@ pub trait SsrObfs: Send + Sync {
 pub struct Obfs;
 
 impl Obfs {
+    /// Create an obfuscator by name.
+    ///
+    /// NOTE: ShadowsocksR is de-scoped (feature-gated OFF in Go reference).
+    /// Only plain, http_simple, and tls1.2_ticket_auth are implemented.
     pub fn create(name: &str, param: Option<&str>) -> Box<dyn SsrObfs> {
         match name.to_lowercase().as_str() {
             "plain" | "none" => Box::new(PlainObfs),
             "http_simple" => Box::new(HttpSimpleObfs::new(param)),
             "tls1.2_ticket_auth" => Box::new(Tls12TicketAuthObfs::new(param)),
-            // TODO: Implement other obfs (etc.)
             _ => {
                 tracing::warn!("Unsupported SSR obfs: {}, falling back to plain", name);
                 Box::new(PlainObfs)

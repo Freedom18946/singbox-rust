@@ -11,11 +11,13 @@ use quinn::{Endpoint, ServerConfig};
 // Use types re-exported by quinn to satisfy trait bounds
 use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sb_core::adapter::InboundService;
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
 use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
+use sb_core::services::v2ray_api::StatsManager;
 use sb_transport::IoStream;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -42,6 +44,10 @@ pub struct TuicInboundConfig {
     pub router: Arc<router::RouterHandle>,
     /// Outbound registry handle for connector lookup
     pub outbounds: Arc<OutboundRegistryHandle>,
+    /// Inbound tag for stats
+    pub tag: Option<String>,
+    /// Optional V2Ray stats manager
+    pub stats: Option<Arc<StatsManager>>,
 }
 
 /// TUIC user (UUID + token)
@@ -318,7 +324,7 @@ async fn handle_tcp_relay(
 
     debug!("TUIC: TCP CONNECT {}:{} from {}", host, port, peer);
 
-    let upstream = match connect_via_router(&cfg, &host, port).await {
+    let (upstream, outbound_tag) = match connect_via_router(&cfg, &host, port).await {
         Ok(s) => s,
         Err(e) => {
             let _ = send.write_all(&[0x01; 16]).await;
@@ -332,8 +338,12 @@ async fn handle_tcp_relay(
     let response = vec![0x00; 16];
     send.write_all(&response).await?;
 
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+
     // Bidirectional relay
-    relay_quic_tcp(send, recv, upstream).await?;
+    relay_quic_tcp(send, recv, upstream, traffic).await?;
 
     Ok(())
 }
@@ -364,6 +374,17 @@ async fn handle_udp_relay(
         return Err(e);
     }
 
+    let outbound_tag = match &route {
+        OutRouteTarget::Named(name) => Some(name.as_str()),
+        OutRouteTarget::Kind(OutboundKind::Direct) => Some("direct"),
+        OutRouteTarget::Kind(OutboundKind::Block) => Some("block"),
+        _ => None,
+    };
+    let traffic = cfg
+        .stats
+        .as_ref()
+        .and_then(|stats| stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag, None));
+
     // Bind local UDP socket
     let udp = UdpSocket::bind("0.0.0.0:0")
         .await
@@ -380,7 +401,7 @@ async fn handle_udp_relay(
     send.write_all(&[0x00]).await?;
 
     // Bidirectional relay for UDP packets
-    relay_quic_udp(send, recv, udp).await?;
+    relay_quic_udp(send, recv, udp, traffic).await?;
 
     Ok(())
 }
@@ -468,7 +489,11 @@ async fn parse_address_port(recv: &mut quinn::RecvStream) -> Result<(String, u16
     Ok((host, port))
 }
 
-async fn connect_via_router(cfg: &TuicInboundConfig, host: &str, port: u16) -> Result<IoStream> {
+async fn connect_via_router(
+    cfg: &TuicInboundConfig,
+    host: &str,
+    port: u16,
+) -> Result<(IoStream, Option<String>)> {
     let ctx = RouteCtx {
         host: Some(host),
         ip: None,
@@ -476,6 +501,12 @@ async fn connect_via_router(cfg: &TuicInboundConfig, host: &str, port: u16) -> R
         transport: Transport::Tcp,
     };
     let target: OutRouteTarget = cfg.router.select_ctx_and_record(ctx);
+    let outbound_tag = match &target {
+        OutRouteTarget::Named(name) => Some(name.clone()),
+        OutRouteTarget::Kind(OutboundKind::Direct) => Some("direct".to_string()),
+        OutRouteTarget::Kind(OutboundKind::Block) => Some("block".to_string()),
+        _ => None,
+    };
     let endpoint = match host.parse::<IpAddr>() {
         Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
         Err(_) => OutEndpoint::Domain(host.to_string(), port),
@@ -487,6 +518,7 @@ async fn connect_via_router(cfg: &TuicInboundConfig, host: &str, port: u16) -> R
             .connect_preferred(&target, endpoint)
             .await
             .map_err(|e| anyhow!("failed to connect via router: {}", e))
+            .map(|s| (s, outbound_tag))
     }
     #[cfg(not(feature = "v2ray_transport"))]
     {
@@ -495,7 +527,7 @@ async fn connect_via_router(cfg: &TuicInboundConfig, host: &str, port: u16) -> R
             .connect_preferred(&target, endpoint)
             .await
             .map_err(|e| anyhow!("failed to connect via router: {}", e))?;
-        Ok(Box::new(stream))
+        Ok((Box::new(stream), outbound_tag))
     }
 }
 
@@ -521,8 +553,12 @@ async fn relay_quic_tcp(
     mut quic_send: quinn::SendStream,
     mut quic_recv: quinn::RecvStream,
     tcp: IoStream,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
+
+    let traffic_up = traffic.clone();
+    let traffic_down = traffic.clone();
 
     let quic_to_tcp = async {
         let mut buf = vec![0u8; 8192];
@@ -541,6 +577,9 @@ async fn relay_quic_tcp(
                 .write_all(&buf[..n])
                 .await
                 .map_err(|e| anyhow!("TCP write error: {}", e))?;
+            if let Some(ref recorder) = traffic_up {
+                recorder.record_up(n as u64);
+            }
         }
         tcp_write.shutdown().await.ok();
         Ok::<_, anyhow::Error>(())
@@ -562,6 +601,9 @@ async fn relay_quic_tcp(
                 .write_all(&buf[..n])
                 .await
                 .map_err(|e| anyhow!("QUIC send error: {}", e))?;
+            if let Some(ref recorder) = traffic_down {
+                recorder.record_down(n as u64);
+            }
         }
         quic_send.finish().ok();
         Ok::<_, anyhow::Error>(())
@@ -578,9 +620,12 @@ async fn relay_quic_udp(
     mut quic_send: quinn::SendStream,
     mut quic_recv: quinn::RecvStream,
     udp: tokio::net::UdpSocket,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let udp = Arc::new(udp);
     let udp_clone = udp.clone();
+    let traffic_up = traffic.clone();
+    let traffic_down = traffic.clone();
 
     let quic_to_udp = async move {
         let mut buf = vec![0u8; 65535]; // Max UDP packet size
@@ -606,6 +651,9 @@ async fn relay_quic_udp(
             if udp_clone.send(&buf[..len]).await.is_err() {
                 break;
             }
+            if let Some(ref recorder) = traffic_up {
+                recorder.record_up(len as u64);
+            }
         }
         Ok::<_, anyhow::Error>(())
     };
@@ -628,6 +676,9 @@ async fn relay_quic_udp(
             // Write packet data
             if quic_send.write_all(&buf[..n]).await.is_err() {
                 break;
+            }
+            if let Some(ref recorder) = traffic_down {
+                recorder.record_down(n as u64);
             }
         }
         quic_send.finish().ok();
@@ -699,9 +750,11 @@ mod tests {
             congestion_control: None,
             router: Arc::new(router),
             outbounds: Arc::new(outbounds),
+            tag: None,
+            stats: None,
         };
 
-        let mut stream = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())
+        let (mut stream, _) = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())
             .await
             .expect("route to upstream");
         stream.write_all(b"ping").await.expect("write to upstream");

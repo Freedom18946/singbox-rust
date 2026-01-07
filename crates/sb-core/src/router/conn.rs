@@ -14,11 +14,18 @@ use std::io::{self, ErrorKind};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use crate::net::metered::TrafficRecorder;
+use crate::services::v2ray_api::StatsManager;
+
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tracing::{debug, error, trace, warn};
+use rand::Rng;
 
 // ============================================================================
 // Constants (Go parity: constant/timeout.go)
@@ -66,6 +73,133 @@ pub fn protocol_timeout(protocol: &str) -> Option<Duration> {
         PROTOCOL_DTLS => Some(Duration::from_secs(30)),
         _ => None,
     }
+}
+
+// TLS fragmentation helpers (Go parity: common/tlsfragment)
+const TLS_RECORD_HEADER_LEN: usize = 5;
+const TLS_HANDSHAKE_HEADER_LEN: usize = 6;
+const TLS_RANDOM_LEN: usize = 32;
+const TLS_SESSION_ID_HEADER_LEN: usize = 1;
+const TLS_CIPHER_SUITE_HEADER_LEN: usize = 2;
+const TLS_COMPRESS_METHOD_HEADER_LEN: usize = 1;
+const TLS_EXTENSIONS_HEADER_LEN: usize = 2;
+const TLS_EXTENSION_HEADER_LEN: usize = 4;
+const TLS_SNI_EXTENSION_HEADER_LEN: usize = 5;
+const TLS_CONTENT_TYPE_HANDSHAKE: u8 = 22;
+const TLS_HANDSHAKE_TYPE_CLIENT_HELLO: u8 = 1;
+const TLS_SNI_EXTENSION_TYPE: u16 = 0;
+const TLS_SNI_NAME_DNS_HOSTNAME_TYPE: u8 = 0;
+const TLS_VERSION_BITMASK: u16 = 0xFFFC;
+const TLS_VERSION_13: u16 = 0x0304;
+
+#[derive(Debug)]
+struct TlsServerName {
+    index: usize,
+    name: String,
+}
+
+fn index_tls_server_name(payload: &[u8]) -> Option<TlsServerName> {
+    if payload.len() < TLS_RECORD_HEADER_LEN || payload[0] != TLS_CONTENT_TYPE_HANDSHAKE {
+        return None;
+    }
+    let segment_len = u16::from_be_bytes([payload[3], payload[4]]) as usize;
+    if payload.len() < TLS_RECORD_HEADER_LEN + segment_len {
+        return None;
+    }
+    let mut server_name = index_tls_server_name_from_handshake(&payload[TLS_RECORD_HEADER_LEN..])?;
+    server_name.index += TLS_RECORD_HEADER_LEN;
+    Some(server_name)
+}
+
+fn index_tls_server_name_from_handshake(handshake: &[u8]) -> Option<TlsServerName> {
+    if handshake.len() < TLS_HANDSHAKE_HEADER_LEN + TLS_RANDOM_LEN + TLS_SESSION_ID_HEADER_LEN {
+        return None;
+    }
+    if handshake[0] != TLS_HANDSHAKE_TYPE_CLIENT_HELLO {
+        return None;
+    }
+    let handshake_len = ((handshake[1] as usize) << 16)
+        | ((handshake[2] as usize) << 8)
+        | (handshake[3] as usize);
+    if handshake.len().saturating_sub(4) != handshake_len {
+        return None;
+    }
+    let tls_version = u16::from_be_bytes([handshake[4], handshake[5]]);
+    if (tls_version & TLS_VERSION_BITMASK) != 0x0300 && tls_version != TLS_VERSION_13 {
+        return None;
+    }
+    let session_id_len = handshake[38] as usize;
+    let mut current_index =
+        TLS_HANDSHAKE_HEADER_LEN + TLS_RANDOM_LEN + TLS_SESSION_ID_HEADER_LEN + session_id_len;
+    if handshake.len() < current_index {
+        return None;
+    }
+    let cipher_suites = &handshake[current_index..];
+    if cipher_suites.len() < TLS_CIPHER_SUITE_HEADER_LEN {
+        return None;
+    }
+    let cs_len = u16::from_be_bytes([cipher_suites[0], cipher_suites[1]]) as usize;
+    if cipher_suites.len()
+        < TLS_CIPHER_SUITE_HEADER_LEN + cs_len + TLS_COMPRESS_METHOD_HEADER_LEN
+    {
+        return None;
+    }
+    let compress_method_len =
+        cipher_suites[TLS_CIPHER_SUITE_HEADER_LEN + cs_len] as usize;
+    current_index +=
+        TLS_CIPHER_SUITE_HEADER_LEN + cs_len + TLS_COMPRESS_METHOD_HEADER_LEN + compress_method_len;
+    if handshake.len() < current_index {
+        return None;
+    }
+    let mut server_name =
+        index_tls_server_name_from_extensions(&handshake[current_index..])?;
+    server_name.index += current_index;
+    Some(server_name)
+}
+
+fn index_tls_server_name_from_extensions(exts: &[u8]) -> Option<TlsServerName> {
+    if exts.is_empty() || exts.len() < TLS_EXTENSIONS_HEADER_LEN {
+        return None;
+    }
+    let exts_len = u16::from_be_bytes([exts[0], exts[1]]) as usize;
+    let mut rest = &exts[TLS_EXTENSIONS_HEADER_LEN..];
+    if rest.len() < exts_len {
+        return None;
+    }
+    let mut current_index = TLS_EXTENSIONS_HEADER_LEN;
+    while !rest.is_empty() {
+        if rest.len() < TLS_EXTENSION_HEADER_LEN {
+            return None;
+        }
+        let ex_type = u16::from_be_bytes([rest[0], rest[1]]);
+        let ex_len = u16::from_be_bytes([rest[2], rest[3]]) as usize;
+        if rest.len() < TLS_EXTENSION_HEADER_LEN + ex_len {
+            return None;
+        }
+        let ex_body = &rest[TLS_EXTENSION_HEADER_LEN..TLS_EXTENSION_HEADER_LEN + ex_len];
+        if ex_type == TLS_SNI_EXTENSION_TYPE {
+            if ex_body.len() < TLS_SNI_EXTENSION_HEADER_LEN {
+                return None;
+            }
+            let sni_type = ex_body[2];
+            if sni_type != TLS_SNI_NAME_DNS_HOSTNAME_TYPE {
+                return None;
+            }
+            let sni_len = u16::from_be_bytes([ex_body[3], ex_body[4]]) as usize;
+            let sni = &ex_body[TLS_SNI_EXTENSION_HEADER_LEN..];
+            if sni.len() < sni_len {
+                return None;
+            }
+            let name = String::from_utf8_lossy(&sni[..sni_len]).to_string();
+            return Some(TlsServerName {
+                index: current_index + TLS_EXTENSION_HEADER_LEN + TLS_SNI_EXTENSION_HEADER_LEN,
+                name,
+            });
+        }
+        rest = &rest[TLS_EXTENSION_HEADER_LEN + ex_len..];
+        current_index += TLS_EXTENSION_HEADER_LEN + ex_len;
+    }
+    None
 }
 
 // ============================================================================
@@ -116,6 +250,10 @@ pub struct InboundContext {
     // Route metadata
     /// Original destination before any modifications.
     pub route_original_destination: Option<(String, u16)>,
+    /// Inbound tag for stats tracking.
+    pub inbound_tag: Option<String>,
+    /// Authenticated user for stats tracking.
+    pub auth_user: Option<String>,
 }
 
 // ============================================================================
@@ -182,6 +320,8 @@ pub struct ConnectionManager {
     connections: Mutex<Vec<Arc<ConnectionHandle>>>,
     /// Connection ID counter.
     next_id: AtomicU64,
+    /// Optional stats manager for V2Ray traffic tracking.
+    stats: Option<Arc<StatsManager>>,
 }
 
 impl std::fmt::Debug for ConnectionManager {
@@ -233,7 +373,13 @@ impl ConnectionManager {
         Self {
             connections: Mutex::new(Vec::new()),
             next_id: AtomicU64::new(1),
+            stats: None,
         }
+    }
+
+    pub fn with_stats(mut self, stats: Option<Arc<StatsManager>>) -> Self {
+        self.stats = stats;
+        self
     }
 
     /// Get the number of active connections.
@@ -333,18 +479,19 @@ impl ConnectionManager {
             "TCP connection established"
         );
 
-        // Apply TLS fragmentation if configured
-        // Note: TLS fragmentation would wrap the stream here in a real implementation
-        if metadata.tls_fragment || metadata.tls_record_fragment {
-            debug!(
-                conn_id,
-                tls_fragment = metadata.tls_fragment,
-                tls_record_fragment = metadata.tls_record_fragment,
-                "TLS fragmentation enabled (stub - not applied)"
-            );
-            // In a full implementation, we would wrap remote with a TLS fragment stream
-            // remote = TlsFragmentStream::new(remote, metadata.tls_fragment, ...);
+        if metadata.tls_fragment {
+            if let Err(err) = remote.set_nodelay(true) {
+                warn!(conn_id, error = %err, "failed to enable TCP_NODELAY for TLS fragment");
+            }
         }
+
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(
+                metadata.inbound_tag.as_deref(),
+                Some(dialer.tag()),
+                metadata.auth_user.as_deref(),
+            )
+        });
 
         // Split remote connection into owned halves for spawning
         let (mut remote_reader, mut remote_writer) = remote.into_split();
@@ -353,15 +500,57 @@ impl ConnectionManager {
         let handle_upload = handle.clone();
         let handle_download = handle.clone();
 
+        let tls_fragment = metadata.tls_fragment;
+        let tls_record_fragment = metadata.tls_record_fragment;
+        let fallback_delay = metadata
+            .tls_fragment_fallback_delay
+            .unwrap_or(TLS_FRAGMENT_FALLBACK_DELAY);
+        if tls_fragment || tls_record_fragment {
+            debug!(
+                conn_id,
+                tls_fragment,
+                tls_record_fragment,
+                "TLS fragmentation enabled"
+            );
+        }
+
+        let traffic_upload = traffic.clone();
+        let traffic_download = traffic.clone();
+
         let upload = tokio::spawn(async move {
-            let result = tokio::io::copy(&mut local_reader, &mut remote_writer).await;
+            #[cfg(unix)]
+            let tcp_fd = Some(remote_writer.as_ref().as_raw_fd());
+            #[cfg(not(unix))]
+            let tcp_fd = None;
+            let result = if tls_fragment || tls_record_fragment {
+                copy_with_tls_fragment(
+                    &mut local_reader,
+                    &mut remote_writer,
+                    tls_fragment,
+                    tls_record_fragment,
+                    fallback_delay,
+                    tcp_fd,
+                    traffic_upload.clone(),
+                )
+                .await
+            } else {
+                copy_with_recording(
+                    &mut local_reader,
+                    &mut remote_writer,
+                    traffic_upload.clone(),
+                    true,
+                )
+                    .await
+            };
             let _ = remote_writer.shutdown().await;
             handle_upload.mark_closed();
             result
         });
 
         let download = tokio::spawn(async move {
-            let result = tokio::io::copy(&mut remote_reader, &mut local_writer).await;
+            let result =
+                copy_with_recording(&mut remote_reader, &mut local_writer, traffic_download, false)
+                    .await;
             let _ = local_writer.shutdown().await;
             handle_download.mark_closed();
             result
@@ -477,12 +666,21 @@ impl ConnectionManager {
             }
         };
 
+        let traffic = self.stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(
+                metadata.inbound_tag.as_deref(),
+                Some(dialer.tag()),
+                metadata.auth_user.as_deref(),
+            )
+        });
+
         // Bidirectional UDP copy with timeout
         let local_for_upload = local_socket.clone();
         let remote_for_upload = remote_socket.clone();
         let handle_upload = handle.clone();
         let dest_host = metadata.destination_host.clone();
         let dest_port = metadata.destination_port;
+        let traffic_upload = traffic.clone();
 
         let upload = tokio::spawn(async move {
             let mut buf = [0u8; 65535];
@@ -495,6 +693,9 @@ impl ConnectionManager {
 
                 match recv_result {
                     Ok(Ok(n)) if n > 0 => {
+                        if let Some(ref recorder) = traffic_upload {
+                            recorder.record_up(n as u64);
+                        }
                         let addr = format!("{}:{}", dest_host, dest_port);
                         if let Err(e) = remote_for_upload.send_to(&buf[..n], &addr).await {
                             trace!("UDP upload send error: {}", e);
@@ -518,6 +719,7 @@ impl ConnectionManager {
         let local_for_download = local_socket;
         let remote_for_download = remote_socket;
         let handle_download = handle.clone();
+        let traffic_download = traffic;
 
         let download = tokio::spawn(async move {
             let mut buf = [0u8; 65535];
@@ -535,6 +737,9 @@ impl ConnectionManager {
                         if let Err(e) = local_for_download.send(&buf[..n]).await {
                             trace!("UDP download send error: {}", e);
                             break;
+                        }
+                        if let Some(ref recorder) = traffic_download {
+                            recorder.record_down(n as u64);
                         }
                     }
                     Ok(Ok(_)) => break,
@@ -645,6 +850,289 @@ impl ConnectionManager {
         let mut conns = self.connections.lock().unwrap();
         conns.retain(|c| c.id != id);
     }
+}
+
+fn tls_split_indexes(server_name: &TlsServerName) -> Vec<usize> {
+    if server_name.name.is_empty() {
+        return Vec::new();
+    }
+    let mut splits: Vec<&str> = server_name.name.split('.').collect();
+    let dot_count = server_name.name.matches('.').count();
+    if dot_count > 0 {
+        let keep = splits.len().saturating_sub(dot_count);
+        if keep > 0 && keep < splits.len() {
+            splits.truncate(keep);
+        }
+    }
+
+    let mut current_index = server_name.index;
+    if splits.len() > 1 && splits[0] == "..." {
+        current_index += splits[0].len() + 1;
+        splits.remove(0);
+    }
+
+    let mut rng = rand::thread_rng();
+    let mut indexes = Vec::new();
+    for (i, split) in splits.iter().enumerate() {
+        if split.is_empty() {
+            continue;
+        }
+        let split_at = rng.gen_range(0..split.len());
+        indexes.push(current_index + split_at);
+        current_index += split.len();
+        if i != splits.len().saturating_sub(1) {
+            current_index += 1;
+        }
+    }
+    indexes
+}
+
+#[cfg(unix)]
+type TcpFd = std::os::unix::io::RawFd;
+#[cfg(not(unix))]
+type TcpFd = i32;
+
+async fn write_tls_fragments<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    data: &[u8],
+    split_indexes: &[usize],
+    split_packet: bool,
+    split_record: bool,
+    fallback_delay: Duration,
+    tcp_fd: Option<TcpFd>,
+) -> io::Result<()> {
+    if split_indexes.is_empty()
+        || split_indexes.iter().any(|idx| *idx == 0 || *idx >= data.len())
+    {
+        writer.write_all(data).await?;
+        return Ok(());
+    }
+
+    if split_record && data.len() < TLS_RECORD_HEADER_LEN {
+        writer.write_all(data).await?;
+        return Ok(());
+    }
+
+    let mut buffer = Vec::new();
+    for i in 0..=split_indexes.len() {
+        let segment = if i == 0 {
+            &data[..split_indexes[i]]
+        } else if i == split_indexes.len() {
+            &data[split_indexes[i - 1]..]
+        } else {
+            &data[split_indexes[i - 1]..split_indexes[i]]
+        };
+
+        if split_record {
+            let payload = if i == 0 {
+                if segment.len() <= TLS_RECORD_HEADER_LEN {
+                    &[]
+                } else {
+                    &segment[TLS_RECORD_HEADER_LEN..]
+                }
+            } else {
+                segment
+            };
+
+            let mut record = Vec::with_capacity(TLS_RECORD_HEADER_LEN + payload.len());
+            record.extend_from_slice(&data[..3]);
+            record.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+            record.extend_from_slice(payload);
+
+            if split_packet {
+                if let Some(fd) = tcp_fd {
+                    write_and_wait_ack(writer, fd, &record, fallback_delay).await?;
+                } else {
+                    writer.write_all(&record).await?;
+                    if i != split_indexes.len() {
+                        tokio::time::sleep(fallback_delay).await;
+                    }
+                }
+            } else {
+                buffer.extend_from_slice(&record);
+            }
+        } else if split_packet {
+            if let Some(fd) = tcp_fd {
+                write_and_wait_ack(writer, fd, segment, fallback_delay).await?;
+            } else {
+                writer.write_all(segment).await?;
+                if i != split_indexes.len() {
+                    tokio::time::sleep(fallback_delay).await;
+                }
+            }
+        } else {
+            buffer.extend_from_slice(segment);
+        }
+    }
+
+    if !split_packet {
+        if buffer.is_empty() {
+            writer.write_all(data).await?;
+        } else {
+            writer.write_all(&buffer).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn copy_with_tls_fragment<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    split_packet: bool,
+    split_record: bool,
+    fallback_delay: Duration,
+    tcp_fd: Option<TcpFd>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
+) -> io::Result<u64>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut total = 0u64;
+    let mut first = true;
+    let mut buf = vec![0u8; 18 * 1024];
+
+    loop {
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            return Ok(total);
+        }
+
+        if first {
+            first = false;
+            if let Some(server_name) = index_tls_server_name(&buf[..n]) {
+                let indexes = tls_split_indexes(&server_name);
+                if !indexes.is_empty() {
+                    write_tls_fragments(
+                        writer,
+                        &buf[..n],
+                        &indexes,
+                        split_packet,
+                        split_record,
+                        fallback_delay,
+                        tcp_fd,
+                    )
+                    .await?;
+                    if let Some(ref recorder) = traffic {
+                        recorder.record_up(n as u64);
+                    }
+                    total += n as u64;
+                    continue;
+                }
+            }
+        }
+
+        writer.write_all(&buf[..n]).await?;
+        if let Some(ref recorder) = traffic {
+            recorder.record_up(n as u64);
+        }
+        total += n as u64;
+    }
+}
+
+async fn copy_with_recording<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
+    is_up: bool,
+) -> io::Result<u64>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut total = 0u64;
+    let mut buf = vec![0u8; 16 * 1024];
+    loop {
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            return Ok(total);
+        }
+        writer.write_all(&buf[..n]).await?;
+        total += n as u64;
+        if let Some(ref recorder) = traffic {
+            if is_up {
+                recorder.record_up(n as u64);
+            } else {
+                recorder.record_down(n as u64);
+            }
+        }
+    }
+}
+
+async fn write_and_wait_ack<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    tcp_fd: TcpFd,
+    payload: &[u8],
+    fallback_delay: Duration,
+) -> io::Result<()> {
+    if payload.is_empty() {
+        return Ok(());
+    }
+    writer.write_all(payload).await?;
+    wait_for_ack(tcp_fd, fallback_delay).await
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_for_ack(tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()> {
+    let start = Instant::now();
+    loop {
+        let mut info: libc::tcp_info = unsafe { std::mem::zeroed() };
+        let mut len = std::mem::size_of::<libc::tcp_info>() as libc::socklen_t;
+        let ret = unsafe {
+            libc::getsockopt(
+                tcp_fd,
+                libc::IPPROTO_TCP,
+                libc::TCP_INFO,
+                &mut info as *mut _ as *mut _,
+                &mut len,
+            )
+        };
+        if ret != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if info.tcpi_unacked == 0 {
+            if start.elapsed() <= Duration::from_millis(20) {
+                tokio::time::sleep(fallback_delay).await;
+            }
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+async fn wait_for_ack(tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()> {
+    let start = Instant::now();
+    loop {
+        let mut value: libc::c_int = 0;
+        let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+        let ret = unsafe {
+            libc::getsockopt(
+                tcp_fd,
+                libc::SOL_SOCKET,
+                libc::SO_NWRITE,
+                &mut value as *mut _ as *mut _,
+                &mut len,
+            )
+        };
+        if ret != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if value == 0 {
+            if start.elapsed() <= Duration::from_millis(20) {
+                tokio::time::sleep(fallback_delay).await;
+            }
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+async fn wait_for_ack(_tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()> {
+    tokio::time::sleep(fallback_delay).await;
+    Ok(())
 }
 
 // ============================================================================

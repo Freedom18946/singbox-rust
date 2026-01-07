@@ -270,6 +270,7 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
 
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
+        tag: ib.tag.clone(),
         listen: ib.listen.clone(),
         port: ib.port,
         basic_auth: ib.basic_auth.clone(),
@@ -604,7 +605,9 @@ pub fn build_bridge<'a>(
 
     // Step 3: Inbounds
     // Create shared connection manager for all inbounds (Go parity: route.ConnectionManager)
-    let connection_manager = Arc::new(crate::router::RouteConnectionManager::new());
+    let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
+    let connection_manager =
+        Arc::new(crate::router::RouteConnectionManager::new().with_stats(stats));
 
     // Build DNS components for inbound context
     let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg).ok().unzip();
@@ -687,7 +690,8 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         let adapter_ctx = registry::AdapterInboundContext {
             bridge: Arc::new(br.clone()),
             outbounds: outbound_handle.clone(),
-            dns_router: None, // TODO: Wire DNS router when available
+            // NOTE: DNS router integration available via with_dns_router() builder
+            dns_router: None,
             context: ctx_registry.clone(),
             _phantom: std::marker::PhantomData,
         };

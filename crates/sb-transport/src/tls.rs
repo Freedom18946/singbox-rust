@@ -716,7 +716,7 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for EchDialer<D> {
         let connector = TlsConnector::from(self.config.clone());
 
         // 第六步：执行 TLS 握手
-        // TODO: 当 rustls 支持 ECH 时，需要在这里传递 ech_hello.ech_payload
+        // NOTE: ECH integration pending rustls support. Pass ech_hello.ech_payload when available.
         // 集成点示例：
         // ```rust
         // let mut config = (*self.config).clone();

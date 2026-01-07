@@ -8,6 +8,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
+use crate::net::metered;
 
 #[cfg(feature = "router")]
 use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
@@ -296,6 +297,12 @@ pub(crate) async fn handle_conn(
                         eng_owned.decide(&input, false)
                     };
                     let out_name = d.outbound;
+                    let traffic = br_owned
+                        .context
+                        .v2ray_server
+                        .as_ref()
+                        .and_then(|s| s.stats())
+                        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
@@ -306,6 +313,7 @@ pub(crate) async fn handle_conn(
                                     if let Some(ep) = client_ep {
                                         let relay_c = relay.clone();
                                         let sess_c = sess.clone();
+                                        let traffic_c = traffic.clone();
                                         tokio::spawn(async move {
                                             while let Ok((data, src_addr)) =
                                                 sess_c.recv_from().await
@@ -327,7 +335,11 @@ pub(crate) async fn handle_conn(
                                                     &src_addr.port().to_be_bytes(),
                                                 );
                                                 pkt.extend_from_slice(&data);
-                                                let _ = relay_c.send_to(&pkt, ep).await;
+                                                if relay_c.send_to(&pkt, ep).await.is_ok() {
+                                                    if let Some(ref recorder) = traffic_c {
+                                                        recorder.record_down(data.len() as u64);
+                                                    }
+                                                }
                                             }
                                         });
                                     }
@@ -345,7 +357,11 @@ pub(crate) async fn handle_conn(
                     }
 
                     if let Some(ref sess) = udp_sess {
-                        let _ = sess.send_to(payload, &dst_host, dst_port).await;
+                        if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
+                            if let Some(ref recorder) = traffic {
+                                recorder.record_up(payload.len() as u64);
+                            }
+                        }
                     } else {
                         // Direct UDP via NAT entry per (client, dst)
                         use crate::net::udp_nat::{NatKey, TargetAddr as Tgt};
@@ -385,6 +401,7 @@ pub(crate) async fn handle_conn(
                             let relay_c = relay.clone();
                             let client_c = c;
                             let upstream_c = upstream.clone();
+                            let traffic_c = traffic.clone();
                             tokio::spawn(async move {
                                 let mut rbuf = vec![0u8; 64 * 1024];
                                 while let Ok(m) = upstream_c.recv(&mut rbuf).await {
@@ -404,7 +421,11 @@ pub(crate) async fn handle_conn(
                                         }
                                         pkt.extend_from_slice(&peer.port().to_be_bytes());
                                         pkt.extend_from_slice(&rbuf[..m]);
-                                        let _ = relay_c.send_to(&pkt, client_c).await;
+                                        if relay_c.send_to(&pkt, client_c).await.is_ok() {
+                                            if let Some(ref recorder) = traffic_c {
+                                                recorder.record_down(m as u64);
+                                            }
+                                        }
                                     }
                                 }
                             });
@@ -414,7 +435,11 @@ pub(crate) async fn handle_conn(
                             sb_metrics::socks::set_udp_nat_size(nat.len());
                         }
 
-                        let _ = upstream.send(payload).await;
+                        if upstream.send(payload).await.is_ok() {
+                            if let Some(ref recorder) = traffic {
+                                recorder.record_up(payload.len() as u64);
+                            }
+                        }
                     }
                 } else {
                     // From remote to client: wrap with SOCKS5 UDP header and forward
@@ -622,7 +647,23 @@ pub(crate) async fn handle_conn(
     };
 
     // 5) 透传双向数据
-    let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+    let traffic = bridge
+        .context
+        .v2ray_server
+        .as_ref()
+        .and_then(|s| s.stats())
+        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        &mut cli,
+        &mut upstream,
+        "socks",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
 
     Ok(())
 }

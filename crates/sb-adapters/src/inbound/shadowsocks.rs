@@ -14,6 +14,8 @@ use aes_gcm::{
 };
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 
+use sb_core::net::metered;
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::registry;
@@ -26,6 +28,7 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -104,6 +107,8 @@ pub struct ShadowsocksInboundConfig {
     /// Multi-user configuration
     pub users: Vec<ShadowsocksUser>,
     pub router: Arc<router::RouterHandle>,
+    pub tag: Option<String>,
+    pub stats: Option<Arc<StatsManager>>,
     /// Optional Multiplex configuration
     pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
     /// V2Ray transport layer configuration (WebSocket, gRPC, HTTPUpgrade)
@@ -360,7 +365,7 @@ pub fn parse_ss_addr(buf: &[u8]) -> Result<(String, u16, usize)> {
 /// Handle UDP relay for Shadowsocks
 async fn handle_udp_relay(
     socket: Arc<tokio::net::UdpSocket>,
-    _cfg: ShadowsocksInboundConfig,
+    cfg: ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
     user_map: HashMap<Vec<u8>, String>,
     _rate_limiter: TcpRateLimiter,
@@ -404,6 +409,14 @@ async fn handle_udp_relay(
 
                         debug!(?peer, user=%auth_user, "shadowsocks: UDP packet authenticated");
 
+                        let traffic = cfg.stats.as_ref().and_then(|stats| {
+                            stats.traffic_recorder(
+                                cfg.tag.as_deref(),
+                                Some("direct"),
+                                Some(auth_user.as_str()),
+                            )
+                        });
+
                         // Spawn task for this UDP packet
                         let socket_clone = socket.clone();
                         let cipher_clone = cipher.clone();
@@ -415,6 +428,7 @@ async fn handle_udp_relay(
                                 cipher_clone,
                                 data,
                                 peer,
+                                traffic,
                             ).await {
                                 debug!(error=%e, ?peer, "shadowsocks: UDP packet error");
                             }
@@ -438,6 +452,7 @@ async fn handle_udp_packet(
     cipher: AeadCipherKind,
     data: Vec<u8>,
     peer: SocketAddr,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     // Extract salt and derive subkey
     let salt = &data[..cipher.salt_len()];
@@ -451,6 +466,10 @@ async fn handle_udp_packet(
     // Parse target address
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
+
+    if let Some(ref recorder) = traffic {
+        recorder.record_up(payload.len() as u64);
+    }
 
     // Create upstream socket and send
     let upstream = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
@@ -478,7 +497,11 @@ async fn handle_udp_packet(
             full_resp.extend_from_slice(&resp_salt);
             full_resp.extend_from_slice(&encrypted_resp);
 
-            listen_socket.send_to(&full_resp, peer).await?;
+            if listen_socket.send_to(&full_resp, peer).await.is_ok() {
+                if let Some(ref recorder) = traffic {
+                    recorder.record_down(response_data.len() as u64);
+                }
+            }
         }
         _ => {
             // Timeout or error, ignore
@@ -959,7 +982,7 @@ impl InboundService for ShadowsocksInboundAdapter {
 }
 
 async fn handle_cleartext_stream<T>(
-    _cfg: &ShadowsocksInboundConfig,
+    cfg: &ShadowsocksInboundConfig,
     stream: &mut T,
     peer: SocketAddr,
     _rate_limiter: &TcpRateLimiter,
@@ -1021,7 +1044,7 @@ where
             ip: None,
             transport_udp: false,
             port: Some(port),
-            inbound_tag: Some("shadowsocks"),
+            inbound_tag: cfg.tag.as_deref().or(Some("shadowsocks")),
             network: Some("tcp"),
             ..Default::default()
         };
@@ -1034,8 +1057,11 @@ where
 
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
+    let (mut upstream, outbound_tag) = match decision {
+        RDecision::Direct => {
+            let s = direct_connect_hostport(&host, port, &opts).await?;
+            (s, Some("direct".to_string()))
+        }
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("ss".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -1043,75 +1069,118 @@ where
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let s = http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let s = socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     } else {
                         match proxy {
                             ProxyChoice::Direct => {
-                                direct_connect_hostport(&host, port, &opts).await?
+                                let s = direct_connect_hostport(&host, port, &opts).await?;
+                                (s, Some("direct".to_string()))
                             }
                             ProxyChoice::Http(addr) => {
-                                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
+                                let s =
+                                    http_proxy_connect_through_proxy(addr, &host, port, &opts)
+                                        .await?;
+                                (s, Some("http".to_string()))
                             }
                             ProxyChoice::Socks5(addr) => {
-                                socks5_connect_through_socks5(addr, &host, port, &opts).await?
+                                let s =
+                                    socks5_connect_through_socks5(addr, &host, port, &opts)
+                                        .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     }
                 } else {
                     match proxy {
-                        ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                        ProxyChoice::Direct => {
+                            let s = direct_connect_hostport(&host, port, &opts).await?;
+                            (s, Some("direct".to_string()))
+                        }
                         ProxyChoice::Http(addr) => {
-                            http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
+                            let s = http_proxy_connect_through_proxy(addr, &host, port, &opts)
+                                .await?;
+                            (s, Some("http".to_string()))
                         }
                         ProxyChoice::Socks5(addr) => {
-                            socks5_connect_through_socks5(addr, &host, port, &opts).await?
+                            let s =
+                                socks5_connect_through_socks5(addr, &host, port, &opts).await?;
+                            (s, Some("socks5".to_string()))
                         }
                     }
                 }
             } else {
                 match proxy {
-                    ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+                    ProxyChoice::Direct => {
+                        let s = direct_connect_hostport(&host, port, &opts).await?;
+                        (s, Some("direct".to_string()))
+                    }
                     ProxyChoice::Http(addr) => {
-                        http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
+                        let s = http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
+                        (s, Some("http".to_string()))
                     }
                     ProxyChoice::Socks5(addr) => {
-                        socks5_connect_through_socks5(addr, &host, port, &opts).await?
+                        let s =
+                            socks5_connect_through_socks5(addr, &host, port, &opts).await?;
+                        (s, Some("socks5".to_string()))
                     }
                 }
             }
         }
         RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => direct_connect_hostport(&host, port, &opts).await?,
+            ProxyChoice::Direct => {
+                let s = direct_connect_hostport(&host, port, &opts).await?;
+                (s, Some("direct".to_string()))
+            }
             ProxyChoice::Http(addr) => {
-                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
+                let s = http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
+                (s, Some("http".to_string()))
             }
             ProxyChoice::Socks5(addr) => {
-                socks5_connect_through_socks5(addr, &host, port, &opts).await?
+                let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
+                (s, Some("socks5".to_string()))
             }
         },
         RDecision::Reject => return Err(anyhow!("ss: rejected by rules")),
         // Handle other variants (Hijack, Sniff, Resolve) as direct for now
-        _ => direct_connect_hostport(&host, port, &opts).await?,
+        _ => {
+            let s = direct_connect_hostport(&host, port, &opts).await?;
+            (s, Some("direct".to_string()))
+        }
     };
 
     // Step 4: Relay
-    let _ = tokio::io::copy_bidirectional(stream, &mut upstream).await;
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
+    });
+    let _ = metered::copy_bidirectional_streaming_ctl(
+        stream,
+        &mut upstream,
+        "shadowsocks",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await;
     Ok(())
 }
