@@ -66,14 +66,10 @@ pub mod telemetry;
 #[cfg(feature = "dev-cli")]
 pub mod tracing_init;
 pub mod util;
+pub mod run_engine;
 
 // Router facade - available always, but functionality gated by feature
 pub mod router;
-
-// 兼容占位：保留 bootstrap 模块（空壳），防止其他地方 `mod bootstrap;` 报错。
-// Compatibility Placeholder: Keeps bootstrap module (shell) to prevent `mod bootstrap;` errors elsewhere.
-#[cfg(feature = "router")]
-pub mod bootstrap;
 
 pub mod inbound_starter;
 

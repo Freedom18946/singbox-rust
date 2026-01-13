@@ -154,8 +154,7 @@ async fn connect_tcp(addr: String, cfg: &sb_config::Config, outbound: Option<Str
     let ir = cfg.ir().clone();
 
     // Register adapters (if feature enabled) before building bridge
-    #[cfg(feature = "adapters")]
-    sb_adapters::register_all();
+    app::util::register_adapters_once();
 
     // Build bridge using adapter-aware path (tries adapter registry first, falls back to scaffold)
     #[cfg(feature = "router")]
@@ -225,8 +224,7 @@ async fn connect_udp(addr: String, cfg: &sb_config::Config, outbound: Option<Str
         let ir = cfg.ir().clone();
 
         // Register adapters before building bridge
-        #[cfg(feature = "adapters")]
-        sb_adapters::register_all();
+        app::util::register_adapters_once();
 
         // Build bridge using adapter-aware path
         #[cfg(feature = "router")]

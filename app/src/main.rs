@@ -25,8 +25,6 @@
 mod admin_debug;
 #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 mod analyze;
-#[cfg(feature = "router")]
-mod bootstrap;
 mod cli;
 mod config_loader;
 mod env_dump;

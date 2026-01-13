@@ -515,6 +515,94 @@ fn handle(
     }
 }
 
+/// Parse config from raw string (JSON or YAML) with migration and strict validation
+/// Uses sb_config::config_from_raw_value helper for unified parsing pipeline
+/// Returns (ConfigIR, config_fingerprint)
+fn parse_config_string(content: &str) -> Result<(ConfigIR, String), ConfigParseError> {
+    // Try JSON first, then YAML - fail if both fail (no fallback to {})
+    let raw: serde_json::Value = serde_json::from_str(content)
+        .or_else(|json_err| {
+            serde_yaml::from_str::<serde_json::Value>(content)
+                .map_err(|yaml_err| ConfigParseError::Parse(format!(
+                    "JSON error: {}; YAML error: {}",
+                    json_err, yaml_err
+                )))
+        })
+        .map_err(|e| match e {
+            ConfigParseError::Parse(msg) => ConfigParseError::Parse(msg),
+            _ => ConfigParseError::Parse(format!("parse failed: {}", e)),
+        })?;
+
+    // Compute fingerprint from raw value
+    let fingerprint = sb_config::json_norm::fingerprint_hex8(&raw);
+
+    // Use helper for migration + validation + Config + IR conversion
+    let (_cfg, ir) = sb_config::config_from_raw_value(raw)
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("schema validation failed") {
+                ConfigParseError::Validation(msg)
+            } else if msg.contains("validation") {
+                ConfigParseError::Validation(msg)
+            } else {
+                ConfigParseError::InvalidConfig(msg)
+            }
+        })?;
+    Ok((ir, fingerprint))
+}
+
+/// Parse config from serde_json::Value object with migration and strict validation
+/// Uses sb_config::config_from_raw_value helper for unified parsing pipeline
+/// Returns (ConfigIR, config_fingerprint)
+fn parse_config_value(value: serde_json::Value) -> Result<(ConfigIR, String), ConfigParseError> {
+    // Compute fingerprint from value
+    let fingerprint = sb_config::json_norm::fingerprint_hex8(&value);
+    
+    let (_cfg, ir) = sb_config::config_from_raw_value(value)
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("schema validation failed") {
+                ConfigParseError::Validation(msg)
+            } else if msg.contains("validation") {
+                ConfigParseError::Validation(msg)
+            } else {
+                ConfigParseError::InvalidConfig(msg)
+            }
+        })?;
+    Ok((ir, fingerprint))
+}
+
+/// Error types for config parsing in /reload endpoint
+#[derive(Debug)]
+enum ConfigParseError {
+    Parse(String),
+    Validation(String),
+    InvalidConfig(String),
+    IrConversion(String),
+}
+
+impl ConfigParseError {
+    fn code(&self) -> &'static str {
+        match self {
+            ConfigParseError::Parse(_) => "parse_error",
+            ConfigParseError::Validation(_) => "validation_error",
+            ConfigParseError::InvalidConfig(_) => "invalid_config",
+            ConfigParseError::IrConversion(_) => "ir_conversion_error",
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigParseError::Parse(msg) => write!(f, "{}", msg),
+            ConfigParseError::Validation(msg) => write!(f, "{}", msg),
+            ConfigParseError::InvalidConfig(msg) => write!(f, "{}", msg),
+            ConfigParseError::IrConversion(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
 /// Handle reload request
 fn handle_reload(
     cli: &mut TcpStream,
@@ -587,17 +675,37 @@ fn handle_reload(
     let new_ir = if let Some(config) = config_obj {
         if config.is_null() {
             None
-        } else {
-            // Parse config object to ConfigIR
-            match serde_json::from_value::<ConfigIR>(config.clone()) {
-                Ok(ir) => Some(ir),
+        } else if config.is_string() {
+            // Config is raw JSON/YAML string - parse using Config
+            let config_str = config.as_str().unwrap_or("");
+            match parse_config_string(config_str) {
+                Ok((ir, fp)) => Some((ir, fp)),
                 Err(e) => {
                     let error_obj = serde_json::json!({
                         "event": "reload",
                         "ok": false,
                         "error": {
-                            "code": "invalid_config",
-                            "message": format!("config parse error: {}", e)
+                            "code": e.code(),
+                            "message": e.to_string()
+                        },
+                        "fingerprint": env!("CARGO_PKG_VERSION"),
+                        "t": now
+                    });
+                    let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+                    return write_json(cli, 400, &body);
+                }
+            }
+        } else {
+            // Config is object - parse using Config::from_value
+            match parse_config_value(config.clone()) {
+                Ok((ir, fp)) => Some((ir, fp)),
+                Err(e) => {
+                    let error_obj = serde_json::json!({
+                        "event": "reload",
+                        "ok": false,
+                        "error": {
+                            "code": e.code(),
+                            "message": e.to_string()
                         },
                         "fingerprint": env!("CARGO_PKG_VERSION"),
                         "t": now
@@ -608,31 +716,33 @@ fn handle_reload(
             }
         }
     } else if let Some(path) = path_str {
-        // Load config from file
+        // Load and parse config from file using parse_config_string for unified handling
         match std::fs::read_to_string(path) {
-            Ok(content) => match serde_json::from_str::<ConfigIR>(&content) {
-                Ok(ir) => Some(ir),
-                Err(e) => {
-                    let error_obj = serde_json::json!({
-                        "event": "reload",
-                        "ok": false,
-                        "error": {
-                            "code": "invalid_config",
-                            "message": format!("file parse error: {}", e)
-                        },
-                        "fingerprint": env!("CARGO_PKG_VERSION"),
-                        "t": now
-                    });
-                    let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
-                    return write_json(cli, 400, &body);
+            Ok(content) => {
+                match parse_config_string(&content) {
+                    Ok((ir, fp)) => Some((ir, fp)),
+                    Err(e) => {
+                        let error_obj = serde_json::json!({
+                            "event": "reload",
+                            "ok": false,
+                            "error": {
+                                "code": e.code(),
+                                "message": e.to_string()
+                            },
+                            "fingerprint": env!("CARGO_PKG_VERSION"),
+                            "t": now
+                        });
+                        let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+                        return write_json(cli, 400, &body);
+                    }
                 }
-            },
+            }
             Err(e) => {
                 let error_obj = serde_json::json!({
                     "event": "reload",
                     "ok": false,
                     "error": {
-                        "code": "bad_request",
+                        "code": "file_error",
                         "message": format!("file read error: {}", e)
                     },
                     "fingerprint": env!("CARGO_PKG_VERSION"),
@@ -657,8 +767,8 @@ fn handle_reload(
         return write_json(cli, 400, &body);
     };
 
-    let ir = if let Some(ir) = new_ir {
-        ir
+    let (ir, config_fingerprint) = if let Some((ir, fp)) = new_ir {
+        (ir, fp)
     } else {
         let error_obj = serde_json::json!({
             "event": "reload",
@@ -683,9 +793,11 @@ fn handle_reload(
     let diff_result = match diff_result {
         Ok(diff) => diff,
         Err(e) => {
+            // Config was valid but reload failed - include fingerprint for correlation
             let error_obj = serde_json::json!({
                 "event": "reload",
                 "ok": false,
+                "config_fingerprint": config_fingerprint,
                 "error": {
                     "code": "internal",
                     "message": format!("reload failed: {}", e)
@@ -702,6 +814,7 @@ fn handle_reload(
     let success_obj = serde_json::json!({
         "event": "reload",
         "ok": true,
+        "config_fingerprint": config_fingerprint,
         "changed": {
             "inbounds": {
                 "added": diff_result.inbounds.added,

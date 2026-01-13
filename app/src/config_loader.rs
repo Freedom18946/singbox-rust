@@ -106,9 +106,8 @@ pub fn load_merged_value(entries: &[ConfigEntry]) -> Result<Value> {
 
 pub fn load_config(entries: &[ConfigEntry]) -> Result<sb_config::Config> {
     let raw = load_merged_value(entries)?;
-    let migrated = sb_config::compat::migrate_to_v2(&raw);
-    let cfg = sb_config::Config::from_value(migrated)?;
-    cfg.validate()?;
+    // Use shared helper for migration + validation + Config (ignore IR)
+    let (cfg, _ir) = sb_config::config_from_raw_value(raw)?;
     Ok(cfg)
 }
 
@@ -122,6 +121,13 @@ pub fn entry_files(entries: &[ConfigEntry]) -> Vec<PathBuf> {
             ConfigSource::Stdin => None,
         })
         .collect()
+}
+
+/// Returns true if any entry uses stdin as config source.
+/// Used to detect non-reloadable configurations.
+#[must_use]
+pub fn entries_have_stdin(entries: &[ConfigEntry]) -> bool {
+    entries.iter().any(|e| matches!(e.source, ConfigSource::Stdin))
 }
 
 #[cfg(feature = "dev-cli")]

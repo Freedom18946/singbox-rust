@@ -40,6 +40,7 @@ pub mod de;
 pub mod defaults;
 pub mod inbound;
 pub mod ir;
+pub mod json_norm;
 pub mod merge;
 pub mod minimize;
 pub mod model;
@@ -549,6 +550,40 @@ impl Config {
             }
         }
     }
+}
+
+/// Parse a raw JSON Value into Config and ConfigIR with full migration and validation.
+///
+/// This helper consolidates the complete parsing pipeline:
+/// 1. migrate_to_v2 - Migrate from v1 to v2 schema
+/// 2. validate_v2 - Strict schema validation (Go parity)
+/// 3. Config::from_value - Parse into Config struct
+/// 4. cfg.validate() - Semantic validation
+/// 5. present::to_ir - Convert to ConfigIR
+///
+/// # Errors
+/// Returns an error if any step fails, with descriptive message including
+/// validation pointer and message where applicable.
+pub fn config_from_raw_value(raw: Value) -> Result<(Config, ir::ConfigIR)> {
+    let migrated = compat::migrate_to_v2(&raw);
+
+    // Strict validation (Go parity)
+    let issues = crate::validator::v2::validate_v2(&migrated, false);
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.get("kind").and_then(|k| k.as_str()) == Some("error"))
+        .collect();
+    if !errors.is_empty() {
+        let first = &errors[0];
+        let ptr = first.get("ptr").and_then(|p| p.as_str()).unwrap_or("/");
+        let msg = first.get("msg").and_then(|m| m.as_str()).unwrap_or("validation error");
+        return Err(anyhow!("schema validation failed at {}: {}", ptr, msg));
+    }
+
+    let cfg = Config::from_value(migrated)?;
+    cfg.validate()?;
+    let ir = crate::present::to_ir(&cfg)?;
+    Ok((cfg, ir))
 }
 
 

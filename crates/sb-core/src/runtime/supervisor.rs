@@ -127,6 +127,10 @@ impl Supervisor {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
 
+        // Register adapters once (idempotent) before building bridge
+        #[cfg(feature = "adapters")]
+        sb_adapters::register_all();
+
         // Configure logging
         if let Some(log_ir) = &ir.log {
             crate::log::configure(log_ir);
@@ -247,6 +251,10 @@ impl Supervisor {
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
+
+        // Register adapters once (idempotent) before building bridge
+        #[cfg(feature = "adapters")]
+        sb_adapters::register_all();
 
         // Configure logging
         if let Some(log_ir) = &ir.log {

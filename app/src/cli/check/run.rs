@@ -319,8 +319,7 @@ fn wants_extended_analysis(args: &CheckArgs) -> bool {
 pub(crate) fn check_config(cfg: &sb_config::Config) -> Result<()> {
     #[cfg(feature = "router")]
     {
-        #[cfg(feature = "adapters")]
-        sb_adapters::register_all();
+        app::util::register_adapters_once();
         let cfg_ir = sb_config::present::to_ir(cfg)?;
         sb_core::runtime::Runtime::from_config_ir(&cfg_ir)
             .map_err(|e| anyhow::anyhow!("runtime init failed: {e}"))?;
