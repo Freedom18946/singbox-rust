@@ -9,13 +9,13 @@ use serde_json::json;
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::{NamedTempFile, TempDir};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::sleep;
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::rustls::pki_types::ServerName;
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::TlsConnector;
-use tempfile::{NamedTempFile, TempDir};
 
 fn find_free_port() -> std::io::Result<u16> {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -133,7 +133,7 @@ async fn connect_tls(
     connector: &TlsConnector,
 ) -> Result<tokio_rustls::client::TlsStream<TcpStream>> {
     let stream = TcpStream::connect(addr).await?;
-    let server_name = ServerName::try_from("localhost")
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let server_name =
+        ServerName::try_from("localhost").map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(connector.connect(server_name, stream).await?)
 }

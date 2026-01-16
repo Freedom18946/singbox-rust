@@ -11,7 +11,8 @@ fn write_tmp(content: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn minimize_is_degraded_when_negation_present_text() {
-    let cfg = r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
+    let cfg =
+        r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
     let tmp = write_tmp(cfg);
     let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("app");
     cmd.args([
@@ -25,7 +26,8 @@ fn minimize_is_degraded_when_negation_present_text() {
 
 #[test]
 fn minimize_is_degraded_when_negation_present_json() {
-    let cfg = r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
+    let cfg =
+        r#"{"route":{"rules":[{"domain":["a.com"],"not_domain":["x.com"],"outbound":"direct"}]}}"#;
     let tmp = write_tmp(cfg);
     let output = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([

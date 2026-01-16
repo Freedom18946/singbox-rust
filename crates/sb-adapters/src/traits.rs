@@ -197,8 +197,7 @@ impl RetryPolicy {
 
 /// DNS resolution mode for proxy connections.
 /// 代理连接的 DNS 解析模式。
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ResolveMode {
     /// Resolve domain names locally and send IP addresses to the proxy.
     /// 在本地解析域名，并将 IP 地址发送给代理。
@@ -209,7 +208,6 @@ pub enum ResolveMode {
     #[default]
     Remote,
 }
-
 
 impl Display for ResolveMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

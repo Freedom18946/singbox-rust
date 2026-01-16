@@ -21,7 +21,6 @@ async fn test_mixed_inbound_protocol_detection() {
     // - Setting up a test router
     // - Starting the mixed inbound server
     // - Making actual connections
-
 }
 
 #[cfg(all(feature = "http", feature = "socks"))]

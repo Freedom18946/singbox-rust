@@ -205,9 +205,7 @@ mod observe_tests {
                         if response.status().is_success() {
                             let body = response.text().await.ok()?;
                             let payload: Value = serde_json::from_str(&body).ok()?;
-                            if payload.get("pid").and_then(|v| v.as_u64())
-                                == Some(expected_pid)
-                            {
+                            if payload.get("pid").and_then(|v| v.as_u64()) == Some(expected_pid) {
                                 return Some(base_url);
                             }
                         }

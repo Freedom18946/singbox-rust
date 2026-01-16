@@ -653,6 +653,7 @@ async fn relay_quic_udp(
             }
             if let Some(ref recorder) = traffic_up {
                 recorder.record_up(len as u64);
+                recorder.record_up_packet(1);
             }
         }
         Ok::<_, anyhow::Error>(())
@@ -679,6 +680,7 @@ async fn relay_quic_udp(
             }
             if let Some(ref recorder) = traffic_down {
                 recorder.record_down(n as u64);
+                recorder.record_down_packet(1);
             }
         }
         quic_send.finish().ok();

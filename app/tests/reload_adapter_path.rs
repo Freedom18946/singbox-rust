@@ -26,7 +26,10 @@ fn should_skip_network_tests() -> bool {
             drop(listener);
             false
         }
-        Err(err) => matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable),
+        Err(err) => matches!(
+            err.kind(),
+            io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+        ),
     }
 }
 

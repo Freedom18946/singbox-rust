@@ -246,23 +246,23 @@ pub struct GeoSiteDb {
 // Protobuf definitions for GeoSite (v2fly community format)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoSiteList {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub entry: Vec<GeoSite>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoSite {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub country_code: String,
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub domain: Vec<Domain>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Domain {
-    #[prost(enumeration="Type", tag="1")]
+    #[prost(enumeration = "Type", tag = "1")]
     pub r#type: i32,
-    #[prost(string, tag="2")]
+    #[prost(string, tag = "2")]
     pub value: String,
 }
 
@@ -290,7 +290,9 @@ impl GeoSiteDb {
             code: crate::error::IssueCode::InvalidType,
             ptr: "/geosite/database_format".to_string(),
             msg: format!("protobuf: failed to decode GeoSite database: {}", e),
-            hint: Some("Ensure the file is a valid protobuf GeoSite database (v2fly format)".to_string()),
+            hint: Some(
+                "Ensure the file is a valid protobuf GeoSite database (v2fly format)".to_string(),
+            ),
         })?;
 
         let mut categories: HashMap<String, Vec<DomainRule>> = HashMap::new();
@@ -302,15 +304,18 @@ impl GeoSiteDb {
             for d in entry.domain {
                 let rule = match Type::try_from(d.r#type).ok() {
                     Some(Type::Plain) => DomainRule::Keyword(d.value),
-                    Some(Type::Regex) => {
-                         match regex::Regex::new(&d.value) {
-                             Ok(re) => DomainRule::Regex(d.value, re),
-                             Err(e) => {
-                                 tracing::warn!("invalid regex pattern '{}' in geosite {}: {}", d.value, category, e);
-                                 continue;
-                             }
-                         }
-                    }
+                    Some(Type::Regex) => match regex::Regex::new(&d.value) {
+                        Ok(re) => DomainRule::Regex(d.value, re),
+                        Err(e) => {
+                            tracing::warn!(
+                                "invalid regex pattern '{}' in geosite {}: {}",
+                                d.value,
+                                category,
+                                e
+                            );
+                            continue;
+                        }
+                    },
                     Some(Type::Domain) => DomainRule::Suffix(d.value),
                     Some(Type::Full) => DomainRule::Exact(d.value),
                     None => continue, // Skip unknown types
@@ -341,7 +346,7 @@ impl GeoSiteDb {
 
         false
     }
-    
+
     /// Get all categories that match a domain
     pub fn lookup_categories(&self, domain: &str) -> Vec<String> {
         let mut matching_categories = Vec::new();
@@ -355,7 +360,7 @@ impl GeoSiteDb {
         }
         matching_categories
     }
-    
+
     /// Get all available categories in the database
     pub fn available_categories(&self) -> Vec<String> {
         self.categories.keys().cloned().collect()

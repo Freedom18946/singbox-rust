@@ -167,13 +167,15 @@ mod tests {
     #[async_trait]
     impl Dialer for MockDialer {
         async fn connect(&self, _host: &str, _port: u16) -> Result<IoStream, DialError> {
-            let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            
+            let count = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
             match &self.mode {
                 MockMode::AlwaysFail => Err(DialError::Other("connection failed".to_string())),
                 MockMode::FailUntil(limit) => {
                     if count < *limit {
-                         Err(DialError::Other("connection failed".to_string()))
+                        Err(DialError::Other("connection failed".to_string()))
                     } else {
                         // Return a dummy stream
                         let (client, _server) = tokio::io::duplex(64);
@@ -208,8 +210,7 @@ mod tests {
             count_timeouts: true,
         };
 
-        let cb_dialer =
-            CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
+        let cb_dialer = CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
 
         // First two failures should go through
         let result1 = cb_dialer.connect("example.com", 80).await;
@@ -256,8 +257,7 @@ mod tests {
             count_timeouts: true,
         };
 
-        let cb_dialer =
-            CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
+        let cb_dialer = CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
 
         // Trigger circuit breaker opening
         // Manually check IsErr because unwrapping Ok panics with debug info which IoStream lacks

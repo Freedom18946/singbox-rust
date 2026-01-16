@@ -37,9 +37,6 @@ fn go_bin() -> Option<String> {
 #[test]
 fn test_reality_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -119,9 +116,6 @@ fn test_reality_config_compatibility() {
 #[test]
 fn test_hysteria2_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -182,9 +176,6 @@ fn test_hysteria2_config_compatibility() {
 #[test]
 fn test_ssh_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -244,9 +235,6 @@ fn test_ssh_config_compatibility() {
 #[test]
 fn test_tuic_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -307,9 +295,6 @@ fn test_tuic_config_compatibility() {
 #[test]
 fn test_ech_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -376,9 +361,6 @@ fn test_ech_config_compatibility() {
 #[test]
 fn test_hysteria_v1_config_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",
@@ -440,9 +422,6 @@ fn test_hysteria_v1_config_compatibility() {
 #[test]
 fn test_mixed_p0_protocols_compatibility() {
     let cfg = r#"{
-        "log": {
-            "level": "info"
-        },
         "inbounds": [
             {
                 "type": "socks",

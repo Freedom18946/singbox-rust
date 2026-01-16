@@ -6,10 +6,10 @@
 //! Mirrors Go's `service/resolved/resolve1.go`.
 
 use std::sync::Arc;
-#[cfg(all(target_os = "linux", feature = "service_resolved"))]
-use tracing::{debug, info, warn};
 #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
 use tracing::warn;
+#[cfg(all(target_os = "linux", feature = "service_resolved"))]
+use tracing::{debug, info, warn};
 
 use sb_core::dns::transport::resolved::Resolve1ManagerState;
 

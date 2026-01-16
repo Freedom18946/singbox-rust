@@ -192,9 +192,7 @@ impl RuleMatcher {
             }
         }
 
-        if !rule.geosite.is_empty()
-            && !ctx.geosite_codes.iter().any(|c| rule.geosite.contains(c))
-        {
+        if !rule.geosite.is_empty() && !ctx.geosite_codes.iter().any(|c| rule.geosite.contains(c)) {
             return false;
         }
 
@@ -452,12 +450,12 @@ impl RuleMatcher {
 
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(ip) => {
-            ip.is_private() || ip.is_loopback() || ip.is_link_local()
-        }
+        IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
         IpAddr::V6(ip) => {
             // IPv6 unique local: fc00::/7
-            (ip.segments()[0] & 0xfe00) == 0xfc00 || ip.is_loopback() || (ip.segments()[0] & 0xffc0) == 0xfe80
+            (ip.segments()[0] & 0xfe00) == 0xfc00
+                || ip.is_loopback()
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
         }
     }
 }

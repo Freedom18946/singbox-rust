@@ -279,15 +279,15 @@ fn heat(
                     } else {
                         drop += 1;
                     }
-                        if _rps > 0 {
-                            let target = interval;
-                            let spent = last.elapsed();
-                            if spent < target {
-                                if let Some(delay) = target.checked_sub(spent) {
-                                    std::thread::sleep(delay);
-                                }
+                    if _rps > 0 {
+                        let target = interval;
+                        let spent = last.elapsed();
+                        if spent < target {
+                            if let Some(delay) = target.checked_sub(spent) {
+                                std::thread::sleep(delay);
                             }
-                            last = std::time::Instant::now();
+                        }
+                        last = std::time::Instant::now();
                     } else {
                         // 当 rps=0 时避免 CPU 100% 占用
                         std::thread::yield_now();

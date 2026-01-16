@@ -112,9 +112,9 @@ pub mod run;
 pub mod tools;
 pub mod version;
 
+use anyhow::Result;
 use clap::{ArgAction, Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use anyhow::Result;
 
 /// Output format for CLI commands
 #[derive(ValueEnum, Debug, Clone, Copy)]

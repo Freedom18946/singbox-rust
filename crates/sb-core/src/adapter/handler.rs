@@ -60,10 +60,10 @@ pub trait PacketHandlerEx: Send + Sync {
 pub trait UpstreamHandler: Send + Sync {
     /// Get the upstream tag/name
     fn tag(&self) -> &str;
-    
+
     /// Connect to the upstream destination
     async fn connect(&self, host: &str, port: u16) -> Result<Box<dyn AsyncStream>>;
-    
+
     /// Check if this upstream supports UDP
     fn supports_udp(&self) -> bool {
         false
@@ -81,7 +81,7 @@ pub trait HandlerLifecycle: Send + Sync {
     async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Close the handler
     async fn close(&self) -> Result<()> {
         Ok(())
@@ -108,7 +108,7 @@ impl UpstreamHandler for UpstreamWrapper {
     fn tag(&self) -> &str {
         &self.tag
     }
-    
+
     async fn connect(&self, host: &str, port: u16) -> Result<Box<dyn AsyncStream>> {
         let stream = self.connector.connect(host, port).await?;
         Ok(Box::new(stream))
@@ -117,9 +117,12 @@ impl UpstreamHandler for UpstreamWrapper {
 
 /// Handler registry for extended handlers
 pub struct HandlerRegistry {
-    connection_handlers: parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn ConnectionHandlerEx>>>,
-    packet_handlers: parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn PacketHandlerEx>>>,
-    upstream_handlers: parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn UpstreamHandler>>>,
+    connection_handlers:
+        parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn ConnectionHandlerEx>>>,
+    packet_handlers:
+        parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn PacketHandlerEx>>>,
+    upstream_handlers:
+        parking_lot::RwLock<std::collections::HashMap<String, Arc<dyn UpstreamHandler>>>,
 }
 
 impl Default for HandlerRegistry {
@@ -136,46 +139,46 @@ impl HandlerRegistry {
             upstream_handlers: parking_lot::RwLock::new(std::collections::HashMap::new()),
         }
     }
-    
+
     /// Register a connection handler
     pub fn register_connection_handler(&self, tag: String, handler: Arc<dyn ConnectionHandlerEx>) {
         self.connection_handlers.write().insert(tag, handler);
     }
-    
+
     /// Register a packet handler
     pub fn register_packet_handler(&self, tag: String, handler: Arc<dyn PacketHandlerEx>) {
         self.packet_handlers.write().insert(tag, handler);
     }
-    
+
     /// Register an upstream handler
     pub fn register_upstream(&self, tag: String, handler: Arc<dyn UpstreamHandler>) {
         self.upstream_handlers.write().insert(tag, handler);
     }
-    
+
     /// Get a connection handler by tag
     pub fn get_connection_handler(&self, tag: &str) -> Option<Arc<dyn ConnectionHandlerEx>> {
         self.connection_handlers.read().get(tag).cloned()
     }
-    
+
     /// Get a packet handler by tag
     pub fn get_packet_handler(&self, tag: &str) -> Option<Arc<dyn PacketHandlerEx>> {
         self.packet_handlers.read().get(tag).cloned()
     }
-    
+
     /// Get an upstream handler by tag
     pub fn get_upstream(&self, tag: &str) -> Option<Arc<dyn UpstreamHandler>> {
         self.upstream_handlers.read().get(tag).cloned()
     }
-    
+
     /// List all registered tags
     pub fn list_connection_tags(&self) -> Vec<String> {
         self.connection_handlers.read().keys().cloned().collect()
     }
-    
+
     pub fn list_packet_tags(&self) -> Vec<String> {
         self.packet_handlers.read().keys().cloned().collect()
     }
-    
+
     pub fn list_upstream_tags(&self) -> Vec<String> {
         self.upstream_handlers.read().keys().cloned().collect()
     }

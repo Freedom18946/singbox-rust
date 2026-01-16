@@ -12,12 +12,18 @@ fn config_merge_order_sorts_paths() -> Result<()> {
     let z_path = temp.path().join("z.json");
     let a_path = dir.join("a.json");
 
-    fs::write(&z_path, serde_json::to_vec(&json!({
-        "log": {"level": "error"}
-    }))?)?;
-    fs::write(&a_path, serde_json::to_vec(&json!({
-        "log": {"level": "info"}
-    }))?)?;
+    fs::write(
+        &z_path,
+        serde_json::to_vec(&json!({
+            "log": {"level": "error"}
+        }))?,
+    )?;
+    fs::write(
+        &a_path,
+        serde_json::to_vec(&json!({
+            "log": {"level": "info"}
+        }))?,
+    )?;
 
     let entries = app::config_loader::collect_config_entries(&[z_path], &[dir])?;
     let merged = app::config_loader::load_merged_value(&entries)?;

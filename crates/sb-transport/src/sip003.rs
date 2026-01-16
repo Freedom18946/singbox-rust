@@ -167,10 +167,7 @@ impl Sip003Plugin {
         );
 
         let child = cmd.spawn().map_err(|e| {
-            io::Error::new(
-                ErrorKind::Other,
-                format!("Failed to start plugin '{}': {}", config.plugin, e),
-            )
+            io::Error::other(format!("Failed to start plugin '{}': {}", config.plugin, e))
         })?;
 
         self.child = Some(child);
@@ -198,10 +195,7 @@ impl Sip003Plugin {
     /// Check if plugin is running
     pub fn is_running(&mut self) -> bool {
         if let Some(ref mut child) = self.child {
-            match child.try_wait() {
-                Ok(None) => true,
-                _ => false,
-            }
+            matches!(child.try_wait(), Ok(None))
         } else {
             false
         }

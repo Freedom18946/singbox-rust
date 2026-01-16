@@ -1,16 +1,15 @@
+use super::{DnsStartStage, DnsTransport};
+use anyhow::Result;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
-use anyhow::Result;
-use super::{DnsTransport, DnsStartStage};
 
 /// Type alias for transport constructor function
-pub type TransportConstructor = Box<
-    dyn Fn(&str, &serde_json::Value) -> Result<Arc<dyn DnsTransport>> + Send + Sync,
->;
+pub type TransportConstructor =
+    Box<dyn Fn(&str, &serde_json::Value) -> Result<Arc<dyn DnsTransport>> + Send + Sync>;
 
 /// Registry to manage DNS transport lifecycle, types, and dependencies (Go-parity)
-/// 
+///
 /// Mirrors Go's `TransportRegistry` with:
 /// - Type-based constructor registration
 /// - Options creation per transport type
@@ -77,7 +76,12 @@ impl TransportRegistry {
     }
 
     /// Register a transport with dependencies
-    pub fn register_with_deps(&self, tag: String, transport: Arc<dyn DnsTransport>, deps: Vec<String>) {
+    pub fn register_with_deps(
+        &self,
+        tag: String,
+        transport: Arc<dyn DnsTransport>,
+        deps: Vec<String>,
+    ) {
         self.transports.lock().insert(tag.clone(), transport);
         if !deps.is_empty() {
             self.dependencies.lock().insert(tag, deps);
@@ -98,11 +102,11 @@ impl TransportRegistry {
     pub fn get_startup_order(&self) -> Result<Vec<String>> {
         let deps = self.dependencies.lock();
         let transports = self.transports.lock();
-        
+
         let mut order = Vec::new();
         let mut visited = std::collections::HashSet::new();
         let mut in_progress = std::collections::HashSet::new();
-        
+
         fn visit(
             tag: &str,
             deps: &HashMap<String, Vec<String>>,
@@ -116,25 +120,25 @@ impl TransportRegistry {
             if visited.contains(tag) {
                 return Ok(());
             }
-            
+
             in_progress.insert(tag.to_string());
-            
+
             if let Some(tag_deps) = deps.get(tag) {
                 for dep in tag_deps {
                     visit(dep, deps, visited, in_progress, order)?;
                 }
             }
-            
+
             in_progress.remove(tag);
             visited.insert(tag.to_string());
             order.push(tag.to_string());
             Ok(())
         }
-        
+
         for tag in transports.keys() {
             visit(tag, &deps, &mut visited, &mut in_progress, &mut order)?;
         }
-        
+
         Ok(order)
     }
 
@@ -142,17 +146,17 @@ impl TransportRegistry {
     pub async fn start_all(&self, stage: DnsStartStage) -> Result<()> {
         let order = self.get_startup_order()?;
         let transports = self.transports.lock().clone();
-        
+
         for tag in order {
             if let Some(t) = transports.get(&tag) {
-                t.start(stage).await.map_err(|e| {
-                    anyhow::anyhow!("Failed to start transport {}: {}", tag, e)
-                })?;
+                t.start(stage)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to start transport {}: {}", tag, e))?;
             }
         }
         Ok(())
     }
-    
+
     /// Close all registered transports (reverse order)
     pub async fn close_all(&self) -> Result<()> {
         let mut order = self.get_startup_order()?;
@@ -161,9 +165,9 @@ impl TransportRegistry {
 
         for tag in order {
             if let Some(t) = transports.get(&tag) {
-                t.close().await.map_err(|e| {
-                    anyhow::anyhow!("Failed to close transport {}: {}", tag, e)
-                })?;
+                t.close()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to close transport {}: {}", tag, e))?;
             }
         }
         Ok(())

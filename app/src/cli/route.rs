@@ -24,10 +24,9 @@ pub struct RouteArgs {
 }
 
 pub fn run(global: &GlobalArgs, args: RouteArgs) -> Result<()> {
-    let entries =
-        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
-    let cfg = config_loader::load_config(&entries)
-        .with_context(|| "load config for route explain")?;
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let cfg =
+        config_loader::load_config(&entries).with_context(|| "load config for route explain")?;
 
     if args.explain {
         // Use real ExplainEngine instead of stub

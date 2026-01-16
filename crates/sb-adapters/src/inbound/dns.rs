@@ -129,9 +129,10 @@ impl DnsInboundAdapter {
         let socket = Arc::new(UdpSocket::bind(self.listen).await?);
         info!(addr = ?self.listen, "DNS UDP server listening");
 
-        let traffic = self.stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(self.tag.as_deref(), None, None)
-        });
+        let traffic = self
+            .stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), None, None));
 
         let mut buf = vec![0u8; 4096]; // DNS messages are typically < 512 bytes, but EDNS can be larger
 
@@ -148,6 +149,7 @@ impl DnsInboundAdapter {
                             self.active_queries.fetch_add(1, Ordering::Relaxed);
                             if let Some(ref recorder) = traffic {
                                 recorder.record_up(len as u64);
+                                recorder.record_up_packet(1);
                             }
                             let query = buf[..len].to_vec();
                             let socket_ref = socket.clone();
@@ -202,6 +204,7 @@ impl DnsInboundAdapter {
                 if socket.send_to(&response, src).await.is_ok() {
                     if let Some(ref recorder) = traffic {
                         recorder.record_down(response.len() as u64);
+                        recorder.record_down_packet(1);
                     }
                 }
                 debug!(src = %src, query_len = query.len(), response_len = response.len(), "DNS query handled");
@@ -212,6 +215,7 @@ impl DnsInboundAdapter {
                     if socket.send_to(&response, src).await.is_ok() {
                         if let Some(ref recorder) = traffic {
                             recorder.record_down(response.len() as u64);
+                            recorder.record_down_packet(1);
                         }
                     }
                 }
@@ -398,9 +402,10 @@ impl DnsInboundAdapter {
     async fn run_tcp_server(&self) -> std::io::Result<()> {
         let listener = TcpListener::bind(self.listen).await?;
         info!(addr = ?self.listen, "DNS TCP server listening");
-        let traffic = self.stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(self.tag.as_deref(), None, None)
-        });
+        let traffic = self
+            .stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), None, None));
 
         loop {
             if self.shutdown.load(Ordering::Relaxed) {
@@ -496,7 +501,7 @@ impl InboundService for DnsInboundAdapter {
                     .build()
                     .map(|rt| rt.handle().clone())
             })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         let listen = self.listen;
         let shutdown = self.shutdown.clone();

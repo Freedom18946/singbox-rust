@@ -357,8 +357,7 @@ async fn test_trojan_tls_handshake_stress() {
 #[tokio::test]
 async fn test_trojan_sni_verification() {
     let expected_sni = "trojan.sni.test";
-    let Some((server_addr, stop_tx)) =
-        start_sni_enforced_trojan_server(expected_sni, None).await
+    let Some((server_addr, stop_tx)) = start_sni_enforced_trojan_server(expected_sni, None).await
     else {
         return;
     };
@@ -694,8 +693,8 @@ async fn test_trojan_timeout_handling() {
     slow_stream.write_all(b"slow").await.expect("write slow");
 
     let mut buf = [0u8; 4];
-    let read = tokio::time::timeout(Duration::from_millis(200), slow_stream.read_exact(&mut buf))
-        .await;
+    let read =
+        tokio::time::timeout(Duration::from_millis(200), slow_stream.read_exact(&mut buf)).await;
     assert!(read.is_err(), "slow server should exceed timeout");
 }
 

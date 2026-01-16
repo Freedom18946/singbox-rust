@@ -1,5 +1,5 @@
-use serde_json::json;
 use sb_config::validator::v2::to_ir_v1;
+use serde_json::json;
 
 #[test]
 fn test_parse_dns_rule_match_fields() {
@@ -30,7 +30,7 @@ fn test_parse_dns_rule_match_fields() {
     let ir = to_ir_v1(&config);
     let dns = ir.dns.expect("dns should be present");
     assert!(!dns.rules.is_empty());
-    
+
     let rule = &dns.rules[0];
     assert_eq!(rule.ip_is_private, Some(true));
     assert_eq!(rule.source_ip_is_private, Some(true));
@@ -66,15 +66,15 @@ fn test_parse_dns_rule_action_hijack() {
     let rule = &dns.rules[0];
     assert_eq!(rule.action.as_deref(), Some("hijack-dns"));
     assert_eq!(rule.rcode.as_deref(), Some("NXDOMAIN"));
-    
+
     let answer = rule.answer.as_ref().expect("answer should be present");
     assert_eq!(answer.len(), 1);
     assert_eq!(answer[0], "1.1.1.1");
-    
+
     let ns = rule.ns.as_ref().expect("ns should be present");
     assert_eq!(ns.len(), 1);
     assert_eq!(ns[0], "ns1.example.com");
-    
+
     let extra = rule.extra.as_ref().expect("extra should be present");
     assert_eq!(extra.len(), 1);
     assert_eq!(extra[0], "extra-info");

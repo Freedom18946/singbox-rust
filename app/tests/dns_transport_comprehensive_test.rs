@@ -53,7 +53,6 @@ fn test_dns_transports_are_documented() {
     println!("Missing (1/12):");
     println!("  ✅ local (LocalUpstream with system fallback)");
     println!("==============================\n");
-
 }
 
 #[test]
@@ -161,7 +160,6 @@ fn test_dns_features_are_documented() {
     println!("  ✅ dns_tailscale enabled");
     #[cfg(not(feature = "dns_tailscale"))]
     println!("  ⚠️  dns_tailscale disabled");
-
 }
 
 // ============================================================================

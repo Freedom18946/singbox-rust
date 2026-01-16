@@ -151,10 +151,7 @@ impl SimpleV2RayApiServer {
     }
 
     /// Start the simple V2Ray API server with a shutdown signal.
-    pub async fn start_with_shutdown(
-        &self,
-        mut shutdown: oneshot::Receiver<()>,
-    ) -> ApiResult<()> {
+    pub async fn start_with_shutdown(&self, mut shutdown: oneshot::Receiver<()>) -> ApiResult<()> {
         let _ = &self.monitoring;
 
         log::info!(

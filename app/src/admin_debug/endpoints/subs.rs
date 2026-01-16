@@ -277,344 +277,346 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         let parsed = url::Url::parse(url)?;
         let host = parsed.host_str().unwrap_or("").to_string();
 
-    // Circuit breaker check
-    if let Ok(mut br) = breaker::global().lock() {
-        if !br.check(&host) {
-            inc_breaker_block();
-            set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
-            anyhow::bail!("circuit breaker open for host: {host}");
+        // Circuit breaker check
+        if let Ok(mut br) = breaker::global().lock() {
+            if !br.check(&host) {
+                inc_breaker_block();
+                set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
+                anyhow::bail!("circuit breaker open for host: {host}");
+            }
         }
-    }
-    // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
-    if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
-        inc_block_private_ip();
-        set_last_error_with_host(
-            SecurityErrorKind::PrivateBlocked,
-            &host,
-            format!("private/loopback: {e}"),
-        );
-        return Err(e);
-    }
-    if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
-        inc_block_private_ip();
-        set_last_error_with_host(
-            SecurityErrorKind::PrivateBlocked,
-            &host,
-            format!("dns-private: {e}"),
-        );
-        return Err(e);
-    }
-
-    // Get current configuration
-    let config = reloadable::get();
-    let _max_redirects = config.max_redirects;
-    let timeout_ms = config.timeout_ms;
-    let size_limit = config.max_bytes;
-
-    // Build HTTP client with SafeRedirect policy
-    use crate::admin_debug::http::redirect::SafeRedirect;
-    let redirect =
-        SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::custom(redirect))
-        .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
-        .user_agent(format!("sb-subs/{}", env!("CARGO_PKG_VERSION")))
-        .build()?;
-
-    // Try cache first and prepare conditional request
-    let mut if_none_match = None;
-    let mut has_cached_entry = false;
-    if let Ok(mut lru) = cache::global().lock() {
-        if let Some(cached_tier_entry) = lru.get(url) {
-            inc_cache_hit();
-            if_none_match = cached_tier_entry.etag().cloned();
-            has_cached_entry = true;
-        } else {
-            inc_cache_miss();
+        // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
+        if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
+            inc_block_private_ip();
+            set_last_error_with_host(
+                SecurityErrorKind::PrivateBlocked,
+                &host,
+                format!("private/loopback: {e}"),
+            );
+            return Err(e);
         }
-    }
+        if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
+            inc_block_private_ip();
+            set_last_error_with_host(
+                SecurityErrorKind::PrivateBlocked,
+                &host,
+                format!("dns-private: {e}"),
+            );
+            return Err(e);
+        }
 
-    // HEAD pre-exploration if no cached ETag available
-    let mut head_etag = None;
-    if !has_cached_entry && std::env::var("SB_SUBS_HEAD_PRECHECK").ok().as_deref() == Some("1") {
+        // Get current configuration
+        let config = reloadable::get();
+        let _max_redirects = config.max_redirects;
+        let timeout_ms = config.timeout_ms;
+        let size_limit = config.max_bytes;
+
+        // Build HTTP client with SafeRedirect policy
+        use crate::admin_debug::http::redirect::SafeRedirect;
+        let redirect =
+            SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::custom(redirect))
+            .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
+            .user_agent(format!("sb-subs/{}", env!("CARGO_PKG_VERSION")))
+            .build()?;
+
+        // Try cache first and prepare conditional request
+        let mut if_none_match = None;
+        let mut has_cached_entry = false;
         if let Ok(mut lru) = cache::global().lock() {
-            lru.inc_head_count();
+            if let Some(cached_tier_entry) = lru.get(url) {
+                inc_cache_hit();
+                if_none_match = cached_tier_entry.etag().cloned();
+                has_cached_entry = true;
+            } else {
+                inc_cache_miss();
+            }
         }
-        crate::admin_debug::security_metrics::inc_head_total();
 
-        let _head_resp = match tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms / 2), // Shorter timeout for HEAD
-            client.head(parsed.clone()).send(),
+        // HEAD pre-exploration if no cached ETag available
+        let mut head_etag = None;
+        if !has_cached_entry && std::env::var("SB_SUBS_HEAD_PRECHECK").ok().as_deref() == Some("1")
+        {
+            if let Ok(mut lru) = cache::global().lock() {
+                lru.inc_head_count();
+            }
+            crate::admin_debug::security_metrics::inc_head_total();
+
+            let _head_resp = match tokio::time::timeout(
+                std::time::Duration::from_millis(timeout_ms / 2), // Shorter timeout for HEAD
+                client.head(parsed.clone()).send(),
+            )
+            .await
+            {
+                Ok(Ok(r)) if r.status().is_success() => {
+                    head_etag = r
+                        .headers()
+                        .get(reqwest::header::ETAG)
+                        .and_then(|v| v.to_str().ok())
+                        .map(std::string::ToString::to_string);
+                    Some(r)
+                }
+                _ => None, // HEAD failed or timed out, proceed with GET
+            };
+
+            if head_etag.is_some() {
+                if_none_match = head_etag.clone();
+            }
+        }
+
+        // Build request with conditional headers if we have an ETag
+        let mut request_builder = client.get(parsed.clone());
+        if let Some(etag) = &if_none_match {
+            request_builder = request_builder.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+
+        let resp = match tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            request_builder.send(),
         )
         .await
         {
-            Ok(Ok(r)) if r.status().is_success() => {
-                head_etag = r
-                    .headers()
-                    .get(reqwest::header::ETAG)
-                    .and_then(|v| v.to_str().ok())
-                    .map(std::string::ToString::to_string);
-                Some(r)
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                // 识别 TooManyRedirects (更稳定的类型检查)
+                let mut is_tmr = false;
+                let mut cur: &(dyn std::error::Error + 'static) = &e;
+                while let Some(src) = cur.source() {
+                    if src.is::<reqwest::Error>() {
+                        // 检查 reqwest error 是否为 redirect 类型
+                        if src.to_string().contains("too many redirects")
+                            || src.to_string().contains("redirect")
+                        {
+                            is_tmr = true;
+                            break;
+                        }
+                    }
+                    cur = src;
+                }
+                if is_tmr {
+                    inc_redirects();
+                    set_last_error_with_host(
+                        SecurityErrorKind::TooManyRedirects,
+                        &host,
+                        "too many redirects",
+                    );
+                }
+                if e.is_connect() {
+                    inc_connect_timeout();
+                    set_last_error_with_host(
+                        SecurityErrorKind::ConnectTimeout,
+                        &host,
+                        "connect timeout",
+                    );
+                }
+                // Mark circuit breaker failure
+                if let Ok(mut br) = breaker::global().lock() {
+                    br.mark_failure(&host);
+                }
+                return Err(e.into());
             }
-            _ => None, // HEAD failed or timed out, proceed with GET
+            Err(_) => {
+                inc_timeout();
+                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
+                // Mark circuit breaker failure
+                if let Ok(mut br) = breaker::global().lock() {
+                    br.mark_failure(&host);
+                }
+                return Err(anyhow::anyhow!("timeout"));
+            }
         };
 
-        if head_etag.is_some() {
-            if_none_match = head_etag.clone();
-        }
-    }
-
-    // Build request with conditional headers if we have an ETag
-    let mut request_builder = client.get(parsed.clone());
-    if let Some(etag) = &if_none_match {
-        request_builder = request_builder.header(reqwest::header::IF_NONE_MATCH, etag);
-    }
-
-    let resp = match tokio::time::timeout(
-        std::time::Duration::from_millis(timeout_ms),
-        request_builder.send(),
-    )
-    .await
-    {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            // 识别 TooManyRedirects (更稳定的类型检查)
-            let mut is_tmr = false;
-            let mut cur: &(dyn std::error::Error + 'static) = &e;
-            while let Some(src) = cur.source() {
-                if src.is::<reqwest::Error>() {
-                    // 检查 reqwest error 是否为 redirect 类型
-                    if src.to_string().contains("too many redirects")
-                        || src.to_string().contains("redirect")
-                    {
-                        is_tmr = true;
-                        break;
-                    }
+        // Handle 304 Not Modified - return cached content
+        if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+            if let Ok(mut lru) = cache::global().lock() {
+                if let Some(cached_tier_entry) = lru.get(resp.url().as_str()) {
+                    // Handle both memory and disk cached entries
+                    let cached_body = cached_tier_entry
+                        .get_body()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
+                    let cached_string = String::from_utf8_lossy(&cached_body).to_string();
+                    record_latency_ms(t0.elapsed().as_millis() as u64);
+                    mark_last_ok();
+                    // Trigger prefetch for successful 304 response
+                    let et_local: Option<String> = cached_tier_entry.etag().cloned();
+                    maybe_enqueue_prefetch(&resp, et_local.as_ref());
+                    return Ok(cached_string);
                 }
-                cur = src;
             }
-            if is_tmr {
-                inc_redirects();
+            anyhow::bail!("cache miss on 304 response");
+        }
+
+        // 若发生重定向，检查最终 URL
+        if resp.url() != &parsed {
+            let redirect_host = resp.url().host_str().unwrap_or("").to_string();
+            if let Err(e) = forbid_private_host_or_resolved_with_allowlist(resp.url()) {
+                inc_block_private_ip();
                 set_last_error_with_host(
-                    SecurityErrorKind::TooManyRedirects,
+                    SecurityErrorKind::PrivateBlocked,
+                    &redirect_host,
+                    format!("redirect->private: {e}"),
+                );
+                return Err(e);
+            }
+            if let Err(e) = forbid_private_host_or_resolved_async(resp.url()).await {
+                inc_block_private_ip();
+                set_last_error_with_host(
+                    SecurityErrorKind::PrivateBlocked,
+                    &redirect_host,
+                    format!("redirect->dns-private: {e}"),
+                );
+                return Err(e);
+            }
+        }
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let code = resp.status().as_u16();
+            if (400..500).contains(&code) {
+                inc_upstream_4xx();
+                set_last_error_with_host(
+                    SecurityErrorKind::Upstream4xx,
                     &host,
-                    "too many redirects",
+                    format!("upstream {status}"),
                 );
             }
-            if e.is_connect() {
-                inc_connect_timeout();
+            if (500..600).contains(&code) {
+                inc_upstream_5xx();
                 set_last_error_with_host(
-                    SecurityErrorKind::ConnectTimeout,
+                    SecurityErrorKind::Upstream5xx,
                     &host,
-                    "connect timeout",
+                    format!("upstream {status}"),
                 );
             }
-            // Mark circuit breaker failure
-            if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
+            // Mark circuit breaker failure for server errors
+            if (500..600).contains(&code) {
+                if let Ok(mut br) = breaker::global().lock() {
+                    br.mark_failure(&host);
+                }
             }
-            return Err(e.into());
+            anyhow::bail!("upstream status {status}");
         }
-        Err(_) => {
-            inc_timeout();
-            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
-            // Mark circuit breaker failure
-            if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
-            }
-            return Err(anyhow::anyhow!("timeout"));
-        }
-    };
 
-    // Handle 304 Not Modified - return cached content
-    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
-        if let Ok(mut lru) = cache::global().lock() {
-            if let Some(cached_tier_entry) = lru.get(resp.url().as_str()) {
-                // Handle both memory and disk cached entries
-                let cached_body = cached_tier_entry
-                    .get_body()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
-                let cached_string = String::from_utf8_lossy(&cached_body).to_string();
-                record_latency_ms(t0.elapsed().as_millis() as u64);
-                mark_last_ok();
-                // Trigger prefetch for successful 304 response
-                let et_local: Option<String> = cached_tier_entry.etag().cloned();
-                maybe_enqueue_prefetch(&resp, et_local.as_ref());
-                return Ok(cached_string);
+        // Check MIME allow list using reloadable config
+        if let Some(allow_list) = &config.mime_allow {
+            if let Some(ct) = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+            {
+                let allowed = allow_list.iter().any(|pat| ct.starts_with(pat));
+                if !allowed {
+                    set_last_error_with_host(
+                        SecurityErrorKind::MimeDeny,
+                        &host,
+                        format!("mime not allowed: {ct}"),
+                    );
+                    anyhow::bail!("content-type not allowed: {ct}");
+                }
             }
         }
-        anyhow::bail!("cache miss on 304 response");
-    }
 
-    // 若发生重定向，检查最终 URL
-    if resp.url() != &parsed {
-        let redirect_host = resp.url().host_str().unwrap_or("").to_string();
-        if let Err(e) = forbid_private_host_or_resolved_with_allowlist(resp.url()) {
-            inc_block_private_ip();
-            set_last_error_with_host(
-                SecurityErrorKind::PrivateBlocked,
-                &redirect_host,
-                format!("redirect->private: {e}"),
-            );
-            return Err(e);
-        }
-        if let Err(e) = forbid_private_host_or_resolved_async(resp.url()).await {
-            inc_block_private_ip();
-            set_last_error_with_host(
-                SecurityErrorKind::PrivateBlocked,
-                &redirect_host,
-                format!("redirect->dns-private: {e}"),
-            );
-            return Err(e);
-        }
-    }
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let code = resp.status().as_u16();
-        if (400..500).contains(&code) {
-            inc_upstream_4xx();
-            set_last_error_with_host(
-                SecurityErrorKind::Upstream4xx,
-                &host,
-                format!("upstream {status}"),
-            );
-        }
-        if (500..600).contains(&code) {
-            inc_upstream_5xx();
-            set_last_error_with_host(
-                SecurityErrorKind::Upstream5xx,
-                &host,
-                format!("upstream {status}"),
-            );
-        }
-        // Mark circuit breaker failure for server errors
-        if (500..600).contains(&code) {
-            if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
+        // Check MIME deny list using reloadable config
+        if let Some(deny_list) = &config.mime_deny {
+            if let Some(ct) = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+            {
+                let denied = deny_list.iter().any(|pat| ct.starts_with(pat));
+                if denied {
+                    set_last_error_with_host(
+                        SecurityErrorKind::MimeDeny,
+                        &host,
+                        format!("mime denied: {ct}"),
+                    );
+                    anyhow::bail!("content-type denied: {ct}");
+                }
             }
         }
-        anyhow::bail!("upstream status {status}");
-    }
-
-    // Check MIME allow list using reloadable config
-    if let Some(allow_list) = &config.mime_allow {
-        if let Some(ct) = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-        {
-            let allowed = allow_list.iter().any(|pat| ct.starts_with(pat));
-            if !allowed {
-                set_last_error_with_host(
-                    SecurityErrorKind::MimeDeny,
-                    &host,
-                    format!("mime not allowed: {ct}"),
-                );
-                anyhow::bail!("content-type not allowed: {ct}");
-            }
-        }
-    }
-
-    // Check MIME deny list using reloadable config
-    if let Some(deny_list) = &config.mime_deny {
-        if let Some(ct) = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-        {
-            let denied = deny_list.iter().any(|pat| ct.starts_with(pat));
-            if denied {
-                set_last_error_with_host(
-                    SecurityErrorKind::MimeDeny,
-                    &host,
-                    format!("mime denied: {ct}"),
-                );
-                anyhow::bail!("content-type denied: {ct}");
-            }
-        }
-    }
-    if let Some(cl) = resp.content_length() {
-        if cl as usize > size_limit {
-            inc_exceed_size();
-            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
-            anyhow::bail!("exceed size limit: {size_limit} bytes");
-        }
-    }
-    // Extract all data before consuming response
-    let response_etag = resp
-        .headers()
-        .get(reqwest::header::ETAG)
-        .and_then(|v| v.to_str().ok())
-        .map(std::string::ToString::to_string);
-
-    let response_content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(std::string::ToString::to_string);
-
-    let response_url = resp.url().clone();
-    let response_headers = resp.headers().clone();
-
-    let read_body = async {
-        let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
-        let mut stream = resp.bytes_stream();
-        use futures_util::StreamExt;
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            if body.len() + chunk.len() > size_limit {
+        if let Some(cl) = resp.content_length() {
+            if cl as usize > size_limit {
                 inc_exceed_size();
-                set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+                set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
                 anyhow::bail!("exceed size limit: {size_limit} bytes");
             }
-            body.extend_from_slice(&chunk);
         }
-        Ok::<bytes::BytesMut, anyhow::Error>(body)
-    };
+        // Extract all data before consuming response
+        let response_etag = resp
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(std::string::ToString::to_string);
 
-    let body = match timeout(std::time::Duration::from_millis(timeout_ms), read_body).await {
-        Ok(Ok(body)) => body,
-        Ok(Err(err)) => return Err(err),
-        Err(_) => {
-            inc_timeout();
-            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "read timeout");
-            return Err(anyhow::anyhow!("timeout"));
-        }
-    };
+        let response_content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(std::string::ToString::to_string);
 
-    // Record latency and mark success
-    let dt = t0.elapsed().as_millis() as u64;
-    record_latency_ms(dt);
+        let response_url = resp.url().clone();
+        let response_headers = resp.headers().clone();
 
-    let out = String::from_utf8_lossy(&body).to_string();
-
-    // Store in cache with ETag and Content-Type if available
-    if let Ok(mut lru) = cache::global().lock() {
-        let cache_entry = cache::CacheEntry {
-            etag: response_etag.clone(),
-            content_type: response_content_type,
-            body: body.to_vec(),
-            timestamp: std::time::Instant::now(),
+        let read_body = async {
+            let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
+            let mut stream = resp.bytes_stream();
+            use futures_util::StreamExt;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                if body.len() + chunk.len() > size_limit {
+                    inc_exceed_size();
+                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+                    anyhow::bail!("exceed size limit: {size_limit} bytes");
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok::<bytes::BytesMut, anyhow::Error>(body)
         };
 
-        lru.put(url.to_string(), cache_entry);
-    }
+        let body = match timeout(std::time::Duration::from_millis(timeout_ms), read_body).await {
+            Ok(Ok(body)) => body,
+            Ok(Err(err)) => return Err(err),
+            Err(_) => {
+                inc_timeout();
+                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "read timeout");
+                return Err(anyhow::anyhow!("timeout"));
+            }
+        };
 
-    // Mark circuit breaker success
-    if let Ok(mut br) = breaker::global().lock() {
-        br.mark_success(&host);
-    }
+        // Record latency and mark success
+        let dt = t0.elapsed().as_millis() as u64;
+        record_latency_ms(dt);
 
-    mark_last_ok();
-    // Trigger prefetch for successful 200 response
-    let et_local: Option<String> = response_etag.clone();
-    if let Some(ma) = cache_control_max_age(&response_headers) {
-        if ma >= 60 {
-            let _ = crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local);
+        let out = String::from_utf8_lossy(&body).to_string();
+
+        // Store in cache with ETag and Content-Type if available
+        if let Ok(mut lru) = cache::global().lock() {
+            let cache_entry = cache::CacheEntry {
+                etag: response_etag.clone(),
+                content_type: response_content_type,
+                body: body.to_vec(),
+                timestamp: std::time::Instant::now(),
+            };
+
+            lru.put(url.to_string(), cache_entry);
         }
-    }
+
+        // Mark circuit breaker success
+        if let Ok(mut br) = breaker::global().lock() {
+            br.mark_success(&host);
+        }
+
+        mark_last_ok();
+        // Trigger prefetch for successful 200 response
+        let et_local: Option<String> = response_etag.clone();
+        if let Some(ma) = cache_control_max_age(&response_headers) {
+            if ma >= 60 {
+                let _ =
+                    crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local);
+            }
+        }
         Ok(out)
     }
     .await;

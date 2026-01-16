@@ -97,7 +97,7 @@ impl DnsResolver {
 
         // PreferIPv6: AAAA first, then A
         if self.strategy == DnsStrategy::PreferIpv6 {
-             if let Ok(aaaa_answer) = &aaaa_result {
+            if let Ok(aaaa_answer) = &aaaa_result {
                 all_ips.extend(aaaa_answer.ips.clone());
                 min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
             }
@@ -107,18 +107,18 @@ impl DnsResolver {
             }
         } else {
             // Default (PreferIPv4) or fallback
-             if let Ok(a_answer) = &a_result {
+            if let Ok(a_answer) = &a_result {
                 all_ips.extend(a_answer.ips.clone());
                 min_ttl = Some(min_ttl.map_or(a_answer.ttl, |ttl| ttl.min(a_answer.ttl)));
             }
-             if let Ok(aaaa_answer) = &aaaa_result {
+            if let Ok(aaaa_answer) = &aaaa_result {
                 all_ips.extend(aaaa_answer.ips.clone());
                 min_ttl = Some(min_ttl.map_or(aaaa_answer.ttl, |ttl| ttl.min(aaaa_answer.ttl)));
             }
         }
 
         if all_ips.is_empty() {
-             // Return validation error compatible with existing tests
+            // Return validation error compatible with existing tests
             return Err(anyhow::Error::from(SbError::dns(format!(
                 "No DNS records for domain: {domain}"
             ))));
@@ -302,14 +302,18 @@ impl Resolver for DnsResolver {
 
     async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
         for up in &self.upstreams {
-            up.start(stage).await.map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", up.name(), e))?;
+            up.start(stage)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", up.name(), e))?;
         }
         Ok(())
     }
 
     async fn close(&self) -> Result<()> {
         for up in &self.upstreams {
-            up.close().await.map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", up.name(), e))?;
+            up.close()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", up.name(), e))?;
         }
         Ok(())
     }

@@ -107,7 +107,7 @@ impl OutboundManager {
     pub async fn remove(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
         // Remove from dependencies
         self.dependencies.write().await.remove(tag);
-        
+
         // Try adapters first
         let mut adapters = self.adapters.write().await;
         if let Some(adapter) = adapters.remove(tag) {
@@ -122,16 +122,22 @@ impl OutboundManager {
 
     /// Remove with dependency check (Go parity: ErrInvalid if tag is empty or has dependents).
     /// 带依赖检查的移除（Go 对等：标签为空或有依赖项时返回 ErrInvalid）。
-    pub async fn remove_with_check(&self, tag: &str) -> Result<Option<Arc<dyn OutboundConnector>>, String> {
+    pub async fn remove_with_check(
+        &self,
+        tag: &str,
+    ) -> Result<Option<Arc<dyn OutboundConnector>>, String> {
         if tag.is_empty() {
             return Err("empty tag invalid".to_string());
         }
-        
+
         // Check for dependents
         if self.has_dependents(tag).await {
-            return Err(format!("cannot remove '{}': other outbounds depend on it", tag));
+            return Err(format!(
+                "cannot remove '{}': other outbounds depend on it",
+                tag
+            ));
         }
-        
+
         Ok(self.remove(tag).await)
     }
 
@@ -157,12 +163,12 @@ impl OutboundManager {
                 warn!(tag = %tag, error = %e, "outbound: failed to close old adapter during replace");
             }
         }
-        
+
         // Replace in adapters
         let mut adapters = self.adapters.write().await;
         adapters.insert(tag.clone(), adapter);
         drop(adapters);
-        
+
         // Also remove from legacy if present
         let mut legacy = self.legacy_connectors.write().await;
         legacy.remove(&tag);
@@ -179,7 +185,7 @@ impl OutboundManager {
             }
             self.adapters.write().await.remove(&tag);
         }
-        
+
         // Replace in legacy connectors
         let mut legacy = self.legacy_connectors.write().await;
         legacy.insert(tag, connector);
@@ -190,7 +196,7 @@ impl OutboundManager {
     pub async fn list_tags(&self) -> Vec<String> {
         let adapters = self.adapters.read().await;
         let connectors = self.legacy_connectors.read().await;
-        
+
         let mut tags: Vec<String> = adapters.keys().cloned().collect();
         tags.extend(connectors.keys().cloned());
         tags
@@ -356,7 +362,10 @@ impl OutboundManager {
                 .filter(|(_, &deg)| deg > 0)
                 .map(|(tag, _)| tag.clone())
                 .collect();
-            return Err(format!("Dependency cycle detected involving: {:?}", cycle_nodes));
+            return Err(format!(
+                "Dependency cycle detected involving: {:?}",
+                cycle_nodes
+            ));
         }
 
         Ok(result)
@@ -438,14 +447,14 @@ mod tests {
     #[tokio::test]
     async fn test_outbound_manager_default_tag() {
         let manager = OutboundManager::new();
-        
+
         // No default initially
         assert!(manager.get_default().await.is_none());
-        
+
         // Set default
         manager.set_default(Some("proxy".to_string())).await;
         assert_eq!(manager.get_default().await, Some("proxy".to_string()));
-        
+
         // Clear default
         manager.set_default(None).await;
         assert!(manager.get_default().await.is_none());

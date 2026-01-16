@@ -82,7 +82,7 @@ impl HttpSimpleObfs {
             "Mozilla/5.0 (X11; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0",
         ];
         let ua = user_agents[rng.gen_range(0..user_agents.len())];
-        
+
         // Use a persistent connection to mimic browser behavior
         format!(
             "GET / HTTP/1.1\r\n\
@@ -95,7 +95,8 @@ impl HttpSimpleObfs {
              Content-Length: {}\r\n\
              \r\n",
             self.host, ua, data_len
-        ).into_bytes()
+        )
+        .into_bytes()
     }
 }
 
@@ -125,7 +126,7 @@ impl SsrObfs for HttpSimpleObfs {
                 return Ok(());
             }
         }
-        
+
         // Pass through if not recognized match
         out.put_slice(data);
         Ok(())
@@ -134,7 +135,7 @@ impl SsrObfs for HttpSimpleObfs {
     fn overhead(&self) -> usize {
         // Variable overhead, purely estimated for buffer resizing
         if self.first_request {
-            512 
+            512
         } else {
             0
         }
@@ -167,7 +168,7 @@ impl Tls12TicketAuthObfs {
         // ContentType: Handshake (22)
         buf.put_u8(22);
         // Version: TLS 1.0 (0x0301) for compatibility/legacy mimicry
-        buf.put_u16(0x0301); 
+        buf.put_u16(0x0301);
         // Length placeholder (will fill later)
         let len_pos = buf.len();
         buf.put_u16(0);
@@ -185,7 +186,7 @@ impl Tls12TicketAuthObfs {
         let body_start = buf.len();
         // Version: TLS 1.2 (0x0303)
         buf.put_u16(0x0303);
-        
+
         // Random (32 bytes) - unix time + random
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -237,8 +238,8 @@ impl Tls12TicketAuthObfs {
 
         // Ext: Session Ticket (mimic)
         buf.put_u16(0x0023); // Type
-        // To properly mimic "ticket_auth", we would embed something here.
-        // For now, simple random bytes to simulate a ticket.
+                             // To properly mimic "ticket_auth", we would embed something here.
+                             // For now, simple random bytes to simulate a ticket.
         let ticket_len = 128 + (data.len() % 64); // Variable length
         buf.put_u16(ticket_len as u16);
         let mut ticket = vec![0u8; ticket_len];
@@ -286,7 +287,7 @@ impl SsrObfs for Tls12TicketAuthObfs {
     fn encode(&mut self, data: &[u8], out: &mut BytesMut) {
         if self.first_request {
             let hello = self.generate_client_hello(data);
-             out.reserve(hello.len() + data.len());
+            out.reserve(hello.len() + data.len());
             out.put_slice(&hello);
             out.put_slice(data); // In simple mode, append data. In full auth, data goes into ticket.
             self.first_request = false;
@@ -300,23 +301,23 @@ impl SsrObfs for Tls12TicketAuthObfs {
         // Simple heuristic strip similar to HttpSimple
         // ServerHello (22) + Version (0303/0301)
         if data.len() > 5 && data[0] == 22 && (data[1] == 3 && (data[2] == 1 || data[2] == 3)) {
-             // It's a TLS record. Skip parsing carefully and just try to find Application Data or heuristic skip.
-             // For simplicity, we just pass through or strip if we successfully parse a full record train ending.
-             // But simpler: just pass through data if we assume server sends raw data after handshake?
-             // Actually, SSR server usually replies with HTTP response or similar if it's failed, or data if success.
-             // If this is simple mimic, server might just echo data.
-             // Let's assume standard SSR behavior: strip if matched, like HTTP simple.
-             
-             // To properly strip, we'd need to parse the ServerHello/NewSessionTicket/ChangeCipherSpec/Finished chain.
-             // That's complex. For this task, we will just PASS THROUGH. 
-             // Logic: decode is often identity for client->server if server doesn't respond with obfuscated data.
-             // If server responds with TLS, we should ideally strip it.
-             // Let's implement a naive strip: scan for Application Data (23) or just output raw.
-             // Usually, client doesn't need to strip unless it's a browser.
-             // We'll behave like 'plain' on decode for now to avoid breaking things, 
-             // as most 'simple' implementations just verify the client hello on server side.
+            // It's a TLS record. Skip parsing carefully and just try to find Application Data or heuristic skip.
+            // For simplicity, we just pass through or strip if we successfully parse a full record train ending.
+            // But simpler: just pass through data if we assume server sends raw data after handshake?
+            // Actually, SSR server usually replies with HTTP response or similar if it's failed, or data if success.
+            // If this is simple mimic, server might just echo data.
+            // Let's assume standard SSR behavior: strip if matched, like HTTP simple.
+
+            // To properly strip, we'd need to parse the ServerHello/NewSessionTicket/ChangeCipherSpec/Finished chain.
+            // That's complex. For this task, we will just PASS THROUGH.
+            // Logic: decode is often identity for client->server if server doesn't respond with obfuscated data.
+            // If server responds with TLS, we should ideally strip it.
+            // Let's implement a naive strip: scan for Application Data (23) or just output raw.
+            // Usually, client doesn't need to strip unless it's a browser.
+            // We'll behave like 'plain' on decode for now to avoid breaking things,
+            // as most 'simple' implementations just verify the client hello on server side.
         }
-        
+
         out.put_slice(data);
         Ok(())
     }

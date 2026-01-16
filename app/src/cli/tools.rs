@@ -142,15 +142,18 @@ async fn connect(
     network: Net,
     outbound: Option<String>,
 ) -> Result<()> {
-    let cfg = load_config_for_tools(global)?
-        .context("config required for tools connect")?;
+    let cfg = load_config_for_tools(global)?.context("config required for tools connect")?;
     match network {
         Net::Tcp => connect_tcp(addr.clone(), &cfg, outbound.clone()).await,
         Net::Udp => connect_udp(addr, &cfg, outbound).await,
     }
 }
 
-async fn connect_tcp(addr: String, cfg: &sb_config::Config, outbound: Option<String>) -> Result<()> {
+async fn connect_tcp(
+    addr: String,
+    cfg: &sb_config::Config,
+    outbound: Option<String>,
+) -> Result<()> {
     let ir = cfg.ir().clone();
 
     // Register adapters (if feature enabled) before building bridge
@@ -213,7 +216,11 @@ fn parse_addr(s: &str) -> Option<(String, u16)> {
     None
 }
 
-async fn connect_udp(addr: String, cfg: &sb_config::Config, outbound: Option<String>) -> Result<()> {
+async fn connect_udp(
+    addr: String,
+    cfg: &sb_config::Config,
+    outbound: Option<String>,
+) -> Result<()> {
     use tokio::net::UdpSocket;
     use tokio::time::{timeout, Duration};
 
@@ -656,8 +663,7 @@ async fn dns_lookup(
 }
 
 fn load_config_for_tools(global: &GlobalArgs) -> Result<Option<sb_config::Config>> {
-    let entries =
-        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
     if global.config.is_empty() && global.config_directory.is_empty() {
         if let [entry] = entries.as_slice() {
             if let ConfigSource::File(path) = &entry.source {

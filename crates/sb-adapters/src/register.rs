@@ -1274,14 +1274,18 @@ fn build_socks_inbound(
     use crate::inbound::socks::{DomainStrategy, SocksInboundConfig};
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
-    
-    let domain_strategy = param.domain_strategy.as_deref().and_then(|s| match s.to_ascii_lowercase().as_str() {
-        "asis" | "as_is" => Some(DomainStrategy::AsIs),
-        "useip" | "use_ip" => Some(DomainStrategy::UseIp),
-        "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
-        "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
-        _ => None,
-    });
+
+    let domain_strategy =
+        param
+            .domain_strategy
+            .as_deref()
+            .and_then(|s| match s.to_ascii_lowercase().as_str() {
+                "asis" | "as_is" => Some(DomainStrategy::AsIs),
+                "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+                "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+                "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+                _ => None,
+            });
 
     let cfg = SocksInboundConfig {
         tag: param.tag.clone(),
@@ -1317,13 +1321,17 @@ fn build_mixed_inbound(
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
 
-    let domain_strategy = param.domain_strategy.as_deref().and_then(|s| match s.to_ascii_lowercase().as_str() {
-        "asis" | "as_is" => Some(DomainStrategy::AsIs),
-        "useip" | "use_ip" => Some(DomainStrategy::UseIp),
-        "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
-        "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
-        _ => None,
-    });
+    let domain_strategy =
+        param
+            .domain_strategy
+            .as_deref()
+            .and_then(|s| match s.to_ascii_lowercase().as_str() {
+                "asis" | "as_is" => Some(DomainStrategy::AsIs),
+                "useip" | "use_ip" => Some(DomainStrategy::UseIp),
+                "useipv4" | "use_ipv4" => Some(DomainStrategy::UseIpv4),
+                "useipv6" | "use_ipv6" => Some(DomainStrategy::UseIpv6),
+                _ => None,
+            });
 
     let cfg = MixedInboundConfig {
         tag: param.tag.clone(),

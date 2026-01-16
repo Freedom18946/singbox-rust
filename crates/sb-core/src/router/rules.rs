@@ -197,17 +197,21 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             geoip: ir.geoip.clone(),
             source_ip_cidr: ir.source.iter().filter_map(|s| s.parse().ok()).collect(),
             source_geoip: Vec::new(), // ir.source_geoip not available
-            port: ir.port.iter().filter_map(|s| s.parse().ok()).collect(), 
-            port_range: ir.port.iter().filter_map(|s| {
-                if let Some((start, end)) = s.split_once('-') {
-                     let start = start.parse().ok()?;
-                     let end = end.parse().ok()?;
-                     Some((start, end))
-                } else {
-                    None
-                }
-            }).collect(),
-            source_port: Vec::new(), 
+            port: ir.port.iter().filter_map(|s| s.parse().ok()).collect(),
+            port_range: ir
+                .port
+                .iter()
+                .filter_map(|s| {
+                    if let Some((start, end)) = s.split_once('-') {
+                        let start = start.parse().ok()?;
+                        let end = end.parse().ok()?;
+                        Some((start, end))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            source_port: Vec::new(),
             source_port_range: Vec::new(),
             network: ir.network.clone(),
             protocol: ir.protocol.clone(),
@@ -221,7 +225,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             inbound_tag: Vec::new(),
             auth_user: Vec::new(),
             query_type: Vec::new(), // RuleIR doesn't typically have query_type for routing
-            ip_is_private: false, // Default
+            ip_is_private: false,   // Default
             ip_version: Vec::new(),
             clash_mode: ir.clash_mode.clone(),
             client: ir.client.clone(),
@@ -234,20 +238,19 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             // Existing matchers have negation lists. CompositeRule logic is: if negation matches -> false; all positive matches -> true.
             // If invert is true, result = !result.
             // CompositeRule matches() returns bool.
-            
+
             // Wait, does CompositeRule have an `invert` field? It does NOT.
             // RuleIR's `invert` field inverts the FINAL result.
             // We should add `invert` to CompositeRule or handle it in `matches`.
             // Let's add `invert` to CompositeRule.
             // ...
-            
             outbound_tag: ir.outbound_tag.clone(),
             user: ir.user.clone(),
             user_id: ir.user_id.clone(),
             group: ir.group.clone(),
             group_id: ir.group_id.clone(),
             adguard: Vec::new(), // Todo: Parse adguard strings? IR uses `adguard` field? RuleIR doesn't seem to have adguard field in the snippet I saw.
-            
+
             // Negation fields
             not_domain: ir.not_domain.clone(),
             not_domain_suffix: ir.not_domain_suffix.clone(),
@@ -255,20 +258,32 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             // not_domain_regex: ... (handled by regex set if applicable, or we use vec)
             not_domain_regex,
             not_geosite: ir.not_geosite.clone(),
-            not_ip_cidr: ir.not_ipcidr.iter().filter_map(|s| s.parse().ok()).collect(),
+            not_ip_cidr: ir
+                .not_ipcidr
+                .iter()
+                .filter_map(|s| s.parse().ok())
+                .collect(),
             not_geoip: ir.not_geoip.clone(),
-            not_source_ip_cidr: ir.not_source.iter().filter_map(|s| s.parse().ok()).collect(),
+            not_source_ip_cidr: ir
+                .not_source
+                .iter()
+                .filter_map(|s| s.parse().ok())
+                .collect(),
             not_source_geoip: Vec::new(), // ir.not_source_geoip doesn't exist?
             not_port: ir.not_port.iter().filter_map(|s| s.parse().ok()).collect(),
-            not_port_range: ir.not_port.iter().filter_map(|s| {
-                if let Some((start, end)) = s.split_once('-') {
-                    let start = start.parse().ok()?;
-                    let end = end.parse().ok()?;
-                    Some((start, end))
-                } else {
-                    None
-                }
-            }).collect(),
+            not_port_range: ir
+                .not_port
+                .iter()
+                .filter_map(|s| {
+                    if let Some((start, end)) = s.split_once('-') {
+                        let start = start.parse().ok()?;
+                        let end = end.parse().ok()?;
+                        Some((start, end))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             not_source_port: Vec::new(),
             not_source_port_range: Vec::new(),
             not_network: ir.not_network.clone(),
@@ -293,7 +308,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             not_group: ir.not_group.clone(),
             not_group_id: ir.not_group_id.clone(),
             not_adguard: Vec::new(),
-            
+
             // Missing fields from CompositeRule definition I saw?
             // ip_accept_any?
             ip_accept_any: false, // Default
@@ -667,7 +682,7 @@ impl CompositeRule {
             };
             return if self.invert { !result } else { result };
         }
-        
+
         // 1. Negation checks (if any match, rule fails)
         if !self.not_domain.is_empty() {
             if let Some(domain) = ctx.domain {
@@ -1263,7 +1278,11 @@ impl CompositeRule {
             } else {
                 crate::adapter::clash::get_mode().to_string()
             };
-            if !self.clash_mode.iter().any(|m| m.eq_ignore_ascii_case(&mode)) {
+            if !self
+                .clash_mode
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&mode))
+            {
                 return false;
             }
         }

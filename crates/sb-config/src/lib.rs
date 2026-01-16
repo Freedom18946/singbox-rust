@@ -438,10 +438,7 @@ impl Config {
             .collect();
         if !errors.is_empty() {
             let first = &errors[0];
-            let ptr = first
-                .get("ptr")
-                .and_then(|p| p.as_str())
-                .unwrap_or("/");
+            let ptr = first.get("ptr").and_then(|p| p.as_str()).unwrap_or("/");
             let msg = first
                 .get("msg")
                 .and_then(|m| m.as_str())
@@ -576,7 +573,10 @@ pub fn config_from_raw_value(raw: Value) -> Result<(Config, ir::ConfigIR)> {
     if !errors.is_empty() {
         let first = &errors[0];
         let ptr = first.get("ptr").and_then(|p| p.as_str()).unwrap_or("/");
-        let msg = first.get("msg").and_then(|m| m.as_str()).unwrap_or("validation error");
+        let msg = first
+            .get("msg")
+            .and_then(|m| m.as_str())
+            .unwrap_or("validation error");
         return Err(anyhow!("schema validation failed at {}: {}", ptr, msg));
     }
 
@@ -585,7 +585,6 @@ pub fn config_from_raw_value(raw: Value) -> Result<(Config, ir::ConfigIR)> {
     let ir = crate::present::to_ir(&cfg)?;
     Ok((cfg, ir))
 }
-
 
 pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     use serde_json::Map;
@@ -622,7 +621,6 @@ pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     merged.insert("schema_version".to_string(), Value::from(2));
     Value::Object(merged)
 }
-
 
 fn default_vless_network() -> String {
     "tcp".to_string()
@@ -811,13 +809,19 @@ outbounds:
         }"#;
         let raw: Value = serde_json::from_str(json).unwrap();
         let cfg = Config::from_value(raw).unwrap();
-        
+
         // The Rule struct's domain_suffix should come from IR's domain_suffix, not domain
         assert_eq!(cfg.rules.len(), 1);
-        assert!(cfg.rules[0].domain_suffix.contains(&".example.com".to_string()));
-        assert!(cfg.rules[0].domain_suffix.contains(&".google.com".to_string()));
+        assert!(cfg.rules[0]
+            .domain_suffix
+            .contains(&".example.com".to_string()));
+        assert!(cfg.rules[0]
+            .domain_suffix
+            .contains(&".google.com".to_string()));
         // domain_suffix should NOT contain "exact.com" (that's from domain field)
-        assert!(!cfg.rules[0].domain_suffix.contains(&"exact.com".to_string()));
+        assert!(!cfg.rules[0]
+            .domain_suffix
+            .contains(&"exact.com".to_string()));
     }
 
     #[test]
@@ -861,7 +865,10 @@ outbounds:
         let ir = crate::validator::v2::to_ir_v1(&raw);
         assert_eq!(ir.route.rules.len(), 1);
         assert_eq!(ir.route.rules[0].action, crate::ir::RuleAction::Hijack);
-        assert_eq!(ir.route.rules[0].override_address, Some("1.1.1.1".to_string()));
+        assert_eq!(
+            ir.route.rules[0].override_address,
+            Some("1.1.1.1".to_string())
+        );
         assert_eq!(ir.route.rules[0].override_port, Some(53));
     }
 

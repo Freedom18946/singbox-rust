@@ -62,11 +62,11 @@ pub mod hardening;
 pub mod http_util;
 #[cfg(feature = "panic_log")]
 pub mod panic;
+pub mod run_engine;
 pub mod telemetry;
 #[cfg(feature = "dev-cli")]
 pub mod tracing_init;
 pub mod util;
-pub mod run_engine;
 
 // Router facade - available always, but functionality gated by feature
 pub mod router;

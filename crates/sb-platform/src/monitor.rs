@@ -260,7 +260,10 @@ fn get_network_type_macos() -> &'static str {
     if names.iter().any(|n| n.starts_with("pdp_ip")) {
         return "cellular";
     }
-    if names.iter().any(|n| n.starts_with("awdl") || n.starts_with("llw")) {
+    if names
+        .iter()
+        .any(|n| n.starts_with("awdl") || n.starts_with("llw"))
+    {
         return "wifi";
     }
     if names.iter().any(|n| n.starts_with("en")) {
@@ -273,9 +276,8 @@ fn get_network_type_macos() -> &'static str {
 #[cfg(target_os = "windows")]
 fn get_network_type_windows() -> &'static str {
     use windows::Win32::NetworkManagement::IpHelper::{
-        GetAdaptersAddresses, GAA_FLAG_INCLUDE_PREFIX, IF_TYPE_ETHERNET_CSMACD,
-        IF_TYPE_IEEE80211, IF_TYPE_SOFTWARE_LOOPBACK, IF_TYPE_WWANPP, IF_TYPE_WWANPP2,
-        IP_ADAPTER_ADDRESSES_LH,
+        GetAdaptersAddresses, GAA_FLAG_INCLUDE_PREFIX, IF_TYPE_ETHERNET_CSMACD, IF_TYPE_IEEE80211,
+        IF_TYPE_SOFTWARE_LOOPBACK, IF_TYPE_WWANPP, IF_TYPE_WWANPP2, IP_ADAPTER_ADDRESSES_LH,
     };
     use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
     use windows::Win32::Networking::WinSock::AF_UNSPEC;
@@ -309,9 +311,7 @@ fn get_network_type_windows() -> &'static str {
     unsafe {
         while !adapter_ptr.is_null() {
             let adapter = &*adapter_ptr;
-            if adapter.OperStatus == IfOperStatusUp
-                && adapter.IfType != IF_TYPE_SOFTWARE_LOOPBACK
-            {
+            if adapter.OperStatus == IfOperStatusUp && adapter.IfType != IF_TYPE_SOFTWARE_LOOPBACK {
                 match adapter.IfType {
                     IF_TYPE_WWANPP | IF_TYPE_WWANPP2 => saw_cellular = true,
                     IF_TYPE_IEEE80211 => saw_wifi = true,

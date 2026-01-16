@@ -302,7 +302,9 @@ pub(crate) async fn handle_conn(
                         .v2ray_server
                         .as_ref()
                         .and_then(|s| s.stats())
-                        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
+                        .and_then(|stats| {
+                            stats.traffic_recorder(None, Some(out_name.as_str()), None)
+                        });
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
@@ -338,6 +340,7 @@ pub(crate) async fn handle_conn(
                                                 if relay_c.send_to(&pkt, ep).await.is_ok() {
                                                     if let Some(ref recorder) = traffic_c {
                                                         recorder.record_down(data.len() as u64);
+                                                        recorder.record_down_packet(1);
                                                     }
                                                 }
                                             }
@@ -356,13 +359,14 @@ pub(crate) async fn handle_conn(
                         }
                     }
 
-                    if let Some(ref sess) = udp_sess {
-                        if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
-                            if let Some(ref recorder) = traffic {
-                                recorder.record_up(payload.len() as u64);
+                        if let Some(ref sess) = udp_sess {
+                            if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
+                                if let Some(ref recorder) = traffic {
+                                    recorder.record_up(payload.len() as u64);
+                                    recorder.record_up_packet(1);
+                                }
                             }
-                        }
-                    } else {
+                        } else {
                         // Direct UDP via NAT entry per (client, dst)
                         use crate::net::udp_nat::{NatKey, TargetAddr as Tgt};
                         let dst = if let Ok(ip) = dst_host.parse::<std::net::IpAddr>() {
@@ -424,6 +428,7 @@ pub(crate) async fn handle_conn(
                                         if relay_c.send_to(&pkt, client_c).await.is_ok() {
                                             if let Some(ref recorder) = traffic_c {
                                                 recorder.record_down(m as u64);
+                                                recorder.record_down_packet(1);
                                             }
                                         }
                                     }
@@ -438,6 +443,7 @@ pub(crate) async fn handle_conn(
                         if upstream.send(payload).await.is_ok() {
                             if let Some(ref recorder) = traffic {
                                 recorder.record_up(payload.len() as u64);
+                                recorder.record_up_packet(1);
                             }
                         }
                     }

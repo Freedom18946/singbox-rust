@@ -294,12 +294,10 @@ async fn test_ss_multi_user_auth() {
     };
 
     // Start multiple SS servers with different passwords (simulating multi-user)
-    let Some((server1_addr, _stop_tx1)) = start_ss_server("aes-256-gcm", "user1-pass").await
-    else {
+    let Some((server1_addr, _stop_tx1)) = start_ss_server("aes-256-gcm", "user1-pass").await else {
         return;
     };
-    let Some((server2_addr, _stop_tx2)) = start_ss_server("aes-256-gcm", "user2-pass").await
-    else {
+    let Some((server2_addr, _stop_tx2)) = start_ss_server("aes-256-gcm", "user2-pass").await else {
         return;
     };
 

@@ -8,12 +8,12 @@
 //!   - run this inbound with the same `listen` port.
 
 use anyhow::{anyhow, Result};
+use sb_core::net::metered;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
 use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
-use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -213,7 +213,9 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("redirect: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("redirect: rejected by rules"))
+        }
         // Sniff/Resolve/Hijack not yet supported in inbound handlers
         _ => return Err(anyhow!("redirect: unsupported routing action")),
     };

@@ -386,7 +386,6 @@ pub enum TransportConfig {
     },
 }
 
-
 fn default_ws_path() -> String {
     "/".to_string()
 }

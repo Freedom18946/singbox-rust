@@ -46,10 +46,8 @@ pub struct UpstreamArgs {
 }
 
 pub fn run(global: &GlobalArgs, args: DnsArgs) -> Result<()> {
-    let entries =
-        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
-    let cfg = config_loader::load_config(&entries)
-        .with_context(|| "load config for DNS tools")?;
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let cfg = config_loader::load_config(&entries).with_context(|| "load config for DNS tools")?;
     match args.command {
         DnsCommands::Query(query_args) => run_query(&cfg, query_args),
         DnsCommands::Cache(cache_args) => run_cache(&cfg, cache_args),

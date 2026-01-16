@@ -99,24 +99,29 @@ impl DerpClient {
         // Check if port is missing
         let host_port_str = if addr_str.contains(']') {
             // IPv6 [host]:port
-             if !addr_str.ends_with(']') && addr_str.rfind(':').map(|c| c > addr_str.rfind(']').unwrap()).unwrap_or(false) {
-                 addr_str.to_string()
-             } else {
-                 format!("{}:{}", addr_str, default_port)
-             }
+            if !addr_str.ends_with(']')
+                && addr_str
+                    .rfind(':')
+                    .map(|c| c > addr_str.rfind(']').unwrap())
+                    .unwrap_or(false)
+            {
+                addr_str.to_string()
+            } else {
+                format!("{}:{}", addr_str, default_port)
+            }
         } else if addr_str.contains(':') {
-             // IPv4 or host:port
-             // If multiple colons, it might be raw IPv6 without brackets (which is invalid for SocketAddr lookup usually, needs brackets)
-             // But assume standard host:port or ipv4:port
-             // If it has one colon, it has port.
-             // If more than one... could be IPv6? tokio lookup handles raw IPv6 sometimes provided.
-             // But standard URL format for IPv6 is [addr]:port.
-             // Let's rely on if it parses.
-             if addr_str.rfind(':').is_some() {
-                 addr_str.to_string()
-             } else {
-                 format!("{}:{}", addr_str, default_port)
-             }
+            // IPv4 or host:port
+            // If multiple colons, it might be raw IPv6 without brackets (which is invalid for SocketAddr lookup usually, needs brackets)
+            // But assume standard host:port or ipv4:port
+            // If it has one colon, it has port.
+            // If more than one... could be IPv6? tokio lookup handles raw IPv6 sometimes provided.
+            // But standard URL format for IPv6 is [addr]:port.
+            // Let's rely on if it parses.
+            if addr_str.rfind(':').is_some() {
+                addr_str.to_string()
+            } else {
+                format!("{}:{}", addr_str, default_port)
+            }
         } else {
             format!("{}:{}", addr_str, default_port)
         };
@@ -145,9 +150,12 @@ impl DerpClient {
                 trace!("Received DERP server key: {:02x?}", key);
                 if let Some(expected) = self.expected_server_key {
                     if key != expected {
-                         return Err(io::Error::new(
+                        return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            format!("Server key mismatch: expected {:02x?}, got {:02x?}", expected, key),
+                            format!(
+                                "Server key mismatch: expected {:02x?}, got {:02x?}",
+                                expected, key
+                            ),
                         ));
                     }
                 }

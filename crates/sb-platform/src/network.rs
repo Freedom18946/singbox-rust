@@ -132,7 +132,7 @@ fn get_mac_windows(iface: &str) -> Result<MacAddress, String> {
         };
 
         match result.0 {
-            0 => break, // ERROR_SUCCESS
+            0 => break,      // ERROR_SUCCESS
             111 => continue, // ERROR_BUFFER_OVERFLOW - retry with new size
             code => return Err(format!("GetAdaptersAddresses failed with error {code}")),
         }

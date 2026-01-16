@@ -90,11 +90,7 @@ pub trait DnsRouter: Send + Sync {
     ///
     /// This is the low-level interface that takes raw DNS wire-format messages.
     /// 这是接收原始 DNS 线格式消息的低级接口。
-    async fn exchange(
-        &self,
-        ctx: &DnsQueryContext,
-        message: &[u8],
-    ) -> Result<Vec<u8>>;
+    async fn exchange(&self, ctx: &DnsQueryContext, message: &[u8]) -> Result<Vec<u8>>;
 
     /// Lookup IP addresses for a domain using routing rules.
     /// 使用路由规则查找域名的 IP 地址。
@@ -132,11 +128,7 @@ pub struct NullDnsRouter;
 
 #[async_trait]
 impl DnsRouter for NullDnsRouter {
-    async fn exchange(
-        &self,
-        _ctx: &DnsQueryContext,
-        _message: &[u8],
-    ) -> Result<Vec<u8>> {
+    async fn exchange(&self, _ctx: &DnsQueryContext, _message: &[u8]) -> Result<Vec<u8>> {
         Err(anyhow::anyhow!("NullDnsRouter: exchange not supported"))
     }
 
@@ -145,7 +137,9 @@ impl DnsRouter for NullDnsRouter {
     }
 
     async fn lookup_default(&self, _domain: &str) -> Result<Vec<IpAddr>> {
-        Err(anyhow::anyhow!("NullDnsRouter: lookup_default not supported"))
+        Err(anyhow::anyhow!(
+            "NullDnsRouter: lookup_default not supported"
+        ))
     }
 
     async fn resolve(&self, _ctx: &DnsQueryContext, _domain: &str) -> Result<DnsAnswer> {

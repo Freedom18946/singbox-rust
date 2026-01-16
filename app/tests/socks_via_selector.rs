@@ -12,8 +12,10 @@ fn start_echo() -> Option<(std::net::SocketAddr, thread::JoinHandle<()>)> {
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping socks selector test: cannot bind echo server ({err})");
                 return None;
             }
@@ -80,8 +82,10 @@ fn end2end_via_selector() {
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping socks selector test: cannot bind socks listener ({err})");
                 return;
             }

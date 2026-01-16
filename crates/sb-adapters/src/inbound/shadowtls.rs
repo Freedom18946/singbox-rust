@@ -11,13 +11,13 @@
 
 use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundService;
+use sb_core::net::metered;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -173,9 +173,10 @@ where
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
     let (mut upstream, outbound_tag) = match decision {
-        RDecision::Direct => {
-            (direct_connect_hostport(&host, port, &opts).await?, Some("direct".to_string()))
-        }
+        RDecision::Direct => (
+            direct_connect_hostport(&host, port, &opts).await?,
+            Some("direct".to_string()),
+        ),
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("shadowtls".into(), "default".into());
             if let Some(reg) = registry::global() {
@@ -240,7 +241,9 @@ where
             };
             (stream, Some(tag.to_string()))
         }
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("shadowtls: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("shadowtls: rejected by rules"))
+        }
         _ => return Err(anyhow!("shadowtls: unsupported routing action")),
     };
 

@@ -245,7 +245,7 @@ mod ssh_server {
                             match read_half.read(&mut buf).await {
                                 Ok(0) => {
                                     debug!(target = %target, "Target connection closed");
-                                    let _ = session_handle.close(channel_id);
+                                    let _ = session_handle.close(channel_id).await;
                                     break;
                                 }
                                 Ok(n) => {
@@ -256,7 +256,7 @@ mod ssh_server {
                                 }
                                 Err(e) => {
                                     warn!(error = %e, "Read from target failed");
-                                    let _ = session_handle.close(channel_id);
+                                    let _ = session_handle.close(channel_id).await;
                                     break;
                                 }
                             }
@@ -286,8 +286,8 @@ mod ssh_server {
                     "SSH channel data forwarding"
                 );
                 if let Err(e) = state.writer.write_all(data).await {
-                     warn!(error = %e, "Failed to write to target");
-                     return Ok(()); // Connection closed effectively
+                    warn!(error = %e, "Failed to write to target");
+                    return Ok(()); // Connection closed effectively
                 }
             }
             Ok(())
@@ -345,10 +345,7 @@ mod ssh_server {
         /// Run the SSH server using russh
         pub async fn run_ssh_server(&self) -> std::io::Result<()> {
             // Get or generate server key
-            let key = self
-                .get_server_key()
-                .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let key = self.get_server_key().await.map_err(std::io::Error::other)?;
 
             // Configure SSH server
             let config = server::Config {
@@ -477,7 +474,7 @@ impl InboundService for SshInboundAdapter {
                     .build()
                     .map(|rt| rt.handle().clone())
             })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         let listen = self.listen;
         let shutdown = self.shutdown.clone();

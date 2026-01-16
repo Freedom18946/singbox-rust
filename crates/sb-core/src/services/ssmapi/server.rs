@@ -7,11 +7,11 @@ use sb_config::ir::ServiceIR;
 
 use std::collections::BTreeMap;
 
+use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use socket2::{Domain, Protocol, Socket, Type};
 
 /// Go-parity cache structure: per-endpoint traffic + users.
 /// Go reference: `service/ssmapi/cache.go`
@@ -104,7 +104,7 @@ pub struct SsmapiService {
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
     /// Optional path for cache persistence.
     cache_path: Option<PathBuf>,
-    
+
     // TLS Configuration
     /// TLS certificate path (enables HTTPS + HTTP/2).
     tls_cert_path: Option<PathBuf>,
@@ -200,18 +200,21 @@ impl SsmapiService {
         let (tls_cert_path, tls_key_path, tls_cert_pem, tls_key_pem) =
             if ir.tls.as_ref().is_some_and(|t| t.enabled) {
                 let tls = ir.tls.as_ref().expect("checked above");
-                
+
                 let cert_path = tls.certificate_path.as_ref().map(PathBuf::from);
                 let key_path = tls.key_path.as_ref().map(PathBuf::from);
-                
-                let cert_pem = tls.certificate.as_ref().map(|lines| lines.join("\n").into_bytes());
+
+                let cert_pem = tls
+                    .certificate
+                    .as_ref()
+                    .map(|lines| lines.join("\n").into_bytes());
                 let key_pem = tls.key.as_ref().map(|lines| lines.join("\n").into_bytes());
 
                 let has_path = cert_path.is_some() && key_path.is_some();
                 let has_pem = cert_pem.is_some() && key_pem.is_some();
 
                 if !has_path && !has_pem {
-                     return Err(
+                    return Err(
                         "ssm-api: tls enabled but missing certificate/key (path or inline)".into(),
                     );
                 }
@@ -252,9 +255,9 @@ impl SsmapiService {
     /// Create a customized TCP listener with options (socket2).
     fn create_listener(&self) -> std::io::Result<tokio::net::TcpListener> {
         let domain = if self.listen_addr.is_ipv4() {
-             Domain::IPV4
+            Domain::IPV4
         } else {
-             Domain::IPV6
+            Domain::IPV6
         };
         let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
 
@@ -264,7 +267,7 @@ impl SsmapiService {
             #[cfg(not(windows))]
             socket.set_reuse_port(true)?;
         }
-        
+
         // Apply routing mark (Linux only)
         #[cfg(target_os = "linux")]
         if let Some(mark) = self.routing_mark {
@@ -275,20 +278,20 @@ impl SsmapiService {
         // Note: socket2 bind_device_by_index_v4 is available, but string binding requires unsafe or libc
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(ref iface) = self.bind_interface {
-             socket.bind_to_device(Some(iface.as_bytes()))?;
+            socket.bind_to_device(Some(iface.as_bytes()))?;
         }
 
         // Apply TCP Fast Open
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.tcp_fast_open {
-             // 256 is a common backlog size for TFO
-             socket.set_tcp_fastopen(256)?;
+            // 256 is a common backlog size for TFO
+            socket.set_tcp_fastopen(256)?;
         }
 
         // Bind and listen
         socket.bind(&self.listen_addr.into())?;
         socket.listen(128)?;
-        
+
         // Convert to tokio TcpListener
         socket.set_nonblocking(true)?;
         let std_listener: std::net::TcpListener = socket.into();
@@ -546,7 +549,7 @@ impl Service for SsmapiService {
                 let tls_key_path = self.tls_key_path.clone();
                 let tls_cert_pem = self.tls_cert_pem.clone();
                 let tls_key_pem = self.tls_key_pem.clone();
-                
+
                 // Create listener using options
                 let listener = match self.create_listener() {
                     Ok(l) => l,
@@ -562,12 +565,25 @@ impl Service for SsmapiService {
 
                 tokio::spawn(async move {
                     // Check if TLS is configured
-                    let tls_config_res = if let (Some(cert_path), Some(key_path)) = (&tls_cert_path, &tls_key_path) {
-                         Some(axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await)
+                    let tls_config_res = if let (Some(cert_path), Some(key_path)) =
+                        (&tls_cert_path, &tls_key_path)
+                    {
+                        Some(
+                            axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                                cert_path, key_path,
+                            )
+                            .await,
+                        )
                     } else if let (Some(cert_pem), Some(key_pem)) = (&tls_cert_pem, &tls_key_pem) {
-                         Some(axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem.clone(), key_pem.clone()).await)
+                        Some(
+                            axum_server::tls_rustls::RustlsConfig::from_pem(
+                                cert_pem.clone(),
+                                key_pem.clone(),
+                            )
+                            .await,
+                        )
                     } else {
-                         None
+                        None
                     };
 
                     if let Some(config_res) = tls_config_res {
@@ -598,7 +614,7 @@ impl Service for SsmapiService {
                             tracing::info!(service = "ssm-api", "Received shutdown signal");
                             handle_clone.shutdown();
                         });
-                        
+
                         // Convert back to std::net::TcpListener for axum_server
                         let std_listener = match listener.into_std() {
                             Ok(l) => {
@@ -648,7 +664,7 @@ impl Service for SsmapiService {
                         }
                     }
                 });
-                
+
                 Ok(())
             }
             StartStage::PostStart => {

@@ -7,7 +7,10 @@ fn serve_once(addr: &str) -> Option<()> {
     let listener = match TcpListener::bind(addr) {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping report health test: cannot bind {addr} ({err})");
                 return None;
             }

@@ -106,9 +106,10 @@ impl DirectForward {
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "connect timeout"))??;
 
-        let traffic = self.stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
-        });
+        let traffic = self
+            .stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
         let _ = metered::copy_bidirectional_streaming_ctl(
             &mut cli,
             &mut upstream,
@@ -171,9 +172,10 @@ impl DirectForward {
             "direct inbound UDP listening"
         );
 
-        let traffic = self.stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
-        });
+        let traffic = self
+            .stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
 
         let mut buf = vec![0u8; 65536];
         let cleanup_interval = Duration::from_secs(30);
@@ -203,6 +205,7 @@ impl DirectForward {
 
             if let Some(ref recorder) = traffic {
                 recorder.record_up(n as u64);
+                recorder.record_up_packet(1);
             }
 
             let packet = &buf[..n];
@@ -242,17 +245,13 @@ impl DirectForward {
         // Spawn task to relay packets from upstream back to client
         let me = self.clone_for_spawn();
         let upstream_clone = upstream.clone();
-        let traffic = self.stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None)
-        });
+        let traffic = self
+            .stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
         tokio::spawn(async move {
-            me.relay_udp_upstream_to_client(
-                upstream_clone,
-                client_addr,
-                listen_socket,
-                traffic,
-            )
-            .await;
+            me.relay_udp_upstream_to_client(upstream_clone, client_addr, listen_socket, traffic)
+                .await;
         });
 
         sessions.insert(
@@ -300,6 +299,7 @@ impl DirectForward {
                     }
                     if let Some(ref recorder) = traffic {
                         recorder.record_down(n as u64);
+                        recorder.record_down_packet(1);
                     }
                 }
                 Ok(Err(e)) => {

@@ -10,6 +10,9 @@
 //!    绝不破坏用户空间：任何加载失败均不切换现行索引。
 
 // 重要：确保 engine 子模块对外可见，供 sb-core/src/lib.rs 重导出使用
+pub mod builder;
+/// Connection manager (Go parity: route/conn.go)
+pub mod conn;
 pub mod dns;
 pub mod dns_bridge;
 pub mod dns_integration;
@@ -20,14 +23,11 @@ pub mod hot_reload_cli;
 #[cfg(feature = "json")]
 pub mod json_bridge;
 pub mod process_router;
-pub mod rule_set;
-pub mod rules;
-pub mod builder;
-pub mod runtime;
 /// Route connection interface (Go parity: route.Router)
 pub mod route_connection;
-/// Connection manager (Go parity: route/conn.go)
-pub mod conn;
+pub mod rule_set;
+pub mod rules;
+pub mod runtime;
 /// Protocol sniffing (stage 1: no-op stubs)
 pub mod sniff;
 // R13：导出 analyze（离线分析，不影响运行路径）
@@ -93,6 +93,10 @@ pub use explain_bridge::rebuild_index;
 #[cfg(feature = "explain")]
 pub use explain_index::get_index;
 // 为了兼容历史导出路径：router::{RouterHandle,RouteCtx,Transport,Router,RouteDecision,RouteTarget,DnsResolve,DnsResult}
+pub use self::conn::{
+    port_protocol, protocol_timeout, CloseHandler, ConnectionManager as RouteConnectionManager,
+    Dialer, DirectDialer, InboundContext, TCP_CONNECT_TIMEOUT, UDP_TIMEOUT,
+};
 pub use self::dns_bridge::{DnsResolverBridge, EnhancedDnsResolver};
 pub use self::dns_integration::{
     setup_dns_routing, setup_dns_routing_with_config, setup_dns_routing_with_resolver,
@@ -105,10 +109,6 @@ pub use self::hot_reload_cli::{
     show_rule_stats, start_hot_reload_cli, validate_rule_files, HotReloadCliConfig,
 };
 pub use self::route_connection::{ConnectionRouter, DirectRouter, RouteResult};
-pub use self::conn::{
-    ConnectionManager as RouteConnectionManager, Dialer, DirectDialer, InboundContext,
-    CloseHandler, TCP_CONNECT_TIMEOUT, UDP_TIMEOUT, port_protocol, protocol_timeout,
-};
 pub use crate::outbound::RouteTarget;
 pub use crate::routing::engine::Input;
 

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use hmac::{Hmac, Mac};
-use sha1::Sha1;
+use md5::{Digest, Md5};
 use rand::Rng;
-use md5::{Md5, Digest};
+use sha1::Sha1;
 /// Trait for ShadowsocksR protocol.
 pub trait SsrProtocol: Send + Sync {
     /// Pre-handshake (client -> server).
@@ -101,40 +101,41 @@ impl AuthSha1V4Protocol {
 
 impl SsrProtocol for AuthSha1V4Protocol {
     fn client_pre_encrypt(&mut self, data: &[u8], out: &mut BytesMut) {
-        if self.first_packet { // Correction: using first_packet logic
-             // Common SSR auth_sha1_v4 structure (simplified for interoperability layer):
-             // [HMAC(7-10)][ClientID(4)][ConnID(4)][Timestamp(4)]
-             // Real impl is more complex, but this removes the stub.
-             
-             let timestamp = std::time::SystemTime::now()
+        if self.first_packet {
+            // Correction: using first_packet logic
+            // Common SSR auth_sha1_v4 structure (simplified for interoperability layer):
+            // [HMAC(7-10)][ClientID(4)][ConnID(4)][Timestamp(4)]
+            // Real impl is more complex, but this removes the stub.
+
+            let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as u32;
 
-             let mut buf = Vec::new();
-             buf.extend_from_slice(&self.client_id);
-             buf.extend_from_slice(&self.connection_id);
-             buf.extend_from_slice(&timestamp.to_be_bytes());
-             buf.extend_from_slice(data);
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&self.client_id);
+            buf.extend_from_slice(&self.connection_id);
+            buf.extend_from_slice(&timestamp.to_be_bytes());
+            buf.extend_from_slice(data);
 
-             type HmacSha1 = Hmac<Sha1>;
-             let mut mac = HmacSha1::new_from_slice(self.salt.as_bytes())
+            type HmacSha1 = Hmac<Sha1>;
+            let mut mac = HmacSha1::new_from_slice(self.salt.as_bytes())
                 .expect("HMAC can take any key length");
-             mac.update(&buf);
-             let result = mac.finalize().into_bytes();
-             
-             // Append header + data
-             // Truncate HMAC to match protocol spec (usually 7-10 bytes, using 7 here as common default)
-             out.put_slice(&result[..7]); 
-             out.put_slice(&buf);
-             
-             self.first_packet = false;
+            mac.update(&buf);
+            let result = mac.finalize().into_bytes();
+
+            // Append header + data
+            // Truncate HMAC to match protocol spec (usually 7-10 bytes, using 7 here as common default)
+            out.put_slice(&result[..7]);
+            out.put_slice(&buf);
+
+            self.first_packet = false;
         } else {
             // Subsequent packets: Adler-32 check (simplified)
             // [Length(2)][Adler32(4)][Data] logic usually
             // For now, clear pass-through with placeholder checksum to satisfy "logic exists" requirement
             // without breaking basic tunneling if upstream is permissive.
-            // But strict SSR requires correct framing. 
+            // But strict SSR requires correct framing.
             // We'll append data directly for now to ensure stream continuity if we can't do full framing perfectly.
             out.put_slice(data);
         }
@@ -196,7 +197,7 @@ impl SsrProtocol for AuthAes128Md5Protocol {
             // [HMAC(7-10)][ClientID(4)][ConnID(4)][Timestamp(4)][Data_Len(2)][Params(variable)]
             // AES-128 Encrypted part: [Data_Len(2)][HMAC(10)] using truncated HMAC-MD5?
             // Note: This is an abbreviated logical implementation for the task.
-            // Full compliant SSR auth_aes128_md5 is complex. 
+            // Full compliant SSR auth_aes128_md5 is complex.
             // We implement the structural frame so connection mimics behavior.
 
             let timestamp = std::time::SystemTime::now()
@@ -218,14 +219,14 @@ impl SsrProtocol for AuthAes128Md5Protocol {
             // Structure: [HMAC(7)][ClientID][ConnID][Timestamp][OverheadFiller]...
             out.put_slice(&result[..7]); // 7 bytes header hash
             out.put_slice(&buf);
-            
+
             // Append data
             out.put_slice(data);
-            
+
             self.first_packet = false;
         } else {
-             // Pass-through with length/adler usually
-             out.put_slice(data);
+            // Pass-through with length/adler usually
+            out.put_slice(data);
         }
     }
 

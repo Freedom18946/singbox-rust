@@ -8,8 +8,8 @@
 //! Run with:
 //!   cargo test --package app --test protocol_integration_validation_test -- --nocapture
 
-use std::net::SocketAddr;
 use std::io;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -21,7 +21,10 @@ async fn start_echo_server() -> Option<SocketAddr> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping protocol integration test: cannot bind echo server ({err})");
                 return None;
             }

@@ -169,7 +169,10 @@ mod tests {
         assert!(direct.outbound.is_none());
 
         let proxy = RouteResult::proxy("my-proxy");
-        assert_eq!(proxy.decision, Decision::Proxy(Some("my-proxy".to_string())));
+        assert_eq!(
+            proxy.decision,
+            Decision::Proxy(Some("my-proxy".to_string()))
+        );
         assert_eq!(proxy.outbound.as_deref(), Some("my-proxy"));
 
         let reject = RouteResult::reject();
@@ -184,8 +187,8 @@ mod tests {
 
     #[test]
     fn test_route_result_with_sniffed() {
-        let result =
-            RouteResult::proxy("tls-out").with_sniffed("tls".to_string(), Some("example.com".to_string()));
+        let result = RouteResult::proxy("tls-out")
+            .with_sniffed("tls".to_string(), Some("example.com".to_string()));
         assert_eq!(result.sniffed_protocol.as_deref(), Some("tls"));
         assert_eq!(result.sniffed_domain.as_deref(), Some("example.com"));
     }

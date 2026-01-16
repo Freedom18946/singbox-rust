@@ -120,7 +120,8 @@ impl WireGuardEndpoint {
 
         let peers = peers_ir
             .into_iter()
-            .map(|peer| {
+            .enumerate()
+            .map(|(peer_index, peer)| {
                 let endpoint = parse_peer_endpoint(&peer)
                     .map_err(|e| format!("wireguard endpoint '{tag}' {e}"))?;
 
@@ -144,6 +145,19 @@ impl WireGuardEndpoint {
                         format!("wireguard endpoint '{tag}' invalid allowed ip: {cidr}")
                     })?;
                     allowed_ips.push(net);
+                }
+
+                if let Some(reserved) = peer.reserved.as_ref() {
+                    if !reserved.is_empty() {
+                        if reserved.len() != 3 {
+                            return Err(format!(
+                                "wireguard endpoint '{tag}' peer[{peer_index}] reserved must be 3 bytes"
+                            ));
+                        }
+                        return Err(format!(
+                            "wireguard endpoint '{tag}' peer[{peer_index}] reserved bytes are not supported by the userspace transport"
+                        ));
+                    }
                 }
 
                 Ok(PeerConfig {
@@ -173,7 +187,10 @@ impl WireGuardEndpoint {
         })
     }
 
-    fn ensure_started(&self, resolve: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn ensure_started(
+        &self,
+        resolve: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let handle = Handle::try_current()
             .map_err(|e| format!("WireGuard endpoint requires Tokio runtime: {e}"))?;
 
@@ -183,7 +200,9 @@ impl WireGuardEndpoint {
 
         let needs_resolution = {
             let peers = self.peers.read();
-            peers.iter().any(|peer| matches!(peer.endpoint, PeerEndpoint::Domain { .. }))
+            peers
+                .iter()
+                .any(|peer| matches!(peer.endpoint, PeerEndpoint::Domain { .. }))
         };
 
         if resolve {
@@ -206,9 +225,9 @@ impl WireGuardEndpoint {
                         let resolver = resolver.as_ref().ok_or_else(|| {
                             format!("wireguard endpoint '{}' requires DNS resolver", self.tag)
                         })?;
-                        let answer = handle
-                            .block_on(resolver.resolve(host))
-                            .map_err(|e| format!("wireguard endpoint '{}' resolve {host}: {e}", self.tag))?;
+                        let answer = handle.block_on(resolver.resolve(host)).map_err(|e| {
+                            format!("wireguard endpoint '{}' resolve {host}: {e}", self.tag)
+                        })?;
                         let ip = answer.ips.first().copied().ok_or_else(|| {
                             format!(
                                 "wireguard endpoint '{}' resolve {host}: empty result",
@@ -406,7 +425,7 @@ impl Endpoint for WireGuardEndpoint {
             // Returning error is safer than leaking.
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "WireGuard UDP listen_packet not supported without TUN",
+                "WireGuard UDP listen_packet requires a TUN-backed endpoint; userspace transport not supported",
             ))
         })
     }

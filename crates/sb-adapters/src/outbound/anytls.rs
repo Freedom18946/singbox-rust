@@ -120,7 +120,7 @@ impl AnyTlsConnector {
         // We need to send padding length 0 for now as initial handshake
         // Or does AnyTLS require padding in handshake?
         // Protocol: Client sends Hash(32) + PaddingLen(2) + Padding
-        
+
         // Generate random padding length (0-255 bytes) and padding before any await.
         // This keeps ThreadRng off the await boundary and avoids non-Send futures.
         let padding_len: u16 = rand::thread_rng().gen_range(0..=255);

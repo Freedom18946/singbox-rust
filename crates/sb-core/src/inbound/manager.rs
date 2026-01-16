@@ -155,7 +155,7 @@ impl InboundManager {
                 warn!(tag = %tag, error = %e, "inbound: failed to close old handler during replace");
             }
         }
-        
+
         // Replace in handlers
         let mut handlers = self.handlers.write().await;
         handlers.insert(tag, handler);
@@ -186,7 +186,10 @@ mod tests {
     }
 
     impl Lifecycle for MockInboundAdapter {
-        fn start(&self, _stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        fn start(
+            &self,
+            _stage: StartStage,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Ok(())
         }
         fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -231,14 +234,14 @@ mod tests {
     #[tokio::test]
     async fn test_inbound_manager_lifecycle() {
         let manager = InboundManager::new();
-        
+
         let handler1: InboundHandler = Arc::new(MockInboundAdapter {
             tag: "h1".to_string(),
         });
         let handler2: InboundHandler = Arc::new(MockInboundAdapter {
             tag: "h2".to_string(),
         });
-        
+
         manager.add_handler("h1".into(), handler1).await;
         manager.add_handler("h2".into(), handler2).await;
 
@@ -248,7 +251,7 @@ mod tests {
         manager.start_all(StartStage::PostStart).await;
         manager.start_all(StartStage::Started).await;
         manager.close_all().await;
-        
+
         // Should still have handlers registered
         assert_eq!(manager.len().await, 2);
     }

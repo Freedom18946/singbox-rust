@@ -36,11 +36,11 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 | Gap | Severity | Description | Action |
 |-----|----------|-------------|--------|
 | Parity feature gates | 🔴 High | Default build registers stub inbounds/outbounds/services unless `app` features like `adapters`, `service_*`, `dns_*` are enabled | Define a single "parity" feature set or enable by default for parity builds |
-| TLS fragmentation | 🟡 Medium | Implemented in `crates/sb-core/src/router/conn.rs`; ACK-wait parity on unix; publicsuffix + Windows ACK gaps remain | Decide whether to add publicsuffix + Windows ACK parity or accept approximation |
+| TLS fragmentation | 🟡 Medium | Implemented in `crates/sb-core/src/router/conn.rs`; ACK-wait parity on unix; Windows uses TCP_INFO best-effort + fallback delay | Documented limitation; winiphlpapi/EStats required for full parity |
 | Tailscale endpoint | 🔴 High (de-scoped) | Go: tsnet + gVisor + DNS hook + protect_*; Rust: daemon-only (`docs/TAILSCALE_LIMITATIONS.md`) | De-scope accepted; revisit if parity required |
-| WireGuard endpoint | 🟡 Medium | Core endpoint now handles StartStage + peer DNS resolution; still lacks UDP listen + reserved/daemon parity | Close remaining UDP/reserved gaps or document limitations |
+| WireGuard endpoint | 🟡 Medium | Core endpoint now handles StartStage + peer DNS resolution; UDP listen/reserved unsupported in userspace (boringtun) | Documented limitation; TUN/wireguard-go required for parity |
 | TLS uTLS/ECH | 🟡 Medium | rustls cannot fully replicate ClientHello ordering; ECH runtime handshake unsupported | Accept limitation; documented in `docs/TLS_DECISION.md` |
-| Repo structure gaps | 🟡 Medium | Missing Go `clients/`, `include/`, `release/`, `experimental/locale`, and `experimental/libbox` | Port or de-scope explicitly |
+| Repo structure gaps | 🟡 Medium | Missing Go `clients/`, `include/`, `release/`, `experimental/locale`, and `experimental/libbox` | De-scope accepted; no action |
 
 **Resolved Gaps (revalidated 2026-01-07)**:
 - **SSH Outbound**: Verified full implementation in `crates/sb-core/src/outbound/ssh.rs`.
@@ -63,7 +63,7 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 | Go Directory | Files | Rust Crate/Module | Files | Status | Notes |
 |--------------|-------|-------------------|-------|--------|-------|
 | `adapter/` | 26 | `sb-core/src/adapter/` + `sb-adapters/` | 109+ | ◐ | Feature-gated stubs; core logic aligned |
-| `clients/` | 2 subdirs | — | — | ❌ | Go mobile clients not ported |
+| `clients/` | 2 subdirs | — | — | ⊘ | Mobile clients de-scoped |
 | `box.go` | 1 | `sb-core/src/lib.rs` + `app/` | 150+ | ✅ | Core box lifecycle aligned |
 | `cmd/` | 6 | `app/src/` | 30+ | ✅ | CLI commands aligned |
 | `common/` | 24 subdirs | `sb-common/` + `sb-platform/` + `sb-runtime/` | 47 | ◐ | Core helpers aligned; TLS/uTLS/ECH partial; tlsfragment implemented (approx) |
@@ -71,14 +71,14 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 | `constant/` | 22 | `sb-types/` | 2 | ✅ | Constants consolidated |
 | `dns/` | 11 | `sb-core/src/dns/` | 28 | ✅ | DNS rule engine geosite/geoip implemented; DoH HTTP client stub |
 | `dns/transport/` | 10 | `sb-core/src/dns/transport/` | 11 | ✅ | DHCP lifecycle aligned (Windows MAC via `GetAdaptersAddresses`) |
-| `experimental/` | 6 subdirs | `sb-core/src/services/` | 9 | ◐ | V2Ray API HTTP vs gRPC; cachefile JSON vs BoltDB; libbox/locale missing |
-| `include/` | 13 | — | — | ❌ | Go libbox headers and stubs not ported |
+| `experimental/` | 6 subdirs | `sb-core/src/services/` | 9 | ◐ | V2Ray API HTTP vs gRPC; cachefile JSON vs BoltDB; libbox/locale de-scoped |
+| `include/` | 13 | — | — | ⊘ | libbox headers/stubs de-scoped |
 | `log/` | 10 | `sb-core/src/log/` + `sb-metrics/` | 10 | ✅ | Aligned |
 | `option/` | 47 | `sb-config/` | 49 | ✅ | High coverage |
 | `protocol/` | 23 subdirs | `sb-adapters/` | 64+ | ◐ | Feature-gated; default build stubs without `adapters` |
-| `release/` | 3 subdirs | — | — | ❌ | Release packaging scripts not ported |
+| `release/` | 3 subdirs | — | — | ⊘ | Release packaging de-scoped |
 | `route/` | 7 | `sb-core/src/router/` | 44 | ◐ | TLS fragmentation implemented (unix ACK wait); sniff stage1 in scaffold |
-| `route/rule/` | 38 | `sb-core/src/router/` | 43+ | ◐ | `tls-fragment` parsed and applied (publicsuffix/Windows ACK gaps) |
+| `route/rule/` | 38 | `sb-core/src/router/` | 43+ | ◐ | `tls-fragment` parsed and applied (Windows ACK best-effort) |
 | `service/` | 3 subdirs | `sb-core/src/services/` + `sb-adapters/service/` | 18 | ◐ | v2ray_api gRPC parity partial (UDP/packet stats gaps); service stubs in non-feature builds |
 | `test/` | 27 files + config | `tests/` + `app/tests/` | 40+ | ◐ | Coverage exists but not 1:1 with Go test suite |
 | `transport/` | 11 subdirs | `sb-transport/` | 28 | ✅ | Transport API aligned |
@@ -90,7 +90,7 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 Rust parity requires enabling feature-gated adapters/services/transports. Recommended `app` feature set for parity builds:
 
 ```
-router, adapters, dns_dhcp, dns_resolved, dns_tailscale, clash_api, v2ray_api
+parity (router, adapters, dns_udp, dns_doh, dns_dot, dns_doq, dns_doh3, dns_dhcp, dns_resolved, dns_tailscale, service_ntp, service_resolved, service_ssmapi, service_derp, clash_api, v2ray_api)
 ```
 
 Notes:
@@ -161,7 +161,7 @@ Note: Outbound adapters require the `app` feature `adapters` (or per-adapter fea
 | # | Go Protocol | Go Files | Rust File | Status | Gap |
 |---|-------------|----------|-----------|--------|-----|
 | 1 | tailscale | `protocol/tailscale/` (4 files) | `endpoint/tailscale.rs` | ⊘ | De-scoped: daemon-only; tsnet/gVisor/DNS hook not ported |
-| 2 | wireguard | `protocol/wireguard/endpoint.go` | `endpoint/wireguard.rs` | ◐ | Core endpoint wired; StartStage + peer DNS resolution aligned; UDP/reserved parity pending |
+| 2 | wireguard | `protocol/wireguard/endpoint.go` | `endpoint/wireguard.rs` | ◐ | Core endpoint wired; StartStage + peer DNS resolution aligned; UDP listen/reserved unsupported in userspace |
 
 Note: WireGuard endpoint requires `adapter-wireguard-endpoint` to avoid stub registration.
 
@@ -186,7 +186,7 @@ See: [`docs/TAILSCALE_LIMITATIONS.md`](docs/TAILSCALE_LIMITATIONS.md)
 | 2 | resolved | `service/resolved/` (4 files) | `sb-adapters/service/` + `dns/transport/resolved.rs` | ✅ | Feature-gated; platform stubs on non-Linux |
 | 3 | ssmapi | `service/ssmapi/` (5 files) | `services/ssmapi/` (5 files) | ✅ | Feature-gated; parity not revalidated |
 | 4 | clash_api | `experimental/clashapi/` | `services/clash_api.rs` | ✅ | Router/cache wiring verified (2026-01-01) |
-| 5 | v2ray_api | `experimental/v2rayapi/` | `services/v2ray_api.rs` | ◐ | gRPC StatsService implemented; TCP tracking wired for adapters/core; UDP traffic recording wired for router + direct/socks/shadowsocks/trojan/tuic + core socks5 + DNS inbound; packet stats + remaining UDP paths pending |
+| 5 | v2ray_api | `experimental/v2rayapi/` | `services/v2ray_api.rs` | ◐ | gRPC StatsService implemented; TCP/UDP byte + packet tracking wired for router + direct/socks/shadowsocks/trojan/tuic + core socks5 + DNS inbound; remaining UDP path audit pending |
 | 6 | cache_file | `experimental/cachefile/` | `services/cache_file.rs` | ✅ | Sled persistence with serde_json (2026-01-01) |
 | 7 | ntp | *N/A* | `services/ntp.rs` | ➕ | Rust-only |
 | 8 | dns_forwarder | *N/A* | `services/dns_forwarder.rs` | ➕ | Rust-only |
@@ -268,7 +268,7 @@ See: [`docs/TLS_DECISION.md`](docs/TLS_DECISION.md)
 | Rule Set | `rule_set*.go` (3 files) | `router/ruleset/` (6 files) | ✅ |
 | Rule Items (30) | `rule_item_*.go` | `router/rules.rs` | ✅ |
 
-Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-core/src/router/conn.rs` with minor parity gaps (publicsuffix + Windows ACK).
+Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-core/src/router/conn.rs` with minor parity gaps (Windows ACK best-effort only).
 
 **Rule Item Coverage**:
 
@@ -370,7 +370,7 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 | 19 | srs | `sb-core/router/ruleset/` | ✅ | — |
 | 20 | taskmonitor | `sb-runtime/` | ✅ | — |
 | 21 | tls | `sb-tls/` + `sb-transport/tls.rs` | ◐ | uTLS/ECH partial |
-| 22 | tlsfragment | `sb-core/router/conn.rs` | ◐ | Applied; publicsuffix + Windows ACK parity gaps |
+| 22 | tlsfragment | `sb-core/router/conn.rs` | ◐ | Applied; Windows ACK best-effort only |
 | 23 | uot | `sb-transport/uot.rs` | ✅ | — |
 | 24 | urltest | `sb-core/outbound/` | ✅ | — |
 
@@ -430,21 +430,20 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 
 ### Priority 2: TLS Fragmentation
 
-**Current State**: Implemented in `crates/sb-core/src/router/conn.rs`; ACK wait parity on unix; publicsuffix + Windows ACK gaps remain.
+**Current State**: Implemented in `crates/sb-core/src/router/conn.rs`; ACK wait parity on unix; Windows ACK best-effort via TCP_INFO.
 
 **Actions**:
-1. [ ] Decide whether to add publicsuffix handling or keep current split heuristic.
-2. [ ] Decide whether to port Windows ACK-wait or keep fallback delay only.
-3. [ ] Add tests for fragmentation + fallback delay behavior.
+1. [x] Keep Windows ACK best-effort (TCP_INFO + fallback delay); winiphlpapi not implemented.
+2. [ ] Add tests for fragmentation + fallback delay behavior.
 
 ### Priority 3: WireGuard Endpoint Parity
 
-**Current State**: Core endpoint wired with StartStage + peer DNS resolution; UDP listen and reserved/daemon parity gaps remain.
+**Current State**: Core endpoint wired with StartStage + peer DNS resolution; UDP listen/reserved documented unsupported in userspace.
 
 **Actions**:
-1. [ ] Decide how to handle UDP listen (TUN-backed vs document unsupported).
-2. [ ] Evaluate reserved bytes handling in userspace transport or de-scope.
-3. [ ] Document kernel vs userspace parity limits.
+1. [x] Document UDP listen as unsupported without TUN (userspace transport).
+2. [x] Document reserved bytes as unsupported with boringtun transport.
+3. [x] Document kernel vs userspace parity limits (see NEXT_STEPS limitations + endpoint errors).
 
 ### Priority 4: Tailscale Endpoint (De-scoped)
 
@@ -504,9 +503,9 @@ Parity achieved via `sb_platform::network::get_interface_mac()` + Windows `GetAd
 | Finding | Evidence | Impact |
 |---------|----------|--------|
 | Parity feature gates | `app/Cargo.toml` + `crates/sb-adapters/src/register.rs` | Default build registers stubs; parity requires explicit features |
-| TLS fragmentation partial | `crates/sb-core/src/router/conn.rs` | Applied; publicsuffix + Windows ACK parity gaps remain |
-| WireGuard endpoint partial | `crates/sb-core/src/endpoint/wireguard.rs` + `crates/sb-adapters/src/endpoint/wireguard.rs` | StartStage + DNS parity improved; UDP/reserved gaps remain |
-| Repo structure gaps | `go_fork_source/sing-box-1.12.14/{clients,include,release,experimental}` | Missing libbox/locale/mobile/release artifacts |
+| TLS fragmentation partial | `crates/sb-core/src/router/conn.rs` | Applied; Windows ACK best-effort only |
+| WireGuard endpoint partial | `crates/sb-core/src/endpoint/wireguard.rs` + `crates/sb-adapters/src/endpoint/wireguard.rs` | StartStage + DNS parity improved; UDP listen/reserved documented unsupported in userspace |
+| Repo structure gaps | `go_fork_source/sing-box-1.12.14/{clients,include,release,experimental}` | De-scoped libbox/locale/mobile/release artifacts |
 | DNS scheme doc mismatch | `crates/sb-config/src/ir/mod.rs` | Comments mark dhcp/resolved/tailscale as stubbed despite feature-gated support |
 | V2Ray API parity | `crates/sb-core/src/services/v2ray_api.rs` | gRPC StatsService implemented; TCP tracking wired; UDP/packet stats still partial |
 
@@ -522,7 +521,7 @@ Parity achieved via `sb_platform::network::get_interface_mac()` + Windows `GetAd
 | PX-002 | `option/options.go` | `crates/sb-config/src/{lib.rs,compat.rs,validator/v2.rs,ir/mod.rs}` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/option/options.go#L11` `crates/sb-config/src/lib.rs#L341` `crates/sb-config/src/lib.rs#L416` `crates/sb-config/src/compat.rs#L22` `crates/sb-config/src/validator/v2.rs#L880` `crates/sb-config/src/ir/mod.rs#L397` `crates/sb-config/src/ir/mod.rs#L2386` | Unknown field handling + tag retention + log fields diverge; Rust uses schema_version vs Go $schema. | Enforce unknown-field errors; add inbound tag support + duplicate checks incl endpoints; align log fields; allow $schema. |
 | PX-003 | `option/{route.go,rule.go,rule_action.go,rule_dns.go,rule_set.go}` | `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` + `crates/sb-core/src/router/*` | MAJOR_DIFF | FAIL | PARTIAL | `crates/sb-config/tests/route_options_parity.rs` `crates/sb-config/tests/dns_rule_parity.rs` | `go_fork_source/sing-box-1.12.14/option/route.go#L5` `go_fork_source/sing-box-1.12.14/option/rule.go#L69` `go_fork_source/sing-box-1.12.14/option/rule_action.go#L16` `go_fork_source/sing-box-1.12.14/option/rule_dns.go#L70` `go_fork_source/sing-box-1.12.14/option/rule_set.go#L20` `crates/sb-config/src/ir/mod.rs#L1109` `crates/sb-config/src/ir/mod.rs#L1397` `crates/sb-config/src/ir/mod.rs#L1497` `crates/sb-config/src/validator/v2.rs#L1713` `crates/sb-config/src/validator/v2.rs#L1763` | Missing rule actions/logical rules/DNS rule schema; rule_set inline/format/version behavior diverges; parser bug maps domain_suffix -> domain. **Route options aligned (2025-12-31). DNS rule schema+actions aligned: ip_is_private, source_ip_is_private, ip_accept_any, rule_set_ip_cidr_match/accept_empty, clash_mode, network_is_expensive/constrained; hijack rcode/answer/ns/extra (2025-12-31).** | Completed: route options, DNS rule matching fields, DNS hijack action fields. Remaining: logical rules, rule_set inline/format/version, domain_suffix bug. |
 | PX-004 | `dns/{client.go,router.go,transport_manager.go,transport_registry.go,transport_adapter.go,transport_dialer.go,client_truncate.go,extension_edns0_subnet.go}` + `option/dns.go` | `crates/sb-core/src/dns/{client.rs,router.rs,resolver.rs,rule_engine.rs,config_builder.rs,resolve.rs,transport/*}` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/dns/client.go#L34` `go_fork_source/sing-box-1.12.14/dns/router.go#L32` `go_fork_source/sing-box-1.12.14/dns/transport_manager.go#L21` `go_fork_source/sing-box-1.12.14/option/dns.go#L21` `crates/sb-core/src/dns/client.rs#L1` `crates/sb-core/src/dns/router.rs#L1` `crates/sb-core/src/dns/config_builder.rs#L12` `crates/sb-core/src/dns/rule_engine.rs#L1` `crates/sb-core/src/dns/transport/mod.rs#L18` | Rust DNS stack is env-gated/minimal; no Go-style DNSRouter/TransportManager/RuleAction flow; rules are rule-set only; no EDNS0 subnet/TTL rewrite/RDRC/reverse mapping parity. | Implement Go-style DNS client/router/transport manager + rule actions + caching/TTL semantics; align config-driven behavior; add parity tests. |
-| PX-005 | `route/{router.go,route.go,conn.go,dns.go,network.go}` | `crates/sb-core/src/router/{engine.rs,mod.rs,rules.rs,sniff.rs,conn.rs,route_connection.rs}` + `crates/sb-core/src/adapter/{registry.rs,bridge.rs}` | PARTIAL | PARTIAL | PARTIAL | `cargo check -p sb-core --lib` `cargo check -p sb-adapters --lib` | `go_fork_source/sing-box-1.12.14/route/conn.go#L58` `crates/sb-core/src/router/conn.rs#L1` `crates/sb-core/src/adapter/registry.rs#L30` | Implemented ConnectionManager with dial/network strategy/UDP timeouts; TLS fragmentation applied (publicsuffix/Windows ACK gaps); UDP NAT still stubbed. | Decide on publicsuffix/Windows ACK parity; implement UDP NAT for relay; add end-to-end routing tests. |
+| PX-005 | `route/{router.go,route.go,conn.go,dns.go,network.go}` | `crates/sb-core/src/router/{engine.rs,mod.rs,rules.rs,sniff.rs,conn.rs,route_connection.rs}` + `crates/sb-core/src/adapter/{registry.rs,bridge.rs}` | PARTIAL | PARTIAL | PARTIAL | `cargo check -p sb-core --lib` `cargo check -p sb-adapters --lib` | `go_fork_source/sing-box-1.12.14/route/conn.go#L58` `crates/sb-core/src/router/conn.rs#L1` `crates/sb-core/src/adapter/registry.rs#L30` | Implemented ConnectionManager with dial/network strategy/UDP timeouts; TLS fragmentation applied (Windows ACK best-effort); UDP NAT still stubbed. | Implement UDP NAT for relay; add end-to-end routing tests. |
 | PX-006 | `adapter/{inbound.go,outbound.go,service.go,lifecycle.go,lifecycle_legacy.go}` + `adapter/{inbound/manager.go,outbound/manager.go,endpoint/manager.go,service/manager.go}` | `crates/sb-core/src/{inbound/manager.rs,outbound/manager.rs,endpoint/mod.rs,service.rs,context.rs}` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/adapter/inbound.go#L15` `go_fork_source/sing-box-1.12.14/adapter/outbound.go#L13` `go_fork_source/sing-box-1.12.14/adapter/inbound/manager.go#L18` `go_fork_source/sing-box-1.12.14/adapter/outbound/manager.go#L21` `go_fork_source/sing-box-1.12.14/adapter/endpoint/manager.go#L18` `go_fork_source/sing-box-1.12.14/adapter/service/manager.go#L18` `go_fork_source/sing-box-1.12.14/adapter/lifecycle.go#L10` `go_fork_source/sing-box-1.12.14/adapter/lifecycle_legacy.go#L3` `crates/sb-core/src/inbound/manager.rs#L15` `crates/sb-core/src/outbound/manager.rs#L12` `crates/sb-core/src/endpoint/mod.rs#L423` `crates/sb-core/src/service.rs#L177` `crates/sb-core/src/context.rs#L27` | Rust managers are registries only; lifecycle stages, default outbound, dependency ordering, and endpoint/inbound integration missing or diverge. | Implement Go-style manager lifecycle + dependency/start semantics; align default outbound and duplicate-tag replacement; add manager lifecycle tests. |
 | PX-007 | `adapter/{handler.go,upstream.go,router.go,rule.go,connections.go,network.go,endpoint.go}` | `crates/sb-core/src/adapter/{mod.rs,bridge.rs,registry.rs}` + `crates/sb-core/src/endpoint/mod.rs` + `crates/sb-core/src/router/{mod.rs,engine.rs}` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/adapter/handler.go#L18` `go_fork_source/sing-box-1.12.14/adapter/upstream.go#L16` `go_fork_source/sing-box-1.12.14/adapter/router.go#L19` `go_fork_source/sing-box-1.12.14/adapter/rule.go#L7` `go_fork_source/sing-box-1.12.14/adapter/connections.go#L10` `go_fork_source/sing-box-1.12.14/adapter/network.go#L11` `go_fork_source/sing-box-1.12.14/adapter/endpoint.go#L10` `crates/sb-core/src/adapter/mod.rs#L44` `crates/sb-core/src/adapter/bridge.rs#L101` `crates/sb-core/src/adapter/registry.rs#L18` `crates/sb-core/src/endpoint/mod.rs#L112` `crates/sb-core/src/router/engine.rs#L612` | Rust adapter layer is IR/registry-based with limited handler/context APIs; lacks Go handler/upstream wrappers, Router/RuleSet interfaces, and HTTPStartContext parity; router integration uses text rules. | Align adapter interfaces + bridge behavior with Go (handler/upstream wrappers, Router/RuleSet API, HTTP start context, router integration); add adapter bridge tests. |
 | PX-008 | `adapter/{dns.go,fakeip.go,fakeip_metadata.go}` | `crates/sb-core/src/dns/{mod.rs,fakeip.rs,resolver.rs}` + `crates/sb-core/src/services/cache_file.rs` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/adapter/dns.go#L17` `go_fork_source/sing-box-1.12.14/adapter/fakeip.go#L9` `go_fork_source/sing-box-1.12.14/adapter/fakeip_metadata.go#L13` `crates/sb-core/src/dns/mod.rs#L108` `crates/sb-core/src/dns/fakeip.rs#L129` `crates/sb-core/src/dns/resolver.rs#L203` `crates/sb-core/src/services/cache_file.rs#L23` | Rust DNS/FakeIP lacks Go adapter interfaces (DNSRouter/DNSClient/TransportManager/QueryOptions/RDRC) and FakeIP store/metadata/persistence wiring; fakeip uses env-only LRU. | Implement adapter-level DNS/FakeIP interfaces + query options; wire FakeIP store/metadata + RDRC persistence; add parity tests. |

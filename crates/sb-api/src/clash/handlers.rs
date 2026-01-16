@@ -16,10 +16,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
-use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
 
 // ===== Constants =====
 
@@ -98,11 +98,14 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
             OutboundImpl::Socks5(_) => PROXY_TYPE_SOCKS5.to_string(),
             OutboundImpl::HttpProxy(_) => PROXY_TYPE_HTTP.to_string(),
             OutboundImpl::Connector(c) => {
-                 if c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()).is_some() {
-                     "Selector".to_string()
-                 } else {
-                     "Unknown".to_string()
-                 }
+                if c.as_any()
+                    .and_then(|a| a.downcast_ref::<SelectorGroup>())
+                    .is_some()
+                {
+                    "Selector".to_string()
+                } else {
+                    "Unknown".to_string()
+                }
             }
             // Feature-gated protocol variants handled by wildcard
             _ => PROXY_TYPE_UNKNOWN.to_string(),
@@ -273,7 +276,11 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let entries = if let Some(registry) = &state.outbound_registry {
         let reg = registry.read();
         reg.keys()
-            .filter_map(|key| reg.get(key).cloned().map(|outbound| (key.clone(), outbound)))
+            .filter_map(|key| {
+                reg.get(key)
+                    .cloned()
+                    .map(|outbound| (key.clone(), outbound))
+            })
             .collect::<Vec<_>>()
     } else {
         Vec::new()
@@ -306,7 +313,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
 
     // Add default proxies if not present
     if !proxies.contains_key(DIRECT_PROXY_NAME) {
-         proxies.insert(
+        proxies.insert(
             DIRECT_PROXY_NAME.to_string(),
             Proxy {
                 name: DIRECT_PROXY_NAME.to_string(),
@@ -347,23 +354,27 @@ pub async fn select_proxy(
     Json(request): Json<SelectProxyRequest>,
 ) -> impl IntoResponse {
     if let Some(registry) = &state.outbound_registry {
-         let outbound_opt = {
-             let reg = registry.read();
-             reg.get(&proxy_name).cloned()
-         };
+        let outbound_opt = {
+            let reg = registry.read();
+            reg.get(&proxy_name).cloned()
+        };
 
-         if let Some(OutboundImpl::Connector(c)) = outbound_opt {
-             if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                  if group.select_by_name(&request.name).await.is_ok() {
-                      log::info!("Selected proxy '{}' for group '{}'", request.name, proxy_name);
-                      if let Some(cache) = &state.cache_file {
-                          cache.set_selected(&proxy_name, &request.name);
-                      }
-                      return StatusCode::NO_CONTENT;
-                  }
-             }
-         }
-         return StatusCode::BAD_REQUEST;
+        if let Some(OutboundImpl::Connector(c)) = outbound_opt {
+            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                if group.select_by_name(&request.name).await.is_ok() {
+                    log::info!(
+                        "Selected proxy '{}' for group '{}'",
+                        request.name,
+                        proxy_name
+                    );
+                    if let Some(cache) = &state.cache_file {
+                        cache.set_selected(&proxy_name, &request.name);
+                    }
+                    return StatusCode::NO_CONTENT;
+                }
+            }
+        }
+        return StatusCode::BAD_REQUEST;
     }
     StatusCode::SERVICE_UNAVAILABLE
 }
@@ -377,14 +388,14 @@ pub async fn get_proxy_delay(
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let outbound_opt = if let Some(registry) = &state.outbound_registry {
-         let reg = registry.read();
-         reg.get(&proxy_name).cloned()
+        let reg = registry.read();
+        reg.get(&proxy_name).cloned()
     } else {
         None
     };
 
     let Some(outbound) = outbound_opt else {
-         return Json(json!({ "delay": -1 })).into_response();
+        return Json(json!({ "delay": -1 })).into_response();
     };
 
     let timeout_ms = params
@@ -403,32 +414,34 @@ pub async fn get_proxy_delay(
         u.split_once('/').map(|(h, _)| h).unwrap_or(u)
     } else {
         url
-    }.split_once(':').unwrap_or((url, "80"));
-    
+    }
+    .split_once(':')
+    .unwrap_or((url, "80"));
+
     let port = port.parse::<u16>().unwrap_or(80);
 
     // Measure latency
     let delay = match outbound {
         OutboundImpl::Connector(c) => {
-             let start = std::time::Instant::now();
-             if tokio::time::timeout(
-                 std::time::Duration::from_millis(timeout_ms),
-                 c.connect(host, port),
-             )
-             .await
-             .is_ok()
-             {
-                 start.elapsed().as_millis() as i32
-             } else {
-                 -1
-             }
+            let start = std::time::Instant::now();
+            if tokio::time::timeout(
+                std::time::Duration::from_millis(timeout_ms),
+                c.connect(host, port),
+            )
+            .await
+            .is_ok()
+            {
+                start.elapsed().as_millis() as i32
+            } else {
+                -1
+            }
         }
         OutboundImpl::Direct => {
-             let start = std::time::Instant::now();
-             match tokio::net::TcpStream::connect((host, port)).await {
-                 Ok(_) => start.elapsed().as_millis() as i32,
-                 Err(_) => -1,
-             }
+            let start = std::time::Instant::now();
+            match tokio::net::TcpStream::connect((host, port)).await {
+                Ok(_) => start.elapsed().as_millis() as i32,
+                Err(_) => -1,
+            }
         }
         _ => -1,
     };
@@ -561,53 +574,53 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
     let mut rules = Vec::new();
 
     if let Some(cfg) = &state.global_config {
-         for (i, rule) in cfg.route.rules.iter().enumerate() {
-             let proxy = rule.outbound.clone().unwrap_or("DIRECT".to_string());
-             
-             // Explode rule conditions
-             for domain in &rule.domain {
-                 rules.push(Rule {
-                     r#type: "DOMAIN".to_string(),
-                     payload: domain.clone(),
-                     proxy: proxy.clone(),
-                     order: Some(i as u32),
-                 });
-             }
-             for suffix in &rule.domain_suffix {
-                 rules.push(Rule {
-                     r#type: "DOMAIN-SUFFIX".to_string(),
-                     payload: suffix.clone(),
-                     proxy: proxy.clone(),
-                     order: Some(i as u32),
-                 });
-             }
-             for cidr in &rule.ipcidr {
-                 rules.push(Rule {
-                     r#type: "IP-CIDR".to_string(),
-                     payload: cidr.clone(),
-                     proxy: proxy.clone(),
-                     order: Some(i as u32),
-                 });
-             }
-             // Fallback for complex rules
-             if rule.domain.is_empty() && rule.domain_suffix.is_empty() && rule.ipcidr.is_empty() {
-                  rules.push(Rule {
-                     r#type: "MATCH".to_string(),
-                     payload: "".to_string(),
-                     proxy: proxy.clone(),
-                     order: Some(i as u32),
-                 });
-             }
-         }
-         
-         if let Some(default) = &cfg.route.default {
-              rules.push(Rule {
-                     r#type: "MATCH".to_string(),
-                     payload: "".to_string(),
-                     proxy: default.clone(),
-                     order: Some(9999),
-                 });
-         }
+        for (i, rule) in cfg.route.rules.iter().enumerate() {
+            let proxy = rule.outbound.clone().unwrap_or("DIRECT".to_string());
+
+            // Explode rule conditions
+            for domain in &rule.domain {
+                rules.push(Rule {
+                    r#type: "DOMAIN".to_string(),
+                    payload: domain.clone(),
+                    proxy: proxy.clone(),
+                    order: Some(i as u32),
+                });
+            }
+            for suffix in &rule.domain_suffix {
+                rules.push(Rule {
+                    r#type: "DOMAIN-SUFFIX".to_string(),
+                    payload: suffix.clone(),
+                    proxy: proxy.clone(),
+                    order: Some(i as u32),
+                });
+            }
+            for cidr in &rule.ipcidr {
+                rules.push(Rule {
+                    r#type: "IP-CIDR".to_string(),
+                    payload: cidr.clone(),
+                    proxy: proxy.clone(),
+                    order: Some(i as u32),
+                });
+            }
+            // Fallback for complex rules
+            if rule.domain.is_empty() && rule.domain_suffix.is_empty() && rule.ipcidr.is_empty() {
+                rules.push(Rule {
+                    r#type: "MATCH".to_string(),
+                    payload: "".to_string(),
+                    proxy: proxy.clone(),
+                    order: Some(i as u32),
+                });
+            }
+        }
+
+        if let Some(default) = &cfg.route.default {
+            rules.push(Rule {
+                r#type: "MATCH".to_string(),
+                payload: "".to_string(),
+                proxy: default.clone(),
+                order: Some(9999),
+            });
+        }
     }
 
     Json(json!({ "rules": rules }))
@@ -679,7 +692,7 @@ pub async fn update_configs(
     // 2. Apply changes to runtime configuration
     // 3. Reload affected components (inbounds, outbounds, router, DNS)
     // 4. Handle graceful degradation if reload fails
-    
+
     // Persist mode change if present
     if let Some(mode) = obj.get("mode").and_then(|v| v.as_str()) {
         if let Some(cache) = &_state.cache_file {
@@ -1158,7 +1171,11 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
     let entries = if let Some(registry) = &state.outbound_registry {
         let reg = registry.read();
         reg.keys()
-            .filter_map(|key| reg.get(key).cloned().map(|outbound| (key.clone(), outbound)))
+            .filter_map(|key| {
+                reg.get(key)
+                    .cloned()
+                    .map(|outbound| (key.clone(), outbound))
+            })
             .collect::<Vec<_>>()
     } else {
         Vec::new()

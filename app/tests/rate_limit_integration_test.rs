@@ -37,7 +37,10 @@ async fn start_echo_server() -> Option<SocketAddr> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping rate limit tests: cannot bind echo server ({err})");
                 return None;
             }
@@ -94,7 +97,10 @@ async fn start_trojan_server_with_rate_limit(
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping rate limit tests: cannot bind Trojan server ({err})");
                 return None;
             }
@@ -156,7 +162,10 @@ async fn start_ss_server_with_rate_limit(
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping rate limit tests: cannot bind SS server ({err})");
                 return None;
             }
@@ -203,8 +212,7 @@ async fn test_trojan_high_load_rate_limiting() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
-    let Some((server_addr, _stop_tx, _files)) =
-        start_trojan_server_with_rate_limit(10, 2).await
+    let Some((server_addr, _stop_tx, _files)) = start_trojan_server_with_rate_limit(10, 2).await
     else {
         return;
     };
@@ -375,8 +383,7 @@ async fn test_rate_limit_metrics_recording() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
-    let Some((server_addr, _stop_tx, _files)) =
-        start_trojan_server_with_rate_limit(5, 1).await
+    let Some((server_addr, _stop_tx, _files)) = start_trojan_server_with_rate_limit(5, 1).await
     else {
         return;
     };
@@ -437,8 +444,7 @@ async fn test_auth_failure_ban() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
-    let Some((server_addr, _stop_tx, _files)) =
-        start_trojan_server_with_rate_limit(100, 10).await
+    let Some((server_addr, _stop_tx, _files)) = start_trojan_server_with_rate_limit(100, 10).await
     else {
         return;
     };

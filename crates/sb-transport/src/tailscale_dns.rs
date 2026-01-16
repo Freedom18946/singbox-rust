@@ -395,7 +395,7 @@ fn default_socket_factory() -> SocketFactory {
         Box::pin(async {
             UdpSocket::bind("0.0.0.0:0")
                 .await
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("bind udp: {e}")))
+                .map_err(|e| io::Error::other(format!("bind udp: {e}")))
         })
     })
 }

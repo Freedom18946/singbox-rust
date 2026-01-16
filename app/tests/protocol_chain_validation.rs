@@ -29,7 +29,10 @@ async fn start_echo_server() -> Option<SocketAddr> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping protocol chain test: cannot bind echo server ({err})");
                 return None;
             }
@@ -70,7 +73,10 @@ async fn start_trojan_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping protocol chain test: cannot bind Trojan server ({err})");
                 return None;
             }
@@ -124,7 +130,10 @@ async fn start_ss_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping protocol chain test: cannot bind SS server ({err})");
                 return None;
             }

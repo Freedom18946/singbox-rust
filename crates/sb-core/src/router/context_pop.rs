@@ -17,7 +17,6 @@ use std::sync::Arc;
 /// Source of routing context information.
 #[derive(Debug, Clone, Default)]
 pub struct ContextSource {
-
     /// Network monitor for network type info.
     #[cfg(feature = "platform")]
     pub network_monitor: Option<Arc<sb_platform::monitor::NetworkMonitor>>,
@@ -53,8 +52,6 @@ impl ContextData {
     #[allow(unused_variables, unused_mut)]
     pub fn populate(source: &ContextSource) -> Self {
         let mut data = Self::default();
-
-
 
         // Populate network info from platform monitor
         #[cfg(feature = "platform")]

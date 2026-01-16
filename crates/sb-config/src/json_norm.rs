@@ -78,7 +78,8 @@ pub fn normalize_value_for_fingerprint(v: Value) -> Value {
         Value::Object(mut m) => {
             let mut nm = Map::new();
             // Filter out comment keys and sort remaining
-            let mut keys: Vec<_> = m.keys()
+            let mut keys: Vec<_> = m
+                .keys()
                 .filter(|k| !k.starts_with("//") && !k.starts_with('#'))
                 .cloned()
                 .collect();
@@ -91,7 +92,9 @@ pub fn normalize_value_for_fingerprint(v: Value) -> Value {
             Value::Object(nm)
         }
         Value::Array(arr) => Value::Array(
-            arr.into_iter().map(normalize_value_for_fingerprint).collect()
+            arr.into_iter()
+                .map(normalize_value_for_fingerprint)
+                .collect(),
         ),
         x => x,
     }
@@ -103,8 +106,8 @@ pub fn normalize_value_for_fingerprint(v: Value) -> Value {
 /// This is the canonical fingerprinting function used across all reloads and outputs.
 #[must_use]
 pub fn fingerprint_hex8(v: &Value) -> String {
-    use sha2::{Sha256, Digest};
-    
+    use sha2::{Digest, Sha256};
+
     let normalized = normalize_value_for_fingerprint(v.clone());
     let bytes = serde_json::to_vec(&normalized).unwrap_or_default();
     let hash = Sha256::digest(&bytes);
@@ -137,7 +140,10 @@ mod tests {
     fn test_fingerprint_ignores_comments() {
         let with_comment = json!({"foo": "bar", "//note": "ignored", "#todo": "also"});
         let without_comment = json!({"foo": "bar"});
-        assert_eq!(fingerprint_hex8(&with_comment), fingerprint_hex8(&without_comment));
+        assert_eq!(
+            fingerprint_hex8(&with_comment),
+            fingerprint_hex8(&without_comment)
+        );
     }
 
     #[test]

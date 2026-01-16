@@ -172,7 +172,10 @@ fn try_extract_log_from_args(
     ) || {
         #[cfg(feature = "router")]
         {
-            matches!(&args.command, cli::Commands::Run(_) | cli::Commands::Route(_) | cli::Commands::Dns(_))
+            matches!(
+                &args.command,
+                cli::Commands::Run(_) | cli::Commands::Route(_) | cli::Commands::Dns(_)
+            )
         }
         #[cfg(not(feature = "router"))]
         {
@@ -193,10 +196,15 @@ fn try_extract_log_from_args(
         return None;
     }
 
-    let entries =
-        crate::config_loader::collect_config_entries(&args.global.config, &args.global.config_directory)
-            .ok()?;
-    if entries.iter().any(|entry| matches!(entry.source, crate::config_loader::ConfigSource::Stdin)) {
+    let entries = crate::config_loader::collect_config_entries(
+        &args.global.config,
+        &args.global.config_directory,
+    )
+    .ok()?;
+    if entries
+        .iter()
+        .any(|entry| matches!(entry.source, crate::config_loader::ConfigSource::Stdin))
+    {
         return None;
     }
     let cfg = crate::config_loader::load_config(&entries).ok()?;

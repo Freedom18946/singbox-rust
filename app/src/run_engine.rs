@@ -13,7 +13,7 @@ use app::config_loader::{self, ConfigEntry};
 use sb_config::ir::ConfigIR;
 
 /// Apply debug/pprof options from config's experimental.debug section.
-/// Sets environment variables for SB_DEBUG_ADDR, SB_PPROF, SB_PPROF_FREQ, SB_PPROF_MAX_SEC.
+/// Sets environment variables for `SB_DEBUG_ADDR`, `SB_PPROF`, `SB_PPROF_FREQ`, `SB_PPROF_MAX_SEC`.
 pub fn apply_debug_options(ir: &ConfigIR) {
     if let Some(exp) = ir.experimental.as_ref() {
         if let Some(debug) = exp.debug.as_ref() {
@@ -55,12 +55,15 @@ pub fn apply_debug_options(ir: &ConfigIR) {
 
 /// Load config with optional subscription import.
 ///
-/// - Uses config_loader::load_config to load and merge config entries
+/// - Uses `config_loader::load_config` to load and merge config entries
 /// - Optionally imports a subscription file and merges it
 /// - Validates the merged config
-/// - Converts to ConfigIR
+/// - Converts to `ConfigIR`
 ///
-/// Returns (Config, ConfigIR) tuple.
+/// Returns (Config, `ConfigIR`) tuple.
+///
+/// # Errors
+/// Returns an error if loading, importing, validation, or IR conversion fails.
 pub fn load_config_with_import(
     entries: &[ConfigEntry],
     import_path: Option<&Path>,
@@ -73,7 +76,8 @@ pub fn load_config_with_import(
         let subcfg = sb_config::subscribe::from_subscription(&text)
             .with_context(|| "parse subscription failed")?;
         cfg.merge_in_place(subcfg);
-        cfg.validate().with_context(|| "config after import invalid")?;
+        cfg.validate()
+            .with_context(|| "config after import invalid")?;
     }
     // Convert to IR once here, avoiding repeated to_ir calls at call sites
     let ir = sb_config::present::to_ir(&cfg).context("to_ir failed")?;
@@ -82,19 +86,22 @@ pub fn load_config_with_import(
 
 /// Load config with optional subscription import, returning raw Value for DNS env bridge.
 ///
-/// - Uses config_loader::load_merged_value to get raw Value (JSON/YAML)
-/// - Uses sb_config::config_from_raw_value for migration + validation
+/// - Uses `config_loader::load_merged_value` to get raw Value (JSON/YAML)
+/// - Uses `sb_config::config_from_raw_value` for migration + validation
 /// - Optionally imports a subscription file and merges it
-/// - Returns merged raw Value (cfg.raw()) for DNS env bridge compatibility
+/// - Returns merged raw Value (`cfg.raw()`) for DNS env bridge compatibility
 ///
-/// Returns (Config, ConfigIR, serde_json::Value) tuple.
+/// Returns (Config, `ConfigIR`, `serde_json::Value`) tuple.
+///
+/// # Errors
+/// Returns an error if loading, importing, validation, or IR conversion fails.
 pub fn load_config_with_import_raw(
     entries: &[ConfigEntry],
     import_path: Option<&Path>,
 ) -> Result<(sb_config::Config, ConfigIR, serde_json::Value)> {
     let raw = config_loader::load_merged_value(entries)?;
     let (mut cfg, mut ir) = sb_config::config_from_raw_value(raw)?;
-    
+
     if let Some(subfile) = import_path {
         info!(path=%subfile.display(), "importing subscription");
         let text = fs::read_to_string(subfile)
@@ -102,11 +109,12 @@ pub fn load_config_with_import_raw(
         let subcfg = sb_config::subscribe::from_subscription(&text)
             .with_context(|| "parse subscription failed")?;
         cfg.merge_in_place(subcfg);
-        cfg.validate().with_context(|| "config after import invalid")?;
+        cfg.validate()
+            .with_context(|| "config after import invalid")?;
         // Regenerate IR after subscription merge
         ir = sb_config::present::to_ir(&cfg).context("to_ir after merge failed")?;
     }
-    
+
     // Return merged raw from cfg for DNS env bridge (reflects merged state)
     let merged_raw = cfg.raw().clone();
     Ok((cfg, ir, merged_raw))
@@ -125,7 +133,10 @@ pub async fn reload_with_supervisor(
 ) -> Result<()> {
     let (_cfg, ir) = load_config_with_import(entries, import_path)?;
     apply_debug_options(&ir);
-    supervisor.reload(ir).await.context("Supervisor reload failed")?;
+    supervisor
+        .reload(ir)
+        .await
+        .context("Supervisor reload failed")?;
     Ok(())
 }
 
@@ -134,8 +145,6 @@ pub async fn reload_with_supervisor(
 // ============================================================================
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use tokio::sync::oneshot;
@@ -226,13 +235,13 @@ pub struct RunOptions {
     pub grace_ms: u64,
     /// Optional prometheus exporter listen address
     pub prom_listen: Option<String>,
-    /// Enable DNS stub init from env (--dns-from-env / DNS_STUB=1)
+    /// Enable DNS stub init from env (--dns-from-env / `DNS_STUB=1`)
     pub dns_from_env: bool,
     /// Print transport plan for outbounds at startup (info level).
     /// When false, still outputs debug-level "derived transport chain".
     pub print_transport: bool,
-    /// Enable health task (sets SB_HEALTH_ENABLE=1 for Supervisor).
-    /// bin/run: true when --health flag or HEALTH=1 env.
+    /// Enable health task (sets `SB_HEALTH_ENABLE=1` for Supervisor).
+    /// bin/run: true when --health flag or `HEALTH=1` env.
     /// CLI run: false by default.
     pub health_enable: bool,
     /// Enable DNS environment bridge from config.
@@ -264,8 +273,6 @@ pub enum AdminImpl {
     /// Debug admin server (app::admin_debug)
     Debug,
 }
-
-
 
 /// Mode for reload success/failure output.
 #[cfg(feature = "router")]
@@ -331,7 +338,10 @@ fn file_mtime(path: &std::path::Path) -> SystemTime {
 }
 
 #[cfg(feature = "router")]
-fn snapshot_mtimes(entries: &[ConfigEntry], import_path: Option<&Path>) -> HashMap<PathBuf, SystemTime> {
+fn snapshot_mtimes(
+    entries: &[ConfigEntry],
+    import_path: Option<&Path>,
+) -> HashMap<PathBuf, SystemTime> {
     let mut snapshot = HashMap::new();
     for path in config_loader::entry_files(entries) {
         snapshot.insert(path.clone(), file_mtime(&path));
@@ -353,7 +363,7 @@ fn snapshot_changed(
 ) -> (bool, HashMap<PathBuf, SystemTime>) {
     let mut changed = false;
     let mut current = HashMap::new();
-    
+
     // Check config entry files
     for path in config_loader::entry_files(entries) {
         let now = file_mtime(&path);
@@ -367,7 +377,7 @@ fn snapshot_changed(
         }
         current.insert(path, now);
     }
-    
+
     // Check import file
     if let Some(import) = import_path {
         if import.exists() {
@@ -383,7 +393,7 @@ fn snapshot_changed(
             current.insert(import.to_path_buf(), now);
         }
     }
-    
+
     // Entry list changed (files added/removed from config dirs)
     if prev.len() != current.len() {
         changed = true;
@@ -395,7 +405,7 @@ fn snapshot_changed(
             break;
         }
     }
-    
+
     (changed, current)
 }
 
@@ -444,7 +454,7 @@ fn report_reload_result(outcome: &ReloadOutcome, source: ReloadSource, mode: Rel
         ReloadSource::Watch => "watch",
         ReloadSource::Sighup => "SIGHUP",
     };
-    
+
     match (outcome, mode) {
         (ReloadOutcome::Applied(cfg_fp), ReloadOutputMode::LogOnly) => {
             info!(source=%source_str, config_fingerprint=%cfg_fp, "hot-reload applied");
@@ -503,20 +513,20 @@ async fn reload_with_state(
 ) -> ReloadOutcome {
     // Acquire lock to serialize reloads (prevents concurrent watch + SIGHUP races)
     let mut guard = state.lock().await;
-    
+
     // Load config with raw value for fingerprinting
     let (_, ir, raw) = match load_config_with_import_raw(entries, import_path) {
         Ok(v) => v,
         Err(e) => return ReloadOutcome::Failed(e),
     };
-    
+
     let (new_fp_numeric, new_fp_hex) = config_fingerprint(&raw);
-    
+
     // Skip reload if config unchanged (compare numeric fingerprint for speed)
     if new_fp_numeric == guard.fingerprint {
         return ReloadOutcome::SkippedNoChange(guard.fingerprint_hex.clone());
     }
-    
+
     // Apply debug options and reload
     apply_debug_options(&ir);
     match supervisor.reload(ir).await {
@@ -550,7 +560,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     if opts.health_enable {
         std::env::set_var("SB_HEALTH_ENABLE", "1");
     }
-    
+
     // 1) Optional Prom exporter
     if let Some(ref addr) = opts.prom_listen {
         let addr_clone = addr.clone();
@@ -558,13 +568,13 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             let _ = sb_core::metrics::http_exporter::run_exporter(&addr_clone);
         });
     }
-    
+
     // 1.5) Dynamically collect config entries from inputs
     let entries = config_loader::collect_config_entries(
         &opts.config_inputs.config_paths,
         &opts.config_inputs.config_dirs,
     )?;
-    
+
     // 1.6) Detect stdin config and disable watch/reload if present
     let has_stdin = config_loader::entries_have_stdin(&entries);
     if has_stdin && opts.watch {
@@ -583,34 +593,35 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             }
         }
     }
-    
+
     // 2) Load config with raw Value for DNS env bridge
     let (_cfg, ir, raw) = load_config_with_import_raw(&entries, opts.import_path.as_deref())?;
-    
+
     // 2.0.1) Create shared reload state with initial fingerprint (shared across watch + SIGHUP)
     let (initial_fp_numeric, initial_fp_hex) = config_fingerprint(&raw);
     let startup_config_fingerprint = initial_fp_hex.clone(); // Keep copy for startup output
-    let reload_state = Arc::new(TokioMutex::new(ReloadState { 
+    let reload_state = Arc::new(TokioMutex::new(ReloadState {
         fingerprint: initial_fp_numeric,
         fingerprint_hex: initial_fp_hex,
     }));
-    
+
     // 2.1) DNS environment bridge from config (only if enabled)
     let dns_applied = if opts.dns_env_bridge {
         apply_dns_env_from_config(&raw)
     } else {
         false
     };
-    
+
     // 2.2) DNS stub init if needed
-    if !dns_applied && (opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1")) {
+    if !dns_applied && (opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
+    {
         let ttl_secs: u64 = std::env::var("DNS_CACHE_TTL")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(30);
         sb_core::dns::stub::init_global(ttl_secs);
     }
-    
+
     // 3) Print transport plan for outbounds
     // - print_transport=true or SB_TRANSPORT_PLAN=1: info level "transport plan"
     // - otherwise: debug level "derived transport chain" (restore old bin/run behavior)
@@ -623,7 +634,11 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         let kind = ob.ty_str();
         let chain = sb_core::runtime::transport::map::chain_from_ir(ob);
         let sni = ob.tls_sni.clone().unwrap_or_default();
-        let alpn = ob.tls_alpn.as_ref().map(|v| v.join(",")).unwrap_or_default();
+        let alpn = ob
+            .tls_alpn
+            .as_ref()
+            .map(|v| v.join(","))
+            .unwrap_or_default();
         if want_transport_info {
             info!(
                 target: "sb_core::transport",
@@ -646,19 +661,19 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             );
         }
     }
-    
+
     // 4) Apply debug options
     apply_debug_options(&ir);
-    
+
     // 5) Start Supervisor
     info!("Calling Supervisor::start");
     let supervisor = Arc::new(
         sb_core::runtime::supervisor::Supervisor::start(ir)
             .await
-            .context("Supervisor::start failed")?
+            .context("Supervisor::start failed")?,
     );
     info!("Supervisor::start returned");
-    
+
     // 6) Admin server (core or debug)
     if let Some(ref addr) = opts.admin_listen {
         match opts.admin_impl {
@@ -667,15 +682,19 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                 {
                     let socket_addr: std::net::SocketAddr = addr
                         .parse()
-                        .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {}", e))?;
-                    
+                        .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {e}"))?;
+
                     let tls_conf = app::admin_debug::http_server::TlsConf::from_env();
                     let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
-                    
-                    let tls_opt = if tls_conf.enabled { Some(tls_conf) } else { None };
-                    
+
+                    let tls_opt = if tls_conf.enabled {
+                        Some(tls_conf)
+                    } else {
+                        None
+                    };
+
                     app::admin_debug::http_server::spawn(socket_addr, tls_opt, auth_conf)
-                        .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {}", e))?;
+                        .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {e}"))?;
                     info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
                 }
                 #[cfg(not(feature = "admin_debug"))]
@@ -690,13 +709,15 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                     addr,
                     opts.admin_token.clone(),
                     supervisor.clone(),
-                ).await {
+                )
+                .await
+                {
                     error!(error=%e, "failed to start core admin server");
                 }
             }
         }
     }
-    
+
     // 7) Startup output
     match opts.startup_output {
         StartupOutputMode::LogOnly => {
@@ -721,7 +742,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         }
     }
-    
+
     // 8) Optional watch mode (disabled if stdin config detected)
     let watch_handle = if opts.watch && !has_stdin {
         let (stop_tx, mut stop_rx) = oneshot::channel();
@@ -730,10 +751,10 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         let import_clone = opts.import_path.clone();
         let reload_output = opts.reload_output;
         let state_for_watch = reload_state.clone();
-        
+
         // Initial snapshot with current entries and import
         let mut snapshot = snapshot_mtimes(&entries, opts.import_path.as_deref());
-        
+
         let join = tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -750,7 +771,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                                 continue;
                             }
                         };
-                        
+
                         let (changed, next_snapshot) = snapshot_changed(
                             &snapshot,
                             &current_entries,
@@ -772,78 +793,77 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                 }
             }
         });
-        Some(WatchHandle { stop: stop_tx, join })
+        Some(WatchHandle {
+            stop: stop_tx,
+            join,
+        })
     } else {
         None
     };
-    
+
     // 9) Signal handling loop
-    loop {
-        match wait_for_signal().await {
-            RunSignal::Reload => {
-                info!("SIGHUP received; reloading configuration…");
-                
-                // Determine entries for reload
-                let reload_entries = if let Some(ref path) = opts.reload_path {
-                    vec![ConfigEntry {
-                        path: path.display().to_string(),
-                        source: config_loader::ConfigSource::File(path.clone()),
-                    }]
-                } else {
-                    // Dynamically re-collect entries
-                    match config_loader::collect_config_entries(
-                        &opts.config_inputs.config_paths,
-                        &opts.config_inputs.config_dirs,
-                    ) {
-                        Ok(e) => e,
-                        Err(e) => {
-                            let outcome = ReloadOutcome::Failed(e.into());
-                            report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
-                            continue;
-                        }
-                    }
-                };
-                
-                // Check for stdin in reload entries
-                if config_loader::entries_have_stdin(&reload_entries) {
-                    let outcome = ReloadOutcome::Failed(anyhow::anyhow!("stdin config not reloadable"));
+    while let RunSignal::Reload = wait_for_signal().await {
+        info!("SIGHUP received; reloading configuration…");
+
+        // Determine entries for reload
+        let reload_entries = if let Some(ref path) = opts.reload_path {
+            vec![ConfigEntry {
+                path: path.display().to_string(),
+                source: config_loader::ConfigSource::File(path.clone()),
+            }]
+        } else {
+            // Dynamically re-collect entries
+            match config_loader::collect_config_entries(
+                &opts.config_inputs.config_paths,
+                &opts.config_inputs.config_dirs,
+            ) {
+                Ok(e) => e,
+                Err(e) => {
+                    let outcome = ReloadOutcome::Failed(e);
                     report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
                     continue;
                 }
-                
-                let import_for_reload = if opts.reload_path.is_some() {
-                    None
-                } else {
-                    opts.import_path.as_deref()
-                };
-                
-                let outcome = reload_with_state(
-                    reload_state.clone(),
-                    &reload_entries,
-                    import_for_reload,
-                    &supervisor,
-                ).await;
-                report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
             }
-            RunSignal::Terminate => break,
+        };
+
+        // Check for stdin in reload entries
+        if config_loader::entries_have_stdin(&reload_entries) {
+            let outcome = ReloadOutcome::Failed(anyhow::anyhow!("stdin config not reloadable"));
+            report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
+            continue;
         }
+
+        let import_for_reload = if opts.reload_path.is_some() {
+            None
+        } else {
+            opts.import_path.as_deref()
+        };
+
+        let outcome = reload_with_state(
+            reload_state.clone(),
+            &reload_entries,
+            import_for_reload,
+            &supervisor,
+        )
+        .await;
+        report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
     }
-    
+
     // 10) Graceful shutdown
     let close_monitor = CloseMonitor::start();
     if let Some(watch) = watch_handle {
         watch.shutdown().await;
     }
-    
+
     let grace_duration = Duration::from_millis(opts.grace_ms);
     let shutdown_result = supervisor.handle().shutdown_graceful(grace_duration).await;
     close_monitor.shutdown().await;
-    
+
     if let Err(e) = shutdown_result {
         error!(error=%e, "Supervisor did not close properly");
         std::process::exit(1);
     }
-    
+
     Ok(())
 }
 
@@ -854,6 +874,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
 /// Apply DNS environment configuration from config file (top-level `dns` block).
 /// Returns true if any DNS setting was derived from config.
 #[cfg(feature = "router")]
+#[allow(clippy::too_many_lines)]
 fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
     fn set_if_unset(k: &str, v: &str) {
         if std::env::var(k).is_err() {
@@ -861,9 +882,8 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         }
     }
     let mut applied = false;
-    let dns = match doc.get("dns") {
-        Some(v) => v,
-        None => return false,
+    let Some(dns) = doc.get("dns") else {
+        return false;
     };
     // servers: [{ address: "udp://1.1.1.1" | "https://..." | "dot://..." | "doq://..." | "system" | "rcode://..." }]
     if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
@@ -903,7 +923,10 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
                 }
                 continue;
             }
-            if let Some(rest) = addr_raw.strip_prefix("dot://").or_else(|| addr_raw.strip_prefix("tls://")) {
+            if let Some(rest) = addr_raw
+                .strip_prefix("dot://")
+                .or_else(|| addr_raw.strip_prefix("tls://"))
+            {
                 let token = if rest.contains(':') {
                     format!("dot:{rest}")
                 } else {
@@ -919,7 +942,10 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
                 }
                 continue;
             }
-            if let Some(rest) = addr_raw.strip_prefix("doq://").or_else(|| addr_raw.strip_prefix("quic://")) {
+            if let Some(rest) = addr_raw
+                .strip_prefix("doq://")
+                .or_else(|| addr_raw.strip_prefix("quic://"))
+            {
                 let token = format!("doq:{rest}");
                 pool_tokens.push(token.clone());
                 if !first_mode_set {
@@ -942,7 +968,6 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
                     applied = true;
                     first_mode_set = true;
                 }
-                continue;
             }
         }
         if !pool_tokens.is_empty() {
@@ -989,16 +1014,22 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         let mut parts: Vec<String> = Vec::new();
         for (host, val) in hosts {
             let host = host.trim().to_ascii_lowercase();
-            if host.is_empty() { continue; }
+            if host.is_empty() {
+                continue;
+            }
             let mut ips: Vec<String> = Vec::new();
             match val {
                 serde_json::Value::String(s) => {
-                    if !s.trim().is_empty() { ips.push(s.trim().to_string()); }
+                    if !s.trim().is_empty() {
+                        ips.push(s.trim().to_string());
+                    }
                 }
                 serde_json::Value::Array(arr) => {
                     for it in arr {
                         if let Some(s) = it.as_str() {
-                            if !s.trim().is_empty() { ips.push(s.trim().to_string()); }
+                            if !s.trim().is_empty() {
+                                ips.push(s.trim().to_string());
+                            }
                         }
                     }
                 }
@@ -1010,7 +1041,11 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         }
         if !parts.is_empty() {
             set_if_unset("SB_DNS_STATIC", &parts.join(","));
-            if let Some(ttl_s) = dns.get("hosts_ttl").or_else(|| dns.get("static_ttl")).and_then(num_or_string_secs) {
+            if let Some(ttl_s) = dns
+                .get("hosts_ttl")
+                .or_else(|| dns.get("static_ttl"))
+                .and_then(num_or_string_secs)
+            {
                 set_if_unset("SB_DNS_STATIC_TTL_S", &ttl_s.to_string());
             }
             applied = true;
@@ -1018,7 +1053,10 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
     }
     // fakeip
     if let Some(fakeip) = dns.get("fakeip").and_then(|v| v.as_object()) {
-        let enabled = fakeip.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let enabled = fakeip
+            .get("enabled")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         if enabled {
             set_if_unset("SB_DNS_FAKEIP_ENABLE", "1");
             applied = true;
@@ -1049,30 +1087,40 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         applied = true;
     }
     if let Some(pool) = dns.get("pool").and_then(|v| v.as_object()) {
-        if let Some(v) = pool.get("race_window_ms").and_then(|x| x.as_u64()) {
+        if let Some(v) = pool
+            .get("race_window_ms")
+            .and_then(serde_json::Value::as_u64)
+        {
             set_if_unset("SB_DNS_RACE_WINDOW_MS", &v.to_string());
             applied = true;
         }
-        if let Some(v) = pool.get("he_race_ms").and_then(|x| x.as_u64()) {
+        if let Some(v) = pool.get("he_race_ms").and_then(serde_json::Value::as_u64) {
             set_if_unset("SB_DNS_HE_RACE_MS", &v.to_string());
             applied = true;
         }
         if let Some(v) = pool.get("he_order").and_then(|x| x.as_str()) {
-            let norm = if v.eq_ignore_ascii_case("AAAA_FIRST") { "AAAA_FIRST" } else { "A_FIRST" };
+            let norm = if v.eq_ignore_ascii_case("AAAA_FIRST") {
+                "AAAA_FIRST"
+            } else {
+                "A_FIRST"
+            };
             set_if_unset("SB_DNS_HE_ORDER", norm);
             applied = true;
         }
-        if let Some(v) = pool.get("max_inflight").and_then(|x| x.as_u64()) {
+        if let Some(v) = pool.get("max_inflight").and_then(serde_json::Value::as_u64) {
             set_if_unset("SB_DNS_POOL_MAX_INFLIGHT", &v.to_string());
             applied = true;
         }
-        if let Some(v) = pool.get("per_host_inflight").and_then(|x| x.as_u64()) {
+        if let Some(v) = pool
+            .get("per_host_inflight")
+            .and_then(serde_json::Value::as_u64)
+        {
             set_if_unset("SB_DNS_PER_HOST_INFLIGHT", &v.to_string());
             applied = true;
         }
     }
     // timeouts
-    if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) {
+    if let Some(v) = dns.get("timeout_ms").and_then(serde_json::Value::as_u64) {
         let s = v.to_string();
         set_if_unset("SB_DNS_UDP_TIMEOUT_MS", &s);
         set_if_unset("SB_DNS_DOT_TIMEOUT_MS", &s);
@@ -1083,15 +1131,19 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
     }
     // cache controls
     if let Some(cache) = dns.get("cache").and_then(|v| v.as_object()) {
-        if cache.get("enable").and_then(|x| x.as_bool()).unwrap_or(false) {
+        if cache
+            .get("enable")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
             set_if_unset("SB_DNS_CACHE_ENABLE", "1");
             applied = true;
         }
-        if let Some(cap) = cache.get("cap").and_then(|x| x.as_u64()) {
+        if let Some(cap) = cache.get("cap").and_then(serde_json::Value::as_u64) {
             set_if_unset("SB_DNS_CACHE_CAP", &cap.to_string());
             applied = true;
         }
-        if let Some(neg_ms) = cache.get("neg_ttl_ms").and_then(|x| x.as_u64()) {
+        if let Some(neg_ms) = cache.get("neg_ttl_ms").and_then(serde_json::Value::as_u64) {
             set_if_unset("SB_DNS_CACHE_NEG_TTL_MS", &neg_ms.to_string());
             applied = true;
         }
@@ -1101,11 +1153,17 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
 
 #[cfg(feature = "router")]
 fn num_or_string_secs(v: &serde_json::Value) -> Option<u64> {
-    if let Some(n) = v.as_u64() { return Some(n); }
+    if let Some(n) = v.as_u64() {
+        return Some(n);
+    }
     if let Some(s) = v.as_str() {
         let s = s.trim();
-        if s.is_empty() { return None; }
-        if let Ok(n) = s.parse::<u64>() { return Some(n); }
+        if s.is_empty() {
+            return None;
+        }
+        if let Ok(n) = s.parse::<u64>() {
+            return Some(n);
+        }
         let (num, suf) = s.split_at(s.len().saturating_sub(1));
         if let Ok(n) = num.parse::<u64>() {
             return Some(match suf {

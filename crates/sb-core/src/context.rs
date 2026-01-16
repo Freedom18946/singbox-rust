@@ -1,8 +1,8 @@
 use crate::service::StartStage;
+use crate::services::v2ray_api::StatsManager;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::RouteIR;
-use crate::services::v2ray_api::StatsManager;
 use sb_platform::process::ProcessMatcher;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -182,8 +182,6 @@ impl Context {
         self
     }
 
-
-
     pub fn with_v2ray_server(mut self, v2ray_server: Arc<dyn V2RayServer>) -> Self {
         self.v2ray_server = Some(v2ray_server);
         self
@@ -193,7 +191,7 @@ impl Context {
         self.ntp_service = Some(ntp_service);
         self
     }
-    
+
     pub fn with_time_service(mut self, time_service: Arc<dyn TimeService>) -> Self {
         self.time_service = Some(time_service);
         self
@@ -365,22 +363,26 @@ impl NetworkManager {
 
     /// Check if network is expensive (e.g., metered cellular)
     pub fn is_network_expensive(&self) -> bool {
-        self.network_is_expensive.load(std::sync::atomic::Ordering::Relaxed)
+        self.network_is_expensive
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Set network expensive status
     pub fn set_network_expensive(&self, expensive: bool) {
-        self.network_is_expensive.store(expensive, std::sync::atomic::Ordering::Relaxed);
+        self.network_is_expensive
+            .store(expensive, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Check if network is constrained (e.g., low data mode)
     pub fn is_network_constrained(&self) -> bool {
-        self.network_is_constrained.load(std::sync::atomic::Ordering::Relaxed)
+        self.network_is_constrained
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Set network constrained status
     pub fn set_network_constrained(&self, constrained: bool) {
-        self.network_is_constrained.store(constrained, std::sync::atomic::Ordering::Relaxed);
+        self.network_is_constrained
+            .store(constrained, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Update all network state at once
@@ -756,7 +758,7 @@ pub trait NtpService: Send + Sync + std::fmt::Debug {}
 pub trait TimeService: Send + Sync + std::fmt::Debug {
     /// Return current system time.
     fn now(&self) -> std::time::SystemTime;
-    
+
     /// Return current monotonic time.
     fn monotonic(&self) -> std::time::Instant {
         std::time::Instant::now()
@@ -897,11 +899,19 @@ mod tests {
         assert!(opts.auto_detect_interface);
         assert_eq!(opts.default_interface.as_deref(), Some("eth0"));
         assert_eq!(opts.mark, Some(42));
-        assert_eq!(opts.default_domain_resolver.as_ref().map(|o| o.server.as_str()), Some("dns-local"));
+        assert_eq!(
+            opts.default_domain_resolver
+                .as_ref()
+                .map(|o| o.server.as_str()),
+            Some("dns-local")
+        );
         assert_eq!(opts.network_strategy.as_deref(), Some("prefer_ipv6"));
         assert_eq!(opts.default_outbound.as_deref(), Some("direct"));
         assert_eq!(opts.final_outbound.as_deref(), Some("block"));
-        assert_eq!(opts.default_network_type, Some(vec!["ipv4_only".to_string()]));
+        assert_eq!(
+            opts.default_network_type,
+            Some(vec!["ipv4_only".to_string()])
+        );
         assert_eq!(
             opts.default_fallback_network_type,
             Some(vec!["ipv6_only".to_string()])

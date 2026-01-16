@@ -10,6 +10,7 @@
 //! Exposed via gRPC on the configured listen address.
 
 use crate::context::V2RayServer;
+use parking_lot::RwLock;
 use sb_config::ir::{StatsIR, V2RayApiIR};
 use std::collections::{HashMap, HashSet};
 #[cfg(any(feature = "service_v2ray_api", test))]
@@ -17,7 +18,6 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use parking_lot::RwLock;
 
 #[cfg(feature = "service_v2ray_api")]
 use tokio::sync::oneshot;
@@ -146,7 +146,11 @@ impl StatsManager {
             };
 
             if matched {
-                let value = if reset { counter.reset() } else { counter.get() };
+                let value = if reset {
+                    counter.reset()
+                } else {
+                    counter.get()
+                };
                 out.push((name.clone(), value));
             }
         }
@@ -202,43 +206,37 @@ impl StatsManager {
 
         let mut uplink = Vec::new();
         let mut downlink = Vec::new();
+        let mut uplink_packets = Vec::new();
+        let mut downlink_packets = Vec::new();
 
         if let Some(tag) = inbound {
             if self.should_track_inbound(tag) {
-                uplink.push(self.get_counter(&format!(
-                    "inbound>>>{}>>>traffic>>>uplink",
-                    tag
-                )));
-                downlink.push(self.get_counter(&format!(
-                    "inbound>>>{}>>>traffic>>>downlink",
-                    tag
-                )));
+                uplink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>uplink", tag)));
+                downlink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>downlink", tag)));
+                uplink_packets.push(self.get_counter(&format!("inbound>>>{}>>>packet>>>uplink", tag)));
+                downlink_packets
+                    .push(self.get_counter(&format!("inbound>>>{}>>>packet>>>downlink", tag)));
             }
         }
 
         if let Some(tag) = outbound {
             if self.should_track_outbound(tag) {
-                uplink.push(self.get_counter(&format!(
-                    "outbound>>>{}>>>traffic>>>uplink",
-                    tag
-                )));
-                downlink.push(self.get_counter(&format!(
-                    "outbound>>>{}>>>traffic>>>downlink",
-                    tag
-                )));
+                uplink.push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>uplink", tag)));
+                downlink
+                    .push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>downlink", tag)));
+                uplink_packets.push(self.get_counter(&format!("outbound>>>{}>>>packet>>>uplink", tag)));
+                downlink_packets
+                    .push(self.get_counter(&format!("outbound>>>{}>>>packet>>>downlink", tag)));
             }
         }
 
         if let Some(name) = user {
             if self.should_track_user(name) {
-                uplink.push(self.get_counter(&format!(
-                    "user>>>{}>>>traffic>>>uplink",
-                    name
-                )));
-                downlink.push(self.get_counter(&format!(
-                    "user>>>{}>>>traffic>>>downlink",
-                    name
-                )));
+                uplink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>uplink", name)));
+                downlink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>downlink", name)));
+                uplink_packets.push(self.get_counter(&format!("user>>>{}>>>packet>>>uplink", name)));
+                downlink_packets
+                    .push(self.get_counter(&format!("user>>>{}>>>packet>>>downlink", name)));
             }
         }
 
@@ -246,7 +244,12 @@ impl StatsManager {
             return None;
         }
 
-        Some(Arc::new(TrafficCounters { uplink, downlink }))
+        Some(Arc::new(TrafficCounters {
+            uplink,
+            downlink,
+            uplink_packets,
+            downlink_packets,
+        }))
     }
 
     /// Initialize standard V2Ray counters
@@ -258,6 +261,12 @@ impl StatsManager {
             "outbound>>>direct>>>traffic>>>downlink",
             "outbound>>>proxy>>>traffic>>>uplink",
             "outbound>>>proxy>>>traffic>>>downlink",
+            "inbound>>>api>>>packet>>>uplink",
+            "inbound>>>api>>>packet>>>downlink",
+            "outbound>>>direct>>>packet>>>uplink",
+            "outbound>>>direct>>>packet>>>downlink",
+            "outbound>>>proxy>>>packet>>>uplink",
+            "outbound>>>proxy>>>packet>>>downlink",
         ];
 
         for name in counters {
@@ -270,6 +279,8 @@ impl StatsManager {
 pub struct TrafficCounters {
     uplink: Vec<Arc<StatCounter>>,
     downlink: Vec<Arc<StatCounter>>,
+    uplink_packets: Vec<Arc<StatCounter>>,
+    downlink_packets: Vec<Arc<StatCounter>>,
 }
 
 impl crate::net::metered::TrafficRecorder for TrafficCounters {
@@ -282,6 +293,18 @@ impl crate::net::metered::TrafficRecorder for TrafficCounters {
     fn record_down(&self, bytes: u64) {
         for counter in &self.downlink {
             counter.add(bytes);
+        }
+    }
+
+    fn record_up_packet(&self, packets: u64) {
+        for counter in &self.uplink_packets {
+            counter.add(packets);
+        }
+    }
+
+    fn record_down_packet(&self, packets: u64) {
+        for counter in &self.downlink_packets {
+            counter.add(packets);
         }
     }
 }
@@ -408,7 +431,7 @@ impl V2RayServer for V2RayApiServer {
                         "V2Ray API server error"
                     );
                 } else {
-                     tracing::info!(target: "sb_core::services::v2ray", "V2Ray API server stopped");
+                    tracing::info!(target: "sb_core::services::v2ray", "V2Ray API server stopped");
                 }
             });
 
@@ -575,5 +598,51 @@ mod tests {
             server.listen_addr(),
             Some("127.0.0.1:10085".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn test_packet_counters_from_recorder() {
+        let manager = StatsManager::new(Some(StatsIR {
+            enabled: true,
+            inbounds: vec!["dns".to_string()],
+            outbounds: vec!["direct".to_string()],
+            users: vec!["alice".to_string()],
+            inbound: None,
+            outbound: None,
+        }));
+
+        let recorder = manager
+            .traffic_recorder(Some("dns"), Some("direct"), Some("alice"))
+            .expect("traffic recorder expected");
+
+        recorder.record_up(10);
+        recorder.record_down(20);
+        recorder.record_up_packet(2);
+        recorder.record_down_packet(3);
+
+        let uplink = 10;
+        let downlink = 20;
+        let up_packets = 2;
+        let down_packets = 3;
+
+        let checks = [
+            ("inbound>>>dns>>>traffic>>>uplink", uplink),
+            ("inbound>>>dns>>>traffic>>>downlink", downlink),
+            ("outbound>>>direct>>>traffic>>>uplink", uplink),
+            ("outbound>>>direct>>>traffic>>>downlink", downlink),
+            ("user>>>alice>>>traffic>>>uplink", uplink),
+            ("user>>>alice>>>traffic>>>downlink", downlink),
+            ("inbound>>>dns>>>packet>>>uplink", up_packets),
+            ("inbound>>>dns>>>packet>>>downlink", down_packets),
+            ("outbound>>>direct>>>packet>>>uplink", up_packets),
+            ("outbound>>>direct>>>packet>>>downlink", down_packets),
+            ("user>>>alice>>>packet>>>uplink", up_packets),
+            ("user>>>alice>>>packet>>>downlink", down_packets),
+        ];
+
+        for (name, expected) in checks {
+            let value = manager.get_stat(name).unwrap_or(0);
+            assert_eq!(value, expected, "stat mismatch for {name}");
+        }
     }
 }

@@ -292,7 +292,6 @@ impl DhcpTransport {
         }
     }
 
-
     /// Get MAC address for an interface using platform-native APIs.
     ///
     /// Delegates to `sb_platform::network::get_interface_mac()` which uses:

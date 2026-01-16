@@ -35,6 +35,12 @@ use instant_acme::{
     Identifier, LetsEncrypt, NewAccount, NewOrder, OrderStatus,
 };
 
+type ParsedCertificateDates = (
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+    Vec<String>,
+);
+
 /// Well-known ACME directory URLs
 pub mod directories {
     /// Let's Encrypt production directory
@@ -594,30 +600,21 @@ impl AcmeManager {
     }
 
     #[cfg(feature = "acme")]
-    fn parse_certificate_dates(
-        cert_pem: &str,
-    ) -> Result<
-        (
-            chrono::DateTime<chrono::Utc>,
-            chrono::DateTime<chrono::Utc>,
-            Vec<String>,
-        ),
-        String,
-    > {
+    fn parse_certificate_dates(cert_pem: &str) -> Result<ParsedCertificateDates, String> {
+        use rustls::pki_types::CertificateDer;
         use rustls_pemfile::Item;
         use std::io::BufReader;
 
         // Parse PEM to get DER
         let mut reader = BufReader::new(cert_pem.as_bytes());
-        let cert_der = match rustls_pemfile::read_one(&mut reader) {
-            Ok(Some(Item::X509Certificate(der))) => der,
-            _ => return Err("Failed to parse PEM certificate".to_string()),
+        let Ok(Some(Item::X509Certificate(cert_der))) = rustls_pemfile::read_one(&mut reader)
+        else {
+            return Err("Failed to parse PEM certificate".to_string());
         };
 
         // Parse the DER certificate using webpki
         // Note: For full X.509 parsing, we'd need x509-parser crate
         // For now, extract basic info from rustls
-        use rustls::pki_types::CertificateDer;
         let cert = CertificateDer::from(cert_der.to_vec());
 
         // Parse with webpki-roots for basic validation
@@ -626,8 +623,7 @@ impl AcmeManager {
         let file_modified = std::fs::metadata(cert_pem)
             .ok()
             .and_then(|m| m.modified().ok())
-            .map(|t| chrono::DateTime::<chrono::Utc>::from(t))
-            .unwrap_or_else(chrono::Utc::now);
+            .map_or_else(chrono::Utc::now, chrono::DateTime::<chrono::Utc>::from);
 
         // Assume certificate was issued around file creation time
         let not_before = file_modified;

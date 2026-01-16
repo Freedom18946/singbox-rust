@@ -212,7 +212,10 @@ impl StubInboundAdapter {
 }
 
 impl sb_core::service::Lifecycle for StubInboundAdapter {
-    fn start(&self, _stage: sb_core::service::StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn start(
+        &self,
+        _stage: sb_core::service::StartStage,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
 

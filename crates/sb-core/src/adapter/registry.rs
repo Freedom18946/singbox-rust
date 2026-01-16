@@ -11,9 +11,9 @@ use crate::context::ContextRegistry;
 use crate::dns::dns_router::DnsRouter;
 use crate::outbound::OutboundRegistryHandle;
 #[cfg(feature = "router")]
-use crate::router::RouterHandle;
-#[cfg(feature = "router")]
 use crate::router::RouteConnectionManager;
+#[cfg(feature = "router")]
+use crate::router::RouterHandle;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

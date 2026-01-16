@@ -32,9 +32,7 @@ async fn start_echo_server() -> Option<SocketAddr> {
                 err.kind(),
                 io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
             ) {
-                eprintln!(
-                    "Skipping shadowsocks protocol test: cannot bind echo server ({err})"
-                );
+                eprintln!("Skipping shadowsocks protocol test: cannot bind echo server ({err})");
                 return None;
             }
             panic!("Failed to bind echo server: {err}");
@@ -71,9 +69,7 @@ async fn start_ss_server(method: &str, password: &str) -> Option<(SocketAddr, mp
                 err.kind(),
                 io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
             ) {
-                eprintln!(
-                    "Skipping shadowsocks protocol test: cannot bind SS server ({err})"
-                );
+                eprintln!("Skipping shadowsocks protocol test: cannot bind SS server ({err})");
                 return None;
             }
             panic!("Failed to bind SS server: {err}");
@@ -259,8 +255,7 @@ async fn test_ss_multi_user_concurrent() {
     let Some((server2, _stop2)) = start_ss_server("aes-256-gcm", "user2-password").await else {
         return;
     };
-    let Some((server3, _stop3)) =
-        start_ss_server("chacha20-poly1305", "user3-password").await
+    let Some((server3, _stop3)) = start_ss_server("chacha20-poly1305", "user3-password").await
     else {
         return;
     };

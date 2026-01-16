@@ -126,13 +126,19 @@ pub fn entry_files(entries: &[ConfigEntry]) -> Vec<PathBuf> {
 /// Returns true if any entry uses stdin as config source.
 /// Used to detect non-reloadable configurations.
 #[must_use]
+#[allow(dead_code)]
 pub fn entries_have_stdin(entries: &[ConfigEntry]) -> bool {
-    entries.iter().any(|e| matches!(e.source, ConfigSource::Stdin))
+    entries
+        .iter()
+        .any(|e| matches!(e.source, ConfigSource::Stdin))
 }
 
 #[cfg(feature = "dev-cli")]
 #[allow(dead_code)]
-pub fn check_only(config_paths: &[PathBuf], config_dirs: &[PathBuf]) -> Result<(usize, usize, usize)> {
+pub fn check_only(
+    config_paths: &[PathBuf],
+    config_dirs: &[PathBuf],
+) -> Result<(usize, usize, usize)> {
     let entries = collect_config_entries(config_paths, config_dirs)?;
     let cfg = load_config(&entries)?;
     cfg.build_registry_and_router()?; // Stub validation
@@ -141,8 +147,9 @@ pub fn check_only(config_paths: &[PathBuf], config_dirs: &[PathBuf]) -> Result<(
 
 fn read_config_bytes(entry: &ConfigEntry, stdin_cache: &mut Option<Vec<u8>>) -> Result<Vec<u8>> {
     match &entry.source {
-        ConfigSource::File(path) => fs::read(path)
-            .with_context(|| format!("read config at {}", entry.path)),
+        ConfigSource::File(path) => {
+            fs::read(path).with_context(|| format!("read config at {}", entry.path))
+        }
         ConfigSource::Stdin => {
             if let Some(cached) = stdin_cache.as_ref() {
                 return Ok(cached.clone());
@@ -188,8 +195,5 @@ fn merge_values(base: Value, next: Value) -> Value {
 }
 
 fn is_stdin_path(path: &Path) -> bool {
-    matches!(
-        path.to_str(),
-        Some("stdin" | "-")
-    )
+    matches!(path.to_str(), Some("stdin" | "-"))
 }

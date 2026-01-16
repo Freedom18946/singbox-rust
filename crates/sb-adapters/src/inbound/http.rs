@@ -73,13 +73,13 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::services::v2ray_api::StatsManager;
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::services::v2ray_api::StatsManager;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 
@@ -559,15 +559,14 @@ where
                             }
                             ProxyChoice::Http(addr) => {
                                 outbound_tag = Some("http".to_string());
-                                let s =
-                                    http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                        .await?;
+                                let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                    .await?;
                                 Box::new(s)
                             }
                             ProxyChoice::Socks5(addr) => {
                                 outbound_tag = Some("socks5".to_string());
-                                let s = socks5_connect_through_socks5(addr, host, port, &opts)
-                                    .await?;
+                                let s =
+                                    socks5_connect_through_socks5(addr, host, port, &opts).await?;
                                 Box::new(s)
                             }
                         }
@@ -591,8 +590,8 @@ where
                         }
                         ProxyChoice::Http(addr) => {
                             outbound_tag = Some("http".to_string());
-                            let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                .await?;
+                            let s =
+                                http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
                             Box::new(s)
                         }
                         ProxyChoice::Socks5(addr) => {
@@ -645,7 +644,11 @@ where
     let rt = opt_duration_ms_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = opt_duration_ms_from_env("SB_TCP_WRITE_TIMEOUT_MS");
     let traffic = cfg.stats.as_ref().and_then(|stats| {
-        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), auth_user.as_deref())
+        stats.traffic_recorder(
+            cfg.tag.as_deref(),
+            outbound_tag.as_deref(),
+            auth_user.as_deref(),
+        )
     });
     let _ = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         &mut cli,

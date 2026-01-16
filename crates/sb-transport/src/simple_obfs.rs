@@ -17,18 +17,13 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// Obfuscation type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ObfsType {
     /// HTTP obfuscation (GET request wrapper)
+    #[default]
     Http,
     /// TLS obfuscation (fake TLS ClientHello)
     Tls,
-}
-
-impl Default for ObfsType {
-    fn default() -> Self {
-        Self::Http
-    }
 }
 
 impl std::str::FromStr for ObfsType {

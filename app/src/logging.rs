@@ -40,11 +40,11 @@ pub struct LoggingConfig {
     pub level: String,
     /// Sampling configuration for high-frequency logs
     pub sampling: Option<SamplingConfig>,
-    /// Enable sensitive data redaction in log output (SB_LOG_REDACT, default: on)
+    /// Enable sensitive data redaction in log output (`SB_LOG_REDACT`, default: on)
     pub redact: bool,
-    /// Include timestamp in logs (SB_LOG_TIMESTAMP, default: on)
+    /// Include timestamp in logs (`SB_LOG_TIMESTAMP`, default: on)
     pub timestamp: bool,
-    /// Enable ANSI color output (SB_LOG_COLOR=0 disables)
+    /// Enable ANSI color output (`SB_LOG_COLOR=0` disables)
     pub color: bool,
 }
 

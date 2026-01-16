@@ -20,8 +20,8 @@ use tracing::{debug, info, trace, warn};
 use sb_core::adapter::InboundService;
 use sb_core::outbound::{Endpoint, OutboundKind, OutboundRegistryHandle, RouteTarget};
 use sb_core::router::engine::Transport;
-use sb_core::router::{RouteCtx, RouterHandle};
 use sb_core::router::rules::Decision;
+use sb_core::router::{RouteCtx, RouterHandle};
 
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
@@ -411,7 +411,8 @@ impl TunInbound {
                                                 // packet starts at buf[4] (after 4 byte AF info)
                                                 // Protocol is at buf[4+9]
                                                 if buf.len() > 4 + ihl + 12 {
-                                                    let tcph_doff = (buf[4 + ihl + 12] >> 4) as usize * 4;
+                                                    let tcph_doff =
+                                                        (buf[4 + ihl + 12] >> 4) as usize * 4;
                                                     let payload_offset = 4 + ihl + tcph_doff;
                                                     if payload_offset <= readn {
                                                         &buf[payload_offset..readn]
@@ -443,7 +444,9 @@ impl TunInbound {
                                             // Existing session: forward payload
                                             if !packet_payload.is_empty() {
                                                 let _ = session
-                                                    .send_to_outbound(Bytes::copy_from_slice(packet_payload))
+                                                    .send_to_outbound(Bytes::copy_from_slice(
+                                                        packet_payload,
+                                                    ))
                                                     .await;
                                             }
                                         } else {
@@ -479,7 +482,9 @@ impl TunInbound {
                                                 _ => format!("{}:{}", ip, port),
                                             };
 
-                                            let (wifi_ssid, wifi_bssid) = if let Some(info) = sb_platform::wifi::get_wifi_info() {
+                                            let (wifi_ssid, wifi_bssid) = if let Some(info) =
+                                                sb_platform::wifi::get_wifi_info()
+                                            {
                                                 (Some(info.ssid), Some(info.bssid))
                                             } else {
                                                 (None, None)
@@ -496,38 +501,66 @@ impl TunInbound {
                                             };
                                             let decision = self.router.decide(&route_ctx);
                                             let selected_target = match decision {
-                                                Decision::Direct => RouteTarget::Kind(OutboundKind::Direct),
-                                                Decision::Reject | Decision::RejectDrop => RouteTarget::Kind(OutboundKind::Block),
-                                                Decision::Proxy(Some(tag)) => RouteTarget::Named(tag),
+                                                Decision::Direct => {
+                                                    RouteTarget::Kind(OutboundKind::Direct)
+                                                }
+                                                Decision::Reject | Decision::RejectDrop => {
+                                                    RouteTarget::Kind(OutboundKind::Block)
+                                                }
+                                                Decision::Proxy(Some(tag)) => {
+                                                    RouteTarget::Named(tag)
+                                                }
                                                 _ => RouteTarget::Kind(OutboundKind::Direct),
                                             };
 
                                             // Dial Outbound
                                             let ep = Endpoint::Ip(SocketAddr::new(ip, port));
-                                            match self.outbounds.connect_tcp(&selected_target, ep).await {
+                                            match self
+                                                .outbounds
+                                                .connect_tcp(&selected_target, ep)
+                                                .await
+                                            {
                                                 Ok(stream) => {
-                                                    tracing::debug!("TUN: Connected to {} via {:?}", host_str, selected_target);
-                                                    let session = self.session_manager.create_session(
-                                                        tuple,
-                                                        stream,
-                                                        writer.clone()
+                                                    tracing::debug!(
+                                                        "TUN: Connected to {} via {:?}",
+                                                        host_str,
+                                                        selected_target
                                                     );
+                                                    let session =
+                                                        self.session_manager.create_session(
+                                                            tuple,
+                                                            stream,
+                                                            writer.clone(),
+                                                        );
                                                     // Forward initial payload if any
                                                     if !packet_payload.is_empty() {
                                                         let _ = session
-                                                            .send_to_outbound(Bytes::copy_from_slice(packet_payload))
+                                                            .send_to_outbound(
+                                                                Bytes::copy_from_slice(
+                                                                    packet_payload,
+                                                                ),
+                                                            )
                                                             .await;
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    tracing::warn!("TUN: Failed to connect to {}: {}", host_str, e);
+                                                    tracing::warn!(
+                                                        "TUN: Failed to connect to {}: {}",
+                                                        host_str,
+                                                        e
+                                                    );
                                                 }
                                             }
                                         }
-                                    },
+                                    }
                                     _ => {
                                         // UDP/Other - Ignore for now
-                                        trace!("tun pkt {:?} -> {}:{} | skip (UDP/Other)", pkt.proto, pkt.dst_ip, pkt.dst_port);
+                                        trace!(
+                                            "tun pkt {:?} -> {}:{} | skip (UDP/Other)",
+                                            pkt.proto,
+                                            pkt.dst_ip,
+                                            pkt.dst_port
+                                        );
                                     }
                                 }
                             } else {
@@ -731,7 +764,11 @@ impl TunInbound {
         // This helper is used in tests; we can provide a dummy registry for tests.
         let cfg: TunInboundConfig = serde_json::from_value(v.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self::new(cfg, router, Arc::new(sb_core::outbound::OutboundRegistryHandle::default())))
+        Ok(Self::new(
+            cfg,
+            router,
+            Arc::new(sb_core::outbound::OutboundRegistryHandle::default()),
+        ))
     }
 
     /// 执行直接连接探测，用于验证目标可达性

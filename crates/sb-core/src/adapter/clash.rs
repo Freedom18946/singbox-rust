@@ -40,10 +40,10 @@ impl std::str::FromStr for ClashMode {
 pub trait ClashServerAdapter: Send + Sync {
     /// Get current mode
     fn mode(&self) -> ClashMode;
-    
+
     /// Set current mode
     fn set_mode(&self, mode: ClashMode);
-    
+
     /// Get available modes
     fn mode_list(&self) -> Vec<String> {
         vec![

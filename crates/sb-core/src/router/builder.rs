@@ -1,5 +1,7 @@
 use crate::router::{
-    decision_intern, rules::{CompositeRule, Decision}, RouterIndex,
+    decision_intern,
+    rules::{CompositeRule, Decision},
+    RouterIndex,
 };
 use sb_config::ir::ConfigIR;
 use std::collections::HashMap;
@@ -43,11 +45,16 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
     // Helper for interning decisions (reserved for future use)
     #[allow(dead_code)]
     let _intern = |action: &sb_config::ir::RuleAction,
-                  outbound: &Option<String>,
-                  override_addr: &Option<String>,
-                  override_port: Option<u16>|
+                   outbound: &Option<String>,
+                   override_addr: &Option<String>,
+                   override_port: Option<u16>|
      -> &'static str {
-        let d = Decision::from_rule_action(action, outbound.clone(), override_addr.clone(), override_port);
+        let d = Decision::from_rule_action(
+            action,
+            outbound.clone(),
+            override_addr.clone(),
+            override_port,
+        );
         decision_intern::intern_decision(d.as_str())
     };
 
@@ -63,15 +70,15 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
         // This is a critical observation.
         // If we want to support mixing optimized maps and composite rules, we must change `engine.rs` logic.
         // Or we must put everything into `idx.rules` (CompositeRule).
-        
+
         // Given that `engine.rs` conditionally checks optimized maps only if `rules` is empty,
         // we have two choices:
         // 1. Modify `engine.rs` to check optimized maps as well (or before/after).
         // 2. Put EVERYTHING in `CompositeRule`.
-        
+
         // Option 2 is safest for correctness and feature support (Ref: Go implementation uses list of rules).
         // So we will convert ALL RuleIR to CompositeRule.
-        
+
         match CompositeRule::try_from(rule) {
             Ok(c) => composite_rules.push(c),
             Err(e) => return Err(format!("Failed to build rule: {}", e)),

@@ -18,9 +18,9 @@
 //!
 //! Requirements: 9.1, 9.2, 9.4
 
-use std::net::SocketAddr;
 use std::env;
 use std::io;
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};

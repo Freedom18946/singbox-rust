@@ -299,7 +299,12 @@ mod reality_benches {
     }
 
     pub fn bench_reality_throughput(c: &mut Criterion) {
-        bench_env_throughput(c, "reality_throughput", "SB_BENCH_REALITY_ADDR", 1024 * 1024);
+        bench_env_throughput(
+            c,
+            "reality_throughput",
+            "SB_BENCH_REALITY_ADDR",
+            1024 * 1024,
+        );
     }
 }
 
@@ -386,12 +391,7 @@ mod hysteria2_benches {
     }
 
     pub fn bench_hysteria_v2_udp_relay(c: &mut Criterion) {
-        bench_env_throughput(
-            c,
-            "hysteria_v2_udp",
-            "SB_BENCH_HYSTERIA2_ADDR",
-            64 * 1024,
-        );
+        bench_env_throughput(c, "hysteria_v2_udp", "SB_BENCH_HYSTERIA2_ADDR", 64 * 1024);
     }
 }
 
@@ -433,12 +433,7 @@ mod tuic_benches {
     }
 
     pub fn bench_tuic_udp_over_stream(c: &mut Criterion) {
-        bench_env_throughput(
-            c,
-            "tuic_udp_over_stream",
-            "SB_BENCH_TUIC_ADDR",
-            64 * 1024,
-        );
+        bench_env_throughput(c, "tuic_udp_over_stream", "SB_BENCH_TUIC_ADDR", 64 * 1024);
     }
 }
 

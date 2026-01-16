@@ -34,22 +34,22 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::transport_config::InboundStream;
 #[cfg(feature = "tls_reality")]
 use sb_tls::reality::server::RealityConnection;
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
-use crate::transport_config::InboundStream;
 
 type StreamBox = Box<dyn InboundStream>;
 
+use sb_core::net::metered;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -219,12 +219,12 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
                                  let mut config = Config::default();
                                  config.set_max_num_streams(mux_cfg.max_num_streams);
-                                 
+
                                  let compat_stream = stream.compat();
                                  let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
                                  debug!(%peer, "vless: mux session started");
-                                 
+
                                  while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                                      match result {
                                          Ok(stream) => {
@@ -268,8 +268,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
 async fn prepare_tls_layer(
     stream: StreamBox,
-    #[cfg(feature = "tls_reality")]
-    reality: Option<&RealityAcceptor>,
+    #[cfg(feature = "tls_reality")] reality: Option<&RealityAcceptor>,
     tls: Option<&tokio_rustls::TlsAcceptor>,
     fallback_for_alpn: &HashMap<String, SocketAddr>,
     peer: SocketAddr,
@@ -280,31 +279,34 @@ async fn prepare_tls_layer(
             Ok(conn) => match conn {
                 RealityConnection::Proxy(s) => return Ok(Some(Box::new(s))),
                 RealityConnection::Fallback { client, target } => {
-                     debug!(%peer, "vless: REALITY fallback triggered");
-                     // For VLESS, fallback logic is typically bidirectional relay
-                     // In old code: RealityConnection::Fallback { client, target }.handle()
-                     // We need to reconstruct or call method if possible.
-                     // The `conn` *is* the enum.
-                     // We can't reuse `conn` after matching it unless ref.
-                     // Reconstruct:
-                     let conn = RealityConnection::Fallback { client, target };
-                     if let Err(e) = conn.handle().await {
-                         warn!(%peer, error=%e, "vless: REALITY fallback error");
-                     }
-                     return Ok(None);
+                    debug!(%peer, "vless: REALITY fallback triggered");
+                    // For VLESS, fallback logic is typically bidirectional relay
+                    // In old code: RealityConnection::Fallback { client, target }.handle()
+                    // We need to reconstruct or call method if possible.
+                    // The `conn` *is* the enum.
+                    // We can't reuse `conn` after matching it unless ref.
+                    // Reconstruct:
+                    let conn = RealityConnection::Fallback { client, target };
+                    if let Err(e) = conn.handle().await {
+                        warn!(%peer, error=%e, "vless: REALITY fallback error");
+                    }
+                    return Ok(None);
                 }
             },
             Err(e) => return Err(anyhow!("REALITY handshake failed: {}", e)),
         }
     }
-    
+
     if let Some(acceptor) = tls {
-        let mut tls_stream = acceptor.accept(stream).await.map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
-        
+        let mut tls_stream = acceptor
+            .accept(stream)
+            .await
+            .map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
+
         // ALPN Fallback Check
         let mut fallback_target = None;
         if !fallback_for_alpn.is_empty() {
-             if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
+            if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
                 let alpn_str = String::from_utf8_lossy(alpn);
                 if let Some(addr) = fallback_for_alpn.get(alpn_str.as_ref()) {
                     fallback_target = Some(*addr);
@@ -315,7 +317,7 @@ async fn prepare_tls_layer(
         if let Some(target) = fallback_target {
             debug!(%peer, alpn=?target, "vless: ALPN fallback triggered");
             if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
-                 warn!(%peer, error=%e, "vless: ALPN fallback error");
+                warn!(%peer, error=%e, "vless: ALPN fallback error");
             }
             return Ok(None);
         }
@@ -500,8 +502,7 @@ async fn handle_conn_impl(
                         (stream, Some(tag.to_string()))
                     }
                 } else {
-                    let stream =
-                        fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                    let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
                     let tag = match &proxy {
                         ProxyChoice::Direct => "direct",
                         ProxyChoice::Http(_) => "http",
@@ -510,8 +511,7 @@ async fn handle_conn_impl(
                     (stream, Some(tag.to_string()))
                 }
             } else {
-                let stream =
-                    fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
                 let tag = match &proxy {
                     ProxyChoice::Direct => "direct",
                     ProxyChoice::Http(_) => "http",
@@ -529,7 +529,9 @@ async fn handle_conn_impl(
             };
             (stream, Some(tag.to_string()))
         }
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vless: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("vless: rejected by rules"))
+        }
         _ => return Err(anyhow!("vless: unsupported routing action")),
     };
 

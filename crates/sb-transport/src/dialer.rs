@@ -424,7 +424,13 @@ impl TcpDialer {
 
     /// Helper to connect a TCP stream with platform-specific protection and socket options
     async fn connect_tcp_stream(&self, addr: SocketAddr) -> std::io::Result<TcpStream> {
-        #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "android",
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        ))]
         {
             use socket2::{Domain, Protocol, Socket, Type};
 
@@ -448,7 +454,9 @@ impl TcpDialer {
             // Bind to specific IP if configured
             if addr.is_ipv4() {
                 if let Some(bind_v4) = self.bind_v4 {
-                    socket.bind(&std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0).into())?;
+                    socket.bind(
+                        &std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0).into(),
+                    )?;
                 }
             } else if let Some(bind_v6) = self.bind_v6 {
                 socket.bind(&std::net::SocketAddr::new(std::net::IpAddr::V6(bind_v6), 0).into())?;
@@ -464,13 +472,15 @@ impl TcpDialer {
                     socket.set_mark(mark)?;
                 }
             }
-            
+
             #[cfg(target_os = "android")]
             {
                 if let Some(mark) = self.routing_mark {
                     socket.set_mark(mark)?;
                 }
-                if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&tokio::net::TcpSocket::from_std_stream(socket.try_clone()?.into())) {
+                if let Err(e) = sb_platform::android_protect::protect_tcp_socket(
+                    &tokio::net::TcpSocket::from_std_stream(socket.try_clone()?.into()),
+                ) {
                     tracing::warn!("Failed to protect TCP socket: {}", e);
                 }
             }
@@ -478,18 +488,24 @@ impl TcpDialer {
             // TCP Fast Open (Linux/Android only)
             #[cfg(any(target_os = "linux", target_os = "android"))]
             if self.tcp_fast_open {
-                 let _ = socket.set_tcp_fastopen_connect(true);
+                let _ = socket.set_tcp_fastopen_connect(true);
             }
 
             // Set non-blocking before connecting (required for tokio)
             socket.set_nonblocking(true)?;
 
             // Convert to tokio TcpStream via TcpSocket to ensure correct registration
-             let tokio_socket = tokio::net::TcpSocket::from_std_stream(socket.into());
-             tokio_socket.connect(addr).await
+            let tokio_socket = tokio::net::TcpSocket::from_std_stream(socket.into());
+            tokio_socket.connect(addr).await
         }
 
-        #[cfg(not(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "android",
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )))]
         {
             // Fallback for other platforms (e.g. WASM if supported, or obscure unix)
             TcpStream::connect(addr).await

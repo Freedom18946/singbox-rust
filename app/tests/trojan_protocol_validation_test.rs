@@ -76,6 +76,8 @@ fn trojan_config(
         cert_path,
         key_path,
         router,
+        tag: None,
+        stats: None,
         reality: None,
         multiplex: None,
         transport_layer: None,

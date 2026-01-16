@@ -15,8 +15,10 @@ fn start_echo() -> Option<(std::net::SocketAddr, thread::JoinHandle<()>)> {
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping upstream auth test: cannot bind echo server ({err})");
                 return None;
             }
@@ -50,8 +52,10 @@ fn start_fake_http_up_with_auth(
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping upstream auth test: cannot bind upstream listener ({err})");
                 return None;
             }

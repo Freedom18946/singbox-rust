@@ -24,10 +24,10 @@ use std::fs;
 
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, IssueKind};
-use crate::cli::GlobalArgs;
-use crate::config_loader;
 use crate::cli::output;
 use crate::cli::Format;
+use crate::cli::GlobalArgs;
+use crate::config_loader;
 use app::util;
 use sb_config::compat as cfg_compat;
 #[cfg(feature = "schema-v2")]
@@ -41,7 +41,8 @@ use sb_config::validator::v2;
 /// - 2: Config has errors (with or without warnings)
 pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
     if !wants_extended_analysis(&args) {
-        let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+        let entries =
+            config_loader::collect_config_entries(&global.config, &global.config_directory)?;
         let cfg = config_loader::load_config(&entries)?;
         check_config(&cfg)?;
         return Ok(0);
@@ -365,7 +366,9 @@ const RULE_DIMS: &[RuleDimension] = &[
         keys: &["source_port"],
     },
     RuleDimension { keys: &["network"] },
-    RuleDimension { keys: &["protocol"] },
+    RuleDimension {
+        keys: &["protocol"],
+    },
     RuleDimension { keys: &["process"] },
 ];
 
@@ -375,7 +378,10 @@ fn minimize_rules_value(raw: &Value) -> (Value, sb_config::minimize::MinimizeAct
     };
 
     if rules.iter().any(rule_has_negation) {
-        return (raw.clone(), sb_config::minimize::MinimizeAction::SkippedByNegation);
+        return (
+            raw.clone(),
+            sb_config::minimize::MinimizeAction::SkippedByNegation,
+        );
     }
 
     let mut kept: Vec<Value> = Vec::new();
@@ -589,10 +595,7 @@ fn validate_geo_resources(config: &Value, issues: &mut Vec<CheckIssue>) {
         use sb_core::router::geo::{GeoIpDb, GeoSiteDb};
         use std::path::Path;
 
-        if let Some(path) = config
-            .pointer("/route/geoip/path")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(path) = config.pointer("/route/geoip/path").and_then(|v| v.as_str()) {
             if let Err(err) = GeoIpDb::load_from_file(Path::new(path)) {
                 push_err(
                     issues,

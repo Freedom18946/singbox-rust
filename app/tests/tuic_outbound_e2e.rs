@@ -10,14 +10,14 @@
 
 #[cfg(feature = "adapter-tuic")]
 mod tuic_tests {
-    use std::io;
-    use std::net::SocketAddr;
     use sb_adapters::inbound::tuic::{serve as tuic_serve, TuicInboundConfig, TuicUser};
     use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
-    use sb_core::outbound::OutboundRegistryHandle;
-    use sb_core::router;
     use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
     use sb_core::outbound::types::OutboundTcp;
+    use sb_core::outbound::OutboundRegistryHandle;
+    use sb_core::router;
+    use std::io;
+    use std::net::SocketAddr;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
     use tokio::sync::mpsc;
@@ -95,10 +95,7 @@ mod tuic_tests {
         }
     }
 
-    async fn start_tuic_server(
-        uuid: Uuid,
-        token: &str,
-    ) -> Option<(SocketAddr, mpsc::Sender<()>)> {
+    async fn start_tuic_server(uuid: Uuid, token: &str) -> Option<(SocketAddr, mpsc::Sender<()>)> {
         let listener = bind_tcp_listener().await?;
         let addr = listener.local_addr().unwrap();
         drop(listener);
@@ -172,10 +169,8 @@ mod tuic_tests {
         );
         let outbound = TuicOutbound::new(config).expect("tuic outbound");
 
-        let target = sb_core::outbound::types::HostPort::new(
-            echo_addr.ip().to_string(),
-            echo_addr.port(),
-        );
+        let target =
+            sb_core::outbound::types::HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
         let mut stream = outbound.connect(&target).await.expect("connect tuic");
 
         let payload = b"tuic-tcp";
@@ -264,7 +259,10 @@ mod tuic_tests {
             true,
         );
         let outbound = TuicOutbound::new(config).expect("tuic outbound");
-        let transport = outbound.create_udp_transport().await.expect("udp transport");
+        let transport = outbound
+            .create_udp_transport()
+            .await
+            .expect("udp transport");
 
         let payload = b"tuic-udp-stream";
         transport
@@ -317,10 +315,8 @@ mod tuic_tests {
         );
         let outbound = TuicOutbound::new(config).expect("tuic outbound");
 
-        let target = sb_core::outbound::types::HostPort::new(
-            echo_addr.ip().to_string(),
-            echo_addr.port(),
-        );
+        let target =
+            sb_core::outbound::types::HostPort::new(echo_addr.ip().to_string(), echo_addr.port());
         let mut stream = outbound.connect(&target).await.expect("connect tuic");
 
         let payload = b"auth-ok";
@@ -352,10 +348,7 @@ mod tuic_tests {
         );
 
         let outbound = TuicOutbound::new(config).expect("tuic outbound");
-        let target = sb_core::outbound::types::HostPort::new(
-            server_addr.ip().to_string(),
-            80,
-        );
+        let target = sb_core::outbound::types::HostPort::new(server_addr.ip().to_string(), 80);
         let result = outbound.connect(&target).await;
         assert!(result.is_err(), "auth failure should error");
     }
@@ -390,7 +383,6 @@ mod tuic_tests {
                 algo
             );
         }
-
     }
 }
 
@@ -523,10 +515,7 @@ mod packet_tests {
         let connector = TuicConnector::new(config);
         assert_eq!(connector.name(), "tuic", "Connector name should be 'tuic'");
         assert!(
-            connector
-                .create_udp_transport()
-                .await
-                .is_err(),
+            connector.create_udp_transport().await.is_err(),
             "UDP transport should fail without a running server"
         );
     }
@@ -602,12 +591,13 @@ mod packet_tests {
 
         let outbound = TuicOutbound::new(config).expect("tuic outbound");
         let target = sb_core::outbound::types::HostPort::new("127.0.0.1".to_string(), 80);
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            outbound.connect(&target),
-        )
-        .await;
-        assert!(result.is_err() || result.unwrap().is_err(), "connect should fail");
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(2), outbound.connect(&target))
+                .await;
+        assert!(
+            result.is_err() || result.unwrap().is_err(),
+            "connect should fail"
+        );
     }
 }
 

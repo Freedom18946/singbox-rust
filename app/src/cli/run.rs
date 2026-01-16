@@ -20,9 +20,9 @@ use std::path::PathBuf;
 use tracing::info;
 
 use crate::cli::GlobalArgs;
-use app::config_loader;
 #[cfg(feature = "dev-cli")]
 use crate::env_dump;
+use app::config_loader;
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
@@ -44,11 +44,11 @@ pub struct RunArgs {
     #[arg(long, default_value_t = false)]
     no_banner: bool,
 
-    /// Admin HTTP listen address (e.g. 127.0.0.1:19090). Falls back to ADMIN_LISTEN env.
+    /// Admin HTTP listen address (e.g. 127.0.0.1:19090). Falls back to `ADMIN_LISTEN` env.
     #[arg(long = "admin-listen")]
     admin_listen: Option<String>,
 
-    /// Admin HTTP token (optional). Falls back to ADMIN_TOKEN env.
+    /// Admin HTTP token (optional). Falls back to `ADMIN_TOKEN` env.
     #[arg(long = "admin-token")]
     admin_token: Option<String>,
 }
@@ -58,7 +58,7 @@ fn parse_addr(s: &str) -> std::result::Result<SocketAddr, String> {
 }
 
 // Use shared run_engine helpers
-use app::run_engine::{load_config_with_import, RunOptions, ReloadOutputMode};
+use app::run_engine::{load_config_with_import, ReloadOutputMode, RunOptions};
 
 pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
     // --check：零副作用配置校验

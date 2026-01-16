@@ -22,7 +22,7 @@ pub struct CheckIssue {
     pub code: IssueCode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
-    /// Optional stable rule id (sha8) when `SB_CHECK_RULEID=1` and ptr points to /route/rules/N
+    /// Optional stable rule id (sha8) when `SB_CHECK_RULEID=1` and ptr points to `/route/rules/N`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rule_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

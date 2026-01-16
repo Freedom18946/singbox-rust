@@ -298,5 +298,4 @@ fn test_protocol_coverage_summary() {
     println!("  - SSH, ShadowTLS, Tor, AnyTLS, WireGuard");
     println!("  - Selector, URLTest");
     println!("=================================\n");
-
 }

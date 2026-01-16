@@ -28,12 +28,12 @@ use std::time::Duration;
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge};
 use sb_core::net::datagram::{run_nat_evictor, UdpNatKey, UdpNatMap};
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::udp::{direct_sendto, direct_udp_socket_for};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::services::v2ray_api::StatsManager;
-use sb_core::net::metered::TrafficRecorder;
 use std::env;
 
 static NAT_MAP: OnceCell<Arc<UdpNatMap>> = OnceCell::const_new();
@@ -495,6 +495,7 @@ enum ProxyOutcome {
     NeedFallback,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn forward_via_proxy(
     listen: Arc<UdpSocket>,
     client: SocketAddr,
@@ -576,6 +577,7 @@ async fn forward_via_proxy(
                 }
                 if let Some(ref recorder) = traffic {
                     recorder.record_down(reply_payload.len() as u64);
+                    recorder.record_down_packet(1);
                 }
             }
             Ok(None) => break,
@@ -591,6 +593,7 @@ async fn forward_via_proxy(
     ProxyOutcome::Handled
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ensure_upstream_session(
     listen: Arc<UdpSocket>,
     up_map: Arc<UdpUpstreamMap>,
@@ -660,6 +663,7 @@ async fn ensure_upstream_session(
                             if listen_sock.send_to(&reply, client).await.is_ok() {
                                 if let Some(ref recorder) = traffic_clone {
                                     recorder.record_down(payload.len() as u64);
+                                    recorder.record_down_packet(1);
                                 }
                             }
                         }
@@ -1037,15 +1041,17 @@ pub async fn serve_udp_datagrams(
         {
             // 不做任何解析，直接把收到的帧回射给来源地址。
             // Do not parse, directly echo received frame to source address.
-            let traffic = stats.as_ref().and_then(|stats| {
-                stats.traffic_recorder(inbound_tag.as_deref(), None, None)
-            });
+            let traffic = stats
+                .as_ref()
+                .and_then(|stats| stats.traffic_recorder(inbound_tag.as_deref(), None, None));
             if let Some(ref recorder) = traffic {
                 recorder.record_up(n as u64);
+                recorder.record_up_packet(1);
             }
             let _ = sock.send_to(pkt, src).await?;
             if let Some(ref recorder) = traffic {
                 recorder.record_down(pkt.len() as u64);
+                recorder.record_down_packet(1);
             }
             #[cfg(feature = "metrics")]
             {
@@ -1151,11 +1157,13 @@ pub async fn serve_udp_datagrams(
             });
             if let Some(ref recorder) = traffic {
                 recorder.record_up(payload.len() as u64);
+                recorder.record_up_packet(1);
             }
             let reply = encode_udp_datagram(&dst, payload);
             if sock.send_to(&reply, src).await.is_ok() {
                 if let Some(ref recorder) = traffic {
                     recorder.record_down(payload.len() as u64);
+                    recorder.record_down_packet(1);
                 }
             }
             #[cfg(feature = "metrics")]
@@ -1179,9 +1187,9 @@ pub async fn serve_udp_datagrams(
             continue;
         }
 
-        let direct_traffic = stats.as_ref().and_then(|stats| {
-            stats.traffic_recorder(inbound_tag.as_deref(), Some("direct"), None)
-        });
+        let direct_traffic = stats
+            .as_ref()
+            .and_then(|stats| stats.traffic_recorder(inbound_tag.as_deref(), Some("direct"), None));
 
         if use_proxy {
             let proxy_tag = proxy_pool.clone().unwrap_or_else(|| "proxy".to_string());
@@ -1203,6 +1211,7 @@ pub async fn serve_udp_datagrams(
                 ProxyOutcome::Handled => {
                     if let Some(ref recorder) = proxy_traffic {
                         recorder.record_up(body.len() as u64);
+                        recorder.record_up_packet(1);
                     }
                     continue;
                 }
@@ -1257,6 +1266,7 @@ pub async fn serve_udp_datagrams(
                             }
                             if let Some(ref recorder) = traffic {
                                 recorder.record_down(rn as u64);
+                                recorder.record_down_packet(1);
                             }
                             #[cfg(feature = "metrics")]
                             {
@@ -1289,6 +1299,7 @@ pub async fn serve_udp_datagrams(
             Ok(_) => {
                 if let Some(ref recorder) = direct_traffic {
                     recorder.record_up(body.len() as u64);
+                    recorder.record_up_packet(1);
                 }
                 if std::env::var("SB_TEST_ECHO_GLUE")
                     .ok()
@@ -1299,6 +1310,7 @@ pub async fn serve_udp_datagrams(
                     if sock.send_to(&reply, src).await.is_ok() {
                         if let Some(ref recorder) = direct_traffic {
                             recorder.record_down(body.len() as u64);
+                            recorder.record_down_packet(1);
                         }
                     }
                 }

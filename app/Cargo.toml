@@ -19,6 +19,25 @@ acceptance = [
     "prom",
     "preview_route"
 ]
+## Go parity 构建聚合特性集
+parity = [
+    "router",
+    "adapters",
+    "dns_udp",
+    "dns_doh",
+    "dns_dot",
+    "dns_doq",
+    "dns_doh3",
+    "dns_dhcp",
+    "dns_resolved",
+    "dns_tailscale",
+    "service_ntp",
+    "service_resolved",
+    "service_ssmapi",
+    "service_derp",
+    "clash_api",
+    "v2ray_api",
+]
 
 # Test-gating features (not included in acceptance)
 long_tests = []
@@ -87,6 +106,11 @@ adapter-naive = ["sb-adapters/adapter-naive"]
 shadowsocks = ["sb-adapters/adapter-shadowsocks"]
 vmess = ["sb-adapters/adapter-vmess"]
 dns_dhcp = ["sb-core/dns_dhcp"]
+dns_udp = ["sb-core/dns_udp"]
+dns_doh = ["sb-core/dns_doh"]
+dns_dot = ["sb-core/dns_dot"]
+dns_doq = ["sb-core/dns_doq"]
+dns_doh3 = ["sb-core/dns_doh3"]
 dns_resolved = ["sb-core/dns_resolved"]
 dns_tailscale = ["sb-core/dns_tailscale"]
 adapter-wireguard-endpoint = ["sb-adapters/adapter-wireguard-endpoint"]
@@ -114,7 +138,7 @@ adapters = [
     "sb-adapters/adapter-shadowtls",
     "sb-adapters/adapter-anytls",
     "sb-adapters/adapter-wireguard",
-    "sb-adapters/adapter-wireguard-endpoint",
+    "adapter-wireguard-endpoint",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",
@@ -141,8 +165,8 @@ service_ntp = ["sb-core/service_ntp"]
 service_resolved = ["sb-core/service_resolved", "sb-adapters/service_resolved"]
 service_ssmapi   = ["sb-core/service_ssmapi", "sb-adapters/service_ssmapi"]
 service_derp     = ["sb-core/service_derp", "sb-adapters/service_derp"]
-clash_api        = ["sb-api"]
-v2ray_api        = ["sb-api"]
+clash_api        = ["sb-api", "sb-api/clash-api"]
+v2ray_api        = ["sb-api", "sb-api/v2ray-api"]
 hickory-proto = ["dep:hickory-proto"]
 adapter-http = ["sb-adapters/adapter-http"]
 out_tuic = ["sb-core/out_tuic"]

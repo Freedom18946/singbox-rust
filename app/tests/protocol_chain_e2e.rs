@@ -88,7 +88,10 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
 }
 
 #[cfg(feature = "shadowsocks")]
-async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
+async fn start_ss_server(
+    method: &str,
+    password: &str,
+) -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
     use sb_adapters::inbound::shadowsocks::{serve, ShadowsocksInboundConfig, ShadowsocksUser};
     use sb_core::router::engine::RouterHandle;
     use tokio::sync::mpsc;
@@ -103,7 +106,10 @@ async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(Socke
         method: method.to_string(),
         #[allow(deprecated)]
         password: None,
-        users: vec![ShadowsocksUser::new("test".to_string(), password.to_string())],
+        users: vec![ShadowsocksUser::new(
+            "test".to_string(),
+            password.to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,
@@ -118,7 +124,8 @@ async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(Socke
 }
 
 #[cfg(feature = "vmess")]
-async fn start_vmess_server() -> std::io::Result<(SocketAddr, uuid::Uuid, tokio::sync::mpsc::Sender<()>)> {
+async fn start_vmess_server(
+) -> std::io::Result<(SocketAddr, uuid::Uuid, tokio::sync::mpsc::Sender<()>)> {
     use sb_adapters::inbound::vmess::VmessInboundConfig;
     use sb_core::router::engine::RouterHandle;
     use tokio::sync::mpsc;
@@ -150,10 +157,7 @@ async fn start_vmess_server() -> std::io::Result<(SocketAddr, uuid::Uuid, tokio:
 }
 
 #[cfg(all(feature = "http", feature = "socks"))]
-async fn socks5_connect(
-    socks_addr: SocketAddr,
-    target: SocketAddr,
-) -> std::io::Result<TcpStream> {
+async fn socks5_connect(socks_addr: SocketAddr, target: SocketAddr) -> std::io::Result<TcpStream> {
     let mut stream = TcpStream::connect(socks_addr).await?;
     stream.write_all(&[0x05, 0x01, 0x00]).await?;
 
@@ -463,7 +467,9 @@ async fn test_mixed_inbound_protocol_detection_runtime() {
     };
 
     // HTTP CONNECT path
-    let mut http_stream = TcpStream::connect(mixed_addr).await.expect("connect mixed http");
+    let mut http_stream = TcpStream::connect(mixed_addr)
+        .await
+        .expect("connect mixed http");
     let request = format!(
         "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
         echo_addr.ip(),
@@ -483,21 +489,29 @@ async fn test_mixed_inbound_protocol_detection_runtime() {
     let test_data = b"mixed-http";
     http_stream.write_all(test_data).await.unwrap();
     let mut echo_back = vec![0u8; test_data.len()];
-    timeout(Duration::from_secs(2), http_stream.read_exact(&mut echo_back))
-        .await
-        .unwrap()
-        .unwrap();
+    timeout(
+        Duration::from_secs(2),
+        http_stream.read_exact(&mut echo_back),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(&echo_back, test_data);
 
     // SOCKS5 path
-    let mut socks_stream = socks5_connect(mixed_addr, echo_addr).await.expect("socks connect");
+    let mut socks_stream = socks5_connect(mixed_addr, echo_addr)
+        .await
+        .expect("socks connect");
     let socks_data = b"mixed-socks";
     socks_stream.write_all(socks_data).await.unwrap();
     let mut socks_back = vec![0u8; socks_data.len()];
-    timeout(Duration::from_secs(2), socks_stream.read_exact(&mut socks_back))
-        .await
-        .unwrap()
-        .unwrap();
+    timeout(
+        Duration::from_secs(2),
+        socks_stream.read_exact(&mut socks_back),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(&socks_back, socks_data);
 }
 

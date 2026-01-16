@@ -1,4 +1,4 @@
-#![cfg(feature = "router")]
+#![cfg(all(feature = "router", feature = "explain"))]
 //! GEO/DNS resource robustness tests
 //!
 //! Tests for resilient handling of missing, corrupt, and legacy GEO database files.
@@ -130,7 +130,14 @@ async fn test_legacy_geoip_database() {
 async fn test_route_explain_missing_database() {
     let cfg_path = geo_fixture_path("missing/config.yaml");
     let output = Command::new(route_explain_binary_path())
-        .args(["--config", &cfg_path, "--destination", "8.8.8.8", "--format", "json"])
+        .args([
+            "--config",
+            &cfg_path,
+            "--destination",
+            "8.8.8.8",
+            "--format",
+            "json",
+        ])
         .output()
         .expect("Failed to execute route-explain command");
 
@@ -158,7 +165,14 @@ async fn test_route_explain_missing_database() {
 async fn test_route_explain_corrupt_database() {
     let cfg_path = geo_fixture_path("corrupt/config.yaml");
     let output = Command::new(route_explain_binary_path())
-        .args(["--config", &cfg_path, "--destination", "8.8.8.8", "--format", "json"])
+        .args([
+            "--config",
+            &cfg_path,
+            "--destination",
+            "8.8.8.8",
+            "--format",
+            "json",
+        ])
         .output()
         .expect("Failed to execute route-explain command");
 

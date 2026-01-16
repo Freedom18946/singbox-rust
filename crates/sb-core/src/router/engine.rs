@@ -15,8 +15,8 @@ use once_cell::sync::Lazy;
 
 use crate::geoip::lookup_with_metrics_decision;
 use crate::router::{
-    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip, runtime_override_http,
-    runtime_override_udp, shared_index, RouteTarget, RouterIndex,
+    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
+    runtime_override_http, runtime_override_udp, shared_index, RouteTarget, RouterIndex,
 };
 
 type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
@@ -1154,14 +1154,20 @@ impl RouterHandle {
 impl super::route_connection::ConnectionRouter for RouterHandle {
     /// Route a TCP connection based on the routing context.
     /// 根据路由上下文路由 TCP 连接。
-    async fn route_connection<'a>(&self, ctx: &super::RouteCtx<'a>) -> super::route_connection::RouteResult {
+    async fn route_connection<'a>(
+        &self,
+        ctx: &super::RouteCtx<'a>,
+    ) -> super::route_connection::RouteResult {
         let decision = self.decide(ctx);
         decision_to_route_result(decision)
     }
 
     /// Route a UDP packet based on the routing context.
     /// 根据路由上下文路由 UDP 包。
-    async fn route_packet<'a>(&self, ctx: &super::RouteCtx<'a>) -> super::route_connection::RouteResult {
+    async fn route_packet<'a>(
+        &self,
+        ctx: &super::RouteCtx<'a>,
+    ) -> super::route_connection::RouteResult {
         let decision = self.decide(ctx);
         decision_to_route_result(decision)
     }
@@ -1177,9 +1183,11 @@ impl super::route_connection::ConnectionRouter for RouterHandle {
 
 /// Convert Decision to RouteResult
 /// 将 Decision 转换为 RouteResult
-fn decision_to_route_result(decision: crate::router::rules::Decision) -> super::route_connection::RouteResult {
-    use crate::router::rules::Decision;
+fn decision_to_route_result(
+    decision: crate::router::rules::Decision,
+) -> super::route_connection::RouteResult {
     use super::route_connection::RouteResult;
+    use crate::router::rules::Decision;
 
     match decision {
         Decision::Direct => RouteResult::direct(),
@@ -1195,7 +1203,10 @@ fn decision_to_route_result(decision: crate::router::rules::Decision) -> super::
         Decision::Hijack { address, port } => {
             let addr = address.as_deref().unwrap_or("*");
             let p = port.unwrap_or(0);
-            let mut result = RouteResult::new(Decision::Hijack { address: address.clone(), port });
+            let mut result = RouteResult::new(Decision::Hijack {
+                address: address.clone(),
+                port,
+            });
             result.outbound = Some(format!("hijack:{}:{}", addr, p));
             result
         }

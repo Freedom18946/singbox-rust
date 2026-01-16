@@ -9,8 +9,10 @@ use super::{
     DnsUpstream, Resolver,
 };
 
-type DnsComponents =
-    (Arc<dyn Resolver>, Option<Arc<dyn crate::dns::dns_router::DnsRouter>>);
+type DnsComponents = (
+    Arc<dyn Resolver>,
+    Option<Arc<dyn crate::dns::dns_router::DnsRouter>>,
+);
 
 /// Build DNS components (Resolver and Router) from sb-config IR.
 pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponents> {
@@ -97,7 +99,10 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
 
             // Validation: Route action requires server
             if action == DnsRuleAction::Route && r.server.is_none() {
-                tracing::warn!("DNS rule with Route action missing server, skipping: {:?}", r);
+                tracing::warn!(
+                    "DNS rule with Route action missing server, skipping: {:?}",
+                    r
+                );
                 continue;
             }
 
@@ -132,19 +137,21 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
             geosite_db,
         );
         let engine_arc = Arc::new(engine);
-        // EngineResolver clones the engine (cheap clone if Arc fields, but DnsRuleEngine fields are expensive to clone? 
+        // EngineResolver clones the engine (cheap clone if Arc fields, but DnsRuleEngine fields are expensive to clone?
         // DnsRuleEngine struct fields are Vecs and Maps. Cloning DnsRuleEngine is somewhat expensive.
         // We should wrap DnsRuleEngine in Arc for EngineResolver too, or EngineResolver should allow cloning field?
         // Let's modify EngineResolver to hold Arc<DnsRuleEngine> or just clone it if it's acceptable.
-        // DnsRuleEngine derives Clone? Let's check. 
+        // DnsRuleEngine derives Clone? Let's check.
         // If not, we might need to change EngineResolver to use Arc.
-        
-        let base: Arc<dyn Resolver> = Arc::new(EngineResolver { engine: engine_arc.clone() });
+
+        let base: Arc<dyn Resolver> = Arc::new(EngineResolver {
+            engine: engine_arc.clone(),
+        });
         let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-        
+
         // engine_arc implements DnsRouter
         let router: Arc<dyn crate::dns::dns_router::DnsRouter> = engine_arc;
-        
+
         return Ok((overlay, Some(router)));
     }
 
@@ -164,7 +171,6 @@ pub fn resolver_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Arc<dyn Resolver
     let (resolver, _) = build_dns_components(ir)?;
     Ok(resolver)
 }
-
 
 /// Build a single DNS upstream from address string (e.g., udp://, doh3://, system, local).
 /// Exposed for integration tests and CLI validation.
@@ -713,7 +719,7 @@ fn build_ruleset_from_rule(
         wifi_bssid: r.wifi_bssid.clone(),
         query_type: r.query_type.clone(),
         invert: r.invert,
-        
+
         ip_is_private: r.ip_is_private.unwrap_or(false),
         source_ip_is_private: r.source_ip_is_private.unwrap_or(false),
         ip_accept_any: r.ip_accept_any.unwrap_or(false),
@@ -722,7 +728,7 @@ fn build_ruleset_from_rule(
         clash_mode: r.clash_mode.clone(),
         network_is_expensive: r.network_is_expensive.unwrap_or(false),
         network_is_constrained: r.network_is_constrained.unwrap_or(false),
-        
+
         ..Default::default()
     };
     if !r.domain.is_empty() {
@@ -742,11 +748,11 @@ fn build_ruleset_from_rule(
     for cidr in &dr.ip_cidr {
         ip_tree.insert(cidr);
     }
-    // Also include source IP CIDRs in tree? 
+    // Also include source IP CIDRs in tree?
     // Wait, ip_tree in RuleSet is usually for destination IP matching optimization.
-    // The Matcher uses it. If we put source IPs in there, it might match destination IPs incorrectly 
-    // if the tree doesn't distinguish. 
-    // The current RuleMatcher::matches_ip_cidrs uses self.ruleset.ip_tree. 
+    // The Matcher uses it. If we put source IPs in there, it might match destination IPs incorrectly
+    // if the tree doesn't distinguish.
+    // The current RuleMatcher::matches_ip_cidrs uses self.ruleset.ip_tree.
     // Standard practice: ip_tree is for destination IPs.
 
     StdArc::new(RuleSet {
@@ -766,15 +772,11 @@ fn build_ruleset_from_rule(
 
 fn parse_cidrs(list: &[String]) -> Vec<crate::router::ruleset::IpCidr> {
     use crate::router::ruleset::IpCidr;
-    list.iter()
-        .filter_map(|s| IpCidr::parse(s).ok())
-        .collect()
+    list.iter().filter_map(|s| IpCidr::parse(s).ok()).collect()
 }
 
 fn parse_ports(list: &[String]) -> Vec<u16> {
-    list.iter()
-        .filter_map(|s| s.parse().ok())
-        .collect()
+    list.iter().filter_map(|s| s.parse().ok()).collect()
 }
 
 #[cfg(not(feature = "dns_resolved"))]
@@ -825,8 +827,6 @@ mod tests {
         });
         ir.default = Some("sys".into());
 
-
-
         let config = sb_config::ir::ConfigIR {
             dns: Some(ir),
             ..Default::default()
@@ -870,16 +870,21 @@ mod tests {
     #[test]
     fn build_upstream_from_server_sets_local_tag_name() {
         let registry = crate::dns::transport::TransportRegistry::new();
-        let upstream = build_upstream_from_server(&sb_config::ir::DnsServerIR {
-            tag: "local_tag".into(),
-            address: "local".into(),
-            sni: None,
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: None,
-            client_subnet: None,
-            ..Default::default()
-        }, &registry).unwrap().unwrap();
+        let upstream = build_upstream_from_server(
+            &sb_config::ir::DnsServerIR {
+                tag: "local_tag".into(),
+                address: "local".into(),
+                sni: None,
+                ca_paths: vec![],
+                ca_pem: vec![],
+                skip_cert_verify: None,
+                client_subnet: None,
+                ..Default::default()
+            },
+            &registry,
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(upstream.name(), "local::local_tag");
     }

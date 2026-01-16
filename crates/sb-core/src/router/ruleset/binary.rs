@@ -340,13 +340,13 @@ fn parse_rule_item(
             rule.network_is_constrained = true;
         }
         ITEM_SOURCE_PORT => {
-             let port = read_u16(cursor)?;
-             rule.source_port.push(port);
+            let port = read_u16(cursor)?;
+            rule.source_port.push(port);
         }
         ITEM_SOURCE_PORT_RANGE => {
-             let start = read_u16(cursor)?;
-             let end = read_u16(cursor)?;
-             rule.source_port_range.push((start, end));
+            let start = read_u16(cursor)?;
+            let end = read_u16(cursor)?;
+            rule.source_port_range.push((start, end));
         }
         _ => {
             tracing::warn!("unknown rule item type: {}, skipping", item_type);
@@ -539,7 +539,7 @@ fn parse_json_rule(value: &serde_json::Value, index: usize) -> SbResult<Rule> {
             }
         }
     }
-    
+
     // logic for network_is_expensive / constrained
     if let Some(v) = obj.get("network_is_expensive").and_then(|v| v.as_bool()) {
         rule.network_is_expensive = v;
@@ -820,15 +820,15 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
                     buf.push(ITEM_DOMAIN);
                     write_string(buf, s);
                 }
-                 if let super::DomainRule::Suffix(s) = d {
+                if let super::DomainRule::Suffix(s) = d {
                     buf.push(ITEM_DOMAIN);
                     write_string(buf, s);
                 }
             }
-            // Dedup suffix stored in separate buffer? 
+            // Dedup suffix stored in separate buffer?
             // r.domain contains all. r.domain_suffix is shadow.
             // We iterate r.domain to be safe.
-            
+
             for s in &r.domain_keyword {
                 buf.push(ITEM_DOMAIN_KEYWORD);
                 write_string(buf, s);
@@ -894,7 +894,7 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
                 buf.push(ITEM_QUERY_TYPE);
                 write_string(buf, s);
             }
-             for s in &r.source_port {
+            for s in &r.source_port {
                 buf.push(ITEM_SOURCE_PORT);
                 write_u16(buf, *s);
             }

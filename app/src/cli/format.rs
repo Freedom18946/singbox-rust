@@ -29,8 +29,7 @@ pub fn run(global: &GlobalArgs, args: FormatArgs) -> Result<()> {
         crate::cli::help::print_help_json::<FormatArgs>();
     }
 
-    let entries =
-        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
     if entries.is_empty() {
         return Ok(());
     }

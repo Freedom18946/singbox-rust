@@ -7,6 +7,7 @@
 //! - Router-aware outbound selection (direct/proxy)
 //! - Full stream relay with SYNACK semantics
 
+use super::tls;
 use anyhow::{anyhow, Context, Result};
 use anytls_rs::padding::PaddingFactory;
 use anytls_rs::protocol::{Command, Frame};
@@ -31,7 +32,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
-use super::tls;
 
 const ANYTLS_INBOUND_TAG: &str = "anytls";
 
@@ -472,7 +472,9 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
             }
         }
         RDecision::Proxy(None) => fallback_connect(proxy, &dest.host, dest.port, &opts).await?,
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("destination rejected by router")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("destination rejected by router"))
+        }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
             // Not directly handled by AnyTLS inbound; fall back to direct
             direct_connect_hostport(&dest.host, dest.port, &opts).await?

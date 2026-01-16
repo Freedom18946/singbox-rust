@@ -116,10 +116,7 @@ fn expect_ok<T>(res: anyhow::Result<T>) -> T {
 fn expect_err_contains<T>(res: anyhow::Result<T>, needle: &str) {
     match res {
         Ok(_) => panic!("expected Err containing {needle}"),
-        Err(err) => assert!(
-            err.to_string().contains(needle),
-            "unexpected error: {err}"
-        ),
+        Err(err) => assert!(err.to_string().contains(needle), "unexpected error: {err}"),
     }
 }
 
@@ -794,7 +791,10 @@ async fn subs_cache_etag_flow() {
                 // Verify If-None-Match header was sent
                 let request = String::from_utf8_lossy(&buf);
                 let request_lower = request.to_ascii_lowercase();
-                assert!(request_lower.contains("if-none-match"), "request: {request}");
+                assert!(
+                    request_lower.contains("if-none-match"),
+                    "request: {request}"
+                );
 
                 let response = "HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\n\r\n";
                 let _ = stream.write_all(response.as_bytes()).await;
@@ -895,7 +895,6 @@ async fn admin_auth_bearer_token() {
         );
         let result3 = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(!result3);
-
     }
 }
 
@@ -907,17 +906,13 @@ async fn admin_auth_disabled() {
     }
     #[cfg(feature = "admin_debug")]
     {
-        let _env = admin_env_guard(&[
-            ("SB_ADMIN_NO_AUTH", Some("1")),
-            ("SB_ADMIN_TOKEN", None),
-        ]);
+        let _env = admin_env_guard(&[("SB_ADMIN_NO_AUTH", Some("1")), ("SB_ADMIN_TOKEN", None)]);
 
         let headers = std::collections::HashMap::new();
 
         // Even without token, should pass when auth is disabled
         let result = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(result);
-
     }
 }
 
@@ -950,6 +945,5 @@ async fn config_hot_reload() {
         let config2 = app::admin_debug::reloadable::get();
         assert_eq!(config2.max_redirects, 10);
         assert_eq!(config2.timeout_ms, 8000);
-
     }
 }

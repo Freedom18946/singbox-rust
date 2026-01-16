@@ -44,6 +44,8 @@ async fn test_vless_inbound_with_httpupgrade_transport() {
         listen: bind_addr,
         uuid,
         router,
+        tag: None,
+        stats: None,
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),
@@ -70,6 +72,8 @@ async fn test_vless_inbound_tcp_fallback() {
         listen: bind_addr,
         uuid,
         router,
+        tag: None,
+        stats: None,
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP
@@ -129,6 +133,8 @@ async fn test_vless_httpupgrade_with_reality_tls() {
         listen: bind_addr,
         uuid,
         router,
+        tag: None,
+        stats: None,
         reality: None, // Would contain RealityServerConfig in real scenario
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),

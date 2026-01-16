@@ -13,8 +13,10 @@ fn start_echo() -> Option<(std::net::SocketAddr, thread::JoinHandle<()>)> {
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping upstream socks/http test: cannot bind echo ({err})");
                 return None;
             }
@@ -48,8 +50,10 @@ fn start_fake_socks_up(
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping upstream socks/http test: cannot bind socks ({err})");
                 return None;
             }
@@ -124,8 +128,10 @@ fn start_fake_http_up(
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable)
-            {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping upstream socks/http test: cannot bind http ({err})");
                 return None;
             }

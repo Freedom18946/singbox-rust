@@ -63,10 +63,7 @@ fn validate_geo_resources(raw: &Value) -> Result<()> {
         GeoIpDb::load_from_file(Path::new(path))
             .map_err(|e| anyhow::anyhow!("geoip db load failed: {e}"))?;
     }
-    if let Some(path) = raw
-        .pointer("/route/geosite/path")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(path) = raw.pointer("/route/geosite/path").and_then(|v| v.as_str()) {
         GeoSiteDb::load_from_file(Path::new(path))
             .map_err(|e| anyhow::anyhow!("geosite db load failed: {e}"))?;
     }

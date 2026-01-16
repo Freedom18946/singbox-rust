@@ -1,10 +1,9 @@
 #![cfg(feature = "router")]
-use sb_core::router::ruleset::{RuleSetFormat};
-use sb_core::router::ruleset::{Rule, DefaultRule, DomainRule};
-use sb_core::router::ruleset::binary;
-use sb_core::router::geo::{GeoSiteDb, GeoSiteList, GeoSite, Domain, Type};
 use prost::Message;
-
+use sb_core::router::geo::{Domain, GeoSite, GeoSiteDb, GeoSiteList, Type};
+use sb_core::router::ruleset::binary;
+use sb_core::router::ruleset::RuleSetFormat;
+use sb_core::router::ruleset::{DefaultRule, DomainRule, Rule};
 
 #[tokio::test]
 async fn test_px007_geosite_protobuf_parity() {
@@ -30,7 +29,7 @@ async fn test_px007_geosite_protobuf_parity() {
             Domain {
                 r#type: Type::Regex as i32,
                 value: "^regex.*com$".to_string(),
-            }
+            },
         ],
     };
     let list = GeoSiteList { entry: vec![site] };
@@ -58,15 +57,17 @@ async fn test_px007_ruleset_srs_parity() {
 
     // 1. Create a RuleSet with domain rules
     let rule = Rule::Default(DefaultRule {
-        domain: vec![DomainRule::Exact("example.com".to_string())], 
+        domain: vec![DomainRule::Exact("example.com".to_string())],
         ..Default::default()
     });
-    
+
     // Write SRS (version 1)
     binary::write_to_file(&srs_path, &[rule], 1).await.unwrap();
 
     // 2. Load it
-    let loaded_rs = binary::load_from_file(&srs_path, RuleSetFormat::Binary).await.unwrap();
+    let loaded_rs = binary::load_from_file(&srs_path, RuleSetFormat::Binary)
+        .await
+        .unwrap();
     assert_eq!(loaded_rs.rules.len(), 1);
 
     // Verify content

@@ -46,10 +46,12 @@ fn fetch_wifi_info_platform() -> Option<WifiInfo> {
     use std::process::Command;
 
     // Use absolute path for safety and exact version match, though usually on PATH
-    let output = Command::new("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport")
-        .arg("-I")
-        .output()
-        .ok()?;
+    let output = Command::new(
+        "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport",
+    )
+    .arg("-I")
+    .output()
+    .ok()?;
 
     if !output.status.success() {
         return None;

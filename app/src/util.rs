@@ -34,7 +34,7 @@ pub fn register_adapters_once() {
 ///
 /// This helper consolidates the logic to:
 /// 1. Get engine/bridge from Supervisor state
-/// 2. Call sb_core::admin::http::spawn_admin with proper arguments
+/// 2. Call `sb_core::admin::http::spawn_admin` with proper arguments
 /// 3. Log the startup message
 ///
 /// # Arguments
@@ -43,7 +43,7 @@ pub fn register_adapters_once() {
 /// * `supervisor` - Arc reference to the Supervisor
 ///
 /// # Errors
-/// Returns an error if spawn_admin fails to bind to the address.
+/// Returns an error if `spawn_admin` fails to bind to the address.
 #[cfg(feature = "router")]
 pub async fn spawn_core_admin_from_supervisor(
     listen: &str,

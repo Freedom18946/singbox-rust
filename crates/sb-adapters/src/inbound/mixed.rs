@@ -197,10 +197,7 @@ pub fn detect_tls(data: &[u8]) -> bool {
     if data[0] != 0x16 {
         return false;
     }
-    matches!(
-        u16::from_be_bytes([data[1], data[2]]),
-        0x0301..=0x0304
-    )
+    matches!(u16::from_be_bytes([data[1], data[2]]), 0x0301..=0x0304)
 }
 
 /// Detect SOCKS protocol based on the first bytes of a stream.

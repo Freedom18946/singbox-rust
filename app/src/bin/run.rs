@@ -37,7 +37,7 @@ struct Args {
     /// config path for SIGHUP reload (optional, overrides --config for reload only)
     #[arg(long = "reload-path")]
     reload_path: Option<String>,
-    /// admin implementation: core|debug (default: core). Also can be set via SB_ADMIN_IMPL env var.
+    /// admin implementation: core|debug (default: core). Also can be set via `SB_ADMIN_IMPL` env var.
     #[arg(long = "admin-impl", default_value = "core")]
     admin_impl: String,
     /// Print help information in JSON format and exit
@@ -91,7 +91,9 @@ async fn main() -> Result<()> {
     };
 
     // Resolve prom_listen (CLI arg with env fallback)
-    let prom_listen = args.prom_listen.or_else(|| std::env::var("PROM_LISTEN").ok());
+    let prom_listen = args
+        .prom_listen
+        .or_else(|| std::env::var("PROM_LISTEN").ok());
 
     // Determine startup output mode based on --format
     let startup_output = if args.format == "json" {

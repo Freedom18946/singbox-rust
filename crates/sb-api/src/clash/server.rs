@@ -20,9 +20,9 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
+use sb_config::ir::ConfigIR;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
-use sb_config::ir::ConfigIR;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, oneshot};
 use tower_http::cors::{Any, CorsLayer};
@@ -191,10 +191,7 @@ impl ClashApiServer {
     }
 
     /// Start the API server with a graceful shutdown signal.
-    pub async fn start_with_shutdown(
-        &self,
-        shutdown: oneshot::Receiver<()>,
-    ) -> ApiResult<()> {
+    pub async fn start_with_shutdown(&self, shutdown: oneshot::Receiver<()>) -> ApiResult<()> {
         let app = self.create_app();
 
         log::info!("Starting Clash API server on {}", self.listen_addr);

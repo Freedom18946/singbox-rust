@@ -10,8 +10,8 @@
 //! Run with:
 //!   cargo test --package app --test performance_validation -- --ignored --nocapture
 
-use std::net::SocketAddr;
 use std::io;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -55,7 +55,10 @@ async fn start_echo_server() -> Option<SocketAddr> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
-            if matches!(err.kind(), io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable) {
+            if matches!(
+                err.kind(),
+                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
+            ) {
                 eprintln!("Skipping performance test: cannot bind local TCP listener ({err})");
                 return None;
             }

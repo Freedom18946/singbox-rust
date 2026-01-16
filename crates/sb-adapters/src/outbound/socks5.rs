@@ -416,7 +416,9 @@ impl Socks5Connector {
         // 创建 UDP socket（双栈以支持 IPv6 中继地址）
         let udp_socket = match UdpSocket::bind("[::]:0").await {
             Ok(s) => s,
-            Err(_) => UdpSocket::bind("0.0.0.0:0").await.map_err(AdapterError::Io)?,
+            Err(_) => UdpSocket::bind("0.0.0.0:0")
+                .await
+                .map_err(AdapterError::Io)?,
         };
 
         // Connect to relay address

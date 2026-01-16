@@ -12,7 +12,12 @@ fn minimal_help_and_version() {
     v.assert().success();
 }
 
-#[cfg(feature = "router")]
+#[cfg(all(
+    feature = "router",
+    feature = "dsl_analyze",
+    feature = "dsl_derive",
+    feature = "explain"
+))]
 #[test]
 fn router_route_explain_smoke() {
     let cfg_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ok.json");

@@ -24,7 +24,7 @@ fn test_direct_inbound_instantiation() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::create(&param);
+        let result = DirectInboundAdapter::create(&param, None);
         assert!(
             result.is_ok(),
             "Direct inbound should instantiate successfully with valid params"
@@ -62,7 +62,7 @@ fn test_direct_inbound_requires_override_host() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::create(&param);
+        let result = DirectInboundAdapter::create(&param, None);
         assert!(
             result.is_err(),
             "Direct inbound should fail without override_host"
@@ -95,7 +95,7 @@ fn test_direct_inbound_requires_override_port() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::create(&param);
+        let result = DirectInboundAdapter::create(&param, None);
         assert!(
             result.is_err(),
             "Direct inbound should fail without override_port"
@@ -154,15 +154,15 @@ fn test_direct_inbound_network_modes() {
 
         // All network modes should succeed
         assert!(
-            DirectInboundAdapter::create(&param_tcp).is_ok(),
+            DirectInboundAdapter::create(&param_tcp, None).is_ok(),
             "TCP-only Direct inbound should work"
         );
         assert!(
-            DirectInboundAdapter::create(&param_udp).is_ok(),
+            DirectInboundAdapter::create(&param_udp, None).is_ok(),
             "UDP-only Direct inbound should work"
         );
         assert!(
-            DirectInboundAdapter::create(&param_both).is_ok(),
+            DirectInboundAdapter::create(&param_both, None).is_ok(),
             "TCP+UDP Direct inbound should work"
         );
 

@@ -19,7 +19,7 @@ pub fn build_tailscale_endpoint(
 
     #[cfg(feature = "router")]
     {
-        return Some(Arc::new(TailscaleEndpoint::new(ir, ctx.router.clone())));
+        Some(Arc::new(TailscaleEndpoint::new(ir, ctx.router.clone())))
     }
     #[cfg(not(feature = "router"))]
     {

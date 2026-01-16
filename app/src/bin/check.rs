@@ -2,10 +2,10 @@
 //! Full-featured config checker shim for the standalone `check` binary.
 
 use anyhow::Result;
-use std::io::Write;
 use app::cli::check::CheckArgs;
 use app::cli::GlobalArgs;
 use clap::{ArgAction, Parser};
+use std::io::Write;
 
 #[derive(Parser, Debug)]
 #[command(name = "check", version, about = "singbox-rs config checker")]

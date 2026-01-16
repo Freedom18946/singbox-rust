@@ -240,14 +240,14 @@ impl DnsRuleEngine {
                         match rcode_str.to_ascii_uppercase().as_str() {
                             "NXDOMAIN" => crate::dns::cache::Rcode::NxDomain,
                             "REFUSED" => crate::dns::cache::Rcode::Refused,
-                            _ => crate::dns::cache::Rcode::NoError, 
+                            _ => crate::dns::cache::Rcode::NoError,
                         }
                     } else {
                         crate::dns::cache::Rcode::NoError
                     };
 
                     if !answer_ips.is_empty() || decision.rcode.is_some() {
-                       tracing::debug!(
+                        tracing::debug!(
                             "DNS routing: domain={}, type={:?}, action=HijackDns (ips={:?}, rcode={:?})",
                             domain,
                             record_type,
@@ -260,13 +260,13 @@ impl DnsRuleEngine {
                             RecordType::AAAA => ip.is_ipv6(),
                             _ => true,
                         });
-                        
+
                         return Ok(DnsAnswer::new(
                             answer_ips,
-                            std::time::Duration::from_secs(10), 
+                            std::time::Duration::from_secs(10),
                             crate::dns::cache::Source::System,
                             rcode,
-                        )); 
+                        ));
                     }
 
                     tracing::debug!(
@@ -274,7 +274,7 @@ impl DnsRuleEngine {
                         domain,
                         record_type
                     );
-                     return Ok(DnsAnswer::new(
+                    return Ok(DnsAnswer::new(
                         Vec::new(),
                         std::time::Duration::from_secs(0),
                         crate::dns::cache::Source::System,
@@ -287,15 +287,14 @@ impl DnsRuleEngine {
             }
         }
 
-        let tag = decision.upstream_tag.as_deref().unwrap_or(&self.default_upstream_tag);
+        let tag = decision
+            .upstream_tag
+            .as_deref()
+            .unwrap_or(&self.default_upstream_tag);
 
         // Get upstream server
         let upstream = self.upstreams.get(tag).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Upstream '{}' not found for domain '{}'",
-                tag,
-                domain
-            )
+            anyhow::anyhow!("Upstream '{}' not found for domain '{}'", tag, domain)
         })?;
 
         // Query upstream
@@ -309,9 +308,9 @@ impl DnsRuleEngine {
         let mut answer = upstream.query(domain, record_type).await?;
 
         if let Some(limit) = decision.address_limit {
-             if answer.ips.len() > limit as usize {
-                 answer.ips.truncate(limit as usize);
-             }
+            if answer.ips.len() > limit as usize {
+                answer.ips.truncate(limit as usize);
+            }
         }
         Ok(answer)
     }
@@ -389,7 +388,6 @@ impl DnsRuleEngine {
 
         // Match against rules (in priority order)
         // ctx is passed in
-
 
         for compiled in &self.rules {
             if compiled.matcher.matches(ctx) {
@@ -476,7 +474,9 @@ impl DnsRuleEngine {
     /// Start the rule engine (and all upstreams)
     pub async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
         for (tag, up) in &self.upstreams {
-            up.start(stage).await.map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", tag, e))?;
+            up.start(stage)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", tag, e))?;
         }
         self.registry.start_all(stage).await?;
         Ok(())
@@ -485,7 +485,9 @@ impl DnsRuleEngine {
     /// Close the rule engine
     pub async fn close(&self) -> Result<()> {
         for (tag, up) in &self.upstreams {
-            up.close().await.map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", tag, e))?;
+            up.close()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", tag, e))?;
         }
         self.registry.close_all().await?;
         Ok(())
@@ -559,7 +561,10 @@ impl DnsRuleEngine {
             }
             (false, true) => {
                 // IPv6 only
-                match self.resolve_with_context(ctx, domain, RecordType::AAAA).await {
+                match self
+                    .resolve_with_context(ctx, domain, RecordType::AAAA)
+                    .await
+                {
                     Ok(mut ans) => {
                         all_ips.append(&mut ans.ips);
                         min_ttl = Some(ans.ttl);
@@ -579,11 +584,9 @@ impl DnsRuleEngine {
             all_ips,
             min_ttl.unwrap_or_else(|| std::time::Duration::from_secs(10)),
             crate::dns::cache::Source::System,
-            crate::dns::cache::Rcode::NoError, 
+            crate::dns::cache::Rcode::NoError,
         ))
     }
-
-
 
     /// Clear routing cache
     pub fn clear_cache(&self) {
@@ -598,31 +601,25 @@ impl DnsRuleEngine {
     }
 }
 
-
 #[async_trait::async_trait]
 impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
-    async fn exchange(
-        &self,
-        _ctx: &DnsQueryContext,
-        _message: &[u8],
-    ) -> Result<Vec<u8>> {
-        Err(anyhow::anyhow!("DnsRuleEngine: raw exchange not yet supported"))
+    async fn exchange(&self, _ctx: &DnsQueryContext, _message: &[u8]) -> Result<Vec<u8>> {
+        Err(anyhow::anyhow!(
+            "DnsRuleEngine: raw exchange not yet supported"
+        ))
     }
 
-    async fn lookup(
-        &self,
-        ctx: &DnsQueryContext,
-        domain: &str,
-    ) -> Result<Vec<std::net::IpAddr>> {
+    async fn lookup(&self, ctx: &DnsQueryContext, domain: &str) -> Result<Vec<std::net::IpAddr>> {
         let ans = self.resolve_dual_stack_with_context(ctx, domain).await?;
         Ok(ans.ips)
     }
 
     async fn lookup_default(&self, domain: &str) -> Result<Vec<std::net::IpAddr>> {
         let tag = &self.default_upstream_tag;
-        let upstream = self.upstreams.get(tag).ok_or_else(|| {
-            anyhow::anyhow!("Default upstream '{}' not found", tag)
-        })?;
+        let upstream = self
+            .upstreams
+            .get(tag)
+            .ok_or_else(|| anyhow::anyhow!("Default upstream '{}' not found", tag))?;
 
         let (query_ipv4, query_ipv6) = match self.strategy {
             crate::dns::DnsStrategy::Ipv4Only => (true, false),
@@ -652,7 +649,7 @@ impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
         let mut cache = self.cache.lock();
         cache.clear();
     }
-    
+
     fn name(&self) -> &str {
         "dns_rule_engine"
     }
@@ -931,7 +928,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dns_rule_engine_context() {
-        use crate::router::ruleset::{Rule, DefaultRule};
+        use crate::router::ruleset::{DefaultRule, Rule};
         let ruleset = Arc::new(RuleSet {
             source: crate::router::ruleset::RuleSetSource::Local(std::path::PathBuf::from("test")),
             format: RuleSetFormat::Binary,
@@ -986,8 +983,10 @@ mod tests {
 
         // Test with matching context
         let ctx = DnsQueryContext::new().with_inbound("tun");
-        let result = engine.resolve_with_context(&ctx, "example.com", RecordType::A).await;
-        // Mock Upstream always returns OK. We can't easily inspect which upstream was chosen 
+        let result = engine
+            .resolve_with_context(&ctx, "example.com", RecordType::A)
+            .await;
+        // Mock Upstream always returns OK. We can't easily inspect which upstream was chosen
         // without introspection or mocking details, but we can rely on coverage or detailed logs.
         // For this unit test, we at least verify compilation and execution.
         assert!(result.is_ok());
@@ -996,7 +995,7 @@ mod tests {
     }
     #[tokio::test]
     async fn explain_reports_rule_and_cache_hit() {
-        use crate::router::ruleset::{Rule, DefaultRule};
+        use crate::router::ruleset::{DefaultRule, Rule};
         let rule = Rule::Default(DefaultRule {
             domain_suffix: vec!["google.com".to_string()],
             ..Default::default()

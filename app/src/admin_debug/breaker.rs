@@ -82,10 +82,16 @@ pub fn clear_thread_local_clock() {
 enum State {
     #[default]
     Closed,
-    Open { until: Instant, _backoff: Duration },
+    Open {
+        until: Instant,
+        _backoff: Duration,
+    },
     // probes: number of successful probes required to fully close the circuit
     // permits: number of probe attempts allowed while half-open
-    HalfOpen { probes: u32, permits: u32 },
+    HalfOpen {
+        probes: u32,
+        permits: u32,
+    },
 }
 
 struct HostStat {

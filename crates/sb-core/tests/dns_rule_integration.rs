@@ -14,10 +14,10 @@ struct TestUpstream {
 impl DnsUpstream for TestUpstream {
     async fn query(&self, _domain: &str, _record_type: RecordType) -> anyhow::Result<DnsAnswer> {
         Ok(DnsAnswer::new(
-            vec![], 
+            vec![],
             Duration::from_secs(60),
             sb_core::dns::cache::Source::System,
-            sb_core::dns::cache::Rcode::NoError, 
+            sb_core::dns::cache::Rcode::NoError,
         ))
     }
     fn name(&self) -> &str {
@@ -45,14 +45,14 @@ async fn test_dns_rule_query_type_matching() {
     });
     ir.default = Some("main".into());
 
-    // We can't easily inject mock upstreams into config_builder::resolver_from_ir 
-    // because it builds upstreams FROM config. 
-    // However, we can use the `rule_engine` directly if we expose it or test via `resolver_from_ir` by mocking the upstream construction? 
+    // We can't easily inject mock upstreams into config_builder::resolver_from_ir
+    // because it builds upstreams FROM config.
+    // However, we can use the `rule_engine` directly if we expose it or test via `resolver_from_ir` by mocking the upstream construction?
     // `resolver_from_ir` calls `build_upstream_from_server`. We cannot intercept that easily without plumbing.
-    
-    // Instead, let's test `config_builder` parsing mapping correctly, 
+
+    // Instead, let's test `config_builder` parsing mapping correctly,
     // AND test `rule_engine` logic by constructing it manually like `resolver_from_ir` does, but with mocks.
-    
+
     // 1. Verify Config Builder Mapping
     let ir = sb_config::ir::ConfigIR {
         dns: Some(ir),
@@ -64,23 +64,25 @@ async fn test_dns_rule_query_type_matching() {
     // UdpUpstream creation might bind socket? Ideally we don't bind ports in tests.
     // So let's rely on unit tests inside `rule_engine.rs` or `config_builder.rs` if possible?
     // But `rule_engine.rs` tests are private.
-    
+
     // Let's modify `crates/sb-core/src/dns/rule_engine.rs` to make `MockUpstream` public or usable?
     // Or just define a test that constructs `DnsRuleEngine` with manual rules.
-    
+
     // Verify DnsRuleEngine action logic manual construction
-    
-    use sb_core::dns::rule_engine::{DnsRuleEngine, DnsRoutingRule, DnsRuleAction};
-    use sb_core::router::ruleset::{RuleSet, RuleSetSource, RuleSetFormat, Rule, DefaultRule};
-    
+
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleAction, DnsRuleEngine};
+    use sb_core::router::ruleset::{DefaultRule, Rule, RuleSet, RuleSetFormat, RuleSetSource};
+
     let ruleset = Arc::new(RuleSet {
         source: RuleSetSource::Local(std::path::PathBuf::from("test")),
         format: RuleSetFormat::Binary,
         version: 1,
         rules: vec![Rule::Default(DefaultRule {
-             domain: vec![sb_core::router::ruleset::DomainRule::Exact("example.com".into())],
-             query_type: vec!["AAAA".into()], // The field we added
-             ..Default::default()
+            domain: vec![sb_core::router::ruleset::DomainRule::Exact(
+                "example.com".into(),
+            )],
+            query_type: vec!["AAAA".into()], // The field we added
+            ..Default::default()
         })],
         #[cfg(feature = "suffix_trie")]
         domain_trie: Arc::new(Default::default()),
@@ -90,7 +92,7 @@ async fn test_dns_rule_query_type_matching() {
         last_updated: std::time::SystemTime::now(),
         etag: None,
     });
-    
+
     let routing_rule = DnsRoutingRule {
         rule_set: ruleset,
         upstream_tag: None,
@@ -103,16 +105,27 @@ async fn test_dns_rule_query_type_matching() {
         ns: None,
         extra: None,
     };
-    
+
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
 
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+    let engine = DnsRuleEngine::new(
+        vec![routing_rule],
+        upstreams,
+        "main".into(),
+        sb_core::dns::DnsStrategy::default(),
+        Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+        None,
+        None,
+    );
 
     // Test AAAA -> Reject
-    let res: DnsAnswer = engine.resolve("example.com", RecordType::AAAA).await.unwrap();
+    let res: DnsAnswer = engine
+        .resolve("example.com", RecordType::AAAA)
+        .await
+        .unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::Refused);
-    
+
     // Test A -> Route (Default)
     let res: DnsAnswer = engine.resolve("example.com", RecordType::A).await.unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::NoError);
@@ -120,16 +133,16 @@ async fn test_dns_rule_query_type_matching() {
 
 #[tokio::test]
 async fn test_dns_rule_action_hijack() {
-     use sb_core::dns::rule_engine::{DnsRuleEngine, DnsRoutingRule, DnsRuleAction};
-     use sb_core::router::ruleset::{RuleSet, RuleSetSource, RuleSetFormat, Rule, DefaultRule};
-     
-     let ruleset = Arc::new(RuleSet {
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleAction, DnsRuleEngine};
+    use sb_core::router::ruleset::{DefaultRule, Rule, RuleSet, RuleSetFormat, RuleSetSource};
+
+    let ruleset = Arc::new(RuleSet {
         source: RuleSetSource::Local(std::path::PathBuf::from("test")),
         format: RuleSetFormat::Binary,
         version: 1,
         rules: vec![Rule::Default(DefaultRule {
-             domain_keyword: vec!["google".into()],
-             ..Default::default()
+            domain_keyword: vec!["google".into()],
+            ..Default::default()
         })],
         #[cfg(feature = "suffix_trie")]
         domain_trie: Arc::new(Default::default()),
@@ -139,7 +152,7 @@ async fn test_dns_rule_action_hijack() {
         last_updated: std::time::SystemTime::now(),
         etag: None,
     });
-    
+
     let routing_rule = DnsRoutingRule {
         rule_set: ruleset,
         upstream_tag: None,
@@ -152,29 +165,40 @@ async fn test_dns_rule_action_hijack() {
         ns: None,
         extra: None,
     };
-    
+
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
 
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+    let engine = DnsRuleEngine::new(
+        vec![routing_rule],
+        upstreams,
+        "main".into(),
+        sb_core::dns::DnsStrategy::default(),
+        Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+        None,
+        None,
+    );
 
-    let res: DnsAnswer = engine.resolve("www.google.com", RecordType::A).await.unwrap();
+    let res: DnsAnswer = engine
+        .resolve("www.google.com", RecordType::A)
+        .await
+        .unwrap();
     // HijackDns currently returns Refused in our implementation if no rewrite_ip
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::Refused);
 }
 
 #[tokio::test]
 async fn test_dns_rule_action_hijack_with_rewrite() {
-     use sb_core::dns::rule_engine::{DnsRuleEngine, DnsRoutingRule, DnsRuleAction};
-     use sb_core::router::ruleset::{RuleSet, RuleSetSource, RuleSetFormat, Rule, DefaultRule};
-     
-     let ruleset = Arc::new(RuleSet {
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleAction, DnsRuleEngine};
+    use sb_core::router::ruleset::{DefaultRule, Rule, RuleSet, RuleSetFormat, RuleSetSource};
+
+    let ruleset = Arc::new(RuleSet {
         source: RuleSetSource::Local(std::path::PathBuf::from("test")),
         format: RuleSetFormat::Binary,
         version: 1,
         rules: vec![Rule::Default(DefaultRule {
-             domain_keyword: vec!["hijack".into()],
-             ..Default::default()
+            domain_keyword: vec!["hijack".into()],
+            ..Default::default()
         })],
         #[cfg(feature = "suffix_trie")]
         domain_trie: Arc::new(Default::default()),
@@ -184,7 +208,7 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
         last_updated: std::time::SystemTime::now(),
         etag: None,
     });
-    
+
     let routing_rule = DnsRoutingRule {
         rule_set: ruleset,
         upstream_tag: None,
@@ -197,13 +221,24 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
         ns: None,
         extra: None,
     };
-    
+
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("main".into(), Arc::new(TestUpstream { tag: "main".into() }));
 
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "main".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+    let engine = DnsRuleEngine::new(
+        vec![routing_rule],
+        upstreams,
+        "main".into(),
+        sb_core::dns::DnsStrategy::default(),
+        Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+        None,
+        None,
+    );
 
-    let res: DnsAnswer = engine.resolve("www.hijack.com", RecordType::A).await.unwrap();
+    let res: DnsAnswer = engine
+        .resolve("www.hijack.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::NoError);
     assert_eq!(res.ips.len(), 1);
     assert_eq!(res.ips[0].to_string(), "192.168.1.1");
@@ -211,36 +246,44 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
 
 #[tokio::test]
 async fn test_dns_rule_action_address_limit() {
-     use sb_core::dns::rule_engine::{DnsRuleEngine, DnsRoutingRule, DnsRuleAction};
-     use sb_core::router::ruleset::{RuleSet, RuleSetSource, RuleSetFormat, Rule, DefaultRule};
-     
-     // Mock upstream that returns 3 IPs
-     struct MultiIpUpstream;
-     #[async_trait::async_trait]
-     impl DnsUpstream for MultiIpUpstream {
-        async fn query(&self, _domain: &str, _record_type: RecordType) -> anyhow::Result<DnsAnswer> {
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleAction, DnsRuleEngine};
+    use sb_core::router::ruleset::{DefaultRule, Rule, RuleSet, RuleSetFormat, RuleSetSource};
+
+    // Mock upstream that returns 3 IPs
+    struct MultiIpUpstream;
+    #[async_trait::async_trait]
+    impl DnsUpstream for MultiIpUpstream {
+        async fn query(
+            &self,
+            _domain: &str,
+            _record_type: RecordType,
+        ) -> anyhow::Result<DnsAnswer> {
             Ok(DnsAnswer::new(
                 vec![
                     "1.1.1.1".parse().unwrap(),
                     "1.0.0.1".parse().unwrap(),
-                    "8.8.8.8".parse().unwrap()
+                    "8.8.8.8".parse().unwrap(),
                 ],
                 Duration::from_secs(60),
                 sb_core::dns::cache::Source::System,
-                sb_core::dns::cache::Rcode::NoError, 
+                sb_core::dns::cache::Rcode::NoError,
             ))
         }
-        fn name(&self) -> &str { "multi" }
-        async fn health_check(&self) -> bool { true }
+        fn name(&self) -> &str {
+            "multi"
+        }
+        async fn health_check(&self) -> bool {
+            true
+        }
     }
 
-     let ruleset = Arc::new(RuleSet {
+    let ruleset = Arc::new(RuleSet {
         source: RuleSetSource::Local(std::path::PathBuf::from("test")),
         format: RuleSetFormat::Binary,
         version: 1,
         rules: vec![Rule::Default(DefaultRule {
-             domain_keyword: vec!["limit".into()],
-             ..Default::default()
+            domain_keyword: vec!["limit".into()],
+            ..Default::default()
         })],
         #[cfg(feature = "suffix_trie")]
         domain_trie: Arc::new(Default::default()),
@@ -250,7 +293,7 @@ async fn test_dns_rule_action_address_limit() {
         last_updated: std::time::SystemTime::now(),
         etag: None,
     });
-    
+
     let routing_rule = DnsRoutingRule {
         rule_set: ruleset,
         upstream_tag: Some("multi".into()),
@@ -263,13 +306,24 @@ async fn test_dns_rule_action_address_limit() {
         ns: None,
         extra: None,
     };
-    
+
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     upstreams.insert("multi".into(), Arc::new(MultiIpUpstream));
 
-    let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "multi".into(), sb_core::dns::DnsStrategy::default(), Arc::new(sb_core::dns::transport::TransportRegistry::new()), None, None);
+    let engine = DnsRuleEngine::new(
+        vec![routing_rule],
+        upstreams,
+        "multi".into(),
+        sb_core::dns::DnsStrategy::default(),
+        Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+        None,
+        None,
+    );
 
-    let res: DnsAnswer = engine.resolve("www.limit.com", RecordType::A).await.unwrap();
+    let res: DnsAnswer = engine
+        .resolve("www.limit.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(res.rcode, sb_core::dns::cache::Rcode::NoError);
     assert_eq!(res.ips.len(), 1);
 }

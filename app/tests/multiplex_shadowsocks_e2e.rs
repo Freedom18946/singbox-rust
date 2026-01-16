@@ -31,9 +31,7 @@ fn should_skip_network_tests() -> bool {
             drop(listener);
             false
         }
-        Err(err)
-            if is_perm(&err) || err.kind() == io::ErrorKind::AddrNotAvailable =>
-        {
+        Err(err) if is_perm(&err) || err.kind() == io::ErrorKind::AddrNotAvailable => {
             eprintln!("Skipping multiplex shadowsocks tests: {}", err);
             true
         }

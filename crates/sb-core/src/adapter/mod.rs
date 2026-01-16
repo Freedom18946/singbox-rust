@@ -490,17 +490,12 @@ impl Bridge {
                         let dst_port = inbound.override_port.ok_or_else(|| {
                             anyhow::anyhow!("direct inbound requires override_port")
                         })?;
-                        let stats = bridge
-                            .context
-                            .v2ray_server
-                            .as_ref()
-                            .and_then(|s| s.stats());
+                        let stats = bridge.context.v2ray_server.as_ref().and_then(|s| s.stats());
                         Arc::new(
                             DirectForward::new(addr, host, dst_port, inbound.udp)
                                 .with_tag(inbound.tag.clone())
                                 .with_stats(stats),
-                        )
-                            as Arc<dyn InboundService>
+                        ) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Redirect => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(

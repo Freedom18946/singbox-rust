@@ -36,8 +36,7 @@ fn normalize_write_out() {
 
 #[test]
 fn minimize_guard_works() {
-    let cfg =
-        r#"{"route":{"rules":[{"not_domain":["x.com"],"domain":["A.COM","a.com"],"outbound":"direct"}]}}"#;
+    let cfg = r#"{"route":{"rules":[{"not_domain":["x.com"],"domain":["A.COM","a.com"],"outbound":"direct"}]}}"#;
     let tmp = write_cfg(cfg);
     let out = assert_cmd::cargo::cargo_bin_cmd!("app")
         .args([

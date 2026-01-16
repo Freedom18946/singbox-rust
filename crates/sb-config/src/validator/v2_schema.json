@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "properties":{
     "schema_version":{"type":"integer","enum":[2]},
+    "log":{"$ref":"#/defs/log"},
     "inbounds":{"type":"array","items":{"$ref":"#/defs/inbound"}},
     "outbounds":{"type":"array","items":{"$ref":"#/defs/outbound"}},
     "route":{"$ref":"#/defs/route"},
@@ -12,6 +13,13 @@
     "services":{"type":"array","items":{"type":"object"}}
   },
   "defs":{
+    "log":{"type":"object","additionalProperties": false,"properties":{
+      "level":{"type":"string"},
+      "timestamp":{"type":"boolean"},
+      "format":{"type":"string"},
+      "disabled":{"type":"boolean"},
+      "output":{"type":"string"}
+    }},
     "inbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
       "type":{"enum":["socks","http","tun","mixed","direct","hysteria","hysteria2","tuic"]},

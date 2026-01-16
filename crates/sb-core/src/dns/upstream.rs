@@ -1346,9 +1346,9 @@ impl DnsUpstream for DotUpstream {
                 let req = self.build_dns_query(id, domain, record_type)?;
                 let resp = t.query(&req).await?;
                 self.parse_dns_response(&resp, id)
-             } else {
+            } else {
                 self.query_dot(domain, record_type).await
-             }
+            }
         }
         #[cfg(not(feature = "dns_dot"))]
         {
@@ -1616,8 +1616,6 @@ impl DotUpstream {
             offset += 1 + len as usize;
         }
     }
-
-
 }
 
 /// DNS-over-QUIC (`DoQ`) 上游实现
@@ -1681,17 +1679,17 @@ impl DnsUpstream for DoqUpstream {
             };
             // Use shared transport if available, otherwise create temporary one
             let resp_bytes = if let Some(t) = &self.transport {
-                 t.query(&req_bytes).await?
+                t.query(&req_bytes).await?
             } else {
-                 // Build separate DoQ transport with per-upstream extras
-                 let transport = crate::dns::transport::DoqTransport::new_with_tls(
+                // Build separate DoQ transport with per-upstream extras
+                let transport = crate::dns::transport::DoqTransport::new_with_tls(
                     self.server,
                     self.server_name.clone(),
                     self.extra_ca_paths.clone(),
                     self.extra_ca_pem.clone(),
                     self.skip_verify,
-                 )?;
-                 tokio::time::timeout(self.timeout, transport.query(&req_bytes)).await??
+                )?;
+                tokio::time::timeout(self.timeout, transport.query(&req_bytes)).await??
             };
             let (ips, ttl) = crate::dns::udp::parse_answers(&resp_bytes, qtype)?;
             let ttl = ttl
@@ -1890,7 +1888,6 @@ impl DohUpstream {
         // 解析响应
         temp_upstream.parse_response(&response_body, record_type)
     }
-
 }
 
 impl DohUpstream {
@@ -2330,8 +2327,14 @@ mod tests {
     #[test]
     fn dot_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.1.1.1:853".parse().unwrap();
-        let up =
-            DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false, None);
+        let up = DotUpstream::new_with_tls(
+            sa,
+            "cloudflare-dns.com".to_string(),
+            vec![],
+            vec![],
+            false,
+            None,
+        );
         assert!(up.name().contains("cloudflare-dns.com"));
         assert!(up.name().contains("1.1.1.1:853"));
     }
@@ -2339,8 +2342,14 @@ mod tests {
     #[test]
     fn doq_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.0.0.1:853".parse().unwrap();
-        let up =
-            DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false, None);
+        let up = DoqUpstream::new_with_tls(
+            sa,
+            "one.one.one.one".to_string(),
+            vec![],
+            vec![],
+            false,
+            None,
+        );
         assert!(up.name().contains("one.one.one.one"));
         assert!(up.name().contains("1.0.0.1:853"));
     }

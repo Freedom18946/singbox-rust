@@ -852,7 +852,8 @@ async fn serve_with_config(
                 let (method, path, headers) = read_request_head(&mut s).await?;
 
                 // Build middleware chain and create request context
-                let mut request_context = RequestContext::new(method.clone(), path.clone(), headers.clone());
+                let mut request_context =
+                    RequestContext::new(method.clone(), path.clone(), headers.clone());
 
                 // Execute middleware chain
                 if let Err(error_envelope) = middleware_chain.execute(&mut request_context) {
@@ -869,10 +870,14 @@ async fn serve_with_config(
                     // Special handling for mTLS
                     if matches!(auth, AuthConf::Mtls { .. }) && status_code == 401 {
                         s.write_all(b"HTTP/1.1 401 Unauthorized\r\n").await?;
-                        s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n").await?;
+                        s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n")
+                            .await?;
                         s.write_all(b"Content-Type: text/plain\r\n").await?;
                         let body = "mTLS authentication required: valid client certificate needed";
-                        s.write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes()).await?;
+                        s.write_all(
+                            format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes(),
+                        )
+                        .await?;
                     } else {
                         send_error_response(&mut s, error_envelope, status_code).await?;
                     }
@@ -881,23 +886,41 @@ async fn serve_with_config(
 
                 // Route to endpoints with middleware-processed context
                 match (method.as_str(), path.as_str()) {
-                    ("GET", "/__health")  => endpoints::handle_health(&mut s).await?,
+                    ("GET", "/__health") => endpoints::handle_health(&mut s).await?,
                     ("GET", "/__metrics") => endpoints::metrics::handle(&mut s).await?,
                     ("GET", "/__config") => endpoints::handle_config_get(&mut s).await?,
                     ("PUT", "/__config") => {
                         let body = read_request_body(&mut s, &headers).await?;
                         endpoints::handle_config_put(&mut s, body, &headers).await?;
                     }
-                    (_, p) if p.starts_with("/router/geoip") => endpoints::handle_geoip(p, &mut s).await?,
-                    (_, p) if p.starts_with("/router/rules/normalize") => endpoints::handle_normalize(p, &mut s).await?,
+                    (_, p) if p.starts_with("/router/geoip") => {
+                        endpoints::handle_geoip(p, &mut s).await?;
+                    }
+                    (_, p) if p.starts_with("/router/rules/normalize") => {
+                        endpoints::handle_normalize(p, &mut s).await?;
+                    }
                     (_, p) if p.starts_with("/subs/") => {
-                        #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+                        #[cfg(any(
+                            feature = "subs_http",
+                            feature = "subs_clash",
+                            feature = "subs_singbox"
+                        ))]
                         {
                             endpoints::handle_subs(p, &mut s).await?;
                         }
-                        #[cfg(not(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox")))]
+                        #[cfg(not(any(
+                            feature = "subs_http",
+                            feature = "subs_clash",
+                            feature = "subs_singbox"
+                        )))]
                         {
-                            respond_json_error(&mut s, 501, "subscription features not enabled", Some("enable subs_http, subs_clash, or subs_singbox feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "subscription features not enabled",
+                                Some("enable subs_http, subs_clash, or subs_singbox feature"),
+                            )
+                            .await?;
                         }
                     }
                     (_, p) if p.starts_with("/router/analyze") => {
@@ -907,7 +930,13 @@ async fn serve_with_config(
                         }
                         #[cfg(not(feature = "sbcore_rules_tool"))]
                         {
-                            respond_json_error(&mut s, 501, "sbcore_rules_tool feature not enabled", Some("enable sbcore_rules_tool feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "sbcore_rules_tool feature not enabled",
+                                Some("enable sbcore_rules_tool feature"),
+                            )
+                            .await?;
                         }
                     }
                     (_, p) if p.starts_with("/route/dryrun") => {
@@ -917,14 +946,21 @@ async fn serve_with_config(
                         }
                         #[cfg(not(feature = "route_sandbox"))]
                         {
-                            respond_json_error(&mut s, 501, "route_sandbox feature not enabled", Some("enable route_sandbox feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "route_sandbox feature not enabled",
+                                Some("enable route_sandbox feature"),
+                            )
+                            .await?;
                         }
                     }
                     _ => respond_json_error(&mut s, 404, "endpoint not found", None).await?,
                 }
 
                 Ok::<_, std::io::Error>(())
-            }.await;
+            }
+            .await;
 
             if let Err(e) = res {
                 tracing::warn!(%e, "admin http error");

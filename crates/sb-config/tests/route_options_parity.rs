@@ -1,5 +1,5 @@
-use serde_json::json;
 use sb_config::validator::v2::to_ir_v1;
+use serde_json::json;
 
 #[test]
 fn test_route_options_parsing() {
@@ -17,10 +17,16 @@ fn test_route_options_parsing() {
     let route = ir.route;
 
     assert_eq!(route.override_android_vpn, Some(true));
-    assert_eq!(route.default_network_type, Some(vec!["tcp".to_string(), "udp".to_string()]));
-    assert_eq!(route.default_fallback_network_type, Some(vec!["tcp".to_string()]));
+    assert_eq!(
+        route.default_network_type,
+        Some(vec!["tcp".to_string(), "udp".to_string()])
+    );
+    assert_eq!(
+        route.default_fallback_network_type,
+        Some(vec!["tcp".to_string()])
+    );
     assert_eq!(route.default_fallback_delay, Some("300ms".to_string()));
-    
+
     // Updated verification for default_domain_resolver struct
     assert!(route.default_domain_resolver.is_some());
     let dr = route.default_domain_resolver.unwrap();

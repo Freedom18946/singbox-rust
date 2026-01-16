@@ -7,6 +7,8 @@
 //! - Multi-user authentication with SHA224 password hashing
 //! - Routes via sb-core router/outbounds
 
+use super::tls;
+use crate::transport_config::InboundStream;
 use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundService;
 use sb_core::net::metered;
@@ -24,7 +26,6 @@ use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 use sha2::{Digest, Sha224};
-use super::tls;
 use std::collections::HashMap;
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -36,13 +37,12 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
-use crate::transport_config::InboundStream;
 
+#[cfg(feature = "tls_reality")]
+use sb_tls::reality::server::RealityConnection;
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
-#[cfg(feature = "tls_reality")]
-use sb_tls::reality::server::RealityConnection;
 
 type StreamBox = Box<dyn InboundStream>;
 
@@ -283,18 +283,18 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
 
                                 let mut config = Config::default();
                                 config.set_max_num_streams(mux_cfg.max_num_streams);
-                                
+
                                 let compat_stream = stream.compat();
                                 let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
                                 debug!(%peer, "trojan: mux session started");
-                                
+
                                 while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                                     match result {
                                         Ok(stream) => {
                                             let cfg_inner = cfg_clone.clone();
                                             let limiter_inner = rate_limiter_clone.clone();
-                                            
+
                                             tokio::spawn(async move {
                                                 use tokio_util::compat::FuturesAsyncReadCompatExt;
                                                 let mut tokio_stream = stream.compat();
@@ -336,8 +336,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
 
 async fn prepare_tls_layer(
     stream: StreamBox,
-    #[cfg(feature = "tls_reality")]
-    reality: Option<&RealityAcceptor>,
+    #[cfg(feature = "tls_reality")] reality: Option<&RealityAcceptor>,
     tls: Option<&tokio_rustls::TlsAcceptor>,
     fallback_for_alpn: &HashMap<String, SocketAddr>,
     peer: SocketAddr,
@@ -348,21 +347,24 @@ async fn prepare_tls_layer(
             Ok(conn) => match conn {
                 RealityConnection::Proxy(s) => return Ok(Some(Box::new(s))),
                 RealityConnection::Fallback { client, target } => {
-                     debug!(%peer, "trojan: REALITY fallback triggered");
-                     let conn = RealityConnection::Fallback { client, target };
-                     if let Err(e) = conn.handle().await {
-                         warn!(%peer, error=%e, "trojan: REALITY fallback error");
-                     }
-                     return Ok(None);
+                    debug!(%peer, "trojan: REALITY fallback triggered");
+                    let conn = RealityConnection::Fallback { client, target };
+                    if let Err(e) = conn.handle().await {
+                        warn!(%peer, error=%e, "trojan: REALITY fallback error");
+                    }
+                    return Ok(None);
                 }
             },
             Err(e) => return Err(anyhow!("REALITY handshake failed: {}", e)),
         }
     }
-    
+
     if let Some(acceptor) = tls {
-        let mut tls_stream = acceptor.accept(stream).await.map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
-        
+        let mut tls_stream = acceptor
+            .accept(stream)
+            .await
+            .map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
+
         // ALPN Fallback Check
         let mut fallback_target = None;
         if !fallback_for_alpn.is_empty() {
@@ -377,7 +379,7 @@ async fn prepare_tls_layer(
         if let Some(target) = fallback_target {
             debug!(%peer, alpn=?target, "trojan: ALPN fallback triggered");
             if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
-                 warn!(%peer, error=%e, "trojan: ALPN fallback error");
+                warn!(%peer, error=%e, "trojan: ALPN fallback error");
             }
             return Ok(None);
         }
@@ -609,14 +611,15 @@ pub fn parse_trojan_request(buf: &[u8]) -> Result<()> {
     }
     idx += 2;
 
-    let cmd = *buf.get(idx).ok_or_else(|| anyhow!("trojan: missing command"))?;
+    let cmd = *buf
+        .get(idx)
+        .ok_or_else(|| anyhow!("trojan: missing command"))?;
     idx += 1;
     if cmd != 0x01 && cmd != 0x02 {
         return Err(anyhow!("trojan: unsupported command"));
     }
 
-    let (_host, _port, consumed) =
-        crate::inbound::shadowsocks::parse_ss_addr(&buf[idx..])?;
+    let (_host, _port, consumed) = crate::inbound::shadowsocks::parse_ss_addr(&buf[idx..])?;
     idx += consumed;
 
     if buf.get(idx..idx + 2) != Some(b"\r\n") {
@@ -682,6 +685,7 @@ async fn handle_udp_associate(
                     if udp_socket_send.send_to(&payload, addr).await.is_ok() {
                         if let Some(ref recorder) = traffic_up {
                             recorder.record_up(payload.len() as u64);
+                            recorder.record_up_packet(1);
                         }
                     }
                 }
@@ -724,6 +728,7 @@ async fn handle_udp_associate(
             wh.write_all(payload).await?;
             if let Some(ref recorder) = traffic_down {
                 recorder.record_down(payload.len() as u64);
+                recorder.record_down_packet(1);
             }
         }
         Ok::<(), anyhow::Error>(())
@@ -803,9 +808,8 @@ async fn handle_tcp_connect(
                                 (s, Some("direct".to_string()))
                             }
                             ProxyChoice::Http(addr) => {
-                                let s =
-                                    http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                        .await?;
+                                let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                    .await?;
                                 (s, Some("http".to_string()))
                             }
                             ProxyChoice::Socks5(addr) => {
@@ -822,13 +826,12 @@ async fn handle_tcp_connect(
                             (s, Some("direct".to_string()))
                         }
                         ProxyChoice::Http(addr) => {
-                            let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                .await?;
+                            let s =
+                                http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
                             (s, Some("http".to_string()))
                         }
                         ProxyChoice::Socks5(addr) => {
-                            let s =
-                                socks5_connect_through_socks5(addr, host, port, &opts).await?;
+                            let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
                             (s, Some("socks5".to_string()))
                         }
                     }
@@ -864,18 +867,16 @@ async fn handle_tcp_connect(
                 (s, Some("socks5".to_string()))
             }
         },
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("trojan: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("trojan: rejected by rules"))
+        }
         // Sniff/Resolve/Hijack not yet supported in inbound handlers
         _ => return Err(anyhow!("trojan: unsupported routing action")),
     };
 
     // Relay bidirectionally
     let traffic = cfg.stats.as_ref().and_then(|stats| {
-        stats.traffic_recorder(
-            cfg.tag.as_deref(),
-            outbound_tag.as_deref(),
-            Some(auth_user),
-        )
+        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), Some(auth_user))
     });
     let _ = metered::copy_bidirectional_streaming_ctl(
         tls,

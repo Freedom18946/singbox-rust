@@ -19,10 +19,24 @@
 //! Data structures and external interfaces remain compatible: No changes needed for Router/Inbound side.
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
-#[cfg(any(feature = "out_socks", feature = "out_http", feature = "out_trojan", feature = "out_ss", feature = "out_vmess", feature = "out_vless", feature = "out_hysteria", feature = "out_hysteria2", feature = "out_tuic", feature = "out_shadowtls", feature = "out_naive", feature = "out_wireguard"))]
+#[cfg(any(
+    feature = "out_socks",
+    feature = "out_http",
+    feature = "out_trojan",
+    feature = "out_ss",
+    feature = "out_vmess",
+    feature = "out_vless",
+    feature = "out_hysteria",
+    feature = "out_hysteria2",
+    feature = "out_tuic",
+    feature = "out_shadowtls",
+    feature = "out_naive",
+    feature = "out_wireguard"
+))]
 pub mod block_connector;
 pub mod direct_connector;
-#[cfg(feature = "out_http")] // direct_simple currently used by http connector specifically? Check usage. Assuming general utility for non-complex outbounds.
+#[cfg(feature = "out_http")]
+// direct_simple currently used by http connector specifically? Check usage. Assuming general utility for non-complex outbounds.
 #[cfg(any(feature = "out_socks", feature = "out_http"))]
 pub mod direct_simple;
 pub mod endpoint;
@@ -486,8 +500,9 @@ impl OutboundRegistryHandle {
                             Endpoint::Domain(host, port) => HostPort::new(host, port),
                         };
 
-                        let outbound = ShadowTlsOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("ShadowTLS setup failed: {}", e)))?;
+                        let outbound = ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
+                            io::Error::other(format!("ShadowTLS setup failed: {}", e))
+                        })?;
                         let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
@@ -601,8 +616,9 @@ impl OutboundRegistryHandle {
                             Endpoint::Domain(host, port) => HostPort::new(host, port),
                         };
 
-                        let outbound = Hysteria2Outbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
+                        let outbound = Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
+                            io::Error::other(format!("Hysteria2 setup failed: {}", e))
+                        })?;
                         let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
@@ -616,8 +632,9 @@ impl OutboundRegistryHandle {
                             Endpoint::Domain(host, port) => HostPort::new(host, port),
                         };
 
-                        let outbound = WireGuardOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("WireGuard setup failed: {}", e)))?;
+                        let outbound = WireGuardOutbound::new(cfg.clone()).map_err(|e| {
+                            io::Error::other(format!("WireGuard setup failed: {}", e))
+                        })?;
                         let stream = outbound.connect(&hp).await?;
                         Ok(Box::new(stream))
                     }

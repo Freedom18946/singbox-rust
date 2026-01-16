@@ -469,6 +469,7 @@ async fn handle_udp_packet(
 
     if let Some(ref recorder) = traffic {
         recorder.record_up(payload.len() as u64);
+        recorder.record_up_packet(1);
     }
 
     // Create upstream socket and send
@@ -500,6 +501,7 @@ async fn handle_udp_packet(
             if listen_socket.send_to(&full_resp, peer).await.is_ok() {
                 if let Some(ref recorder) = traffic {
                     recorder.record_down(response_data.len() as u64);
+                    recorder.record_down_packet(1);
                 }
             }
         }
@@ -1096,15 +1098,13 @@ where
                                 (s, Some("direct".to_string()))
                             }
                             ProxyChoice::Http(addr) => {
-                                let s =
-                                    http_proxy_connect_through_proxy(addr, &host, port, &opts)
-                                        .await?;
+                                let s = http_proxy_connect_through_proxy(addr, &host, port, &opts)
+                                    .await?;
                                 (s, Some("http".to_string()))
                             }
                             ProxyChoice::Socks5(addr) => {
                                 let s =
-                                    socks5_connect_through_socks5(addr, &host, port, &opts)
-                                        .await?;
+                                    socks5_connect_through_socks5(addr, &host, port, &opts).await?;
                                 (s, Some("socks5".to_string()))
                             }
                         }
@@ -1116,13 +1116,12 @@ where
                             (s, Some("direct".to_string()))
                         }
                         ProxyChoice::Http(addr) => {
-                            let s = http_proxy_connect_through_proxy(addr, &host, port, &opts)
-                                .await?;
+                            let s =
+                                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
                             (s, Some("http".to_string()))
                         }
                         ProxyChoice::Socks5(addr) => {
-                            let s =
-                                socks5_connect_through_socks5(addr, &host, port, &opts).await?;
+                            let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
                             (s, Some("socks5".to_string()))
                         }
                     }
@@ -1138,8 +1137,7 @@ where
                         (s, Some("http".to_string()))
                     }
                     ProxyChoice::Socks5(addr) => {
-                        let s =
-                            socks5_connect_through_socks5(addr, &host, port, &opts).await?;
+                        let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
                         (s, Some("socks5".to_string()))
                     }
                 }

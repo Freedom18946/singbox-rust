@@ -1,3 +1,4 @@
+#![cfg(feature = "explain")]
 use serde_json::Value;
 use std::fs;
 use tempfile::NamedTempFile;

@@ -11,6 +11,12 @@ use tokio_util::sync::CancellationToken;
 pub trait TrafficRecorder: Send + Sync {
     fn record_up(&self, bytes: u64);
     fn record_down(&self, bytes: u64);
+    fn record_up_packet(&self, packets: u64) {
+        let _ = packets;
+    }
+    fn record_down_packet(&self, packets: u64) {
+        let _ = packets;
+    }
 }
 
 #[cfg(feature = "metrics")]
@@ -60,6 +66,7 @@ where
 // - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
 // - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
 // - 当收到 `cancel` 取消，返回 Interrupted
+#[allow(clippy::too_many_arguments)]
 pub async fn copy_bidirectional_streaming_ctl<A, B>(
     a: &mut A,
     b: &mut B,
@@ -129,6 +136,7 @@ where
     };
 
     // 单向拷贝 worker：从 r 读到 buf，写入 w，并将 n 加到 counter
+    #[allow(clippy::too_many_arguments)]
     async fn pump<R, W>(
         mut r: R,
         mut w: W,

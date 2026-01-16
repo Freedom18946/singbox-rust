@@ -7,6 +7,7 @@
 //! - Resource exhaustion limits (memory, CPU, FD limits)
 //! - Rate limiting under attack scenarios
 
+use serial_test::serial;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -14,7 +15,6 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use serial_test::serial;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
@@ -109,9 +109,10 @@ async fn test_connection_flood_protection() {
         .get();
 
     // Set strict rate limit: 20 connections per 5 seconds
-    let Some((server_addr, _stop)) =
-        allow_or_skip(start_ss_server_with_rate_limit(20, 5).await, "shadowsocks server")
-    else {
+    let Some((server_addr, _stop)) = allow_or_skip(
+        start_ss_server_with_rate_limit(20, 5).await,
+        "shadowsocks server",
+    ) else {
         return;
     };
 
@@ -157,7 +158,10 @@ async fn test_connection_flood_protection() {
     // We succeed if EITHER metrics increased OR we saw some blocked connections OR not all succeeded.
     let rate_limit_evident = rate_limited_delta > 0 || blocked > 0 || successful < 100;
     if !rate_limit_evident {
-        println!("⚠️ Warning: Rate limiting not evident - all {} connections succeeded", successful);
+        println!(
+            "⚠️ Warning: Rate limiting not evident - all {} connections succeeded",
+            successful
+        );
         // Don't fail the test in CI - rate limiting may work at application layer
     }
     assert!(successful > 0, "Expected some connections to succeed");
@@ -176,9 +180,10 @@ async fn test_slowloris_slow_read_mitigation() {
     let Some(echo_addr) = allow_or_skip(start_echo_server().await, "echo server") else {
         return;
     };
-    let Some((server_addr, _stop)) =
-        allow_or_skip(start_ss_server_with_rate_limit(100, 10).await, "shadowsocks server")
-    else {
+    let Some((server_addr, _stop)) = allow_or_skip(
+        start_ss_server_with_rate_limit(100, 10).await,
+        "shadowsocks server",
+    ) else {
         return;
     };
 
@@ -233,9 +238,10 @@ async fn test_resource_exhaustion_memory() {
     let Some(echo_addr) = allow_or_skip(start_echo_server().await, "echo server") else {
         return;
     };
-    let Some((server_addr, _stop)) =
-        allow_or_skip(start_ss_server_with_rate_limit(200, 10).await, "shadowsocks server")
-    else {
+    let Some((server_addr, _stop)) = allow_or_skip(
+        start_ss_server_with_rate_limit(200, 10).await,
+        "shadowsocks server",
+    ) else {
         return;
     };
 
@@ -301,9 +307,10 @@ async fn test_burst_traffic_handling() {
     let initial_rate_limited = rate_limit_metrics::RATE_LIMITED_TOTAL
         .with_label_values(&["shadowsocks", "connection_limit"])
         .get();
-    let Some((server_addr, _stop)) =
-        allow_or_skip(start_ss_server_with_rate_limit(50, 2).await, "shadowsocks server")
-    else {
+    let Some((server_addr, _stop)) = allow_or_skip(
+        start_ss_server_with_rate_limit(50, 2).await,
+        "shadowsocks server",
+    ) else {
         return;
     };
 
@@ -362,7 +369,10 @@ async fn test_burst_traffic_handling() {
         println!("⚠️ Warning: Rate limit metrics did not increase - checking if success count shows limiting");
         // If fewer connections succeeded than attempted, rate limiting likely occurred
         if count < 150 {
-            println!("✅ Rate limiting evident from reduced success count ({}/150)", count);
+            println!(
+                "✅ Rate limiting evident from reduced success count ({}/150)",
+                count
+            );
         }
     }
 }
@@ -377,9 +387,10 @@ async fn test_recovery_after_flood() {
     let Some(echo_addr) = allow_or_skip(start_echo_server().await, "echo server") else {
         return;
     };
-    let Some((server_addr, _stop)) =
-        allow_or_skip(start_ss_server_with_rate_limit(10, 2).await, "shadowsocks server")
-    else {
+    let Some((server_addr, _stop)) = allow_or_skip(
+        start_ss_server_with_rate_limit(10, 2).await,
+        "shadowsocks server",
+    ) else {
         return;
     };
 

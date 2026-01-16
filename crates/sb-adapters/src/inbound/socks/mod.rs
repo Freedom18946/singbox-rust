@@ -89,7 +89,6 @@ pub enum DomainStrategy {
     UseIpv6,
 }
 
-
 /// Serve SOCKS5 proxy with ready signal notification
 /// 运行 SOCKS5 代理服务，并提供就绪信号通知
 pub async fn serve_socks(
@@ -488,7 +487,10 @@ where
     let mut endpoint = endpoint;
     if let Some(strategy) = cfg.domain_strategy {
         if let Endpoint::Domain(ref host, port) = endpoint {
-            if matches!(strategy, DomainStrategy::UseIp | DomainStrategy::UseIpv4 | DomainStrategy::UseIpv6) {
+            if matches!(
+                strategy,
+                DomainStrategy::UseIp | DomainStrategy::UseIpv4 | DomainStrategy::UseIpv6
+            ) {
                 if let Some(resolver) = sb_core::dns::global::get() {
                     match resolver.resolve(host).await {
                         Ok(ans) => {
@@ -641,8 +643,7 @@ where
                     Box::new(s)
                 }
                 Endpoint::Ip(sa) => {
-                    let s =
-                        direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                    let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
                     Box::new(s)
                 }
             }
@@ -746,9 +747,9 @@ where
                             ProxyChoice::Direct => {
                                 outbound_tag = Some("direct".to_string());
                                 match &endpoint {
-                                    Endpoint::Domain(host, port) => Box::new(
-                                        direct_connect_hostport(host, *port, &opts).await?,
-                                    ),
+                                    Endpoint::Domain(host, port) => {
+                                        Box::new(direct_connect_hostport(host, *port, &opts).await?)
+                                    }
                                     Endpoint::Ip(sa) => Box::new(
                                         direct_connect_hostport(
                                             &sa.ip().to_string(),
@@ -843,13 +844,8 @@ where
                             outbound_tag = Some("socks5".to_string());
                             match &endpoint {
                                 Endpoint::Domain(host, port) => {
-                                    let s = socks5_connect_through_socks5(
-                                        addr,
-                                        host,
-                                        *port,
-                                        &opts,
-                                    )
-                                    .await?;
+                                    let s = socks5_connect_through_socks5(addr, host, *port, &opts)
+                                        .await?;
                                     Box::new(s)
                                 }
                                 Endpoint::Ip(sa) => {
@@ -888,13 +884,8 @@ where
                         outbound_tag = Some("http".to_string());
                         match &endpoint {
                             Endpoint::Domain(host, port) => {
-                                let s = http_proxy_connect_through_proxy(
-                                    addr,
-                                    host,
-                                    *port,
-                                    &opts,
-                                )
-                                .await?;
+                                let s = http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                    .await?;
                                 Box::new(s)
                             }
                             Endpoint::Ip(sa) => {
@@ -975,7 +966,11 @@ where
     let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
     let traffic = cfg.stats.as_ref().and_then(|stats| {
-        stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), auth_user.as_deref())
+        stats.traffic_recorder(
+            cfg.tag.as_deref(),
+            outbound_tag.as_deref(),
+            auth_user.as_deref(),
+        )
     });
     let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         cli,

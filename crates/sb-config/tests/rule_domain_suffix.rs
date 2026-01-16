@@ -1,5 +1,5 @@
-use serde_json::json;
 use sb_config::validator::v2::to_ir_v1;
+use serde_json::json;
 
 #[test]
 fn rule_domain_suffix_maps_correctly() {

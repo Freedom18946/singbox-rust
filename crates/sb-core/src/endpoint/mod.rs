@@ -567,7 +567,7 @@ impl EndpointManager {
                 tracing::warn!(tag = %tag, error = %e, "endpoint: failed to close old endpoint during replace");
             }
         }
-        
+
         let mut guard = self.endpoints.write();
         guard.insert(tag, endpoint);
     }
@@ -583,7 +583,10 @@ impl EndpointManager {
 
     /// Get an endpoint as an OutboundConnector (Go parity: Endpoint as Outbound).
     /// 获取端点作为出站连接器（Go 对等：端点作为出站）。
-    pub async fn as_outbound_connector(&self, tag: &str) -> Option<Arc<dyn crate::adapter::OutboundConnector>> {
+    pub async fn as_outbound_connector(
+        &self,
+        tag: &str,
+    ) -> Option<Arc<dyn crate::adapter::OutboundConnector>> {
         let ep = self.get(tag).await?;
         Some(Arc::new(EndpointAsOutbound::new(tag.to_string(), ep)))
     }
@@ -600,7 +603,7 @@ impl EndpointAsOutbound {
     pub fn new(tag: String, endpoint: Arc<dyn Endpoint>) -> Self {
         Self { tag, endpoint }
     }
-    
+
     pub fn tag(&self) -> &str {
         &self.tag
     }
@@ -621,13 +624,16 @@ impl crate::adapter::OutboundConnector for EndpointAsOutbound {
         // Use dial_context to establish connection through the endpoint
         let dest = Socksaddr::from_fqdn(host, port);
         let _stream = self.endpoint.dial_context(Network::Tcp, dest).await?;
-        
+
         // Extract underlying TcpStream if possible, otherwise return error
         // For now, we return an error since IoStream is not directly a TcpStream
         // Endpoints need to be refactored to return TcpStream directly or use a different API
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            format!("endpoint {} dial_context returns IoStream, use dial_context directly", self.tag),
+            format!(
+                "endpoint {} dial_context returns IoStream, use dial_context directly",
+                self.tag
+            ),
         ))
     }
 }

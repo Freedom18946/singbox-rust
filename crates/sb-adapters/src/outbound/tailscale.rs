@@ -109,24 +109,24 @@ impl std::fmt::Debug for TailscaleConfig {
         {
             ds.field(
                 "magic_dns_socket_factory",
-                &self
-                    .magic_dns_socket_factory
-                    .as_ref()
-                    .map(|_| "<factory>"),
+                &self.magic_dns_socket_factory.as_ref().map(|_| "<factory>"),
             );
         }
-        ds.field("private_key", &self.private_key.as_ref().map(|_| "[redacted]"))
-            .field(
-                "peer_public_key",
-                &self.peer_public_key.as_ref().map(|_| "[redacted]"),
-            )
-            .field(
-                "pre_shared_key",
-                &self.pre_shared_key.as_ref().map(|_| "[redacted]"),
-            )
-            .field("peer_endpoint", &self.peer_endpoint)
-            .field("persistent_keepalive", &self.persistent_keepalive)
-            .finish()
+        ds.field(
+            "private_key",
+            &self.private_key.as_ref().map(|_| "[redacted]"),
+        )
+        .field(
+            "peer_public_key",
+            &self.peer_public_key.as_ref().map(|_| "[redacted]"),
+        )
+        .field(
+            "pre_shared_key",
+            &self.pre_shared_key.as_ref().map(|_| "[redacted]"),
+        )
+        .field("peer_endpoint", &self.peer_endpoint)
+        .field("persistent_keepalive", &self.persistent_keepalive)
+        .finish()
     }
 }
 

@@ -196,7 +196,9 @@ impl DnsClient {
         let mut map = self.inner.cache.write().await;
 
         // TTL clamping (Go parity: CacheTTLOverride)
-        let raw_ttl = ttl.map_or(self.inner.ttl_default, |s| Duration::from_secs(u64::from(s)));
+        let raw_ttl = ttl.map_or(self.inner.ttl_default, |s| {
+            Duration::from_secs(u64::from(s))
+        });
         let clamped_ttl = if negative {
             // Negative cache uses dedicated TTL
             self.inner.negative_ttl
@@ -593,4 +595,3 @@ mod tests {
         assert!(result.unwrap().is_empty());
     }
 }
-

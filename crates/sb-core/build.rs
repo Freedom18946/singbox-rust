@@ -7,12 +7,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("CARGO_FEATURE_SERVICE_V2RAY_API").is_ok() {
         tonic_build::configure()
             .build_server(true)
-            .build_client(false)  // We only implement the server
+            .build_client(false) // We only implement the server
             .compile(
                 &["proto/v2ray/stats/command.proto"],
                 &["proto"], // Include path
             )?;
-            
+
         println!("cargo:rerun-if-changed=proto/v2ray/stats/command.proto");
     }
     Ok(())

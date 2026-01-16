@@ -119,7 +119,10 @@ mod t_scaffold {
         let eng = Engine::new(&ir);
         std::env::set_var("ADAPTER_FORCE", "scaffold");
         let br = build_bridge(&ir, eng, sb_core::context::Context::default());
-        assert!(br.inbounds.is_empty(), "unsupported inbound should not build");
+        assert!(
+            br.inbounds.is_empty(),
+            "unsupported inbound should not build"
+        );
         assert!(
             br.inbound_kinds.is_empty(),
             "unsupported inbound should not be registered"

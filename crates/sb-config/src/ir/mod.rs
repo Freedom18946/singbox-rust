@@ -1252,7 +1252,11 @@ pub struct RuleIR {
     pub port: Vec<String>,
     /// Process name list.
     /// 进程名称列表。
-    #[serde(default, alias = "process", deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "process",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub process_name: Vec<String>,
     /// Process path list.
     /// 进程路径列表。
@@ -1304,7 +1308,11 @@ pub struct RuleIR {
     pub user_id: Vec<u32>,
     /// User name list (resolved to UID, Linux/macOS).
     /// 用户名列表（解析为 UID，Linux/macOS）。
-    #[serde(default, alias = "uid", deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "uid",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub user: Vec<String>,
     /// Group ID list (GID-based matching, Linux/macOS).
     /// 组 ID 列表（基于 GID 的匹配，Linux/macOS）。
@@ -1312,7 +1320,11 @@ pub struct RuleIR {
     pub group_id: Vec<u32>,
     /// Group name list (resolved to GID, Linux/macOS).
     /// 组名列表（解析为 GID，Linux/macOS）。
-    #[serde(default, alias = "gid", deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "gid",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub group: Vec<String>,
 
     // P1 Parity: Additional routing rule fields (Go compatibility)
@@ -1394,7 +1406,11 @@ pub struct RuleIR {
     pub not_port: Vec<String>,
     /// Exclude process names.
     /// 排除进程名称。
-    #[serde(default, alias = "not_process", deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "not_process",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub not_process_name: Vec<String>,
     /// Exclude process paths.
     /// 排除进程路径。
@@ -2626,18 +2642,18 @@ pub struct DnsServerIR {
     /// Address scheme for this upstream.
     ///
     /// Supported values (by scheme prefix or literal):
-    /// - `system`                       — use system resolver
-    /// - `udp://host:port`              — plain UDP DNS
-    /// - `https://...` / `http://...`   — DoH (DNS over HTTPS)
-    /// - `dot://host:port` / `tls://…`  — DoT (DNS over TLS)
-    /// - `doq://host:port[@sni]`        — DoQ (DNS over QUIC)
-    /// - `doh3://host:port/path`        — DoH over HTTP/3
-    /// - `h3://host:port/path`          — HTTP/3 DNS (alias of `doh3://`)
-    /// - `dhcp` / `dhcp://…`            — DHCP-provided DNS (currently stubbed to system)
-    /// - `tailscale` / `tailscale://…`  — Tailscale DNS (currently stubbed)
-    /// - `resolved` / `resolved://…`    — systemd-resolved DNS (currently stubbed)
+    /// - `system` - use system resolver
+    /// - `local` / `local://` - local transport with system fallback
+    /// - `udp://host[:port]` - plain UDP DNS (default port 53)
+    /// - `https://...` / `http://...` - DoH (DNS over HTTPS; requires `dns_doh`)
+    /// - `dot://host[:port]` / `tls://host[:port]` - DoT (DNS over TLS; requires `dns_dot`, default port 853)
+    /// - `doq://host[:port][@sni]` / `quic://host[:port][@sni]` - DoQ (DNS over QUIC; requires `dns_doq`, default port 853)
+    /// - `doh3://host[:port][/path]` / `h3://host[:port][/path]` - DoH3 (requires `dns_doh3`, default port 443, path defaults to `/dns-query`)
+    /// - `dhcp` / `dhcp://iface` / `dhcp:///path` / `dhcp://?resolv=/path` - DHCP DNS (requires `dns_dhcp`)
+    /// - `tailscale` / `tailscale://host:port` / `tailscale://?servers=a,b` - Tailscale DNS (requires `dns_tailscale`)
+    /// - `resolved` / `resolved:///path` / `resolved://?resolv=/path` - systemd-resolved stub (requires `dns_resolved`)
     pub address: String,
-    /// Optional SNI override (for DoT/DoQ)
+    /// Optional SNI override (for DoT/DoQ/DoH3)
     #[serde(default)]
     pub sni: Option<String>,
     /// EDNS0 Client Subnet override for this upstream

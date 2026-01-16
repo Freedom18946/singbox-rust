@@ -101,9 +101,7 @@ async fn start_test_server(
     Ok(handle)
 }
 
-async fn start_test_server_or_skip(
-    config: &mut TestConfig,
-) -> Option<tokio::task::JoinHandle<()>> {
+async fn start_test_server_or_skip(config: &mut TestConfig) -> Option<tokio::task::JoinHandle<()>> {
     match start_test_server(config).await {
         Ok(handle) => Some(handle),
         Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
@@ -459,13 +457,20 @@ async fn test_multiple_endpoints_consistency() {
         .await
         .expect("Request should complete");
     assert_eq!(status, 401, "Health endpoint should return 401 for no auth");
-    assert!(!envelope.ok, "Health endpoint should have ok=false for no auth");
+    assert!(
+        !envelope.ok,
+        "Health endpoint should have ok=false for no auth"
+    );
     assert!(
         envelope.error.is_some(),
         "Health endpoint should have error for no auth"
     );
     let error = envelope.error.unwrap();
-    assert_eq!(error.kind, ErrorKind::Auth, "Health endpoint should have Auth error");
+    assert_eq!(
+        error.kind,
+        ErrorKind::Auth,
+        "Health endpoint should have Auth error"
+    );
 
     // Test auth failure case for metrics.
     let (status, envelope) = make_request(&client, &metrics_url, &config.no_auth_headers())

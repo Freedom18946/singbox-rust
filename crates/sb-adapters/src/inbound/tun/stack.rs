@@ -196,10 +196,21 @@ impl TunStack {
 
         let local_endpoint = smoltcp::wire::IpEndpoint {
             addr: match local_addr.ip() {
-                IpAddr::V4(v4) => IpAddress::v4(v4.octets()[0], v4.octets()[1], v4.octets()[2], v4.octets()[3]),
+                IpAddr::V4(v4) => IpAddress::v4(
+                    v4.octets()[0],
+                    v4.octets()[1],
+                    v4.octets()[2],
+                    v4.octets()[3],
+                ),
                 IpAddr::V6(v6) => IpAddress::v6(
-                    v6.segments()[0], v6.segments()[1], v6.segments()[2], v6.segments()[3],
-                    v6.segments()[4], v6.segments()[5], v6.segments()[6], v6.segments()[7],
+                    v6.segments()[0],
+                    v6.segments()[1],
+                    v6.segments()[2],
+                    v6.segments()[3],
+                    v6.segments()[4],
+                    v6.segments()[5],
+                    v6.segments()[6],
+                    v6.segments()[7],
                 ),
             },
             port: local_addr.port(),
@@ -207,20 +218,35 @@ impl TunStack {
 
         let remote_endpoint = smoltcp::wire::IpEndpoint {
             addr: match remote_addr.ip() {
-                IpAddr::V4(v4) => IpAddress::v4(v4.octets()[0], v4.octets()[1], v4.octets()[2], v4.octets()[3]),
+                IpAddr::V4(v4) => IpAddress::v4(
+                    v4.octets()[0],
+                    v4.octets()[1],
+                    v4.octets()[2],
+                    v4.octets()[3],
+                ),
                 IpAddr::V6(v6) => IpAddress::v6(
-                    v6.segments()[0], v6.segments()[1], v6.segments()[2], v6.segments()[3],
-                    v6.segments()[4], v6.segments()[5], v6.segments()[6], v6.segments()[7],
+                    v6.segments()[0],
+                    v6.segments()[1],
+                    v6.segments()[2],
+                    v6.segments()[3],
+                    v6.segments()[4],
+                    v6.segments()[5],
+                    v6.segments()[6],
+                    v6.segments()[7],
                 ),
             },
             port: remote_addr.port(),
         };
 
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
-        socket.connect(self.interface.context(), remote_endpoint, local_endpoint)
+        socket
+            .connect(self.interface.context(), remote_endpoint, local_endpoint)
             .map_err(|e| std::io::Error::other(format!("smoltcp connect: {e:?}")))?;
 
-        debug!("Initiated TCP connection from {} to {}", local_addr, remote_addr);
+        debug!(
+            "Initiated TCP connection from {} to {}",
+            local_addr, remote_addr
+        );
         Ok(handle)
     }
 
@@ -239,14 +265,16 @@ impl TunStack {
     /// Send data on a TCP socket.
     pub fn tcp_send(&mut self, handle: SocketHandle, data: &[u8]) -> std::io::Result<usize> {
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
-        socket.send_slice(data)
+        socket
+            .send_slice(data)
             .map_err(|e| std::io::Error::other(format!("tcp send: {e:?}")))
     }
 
     /// Receive data from a TCP socket.
     pub fn tcp_recv(&mut self, handle: SocketHandle, buf: &mut [u8]) -> std::io::Result<usize> {
         let socket: &mut tcp::Socket<'_> = self.socket_set.get_mut(handle);
-        socket.recv_slice(buf)
+        socket
+            .recv_slice(buf)
             .map_err(|e| std::io::Error::other(format!("tcp recv: {e:?}")))
     }
 

@@ -25,8 +25,7 @@ pub fn run(global: &GlobalArgs, args: MergeArgs) -> Result<()> {
         crate::cli::help::print_help_json::<MergeArgs>();
     }
 
-    let entries =
-        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
     let mut merged = config_loader::load_merged_value(&entries)?;
 
     // Inline known path resources for TLS/ECH/SSH compatibility

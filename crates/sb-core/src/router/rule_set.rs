@@ -46,7 +46,7 @@ impl RuleSetDb {
     /// Start lifecycle: Initialize, Start, or PostStart
     pub async fn start(&self, stage: RuleSetStage) -> Result<()> {
         *self.stage.write() = Some(stage);
-        
+
         match stage {
             RuleSetStage::Initialize => {
                 tracing::debug!(target: "sb_core::router", "RuleSetDb initializing");
@@ -64,13 +64,13 @@ impl RuleSetDb {
     /// Load all pending rule-sets concurrently
     async fn load_all_pending(&self) -> Result<()> {
         let pending: Vec<_> = self.pending.write().drain(..).collect();
-        
+
         if pending.is_empty() {
             return Ok(());
         }
-        
+
         tracing::info!(target: "sb_core::router", "Loading {} rule-sets", pending.len());
-        
+
         // Load concurrently using spawn_blocking for I/O
         let tasks: Vec<_> = pending
             .into_iter()
@@ -83,10 +83,10 @@ impl RuleSetDb {
                 })
             })
             .collect();
-        
+
         let mut loaded = Vec::new();
         let mut errors = Vec::new();
-        
+
         for task in tasks {
             match task.await {
                 Ok(Ok((tag, matcher))) => {
@@ -102,11 +102,11 @@ impl RuleSetDb {
                 }
             }
         }
-        
+
         // Store loaded matchers
         self.matchers.write().extend(loaded);
         self.errors.write().extend(errors);
-        
+
         Ok(())
     }
 

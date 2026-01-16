@@ -40,13 +40,13 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use sb_core::net::metered;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::net::metered;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -332,8 +332,7 @@ async fn handle_conn(
                         (stream, Some(tag.to_string()))
                     }
                 } else {
-                    let stream =
-                        fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                    let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
                     let tag = match &proxy {
                         ProxyChoice::Direct => "direct",
                         ProxyChoice::Http(_) => "http",
@@ -342,8 +341,7 @@ async fn handle_conn(
                     (stream, Some(tag.to_string()))
                 }
             } else {
-                let stream =
-                    fallback_connect(&proxy, &target_host, target_port, &opts).await?;
+                let stream = fallback_connect(proxy, &target_host, target_port, &opts).await?;
                 let tag = match &proxy {
                     ProxyChoice::Direct => "direct",
                     ProxyChoice::Http(_) => "http",
@@ -361,7 +359,9 @@ async fn handle_conn(
             };
             (stream, Some(tag.to_string()))
         }
-        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("vmess: rejected by rules")),
+        RDecision::Reject | RDecision::RejectDrop => {
+            return Err(anyhow!("vmess: rejected by rules"))
+        }
         // Sniff/Resolve/Hijack not yet supported in inbound handlers
         _ => return Err(anyhow!("vmess: unsupported routing action")),
     };

@@ -11,7 +11,7 @@ pub struct Args {
     /// workspace root (default: current directory)
     #[arg(long)]
     pub root: Option<String>,
-    /// include admin /__health snapshot if `SB_ADMIN_PORTFILE` or /tmp/admin.port exists
+    /// include admin /__health snapshot if `SB_ADMIN_PORTFILE` or `/tmp/admin.port` exists
     #[arg(long)]
     pub with_health: bool,
 }

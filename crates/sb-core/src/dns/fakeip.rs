@@ -138,16 +138,22 @@ fn refresh_from_env(st: &mut State) {
 
     // Preserve existing mappings and storage when resizing
     let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
-    
+
     // Create new caches with new capacity
     let mut new_v4 = LruCache::new(cap_nz);
     let mut new_v6 = LruCache::new(cap_nz);
     let mut new_ip = LruCache::new(cap_nz);
 
     // Copy over existing items (LRU order might be reset but data preserved)
-    for (k, v) in st.by_domain_v4.iter() { new_v4.put(k.clone(), *v); }
-    for (k, v) in st.by_domain_v6.iter() { new_v6.put(k.clone(), *v); }
-    for (k, v) in st.by_ip.iter() { new_ip.put(*k, v.clone()); }
+    for (k, v) in st.by_domain_v4.iter() {
+        new_v4.put(k.clone(), *v);
+    }
+    for (k, v) in st.by_domain_v6.iter() {
+        new_v6.put(k.clone(), *v);
+    }
+    for (k, v) in st.by_ip.iter() {
+        new_ip.put(*k, v.clone());
+    }
 
     st.v4_base = v4_base;
     st.v4_mask = v4_mask;
@@ -178,7 +184,7 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
     if let Some(ip) = st.by_domain_v4.get(domain) {
         return IpAddr::V4(*ip);
     }
-    
+
     // Check persistence
     if let Some(storage) = st.storage.clone() {
         if let Some(IpAddr::V4(ip)) = storage.get_by_domain(domain) {
@@ -199,11 +205,11 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
     st.by_domain_v4.put(domain.to_string(), ip);
     let ipaddr = IpAddr::V4(ip);
     st.by_ip.put(ipaddr, domain.to_string());
-    
+
     if let Some(storage) = st.storage.clone() {
         storage.store(domain, ipaddr);
     }
-    
+
     ipaddr
 }
 
@@ -233,11 +239,11 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     st.by_domain_v6.put(domain.to_string(), ip);
     let ipaddr = IpAddr::V6(ip);
     st.by_ip.put(ipaddr, domain.to_string());
-    
+
     if let Some(storage) = st.storage.clone() {
         storage.store(domain, ipaddr);
     }
-    
+
     ipaddr
 }
 

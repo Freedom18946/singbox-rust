@@ -38,8 +38,7 @@ fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHand
 #[cfg(feature = "router")]
 fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
-    match crate::router::builder::build_index_from_ir(cfg)
-        .map_err(crate::router::BuildError::Rule)
+    match crate::router::builder::build_index_from_ir(cfg).map_err(crate::router::BuildError::Rule)
     {
         Ok(idx) => {
             let mut handle = RouterHandle::from_index(idx.clone());
@@ -610,7 +609,9 @@ pub fn build_bridge<'a>(
         Arc::new(crate::router::RouteConnectionManager::new().with_stats(stats));
 
     // Build DNS components for inbound context
-    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg).ok().unzip();
+    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg)
+        .ok()
+        .unzip();
     let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
 
     for ib in &cfg.inbounds {

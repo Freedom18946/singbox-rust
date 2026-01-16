@@ -32,12 +32,7 @@ async fn socks_udp_service_starts_with_env() {
     let socks_addr = socks_sock.local_addr().unwrap();
 
     // 启动 SOCKS UDP 服务
-    let service_task = tokio::spawn(serve_udp_datagrams(
-        socks_sock.clone(),
-        None,
-        None,
-        None,
-    ));
+    let service_task = tokio::spawn(serve_udp_datagrams(socks_sock.clone(), None, None, None));
 
     // 给服务一些时间启动
     sleep(Duration::from_millis(100)).await;
