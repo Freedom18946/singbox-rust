@@ -77,10 +77,9 @@ Rust Edition：2024；工具链需 Rust ≥1.70。
 | 项目 | 影响面 | 紧急度 | 建议 |
 |------|--------|--------|------|
 | 会话复用/流控参数（`min_idle_session`, `idle_session_*`, 心跳、SYNACK 超时）与 sing-box outbound 不完全对齐 | 高并发或长连接场景下会话耗尽、频繁重建 | High | 立即：提供 CLI/脚本参数对齐（已支持 `--idle-session-*`），补基准 & e2e |
-| UDP-over-TCP 行为与 sing-box v1.12.12 协议差异 | sing-box outbound 集成失败、UDP 延迟/丢包 | High | 立即：复用 `sing-box/protocol/anytls` 用例交叉测试 |
+| UDP-over-TCP 行为与 sing-box v1.12.14 协议差异 | sing-box outbound 集成失败、UDP 延迟/丢包 | High | 立即：复用 `sing-box/protocol/anytls` 用例交叉测试 |
 | 认证散列与 padding（SHA256+MD5）策略 | 安全性和观测性；MD5 带来质疑 | Medium | 跟进：提供可配置替代，记录安全评估 |
 | TLS 证书管理（自签/LE）流程未固化 | 生产部署易误配或过期，影响上线体验 | Medium | 跟进：脚本化证书生成/轮换，补文档 |
 | 与 sing-box 参考实现行为一致性（握手字段、心跳响应） | 互通回归风险；排障困难 | High | 立即：维护字段对照表与回归测试 |
 | `tracing` 埋点覆盖不足（会话、心跳、异常路径） | 线上问题排查困难 | Medium | 跟进：补关键 span/fields，接入日志聚合 |
 | `sing-box/` 目录版本滞后 | 参考实现漂移导致行为偏差 | Low | 观察：定期同步上游 commit，标记差异 |
-

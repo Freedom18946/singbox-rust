@@ -174,4 +174,4 @@ Rust accepts the same JSON configuration format as Go. Any Go config should work
 ## Version History
 
 - **2025-12-07**: Initial documentation of Rust-only enhancements
-- **Reference**: Go sing-box 1.12.12 parity baseline
+- **Reference**: Go sing-box 1.12.12 parity baseline (历史基线)

@@ -10,7 +10,11 @@
     "outbounds":{"type":"array","items":{"$ref":"#/defs/outbound"}},
     "route":{"$ref":"#/defs/route"},
     "dns":{"$ref":"#/defs/dns"},
-    "services":{"type":"array","items":{"type":"object"}}
+    "services":{"type":"array","items":{"type":"object"}},
+    "endpoints":{"type":"array","items":{"type":"object"}},
+    "experimental":{"type":"object"},
+    "ntp":{"type":"object"},
+    "certificate":{"type":"object"}
   },
   "defs":{
     "log":{"type":"object","additionalProperties": false,"properties":{

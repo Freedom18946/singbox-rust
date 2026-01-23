@@ -8,7 +8,7 @@
 > 3. 📋 Plan development paths based on this document
 >
 > **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: January 1, 2026 (Validated against current repository structure)
+> **Last Updated**: January 18, 2026 (Validated against current repository structure)
 
 ## Project Overview
 
@@ -22,7 +22,6 @@ singbox-rust/
 ├── 📁 .cargo/           # Cargo configuration (build parameters, aliases, etc.)
 ├── 📁 .claude/          # Local assistant artifacts (gitignored)
 ├── 📁 .e2e/             # E2E test artifacts and summaries
-├── 📁 .github/          # GitHub Actions workflows
 ├── 📁 app/              # Main application and multi-bin CLI (feature gated)
 ├── 📁 benches/          # Benchmark workspace
 ├── 📁 benchmark_results/# Benchmark results
@@ -36,6 +35,7 @@ singbox-rust/
 ├── 📁 go_fork_source/   # Go reference implementation source
 ├── 📁 grafana/          # Monitoring dashboards
 ├── 📁 LICENSES/         # Dependency licenses
+├── 📁 SPECS/            # Specifications and design notes
 ├── 📁 reports/          # Reports and baselines
 │   ├── 📄 ACCEPTANCE_QC_2025-11-24.md
 │   ├── 📄 PERFORMANCE_REPORT.md
@@ -229,7 +229,7 @@ scripts/
 ### 📝 Important Files
 
 - Project Planning: `NEXT_STEPS.md` - Next milestones and workflows
-- Go Parity Matrix: `GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.12
+- Go Parity Matrix: `GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
 - Migration Guide: `docs/MIGRATION_GUIDE.md` - Go → Rust full migration path
 - Performance Benchmarks: `BENCHMARKS.md` and `reports/PERFORMANCE_REPORT.md`
 - Test Coverage: `reports/TEST_COVERAGE.md`
@@ -249,92 +249,51 @@ scripts/
 
 ## Recent Updates
 
-### 🎉 100% Protocol Parity Achieved (2025-11-23)
+### Parity Baseline (2026-01-07)
 
-**Major Milestone**: singbox-rust has achieved full feature parity with sing-box Go 1.12.12!
+**Current Baseline**: sing-box Go 1.12.14 — overall parity 88% (183/209), feature-gated parity builds. See `GO_PARITY_MATRIX.md` and `NEXT_STEPS.md`.
 
-#### 1. **Protocol Implementation Complete** - 100% Coverage
+#### Protocol Coverage (Go)
 
-**Inbound Protocols** (17/17 - 100%):
-- ✅ Basic Protocols: SOCKS5, HTTP, Mixed, Direct
-- ✅ Transparent Proxy: TUN, Redirect, TProxy (Linux)
-- ✅ Encrypted Protocols: Shadowsocks, VMess, VLESS, Trojan
-- ✅ Modern Protocols: Naive, ShadowTLS, AnyTLS
-- ✅ QUIC Protocols: Hysteria v1, Hysteria2, TUIC
+**Inbound Protocols** (18/18):
+- ✅ SOCKS5, HTTP, Mixed, Direct, DNS
+- ✅ TUN, Redirect, TProxy (Linux)
+- ✅ Shadowsocks, VMess, VLESS, Trojan
+- ✅ Naive, ShadowTLS, AnyTLS
+- ✅ Hysteria v1, Hysteria2, TUIC
 
-**Outbound Protocols** (19/19 - 100%):
-- ✅ Basic Outbounds: Direct, Block, HTTP, SOCKS5, DNS
-- ✅ Encrypted Protocols: Shadowsocks, VMess, VLESS, Trojan
-- ✅ Advanced Protocols: SSH, ShadowTLS, Tor, AnyTLS
-- ✅ QUIC Protocols: Hysteria v1, Hysteria2, TUIC
-- ✅ VPN Protocols: WireGuard (System interface binding)
-- ✅ Selectors: Selector, URLTest (Full health check)
+**Outbound Protocols** (19/19):
+- ✅ Direct, Block, HTTP, SOCKS5, DNS
+- ✅ Shadowsocks, VMess, VLESS, Trojan
+- ✅ SSH, ShadowTLS, Tor, AnyTLS
+- ✅ Hysteria v1, Hysteria2, TUIC
+- ✅ WireGuard
+- ✅ Selector, URLTest
 
-#### 2. **TLS Infrastructure** (`crates/sb-tls/`)
-- **Standard TLS**: Production-grade TLS 1.2/1.3 (rustls)
-- **REALITY**: X25519 Key Exchange + Auth Data Embedding + Fallback Proxy
-- **ECH**: HPKE Encrypted SNI (DHKEM-X25519 + CHACHA20POLY1305)
-- E2E Tests: `tests/reality_tls_e2e.rs`, `tests/e2e/ech_handshake.rs`
+#### DNS Transports (11/11 aligned, feature-gated)
 
-#### 3. **Service Complete Implementation** (100%)
+- ✅ TCP, UDP, DoT, DoH
+- ✅ DoQ, DoH3
+- ✅ system, local
+- ✅ DHCP, resolved, tailscale
 
-**DERP Service** - Production-grade Implementation:
-- ✅ Full DERP Protocol (10 frame types)
-- ✅ Mesh networking (Cross-server packet relay)
-- ✅ TLS Termination (rustls)
-- ✅ PSK Authentication (mesh + legacy relay)
-- ✅ Rate limiting (per-IP sliding window)
-- ✅ Full metrics (connections/packets/bytes/lifetimes)
-- ✅ STUN Server Integration
-- ✅ All 21 tests passed
+#### Services & Endpoints (parity gaps remain)
 
-**Other Services**:
-- ✅ **Resolved**: Linux D-Bus integration (systemd-resolved)
-- ✅ **SSMAPI**: Full HTTP API (User management + Traffic stats)
+- ✅ DERP service aligned
+- ◐ V2Ray API gRPC parity partial
+- ◐ Resolved/SSMAPI parity gaps (feature-gated; see `GO_PARITY_MATRIX.md`)
+- ◐ WireGuard endpoint userspace MVP; Tailscale endpoint de-scoped
 
-#### 4. **Endpoint Implementation**
-
-**WireGuard Endpoint** - Userspace MVP:
-- ✅ Based on boringtun + tun crate (247 lines implementation)
-- ✅ Full Noise protocol encryption/decryption
-- ✅ TUN device management (Linux/macOS/Windows)
-- ✅ UDP Encapsulation/Decapsulation
-- ✅ Peer Management + Timers
-- ✅ Pre-shared key (PSK) support
-- ⚠️ Production environment recommendation: Use kernel WireGuard
-
-**Tailscale Endpoint**: Temporarily Stub status due to build issues
-
-#### 5. **DNS Transport** (75% Complete + 25% Partial)
-
-**Full Support** (9/12):
-- ✅ TCP, UDP, TLS (DoT), HTTPS (DoH)
-- ✅ QUIC (DoQ), HTTP3 (DoH3)
-- ✅ System, Local, FakeIP
-
-**Partial Support** (3/12):
-- ◐ DHCP: Parse resolv.conf
-- ◐ Resolved: systemd-resolved stub
-- ◐ Tailscale: Env var or explicit address
-
-### 📊 Overall Coverage Progress
+### 📊 Current Coverage Summary
 
 | Category | Current Status | Notes |
 |----------|----------------|-------|
-| **Inbound Protocols** | **100% (17/17)** | All Complete |
-| **Outbound Protocols** | **100% (19/19)** | All Complete |
-| **DNS Transport** | **75% (9/12)** | 9 Full + 3 Partial |
-| **Services** | **100% (3/3)** | DERP/Resolved/SSMAPI |
-| **Endpoints** | **50% (1/2)** | WireGuard MVP |
-| **TLS** | **100% (3/3)** | Standard/REALITY/ECH |
-
-### 🎯 Key Features
-
-- ✅ **AnyTLS Inbound/Outbound**: TLS + Multi-user Auth + padding scheme
-- ✅ **Hysteria v1 Inbound**: QUIC + Custom Protocol + obfs
-- ✅ **Full Migration Guide**: `docs/MIGRATION_GUIDE.md`
-- ✅ **Performance Benchmark**: ChaCha20-Poly1305 123.6 MiB/s
-- ✅ **Concurrency Scaling**: Linearly scales to 1000+ connections
+| **Inbound Protocols** | **100% (18/18)** | Go protocols aligned |
+| **Outbound Protocols** | **100% (19/19)** | Go protocols aligned |
+| **DNS Transport** | **100% (11/11)** | Feature-gated |
+| **Services** | **Partial** | V2Ray API gRPC + Resolved/SSMAPI gaps |
+| **Endpoints** | **Partial** | WireGuard userspace; Tailscale de-scoped |
+| **TLS** | **Partial** | uTLS/ECH limitations |
 
 ## 📋 Document Maintenance Guidelines
 
@@ -368,4 +327,4 @@ When updating, please follow this format:
 
 **⚠️ Important Reminder**: The accuracy of this document directly impacts development efficiency and code quality. Please strictly abide by the maintenance guidelines to ensure the document stays in sync with the actual project structure.
 
-*Document Version: v1.6 | Last Updated: January 1, 2026 | Last Verified: January 1, 2026*
+*Document Version: v1.6 | Last Updated: January 18, 2026 | Last Verified: January 18, 2026*

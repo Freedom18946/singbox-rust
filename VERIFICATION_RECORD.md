@@ -237,7 +237,7 @@ In `crates/sb-config/src/lib.rs::rule_from_ir`, line 264 was using `ir_rule.doma
 ### Verification Environment
 - **OS**: macOS (Darwin)
 - **Rust Toolchain**: stable
-- **Go Reference**: `go_fork_source/sing-box-1.12.12`
+- **Go Reference**: `go_fork_source/sing-box-1.12.14`
 - **Method**: Per-crate test execution with `cargo test -p <crate>`
 
 ### Layer 2: Test Execution Evidence (Fresh Run)
@@ -261,10 +261,10 @@ In `crates/sb-config/src/lib.rs::rule_from_ir`, line 264 was using `ir_rule.doma
 
 | Area | Go Files | Rust Files | Parity | Notes |
 |------|----------|------------|--------|-------|
-| Protocols (Inbound) | 17 | 37 | ✅ 100% | All Go protocols implemented |
+| Protocols (Inbound) | 18 | 37 | ✅ 100% | All Go protocols implemented |
 | Protocols (Outbound) | 19 | 27 | ✅ 100% | 2 de-scoped (SSR, TS outbound) |
 | Services | 6 | 18 | ✅ 100% | DERP/SSMAPI/Resolved + 3 Rust extensions |
-| DNS Transports | 10 | 11 | ✅ 100% | DHCP with Windows MAC parity |
+| DNS Transports | 11 | 11 | ✅ 100% | DHCP with Windows MAC parity |
 | TLS/Crypto | 20 | 12 | ◐ 71% | uTLS/ECH partial (rustls limitation) |
 | Router/Rules | 38 | 43+ | ✅ 100% | All 30 rule item types |
 | Transport Layer | 11 | 28 | ✅ 100% | All v2ray transports |
@@ -293,7 +293,7 @@ In `crates/sb-config/src/lib.rs::rule_from_ir`, line 264 was using `ir_rule.doma
 
 - **Status**: All completed features are **fully verified** via three-layer validation (source/tests/config).
 - **Tests**: 295 tests passed across 10 crates; 0 failures.
-- **Parity**: 92% (175/190 items aligned); 5 partial (TLS uTLS/ECH); 4 de-scoped (Tailscale endpoint, SSR); 6 Rust-only extensions.
+- **Parity**: 88% (183/209 items aligned); 15 partial; 4 de-scoped (Tailscale endpoint, ShadowsocksR, libbox/locale); 4 Rust-only extensions.
 - **Stability**: Fixed 1 minor syntax error in `ruleset/mod.rs` (unclosed struct).
 
 ---
@@ -309,7 +309,7 @@ In `crates/sb-config/src/lib.rs::rule_from_ir`, line 264 was using `ir_rule.doma
 ### Verification Environment
 - **OS**: macOS (Darwin)
 - **Rust Toolchain**: stable
-- **Go Reference**: `single-box-1.12.12`
+- **Go Reference**: `sing-box-1.12.14`
 
 ### Layer 1: Source Parity (Validated)
 
@@ -354,7 +354,7 @@ In `crates/sb-config/src/lib.rs::rule_from_ir`, line 264 was using `ir_rule.doma
 - **OS**: macOS (Darwin)
 - **Rust Toolchain**: stable
 - **Network**: restricted (crates.io fetch blocked; see blockers)
-- **Go Reference**: `go_fork_source/sing-box-1.12.12`
+- **Go Reference**: `go_fork_source/sing-box-1.12.14`
 
 ### Tests Executed (New)
 | Command | Result | Notes |
@@ -401,7 +401,7 @@ Three-layer methodology:
 ### Verification Environment
 - **OS**: macOS (Darwin)
 - **Rust Toolchain**: stable
-- **Go Reference**: `go_fork_source/sing-box-1.12.12`
+- **Go Reference**: `go_fork_source/sing-box-1.12.14`
 - **Method**: Per-crate test execution with `cargo test -p <crate>`
 
 ### Crate Test Results
@@ -602,7 +602,7 @@ P0 + P1.1 + P1.2 are accepted. SSMAPI service is now ✅ Aligned in GO_PARITY_MA
 2) Ensure password is stripped from list response (Go parity)
 
 ### Evidence
-- **Go reference**: `go_fork_source/sing-box-1.12.12/service/ssmapi/server.go` (user list endpoint returns full user objects)
+- **Go reference**: `go_fork_source/sing-box-1.12.14/service/ssmapi/server.go` (user list endpoint returns full user objects)
 - **Rust implementation changes**:
   - `crates/sb-core/src/services/ssmapi/api.rs` L43-47: `ListUsersResponse.users` type changed to `Vec<UserObject>`
   - `crates/sb-core/src/services/ssmapi/api.rs` L109-116: `list_users` now returns users with stats, password stripped
@@ -624,7 +624,7 @@ P0 + P1.1 + P1.2 are accepted. SSMAPI service is now ✅ Aligned in GO_PARITY_MA
 4) Update GO_PARITY_MATRIX.md and NEXT_STEPS.md documentation
 
 ### Evidence
-- **Go reference**: `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`SetMeshKey`, ClientInfo `meshKey`, `derphttp.NewClient(...).MeshKey`)
+- **Go reference**: `go_fork_source/sing-box-1.12.14/service/derp/service.go` (`SetMeshKey`, ClientInfo `meshKey`, `derphttp.NewClient(...).MeshKey`)
 - **Rust implementation**:
   - `crates/sb-core/src/services/derp/server.rs` L1654-1665 (meshKey in ClientInfo validation)
   - `crates/sb-core/src/services/derp/server.rs` L2027 (`run_mesh_client` sends meshKey)
@@ -657,7 +657,7 @@ P1-3 DERP Mesh alignment is accepted. Core mesh behavior (`meshKey` in ClientInf
 
 ### Evidence
 - **Go reference**:
-  - `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`readDERPConfig` / `writeNewDERPConfig`)
+  - `go_fork_source/sing-box-1.12.14/service/derp/service.go` (`readDERPConfig` / `writeNewDERPConfig`)
   - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/derp/derp.go` (frame IDs + `ProtocolVersion=2`)
   - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/derp/derp_server.go` (`recvClientKey`, `sendServerInfo`)
   - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/types/key/node.go` (`NodePrivate.SealTo` / `OpenFrom`, `privkey:` encoding)
@@ -689,8 +689,8 @@ DERP wire-protocol parity (DERP v2 + NaCl box ClientInfo/ServerInfo + Go-compati
 
 ### Evidence
 - **Go reference**:
-  - `go_fork_source/sing-box-1.12.12/service/derp/service.go` (rejects missing TLS; rejects missing `config_path`)
-  - `go_fork_source/sing-box-1.12.12/docs/configuration/service/derp.md` (required config fields)
+  - `go_fork_source/sing-box-1.12.14/service/derp/service.go` (rejects missing TLS; rejects missing `config_path`)
+  - `go_fork_source/sing-box-1.12.14/docs/configuration/service/derp.md` (required config fields)
 - **Rust implementation**:
   - `crates/sb-core/src/services/derp/server.rs` (enforce TLS + `config_path`; mesh client uses TLS)
   - `crates/sb-core/src/services/derp/mesh_test.rs` (TLS client handshake; both DERP servers configured with TLS + `config_path`)
@@ -719,10 +719,10 @@ DERP TLS-required + `config_path` required parity is accepted end-to-end. Remain
 
 ### Evidence
 - **Go reference**:
-  - `go_fork_source/sing-box-1.12.12/constant/proxy.go` (`TypeSSMAPI = "ssm-api"`)
-  - `go_fork_source/sing-box-1.12.12/option/service.go`, `go_fork_source/sing-box-1.12.12/option/ssmapi.go`, `go_fork_source/sing-box-1.12.12/option/tailscale.go`
-  - `go_fork_source/sing-box-1.12.12/docs/configuration/shared/listen.md`
-  - `go_fork_source/sing-box-1.12.12/docs/configuration/service/derp.md`, `go_fork_source/sing-box-1.12.12/docs/configuration/service/resolved.md`, `go_fork_source/sing-box-1.12.12/docs/configuration/service/ssm-api.md`
+  - `go_fork_source/sing-box-1.12.14/constant/proxy.go` (`TypeSSMAPI = "ssm-api"`)
+  - `go_fork_source/sing-box-1.12.14/option/service.go`, `go_fork_source/sing-box-1.12.14/option/ssmapi.go`, `go_fork_source/sing-box-1.12.14/option/tailscale.go`
+  - `go_fork_source/sing-box-1.12.14/docs/configuration/shared/listen.md`
+  - `go_fork_source/sing-box-1.12.14/docs/configuration/service/derp.md`, `go_fork_source/sing-box-1.12.14/docs/configuration/service/resolved.md`, `go_fork_source/sing-box-1.12.14/docs/configuration/service/ssm-api.md`
 - **Rust implementation**:
   - `crates/sb-config/src/ir/mod.rs` (Service Listen Fields + shared `tls`; `ServiceType::Ssmapi` → `"ssm-api"`)
   - `crates/sb-config/src/validator/v2.rs` (services parsing + legacy mapping; accepts `ssm-api` and legacy `ssmapi`)
@@ -824,7 +824,7 @@ Ground-up verification and calibration to Go DERP HTTP behavior:
 4) Browser-facing endpoints match `tsweb.AddBrowserHeaders` (HSTS + CSP + XFO + XCTO)
 
 ### Evidence
-- **Go reference wiring**: `go_fork_source/sing-box-1.12.12/service/derp/service.go`
+- **Go reference wiring**: `go_fork_source/sing-box-1.12.14/service/derp/service.go`
 - **Go dependency source (ground truth)**:
   - `.cache/gopath/pkg/mod/github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/derp/derphttp/derphttp_server.go`
   - `.cache/gopath/pkg/mod/github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/tsweb/tsweb.go`
@@ -851,7 +851,7 @@ Ground-up verification of DERP service parity improvements:
 3) `derp_verify_client_url` is enforced during handshake (rejects before registration)
 
 ### Evidence
-- **Go reference**: `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`derphttp.Handler`, `addWebSocketSupport`, `derphttp.ProbeHandler`, `handleBootstrapDNS`, `derphttp.ServeNoContent`)
+- **Go reference**: `go_fork_source/sing-box-1.12.14/service/derp/service.go` (`derphttp.Handler`, `addWebSocketSupport`, `derphttp.ProbeHandler`, `handleBootstrapDNS`, `derphttp.ServeNoContent`)
 - **Rust implementation**:
   - `crates/sb-core/src/services/derp/server.rs` (hyper HTTP server + endpoints + verify_client_url enforcement)
   - `crates/sb-core/Cargo.toml` (enable `hyper` server + ws feature gating)
@@ -2265,5 +2265,3 @@ Next steps documented in NEXT_STEPS.md / GO_PARITY_MATRIX.md.
 
 ### Conclusion
 - `default_domain_resolver` fully aligned with Go options.
-
-

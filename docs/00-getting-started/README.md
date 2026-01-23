@@ -267,9 +267,9 @@ singbox-rust check -c old-config.json --migrate --write-normalized --out new-con
 
 ### Q: Which protocols are supported?
 
-**A**: All major protocols are fully supported - **100% protocol coverage achieved!**
+**A**: All major protocols are fully supported - **100% of Go protocol coverage achieved!**
 
-- **Inbounds (17/17)**: SOCKS5, HTTP, Mixed, Direct, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
+- **Inbounds (18/18)**: SOCKS5, HTTP, Mixed, Direct, DNS, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
 - **Outbounds (19/19)**: Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 
 See [Migration Guide](../docs/MIGRATION_GUIDE.md) for full protocol matrix and feature parity details.

@@ -1,8 +1,9 @@
 # Feature Verification Record
 
-**Baseline**: Go `sing-box` 1.12.12  
+**Baseline**: Go `sing-box` 1.12.14  
 **Project**: `singbox-rust`  
 **Last Updated**: 2025-12-08 18:59:11 +08:00  
+**Note**: Baseline labels updated on 2026-01-18; QA run data remains from 2025-12-08.  
 
 ---
 
@@ -21,6 +22,38 @@ Scope: Rerun P1 protocol suites with sandbox-aware skips.
 - **Next actions**:
   1. Rerun Shadowsocks/Trojan suites where binds are permitted; document any remaining skips.  
   2. Proceed to WireGuard endpoint and DERP suites with the same skip strategy and record results.  
+
+---
+
+## ✅ Parity Validation Update (2026-01-18)
+
+Scope: Validate recent parity fix for route rule parsing.
+
+- **Change**: `domain_suffix` rule mapping verified (PX-003 resolution).
+- **Command**: `cargo test -p sb-config --lib test_domain_suffix_mapping_from_ir`
+- **Result**: ✅ PASS (1 test)
+- **Change**: rule_set inline/format defaults + strict unknown outbound field enforcement.
+- **Commands**:
+  - `cargo test -p sb-config --test rule_set_parity`
+  - `cargo test -p sb-config --test compatibility_matrix test_unknown_outbound_fields_error_when_strict`
+- **Result**: ✅ PASS (3 tests + 1 test)
+- **Change**: logical rule parsing + rule_set version validation + strict unknown fields for route/dns/services + v1 outbound server_port migration.
+- **Commands**:
+  - `cargo test -p sb-config --test logical_rule_parity`
+  - `cargo test -p sb-config --test rule_set_parity`
+  - `cargo test -p sb-config --test compatibility_matrix`
+- **Result**: ✅ PASS (1 test + 4 tests + 6 tests)
+- **Change**: outbound/endpoint duplicate tag validation + endpoints unknown-field enforcement + schema root allowances.
+- **Commands**:
+  - `cargo test -p sb-config --lib`
+  - `cargo test -p sb-config --test compatibility_matrix`
+- **Result**: ✅ PASS (70 tests + 6 tests)
+- **Change**: sb-config full suite regression run after endpoint/tag validation updates.
+- **Command**: `cargo test -p sb-config`
+- **Result**: ✅ PASS (all sb-config tests)
+- **Change**: parity notes refreshed for root schema allowances (endpoints/ntp/certificate/experimental).
+- **Command**: N/A (documentation update only)
+- **Result**: ✅ Recorded in `GO_PARITY_MATRIX.md`
 
 ---
 
@@ -266,7 +299,7 @@ This document provides timestamped verification records for all features marked 
 
 ---
 
-## Inbound Protocols (17/17)
+## Inbound Protocols (18/18)
 
 ### 1. SOCKS5 Inbound
 **Status**: ⏳ PENDING  
@@ -697,6 +730,31 @@ This document provides timestamped verification records for all features marked 
 - [ ] TLS handshake works
 - [ ] Multi-user auth works
 - [ ] Padding scheme works
+- [ ] Router integration works
+- [ ] Metrics collected
+
+**Issues Found**: None yet
+
+---
+
+### 18. DNS Inbound
+**Status**: ⏳ PENDING  
+**Verification Date**: TBD
+
+**Layer 1 - Source Implementation**:
+- [ ] Implementation file: `crates/sb-adapters/src/inbound/dns.rs`
+- [ ] Registry entry: `crates/sb-adapters/src/register.rs`
+- [ ] IR schema: `crates/sb-config/src/ir/mod.rs`
+
+**Layer 2 - Test Coverage**:
+- [ ] Unit tests exist
+- [ ] Integration tests exist
+- [ ] E2E tests exist
+- [ ] All tests pass
+
+**Layer 3 - Runtime Validation**:
+- [ ] UDP queries work
+- [ ] TCP fallback works
 - [ ] Router integration works
 - [ ] Metrics collected
 
@@ -1217,7 +1275,7 @@ This document provides timestamped verification records for all features marked 
 
 ## DNS Transports
 
-### Complete Transports (9/12)
+### Complete Transports (11/11)
 
 **Status**: ⏳ PENDING (bulk verification needed)  
 **Verification Date**: TBD
@@ -1230,7 +1288,9 @@ This document provides timestamped verification records for all features marked 
 6. **DoH3** - DNS over HTTP/3 (2025-11-10 complete)
 7. **System** - System resolver
 8. **Local** - Local resolver with fallback
-9. **Hosts** - Hosts file overlay
+9. **DHCP** - DHCP resolver (feature-gated)
+10. **Resolved** - systemd-resolved (feature-gated)
+11. **Tailscale** - Tailscale DNS (feature-gated)
 
 ### Partial Transports (3/12)
 

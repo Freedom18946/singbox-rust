@@ -80,6 +80,10 @@ pub fn migrate_to_v2(raw: &Value) -> Value {
                 if let Some(tag) = ob_obj.remove("tag") {
                     ob_obj.insert("name".to_string(), tag);
                 }
+                // server_port -> port
+                if let Some(server_port) = ob_obj.remove("server_port") {
+                    ob_obj.insert("port".to_string(), server_port);
+                }
                 // Normalize type: socks5 -> socks
                 if let Some(ty) = ob_obj.get_mut("type") {
                     if ty == "socks5" {

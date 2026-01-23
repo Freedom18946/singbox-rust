@@ -2,7 +2,7 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **🚀 Production Ready**: **92% Parity** with upstream sing-box 1.12.12 (175/190 items aligned).
+> **🚀 Production Ready**: **88% Parity** with upstream sing-box 1.12.14 (183/209 items aligned).
 > See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for detailed feature matrix and [NEXT_STEPS.md](NEXT_STEPS.md) for milestones.
 
 ---

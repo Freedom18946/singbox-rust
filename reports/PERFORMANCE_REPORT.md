@@ -1,8 +1,8 @@
 # Performance Benchmarking Framework -# Performance Report
 
-**Baseline**: Go sing-box 1.12.12  
+**Baseline**: Go sing-box 1.12.14  
 **Comparison**: Rust singbox-rust  
-**Last Updated**: 2026-01-01  
+**Last Updated**: 2026-01-18  
 **Test Environment**: Apple M1 Pro, macOS 14.5
 
 ---
@@ -21,7 +21,7 @@
 
 ## Executive Summary
 
-We have successfully implemented a comprehensive performance benchmarking framework for singbox-rust, enabling systematic performance measurement and comparison with the Go sing-box 1.12.12 baseline. The framework is now operational with initial protocol coverage.
+We have successfully implemented a comprehensive performance benchmarking framework for singbox-rust, enabling systematic performance measurement and comparison with the Go sing-box 1.12.14 baseline. The framework is now operational with initial protocol coverage.
 
 ### Key Achievements
 
@@ -222,7 +222,7 @@ Real-world scenarios (encryption time + throughput):
 
 1. **Establish Go Baseline**:
    ```bash
-   cd go_fork_source/sing-box-1.12.12
+   cd go_fork_source/sing-box-1.12.14
    go test -bench=. -benchmem -benchtime=10s ./... > ../../benchmark_results/go_baseline.txt
    ```
 
@@ -325,7 +325,7 @@ Perfect linear scaling observed:
 1. ✅ **Complete infrastructure** - DONE
 2. **Collect Go baseline metrics**
    ```bash
-   cd go_fork_source/sing-box-1.12.12
+   cd go_fork_source/sing-box-1.12.14
    go test -bench=. -benchmem ./...
    ```
 3. **Run full Rust benchmarks**

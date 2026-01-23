@@ -453,31 +453,40 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         use crate::ir::OutboundType;
-        let mut names = HashSet::new();
+        let mut inbound_tags = HashSet::new();
+        let mut outbound_tags = HashSet::new();
 
-        // Go parity: validate inbound tags are unique and don't conflict with outbound names
+        // Go parity: validate inbound tags are unique (inbound scope only)
         for ib in &self.ir.inbounds {
             if let Some(tag) = &ib.tag {
-                if !tag.is_empty() && !names.insert(tag.clone()) {
-                    return Err(anyhow!("duplicate inbound/outbound tag: {}", tag));
+                if !tag.is_empty() && !inbound_tags.insert(tag.clone()) {
+                    return Err(anyhow!("duplicate inbound tag: {}", tag));
                 }
             }
         }
 
-        // 1) 出站名称唯一 (and must not conflict with inbound tags)
+        // Go parity: outbound/endpoint tags share a namespace
         for ob in &self.ir.outbounds {
             if let Some(name) = &ob.name {
-                if !names.insert(name.clone()) {
-                    return Err(anyhow!("duplicate outbound name: {}", name));
+                if !name.is_empty() && !outbound_tags.insert(name.clone()) {
+                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", name));
                 }
             }
         }
+        for ep in &self.ir.endpoints {
+            if let Some(tag) = &ep.tag {
+                if !tag.is_empty() && !outbound_tags.insert(tag.clone()) {
+                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", tag));
+                }
+            }
+        }
+
         // 2) Selector/URLTest 成员必须指向已存在的出站
         for ob in &self.ir.outbounds {
             if matches!(ob.ty, OutboundType::Selector | OutboundType::UrlTest) {
                 if let Some(members) = &ob.members {
                     for member in members {
-                        if !names.contains(member) {
+                        if !outbound_tags.contains(member) {
                             return Err(anyhow!(
                                 "outbound '{}': member '{}' not found",
                                 ob.name.as_deref().unwrap_or("unnamed"),
@@ -491,14 +500,14 @@ impl Config {
         // 3) 规则指向存在
         for r in &self.ir.route.rules {
             if let Some(outbound) = &r.outbound {
-                if !names.contains(outbound) {
+                if !outbound_tags.contains(outbound) {
                     return Err(anyhow!("rule outbound not found: {}", outbound));
                 }
             }
         }
         // 4) default_outbound（若存在）必须存在于 outbounds
         if let Some(def) = &self.ir.route.default {
-            if !names.contains(def) {
+            if !outbound_tags.contains(def) {
                 return Err(anyhow!("default_outbound not found in outbounds: {}", def));
             }
         }
@@ -753,7 +762,7 @@ outbounds:
     }
 
     #[test]
-    fn test_inbound_outbound_tag_conflict_rejected() {
+    fn test_inbound_outbound_tag_conflict_allowed() {
         let y = r#"
 inbounds:
   - type: http
@@ -766,10 +775,32 @@ outbounds:
         "#;
         let raw: Value = serde_yaml::from_str(y).unwrap();
         let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "inbound tag may overlap outbound tag (Go parity)"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_outbound_endpoint_tag_rejected() {
+        let y = r#"
+outbounds:
+  - type: direct
+    tag: shared
+endpoints:
+  - type: wireguard
+    tag: shared
+        "#;
+        let raw: Value = serde_yaml::from_str(y).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
         let result = cfg.validate();
         assert!(
             result.is_err(),
-            "inbound tag conflicting with outbound name should be rejected"
+            "duplicate outbound/endpoint tags should be rejected"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("duplicate outbound/endpoint tag"),
+            "error should mention 'duplicate outbound/endpoint tag'"
         );
     }
 

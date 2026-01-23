@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - RC Preparation (Phase 8)
 
+### Parity Recalibration (2026-01-07) 🎯
+
+**88% Go-Rust Parity** - Full calibration against `sing-box-1.12.14`
+
+- **Total Items Compared**: 209
+- **Fully Aligned**: 183 (88%)
+- **Partial Alignment**: 15
+- **De-scoped**: 4 (Tailscale endpoint, ShadowsocksR, libbox/locale)
+- **Rust-only Extensions**: 4
+- **Notes**: Parity build remains feature-gated; TLS uTLS/ECH and WireGuard endpoint limitations documented
+
+#### Changed
+- Updated parity docs and baselines to 1.12.14
+
+---
+
 ### Parity Calibration Milestone (2025-12-24) 🎯
 
-**92% Go-Rust Parity Achieved** - Full calibration against `sing-box-1.12.12`
+**92% Go-Rust Parity Achieved** - Full calibration against `sing-box-1.12.12` (历史基线)
 
 - **Total Items Compared**: 190 (expanded from 169)
 - **Fully Aligned**: 175 (92%)
@@ -30,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Protocol Coverage Milestone 🎉
 
-**100% Go sing-box 1.12.12 Parity Achieved (2025-11-23)**
+**100% Go sing-box 1.12.12 Parity Achieved (2025-11-23, 历史基线)**
 
 - **Inbound Protocols**: 17/17 complete (100%)
   - Latest additions: AnyTLS (2025-11-15), Hysteria v1 (2025-11-12), ShadowTLS (2025-11-12), TUIC (2025-11-12), Hysteria2 (2025-11-12), Naive (2025-11-12), Direct (2025-11-11)

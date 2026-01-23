@@ -1,18 +1,18 @@
 # Project Status
 
-**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100%
+**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 88% (183/209)
 
-**🎉 MAJOR MILESTONE: 100% Protocol Coverage Achieved! 🎉**
+**🎉 MAJOR MILESTONE: 100% Protocol Coverage Achieved (overall parity 88%)! 🎉**
 
-> **Latest Update (2025-11-24)**: Full parity with Go sing-box 1.12.12 achieved. All 17 inbound and 19 outbound protocols complete, DERP mesh networking operational, comprehensive verification framework established. Documentation updated to reflect current state.
+> **Latest Update (2026-01-07)**: Parity recalibrated vs Go sing-box 1.12.14. Overall parity is 88% (183/209) with feature-gated parity builds; protocol coverage remains 100% for Go inbounds/outbounds. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
 
 ## Achievement Summary
 
-- ✅ **Inbound Protocols**: **17/17 (100%)** - SOCKS, HTTP, Mixed, Direct, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, TUIC, Hysteria v1/v2, Naive, ShadowTLS, AnyTLS
-- ✅ **Outbound Protocols**: **19/19 (100%)** - Direct, Block, DNS, SOCKS, HTTP, Shadowsocks, VMess, VLESS, Trojan, TUIC, Hysteria v1/v2, ShadowTLS, SSH, Tor, AnyTLS, WireGuard, Selector, URLTest
-- ✅ **DNS Transports**: **9/12 complete (75%)** + 3 partial (DHCP/Resolved/Tailscale via env/config)
-- ✅ **VPN Endpoints**: WireGuard userspace MVP (boringtun + TUN, feature-gated)
-- ✅ **Services**: DERP **mesh networking complete** (TLS + PSK auth + rate limiting + metrics), Resolved (Linux D-Bus), SSMAPI (HTTP API)
+- ✅ **Inbound Protocols**: **18/18 (100% of Go protocols)** + 1 Rust-only (SSH inbound)
+- ✅ **Outbound Protocols**: **19/19 (100% of Go protocols)**; de-scoped: ShadowsocksR, Tailscale
+- ✅ **DNS Transports**: **11/11 aligned** (feature-gated)
+- ✅ **VPN Endpoints**: WireGuard userspace endpoint (boringtun + TUN, feature-gated; UDP listen/reserved unsupported)
+- ✅ **Services**: DERP **mesh networking complete**; V2Ray API gRPC parity partial; Resolved/SSMAPI feature-gated
 - 📚 **Migration Guide**: [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Complete Go → Rust migration reference
 
 ## Recent Completions (2025-11)
@@ -37,7 +37,7 @@
 
 ## Core Features Complete
 
-- 🎉 **Protocol Parity**: 100% coverage (36/36 protocols vs Go sing-box 1.12.12)
+- 🎉 **Protocol Coverage**: 100% of Go protocols (18 inbound, 19 outbound) vs sing-box 1.12.14
 - 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS (unblocks 15+ protocols)
 - 🎉 **Transport Layer**: WebSocket, HTTP/2, HTTPUpgrade, gRPC, Multiplex, QUIC
 - 🎉 **CLI Tools**: 100% complete (check, route, ruleset, geoip, geosite, format, merge, tools)
@@ -52,14 +52,14 @@
 
 ## Current Status
 
-- ✅ **Protocol Coverage**: 100% complete (17/17 inbound, 19/19 outbound)
+- ✅ **Protocol Coverage**: 100% for Go protocols (18/18 inbound, 19/19 outbound; +1 Rust-only inbound)
 - ✅ **Documentation**: Migration guide complete - [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 - ✅ **Verification Framework**: 3-layer validation system - [VERIFICATION_RECORD.md](../reports/VERIFICATION_RECORD.md)
 - ✅ **DERP Services**: Mesh networking operational (TLS + auth + metrics)
 - 🔄 **Quality Assurance**: Systematic verification of all 55 features in progress
 - 🔄 **Testing**: Feature gate matrix verification (`cargo xtask feature-matrix`)
 - 📊 **Observability**: Metrics alignment and monitoring improvements
-- ⚠️ **Blocked**: Tailscale endpoint (Go build constraints on macOS ARM64 - [see research](TAILSCALE_RESEARCH.md))
+- ⚠️ **De-scoped**: Tailscale endpoint (see [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md))
 
 ## Lint Baseline
 

@@ -284,8 +284,8 @@ fn test_protocol_coverage_summary() {
 
     // This test serves as documentation of current protocol support
     println!("\n=== Protocol Coverage Summary ===");
-    println!("Inbound Protocols: 17/17 (100%)");
-    println!("  - SOCKS, HTTP, Mixed");
+    println!("Inbound Protocols: 18/18 (100% of Go protocols)");
+    println!("  - SOCKS, HTTP, Mixed, DNS");
     println!("  - Shadowsocks, VMess, VLESS, Trojan");
     println!("  - Naive, ShadowTLS, AnyTLS");
     println!("  - Hysteria (v1), Hysteria2, TUIC");

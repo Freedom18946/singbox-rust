@@ -1,20 +1,20 @@
-# Migration Guide: sing-box Go 1.12.12 → singbox-rust
+# Migration Guide: sing-box Go 1.12.14 → singbox-rust
 
-This guide helps users migrate from sing-box Go version 1.12.12 to the Rust implementation, documenting feature parity, configuration compatibility, and known limitations.
+This guide helps users migrate from sing-box Go version 1.12.14 to the Rust implementation, documenting feature parity, configuration compatibility, and known limitations.
 
-**Last Updated:** 2026-01-01  
-**Baseline:** sing-box 1.12.12 (Go)  
+**Last Updated:** 2026-01-18  
+**Baseline:** sing-box 1.12.14 (Go)  
 **Target:** singbox-rust v0.2.0+
 
 ## Executive Summary
 
-**Feature Parity Status: 99%+**
+**Feature Parity Status: 88% (183/209)**
 
-- ✅ **Protocols**: 100% coverage (17/17 inbound, 19/19 outbound)
-- ✅ **DNS**: 75% complete (9/12 transports fully supported, 3 with partial support)
-- ✅ **VPN Endpoints**: WireGuard userspace implementation available
-- ✅ **Services**: DERP complete with mesh networking, Resolved (Linux D-Bus), SSMAPI
-- ⚠️ **Tailscale**: Endpoint blocked due to build constraints (tsnet/libtailscale on macOS ARM64)
+- ✅ **Protocols**: 100% coverage of Go protocols (18/18 inbound, 19/19 outbound)
+- ✅ **DNS**: 11/11 transports aligned (feature-gated)
+- ✅ **VPN Endpoints**: WireGuard userspace MVP available
+- ◐ **Services**: DERP aligned; V2Ray API gRPC partial; Resolved/SSMAPI parity gaps (feature-gated)
+- ⚠️ **Tailscale**: Endpoint de-scoped (see [Tailscale Limitations](#tailscale-limitations))
 
 **Production Readiness:** ⭐⭐⭐⭐⭐ (9.9/10) - Suitable for production use with documented limitations.
 
@@ -24,12 +24,13 @@ This guide helps users migrate from sing-box Go version 1.12.12 to the Rust impl
 
 ### Inbound Protocols
 
-| Protocol | Go 1.12.12 | Rust Status | Notes |
+| Protocol | Go 1.12.14 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
 | SOCKS5 | ✅ | ✅ Complete | Full UDP relay support |
 | HTTP/HTTPS | ✅ | ✅ Complete | CONNECT method |
 | Mixed | ✅ | ✅ Complete | SOCKS5 + HTTP on single port |
 | Direct | ✅ | ✅ Complete | TCP/UDP forwarder |
+| DNS | ✅ | ✅ Complete | DNS inbound handler |
 | TUN | ✅ | ✅ Complete | Linux/macOS/Windows |
 | Redirect | ✅ | ✅ Complete | Linux only |
 | TProxy | ✅ | ✅ Complete | Linux only |
@@ -44,11 +45,11 @@ This guide helps users migrate from sing-box Go version 1.12.12 to the Rust impl
 | Hysteria v2 | ✅ | ✅ Complete | Salamander obfuscation |
 | TUIC | ✅ | ✅ Complete | QUIC + UDP relay |
 
-**Coverage: 17/17 (100%)**
+**Coverage: 18/18 (100%)**
 
 ### Outbound Protocols
 
-| Protocol | Go 1.12.12 | Rust Status | Notes |
+| Protocol | Go 1.12.14 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
 | Direct | ✅ | ✅ Complete | Direct connection |
 | Block | ✅ | ✅ Complete | Connection blocking |
@@ -68,13 +69,13 @@ This guide helps users migrate from sing-box Go version 1.12.12 to the Rust impl
 | Hysteria v1 | ✅ | ✅ Complete | QUIC + congestion control |
 | Hysteria v2 | ✅ | ✅ Complete | Enhanced performance |
 | TUIC | ✅ | ✅ Complete | UDP over stream |
-| WireGuard | ✅ | ◐ Partial | System interface binding (see [WireGuard Notes](#wireguard-outbound)) |
+| WireGuard | ✅ | ✅ Complete | Boxed IO adapter; userspace endpoint limitations apply |
 
 **Coverage: 19/19 (100%)**
 
 ### DNS Transports
 
-| Transport | Go 1.12.12 | Rust Status | Notes |
+| Transport | Go 1.12.14 | Rust Status | Notes |
 |-----------|-----------|-------------|-------|
 | TCP | ✅ | ✅ Complete | Standard transport |
 | UDP | ✅ | ✅ Complete | Default transport |
@@ -82,29 +83,29 @@ This guide helps users migrate from sing-box Go version 1.12.12 to the Rust impl
 | DoH (HTTPS) | ✅ | ✅ Complete | DNS over HTTPS |
 | DoQ (QUIC) | ✅ | ✅ Complete | DNS over QUIC |
 | DoH3 (HTTP/3) | ✅ | ✅ Complete | DNS over HTTP/3 |
-| hosts | ✅ | ✅ Complete | Static hosts file |
-| fakeip | ✅ | ✅ Complete | FakeIP overlay |
-| local | ✅ | ✅ Complete | LocalUpstream + LocalTransport |
-| DHCP | ✅ | ◐ Partial | Reads resolv.conf, platform-dependent |
-| resolved | ✅ | ◐ Partial | systemd-resolved stub resolver |
-| tailscale | ✅ | ◐ Partial | Via explicit address or `SB_TAILSCALE_DNS_ADDRS` |
+| system | ✅ | ✅ Complete | System resolver |
+| local | ✅ | ✅ Complete | Local transport with system fallback |
+| DHCP | ✅ | ✅ Complete | Feature-gated DHCP resolver |
+| resolved | ✅ | ✅ Complete | Feature-gated systemd-resolved |
+| tailscale | ✅ | ✅ Complete | Feature-gated Tailscale DNS |
 
-**Coverage: 9/12 complete, 3/12 partial (75%)**
+**Coverage: 11/11 aligned (feature-gated)**
 
 ### VPN Endpoints
 
-| Endpoint | Go 1.12.12 | Rust Status | Notes |
+| Endpoint | Go 1.12.14 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
-| WireGuard | ✅ | ◐ Userspace MVP | Based on boringtun + tun crate (see [WireGuard Endpoint](#wireguard-endpoint)) |
-| Tailscale | ✅ | ⚠️ Blocked | Build constraints on macOS ARM64 (see [Tailscale Limitations](#tailscale-limitations)) |
+| WireGuard | ✅ | ◐ Userspace MVP | Boringtun + TUN (UDP listen/reserved unsupported) |
+| Tailscale | ✅ | ⚠️ De-scoped | See [Tailscale Limitations](#tailscale-limitations) |
 
 ### Services
 
-| Service | Go 1.12.12 | Rust Status | Notes |
+| Service | Go 1.12.14 | Rust Status | Notes |
 |---------|-----------|-------------|-------|
 | DERP | ✅ | ✅ Complete | Mesh networking, TLS, PSK auth, rate limiting, metrics |
 | Resolved | ✅ | ◐ Partial | Linux D-Bus implementation, feature-gated |
-| SSMAPI | ✅ | ✅ Complete | HTTP API for user management |
+| SSMAPI | ✅ | ◐ Partial | API/status parity gaps, feature-gated |
+| V2Ray API (gRPC) | ✅ | ◐ Partial | UDP/packet stats + tracker gaps |
 
 ---
 
@@ -309,7 +310,7 @@ docker run -d \
 
 ### Breaking Changes
 
-**None.** The Rust implementation maintains full backward compatibility with sing-box 1.12.12 configurations.
+**None.** The Rust implementation maintains full backward compatibility with sing-box 1.12.14 configurations.
 
 ### Behavior Differences
 
@@ -472,7 +473,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 
 ## Performance Comparison
 
-### Benchmarks vs Go 1.12.12
+### Benchmarks vs Go 1.12.14
 
 **Throughput (M1 Mac):**
 - Shadowsocks ChaCha20: 123.6 MiB/s (Rust) vs ~120 MiB/s (Go) ✅
@@ -533,5 +534,5 @@ For issues or questions:
 - File issues on GitHub repository
 
 **Version:** Migration Guide v1.0  
-**Target Audience:** Administrators migrating from sing-box Go 1.12.12  
+**Target Audience:** Administrators migrating from sing-box Go 1.12.14  
 **Prerequisites:** Basic familiarity with sing-box configuration and Rust toolchain

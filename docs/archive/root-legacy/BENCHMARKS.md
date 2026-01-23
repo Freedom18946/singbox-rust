@@ -2,6 +2,8 @@
 
 Comprehensive performance benchmarking for singbox-rust implementation vs Go sing-box 1.12.12 baseline.
 
+历史基线: This archived doc references the 1.12.12 Go baseline for prior results.
+
 ## Quick Start
 
 ```bash

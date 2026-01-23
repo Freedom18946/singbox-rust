@@ -284,7 +284,7 @@ log_success "Summary report generated: $SUMMARY_FILE"
 if [ "$COMPARE_GO" = true ]; then
     log_section "Step 5: Go Baseline Comparison"
     
-    GO_BINARY="$PROJECT_ROOT/go_fork_source/sing-box-1.12.12/sing-box"
+    GO_BINARY="$PROJECT_ROOT/go_fork_source/sing-box-1.12.14/sing-box"
     if [ -f "$GO_BINARY" ]; then
         log_info "Go binary found: $GO_BINARY"
         log_info "Manual comparison instructions added to summary"
@@ -304,7 +304,7 @@ EOF
     else
         log_warn "Go binary not found at $GO_BINARY"
         log_info "To enable Go comparison:"
-        log_info "  1. Build Go sing-box 1.12.12 in go_fork_source/sing-box-1.12.12"
+        log_info "  1. Build Go sing-box 1.12.14 in go_fork_source/sing-box-1.12.14"
         log_info "  2. Ensure binary is available at the expected path"
     fi
 fi

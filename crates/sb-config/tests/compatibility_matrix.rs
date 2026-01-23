@@ -280,6 +280,89 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() -> anyhow::Result<
 }
 
 #[test]
+fn test_unknown_outbound_fields_error_when_strict() -> anyhow::Result<()> {
+    let config = json!({
+        "schema_version": 2,
+        "inbounds": [],
+        "outbounds": [
+            {"name": "direct", "type": "direct", "unknown_outbound_field": "test"}
+        ],
+        "route": {"rules": [], "final": "direct"}
+    });
+
+    let issues = sb_config::validator::v2::validate_v2(&config, false);
+    assert!(
+        issues.iter().any(|i| {
+            i["kind"] == "error"
+                && i["code"] == "UnknownField"
+                && i["ptr"] == "/outbounds/0/unknown_outbound_field"
+        }),
+        "unknown outbound field should be an error"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_unknown_route_dns_services_endpoints_fields_error_when_strict() -> anyhow::Result<()> {
+    let config = json!({
+        "schema_version": 2,
+        "inbounds": [],
+        "outbounds": [{"name": "direct", "type": "direct"}],
+        "route": {
+            "final": "direct",
+            "unknown_route_field": true,
+            "rules": [
+                {"unknown_rule_field": true, "outbound": "direct"}
+            ],
+            "rule_set": [
+                {"tag": "inline-test", "rules": [], "unknown_rule_set_field": true}
+            ]
+        },
+        "dns": {
+            "unknown_dns_field": true,
+            "servers": [
+                {"address": "1.1.1.1", "unknown_server_field": true}
+            ],
+            "rules": [
+                {"domain_suffix": ["example.com"], "server": "local", "unknown_dns_rule_field": true}
+            ]
+        },
+        "endpoints": [
+            {
+                "type": "wireguard",
+                "unknown_endpoint_field": true,
+                "peers": [{"unknown_peer_field": true}]
+            }
+        ],
+        "services": [
+            {"type": "resolved", "unknown_service_field": true}
+        ]
+    });
+
+    let issues = sb_config::validator::v2::validate_v2(&config, false);
+    for ptr in [
+        "/route/unknown_route_field",
+        "/route/rules/0/unknown_rule_field",
+        "/route/rule_set/0/unknown_rule_set_field",
+        "/dns/unknown_dns_field",
+        "/dns/servers/0/unknown_server_field",
+        "/dns/rules/0/unknown_dns_rule_field",
+        "/endpoints/0/unknown_endpoint_field",
+        "/endpoints/0/peers/0/unknown_peer_field",
+        "/services/0/unknown_service_field",
+    ] {
+        assert!(
+            issues.iter().any(|i| {
+                i["kind"] == "error" && i["code"] == "UnknownField" && i["ptr"] == ptr
+            }),
+            "unknown field should be an error at {}",
+            ptr
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn test_compatibility_matrix_summary() -> anyhow::Result<()> {
     // This test provides the summary data required by the spec
     let v1_pass = 3; // From test_v1_variants_pass_migration

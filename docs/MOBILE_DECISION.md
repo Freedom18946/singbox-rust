@@ -152,5 +152,5 @@ pub fn set_system_proxy(&self, enabled: bool);
 ## 相关资源
 
 - [UniFFI 文档](https://mozilla.github.io/uniffi-rs/)
-- [Go libbox](../go_fork_source/sing-box-1.12.12/experimental/libbox/)
+- [Go libbox](../go_fork_source/sing-box-1.12.12/experimental/libbox/) (历史基线)
 - [cbindgen](https://github.com/eqrion/cbindgen)

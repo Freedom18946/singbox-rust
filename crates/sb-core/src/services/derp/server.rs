@@ -2648,7 +2648,7 @@ struct DerpConfigFile {
 
 /// Load or generate DERP server private key.
 ///
-/// Go reference: `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`readDERPConfig`).
+/// Go reference: `go_fork_source/sing-box-1.12.14/service/derp/service.go` (`readDERPConfig`).
 fn load_or_generate_server_private_key(key_path: Option<&str>) -> io::Result<PrivateKey> {
     if let Some(path) = key_path {
         match load_private_key_from_config(path) {

@@ -2,7 +2,7 @@
 
 Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite of sing-box, designed for high performance, memory safety, and cross-platform compatibility.
 
-**Project Status**: v0.2.0+ | Production-ready ⭐⭐⭐⭐⭐ (9.9/10) | Feature Parity: 100%
+**Project Status**: v0.2.0+ | Production-ready ⭐⭐⭐⭐⭐ (9.9/10) | Feature Parity: 88% (183/209) vs sing-box 1.12.14
 
 ---
 
@@ -112,7 +112,7 @@ docs/
 
 ### Protocol Support
 
-- **Inbounds** (17/17): SOCKS5, HTTP, Mixed, Direct, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
+- **Inbounds** (18/18, Go protocols): SOCKS5, HTTP, Mixed, Direct, DNS, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
 - **Outbounds** (19/19): Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 - **TLS**: Standard TLS 1.2/1.3, REALITY, ECH, uTLS (future)
 - **Transports**: TCP, UDP, QUIC, WebSocket, HTTP/2, HTTPUpgrade, gRPC, Multiplex (yamux)
@@ -141,7 +141,8 @@ This documentation follows these principles:
 
 ## 🔄 Recent Updates
 
-- **2025-11-23**: 100% protocol coverage achieved - 17/17 inbound, 19/19 outbound protocols complete
+- **2026-01-07**: Parity recalibrated to 88% (183/209) vs sing-box 1.12.14; protocol coverage remains 18/18 inbound, 19/19 outbound
+- **2025-11-23**: 100% protocol coverage achieved (Go 1.12.12 baseline, 历史基线) - 17/17 inbound, 19/19 outbound
 - **2025-10-18**: Complete documentation restructure - organized by user role
 - **2025-10-09**: TLS infrastructure complete (REALITY, ECH, Standard TLS)
 - **2025-10-02**: Sprint 5 completion - Hysteria v1/v2, TUIC, Direct inbound

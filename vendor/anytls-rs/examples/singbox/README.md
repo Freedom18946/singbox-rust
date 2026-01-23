@@ -16,7 +16,7 @@
 ## 3. 先决条件
 
 - Rust ≥ 1.70，用于运行 `anytls-rs`。
-- 已编译 `sing-box` 可执行文件（建议 v1.12.12+）。
+- 已编译 `sing-box` 可执行文件（建议 v1.12.14+）。
 - `curl`、`dig` 等测试工具。
 
 ## 4. 步骤
@@ -94,4 +94,3 @@
 ## 6. 常见问题
 
 见 `docs/FAQ.md` 与 `docs/TROUBLESHOOTING.md`。
-

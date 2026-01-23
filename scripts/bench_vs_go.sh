@@ -54,7 +54,7 @@ log_error() {
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-log_info "Performance Benchmark: Rust vs Go sing-box 1.12.12"
+log_info "Performance Benchmark: Rust vs Go sing-box 1.12.14"
 log_info "Output directory: $OUTPUT_DIR"
 log_info "Quick mode: $QUICK_MODE"
 
@@ -86,12 +86,12 @@ cargo bench --package sb-benches $BENCH_TIME $SAMPLE_SIZE -- --save-baseline rus
 log_success "Rust benchmarks completed"
 
 # Step 3: Check for Go binary
-GO_BINARY="$PROJECT_ROOT/go_fork_source/sing-box-1.12.12/sing-box"
+GO_BINARY="$PROJECT_ROOT/go_fork_source/sing-box-1.12.14/sing-box"
 if [ ! -f "$GO_BINARY" ]; then
     log_warn "Go sing-box binary not found at $GO_BINARY"
     log_info "Attempting to build Go version..."
     
-    GO_SRC_DIR="$PROJECT_ROOT/go_fork_source/sing-box-1.12.12"
+    GO_SRC_DIR="$PROJECT_ROOT/go_fork_source/sing-box-1.12.14"
     if [ -d "$GO_SRC_DIR" ]; then
         cd "$GO_SRC_DIR"
         if command -v go &> /dev/null; then
@@ -135,7 +135,7 @@ log_info "Generating comparison report..."
 
 REPORT_FILE="$OUTPUT_DIR/comparison_report.md"
 cat > "$REPORT_FILE" << 'REPORT_HEADER'
-# sing-box Performance Comparison: Rust vs Go 1.12.12
+# sing-box Performance Comparison: Rust vs Go 1.12.14
 
 ## Test Environment
 
@@ -161,7 +161,7 @@ Key Metrics:
 ### Go Implementation
 
 Go benchmarks require manual setup. To run:
-1. Navigate to `go_fork_source/sing-box-1.12.12`
+1. Navigate to `go_fork_source/sing-box-1.12.14`
 2. Run `go test -bench=. -benchmem ./...`
 
 ## Analysis

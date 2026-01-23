@@ -1,11 +1,262 @@
 use crate::ir::{ConfigIR, Credentials, DerpStunOptionsIR, HeaderEntry, InboundTlsOptionsIR};
 use sb_types::IssueCode;
 use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::sync::OnceLock;
 
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
 const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
 const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
+
+fn rule_set_format_from_path(path: &str) -> Option<&'static str> {
+    if path.ends_with(".json") {
+        Some("source")
+    } else if path.ends_with(".srs") {
+        Some("binary")
+    } else {
+        None
+    }
+}
+
+fn rule_set_format_from_url(url: &str) -> Option<&'static str> {
+    let path = url.split('?').next().unwrap_or(url);
+    rule_set_format_from_path(path)
+}
+
+fn allowed_route_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::RouteIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in [
+            "final",
+            "geoip",
+            "geosite",
+            "default_mark",
+            "default_resolver",
+            "default_network_strategy",
+            "fallback_delay",
+        ] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_route_rule_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::RuleIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in ["when", "to", "suffix", "keyword", "regex", "ip_cidr", "process"] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_rule_set_keys() -> &'static HashSet<&'static str> {
+    static KEYS: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        for key in [
+            "tag",
+            "type",
+            "format",
+            "path",
+            "url",
+            "download_detour",
+            "update_interval",
+            "rules",
+            "version",
+        ] {
+            set.insert(key);
+        }
+        set
+    })
+}
+
+fn allowed_dns_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::DnsIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in ["ttl", "fakeip", "pool", "hosts", "hosts_ttl", "static_ttl"] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_dns_server_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::DnsServerIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in ["name", "type", "server"] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_dns_rule_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::DnsRuleIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in [
+            "domain_keyword",
+            "process",
+            "rule_set_ipcidr_match_source",
+            "rule_set_ipcidr_accept_empty",
+        ] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_service_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::ServiceIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                set.insert(key.clone());
+            }
+        }
+        for key in [
+            "resolved_listen",
+            "resolved_listen_port",
+            "ssmapi_listen",
+            "ssmapi_listen_port",
+            "derp_listen",
+            "derp_listen_port",
+            "ssmapi_tls_cert_path",
+            "ssmapi_tls_key_path",
+            "ssmapi_cache_path",
+            "derp_tls_cert_path",
+            "derp_tls_key_path",
+            "derp_config_path",
+            "derp_server_key_path",
+            "derp_verify_client_endpoint",
+            "derp_verify_client_url",
+            "derp_home",
+            "derp_mesh_psk",
+            "derp_mesh_psk_file",
+            "derp_mesh_with",
+            "derp_stun_enabled",
+            "derp_stun_listen_port",
+        ] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_endpoint_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        for key in [
+            "type",
+            "tag",
+            "network",
+            "system_interface",
+            "interface_name",
+            "mtu",
+            "address",
+            "private_key",
+            "listen_port",
+            "peers",
+            "udp_timeout",
+            "workers",
+            "state_directory",
+            "auth_key",
+            "control_url",
+            "ephemeral",
+            "hostname",
+            "accept_routes",
+            "exit_node",
+            "exit_node_allow_lan_access",
+            "advertise_routes",
+            "advertise_exit_node",
+        ] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_endpoint_peer_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        for key in [
+            "address",
+            "port",
+            "public_key",
+            "pre_shared_key",
+            "allowed_ips",
+            "persistent_keepalive_interval",
+            "reserved",
+        ] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
+
+fn allowed_outbound_keys() -> &'static HashSet<String> {
+    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut set = HashSet::new();
+        let val = serde_json::to_value(crate::ir::OutboundIR::default()).unwrap_or(Value::Null);
+        if let Some(map) = val.as_object() {
+            for key in map.keys() {
+                if key == "ty" {
+                    set.insert("type".to_string());
+                } else {
+                    set.insert(key.clone());
+                }
+            }
+        }
+        // Go parity: allow legacy tags and transport sections
+        set.insert("tag".to_string());
+        for key in ["transport", "ws", "h2", "tls", "http_upgrade", "httpupgrade", "grpc"] {
+            set.insert(key.to_string());
+        }
+        set
+    })
+}
 
 fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
     match value? {
@@ -696,6 +947,289 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     ));
                 }
             }
+
+            // additionalProperties=false (V2 allowed fields)
+            if let Some(map) = ob.as_object() {
+                let allowed = allowed_outbound_keys();
+                for k in map.keys() {
+                    if !allowed.contains(k) {
+                        let kind = if allow_unknown { "warning" } else { "error" };
+                        issues.push(emit_issue(
+                            kind,
+                            IssueCode::UnknownField,
+                            &format!("/outbounds/{}/{}", i, k),
+                            "unknown field",
+                            "remove it",
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(route) = doc.get("route").and_then(|v| v.as_object()) {
+        let allowed = allowed_route_keys();
+        for k in route.keys() {
+            if !allowed.contains(k) {
+                let kind = if allow_unknown { "warning" } else { "error" };
+                issues.push(emit_issue(
+                    kind,
+                    IssueCode::UnknownField,
+                    &format!("/route/{}", k),
+                    "unknown field",
+                    "remove it",
+                ));
+            }
+        }
+        if let Some(rules) = route.get("rules").and_then(|v| v.as_array()) {
+            let allowed_rules = allowed_route_rule_keys();
+            for (i, rule) in rules.iter().enumerate() {
+                if let Some(map) = rule.as_object() {
+                    for k in map.keys() {
+                        if !allowed_rules.contains(k) {
+                            let kind = if allow_unknown { "warning" } else { "error" };
+                            issues.push(emit_issue(
+                                kind,
+                                IssueCode::UnknownField,
+                                &format!("/route/rules/{}/{}", i, k),
+                                "unknown field",
+                                "remove it",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(rule_sets) = route.get("rule_set").and_then(|v| v.as_array()) {
+            let allowed_rule_set = allowed_rule_set_keys();
+            for (i, rs) in rule_sets.iter().enumerate() {
+                if let Some(map) = rs.as_object() {
+                    for k in map.keys() {
+                        if !allowed_rule_set.contains(k.as_str()) {
+                            let kind = if allow_unknown { "warning" } else { "error" };
+                            issues.push(emit_issue(
+                                kind,
+                                IssueCode::UnknownField,
+                                &format!("/route/rule_set/{}/{}", i, k),
+                                "unknown field",
+                                "remove it",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(dns) = doc.get("dns").and_then(|v| v.as_object()) {
+        let allowed = allowed_dns_keys();
+        for k in dns.keys() {
+            if !allowed.contains(k) {
+                let kind = if allow_unknown { "warning" } else { "error" };
+                issues.push(emit_issue(
+                    kind,
+                    IssueCode::UnknownField,
+                    &format!("/dns/{}", k),
+                    "unknown field",
+                    "remove it",
+                ));
+            }
+        }
+        if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
+            let allowed_server = allowed_dns_server_keys();
+            for (i, server) in servers.iter().enumerate() {
+                if let Some(map) = server.as_object() {
+                    for k in map.keys() {
+                        if !allowed_server.contains(k) {
+                            let kind = if allow_unknown { "warning" } else { "error" };
+                            issues.push(emit_issue(
+                                kind,
+                                IssueCode::UnknownField,
+                                &format!("/dns/servers/{}/{}", i, k),
+                                "unknown field",
+                                "remove it",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(rules) = dns.get("rules").and_then(|v| v.as_array()) {
+            let allowed_rules = allowed_dns_rule_keys();
+            for (i, rule) in rules.iter().enumerate() {
+                if let Some(map) = rule.as_object() {
+                    for k in map.keys() {
+                        if !allowed_rules.contains(k) {
+                            let kind = if allow_unknown { "warning" } else { "error" };
+                            issues.push(emit_issue(
+                                kind,
+                                IssueCode::UnknownField,
+                                &format!("/dns/rules/{}/{}", i, k),
+                                "unknown field",
+                                "remove it",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
+        let allowed = allowed_service_keys();
+        for (i, svc) in services.iter().enumerate() {
+            if let Some(map) = svc.as_object() {
+                for k in map.keys() {
+                    if !allowed.contains(k) {
+                        let kind = if allow_unknown { "warning" } else { "error" };
+                        issues.push(emit_issue(
+                            kind,
+                            IssueCode::UnknownField,
+                            &format!("/services/{}/{}", i, k),
+                            "unknown field",
+                            "remove it",
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(endpoints) = doc.get("endpoints").and_then(|v| v.as_array()) {
+        let allowed = allowed_endpoint_keys();
+        for (i, endpoint) in endpoints.iter().enumerate() {
+            if let Some(map) = endpoint.as_object() {
+                for k in map.keys() {
+                    if !allowed.contains(k) {
+                        let kind = if allow_unknown { "warning" } else { "error" };
+                        issues.push(emit_issue(
+                            kind,
+                            IssueCode::UnknownField,
+                            &format!("/endpoints/{}/{}", i, k),
+                            "unknown field",
+                            "remove it",
+                        ));
+                    }
+                }
+                if let Some(peers) = map.get("peers").and_then(|v| v.as_array()) {
+                    let allowed_peers = allowed_endpoint_peer_keys();
+                    for (j, peer) in peers.iter().enumerate() {
+                        if let Some(peer_map) = peer.as_object() {
+                            for k in peer_map.keys() {
+                                if !allowed_peers.contains(k) {
+                                    let kind = if allow_unknown { "warning" } else { "error" };
+                                    issues.push(emit_issue(
+                                        kind,
+                                        IssueCode::UnknownField,
+                                        &format!("/endpoints/{}/peers/{}/{}", i, j, k),
+                                        "unknown field",
+                                        "remove it",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4) route.rule_set validation (type/format parity)
+    if let Some(route) = doc.get("route").and_then(|v| v.as_object()) {
+        if let Some(rule_sets) = route.get("rule_set").and_then(|v| v.as_array()) {
+            for (i, rs) in rule_sets.iter().enumerate() {
+                let Some(obj) = rs.as_object() else {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/route/rule_set/{}", i),
+                        "rule_set item must be an object",
+                        "use object",
+                    ));
+                    continue;
+                };
+
+                let tag = obj.get("tag").and_then(|v| v.as_str()).unwrap_or("");
+                if tag.trim().is_empty() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::MissingRequired,
+                        &format!("/route/rule_set/{}/tag", i),
+                        "missing required field",
+                        "add tag",
+                    ));
+                }
+
+                let ty_raw = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let ty = if ty_raw.trim().is_empty() { "inline" } else { ty_raw };
+                match ty {
+                    "inline" | "local" | "remote" => {}
+                    _ => {
+                        issues.push(emit_issue(
+                            "error",
+                            IssueCode::TypeMismatch,
+                            &format!("/route/rule_set/{}/type", i),
+                            "unknown rule_set type",
+                            "use inline|local|remote",
+                        ));
+                    }
+                }
+
+                if ty != "inline" {
+                    let mut format = obj
+                        .get("format")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    if format.is_empty() {
+                        if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
+                            if let Some(inferred) = rule_set_format_from_path(path) {
+                                format = inferred.to_string();
+                            }
+                        }
+                        if format.is_empty() {
+                            if let Some(url) = obj.get("url").and_then(|v| v.as_str()) {
+                                if let Some(inferred) = rule_set_format_from_url(url) {
+                                    format = inferred.to_string();
+                                }
+                            }
+                        }
+                    }
+
+                    if format.is_empty() {
+                        issues.push(emit_issue(
+                            "error",
+                            IssueCode::MissingRequired,
+                            &format!("/route/rule_set/{}/format", i),
+                            "missing format",
+                            "set format to source|binary",
+                        ));
+                    } else if format != "source" && format != "binary" {
+                        issues.push(emit_issue(
+                            "error",
+                            IssueCode::TypeMismatch,
+                            &format!("/route/rule_set/{}/format", i),
+                            "unknown rule_set format",
+                            "use source|binary",
+                        ));
+                    }
+                }
+                if let Some(version_val) = obj.get("version") {
+                    let version = version_val
+                        .as_u64()
+                        .and_then(|v| u8::try_from(v).ok());
+                    let valid = matches!(version, Some(1 | 2 | 3));
+                    if !valid {
+                        issues.push(emit_issue(
+                            "error",
+                            IssueCode::TypeMismatch,
+                            &format!("/route/rule_set/{}/version", i),
+                            "unknown rule_set version",
+                            "use 1|2|3",
+                        ));
+                    }
+                }
+            }
         }
     }
     issues
@@ -713,6 +1247,9 @@ fn parse_rule_entry(val: &Value) -> crate::ir::RuleIR {
         let condition_obj = obj.get("when").and_then(|v| v.as_object()).unwrap_or(obj);
         // Parse type/mode/sub-rules for logical rules
         let rule_type = obj.get("type").and_then(|v| v.as_str());
+        if let Some(rule_type) = rule_type {
+            r.rule_type = Some(rule_type.to_string());
+        }
         if rule_type == Some("logical") {
             r.mode = obj
                 .get("mode")
@@ -1864,11 +2401,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let ty = obj
+                    let mut ty = obj
                         .get("type")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("local")
+                        .unwrap_or("inline")
                         .to_string();
+                    if ty.trim().is_empty() {
+                        ty = "inline".to_string();
+                    }
                     let path = obj
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -1878,43 +2418,29 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
-                    // Format inference
-                    let format = obj
-                        .get("format")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| {
-                            // Infer from path extension (Go parity: .json=source, .srs=binary)
-                            let infer_from_ext = |p: &str| -> Option<String> {
-                                if p.ends_with(".json") {
-                                    Some("source".to_string())
-                                } else if p.ends_with(".srs") {
-                                    Some("binary".to_string())
-                                } else {
-                                    None
-                                }
-                            };
-
-                            if let Some(p) = &path {
-                                if let Some(fmt) = infer_from_ext(p) {
-                                    return fmt;
-                                }
+                    // Format inference (Go parity)
+                    let mut format = if ty == "inline" {
+                        String::new()
+                    } else {
+                        obj.get("format")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default()
+                    };
+                    if ty != "inline" && format.is_empty() {
+                        if let Some(p) = &path {
+                            if let Some(fmt) = rule_set_format_from_path(p) {
+                                format = fmt.to_string();
                             }
+                        }
+                        if format.is_empty() {
                             if let Some(u) = &url {
-                                // Simple extension check on URL (without url crate)
-                                // Remove query params for extension check
-                                let path_part = u.split('?').next().unwrap_or(u);
-                                if let Some(fmt) = infer_from_ext(path_part) {
-                                    return fmt;
+                                if let Some(fmt) = rule_set_format_from_url(u) {
+                                    format = fmt.to_string();
                                 }
                             }
-                            // Default to binary for non-inline types
-                            if ty != "inline" {
-                                "binary".to_string()
-                            } else {
-                                String::new()
-                            }
-                        });
+                        }
+                    }
 
                     let download_detour = obj
                         .get("download_detour")
@@ -1933,6 +2459,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         None
                     };
 
+                    let version = if ty == "inline" {
+                        None
+                    } else {
+                        obj.get("version")
+                            .and_then(|v| v.as_u64())
+                            .and_then(|v| u8::try_from(v).ok())
+                    };
+
                     if !tag.is_empty() {
                         ir.route.rule_set.push(crate::ir::RuleSetIR {
                             tag,
@@ -1943,10 +2477,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             download_detour,
                             update_interval,
                             rules,
-                            version: obj
-                                .get("version")
-                                .and_then(|v| v.as_u64())
-                                .and_then(|v| u8::try_from(v).ok()),
+                            version,
                         });
                     }
                 }

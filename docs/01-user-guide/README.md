@@ -73,7 +73,7 @@ cargo build --features "adapters,sb-adapters/adapter-vless,sb-adapters/adapter-h
 
 ## Protocol Support
 
-### Inbound Protocols (17/17 Complete - 100%)
+### Inbound Protocols (18/18 Complete - 100% of Go protocols)
 
 **🎯 Phase 1 Core (Production-Ready)**:
 - **Shadowsocks**: AEAD ciphers with UDP relay (AES-GCM, ChaCha20-Poly1305, AEAD-2022)
@@ -84,6 +84,7 @@ cargo build --features "adapters,sb-adapters/adapter-vless,sb-adapters/adapter-h
 - **HTTP/HTTPS**: HTTP proxy with CONNECT method
 - **Mixed**: Combined SOCKS5 + HTTP on single port
 - **Direct**: TCP/UDP forwarder with address override
+- **DNS**: DNS inbound for local resolver
 - **TUN**: Virtual network interface (macOS/Linux/Windows)
 - **Redirect**: Linux-only transparent proxy (iptables/nftables)
 - **TProxy**: Linux-only transparent proxy with original destination
@@ -96,7 +97,7 @@ cargo build --features "adapters,sb-adapters/adapter-vless,sb-adapters/adapter-h
 - **ShadowTLS**: TLS camouflage for Shadowsocks
 - **AnyTLS**: TLS-based protocol with multi-user authentication and padding
 
-### Outbound Protocols (19/19 Complete - 100%)
+### Outbound Protocols (19/19 Complete - 100% of Go protocols)
 
 **🎯 Phase 1 Core (Production-Ready)**:
 - **Shadowsocks**: Full cipher suite support (AES-GCM, ChaCha20-Poly1305, AEAD-2022)

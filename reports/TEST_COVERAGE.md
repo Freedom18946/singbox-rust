@@ -1,6 +1,6 @@
 # Test Coverage Report
 
-**Last Updated**: 2026-01-01
+**Last Updated**: 2026-01-18
 
 ---
 
@@ -21,7 +21,7 @@ This document tracks test coverage for protocol adapters, DNS transports, VPN en
 
 **Updates (2025-11-21)**
 - Added endpoint/service lifecycle coverage: `app/tests/wireguard_endpoint_test.rs`, `app/tests/wireguard_endpoint_e2e.rs`, `app/tests/service_instantiation_e2e.rs`
-- Adapter parity now reaches 17/17 inbounds and 19/19 outbounds (AnyTLS/WireGuard included)
+- Adapter parity now reaches 18/18 inbounds and 19/19 outbounds (AnyTLS/WireGuard included)
 
 ## DNS Transport Tests
 
@@ -72,7 +72,7 @@ Basic tests to verify the adapter registration system compiles and runs correctl
 - `test_register_all_is_safe` - Verifies registration can be called multiple times safely
 - `test_adapter_module_exists` - Verifies the module compiles
 - `test_*_feature_enabled` - Verifies feature gates work for each adapter type
-- `test_documented_inbound_count` - Documents expected inbound count (17 types)
+- `test_documented_inbound_count` - Documents expected inbound count (18 types)
 - `test_documented_outbound_count` - Documents expected outbound count (19 types)
 
 **Status:** ✅ All tests passing
