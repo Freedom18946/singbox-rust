@@ -30,7 +30,7 @@ docker run -d \
   ghcr.io/freedom18946/singbox-rust:v1.0.0
 ```
 
-**See**: [`deployments/docker/Dockerfile`](deployments/docker/Dockerfile)
+**See**: [`deployments/docker/Dockerfile`](../../../deployments/docker/Dockerfile)
 
 ### Option 2: Docker Compose (Full Stack)
 
@@ -41,7 +41,7 @@ docker-compose up -d
 
 **Includes**: Trojan + Shadowsocks + Prometheus + Grafana
 
-**See**: [`deployments/docker-compose/`](deployments/docker-compose/)
+**See**: [`deployments/docker-compose/`](../../../deployments/docker-compose/)
 
 ### Option 3: Kubernetes
 
@@ -51,7 +51,7 @@ kubectl apply -f deployments/kubernetes/deployment.yaml
 
 **Features**: 3 replicas, health probes, ConfigMap, auto-scaling ready
 
-**See**: [`deployments/kubernetes/deployment.yaml`](deployments/kubernetes/deployment.yaml)
+**See**: [`deployments/kubernetes/deployment.yaml`](../../../deployments/kubernetes/deployment.yaml)
 
 ### Option 4: systemd
 
@@ -64,26 +64,26 @@ sudo cp deployments/systemd/singbox-rust.service /etc/systemd/system/
 sudo systemctl enable --now singbox-rust
 ```
 
-**See**: [`deployments/systemd/singbox-rust.service`](deployments/systemd/singbox-rust.service)
+**See**: [`deployments/systemd/singbox-rust.service`](../../../deployments/systemd/singbox-rust.service)
 
 ---
 
 ## 📚 Documentation
 
 ### Deployment & Operations
-- **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Problem diagnosis and solutions
-- **[Docker Compose README](deployments/docker-compose/README.md)** - Docker stack guide
+- **[Deployment Guide](../../DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
+- **[Troubleshooting](../../TROUBLESHOOTING.md)** - Problem diagnosis and solutions
+- **[Docker Compose README](../../../deployments/docker-compose/README.md)** - Docker stack guide
 
 ### Configuration Examples
-- **[Trojan Server](deployments/config-examples/trojan-server.json)** - Production Trojan config
-- **[Shadowsocks Server](deployments/config-examples/shadowsocks-server.json)** - SS server config
-- **[Client Multi-hop](deployments/config-examples/client-multi-hop.json)** - Client with failover
+- **[Trojan Server](../../../deployments/config-examples/trojan-server.json)** - Production Trojan config
+- **[Shadowsocks Server](../../../deployments/config-examples/shadowsocks-server.json)** - SS server config
+- **[Client Multi-hop](../../../deployments/config-examples/client-multi-hop.json)** - Client with failover
 
 ### Development & Testing
-- **[Security Audit Report](artifacts/security_audit.md)** - Security assessment
-- **[Performance Report](reports/PERFORMANCE_REPORT.md)** - Benchmarking data
-- **[Rate Limiting Guide](docs/RATE_LIMITING.md)** - DoS protection
+- **[Security Guidelines](../../../SECURITY.md)** - Security notes
+- **[Performance Report](../../../reports/PERFORMANCE_REPORT.md)** - Benchmarking data
+- **[Rate Limiting Guide](../../RATE_LIMITING.md)** - DoS protection
 
 ---
 
@@ -198,7 +198,7 @@ singbox-rust/
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+See [Contributing](../../04-development/contributing/getting-started.md) for development guidelines.
 
 **Testing**: All protocol changes require comprehensive tests  
 **Security**: Run `cargo audit` before submitting  
@@ -208,7 +208,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## 📄 License
 
-See [LICENSE](LICENSE)
+See [Third-Party Licenses](../../../LICENSES/THIRD-PARTY.md)
 
 ---
 
@@ -216,8 +216,8 @@ See [LICENSE](LICENSE)
 
 - **Documentation**: [GitHub Wiki](#)
 - **Issues**: [GitHub Issues](https://github.com/Freedom18946/singbox-rust/issues)
-- **Roadmap**: [NEXT_STEPS.md](NEXT_STEPS.md)
-- **Parity Matrix**: [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md)
+- **Roadmap**: [NEXT_STEPS.md](../../../NEXT_STEPS.md)
+- **Parity Matrix**: [GO_PARITY_MATRIX.md](../../../GO_PARITY_MATRIX.md)
 
 ---
 

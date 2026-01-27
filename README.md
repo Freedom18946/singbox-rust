@@ -28,19 +28,18 @@ Visit our comprehensive documentation portal at **[docs/](docs/)**:
 - **[Your First Proxy](docs/00-getting-started/first-proxy.md)** - Connect to an upstream server
 
 ### 📖 [User Guide](docs/01-user-guide/)
-- **[Configuration Reference](docs/01-user-guide/configuration/overview.md)** - Full config schema
-- **[Protocol Support](docs/01-user-guide/README.md#protocol-support)** - Inbound/Outbound protocols (Shadowsocks, Trojan, VMess, VLESS, Hysteria, etc.)
-- **[Routing](docs/01-user-guide/configuration/routing.md)** - Smart routing by domain, IP, process
-- **[TLS & Anti-Censorship](docs/01-user-guide/configuration/tls.md)** - REALITY, ECH, Standard TLS
+- **[User Guide](docs/01-user-guide/README.md)** - Configuration and usage overview
+- **[DNS Configuration](docs/01-user-guide/configuration/dns.md)** - DNS strategies and FakeIP
+- **[TLS Configuration](docs/01-user-guide/configuration/tls.md)** - REALITY, ECH, Standard TLS
 
 ### 🛠️ [Operations](docs/03-operations/)
-- **[Deployment](docs/03-operations/README.md#deployment-patterns)** - Systemd, Docker, Kubernetes
-- **[Monitoring](docs/03-operations/monitoring/metrics.md)** - Prometheus metrics & Grafana
-- **[Troubleshooting](docs/03-operations/README.md#troubleshooting)** - Common issues & fixes
+- **[Operations Overview](docs/03-operations/README.md)** - Deployment and runtime notes
+- **[Monitoring](docs/03-operations/monitoring/grafana-dashboards.md)** - Grafana dashboards
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues & fixes
 
 ### 💻 [Development](docs/04-development/)
-- **[Architecture](docs/04-development/architecture.md)** - System design & modules
-- **[Contribution Guide](docs/04-development/contributing.md)** - How to contribute
+- **[Development Guide](docs/04-development/README.md)** - Development notes and workflows
+- **[Transport Defaults](docs/04-development/transport-defaults.md)** - Transport inference behavior
 - **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Go to Rust migration details
 
 ---

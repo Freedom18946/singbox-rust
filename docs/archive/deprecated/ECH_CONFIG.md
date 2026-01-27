@@ -378,5 +378,5 @@ cargo test -p sb-tls --features ech
 ## See Also
 
 - [TLS Configuration Guide](TLS.md)
-- [REALITY TLS Guide](REALITY.md)
-- [Outbound Configuration](UPSTREAM_CONNECTORS.md)
+- [REALITY TLS Guide](../../01-user-guide/protocols/reality.md)
+- [User Guide](../../01-user-guide/README.md)

@@ -105,7 +105,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 | DERP | ✅ | ✅ Complete | Mesh networking, TLS, PSK auth, rate limiting, metrics |
 | Resolved | ✅ | ◐ Partial | Linux D-Bus implementation, feature-gated |
 | SSMAPI | ✅ | ◐ Partial | API/status parity gaps, feature-gated |
-| V2Ray API (gRPC) | ✅ | ◐ Partial | UDP/packet stats + tracker gaps |
+| V2Ray API (gRPC) | ✅ | ◐ Partial | UDP/packet stats wired incl. TUN + endpoint flows; router-level tracker gaps remain |
 
 ---
 

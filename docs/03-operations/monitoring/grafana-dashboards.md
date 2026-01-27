@@ -278,7 +278,7 @@ See [Alerting Rules](../../../grafana/alerts/rules.yml) for complete configurati
 **Solutions**:
 ```bash
 # Check metrics endpoint
-curl http://localhost:18088/metrics | grep dns_query_total
+curl http://localhost:18088/__metrics | grep dns_query_total
 
 # Check Prometheus targets
 curl http://localhost:9090/api/v1/targets
@@ -293,7 +293,7 @@ Grafana UI → Configuration → Data Sources → Prometheus → Test
 
 ```bash
 # List all singbox-rust metrics
-curl http://localhost:18088/metrics | grep -E "^(dns|http|udp|proxy|outbound)_"
+curl http://localhost:18088/__metrics | grep -E "^(dns|http|udp|proxy|outbound)_"
 ```
 
 **Common Issues**:

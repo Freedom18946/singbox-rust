@@ -10,13 +10,13 @@ singbox-rust provides multiple API interfaces:
 
 ### [Admin HTTP API](admin-api/)
 
-REST HTTP API for runtime management and configuration.
+HTTP API for runtime management and diagnostics.
 
 - **Purpose**: Control and monitor running instance
-- **Protocol**: HTTP/HTTPS REST
+- **Protocol**: HTTP/HTTPS
 - **Default**: `http://127.0.0.1:18088`
-- **Authentication**: Optional JWT, mTLS, HMAC
-- **Use Cases**: Configuration management, health checks, metrics
+- **Authentication**: Optional bearer token, HMAC, or mTLS
+- **Use Cases**: Health checks, config fetch/update, metrics, routing tools
 
 **Quick start**:
 
@@ -26,7 +26,7 @@ export SB_ADMIN_ENABLE=1
 singbox-rust run -c config.yaml
 
 # Check health
-curl http://127.0.0.1:18088/admin/ping
+curl http://127.0.0.1:18088/__health
 ```
 
 See [Admin API Documentation](admin-api/overview.md).
@@ -67,70 +67,47 @@ SB_ADMIN_ENABLE=1 SB_ADMIN_LISTEN=127.0.0.1:18088 singbox-rust run -c config.yam
 **Check Service Health**:
 
 ```bash
-curl http://127.0.0.1:18088/admin/ping
+curl http://127.0.0.1:18088/__health
 ```
 
 **Get Prometheus Metrics**:
 
 ```bash
-curl http://127.0.0.1:18088/metrics
+curl http://127.0.0.1:18088/__metrics
 ```
 
-**List Outbounds**:
+**Fetch Admin Debug Config**:
 
 ```bash
-curl http://127.0.0.1:18088/admin/outbounds
+curl http://127.0.0.1:18088/__config
 ```
 
-**Test Routing Decision**:
+**Update Admin Debug Config**:
 
 ```bash
-curl -X POST http://127.0.0.1:18088/admin/explain \
+curl -X PUT http://127.0.0.1:18088/__config \
   -H "Content-Type: application/json" \
-  -d '{"dest": "google.com:443"}'
-```
-
-**Switch Selector Outbound**:
-
-```bash
-curl -X POST http://127.0.0.1:18088/admin/select \
-  -H "Content-Type: application/json" \
-  -d '{"selector": "proxy-select", "outbound": "proxy-us"}'
+  -H "X-Role: admin" \
+  -d '{"rps": 100}'
 ```
 
 ---
 
 ## Authentication
 
-### JWT Authentication (Recommended)
+### Bearer Token Authentication
 
-Configure JWT authentication for production:
-
-```yaml
-admin:
-  listen: 0.0.0.0:18088 # Listen on all interfaces
-  jwt:
-    enabled: true
-    secret: ${JWT_SECRET} # From environment
-    algorithm: HS256
-    ttl: 3600s
-```
-
-**Generate JWT token**:
+Set a token via environment variable:
 
 ```bash
-# Using singbox-rust (if supported)
-singbox-rust generate jwt-token --secret your-secret
-
-# Or use any JWT library
-jwt encode --secret=your-secret '{"sub":"admin","exp":1234567890}'
+export SB_ADMIN_TOKEN=your-secret-token
 ```
 
 **Make authenticated request**:
 
 ```bash
-curl http://0.0.0.0:18088/admin/ping \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+curl http://127.0.0.1:18088/__health \
+  -H "Authorization: Bearer your-secret-token"
 ```
 
 See [Authentication Guide](admin-api/authentication.md).
@@ -152,7 +129,7 @@ admin:
 **Make request with client cert**:
 
 ```bash
-curl https://0.0.0.0:18088/admin/ping \
+curl https://0.0.0.0:18088/__health \
   --cert client.crt \
   --key client.key \
   --cacert server-ca.crt
@@ -179,7 +156,7 @@ import time
 
 secret = b"your-secret"
 timestamp = str(int(time.time()))
-path = "/admin/ping"
+path = "/__health"
 message = (timestamp + path).encode()
 signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
 auth_header = f"SB-HMAC admin:{timestamp}:{signature}"
@@ -188,7 +165,7 @@ auth_header = f"SB-HMAC admin:{timestamp}:{signature}"
 **Make request**:
 
 ```bash
-curl http://127.0.0.1:18088/admin/ping \
+curl http://127.0.0.1:18088/__health \
   -H "Authorization: $auth_header"
 ```
 
@@ -219,7 +196,7 @@ All API responses follow a unified envelope format:
     "kind": "NotFound",
     "msg": "Outbound 'proxy-jp' not found",
     "ptr": "/outbound",
-    "hint": "Check available outbounds with GET /admin/outbounds"
+    "hint": "Check available outbounds in your configuration"
   },
   "requestId": "req-1234567890-002"
 }
@@ -325,9 +302,7 @@ X-API-Version: v1
 **curl**:
 
 ```bash
-curl -X POST http://127.0.0.1:18088/admin/select \
-  -H "Content-Type: application/json" \
-  -d '{"selector": "proxy-group", "outbound": "proxy-us"}'
+curl http://127.0.0.1:18088/__health
 ```
 
 **Python**:
@@ -335,21 +310,14 @@ curl -X POST http://127.0.0.1:18088/admin/select \
 ```python
 import requests
 
-response = requests.post(
-    "http://127.0.0.1:18088/admin/select",
-    json={"selector": "proxy-group", "outbound": "proxy-us"}
-)
+response = requests.get("http://127.0.0.1:18088/__health")
 print(response.json())
 ```
 
 **JavaScript**:
 
 ```javascript
-fetch("http://127.0.0.1:18088/admin/select", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ selector: "proxy-group", outbound: "proxy-us" }),
-})
+fetch("http://127.0.0.1:18088/__health")
   .then((r) => r.json())
   .then((data) => console.log(data));
 ```
@@ -359,7 +327,7 @@ fetch("http://127.0.0.1:18088/admin/select", {
 ## Related Documentation
 
 - **[Admin API Overview](admin-api/overview.md)** - Complete HTTP API reference
-- **[Authentication Guide](admin-api/authentication.md)** - JWT, mTLS, HMAC setup
+- **[Authentication Guide](admin-api/authentication.md)** - Bearer token, mTLS, HMAC setup
 - **[V2Ray Stats API](v2ray-stats/overview.md)** - gRPC stats service
 - **[Internal APIs](internal/)** - Developer API reference
 - **[Security Best Practices](../03-operations/security/hardening.md)** - Securing APIs

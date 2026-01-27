@@ -8,7 +8,7 @@
 
 ### What Was Added
 
-**[benches/benches/aead_crypto.rs](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches/benches/aead_crypto.rs)** (220 lines)
+**[benches/benches/aead_crypto.rs](../benches/benches/aead_crypto.rs)** (220 lines)
 - Real AES-256-GCM encryption/decryption using `aes-gcm` crate
 - Real ChaCha20-Poly1305 encryption/decryption using `chacha20poly1305` crate
 - Encryption overhead analysis (vs baseline copy)

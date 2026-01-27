@@ -8,7 +8,7 @@ Technical reference materials and specifications.
 
 ### Configuration Schemas
 
-- **[Config V2 Schema](schemas/config-v2.md)** - Complete JSON schema reference
+- **[Config V2 Schema](schemas/config-v2.md)** - Schema reference (in progress)
 - **[Subscription Schema](schemas/subscription.md)** - Subscription file format
 - **[Rule-Set Format](schemas/rule-set.md)** - SRS binary format specification
 

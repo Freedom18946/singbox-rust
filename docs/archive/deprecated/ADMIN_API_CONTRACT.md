@@ -274,6 +274,6 @@ All envelope responses can be validated against the contract types to ensure con
 
 ## See Also
 
-- [`sb-admin-contract` crate source](../crates/sb-admin-contract/src/lib.rs)
+- [`sb-admin-contract` crate source](../../../crates/sb-admin-contract/src/lib.rs)
 - [Admin API documentation](admin_api.md)
 - [Admin HTTP documentation](ADMIN_HTTP.md)

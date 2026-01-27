@@ -19,20 +19,23 @@ Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite o
 
 - **[Deployment Guide →](03-operations/)** - Systemd, Docker, Kubernetes deployment
 - **[Monitoring →](03-operations/monitoring/)** - Prometheus metrics, logging, tracing
-- **[Performance →](03-operations/performance/)** - Optimization guides and checklists
-- **[Security →](03-operations/security/)** - Hardening, TLS best practices
+- **[Environment Toggles →](03-operations/env-toggles.md)** - Runtime flags and env overrides
+- **[Transport Fallback →](03-operations/transport-fallback.md)** - Fallback behavior and guidance
+- **[Data Pipeline →](03-operations/data-pipeline.md)** - Metrics and data flow overview
 
 ### 💻 I'm a Developer
 
-- **[Development Guide →](04-development/)** - Architecture, contributing, testing
-- **[Architecture →](04-development/architecture/)** - System design and data flow
+- **[Development Guide →](04-development/)** - Architecture, contributing, and build system
+- **[Architecture Overview →](04-development/architecture/overview.md)** - System design and data flow
+- **[Contributing →](04-development/contributing/getting-started.md)** - Dev setup and workflow
+- **[Quality Gates →](04-development/quality-gates/testing.md)** - Linting, testing, benchmarking
 - **[API Reference →](05-api-reference/)** - Admin HTTP API, V2Ray gRPC API
-- **[Quality Gates →](04-development/quality-gates/)** - Linting, testing, benchmarking
 
 ### 🎓 I Want to Go Deeper
 
 - **[Advanced Topics →](06-advanced-topics/)** - REALITY, ECH, advanced routing, DSL
 - **[Reference →](07-reference/)** - Schemas, error codes, glossary
+- **[Migration Guide →](MIGRATION_GUIDE.md)** - Go → Rust migration notes
 
 ---
 
@@ -41,15 +44,61 @@ Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite o
 ```
 docs/
 ├── 00-getting-started/      🚀 5-minute quickstart, installation
-├── 01-user-guide/           📖 Configuration, protocols, features
+├── 01-user-guide/           📖 Configuration and usage
 ├── 02-cli-reference/        🔧 Command-line tools (run, check, generate, etc.)
-├── 03-operations/           🏗️ Deployment, monitoring, performance, security
+├── 03-operations/           🏗️ Deployment, monitoring, runtime toggles
 ├── 04-development/          💻 Architecture, contributing, build system
 ├── 05-api-reference/        📡 HTTP Admin API, gRPC Stats API
 ├── 06-advanced-topics/      🎓 REALITY, ECH, custom routing, DSL
 ├── 07-reference/            📚 Schemas, error codes, compatibility
-└── 08-examples/             💡 Configuration examples
+├── 08-examples/             💡 Configuration examples
+├── archive/                 🗃️ Historical docs
+├── examples/                🧪 YAML example configs
+├── protocols/               🧩 Protocol notes (placeholder)
+└── testing/                 ✅ Testing guide
 ```
+
+---
+
+## Subsection Indexes
+
+### User Guide
+
+- [Configuration Index](01-user-guide/configuration/README.md)
+- [Protocols Index](01-user-guide/protocols/README.md)
+- [Features Index](01-user-guide/features/README.md)
+
+### Operations
+
+- [Deployment Index](03-operations/deployment/README.md)
+- [Monitoring Index](03-operations/monitoring/README.md)
+- [Performance Index](03-operations/performance/README.md)
+- [Security Index](03-operations/security/README.md)
+
+### Development
+
+- [Architecture Index](04-development/architecture/README.md)
+- [Contributing Index](04-development/contributing/README.md)
+- [Build System Index](04-development/build-system/README.md)
+- [Quality Gates Index](04-development/quality-gates/README.md)
+- [Protocols Index](04-development/protocols/README.md)
+
+### API Reference
+
+- [Admin API](05-api-reference/admin-api/README.md)
+- [V2Ray Stats API](05-api-reference/v2ray-stats/README.md)
+- [Internal APIs](05-api-reference/internal/README.md)
+
+### Reference
+
+- [Schemas Index](07-reference/schemas/README.md)
+
+### Examples
+
+- [Basic Examples](08-examples/basic/README.md)
+- [Advanced Examples](08-examples/advanced/README.md)
+- [DNS Examples](08-examples/dns/README.md)
+- [Transport Examples](08-examples/transport/README.md)
 
 ---
 
@@ -57,38 +106,44 @@ docs/
 
 ### Configuration & Setup
 
-- [Installation Guide](00-getting-started/README.md#installation)
+- [Quick Start](00-getting-started/README.md)
 - [Basic Configuration](00-getting-started/basic-configuration.md)
-- [Configuration Schema (V2)](01-user-guide/configuration/overview.md)
-- [V1 → V2 Migration](01-user-guide/configuration/schema-migration.md)
+- [Your First Proxy](00-getting-started/first-proxy.md)
+- [User Guide](01-user-guide/README.md)
+- [Migration Guide](MIGRATION_GUIDE.md)
 
-### Protocols
+### Networking & TLS
 
-- [REALITY Protocol](01-user-guide/protocols/reality.md) - Anti-censorship TLS
-- [ECH (Encrypted Client Hello)](01-user-guide/protocols/ech.md) - SNI encryption
-- [Hysteria v2](01-user-guide/protocols/hysteria.md) - High-performance QUIC
-- [TUIC](01-user-guide/protocols/tuic.md) - UDP-optimized proxy
+- [TLS Configuration](01-user-guide/configuration/tls.md)
+- [DNS Configuration](01-user-guide/configuration/dns.md)
+- [UDP Support](UDP_SUPPORT.md)
+- [Transport Strategy](TRANSPORT_STRATEGY.md)
+- [Transport Mapping](TRANSPORT_MAPPING.md)
+- [TLS Decision](TLS_DECISION.md)
 
 ### Features
 
-- [Routing Rules](01-user-guide/configuration/routing.md) - Advanced traffic routing
-- [DNS Configuration](01-user-guide/configuration/dns.md) - FakeIP, DoH, DoT, DoQ
-- [TLS Configuration](01-user-guide/configuration/tls.md) - Standard TLS, REALITY, ECH
-- [Process Matching](01-user-guide/features/process-matching.md) - Native OS APIs (149x faster)
+- [DNS Configuration](01-user-guide/configuration/dns.md)
+- [TLS Configuration](01-user-guide/configuration/tls.md)
+- [Transport Defaults](04-development/transport-defaults.md)
+- [Rate Limiting](RATE_LIMITING.md)
+- [Metrics Catalog](METRICS_CATALOG.md)
 
 ### Operations
 
-- [Systemd Deployment](03-operations/deployment/systemd.md)
-- [Docker Deployment](03-operations/deployment/docker.md)
-- [Prometheus Metrics](03-operations/monitoring/metrics.md)
-- [Performance Tuning](03-operations/performance/optimization-guide.md)
+- [Operations Overview](03-operations/README.md)
+- [Deployment Guide](DEPLOYMENT_GUIDE.md)
+- [Environment Toggles](03-operations/env-toggles.md)
+- [Grafana Dashboards](03-operations/monitoring/grafana-dashboards.md)
+- [Transport Fallback](03-operations/transport-fallback.md)
 
 ### Development
 
+- [Development Guide](04-development/README.md)
 - [Architecture Overview](04-development/architecture/overview.md)
-- [Contributing Guide](04-development/contributing/getting-started.md)
-- [Testing Guide](04-development/quality-gates/testing.md)
-- [Protocol Implementation](04-development/protocols/implementation-guide.md)
+- [Contributing](04-development/contributing/getting-started.md)
+- [Build System](04-development/build-system/overview.md)
+- [Quality Gates](04-development/quality-gates/testing.md)
 
 ---
 
@@ -96,9 +151,9 @@ docs/
 
 ### Common Issues
 
-- **[Troubleshooting Guide](01-user-guide/troubleshooting.md)** - Common errors and fixes
-- **[Error Codes Reference](07-reference/error-codes.md)** - All error codes explained
-- **[FAQ](00-getting-started/README.md#faq)** - Frequently asked questions
+- **[Troubleshooting Guide](TROUBLESHOOTING.md)** - Common errors and fixes
+- **[User Guide](01-user-guide/README.md)** - Configuration and usage reference
+- **[Deployment Checklist](DEPLOYMENT_CHECKLIST.md)** - Preflight ops checklist
 
 ### Community & Support
 
@@ -162,17 +217,12 @@ Historical sprint reports, task summaries, and deprecated docs are preserved in 
 
 Found a typo? Want to improve an explanation? Documentation contributions are welcome!
 
-See [Documentation Contributing Guide](04-development/contributing/documentation.md) for:
-
-- Documentation style guide
-- How to add new pages
-- Building docs locally
-- Submitting documentation PRs
+See the documentation guide for structure and link hygiene tips: [Documentation Guide](04-development/contributing/documentation.md).
 
 ---
 
 **Documentation Version**: v2.0 (restructured)  
 **Project Version**: v0.2.0+  
-**Last Updated**: 2026-01-01
+**Last Updated**: 2026-01-26
 
 > _Never break userspace_ — we add, we don't remove.

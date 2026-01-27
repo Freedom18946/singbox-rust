@@ -8,7 +8,7 @@
 > 3. 📋 Plan development paths based on this document
 >
 > **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: January 18, 2026 (Validated against current repository structure)
+> **Last Updated**: January 26, 2026 (Validated against current repository structure)
 
 ## Project Overview
 
@@ -153,25 +153,138 @@ app/
 
 ```
 docs/
-├── 00-getting-started/   # Quick Start
-├── 01-user-guide/        # User Guide/Configuration
-├── 02-cli-reference/     # CLI Reference
-├── 03-operations/        # Operations/Deployment
-├── 04-development/       # Development and Contribution
-├── 05-api-reference/     # API Reference
-├── 06-advanced-topics/   # Advanced Topics (REALITY/ECH etc.)
-├── 07-reference/         # Reference (Schema/Error Codes)
-├── 08-examples/          # Examples
-├── archive/              # Historical Archive
-├── MIGRATION_GUIDE.md    # Go → Rust Migration Guide
-├── STATUS.md             # Project Status and Milestones
-├── DERP_USAGE.md         # DERP Service Usage Guide
-├── wireguard-endpoint-guide.md  # WireGuard Endpoint Full Guide
-├── wireguard-quickstart.md      # WireGuard Quick Start
-├── TAILSCALE_RESEARCH.md       # Tailscale Research Report
-├── RESTRUCTURE_SUMMARY.md
-├── REFACTORING_PROPOSAL.md
+├── 00-getting-started/        # Quick Start
+├── 01-user-guide/             # User Guide/Configuration
+├── 02-cli-reference/          # CLI Reference
+├── 03-operations/             # Operations/Deployment
+├── 04-development/            # Architecture, contributing, build system
+├── 05-api-reference/          # API Reference
+├── 06-advanced-topics/        # Advanced Topics (REALITY/ECH etc.)
+├── 07-reference/              # Reference (Schema/Error Codes)
+├── 08-examples/               # Examples
+├── archive/                   # Historical Archive
+├── examples/                  # YAML config examples
+├── protocols/                 # Protocol notes (currently empty placeholder)
+├── testing/                   # Testing guides
 ├── CLEANUP_COMPLETION_REPORT.md
+├── DEPLOYMENT.md
+├── DEPLOYMENT_CHECKLIST.md
+├── DEPLOYMENT_GUIDE.md
+├── DERP_USAGE.md
+├── METRICS_CATALOG.md
+├── MIGRATION_GUIDE.md
+├── MIGRATION_GUIDE_M1.md
+├── MOBILE_DECISION.md
+├── RATE_LIMITING.md
+├── README.md
+├── REFACTORING_PROPOSAL.md
+├── RESTRUCTURE_SUMMARY.md
+├── RUST_ENHANCEMENTS.md
+├── STATUS.md
+├── TAILSCALE_DECISION.md
+├── TAILSCALE_LIMITATIONS.md
+├── TAILSCALE_RESEARCH.md
+├── TEST_EXECUTION_SUMMARY.md
+├── TLS_DECISION.md
+├── TODO_AUDIT.md
+├── TRANSPORT_MAPPING.md
+├── TRANSPORT_STRATEGY.md
+├── TROUBLESHOOTING.md
+├── UDP_SUPPORT.md
+├── walkthrough_aead_benchmarks.md
+├── wireguard-endpoint-guide.md
+└── wireguard-quickstart.md
+```
+
+### Development Docs (docs/04-development/)
+
+```
+docs/04-development/
+├── architecture/        # Architecture notes
+├── build-system/        # Workspace build configuration
+├── contributing/        # Contribution workflow
+├── quality-gates/       # Linting/testing/benchmarks
+├── protocols/           # Protocol implementation notes
+├── README.md            # Development guide index
+└── transport-defaults.md
+```
+
+### User Guide (docs/01-user-guide/)
+
+```
+docs/01-user-guide/
+├── configuration/       # DNS/TLS configuration
+├── features/            # Feature stubs (multiplex/transports)
+├── protocols/           # Protocol stubs
+├── README.md            # User guide index
+└── troubleshooting.md
+```
+
+### CLI Reference (docs/02-cli-reference/)
+
+```
+docs/02-cli-reference/
+├── README.md            # CLI index
+├── run.md               # Command pages
+├── check.md
+├── route-explain.md
+├── format.md
+├── merge.md
+├── geoip-geosite.md
+├── rule-set.md
+├── generate.md
+├── tools.md
+├── completions.md
+├── version.md
+├── exit-codes.md
+└── environment-variables.md
+```
+
+### Operations (docs/03-operations/)
+
+```
+docs/03-operations/
+├── deployment/          # Systemd/Docker/K8s/Windows stubs
+├── monitoring/          # Metrics/logging dashboards
+├── performance/         # Optimization notes
+├── security/            # Hardening and TLS practices
+├── README.md            # Operations guide index
+├── data-pipeline.md
+├── env-toggles.md
+└── transport-fallback.md
+```
+
+### API Reference (docs/05-api-reference/)
+
+```
+docs/05-api-reference/
+├── admin-api/           # Admin HTTP API
+├── v2ray-stats/         # gRPC stats API
+├── internal/            # Internal API notes
+└── README.md
+```
+
+### Reference (docs/07-reference/)
+
+```
+docs/07-reference/
+├── schemas/             # Schema stubs
+├── README.md
+├── breaking-changes.md
+├── compatibility-matrix.md
+├── error-codes.md
+├── feature-parity.md
+└── glossary.md
+```
+
+### Examples (docs/08-examples/)
+
+```
+docs/08-examples/
+├── basic/               # Basic configs
+├── advanced/            # Advanced configs
+├── dns/                 # DNS examples
+├── transport/           # Transport examples
 └── README.md
 ```
 

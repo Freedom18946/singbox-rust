@@ -27,7 +27,7 @@ Contributing to singbox-rust: architecture, code style, testing, and build syste
 - **[Overview](build-system/overview.md)** - Cargo workspace and build configuration
 - **[Feature Flags](build-system/feature-flags.md)** - Available features and combinations
 - **[Cross Compilation](build-system/cross-compilation.md)** - Building for different targets
-- **[CI Matrix](build-system/ci-matrix.md)** - GitHub Actions CI/CD
+- **[CI Matrix](build-system/ci-matrix.md)** - CI/CD scripts and tasks
 
 ### Quality Gates
 
@@ -41,6 +41,15 @@ Contributing to singbox-rust: architecture, code style, testing, and build syste
 - **[Implementation Guide](protocols/implementation-guide.md)** - Adding new protocols
 - **[Adapter Bridge](protocols/adapter-bridge.md)** - Inbound/outbound adapter interface
 - **[Upstream Compatibility](protocols/upstream-compat.md)** - Maintaining parity with sing-box
+
+### Related References
+
+- **[Transport Defaults](transport-defaults.md)** - Outbound transport defaults and conflicts
+- **[Project Structure Navigation](../../PROJECT_STRUCTURE_NAVIGATION.md)** - Authoritative project layout
+- **[API Reference](../05-api-reference/README.md)** - Admin HTTP API, V2Ray gRPC API
+- **[Operations Guide](../03-operations/README.md)** - Runtime ops and deployment
+- **[Migration Guide](../MIGRATION_GUIDE.md)** - Go → Rust migration notes
+- **[Testing Guide](../testing/TESTING_GUIDE.md)** - Test strategy and execution
 
 ---
 
@@ -143,7 +152,7 @@ crates/
 4. **Never Break Userspace**: Backward compatibility is paramount
 5. **Async-First**: Built on tokio with async_trait
 
-See [Architecture Overview](architecture/overview.md).
+See [Project Structure Navigation](../../PROJECT_STRUCTURE_NAVIGATION.md) and [Transport Strategy](../TRANSPORT_STRATEGY.md).
 
 ---
 
@@ -174,7 +183,7 @@ fn connect(&self) -> Stream {
 - Prefer `thiserror` for error types
 - Use `tracing` for logging, not `println!()`
 
-See [Code Style Guide](contributing/code-style.md).
+Code style guidance is currently captured in lint rules and inline examples; a dedicated style guide is planned.
 
 ### Testing Standards
 
@@ -448,7 +457,7 @@ cargo doc --workspace -- -D missing_docs
 
 ## Getting Help
 
-- **Architecture Questions**: Read [Architecture docs](architecture/)
+- **Architecture Questions**: Read [Architecture docs](architecture/overview.md)
 - **Code Review**: Submit PR for feedback
 - **Discussions**: [GitHub Discussions](https://github.com/your-repo/discussions)
 - **Chat**: [Discord/Matrix](https://your-chat-link) (if available)

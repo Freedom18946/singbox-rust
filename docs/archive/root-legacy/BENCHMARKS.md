@@ -101,7 +101,7 @@ Comprehensive performance benchmarking for singbox-rust implementation vs Go sin
 | File descriptor usage | 🔄 Planned |
 
 **Documentation:**
-- [PERFORMANCE_REPORT.md](reports/PERFORMANCE_REPORT.md) - Latest results and analysis
+- [PERFORMANCE_REPORT.md](../../../reports/PERFORMANCE_REPORT.md) - Latest results and analysis
 
 ## Methodology
 

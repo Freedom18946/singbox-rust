@@ -272,12 +272,9 @@ outbounds:
     default: proxy-us-1
 ```
 
-**Switch via API**:
+**Switch selection**:
 
-```bash
-curl -X POST http://127.0.0.1:18088/admin/select \
-  -d '{"selector": "manual-select", "outbound": "proxy-jp"}'
-```
+Edit the selector `default` and reload the config (or restart the service).
 
 [Full Example →](advanced/load-balancing.md)
 
@@ -547,7 +544,7 @@ curl -x socks5h://127.0.0.1:1080 https://ifconfig.me
 
 ```bash
 # If admin API enabled
-curl http://127.0.0.1:18088/metrics | grep sb_connections
+curl http://127.0.0.1:18088/__metrics | grep sb_connections
 ```
 
 ---

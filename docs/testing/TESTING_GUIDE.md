@@ -525,7 +525,7 @@ cargo run -p xtask -- feature-matrix
 
 - [Rust Testing Documentation](https://doc.rust-lang.org/book/ch11-00-testing.html)
 - [tokio Testing Guide](https://tokio.rs/tokio/topics/testing)
-- [Project Test Coverage](../TEST_COVERAGE.md)
+- [Project Test Coverage](../../reports/TEST_COVERAGE.md)
 - [Go Parity Matrix](../../GO_PARITY_MATRIX.md)
 
 ## Contact

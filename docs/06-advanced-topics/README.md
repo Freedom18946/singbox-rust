@@ -4,6 +4,15 @@ Deep dives into advanced features and use cases.
 
 ---
 
+## Start Here
+
+Pick a path based on your goal:
+
+- **Anti-censorship**: [REALITY Deployment](reality-deployment.md) → [Protocol Camouflage](protocol-camouflage.md)
+- **Routing complexity**: [Custom Routing](custom-routing.md) → [DSL Rules](dsl-rules.md)
+- **Multi-node selection**: [Node Selection](node-selection.md) → [Health Checks](health-checks.md)
+- **Performance tuning**: [Multiplexing](multiplexing.md) → [Connection Pooling](connection-pooling.md)
+
 ## Available Topics
 
 ### Anti-Censorship Protocols
@@ -36,6 +45,12 @@ Deep dives into advanced features and use cases.
 - **[Scenarios](scenarios.md)** - Real-world deployment scenarios
 - **[Chaos Engineering](chaos-engineering.md)** - Resilience testing
 - **[Migration from sing-box](migration.md)** - Migrating from Go implementation
+
+## Related Docs
+
+- [User Guide](../01-user-guide/README.md)
+- [TLS Configuration](../01-user-guide/configuration/tls.md)
+- [Transport Defaults](../04-development/transport-defaults.md)
 
 ---
 
@@ -172,9 +187,8 @@ else
     PROXY="personal-proxy"
 fi
 
-# Update selector via Admin API
-curl -X POST http://127.0.0.1:18088/admin/select \
-  -d "{\"selector\": \"auto-select\", \"outbound\": \"$PROXY\"}"
+# Update selector by editing config and reloading the service
+echo "set selector default to $PROXY" >&2
 ```
 
 See [Custom Routing](custom-routing.md).

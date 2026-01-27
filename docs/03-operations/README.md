@@ -88,7 +88,7 @@ export SB_ADMIN_LISTEN=0.0.0.0:18088
 singbox-rust run -c config.yaml
 
 # Scrape metrics
-curl http://127.0.0.1:18088/metrics
+curl http://127.0.0.1:18088/__metrics
 ```
 
 See [Prometheus Metrics](monitoring/metrics.md).
@@ -238,7 +238,7 @@ See [Credential Management](security/credential-management.md).
 
 ### Metrics
 
-singbox-rust exposes Prometheus metrics at `/metrics`:
+singbox-rust exposes Prometheus metrics at `/__metrics`:
 
 **Key metrics**:
 
@@ -295,10 +295,10 @@ See [Logging](monitoring/logging.md).
 
 ```bash
 # Metrics endpoint (also serves as health check)
-curl -f http://127.0.0.1:18088/metrics || exit 1
+curl -f http://127.0.0.1:18088/__metrics || exit 1
 
-# Admin ping (if admin API enabled)
-curl -f http://127.0.0.1:18088/admin/ping || exit 1
+# Health check (admin debug)
+curl -f http://127.0.0.1:18088/__health || exit 1
 ```
 
 **Systemd health check**:
@@ -315,7 +315,7 @@ RestartSec=5s
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:18088/metrics || exit 1
+  CMD curl -f http://localhost:18088/__metrics || exit 1
 ```
 
 ---
@@ -470,7 +470,7 @@ docker logs singbox-rust --tail 50
 **Check metrics**:
 
 ```bash
-curl http://127.0.0.1:18088/metrics | grep memory
+curl http://127.0.0.1:18088/__metrics | grep memory
 ```
 
 **Possible causes**:

@@ -19,6 +19,7 @@ Key blockers:
 - [x] Decide on Windows ACK parity for TLS fragmentation (best-effort TCP_INFO + fallback delay)
 - [x] Document WireGuard endpoint UDP listen/reserved limitations (userspace transport)
 - [x] Finish UDP packet stats + router-level tracking for V2Ray API (direct/socks/shadowsocks/trojan/tuic + core socks5 + DNS inbound wired; remaining UDP paths + packet counters)
+- [x] Audit remaining V2Ray API UDP packet stats gaps (adapter TUN UDP + endpoint flows) and wire endpoint routing handler for stats
 - [x] Align DNS scheme comments in `crates/sb-config/src/ir/mod.rs`
 
 ---
@@ -53,6 +54,11 @@ Key blockers:
 - [x] Loaded public suffix list for TLS fragmentation + added validation tests
 - [x] Documented Windows ACK best-effort + WireGuard endpoint UDP/reserved limitations
 - [x] De-scoped libbox/locale/clients/release artifacts
+
+## Completed (2026-01-23)
+
+- [x] Wired V2Ray API traffic stats for TUN TCP (core + adapters)
+- [x] Wired endpoint routing handler stats + adapter TUN UDP packet stats (tun_macos)
 
 ---
 
