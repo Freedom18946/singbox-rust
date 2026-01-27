@@ -110,6 +110,14 @@ Run explain on example configurations.
 
 ## Development Utilities
 
+### `check-doc-links.sh`
+Validate markdown links under `docs/`.
+
+```bash
+./scripts/tools/check-doc-links.sh
+./scripts/tools/check-doc-links.sh docs
+```
+
 ### `config-patch.sh`
 Patch configuration files.
 

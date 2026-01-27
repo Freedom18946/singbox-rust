@@ -69,6 +69,9 @@ Individual CI tasks that can be run independently or as part of the pipeline.
 - `explain-nat-metrics.sh` - NAT metrics explanation
 - `diag-and-subs.sh` - Diagnostics and subscriptions
 
+### Docs & Quality
+- `docs-links.sh` - Validate markdown links under docs/
+
 ### Quality Gates
 - `release-gate.sh` - Release quality gate checks
 - `min-guard-schema.sh` - Minimum guard schema validation

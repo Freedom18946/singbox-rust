@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+bash scripts/ci/tasks/docs-links.sh
 bash scripts/ci/accept.sh
 
 # 按平台判定门槛
