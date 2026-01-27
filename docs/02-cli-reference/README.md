@@ -187,7 +187,7 @@ singbox-rust merge -c base.yaml -c override.yaml output.yaml
 singbox-rust merge -c config.base.yaml -c config.prod.yaml config.final.yaml
 ```
 
-See [CLI Tools](https://github.com/sing-box/sing-box/blob/dev-next/docs/configuration/merge.md) for merge behavior.
+See [CLI Tools](https://github.com/sing-box/sing-box/blob/dev-next/docs/configuration/merge.md) for merge behavior (upstream reference).
 
 ---
 
@@ -369,7 +369,7 @@ singbox-rust bench io --url https://example.com --requests 100 --concurrency 10
 
 **Note**: Requires `reqwest` feature flag.
 
-See [benchmarks documentation](../../03-operations/performance/benchmarks.md).
+See [Operations Guide](../03-operations/README.md) for performance and runtime notes.
 
 ---
 
@@ -503,7 +503,7 @@ sudo systemctl start singbox-rust
 journalctl -u singbox-rust -f
 
 # 5. Health check
-curl http://127.0.0.1:18088/metrics
+curl http://127.0.0.1:18088/__metrics
 ```
 
 ### Migration from V1
@@ -550,9 +550,9 @@ singbox-rust run -c config.v2.yaml
 ## Getting Help
 
 - **Per-command help**: `singbox-rust <command> --help`
-- **User Guide**: [Configuration docs](../01-user-guide/)
-- **Examples**: [Example configurations](../08-examples/)
-- **Troubleshooting**: [Common issues](../01-user-guide/troubleshooting.md)
+- **User Guide**: [Configuration docs](../01-user-guide/README.md)
+- **Examples**: [Example configurations](../08-examples/README.md)
+- **Troubleshooting**: [Common issues](../TROUBLESHOOTING.md)
 
 ---
 
@@ -560,5 +560,5 @@ singbox-rust run -c config.v2.yaml
 
 - [Environment Variables](environment-variables.md)
 - [Exit Codes](exit-codes.md)
-- [User Guide](../01-user-guide/)
-- [Operations Guide](../03-operations/)
+- [User Guide](../01-user-guide/README.md)
+- [Operations Guide](../03-operations/README.md)

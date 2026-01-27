@@ -138,7 +138,7 @@ route:
 
 ## Example 3: VLESS with REALITY
 
-[REALITY](../01-user-guide/protocols/reality.md) is an anti-censorship protocol that disguises traffic as legitimate TLS connections.
+[REALITY](../01-user-guide/configuration/tls.md) is an anti-censorship TLS mode that disguises traffic as legitimate TLS connections.
 
 ```yaml
 schema_version: 2
@@ -178,7 +178,7 @@ route:
 singbox-rust generate reality-keypair
 ```
 
-See [REALITY Protocol Guide](../01-user-guide/protocols/reality.md) for details.
+See [TLS Configuration](../01-user-guide/configuration/tls.md) for REALITY details.
 
 ---
 
@@ -218,7 +218,7 @@ route:
 
 ## Example 5: Hysteria v2
 
-[Hysteria v2](../01-user-guide/protocols/hysteria.md) is a high-performance QUIC-based protocol.
+[Hysteria v2](../06-advanced-topics/README.md) is a high-performance QUIC-based protocol.
 
 ```yaml
 schema_version: 2
@@ -351,7 +351,7 @@ route:
   default: direct
 ```
 
-See [Routing Configuration](../01-user-guide/configuration/routing.md) for advanced rules.
+See [Routing Configuration](../01-user-guide/configuration/routing.md) for advanced rules and [Transport Strategy](../TRANSPORT_STRATEGY.md) for transport behavior notes.
 
 ---
 
@@ -388,12 +388,9 @@ route:
   default: proxy-select
 ```
 
-**Switch proxy via API**:
+**Switch proxy**:
 
-```bash
-curl -X POST http://127.0.0.1:18088/admin/select \
-  -d '{"selector": "proxy-select", "outbound": "proxy-jp"}'
-```
+Edit the selector `default` and reload the config (or restart the service).
 
 ### Automatic Selection (URLTest)
 
@@ -425,7 +422,7 @@ route:
   default: auto-proxy
 ```
 
-See [Load Balancing Example](../08-examples/advanced/load-balancing.md).
+See [Examples Index](../08-examples/README.md).
 
 ---
 
@@ -489,29 +486,29 @@ See [Load Balancing Example](../08-examples/advanced/load-balancing.md).
 **Solutions**:
 
 1. Try different transport (WebSocket, HTTP/2, gRPC)
-2. Enable multiplexing ([Multiplex Guide](../01-user-guide/features/multiplex.md))
+2. Enable multiplexing ([Advanced Topics](../06-advanced-topics/README.md))
 3. Check bandwidth settings (Hysteria)
 4. Test with:
    ```bash
    curl -x socks5h://127.0.0.1:1080 -w "%{time_total}\n" -o /dev/null https://google.com
    ```
 
-See [Troubleshooting Guide](../01-user-guide/troubleshooting.md) for more.
+See [Troubleshooting Guide](../TROUBLESHOOTING.md) for more.
 
 ---
 
 ## Next Steps
 
-- **[Smart Routing](../01-user-guide/configuration/routing.md)** - Route by domain, IP, process
+- **[Smart Routing](../TRANSPORT_STRATEGY.md)** - Route by domain, IP, process
 - **[DNS Configuration](../01-user-guide/configuration/dns.md)** - FakeIP, DoH, DoT
-- **[TUN Mode](../08-examples/basic/tun-mode.md)** - System-wide transparent proxy
-- **[Advanced Examples](../08-examples/)** - More configuration examples
+- **[Examples Index](../08-examples/README.md)** - More configuration examples
 
 ---
 
 **Related Documentation**:
 
-- [Protocol Guides](../01-user-guide/protocols/)
-- [Outbound Configuration](../01-user-guide/configuration/outbounds.md)
+- [User Guide](../01-user-guide/README.md)
 - [TLS Configuration](../01-user-guide/configuration/tls.md)
-- [Performance Tuning](../03-operations/performance/optimization-guide.md)
+- [Transport Defaults](../04-development/transport-defaults.md)
+- [Operations Guide](../03-operations/README.md)
+- [Examples Index](../08-examples/README.md)

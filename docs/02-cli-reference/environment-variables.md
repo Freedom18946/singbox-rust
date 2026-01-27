@@ -758,7 +758,7 @@ singbox-rust check -c config.yaml
 ## Related Documentation
 
 - [CLI Reference](README.md) - Command-line interface
-- [Configuration Guide](../01-user-guide/configuration/overview.md) - Configuration file reference
+- [Configuration Overview](../01-user-guide/configuration/overview.md) - Configuration reference
 - [Operations Guide](../03-operations/) - Production deployment
 
 ---

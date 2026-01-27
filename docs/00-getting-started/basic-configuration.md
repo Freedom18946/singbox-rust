@@ -458,7 +458,7 @@ Most editors support JSON Schema validation:
 }
 ```
 
-See [Schema Reference](../07-reference/schemas/config-v2.md).
+See [Reference Index](../07-reference/README.md) for schema references (detailed pages are planned).
 
 ---
 
@@ -467,12 +467,13 @@ See [Schema Reference](../07-reference/schemas/config-v2.md).
 - **[Add Your First Proxy](first-proxy.md)** - Connect to an upstream proxy
 - **[User Guide](../01-user-guide/)** - Deep dive into features
 - **[Configuration Examples](../08-examples/)** - Ready-to-use configs
-- **[Troubleshooting](../01-user-guide/troubleshooting.md)** - Common issues
+- **[Troubleshooting](../TROUBLESHOOTING.md)** - Common issues
 
 ---
 
 **Related Documentation**:
 
+- [Configuration Overview](../01-user-guide/configuration/overview.md)
 - [Inbound Configuration](../01-user-guide/configuration/inbounds.md)
 - [Outbound Configuration](../01-user-guide/configuration/outbounds.md)
 - [Routing Configuration](../01-user-guide/configuration/routing.md)

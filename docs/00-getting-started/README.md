@@ -201,19 +201,21 @@ curl -x socks5h://127.0.0.1:1080 https://ifconfig.me
 
 - **[Basic Configuration Guide](basic-configuration.md)** - Understand the config structure
 - **[Add an Upstream Proxy](first-proxy.md)** - Connect to a remote proxy server
-- **[User Guide](../01-user-guide/)** - Deep dive into features
+- **[User Guide](../01-user-guide/README.md)** - Deep dive into features
 
 ### 🔧 Common Configurations
 
-- **[SOCKS5 + HTTP on One Port](../08-examples/basic/mixed-proxy.md)** - Mixed inbound
-- **[TUN Mode (System-wide Proxy)](../08-examples/basic/tun-mode.md)** - Transparent proxy
-- **[Load Balancing](../08-examples/advanced/load-balancing.md)** - Multiple upstreams
+- **[Examples Index](../08-examples/README.md)** - Ready-to-use configs (index)
+- **[Transport Planning Examples](../examples/README.md)** - Transport chain samples
+- **[Transport Fallback Example](../08-examples/transport/fallback.md)** - WS/H2 fallback behavior
 
 ### 🎓 Advanced Topics
 
-- **[REALITY Protocol](../01-user-guide/protocols/reality.md)** - Anti-censorship TLS
-- **[Smart Routing](../01-user-guide/configuration/routing.md)** - Route by domain, IP, process
+- **[TLS Configuration](../01-user-guide/configuration/tls.md)** - REALITY/ECH settings
+- **[Routing Configuration](../01-user-guide/configuration/routing.md)** - Routing rules and priorities
+- **[Transport Strategy](../TRANSPORT_STRATEGY.md)** - Routing/transport decisions
 - **[DNS Configuration](../01-user-guide/configuration/dns.md)** - FakeIP, DoH, DoT
+- **[Advanced Topics Index](../06-advanced-topics/README.md)** - Deep dives
 
 ---
 
@@ -272,7 +274,7 @@ singbox-rust check -c old-config.json --migrate --write-normalized --out new-con
 - **Inbounds (18/18)**: SOCKS5, HTTP, Mixed, Direct, DNS, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
 - **Outbounds (19/19)**: Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 
-See [Migration Guide](../docs/MIGRATION_GUIDE.md) for full protocol matrix and feature parity details.
+See [Migration Guide](../MIGRATION_GUIDE.md) for full protocol matrix and feature parity details.
 
 ### Q: How do I enable TUN mode on Linux?
 
@@ -287,7 +289,7 @@ sudo setcap cap_net_admin+ep $(which singbox-rust)
 singbox-rust run -c config.yaml
 
 # Option 3: Use systemd with AmbientCapabilities
-# See docs/03-operations/deployment/systemd.md
+# See docs/DEPLOYMENT_GUIDE.md
 ```
 
 ### Q: How do I update to the latest version?
@@ -318,7 +320,8 @@ cargo install singbox-rust --force
 
 - `examples/configs/` in the repository
 - [Configuration Gallery](../08-examples/README.md)
-- [User Guide](../01-user-guide/configuration/overview.md)
+- [Transport Planning Examples](../examples/README.md)
+- [User Guide](../01-user-guide/README.md)
 
 ### Q: How do I troubleshoot connection issues?
 
@@ -344,10 +347,10 @@ cargo install singbox-rust --force
 
 4. **Check metrics** (if admin enabled):
    ```bash
-   curl http://127.0.0.1:18088/metrics
+   curl http://127.0.0.1:18088/__metrics
    ```
 
-See [Troubleshooting Guide](../01-user-guide/troubleshooting.md) for common issues.
+See [Troubleshooting Guide](../TROUBLESHOOTING.md) for common issues.
 
 ---
 
@@ -356,7 +359,7 @@ See [Troubleshooting Guide](../01-user-guide/troubleshooting.md) for common issu
 - **Documentation**: You're here! Browse [docs/](../)
 - **GitHub Issues**: [Report bugs](https://github.com/your-repo/issues)
 - **Discussions**: [Ask questions](https://github.com/your-repo/discussions)
-- **Examples**: [Configuration examples](../08-examples/)
+- **Examples**: [Configuration examples](../08-examples/README.md)
 
 ---
 
@@ -366,7 +369,7 @@ Now that you have singbox-rust running, explore:
 
 1. **[Basic Configuration Guide](basic-configuration.md)** - Understand config structure in depth
 2. **[Add Your First Proxy](first-proxy.md)** - Connect to an upstream VMess/VLESS/Trojan server
-3. **[User Guide](../01-user-guide/)** - Learn all features
-4. **[Operations Guide](../03-operations/)** - Deploy to production
+3. **[User Guide](../01-user-guide/README.md)** - Learn all features
+4. **[Operations Guide](../03-operations/README.md)** - Deploy to production
 
 Happy proxying! 🎉
