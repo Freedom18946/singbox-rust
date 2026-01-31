@@ -96,6 +96,13 @@ impl<'a> Runtime<'a> {
                     {
                         tun.set_router(self.engine.handle());
                     }
+                    let stats = self
+                        .bridge
+                        .context
+                        .v2ray_server
+                        .as_ref()
+                        .and_then(|s| s.stats());
+                    tun.set_stats(stats);
                     tun.set_outbound_manager(self.switchboard.clone());
                 }
             }

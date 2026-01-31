@@ -168,6 +168,7 @@ pub fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
+                    outbounds.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -427,20 +428,27 @@ fn start_mixed_inbound(
 
 #[cfg(all(feature = "tun", feature = "adapters"))]
 fn start_tun_inbound(
-    _ib: &InboundIR,
+    ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
+    outbounds: Arc<OutboundRegistryHandle>,
 ) -> Option<InboundHandle> {
     let cfg = TunInboundConfig::default();
-    let inbound = TunInbound::new(cfg, {
-        #[cfg(feature = "router")]
+    let inbound = TunInbound::new(
+        cfg,
         {
-            router
-        }
-        #[cfg(not(feature = "router"))]
-        {
-            Arc::new(sb_core::router::RouterHandle::from_env())
-        }
-    });
+            #[cfg(feature = "router")]
+            {
+                router
+            }
+            #[cfg(not(feature = "router"))]
+            {
+                Arc::new(sb_core::router::RouterHandle::from_env())
+            }
+        },
+        outbounds,
+        ib.tag.clone(),
+        None,
+    );
     let join = tokio::spawn(async move {
         if let Err(e) = inbound.serve().await {
             warn!(error=%e, "tun inbound failed");

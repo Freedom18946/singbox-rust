@@ -22,6 +22,7 @@ use sb_core::outbound::{Endpoint, OutboundKind, OutboundRegistryHandle, RouteTar
 use sb_core::router::engine::Transport;
 use sb_core::router::rules::Decision;
 use sb_core::router::{RouteCtx, RouterHandle};
+use sb_core::services::v2ray_api::StatsManager;
 
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
@@ -194,6 +195,8 @@ pub struct TunInbound {
     /// TCP Session Manager
     session_manager: Arc<TcpSessionManager>,
     cfg: TunInboundConfig,
+    inbound_tag: Option<String>,
+    stats: Option<Arc<StatsManager>>,
     /// Userspace network stack
     stack: Arc<tokio::sync::Mutex<TunStack>>,
     /// Receiver for packets from stack to TUN
@@ -207,6 +210,8 @@ impl TunInbound {
         cfg: TunInboundConfig,
         router: Arc<RouterHandle>,
         outbounds: Arc<OutboundRegistryHandle>,
+        inbound_tag: Option<String>,
+        stats: Option<Arc<StatsManager>>,
     ) -> Self {
         // Create a dummy channel for now; actual channel will be created in run() or passed in
         // For simplicity, we initialize TunStack here but it might need reconfiguration.
@@ -224,6 +229,8 @@ impl TunInbound {
             outbounds,
             session_manager,
             cfg,
+            inbound_tag,
+            stats,
             stack: Arc::new(tokio::sync::Mutex::new(stack)),
             stack_rx: Arc::new(tokio::sync::Mutex::new(rx)),
             platform_hook,
@@ -500,18 +507,30 @@ impl TunInbound {
                                                 ..Default::default()
                                             };
                                             let decision = self.router.decide(&route_ctx);
-                                            let selected_target = match decision {
-                                                Decision::Direct => {
-                                                    RouteTarget::Kind(OutboundKind::Direct)
-                                                }
-                                                Decision::Reject | Decision::RejectDrop => {
-                                                    RouteTarget::Kind(OutboundKind::Block)
-                                                }
+                                            let (selected_target, outbound_tag) = match decision {
+                                                Decision::Direct => (
+                                                    RouteTarget::Kind(OutboundKind::Direct),
+                                                    "direct".to_string(),
+                                                ),
+                                                Decision::Reject | Decision::RejectDrop => (
+                                                    RouteTarget::Kind(OutboundKind::Block),
+                                                    "block".to_string(),
+                                                ),
                                                 Decision::Proxy(Some(tag)) => {
-                                                    RouteTarget::Named(tag)
+                                                    (RouteTarget::Named(tag.clone()), tag)
                                                 }
-                                                _ => RouteTarget::Kind(OutboundKind::Direct),
+                                                _ => (
+                                                    RouteTarget::Kind(OutboundKind::Direct),
+                                                    "direct".to_string(),
+                                                ),
                                             };
+                                            let traffic = self.stats.as_ref().and_then(|stats| {
+                                                stats.traffic_recorder(
+                                                    self.inbound_tag.as_deref(),
+                                                    Some(outbound_tag.as_str()),
+                                                    self.cfg.user_tag.as_deref(),
+                                                )
+                                            });
 
                                             // Dial Outbound
                                             let ep = Endpoint::Ip(SocketAddr::new(ip, port));
@@ -531,6 +550,7 @@ impl TunInbound {
                                                             tuple,
                                                             stream,
                                                             writer.clone(),
+                                                            traffic,
                                                         );
                                                     // Forward initial payload if any
                                                     if !packet_payload.is_empty() {
@@ -768,6 +788,8 @@ impl TunInbound {
             cfg,
             router,
             Arc::new(sb_core::outbound::OutboundRegistryHandle::default()),
+            None,
+            None,
         ))
     }
 
@@ -1534,7 +1556,7 @@ mod tests {
         let cfg = TunInboundConfig::default();
         let router = create_dummy_router();
         let outbounds = Arc::new(sb_core::outbound::OutboundRegistryHandle::default());
-        let inbound = TunInbound::new(cfg, router, outbounds);
+        let inbound = TunInbound::new(cfg, router, outbounds, None, None);
 
         // Run for a short time to verify it starts without error
         let _ = tokio::time::timeout(std::time::Duration::from_millis(100), inbound.run()).await;

@@ -1883,10 +1883,13 @@ fn build_tun_inbound(
     };
 
     tracing::info!("Initializing TunInbound: {}", config.name);
+    let stats = ctx.context.v2ray_server.as_ref().and_then(|s| s.stats());
     Some(Arc::new(TunInbound::new(
         config,
         ctx.router.clone(),
         ctx.outbounds.clone(),
+        param.tag.clone(),
+        stats,
     )))
 }
 

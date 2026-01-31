@@ -602,6 +602,20 @@ pub fn build_bridge<'a>(
     #[cfg(feature = "router")]
     let router_handle = router_handle_from_ir(cfg);
 
+    #[cfg(feature = "router")]
+    let endpoint_handler = {
+        let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
+        let udp_factories = Arc::new(br.udp_factories.clone());
+        Some(Arc::new(
+            crate::endpoint::handler::EndpointConnectionHandler::new(
+                router_handle.clone(),
+                outbound_handle.clone(),
+                udp_factories,
+                stats,
+            ),
+        ))
+    };
+
     // Step 3: Inbounds
     // Create shared connection manager for all inbounds (Go parity: route.ConnectionManager)
     let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
@@ -642,6 +656,10 @@ pub fn build_bridge<'a>(
     for endpoint_ir in &cfg.endpoints {
         let ctx = EndpointContext::default();
         if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
+            #[cfg(feature = "router")]
+            if let Some(handler) = endpoint_handler.as_ref() {
+                endpoint.set_connection_handler(handler.clone());
+            }
             br.add_endpoint(endpoint);
         } else {
             tracing::warn!(

@@ -799,7 +799,10 @@ endpoints:
             "duplicate outbound/endpoint tags should be rejected"
         );
         assert!(
-            result.unwrap_err().to_string().contains("duplicate outbound/endpoint tag"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate outbound/endpoint tag"),
             "error should mention 'duplicate outbound/endpoint tag'"
         );
     }

@@ -83,6 +83,7 @@ pub async fn dial_pref(host: &str, port: u16) -> io::Result<TcpStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sb_test_utils::skip::skip_if_io_permission_denied;
     use tokio::net::TcpListener;
 
     #[tokio::test]
@@ -99,7 +100,15 @@ mod tests {
     #[tokio::test]
     async fn dial_to_local_listener_succeeds() {
         // 本地起 listener，使用 dial_all("localhost", port) 拨通
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) => {
+                if skip_if_io_permission_denied(&err, "local dial test") {
+                    return;
+                }
+                panic!("{err}");
+            }
+        };
         let port = listener.local_addr().unwrap().port();
         let _guard = tokio::spawn(async move {
             // 接一把，保持一会儿

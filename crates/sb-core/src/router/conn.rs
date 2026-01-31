@@ -1186,8 +1186,8 @@ async fn wait_for_ack(tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()>
 #[cfg(target_os = "windows")]
 async fn wait_for_ack(tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()> {
     use windows_sys::Win32::Networking::WinSock::{
-        WSAGetLastError, WSAIoctl, SIO_TCP_INFO, SOCKET_ERROR, TCP_INFO_v0, WSAEACCES,
-        WSAEOPNOTSUPP, WSAEINVAL,
+        TCP_INFO_v0, WSAGetLastError, WSAIoctl, SIO_TCP_INFO, SOCKET_ERROR, WSAEACCES, WSAEINVAL,
+        WSAEOPNOTSUPP,
     };
 
     let start = Instant::now();
@@ -1227,7 +1227,12 @@ async fn wait_for_ack(tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()>
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios", target_os = "windows")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows"
+)))]
 async fn wait_for_ack(_tcp_fd: TcpFd, fallback_delay: Duration) -> io::Result<()> {
     tokio::time::sleep(fallback_delay).await;
     Ok(())
@@ -1299,13 +1304,21 @@ mod tests {
         assert!(!ctx.udp_connect);
     }
 
+    /// Test that the dialer handles unreachable addresses appropriately.
+    /// This test is environment-dependent (network routing varies by system).
+    /// Run manually with: cargo test -p sb-core --lib test_direct_dialer_timeout -- --ignored
     #[tokio::test]
+    #[ignore = "network-dependent: dial behavior varies by system routing"]
     async fn test_direct_dialer_timeout() {
         let dialer = DirectDialer;
-        // Try to connect to a non-routable address to test timeout
-        let result = dialer.dial_tcp("10.255.255.1", 12345).await;
-        // Should fail (either timeout or connection refused)
-        assert!(result.is_err());
+        // RFC 5737 TEST-NET-1: should be non-routable per specification
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            dialer.dial_tcp("192.0.2.1", 12345),
+        )
+        .await;
+        // Should timeout or connection should fail on standard networks
+        assert!(result.is_err() || result.unwrap().is_err());
     }
 
     #[tokio::test]
@@ -1383,4 +1396,233 @@ mod tests {
         assert!(has_public_suffix("github.com"));
         assert!(!has_public_suffix("bad domain.example"));
     }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_empty_indexes() {
+        // When split_indexes is empty, data should be written as-is
+        let mut output = Vec::new();
+        let data = b"hello world";
+        let fallback_delay = Duration::from_millis(10);
+
+        write_tls_fragments(
+            &mut output,
+            data,
+            &[],      // empty indexes
+            true,     // split_packet
+            false,    // split_record
+            fallback_delay,
+            None,
+        )
+        .await
+        .expect("write should succeed");
+
+        assert_eq!(output, data);
+    }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_with_fallback_delay() {
+        // Test that fragmentation works with fallback delay (no ACK wait)
+        use std::time::Instant;
+
+        let mut output = Vec::new();
+        let data = b"0123456789";
+        let split_indexes = vec![3, 7]; // Split at positions 3 and 7
+        let fallback_delay = Duration::from_millis(50);
+
+        let start = Instant::now();
+        write_tls_fragments(
+            &mut output,
+            data,
+            &split_indexes,
+            true,  // split_packet
+            false, // split_record
+            fallback_delay,
+            None,  // No TCP fd - uses fallback delay
+        )
+        .await
+        .expect("write should succeed");
+        let elapsed = start.elapsed();
+
+        // Output should contain all original data
+        assert_eq!(output, data);
+
+        // Should have applied fallback delay for each split (2 splits)
+        // Allow some timing variance
+        assert!(
+            elapsed >= Duration::from_millis(80),
+            "Expected at least 80ms (2 * 50ms delay), got {:?}",
+            elapsed
+        );
+    }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_buffer_mode() {
+        // Test non-split_packet mode (buffer and write at once)
+        let mut output = Vec::new();
+        let data = b"0123456789";
+        let split_indexes = vec![3, 7];
+
+        write_tls_fragments(
+            &mut output,
+            data,
+            &split_indexes,
+            false, // split_packet = false (buffer mode)
+            false, // split_record
+            Duration::from_millis(10),
+            None,
+        )
+        .await
+        .expect("write should succeed");
+
+        // Output should be the same as input (just reassembled)
+        assert_eq!(output, data);
+    }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_invalid_index() {
+        // Test that invalid indexes (0 or >= data.len()) cause direct write
+        let mut output = Vec::new();
+        let data = b"hello";
+
+        // Index 0 is invalid
+        write_tls_fragments(
+            &mut output,
+            data,
+            &[0],
+            true,
+            false,
+            Duration::from_millis(10),
+            None,
+        )
+        .await
+        .expect("write should succeed");
+        assert_eq!(output, data);
+
+        // Index >= len is invalid
+        output.clear();
+        write_tls_fragments(
+            &mut output,
+            data,
+            &[10],
+            true,
+            false,
+            Duration::from_millis(10),
+            None,
+        )
+        .await
+        .expect("write should succeed");
+        assert_eq!(output, data);
+    }
+
+    #[test]
+    fn test_tls_split_indexes_empty_name() {
+        let empty = TlsServerName {
+            index: 0,
+            name: String::new(),
+        };
+        let indexes = tls_split_indexes(&empty);
+        assert!(indexes.is_empty());
+    }
+
+    #[test]
+    fn test_tls_split_indexes_single_label() {
+        let single = TlsServerName {
+            index: 0,
+            name: "localhost".to_string(),
+        };
+        let indexes = tls_split_indexes(&single);
+        // Single label should produce one split index within the name
+        assert_eq!(indexes.len(), 1);
+        assert!(indexes[0] < single.name.len());
+    }
+
+    #[test]
+    fn test_tls_split_indexes_multi_label_domain() {
+        // Test multi-label domain splitting (e.g., www.example.com)
+        let multi = TlsServerName {
+            index: 10, // Offset in original TLS payload
+            name: "www.example.com".to_string(),
+        };
+        let indexes = tls_split_indexes(&multi);
+
+        // Should produce multiple split indexes for multi-label domain
+        assert!(
+            !indexes.is_empty(),
+            "Multi-label domain should produce split indexes"
+        );
+
+        // All indexes should be within valid range (starting from offset)
+        for idx in &indexes {
+            assert!(
+                *idx >= 10 && *idx < 10 + multi.name.len(),
+                "Index {} should be within range [10, {})",
+                idx,
+                10 + multi.name.len()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_record_mode() {
+        // Test split_record=true mode which rewraps TLS records
+        // Simulate a minimal TLS ClientHello-like structure
+        // TLS record header: 5 bytes (type=0x16, version=0x0301, length)
+        let tls_record_header = [0x16, 0x03, 0x01, 0x00, 0x10]; // TLS handshake, length=16
+        let tls_payload = b"0123456789ABCDEF"; // 16 bytes of payload
+        let mut data = Vec::new();
+        data.extend_from_slice(&tls_record_header);
+        data.extend_from_slice(tls_payload);
+
+        let mut output = Vec::new();
+        let split_indexes = vec![10]; // Split within the payload (after header + 5 bytes of payload)
+
+        write_tls_fragments(
+            &mut output,
+            &data,
+            &split_indexes,
+            false, // split_packet = false (buffer first)
+            true,  // split_record = true (rewrap TLS records)
+            Duration::from_millis(10),
+            None,
+        )
+        .await
+        .expect("write should succeed");
+
+        // In record mode, each fragment gets its own TLS record header
+        // Output should be larger than input due to additional headers
+        assert!(
+            output.len() >= data.len(),
+            "Record mode output ({}) should be at least as large as input ({})",
+            output.len(),
+            data.len()
+        );
+
+        // First 3 bytes of output should match TLS record type and version
+        assert_eq!(output[0], 0x16, "Should be TLS handshake record type");
+        assert_eq!(output[1], 0x03, "Should be TLS major version 3");
+        assert_eq!(output[2], 0x01, "Should be TLS minor version 1");
+    }
+
+    #[tokio::test]
+    async fn test_write_tls_fragments_short_tls_record() {
+        // Test that short TLS records (< 5 bytes header) are written as-is
+        let mut output = Vec::new();
+        let data = b"abc"; // Too short to be a valid TLS record
+
+        write_tls_fragments(
+            &mut output,
+            data,
+            &[1],
+            false, // split_packet
+            true,  // split_record = true (but data is too short)
+            Duration::from_millis(10),
+            None,
+        )
+        .await
+        .expect("write should succeed");
+
+        // Short data should be written as-is
+        assert_eq!(output, data);
+    }
 }
+

@@ -8,6 +8,7 @@
 
 use bytes::Bytes;
 use dashmap::DashMap;
+use sb_core::net::metered::TrafficRecorder;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
@@ -89,6 +90,7 @@ impl TcpSessionManager {
         tuple: FourTuple,
         outbound: TcpStream,
         tun_writer: Arc<dyn TunWriter + Send + Sync>,
+        traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> Arc<TcpSession> {
         let (to_outbound_tx, to_outbound_rx) = mpsc::channel::<Bytes>(64);
 
@@ -106,6 +108,7 @@ impl TcpSessionManager {
         // Spawn relay tasks
         let tuple_copy = tuple;
         let sessions = Arc::clone(&self.sessions);
+        let traffic_c = traffic.clone();
 
         // TUN -> Outbound relay
         tokio::spawn(relay_tun_to_outbound(
@@ -114,6 +117,7 @@ impl TcpSessionManager {
             tuple_copy,
             Arc::clone(&tun_writer),
             Arc::clone(&sessions),
+            traffic_c,
         ));
 
         // Insert into session map
@@ -156,6 +160,7 @@ async fn relay_tun_to_outbound(
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
     // Split outbound stream for bidirectional relay
     // Use into_split() to take ownership instead of borrowing
@@ -165,6 +170,7 @@ async fn relay_tun_to_outbound(
     let tuple_copy = tuple;
     let tun_writer_copy = Arc::clone(&tun_writer);
     let sessions_copy = Arc::clone(&sessions);
+    let traffic_down = traffic.clone();
 
     tokio::spawn(async move {
         relay_outbound_to_tun(
@@ -172,6 +178,7 @@ async fn relay_tun_to_outbound(
             tuple_copy,
             tun_writer_copy,
             sessions_copy,
+            traffic_down,
         )
         .await;
     });
@@ -184,6 +191,9 @@ async fn relay_tun_to_outbound(
                 tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port, e
             );
             break;
+        }
+        if let Some(ref recorder) = traffic {
+            recorder.record_up(chunk.len() as u64);
         }
         trace!(
             "TUN->Outbound: {} bytes for {}:{} -> {}:{}",
@@ -209,6 +219,7 @@ async fn relay_outbound_to_tun(
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
     let mut buf = vec![0u8; 8192];
     let mut seq = 1000u32; // Simplified: real impl should track actual seq
@@ -250,6 +261,9 @@ async fn relay_outbound_to_tun(
                                 tuple.src_ip, tuple.src_port, e
                             );
                             break;
+                        }
+                        if let Some(ref recorder) = traffic {
+                            recorder.record_down(n as u64);
                         }
                         seq = seq.wrapping_add(n as u32);
                     }

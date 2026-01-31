@@ -26,7 +26,9 @@ use tokio::{
     sync::{oneshot, Mutex, RwLock},
 };
 
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::{OutboundConnector, UdpTransport};
+use sb_core::services::v2ray_api::StatsManager;
 use sb_core::types::{ConnCtx, Endpoint, Host, Network};
 
 use sb_platform::tun::{AsyncTunDevice, MacOsTun, TunConfig, TunDevice, TunError};
@@ -57,6 +59,8 @@ impl TunMacosRuntime {
         process_router: Option<Arc<ProcessRouter>>,
         process_matcher: Option<Arc<ProcessMatcher>>,
         stats: Arc<ProcessAwareTunStatistics>,
+        v2ray_stats: Option<Arc<StatsManager>>,
+        inbound_tag: Option<String>,
     ) -> Result<Self, TunError> {
         let tun_cfg = TunConfig {
             name: config.name.clone(),
@@ -88,6 +92,8 @@ impl TunMacosRuntime {
             process_router,
             process_matcher,
             stats,
+            v2ray_stats,
+            inbound_tag,
         });
 
         let socks_task = tokio::spawn(run_socks_server(listener, stop_rx, bridge.clone()));
@@ -150,6 +156,8 @@ struct SocksBridge {
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
     stats: Arc<ProcessAwareTunStatistics>,
+    v2ray_stats: Option<Arc<StatsManager>>,
+    inbound_tag: Option<String>,
 }
 
 async fn run_socks_server(
@@ -302,13 +310,21 @@ async fn handle_connect(
 
     info!(peer=?peer, dest=?target, decision=%decision_msg, "SOCKS CONNECT established");
 
-    let (mut ri, mut wi) = tokio::io::split(stream);
-    let (mut ro, mut wo) = tokio::io::split(outbound);
-
-    let client_to_remote = tokio::io::copy(&mut ri, &mut wo);
-    let remote_to_client = tokio::io::copy(&mut ro, &mut wi);
-
-    let res = tokio::try_join!(client_to_remote, remote_to_client);
+    let traffic = bridge.v2ray_stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(bridge.inbound_tag.as_deref(), None, ctx.user.as_deref())
+    });
+    let res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+        stream,
+        &mut outbound,
+        "tun_macos",
+        Duration::from_secs(1),
+        None,
+        None,
+        None,
+        traffic,
+    )
+    .await
+    .map(|_| ());
     bridge.stats.on_tcp_close();
 
     res.map(|_| ())
@@ -412,6 +428,8 @@ async fn handle_udp_associate(
         bridge.process_router.clone(),
         bridge.process_matcher.clone(),
         bridge.stats.clone(),
+        bridge.v2ray_stats.clone(),
+        bridge.inbound_tag.clone(),
     ));
 
     tokio::spawn(manager.clone().inbound_loop());
@@ -462,6 +480,7 @@ struct UdpChannel {
     transport: Arc<dyn UdpTransport>,
     #[allow(dead_code)]
     endpoint: Endpoint,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 }
 
 struct UdpSessionManager {
@@ -470,6 +489,8 @@ struct UdpSessionManager {
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
     stats: Arc<ProcessAwareTunStatistics>,
+    v2ray_stats: Option<Arc<StatsManager>>,
+    inbound_tag: Option<String>,
     channels: RwLock<HashMap<UdpKey, Arc<UdpChannel>>>,
     #[allow(dead_code)]
     closed: Mutex<bool>,
@@ -482,6 +503,8 @@ impl UdpSessionManager {
         process_router: Option<Arc<ProcessRouter>>,
         process_matcher: Option<Arc<ProcessMatcher>>,
         stats: Arc<ProcessAwareTunStatistics>,
+        v2ray_stats: Option<Arc<StatsManager>>,
+        inbound_tag: Option<String>,
     ) -> Self {
         Self {
             socket,
@@ -489,6 +512,8 @@ impl UdpSessionManager {
             process_router,
             process_matcher,
             stats,
+            v2ray_stats,
+            inbound_tag,
             channels: RwLock::new(HashMap::new()),
             closed: Mutex::new(false),
         }
@@ -605,6 +630,10 @@ impl UdpSessionManager {
             .send_to(payload, &endpoint)
             .await
             .map_err(|e| io::Error::other(format!("udp send failed: {e}")))?;
+        if let Some(ref recorder) = channel.traffic {
+            recorder.record_up(payload.len() as u64);
+            recorder.record_up_packet(1);
+        }
         self.stats.on_udp_packet();
         Ok(())
     }
@@ -651,6 +680,9 @@ impl UdpSessionManager {
             .await
             .map_err(|e| io::Error::other(format!("udp connect failed: {e}")))?;
         let transport: Arc<dyn UdpTransport> = transport.into();
+        let traffic = self.v2ray_stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(self.inbound_tag.as_deref(), None, ctx.user.as_deref())
+        });
 
         if let Some(router) = self.process_router.as_ref() {
             let _ = router
@@ -674,6 +706,7 @@ impl UdpSessionManager {
         let endpoint_clone = endpoint.clone();
         let transport_clone = transport.clone();
         let key_clone = key.clone();
+        let traffic_clone = traffic.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; 65535];
             loop {
@@ -682,6 +715,10 @@ impl UdpSessionManager {
                         let packet = build_udp_response(&endpoint_clone, addr, &buf[..size]);
                         if socket.send_to(&packet, key_clone.client).await.is_err() {
                             break;
+                        }
+                        if let Some(ref recorder) = traffic_clone {
+                            recorder.record_down(size as u64);
+                            recorder.record_down_packet(1);
                         }
                     }
                     Err(err) => {
@@ -695,6 +732,7 @@ impl UdpSessionManager {
         Ok(Arc::new(UdpChannel {
             transport,
             endpoint: endpoint.clone(),
+            traffic,
         }))
     }
 }

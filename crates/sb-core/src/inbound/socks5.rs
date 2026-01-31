@@ -8,7 +8,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
-use crate::net::metered;
+use crate::net::metered::{self, TrafficRecorder};
 
 #[cfg(feature = "router")]
 use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
@@ -161,6 +161,8 @@ pub(crate) async fn handle_conn(
             let mut buf = vec![0u8; 64 * 1024];
             // Outbound UDP session created lazily on demand
             let mut udp_sess: Option<Arc<dyn crate::adapter::UdpOutboundSession>> = None;
+            // Best-effort traffic recorder for relay-originated packets (no NAT/session)
+            let mut last_traffic: Option<Arc<dyn TrafficRecorder>> = None;
             loop {
                 let Ok((n, src)) = relay.recv_from(&mut buf).await else {
                     break;
@@ -305,6 +307,7 @@ pub(crate) async fn handle_conn(
                         .and_then(|stats| {
                             stats.traffic_recorder(None, Some(out_name.as_str()), None)
                         });
+                    last_traffic = traffic.clone();
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
@@ -359,14 +362,14 @@ pub(crate) async fn handle_conn(
                         }
                     }
 
-                        if let Some(ref sess) = udp_sess {
-                            if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
-                                if let Some(ref recorder) = traffic {
-                                    recorder.record_up(payload.len() as u64);
-                                    recorder.record_up_packet(1);
-                                }
+                    if let Some(ref sess) = udp_sess {
+                        if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
+                            if let Some(ref recorder) = traffic {
+                                recorder.record_up(payload.len() as u64);
+                                recorder.record_up_packet(1);
                             }
-                        } else {
+                        }
+                    } else {
                         // Direct UDP via NAT entry per (client, dst)
                         use crate::net::udp_nat::{NatKey, TargetAddr as Tgt};
                         let dst = if let Ok(ip) = dst_host.parse::<std::net::IpAddr>() {
@@ -468,6 +471,10 @@ pub(crate) async fn handle_conn(
                     pkt.extend_from_slice(&buf[..n]);
                     if let Some(ep) = client_ep {
                         let _ = relay.send_to(&pkt, ep).await;
+                        if let Some(ref recorder) = last_traffic {
+                            recorder.record_down(n as u64);
+                            recorder.record_down_packet(1);
+                        }
                     }
                 }
             }

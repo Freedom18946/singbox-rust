@@ -476,7 +476,12 @@ impl Bridge {
                         // TUN inbound service
                         use crate::inbound::tun::TunInboundService;
 
-                        Arc::new(TunInboundService::new()) as Arc<dyn InboundService>
+                        let stats = bridge.context.v2ray_server.as_ref().and_then(|s| s.stats());
+                        Arc::new(
+                            TunInboundService::new()
+                                .with_tag(inbound.tag.clone())
+                                .with_stats(stats),
+                        ) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Direct => {
                         use crate::inbound::direct::DirectForward;

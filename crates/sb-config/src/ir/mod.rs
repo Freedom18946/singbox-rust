@@ -2651,7 +2651,7 @@ pub struct DnsServerIR {
     /// - `doh3://host[:port][/path]` / `h3://host[:port][/path]` - DoH3 (requires `dns_doh3`, default port 443, path defaults to `/dns-query`)
     /// - `dhcp` / `dhcp://iface` / `dhcp:///path` / `dhcp://?resolv=/path` - DHCP DNS (requires `dns_dhcp`)
     /// - `tailscale` / `tailscale://host:port` / `tailscale://?servers=a,b` - Tailscale DNS (requires `dns_tailscale`)
-    /// - `resolved` / `resolved:///path` / `resolved://?resolv=/path` - systemd-resolved stub (requires `dns_resolved`)
+    /// - `resolved` / `resolved:///path` / `resolved://?resolv=/path` - systemd-resolved (Linux only, requires `dns_resolved`)
     pub address: String,
     /// Optional SNI override (for DoT/DoQ/DoH3)
     #[serde(default)]

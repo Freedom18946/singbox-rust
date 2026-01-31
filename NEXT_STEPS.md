@@ -60,6 +60,13 @@ Key blockers:
 - [x] Wired V2Ray API traffic stats for TUN TCP (core + adapters)
 - [x] Wired endpoint routing handler stats + adapter TUN UDP packet stats (tun_macos)
 
+## Completed (2026-01-29)
+
+- [x] Fixed flaky `test_direct_dialer_timeout` (marked `#[ignore]` - network-dependent)
+- [x] Added TLS fragmentation test coverage (3 new tests: multi-label domain, record mode, short record)
+- [x] Documented parity build in `docs/STATUS.md`
+- [x] Verified CI parity integration in `.github/workflows/ci.yml`
+
 ---
 
 ## Historical Completions

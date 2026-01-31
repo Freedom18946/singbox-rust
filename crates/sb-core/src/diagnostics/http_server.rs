@@ -276,11 +276,24 @@ pub fn apply_debug_options(options: &DebugOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sb_test_utils::skip::skip_if_msg_contains;
 
     #[tokio::test]
     async fn test_debug_server_start_stop() {
         let options = DebugOptions::with_listen("127.0.0.1:0");
-        let server = DebugServer::start(&options).await.unwrap();
+        let server = match DebugServer::start(&options).await {
+            Ok(server) => server,
+            Err(err) => {
+                if skip_if_msg_contains(
+                    err.as_ref(),
+                    "Operation not permitted",
+                    "debug server test",
+                ) {
+                    return;
+                }
+                panic!("{}", err);
+            }
+        };
 
         let addr = server.addr();
         assert!(addr.port() > 0);
@@ -291,7 +304,19 @@ mod tests {
     #[tokio::test]
     async fn test_memory_endpoint() {
         let options = DebugOptions::with_listen("127.0.0.1:0");
-        let server = DebugServer::start(&options).await.unwrap();
+        let server = match DebugServer::start(&options).await {
+            Ok(server) => server,
+            Err(err) => {
+                if skip_if_msg_contains(
+                    err.as_ref(),
+                    "Operation not permitted",
+                    "debug server test",
+                ) {
+                    return;
+                }
+                panic!("{}", err);
+            }
+        };
         let addr = server.addr();
 
         // Make HTTP request
@@ -310,7 +335,19 @@ mod tests {
     #[tokio::test]
     async fn test_gc_endpoint() {
         let options = DebugOptions::with_listen("127.0.0.1:0");
-        let server = DebugServer::start(&options).await.unwrap();
+        let server = match DebugServer::start(&options).await {
+            Ok(server) => server,
+            Err(err) => {
+                if skip_if_msg_contains(
+                    err.as_ref(),
+                    "Operation not permitted",
+                    "debug server test",
+                ) {
+                    return;
+                }
+                panic!("{}", err);
+            }
+        };
         let addr = server.addr();
 
         let response = reqwest::get(format!("http://{}/debug/gc", addr))

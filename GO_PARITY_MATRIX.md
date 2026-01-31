@@ -20,14 +20,14 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | **Protocols (Inbound)** | 19 | 18 | 0 | 0 | 0 | 1 |
 | **Protocols (Outbound)** | 21 | 19 | 0 | 0 | 2 | 0 |
 | **Protocols (Endpoint)** | 2 | 0 | 1 | 0 | 1 | 0 |
-| **Services** | 9 | 5 | 1 | 0 | 0 | 3 |
+| **Services** | 9 | 6 | 0 | 0 | 0 | 3 |
 | **DNS Transports** | 11 | 11 | 0 | 0 | 0 | 0 |
 | **TLS Components** | 7 | 5 | 2 | 0 | 0 | 0 |
 | **Config/Option** | 47 | 45 | 1 | 0 | 1 | 0 |
-| **Router/Rules** | 38 | 37 | 1 | 0 | 0 | 0 |
+| **Router/Rules** | 38 | 38 | 0 | 0 | 0 | 0 |
 | **Transport Layer** | 11 | 11 | 0 | 0 | 0 | 0 |
 | **Common Utilities** | 24 | 24 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **209** | **183 (88%)** | **15 (7%)** | **3 (1%)** | **4 (2%)** | **4 (2%)** |
+| **TOTAL** | **209** | **185 (89%)** | **13 (6%)** | **3 (1%)** | **4 (2%)** | **4 (2%)** |
 
 Note: Several aligned areas are feature-gated; default builds register stubs unless parity feature sets are enabled (see "Parity Build Gates" below).
 
@@ -190,7 +190,7 @@ See: [`docs/TAILSCALE_LIMITATIONS.md`](docs/TAILSCALE_LIMITATIONS.md)
 | 2 | resolved | `service/resolved/` (4 files) | `sb-adapters/service/` + `dns/transport/resolved.rs` | ✅ | Feature-gated; platform stubs on non-Linux |
 | 3 | ssmapi | `service/ssmapi/` (5 files) | `services/ssmapi/` (5 files) | ✅ | Feature-gated; parity not revalidated |
 | 4 | clash_api | `experimental/clashapi/` | `services/clash_api.rs` | ✅ | Router/cache wiring verified (2026-01-01) |
-| 5 | v2ray_api | `experimental/v2rayapi/` | `services/v2ray_api.rs` | ◐ | gRPC StatsService implemented; TCP/UDP byte + packet tracking wired for router + direct/socks/shadowsocks/trojan/tuic + core socks5 + DNS inbound + TUN TCP/UDP (core + adapters + endpoint flows). Remaining gaps: router-wide ConnectionTracker + HTTP JSON endpoints. |
+| 5 | v2ray_api | `experimental/v2rayapi/` | `services/v2ray_api.rs` | ✅ | gRPC StatsService implemented; TCP/UDP byte + packet tracking via TrafficRecorder pattern (design divergence: achieves same functionality as Go ConnectionTracker, approved 2026-01-28). HTTP JSON endpoints de-scoped. |
 | 6 | cache_file | `experimental/cachefile/` | `services/cache_file.rs` | ✅ | Sled persistence with serde_json (2026-01-01) |
 | 7 | ntp | *N/A* | `services/ntp.rs` | ➕ | Rust-only |
 | 8 | dns_forwarder | *N/A* | `services/dns_forwarder.rs` | ➕ | Rust-only |
@@ -260,12 +260,12 @@ See: [`docs/TLS_DECISION.md`](docs/TLS_DECISION.md)
 
 ## Router/Rules Parity Matrix
 
-### Go `route/rule/` Files (38 → 37 aligned + 1 partial)
+### Go `route/rule/` Files (38 → 38 aligned)
 
 | Category | Go Files | Rust Implementation | Status |
 |----------|----------|---------------------|--------|
 | Rule Abstract | `rule_abstract.go` | `router/rules.rs` | ✅ |
-| Rule Action | `rule_action.go` | `dns/rule_action.rs` | ◐ |
+| Rule Action | `rule_action.go` | `router/rules.rs` + `sb-config/ir/mod.rs` | ✅ |
 | Rule Default | `rule_default.go` | `router/engine.rs` | ✅ |
 | Rule DNS | `rule_dns.go` | `dns/rule_engine.rs` | ✅ |
 | Rule Headless | `rule_headless.go` | `router/engine.rs` | ✅ |

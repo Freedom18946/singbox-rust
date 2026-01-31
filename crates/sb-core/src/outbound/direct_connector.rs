@@ -512,6 +512,7 @@ impl crate::adapter::OutboundConnector for DirectConnector {
 mod tests {
     use super::*;
     use crate::types::Host;
+    use sb_test_utils::skip::skip_if_io_permission_denied;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
@@ -559,7 +560,15 @@ mod tests {
         // a real UDP server, but we can test the structure
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let socket = match UdpSocket::bind("127.0.0.1:0").await {
+                Ok(socket) => socket,
+                Err(err) => {
+                    if skip_if_io_permission_denied(&err, "direct UDP transport test") {
+                        return;
+                    }
+                    panic!("{err}");
+                }
+            };
             let _transport = DirectUdpTransport::new(socket);
             // If we get here, the transport was created successfully
         });

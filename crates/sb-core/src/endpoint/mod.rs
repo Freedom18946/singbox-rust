@@ -403,6 +403,8 @@ pub fn endpoint_registry() -> &'static EndpointRegistry {
     &ENDPOINT_REGISTRY
 }
 
+#[cfg(feature = "router")]
+pub mod handler;
 pub mod tailscale;
 pub mod wireguard;
 

@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use sb_core::outbound::OutboundConnector;
 use sb_core::router::process_router::ProcessRouter;
+use sb_core::services::v2ray_api::StatsManager;
 
 use sb_platform::process::ProcessMatcher;
 use sb_platform::tun::TunError;
@@ -113,6 +114,8 @@ pub struct ProcessAwareTunInbound {
     process_matcher: Option<Arc<ProcessMatcher>>,
     runtime: Mutex<Option<TunMacosRuntime>>,
     stats: Arc<ProcessAwareTunStatistics>,
+    v2ray_stats: Option<Arc<StatsManager>>,
+    inbound_tag: Option<String>,
 }
 
 impl ProcessAwareTunInbound {
@@ -128,11 +131,22 @@ impl ProcessAwareTunInbound {
             process_matcher: ProcessMatcher::new().ok().map(Arc::new),
             runtime: Mutex::new(None),
             stats: Arc::new(ProcessAwareTunStatistics::default()),
+            v2ray_stats: None,
+            inbound_tag: None,
         })
     }
 
     pub fn stats(&self) -> Arc<ProcessAwareTunStatistics> {
         self.stats.clone()
+    }
+
+    pub fn set_v2ray_stats(
+        &mut self,
+        stats: Option<Arc<StatsManager>>,
+        inbound_tag: Option<String>,
+    ) {
+        self.v2ray_stats = stats;
+        self.inbound_tag = inbound_tag;
     }
 
     pub async fn start(&self) -> Result<(), TunError> {
@@ -142,6 +156,10 @@ impl ProcessAwareTunInbound {
             self.process_router.clone(),
             self.process_matcher.clone(),
             self.stats.clone(),
+            self.v2ray_stats.clone(),
+            self.inbound_tag
+                .clone()
+                .or_else(|| Some(self.config.name.clone())),
         )
         .await?;
 

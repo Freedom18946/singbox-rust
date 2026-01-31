@@ -17,6 +17,7 @@ mod tests {
         upstream::{SystemUpstream, UdpUpstream},
         DnsAnswer, DnsUpstream, RecordType, Resolver,
     };
+    use sb_test_utils::skip::skip_with_reason;
 
     #[tokio::test]
     async fn test_dns_resolver_with_system_upstream() {
@@ -25,11 +26,12 @@ mod tests {
 
         // 测试解析已知域名
         let result = resolver.resolve("google.com").await;
-        assert!(
-            result.is_ok(),
-            "Should resolve google.com: {:?}",
-            result.err()
-        );
+        if let Err(err) = result {
+            if skip_with_reason("system DNS resolver test", &err) {
+                return;
+            }
+            panic!("system DNS resolver test failed: {err}");
+        }
 
         let answer = result.unwrap();
         assert!(!answer.ips.is_empty(), "Should return at least one IP");
@@ -76,11 +78,12 @@ mod tests {
             .with_timeout(Duration::from_secs(5));
 
         let result = executor.query("google.com", RecordType::A).await;
-        assert!(
-            result.is_ok(),
-            "Failover query should succeed: {:?}",
-            result.err()
-        );
+        if let Err(err) = result {
+            if skip_with_reason("DNS failover test", &err) {
+                return;
+            }
+            panic!("DNS failover test failed: {err}");
+        }
     }
 
     #[tokio::test]

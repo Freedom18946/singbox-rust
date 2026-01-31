@@ -213,7 +213,8 @@ impl StatsManager {
             if self.should_track_inbound(tag) {
                 uplink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>uplink", tag)));
                 downlink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>downlink", tag)));
-                uplink_packets.push(self.get_counter(&format!("inbound>>>{}>>>packet>>>uplink", tag)));
+                uplink_packets
+                    .push(self.get_counter(&format!("inbound>>>{}>>>packet>>>uplink", tag)));
                 downlink_packets
                     .push(self.get_counter(&format!("inbound>>>{}>>>packet>>>downlink", tag)));
             }
@@ -224,7 +225,8 @@ impl StatsManager {
                 uplink.push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>uplink", tag)));
                 downlink
                     .push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>downlink", tag)));
-                uplink_packets.push(self.get_counter(&format!("outbound>>>{}>>>packet>>>uplink", tag)));
+                uplink_packets
+                    .push(self.get_counter(&format!("outbound>>>{}>>>packet>>>uplink", tag)));
                 downlink_packets
                     .push(self.get_counter(&format!("outbound>>>{}>>>packet>>>downlink", tag)));
             }
@@ -234,7 +236,8 @@ impl StatsManager {
             if self.should_track_user(name) {
                 uplink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>uplink", name)));
                 downlink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>downlink", name)));
-                uplink_packets.push(self.get_counter(&format!("user>>>{}>>>packet>>>uplink", name)));
+                uplink_packets
+                    .push(self.get_counter(&format!("user>>>{}>>>packet>>>uplink", name)));
                 downlink_packets
                     .push(self.get_counter(&format!("user>>>{}>>>packet>>>downlink", name)));
             }

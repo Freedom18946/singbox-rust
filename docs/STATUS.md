@@ -61,6 +61,23 @@
 - 📊 **Observability**: Metrics alignment and monitoring improvements
 - ⚠️ **De-scoped**: Tailscale endpoint (see [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md))
 
+## Parity Build
+
+To build with **full Go feature parity**, use the `parity` feature flag:
+
+```bash
+cargo build -p app --features parity --release
+```
+
+This enables all parity-critical features:
+- **Router**: Full routing engine with rule evaluation
+- **Adapters**: All inbound/outbound protocol adapters
+- **DNS**: UDP, DoH, DoT, DoQ, DoH3, DHCP, Resolved, Tailscale transports
+- **Services**: NTP, Resolved, SSMAPI, DERP
+- **APIs**: Clash API, V2Ray API
+
+> **Note**: Default builds use stub registrations for unconfigured adapters. Use `--features parity` to enable full protocol implementations.
+
 ## Lint Baseline
 
 - Workspace default denies warnings: `cargo clippy --workspace --all-targets -- -D warnings`

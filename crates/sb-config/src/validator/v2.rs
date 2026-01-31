@@ -59,7 +59,9 @@ fn allowed_route_rule_keys() -> &'static HashSet<String> {
                 set.insert(key.clone());
             }
         }
-        for key in ["when", "to", "suffix", "keyword", "regex", "ip_cidr", "process"] {
+        for key in [
+            "when", "to", "suffix", "keyword", "regex", "ip_cidr", "process",
+        ] {
             set.insert(key.to_string());
         }
         set
@@ -251,7 +253,15 @@ fn allowed_outbound_keys() -> &'static HashSet<String> {
         }
         // Go parity: allow legacy tags and transport sections
         set.insert("tag".to_string());
-        for key in ["transport", "ws", "h2", "tls", "http_upgrade", "httpupgrade", "grpc"] {
+        for key in [
+            "transport",
+            "ws",
+            "h2",
+            "tls",
+            "http_upgrade",
+            "httpupgrade",
+            "grpc",
+        ] {
             set.insert(key.to_string());
         }
         set
@@ -1161,7 +1171,11 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                 }
 
                 let ty_raw = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                let ty = if ty_raw.trim().is_empty() { "inline" } else { ty_raw };
+                let ty = if ty_raw.trim().is_empty() {
+                    "inline"
+                } else {
+                    ty_raw
+                };
                 match ty {
                     "inline" | "local" | "remote" => {}
                     _ => {
@@ -1215,9 +1229,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     }
                 }
                 if let Some(version_val) = obj.get("version") {
-                    let version = version_val
-                        .as_u64()
-                        .and_then(|v| u8::try_from(v).ok());
+                    let version = version_val.as_u64().and_then(|v| u8::try_from(v).ok());
                     let valid = matches!(version, Some(1 | 2 | 3));
                     if !valid {
                         issues.push(emit_issue(

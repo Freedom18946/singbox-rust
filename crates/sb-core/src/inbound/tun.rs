@@ -15,6 +15,7 @@
 use crate::adapter::InboundService;
 use crate::router::{RouteCtx, RouterHandle, Transport};
 use crate::runtime::switchboard::OutboundSwitchboard;
+use crate::services::v2ray_api::StatsManager;
 use sb_platform::tun::{AsyncTunDevice, TunConfig as PlatformTunConfig, TunError};
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
@@ -403,6 +404,8 @@ pub struct TunInboundService {
     shutdown: Arc<AtomicBool>,
     sniff_enabled: bool,
     sessions: Arc<SessionTable>,
+    tag: Option<String>,
+    stats: Arc<RwLock<Option<Arc<StatsManager>>>>,
     // Dependencies injected after construction
     router: Arc<RwLock<Option<Arc<RouterHandle>>>>,
     outbound_manager: Arc<RwLock<Option<Arc<OutboundSwitchboard>>>>,
@@ -450,6 +453,8 @@ impl TunInboundService {
             shutdown: Arc::new(AtomicBool::new(false)),
             sniff_enabled: false,
             sessions,
+            tag: None,
+            stats: Arc::new(RwLock::new(None)),
             router: Arc::new(RwLock::new(None)),
             outbound_manager: Arc::new(RwLock::new(None)),
             process_matcher,
@@ -460,6 +465,12 @@ impl TunInboundService {
     pub fn set_router(&self, router: Arc<RouterHandle>) {
         let mut r = self.router.write().unwrap();
         *r = Some(router);
+    }
+
+    /// Attach stats manager for V2Ray API traffic accounting.
+    pub fn set_stats(&self, stats: Option<Arc<StatsManager>>) {
+        let mut s = self.stats.write().unwrap();
+        *s = stats;
     }
 
     /// Set the outbound manager
@@ -489,6 +500,18 @@ impl TunInboundService {
         self
     }
 
+    /// Attach inbound tag for stats tracking.
+    pub fn with_tag(mut self, tag: Option<String>) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    /// Attach stats manager for V2Ray API traffic accounting.
+    pub fn with_stats(mut self, stats: Option<Arc<StatsManager>>) -> Self {
+        let _ = std::mem::replace(&mut self.stats, Arc::new(RwLock::new(stats)));
+        self
+    }
+
     /// Check if shutdown has been requested
     pub fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Relaxed)
@@ -502,6 +525,9 @@ impl TunInboundService {
         use std::collections::HashMap;
         use tokio::io::unix::AsyncFd;
         // use tokio::io::{AsyncReadExt, AsyncWriteExt}; // Unused
+
+        let inbound_tag = self.tag.clone();
+        let stats = self.stats.read().unwrap().clone();
 
         let platform_config = PlatformTunConfig {
             name: self.config.name.clone(),
@@ -692,6 +718,8 @@ impl TunInboundService {
 
                         let process_matcher = self.process_matcher.clone();
                         let sniff_enabled = self.sniff_enabled;
+                        let stats = stats.clone();
+                        let inbound_tag = inbound_tag.clone();
 
                         tokio::spawn(async move {
                             if let (Some(r), Some(om)) = (router, outbound_manager) {
@@ -759,6 +787,15 @@ impl TunInboundService {
                                 // 4. Routing Decision
                                 let decision = r.decide(&ctx);
                                 let target_tag = decision.as_str().to_string();
+                                let traffic = stats.as_ref().and_then(|stats| {
+                                    stats.traffic_recorder(
+                                        inbound_tag.as_deref(),
+                                        Some(target_tag.as_str()),
+                                        None,
+                                    )
+                                });
+                                let traffic_up = traffic.clone();
+                                let traffic_down = traffic.clone();
 
                                 // 5. Connect and Forward
                                 if let Some(connector) = om.get_connector(&target_tag) {
@@ -782,6 +819,9 @@ impl TunInboundService {
                                                     );
                                                     return;
                                                 }
+                                                if let Some(ref recorder) = traffic_up {
+                                                    recorder.record_up(buffered_data.len() as u64);
+                                                }
                                             }
 
                                             let (mut ro, mut wo) = tokio::io::split(stream);
@@ -790,6 +830,9 @@ impl TunInboundService {
                                                     while let Some(data) = bridge_rx.recv().await {
                                                         if wo.write_all(&data).await.is_err() {
                                                             break;
+                                                        }
+                                                        if let Some(ref recorder) = traffic_up {
+                                                            recorder.record_up(data.len() as u64);
                                                         }
                                                     }
                                                     let _ = wo.shutdown().await;
@@ -808,6 +851,9 @@ impl TunInboundService {
                                                             .is_err()
                                                         {
                                                             break;
+                                                        }
+                                                        if let Some(ref recorder) = traffic_down {
+                                                            recorder.record_down(n as u64);
                                                         }
                                                     }
                                                 }
@@ -905,6 +951,8 @@ impl TunInboundService {
 
                     let process_matcher = self.process_matcher.clone();
                     let sniff_enabled = self.sniff_enabled;
+                    let stats = stats.clone();
+                    let inbound_tag = inbound_tag.clone();
 
                     tokio::spawn(async move {
                         if let (Some(r), Some(om)) = (router, outbound_manager) {
@@ -965,6 +1013,15 @@ impl TunInboundService {
 
                             let decision = r.decide(&ctx);
                             let target_tag = decision.as_str().to_string();
+                            let traffic = stats.as_ref().and_then(|stats| {
+                                stats.traffic_recorder(
+                                    inbound_tag.as_deref(),
+                                    Some(target_tag.as_str()),
+                                    None,
+                                )
+                            });
+                            let traffic_up = traffic.clone();
+                            let traffic_down = traffic.clone();
 
                             if let Some(factory) = om.get_udp_factory(&target_tag) {
                                 match factory.open_session().await {
@@ -976,17 +1033,32 @@ impl TunInboundService {
 
                                         // Send buffered packets first
                                         for pkt in buffered_packets {
-                                            let _ =
-                                                msg_send.send_to(&pkt, &dst_str, dst_port).await;
+                                            if msg_send
+                                                .send_to(&pkt, &dst_str, dst_port)
+                                                .await
+                                                .is_ok()
+                                            {
+                                                if let Some(ref recorder) = traffic_up {
+                                                    recorder.record_up(pkt.len() as u64);
+                                                    recorder.record_up_packet(1);
+                                                }
+                                            }
                                         }
 
                                         tokio::join!(
                                             async move {
                                                 // TUN -> Remote
                                                 while let Some(data) = bridge_rx.recv().await {
-                                                    let _ = msg_send
+                                                    if msg_send
                                                         .send_to(&data, &dst_str, dst_port)
-                                                        .await;
+                                                        .await
+                                                        .is_ok()
+                                                    {
+                                                        if let Some(ref recorder) = traffic_up {
+                                                            recorder.record_up(data.len() as u64);
+                                                            recorder.record_up_packet(1);
+                                                        }
+                                                    }
                                                 }
                                             },
                                             async move {
@@ -994,8 +1066,15 @@ impl TunInboundService {
                                                 loop {
                                                     match msg_recv.recv_from().await {
                                                         Ok((data, _addr)) => {
+                                                            let data_len = data.len();
                                                             if bridge_tx.send(data).await.is_err() {
                                                                 break;
+                                                            }
+                                                            if let Some(ref recorder) = traffic_down
+                                                            {
+                                                                recorder
+                                                                    .record_down(data_len as u64);
+                                                                recorder.record_down_packet(1);
                                                             }
                                                         }
                                                         Err(e) => {
