@@ -4,7 +4,7 @@
 
 **🎉 MAJOR MILESTONE: 100% Protocol Coverage Achieved (overall parity 88%)! 🎉**
 
-> **Latest Update (2026-01-07)**: Parity recalibrated vs Go sing-box 1.12.14. Overall parity is 88% (183/209) with feature-gated parity builds; protocol coverage remains 100% for Go inbounds/outbounds. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
+> **Latest Update (2026-02-01)**: Aligned config validation with Go-compatible aliases (e.g., `auth_str`, `user`, URLTest timing keys, selector/urltest `outbounds`), clarified DNS outbound feature gating, and made WireGuard endpoint tests feature-aware. Overall parity remains 88% (183/209) with feature-gated parity builds; protocol coverage remains 100% for Go inbounds/outbounds. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
 
 ## Achievement Summary
 

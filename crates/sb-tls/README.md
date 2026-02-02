@@ -5,8 +5,9 @@ This crate provides TLS abstractions and anti-censorship protocols for singbox-r
 ## Features
 
 - **`reality`** (default): REALITY anti-censorship protocol
-- **`utls`**: uTLS fingerprint mimicry (TODO)
-- **`ech`**: Encrypted Client Hello (TODO)
+- **`utls`**: uTLS-style fingerprinting (best-effort cipher suite/ALPN ordering via rustls)
+- **`ech`**: Encrypted Client Hello (config + HPKE implemented; handshake integration pending)
+- **`acme`**: ACME helpers for certificate management (feature-gated)
 
 ## Modules
 
@@ -115,49 +116,36 @@ REALITY bypasses SNI whitelisting by:
 
 ## Implementation Status
 
-### ✅ Completed
+### ✅ Implemented
 
 - [x] TLS abstraction layer (`TlsConnector` trait)
 - [x] Standard TLS connector (rustls)
-- [x] REALITY configuration structs
-- [x] X25519 authentication framework
-- [x] REALITY client connector (framework)
-- [x] REALITY server acceptor (framework)
-- [x] Configuration validation
-- [x] Key generation utilities
+- [x] REALITY configuration structs + validation
+- [x] REALITY ClientHello extension injection + server-side parsing
+- [x] X25519 key exchange + auth hash computation
+- [x] REALITY server auth: derive `session_data` from ClientHello random
+- [x] REALITY temporary certificate verification (HMAC) + WebPKI fallback
+- [x] REALITY client connector (with custom cert verifier hook)
+- [x] REALITY server acceptor (temporary HMAC cert + fallback relay)
+- [x] REALITY target chain capture/replay (intermediates) + leaf template (CN/SAN/validity)
+- [x] uTLS fingerprint catalog + rustls ClientConfig builder (cipher suites + ALPN)
+- [x] ECH config structs, ECHConfigList parser, HPKE primitives (see `crates/sb-tls/src/ech/README.md`)
+- [x] Key generation utilities (REALITY + ECH)
+- [x] ECH client handshake integration via rustls (TLS 1.3 only)
 
-### 🚧 TODO (Full Implementation)
+### ⚠️ Partial / Pending
 
-- [ ] Custom ClientHello generation with REALITY extensions
-- [ ] Certificate type detection (temporary vs real)
-- [ ] Actual X25519 ECDH (currently placeholder)
-- [ ] Target certificate stealing mechanism
-- [ ] TLS fingerprint emulation (uTLS)
-- [ ] Encrypted Client Hello (ECH)
+- [ ] REALITY full leaf cloning (byte-for-byte target leaf/extension parity)
+- [ ] uTLS full ClientHello/extension ordering parity (rustls limitation)
+- [ ] QUIC ECH alignment + E2E coverage
 
 ### Implementation Notes
 
-The current implementation provides the **framework and architecture** for REALITY:
+The current implementation provides **end-to-end wiring** for REALITY, uTLS, and ECH **configuration**, with a few protocol-critical gaps:
 
-1. **Configuration**: Full config structs with validation
-2. **Authentication**: X25519 key management (placeholder crypto)
-3. **Client/Server**: Connection flow and handshake structure
-4. **Fallback**: Fallback mechanism architecture
-
-For **production use**, the following needs implementation:
-
-1. **Custom TLS Library**: rustls doesn't allow ClientHello modification
-   - Option 1: Fork rustls and add hooks for ClientHello modification
-   - Option 2: Use boring-sys (BoringSSL) for low-level TLS control
-   - Option 3: Implement custom TLS 1.3 handshake
-
-2. **Proper X25519**: Current implementation is placeholder
-   - Replace with proper ECDH using ring or x25519-dalek StaticSecret
-
-3. **Certificate Handling**: Implement certificate stealing from target
-   - Connect to real target
-   - Extract certificate chain
-   - Present to client (fallback mode)
+1. **REALITY Leaf Cloning**: target chain capture/replay is implemented, but the leaf is not byte-for-byte identical to the target (public key + extensions differ).
+2. **uTLS Parity**: rustls cannot fully control ClientHello extension order/grease; current behavior is best-effort.
+3. **ECH Integration**: rustls ECH client wiring is integrated (TLS 1.3 only); QUIC ECH is still pending.
 
 ## References
 

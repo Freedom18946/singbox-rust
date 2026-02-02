@@ -1,7 +1,10 @@
 //! REALITY authentication using X25519 key exchange
 
 use rand::rngs::OsRng;
+use hmac::{Hmac, Mac};
+use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
+use sha2::Sha512;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// REALITY authentication helper
@@ -92,6 +95,36 @@ impl RealityAuth {
         let computed = self.compute_auth_hash(peer_public_key, short_id, session_data);
         constant_time_compare(&computed, expected_hash)
     }
+}
+
+/// Derive REALITY auth key from shared secret and session data.
+/// 从共享密钥和会话数据派生 REALITY 认证密钥。
+///
+/// This follows the Go reference behavior: HKDF-SHA256 with salt = session_data[0..20],
+/// info = "REALITY", output = 32 bytes.
+/// 该流程遵循 Go 参考实现：HKDF-SHA256，salt 为 session_data[0..20]，info 为 "REALITY"，输出 32 字节。
+pub fn derive_auth_key(shared_secret: [u8; 32], session_data: &[u8; 32]) -> Result<[u8; 32], String> {
+    let salt = &session_data[..20];
+    let hkdf = Hkdf::<Sha256>::new(Some(salt), &shared_secret);
+    let mut okm = [0u8; 32];
+    hkdf.expand(b"REALITY", &mut okm)
+        .map_err(|_| "REALITY HKDF expand failed".to_string())?;
+    Ok(okm)
+}
+
+/// Compute REALITY temporary certificate signature (HMAC-SHA512 over public key).
+/// 计算 REALITY 临时证书签名（对公钥做 HMAC-SHA512）。
+pub fn compute_temp_cert_signature(
+    auth_key: &[u8; 32],
+    public_key: &[u8],
+) -> Result<[u8; 64], String> {
+    let mut mac =
+        Hmac::<Sha512>::new_from_slice(auth_key).map_err(|_| "invalid auth_key".to_string())?;
+    mac.update(public_key);
+    let result = mac.finalize().into_bytes();
+    let mut signature = [0u8; 64];
+    signature.copy_from_slice(&result);
+    Ok(signature)
 }
 
 /// Generate a new keypair and return as hex strings

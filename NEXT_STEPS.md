@@ -21,6 +21,7 @@ Key blockers:
 - [x] Finish UDP packet stats + router-level tracking for V2Ray API (direct/socks/shadowsocks/trojan/tuic + core socks5 + DNS inbound wired; remaining UDP paths + packet counters)
 - [x] Audit remaining V2Ray API UDP packet stats gaps (adapter TUN UDP + endpoint flows) and wire endpoint routing handler for stats
 - [x] Align DNS scheme comments in `crates/sb-config/src/ir/mod.rs`
+- [x] Decide approach for userspace WireGuard UDP limitation (Endpoint trait requires OS `UdpSocket`): de-scoped for now; TUN/wireguard-go required for parity
 
 ---
 
@@ -66,6 +67,14 @@ Key blockers:
 - [x] Added TLS fragmentation test coverage (3 new tests: multi-label domain, record mode, short record)
 - [x] Documented parity build in `docs/STATUS.md`
 - [x] Verified CI parity integration in `.github/workflows/ci.yml`
+
+## Completed (2026-02-02)
+
+- [x] Added Shadowsocks integration tests (14 tests: config validation, trait impl, dial mechanics)
+- [x] Added Trojan integration tests (16 tests: config, password handling, serialization)
+- [x] Added DNS outbound integration tests (15 tests: transports, config, dial)
+- [x] Fixed `adapter-vless` feature gate (added missing TLS deps: `tokio-rustls`, `rustls`, `rustls-pki-types`, `webpki-roots`)
+- [x] Added VLESS integration tests (17 tests: FlowControl, Encryption, config, dial)
 
 ---
 

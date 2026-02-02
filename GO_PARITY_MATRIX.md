@@ -1,4 +1,4 @@
-# Go-Rust Parity Matrix (2026-01-07 Recalibration)
+# Go-Rust Parity Matrix (2026-01-31 Recalibration)
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.14` for functional, type, API, comment, and directory parity.
 
@@ -12,7 +12,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 ---
 
-## Executive Summary (2026-01-07)
+## Executive Summary (2026-01-31)
 
 | Area | Total | Aligned | Partial | Not Aligned | De-scoped | Rust-only |
 |------|-------|---------|---------|-------------|-----------|-----------|
@@ -22,12 +22,12 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | **Protocols (Endpoint)** | 2 | 0 | 1 | 0 | 1 | 0 |
 | **Services** | 9 | 6 | 0 | 0 | 0 | 3 |
 | **DNS Transports** | 11 | 11 | 0 | 0 | 0 | 0 |
-| **TLS Components** | 7 | 5 | 2 | 0 | 0 | 0 |
+| **TLS Components** | 7 | 3 | 4 | 0 | 0 | 0 |
 | **Config/Option** | 47 | 45 | 1 | 0 | 1 | 0 |
 | **Router/Rules** | 38 | 38 | 0 | 0 | 0 | 0 |
 | **Transport Layer** | 11 | 11 | 0 | 0 | 0 | 0 |
 | **Common Utilities** | 24 | 24 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **209** | **185 (89%)** | **13 (6%)** | **3 (1%)** | **4 (2%)** | **4 (2%)** |
+| **TOTAL** | **209** | **183 (88%)** | **15 (7%)** | **3 (1%)** | **4 (2%)** | **4 (2%)** |
 
 Note: Several aligned areas are feature-gated; default builds register stubs unless parity feature sets are enabled (see "Parity Build Gates" below).
 
@@ -37,9 +37,10 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 |-----|----------|-------------|--------|
 | Parity feature gates | 🔴 High | Default build registers stub inbounds/outbounds/services unless `app` features like `adapters`, `service_*`, `dns_*` are enabled | Define a single "parity" feature set or enable by default for parity builds |
 | TLS fragmentation | 🟡 Medium | Implemented in `crates/sb-core/src/router/conn.rs`; ACK-wait parity on unix; Windows uses TCP_INFO best-effort + fallback delay | Documented limitation; winiphlpapi/EStats required for full parity |
+| REALITY auth/cert verification | 🟡 Medium | Server-side auth derives session data from ClientHello random; temp cert HMAC verification + WebPKI fallback implemented; target chain capture/replay (intermediates) + leaf template in place | Implement full leaf cloning (byte-for-byte parity) or document limitation |
 | Tailscale endpoint | 🔴 High (de-scoped) | Go: tsnet + gVisor + DNS hook + protect_*; Rust: daemon-only (`docs/TAILSCALE_LIMITATIONS.md`) | De-scope accepted; revisit if parity required |
 | WireGuard endpoint | 🟡 Medium | Core endpoint now handles StartStage + peer DNS resolution; UDP listen/reserved unsupported in userspace (boringtun) | Documented limitation; TUN/wireguard-go required for parity |
-| TLS uTLS/ECH | 🟡 Medium | rustls cannot fully replicate ClientHello ordering; ECH runtime handshake unsupported | Accept limitation; documented in `docs/TLS_DECISION.md` |
+| TLS uTLS/ECH | 🟡 Medium | rustls cannot fully replicate ClientHello ordering; ECH client handshake integrated (TLS 1.3) but QUIC/server-side pending | Accept limitation; documented in `docs/TLS_DECISION.md` |
 | Repo structure gaps | 🟡 Medium | Missing Go `clients/`, `include/`, `release/`, `experimental/locale`, and `experimental/libbox` | De-scope accepted; no action |
 
 **Resolved Gaps (revalidated 2026-01-07)**:
@@ -71,7 +72,7 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 | `box.go` | 1 | `sb-core/src/lib.rs` + `app/` | 150+ | ✅ | Core box lifecycle aligned |
 | `cmd/` | 6 | `app/src/` | 30+ | ✅ | CLI commands aligned |
 | `common/` | 24 subdirs | `sb-common/` + `sb-platform/` + `sb-runtime/` | 47 | ◐ | Core helpers aligned; TLS/uTLS/ECH partial; tlsfragment implemented (approx) |
-| `common/tls/` | 20 | `sb-tls/` + `sb-transport/src/tls.rs` | 12 | ◐ | std aligned; uTLS/ECH partial |
+| `common/tls/` | 20 | `sb-tls/` + `sb-transport/src/tls.rs` | 12 | ◐ | std aligned; uTLS partial; ECH client integrated (TLS 1.3) |
 | `constant/` | 22 | `sb-types/` | 2 | ✅ | Constants consolidated |
 | `dns/` | 11 | `sb-core/src/dns/` | 28 | ✅ | DNS rule engine geosite/geoip implemented; DoH HTTP client stub |
 | `dns/transport/` | 10 | `sb-core/src/dns/transport/` | 11 | ✅ | DHCP lifecycle aligned (Windows MAC via `GetAdaptersAddresses`) |
@@ -236,9 +237,9 @@ Note: DHCP/resolved/tailscale upstreams are feature-gated; default builds error 
 | 1 | std_client | `common/tls/std_client.go` | `sb-transport/tls.rs` | ✅ | — |
 | 2 | std_server | `common/tls/std_server.go` | `sb-transport/tls.rs` | ✅ | — |
 | 3 | utls_client | `common/tls/utls_client.go` (8KB) | `sb-tls/utls.rs` (28KB) | ◐ | rustls cannot match ClientHello; fallbacks documented |
-| 4 | reality_client | `common/tls/reality_client.go` | `sb-tls/reality/` | ✅ | — |
-| 5 | reality_server | `common/tls/reality_server.go` | `sb-tls/reality/` | ✅ | — |
-| 6 | ech | `common/tls/ech*.go` (4 files) | `sb-tls/ech/` (5 files) | ◐ | Parser/HPKE; no rustls ECH handshake |
+| 4 | reality_client | `common/tls/reality_client.go` | `sb-tls/reality/` | ◐ | Cert verification is permissive (proxy vs fallback not distinguished) |
+| 5 | reality_server | `common/tls/reality_server.go` | `sb-tls/reality/` | ◐ | Session data derived from ClientHello random; temp cert HMAC verification + WebPKI fallback; target chain replay (intermediates) + leaf template |
+| 6 | ech | `common/tls/ech*.go` (4 files) | `sb-tls/ech/` (5 files) | ◐ | rustls ECH client handshake integrated (TLS 1.3); QUIC/server-side pending |
 | 7 | acme | `common/tls/acme*.go` (3 files) | `sb-tls/acme.rs` (28KB) | ✅ | — |
 
 **uTLS Fingerprint Mapping**:
@@ -327,8 +328,6 @@ Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-c
 | 46 | `tailscale.go` | `sb-config/ir/` | ◐ | tsnet fields not fully used |
 | 47 | `shadowsocksr.go` | `sb-config/ir/` | ⊘ | Feature-gated |
 
-Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved` as "stubbed" despite feature-gated implementations; comments need alignment.
-
 ---
 
 ## Transport Layer Parity Matrix
@@ -373,7 +372,7 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 | 18 | sniff | `sb-core/router/sniff.rs` | ✅ | — |
 | 19 | srs | `sb-core/router/ruleset/` | ✅ | — |
 | 20 | taskmonitor | `sb-runtime/` | ✅ | — |
-| 21 | tls | `sb-tls/` + `sb-transport/tls.rs` | ◐ | uTLS/ECH partial |
+| 21 | tls | `sb-tls/` + `sb-transport/tls.rs` | ◐ | uTLS/ECH partial; REALITY leaf cloning incomplete |
 | 22 | tlsfragment | `sb-core/router/conn.rs` | ◐ | Applied; Windows ACK best-effort only |
 | 23 | uot | `sb-transport/uot.rs` | ✅ | — |
 | 24 | urltest | `sb-core/outbound/` | ✅ | — |
@@ -428,9 +427,9 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 **Current State**: Default build registers stub adapters/services; parity requires `app` feature flags.
 
 **Actions**:
-1. [ ] Add a single `parity` feature alias (or enable parity features by default in parity builds).
-2. [ ] Document the parity feature set in `docs/STATUS.md` and `NEXT_STEPS.md`.
-3. [ ] Ensure CI parity build uses `--features parity` and blocks stub fallback regressions.
+1. [x] Add a single `parity` feature alias (or enable parity features by default in parity builds).
+2. [x] Document the parity feature set in `docs/STATUS.md` and `NEXT_STEPS.md`.
+3. [x] Ensure CI parity build uses `--features parity` and blocks stub fallback regressions.
 
 ### Priority 2: TLS Fragmentation
 
@@ -438,7 +437,7 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 
 **Actions**:
 1. [x] Keep Windows ACK best-effort (TCP_INFO + fallback delay); winiphlpapi not implemented.
-2. [ ] Add tests for fragmentation + fallback delay behavior.
+2. [x] Add tests for fragmentation + fallback delay behavior (`crates/sb-core/src/router/conn.rs`).
 
 ### Priority 3: WireGuard Endpoint Parity
 
@@ -463,12 +462,12 @@ Note: `crates/sb-config/src/ir/mod.rs` still labels `dhcp`/`tailscale`/`resolved
 
 ### Priority 5: TLS uTLS/ECH (Library Limitation)
 
-**Current State**: rustls cannot fully replicate uTLS ClientHello ordering; ECH handshake integration incomplete.
+**Current State**: rustls cannot fully replicate uTLS ClientHello ordering; ECH client handshake integrated (TLS 1.3), QUIC/server-side pending.
 
 **Options**:
 - **A) Accept limitation**: Document as known constraint ✅ (current decision)
 - **B) Evaluate `boring-rs` FFI**: Higher fidelity but maintenance cost
-- **C) Monitor rustls**: Track ECH support in rustls roadmap
+- **C) Monitor rustls**: Track server-side ECH + QUIC ECH support
 
 See: [`docs/TLS_DECISION.md`](docs/TLS_DECISION.md)
 
@@ -510,7 +509,7 @@ Parity achieved via `sb_platform::network::get_interface_mac()` + Windows `GetAd
 | TLS fragmentation partial | `crates/sb-core/src/router/conn.rs` | Applied; Windows ACK best-effort only |
 | WireGuard endpoint partial | `crates/sb-core/src/endpoint/wireguard.rs` + `crates/sb-adapters/src/endpoint/wireguard.rs` | StartStage + DNS parity improved; UDP listen/reserved documented unsupported in userspace |
 | Repo structure gaps | `go_fork_source/sing-box-1.12.14/{clients,include,release,experimental}` | De-scoped libbox/locale/mobile/release artifacts |
-| DNS scheme doc mismatch | `crates/sb-config/src/ir/mod.rs` | Comments mark dhcp/resolved/tailscale as stubbed despite feature-gated support |
+| DNS scheme doc mismatch | `crates/sb-config/src/ir/mod.rs` | Resolved 2026-02-01: comments aligned with feature-gated support |
 | V2Ray API parity | `crates/sb-core/src/services/v2ray_api.rs` | gRPC StatsService implemented; TCP/UDP tracking wired incl. TUN + endpoint flows; remaining gaps: router-wide ConnectionTracker + HTTP JSON endpoints |
 
 ---

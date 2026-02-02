@@ -7,8 +7,8 @@
 //! - `TlsConnector` trait 用于可扩展的 TLS 实现
 //! - REALITY protocol for anti-censorship (certificate stealing)
 //! - REALITY 协议用于抗审查（证书窃取）
-//! - ECH (Encrypted Client Hello) support (future)
-//! - ECH (加密客户端 Hello) 支持（未来支持）
+//! - ECH (Encrypted Client Hello) support
+//! - ECH (加密客户端 Hello) 支持
 //!
 //! ## Features
 //! ## 特性
@@ -28,7 +28,17 @@
 
 use async_trait::async_trait;
 use std::io;
+use std::sync::OnceLock;
 use tokio::io::{AsyncRead, AsyncWrite};
+
+static RUSTLS_CRYPTO_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+pub(crate) fn ensure_rustls_crypto_provider() {
+    RUSTLS_CRYPTO_PROVIDER_INSTALLED.get_or_init(|| {
+        // Prefer ring for consistency when multiple providers are enabled.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// Combined `AsyncRead` + `AsyncWrite` trait
 /// 组合的 `AsyncRead` + `AsyncWrite` trait

@@ -83,3 +83,4 @@ pub enum RealityError {
 }
 
 pub type RealityResult<T> = Result<T, RealityError>;
+pub mod cloning;

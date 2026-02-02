@@ -76,8 +76,9 @@ Adapter DNS helpers
 --------------------
 
 The Rust `adapter-dns` outbound kind can run a DNS-forwarding proxy tied to the upstreams
-defined above. When you enable `adapter-dns` (and refer to `dns` from `sb-config::ir`), the
-outbound builder honors additional IR fields described in `sb-config::ir::OutboundIR`:
+defined above. The outbound is feature-gated by `adapter-dns` and exposed as `type: dns`.
+When you enable `adapter-dns` (and refer to `dns` from `sb-config::ir`), the outbound
+builder honors additional IR fields described in `sb-config::ir::OutboundIR`:
 
 - `dns_transport`: choose between `udp`, `tcp`, `dot`, `doh`, and `doq` (default `udp`).
 - `dns_tls_server_name`: SNI for DoT/DoQ if the resolver is an IP address.

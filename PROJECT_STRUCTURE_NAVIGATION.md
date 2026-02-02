@@ -8,7 +8,7 @@
 > 3. 📋 Plan development paths based on this document
 >
 > **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: January 26, 2026 (Validated against current repository structure)
+> **Last Updated**: February 1, 2026 (Validated against current repository structure)
 
 ## Project Overview
 
@@ -22,6 +22,7 @@ singbox-rust/
 ├── 📁 .cargo/           # Cargo configuration (build parameters, aliases, etc.)
 ├── 📁 .claude/          # Local assistant artifacts (gitignored)
 ├── 📁 .e2e/             # E2E test artifacts and summaries
+├── 📁 .github/          # GitHub workflows and templates
 ├── 📁 app/              # Main application and multi-bin CLI (feature gated)
 ├── 📁 benches/          # Benchmark workspace
 ├── 📁 benchmark_results/# Benchmark results
@@ -38,6 +39,7 @@ singbox-rust/
 ├── 📁 SPECS/            # Specifications and design notes
 ├── 📁 reports/          # Reports and baselines
 │   ├── 📄 ACCEPTANCE_QC_2025-11-24.md
+│   ├── 📄 GO_DIFF_ANALYSIS_2026-01-31.md
 │   ├── 📄 PERFORMANCE_REPORT.md
 │   ├── 📄 README.md
 │   ├── 📁 stress-tests
@@ -59,6 +61,8 @@ singbox-rust/
 ├── 📄 minimal.yaml      # Minimal config example
 ├── 📄 NEXT_STEPS.md     # Next milestones and workflow
 ├── 📄 PROJECT_STRUCTURE_NAVIGATION.md   # Project structure navigation (Current)
+├── 📄 .gitignore        # Git ignore rules
+├── 📄 .gitmodules       # Git submodule configuration
 ├── 📄 public-api-baseline.txt # Public API baseline
 ├── 📄 README.md         # Project description and quick start
 ├── 📄 SECURITY.md       # Security instructions
@@ -344,7 +348,7 @@ scripts/
 - Project Planning: `NEXT_STEPS.md` - Next milestones and workflows
 - Go Parity Matrix: `GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
 - Migration Guide: `docs/MIGRATION_GUIDE.md` - Go → Rust full migration path
-- Performance Benchmarks: `BENCHMARKS.md` and `reports/PERFORMANCE_REPORT.md`
+- Performance Benchmarks: `benchmark_results/`, `reports/PERFORMANCE_REPORT.md`, and legacy `docs/archive/root-legacy/BENCHMARKS.md`
 - Test Coverage: `reports/TEST_COVERAGE.md`
 - Security Documentation: `SECURITY.md`
 - Changelog: `CHANGELOG.md`
@@ -361,6 +365,11 @@ scripts/
 - **Find Usage Examples**: Browse in `examples/` directory
 
 ## Recent Updates
+
+### Structure Sync (2026-02-01)
+
+- Removed tracked local logs: `check_log.txt`, `test_output.txt`
+- Refreshed document timestamps after structure verification
 
 ### Parity Baseline (2026-01-07)
 
@@ -440,4 +449,4 @@ When updating, please follow this format:
 
 **⚠️ Important Reminder**: The accuracy of this document directly impacts development efficiency and code quality. Please strictly abide by the maintenance guidelines to ensure the document stays in sync with the actual project structure.
 
-*Document Version: v1.6 | Last Updated: January 18, 2026 | Last Verified: January 18, 2026*
+*Document Version: v1.9 | Last Updated: February 1, 2026 | Last Verified: February 1, 2026*

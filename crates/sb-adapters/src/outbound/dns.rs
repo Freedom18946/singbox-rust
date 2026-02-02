@@ -4,7 +4,6 @@
 //! DNS queries through specific servers or configurations.
 
 use crate::outbound::prelude::*;
-use sb_core::dns::transport::DnsTransport as DnsTransportTrait;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};

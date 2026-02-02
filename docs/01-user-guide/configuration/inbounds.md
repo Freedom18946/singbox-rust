@@ -38,6 +38,7 @@ inbounds:
 - Some inbound types require extra protocol-specific fields.
 - TUN requires elevated permissions on most platforms.
 - Prefer `tag`; `name` is accepted for compatibility.
+- Compatibility aliases for select fields are documented in the configuration overview.
 
 ## Related
 

@@ -22,10 +22,18 @@
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "transport_reality")]
 use sb_tls::TlsConnector;
+
+fn ensure_rustls_crypto_provider() {
+    static INSTALLED: OnceLock<()> = OnceLock::new();
+    INSTALLED.get_or_init(|| {
+        // Prefer ring when multiple providers are present.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// TLS Dialer Wrapper / TLS 拨号器包装器
 ///
@@ -188,6 +196,7 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for TlsDialer<D> {
 /// ```
 #[cfg(feature = "transport_tls")]
 pub fn webpki_roots_config() -> Arc<rustls::ClientConfig> {
+    ensure_rustls_crypto_provider();
     use rustls::{ClientConfig, RootCertStore};
 
     // Load built-in root certificates from webpki-roots
@@ -252,6 +261,7 @@ pub fn webpki_roots_config() -> Arc<rustls::ClientConfig> {
 /// ```
 #[cfg(feature = "transport_tls")]
 pub fn smoke_empty_roots_config() -> Arc<rustls::ClientConfig> {
+    ensure_rustls_crypto_provider();
     use rustls::{ClientConfig, RootCertStore};
 
     // 创建完全空的根证书存储
@@ -616,7 +626,7 @@ impl<D: Dialer> TlsDialer<D> {
 /// ## Field Description / 字段说明
 /// - `inner`: Underlying dialer instance, responsible for establishing base connection / 底层拨号器实例，负责建立基础连接
 /// - `config`: rustls client config / rustls 客户端配置
-/// - `ech_connector`: ECH connector, handles ClientHello encryption / ECH 连接器，处理 ClientHello 加密
+/// - `ech_connector`: ECH connector, handles config validation / ECH 连接器，处理配置校验
 #[cfg(feature = "transport_ech")]
 pub struct EchDialer<D: Dialer> {
     /// Underlying dialer, responsible for establishing raw connection
@@ -627,9 +637,66 @@ pub struct EchDialer<D: Dialer> {
     /// TLS 客户端配置
     pub config: Arc<rustls::ClientConfig>,
 
-    /// ECH connector, handles ClientHello encryption
-    /// ECH 连接器，处理 ClientHello 加密
+    /// ECH connector, handles config validation and parsing
+    /// ECH 连接器，处理配置校验与解析
     pub ech_connector: sb_tls::EchConnector,
+}
+
+#[cfg(feature = "transport_ech")]
+fn build_ech_client_config(
+    base_config: Option<&rustls::ClientConfig>,
+    ech_config: &sb_tls::EchClientConfig,
+) -> Result<rustls::ClientConfig, DialError> {
+    if !ech_config.enabled {
+        return Err(DialError::Tls(
+            "ECH config provided but disabled".to_string(),
+        ));
+    }
+
+    let ech_mode = ech_config
+        .to_rustls_ech_mode()
+        .map_err(|e| DialError::Tls(format!("Invalid ECH config: {e}")))?;
+
+    let builder = if let Some(base) = base_config {
+        rustls::ClientConfig::builder_with_provider(base.crypto_provider().clone())
+    } else {
+        ensure_rustls_crypto_provider();
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .cloned()
+            .ok_or_else(|| DialError::Tls("Missing rustls crypto provider".to_string()))?;
+        rustls::ClientConfig::builder_with_provider(provider)
+    };
+
+    let builder = builder
+        .with_ech(ech_mode)
+        .map_err(|e| DialError::Tls(format!("Failed to enable ECH: {e}")))?;
+
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let mut config = builder
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    // TODO: map pq_signature_schemes_enabled and dynamic_record_sizing_disabled when rustls exposes knobs.
+
+    if let Some(base) = base_config {
+        config.alpn_protocols = base.alpn_protocols.clone();
+        config.resumption = base.resumption.clone();
+        config.max_fragment_size = base.max_fragment_size;
+        config.client_auth_cert_resolver = base.client_auth_cert_resolver.clone();
+        config.enable_sni = base.enable_sni;
+        config.key_log = base.key_log.clone();
+        config.enable_secret_extraction = base.enable_secret_extraction;
+        config.enable_early_data = base.enable_early_data;
+        config.require_ems = base.require_ems;
+        config.time_provider = base.time_provider.clone();
+        config.cert_decompressors = base.cert_decompressors.clone();
+        config.cert_compressors = base.cert_compressors.clone();
+        config.cert_compression_cache = base.cert_compression_cache.clone();
+    }
+
+    Ok(config)
 }
 
 #[cfg(feature = "transport_ech")]
@@ -663,25 +730,19 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for EchDialer<D> {
     ///
     /// # rustls ECH Support Status / rustls ECH 支持状态
     ///
-    /// ⚠️ **Current Limitation**: rustls 0.23 does not support ECH extension / ⚠️ **当前限制**: rustls 0.23 不支持 ECH 扩展
+    /// ✅ rustls 0.23+ provides client-side ECH support (TLS 1.3 only).
+    /// ✅ rustls 0.23+ 提供客户端 ECH 支持（仅 TLS 1.3）。
     ///
-    /// This implementation provides the framework for ECH integration:
-    /// 本实现提供了 ECH 集成的框架：
-    /// - ECH ClientHello encryption (Done) / ECH ClientHello 加密（完成）
-    /// - ECH configuration management (Done) / ECH 配置管理（完成）
-    /// - TLS handshake integration point (Pending rustls support) / TLS 握手集成点（待 rustls 支持）
+    /// This dialer enables rustls ECH mode and lets rustls construct the outer ClientHello.
+    /// 本拨号器启用 rustls 的 ECH 模式，并由 rustls 构建外层 ClientHello。
     ///
-    /// When rustls adds ECH support, we need to:
-    /// 当 rustls 添加 ECH 支持时，需要：
-    /// 1. Enable ECH in ClientConfig / 在 ClientConfig 中启用 ECH
-    /// 2. Pass ech_hello.ech_payload to TLS handshake / 传递 ech_hello.ech_payload 到 TLS 握手
-    /// 3. Extract ECH acceptance status from ServerHello / 从 ServerHello 中提取 ECH 接受状态
+    /// - Inner SNI: real target hostname passed to `connect` / 内层 SNI：`connect` 传入的真实目标域名
+    /// - Outer SNI: public name from ECHConfigList / 外层 SNI：ECHConfigList 中的 public name
     ///
     /// # Error Handling / 错误处理
     /// - Underlying connection failure: Propagate `DialError` directly / 底层连接失败: 直接传播 `DialError`
     /// - ECH disabled: Return `DialError::Tls` / ECH 未启用: 返回 `DialError::Tls` 错误
-    /// - ECH encryption failure: Convert to `DialError::Tls` / ECH 加密失败: 转换为 `DialError::Tls`
-    /// - Outer SNI invalid: Convert to `DialError::Tls` / 外层 SNI 无效: 转换为 `DialError::Tls`
+    /// - Invalid ECH config: Convert to `DialError::Tls` / 无效 ECH 配置: 转换为 `DialError::Tls`
     /// - TLS handshake failure: Convert to `DialError::Tls` / TLS 握手失败: 转换为 `DialError::Tls`
     /// - ECH not accepted: Log warning but continue (downgrade behavior) / ECH 未被接受: 记录警告但继续连接（降级行为）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
@@ -698,49 +759,22 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for EchDialer<D> {
         // 第二步：使用底层拨号器建立原始连接
         let stream = self.inner.connect(host, port).await?;
 
-        // 第三步：使用 ECH 加密真实的 SNI
-        // 这会生成包含加密 ClientHello 的 ECH 结构
-        let ech_hello = self
-            .ech_connector
-            .wrap_tls(host)
-            .map_err(|e| DialError::Tls(format!("ECH 加密失败: {}", e)))?;
+        // 第三步：使用真实 SNI 进行 TLS 连接（rustls 将自动使用 ECH 外层名称）
+        let server_name = ServerName::try_from(host.to_string())
+            .map_err(|e| DialError::Tls(format!("SNI 解析失败: {:?}", e)))?;
 
-        // 第四步：使用外层 SNI（公共名称）进行 TLS 连接
-        // 这是审查者能看到的 SNI，应该是一个无害的域名
-        let outer_sni = ServerName::try_from(ech_hello.outer_sni.clone())
-            .map_err(|e| DialError::Tls(format!("外层 SNI 解析失败: {:?}", e)))?;
-
-        // 第五步：配置 TLS 连接
-        // 注意：这里使用标准的 rustls，ECH 扩展已经在 ClientHello 中
-        // 实际的 ECH 支持需要 rustls 的 ECH 功能或自定义扩展处理
         let connector = TlsConnector::from(self.config.clone());
-
-        // 第六步：执行 TLS 握手
-        // NOTE: ECH integration pending rustls support. Pass ech_hello.ech_payload when available.
-        // 集成点示例：
-        // ```rust
-        // let mut config = (*self.config).clone();
-        // config.enable_ech(ech_hello.ech_payload);
-        // let connector = TlsConnector::from(Arc::new(config));
-        // ```
         let tls = connector
-            .connect(outer_sni, stream)
+            .connect(server_name, stream)
             .await
             .map_err(|e| DialError::Tls(format!("ECH TLS 握手失败: {}", e)))?;
 
-        // 第七步：验证 ECH 接受状态（可选）
-        // 注意：由于 rustls 当前不支持 ECH，我们无法从 ServerHello 中提取数据
-        // 当 rustls 支持 ECH 时，应该在这里验证服务器是否接受了 ECH
-        // 集成点示例：
-        // ```rust
-        // if let Some(server_hello) = tls.get_server_hello() {
-        //     if !self.ech_connector.verify_ech_acceptance(server_hello)? {
-        //         tracing::warn!("服务器未接受 ECH，连接可能降级");
-        //     }
-        // }
-        // ```
+        // 第四步：记录 ECH 接受状态（可选）
+        let ech_status = tls.get_ref().1.ech_status();
+        if matches!(ech_status, rustls::client::EchStatus::Rejected) {
+            tracing::warn!("服务器拒绝了 ECH，连接可能降级");
+        }
 
-        // 第八步：返回加密连接
         Ok(Box::new(tls))
     }
 
@@ -791,6 +825,15 @@ impl<D: Dialer> EchDialer<D> {
         // 创建 ECH 连接器，这会验证配置并解析 ECHConfigList
         let ech_connector = sb_tls::EchConnector::new(ech_config)
             .map_err(|e| DialError::Tls(format!("创建 ECH 连接器失败: {}", e)))?;
+
+        let config = if ech_connector.config().enabled {
+            Arc::new(build_ech_client_config(
+                Some(config.as_ref()),
+                ech_connector.config(),
+            )?)
+        } else {
+            config
+        };
 
         Ok(Self {
             inner,
@@ -1200,6 +1243,7 @@ impl TlsTransport {
         use tokio_rustls::TlsConnector;
 
         // Create rustls client config
+        ensure_rustls_crypto_provider();
         let mut tls_config = if config.insecure {
             // Insecure mode: skip certificate verification
             rustls::ClientConfig::builder()
@@ -1261,6 +1305,7 @@ impl TlsTransport {
         let key = load_private_key(key_path)?;
 
         // Create rustls server config
+        ensure_rustls_crypto_provider();
         let mut tls_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
@@ -1339,38 +1384,28 @@ impl TlsTransport {
             dynamic_record_sizing_disabled: config.dynamic_record_sizing_disabled,
         };
 
-        // Create ECH connector
-        let ech_connector = sb_tls::EchConnector::new(ech_config)
-            .map_err(|e| DialError::Tls(format!("Failed to create ECH connector: {}", e)))?;
-
-        // Wrap TLS to get ECH ClientHello
-        let ech_hello = ech_connector
-            .wrap_tls(server_name)
-            .map_err(|e| DialError::Tls(format!("ECH encryption failed: {}", e)))?;
-
-        // Create rustls client config
-        let root_store = rustls::RootCertStore::empty();
-        let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+        let mut tls_config = build_ech_client_config(None, &ech_config)?;
 
         // Configure ALPN
         if !config.alpn.is_empty() {
             tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
         }
 
-        // Use outer SNI from ECH
-        let outer_sni = ServerName::try_from(ech_hello.outer_sni.clone())
-            .map_err(|e| DialError::Tls(format!("Invalid outer SNI: {:?}", e)))?;
+        // Use real SNI (rustls will automatically choose the outer name from ECH config)
+        let sni = config.server_name.as_deref().unwrap_or(server_name);
+        let server_name = ServerName::try_from(sni.to_string())
+            .map_err(|e| DialError::Tls(format!("Invalid server name: {:?}", e)))?;
 
-        // Perform TLS handshake with ECH
-        // Note: rustls 0.23 doesn't natively support ECH, so this is a placeholder
-        // When rustls adds ECH support, we'll need to pass ech_hello.ech_payload
         let connector = TlsConnector::from(Arc::new(tls_config));
         let tls_stream = connector
-            .connect(outer_sni, stream)
+            .connect(server_name, stream)
             .await
             .map_err(|e| DialError::Tls(format!("ECH TLS handshake failed: {}", e)))?;
+
+        let ech_status = tls_stream.get_ref().1.ech_status();
+        if matches!(ech_status, rustls::client::EchStatus::Rejected) {
+            tracing::warn!("服务器拒绝了 ECH，连接可能降级");
+        }
 
         Ok(Box::new(tls_stream))
     }
@@ -1686,14 +1721,16 @@ mod ech_tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&public_key);
 
-        // Cipher suites length + cipher suite
-        // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        // Cipher suites length + cipher suite (KDF + AEAD)
+        config_list.extend_from_slice(&[0x00, 0x04]);
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 
@@ -1968,13 +2005,16 @@ mod tls_transport_tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
 
-        // Cipher suites length + cipher suite
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        // Cipher suites length + cipher suite (KDF + AEAD)
+        config_list.extend_from_slice(&[0x00, 0x04]);
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 

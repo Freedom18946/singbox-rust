@@ -267,6 +267,8 @@ See [CLI Reference](../02-cli-reference/) for all commands.
 singbox-rust check -c old-config.json --migrate --write-normalized --out new-config.json
 ```
 
+Go-compatible aliases (for example `user`, `auth_str`, URLTest `*_ms` timing keys, and selector/urltest `outbounds` as an alias for `members`) are accepted during validation.
+
 ### Q: Which protocols are supported?
 
 **A**: All major protocols are fully supported - **100% of Go protocol coverage achieved!**

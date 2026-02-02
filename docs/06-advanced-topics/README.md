@@ -152,11 +152,13 @@ outbounds:
     outbounds: [us-1, us-2, us-3]
     url: https://www.google.com/generate_204
     interval: 300s
+    timeout_ms: 3000
 
   # EU servers
   - type: urltest
     tag: eu-group
     outbounds: [eu-1, eu-2, eu-3]
+    timeout_ms: 3000
 
 route:
   rules:
@@ -187,7 +189,7 @@ else
     PROXY="personal-proxy"
 fi
 
-# Update selector by editing config and reloading the service
+# Update selector by editing config and reloading the service (use `members` or the alias `outbounds` for member lists)
 echo "set selector default to $PROXY" >&2
 ```
 
@@ -274,8 +276,12 @@ outbounds:
     subscription: main-sub
     url: https://www.google.com/generate_204
     interval: 300s
+    timeout_ms: 3000
     tolerance: 50ms # Switch if difference > 50ms
 ```
+
+Use `interval_ms`/`timeout_ms`/`tolerance_ms` for millisecond precision if needed.
+`members` is accepted as an alias for `outbounds` when listing selector/urltest members.
 
 See [Subscription System Guide](subscription-system.md).
 

@@ -170,8 +170,8 @@ pub enum OutboundType {
     /// SSH tunnel.
     /// SSH 隧道。
     Ssh,
-    /// DNS outbound (Go-only).
-    /// DNS 出站 (仅限 Go)。
+    /// DNS outbound (feature-gated).
+    /// DNS 出站（特性开关）。
     Dns,
     /// Tor outbound.
     /// Tor 出站。
@@ -185,8 +185,8 @@ pub enum OutboundType {
     /// WireGuard outbound.
     /// WireGuard 出站。
     Wireguard,
-    /// Tailscale outbound (stub).
-    /// Tailscale 出站 (存根)。
+    /// Tailscale outbound (Rust-only, feature-gated).
+    /// Tailscale 出站（Rust 扩展，特性开关）。
     Tailscale,
     /// ShadowsocksR outbound.
     /// ShadowsocksR 出站。

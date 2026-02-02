@@ -51,6 +51,8 @@ route:
 
 **Full schema**: See [Config V2 Schema](schemas/config-v2.md)
 
+**Compatibility note**: The validator accepts select Go-compatible aliases (for example `user`, `auth_str`, URLTest `*_ms` timing keys, and selector/urltest `outbounds` as an alias for `members`).
+
 ### Common Error Codes
 
 | Code   | Type    | Meaning                         | Solution                  |

@@ -20,6 +20,8 @@ Each page includes:
 - Minimal inbound/outbound examples
 - Links to TLS and transport docs
 
+Note: Config validation accepts select Go-compatible aliases (for example `user`, `auth_str`, URLTest timing `*_ms` fields, and selector/urltest `outbounds` as an alias for `members`). See the configuration guide for details.
+
 ## Related
 
 - [TLS Configuration](../configuration/tls.md)

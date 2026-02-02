@@ -32,9 +32,8 @@ Supported Outbounds (UDP)
 Notes
 - WS/H2 conflict in transport hints resolves to WS with a warning
 - 0‑RTT (TUIC) field is accepted and stored; enabling early data will be evaluated with quinn behavior
-- DNS outbound is not exposed as a standalone type in IR; use routing rule `protocol: dns` → direct/selected outbound
+- DNS outbound is exposed as type `dns` in IR (feature-gated via `adapter-dns`); use it for DNS resolution only, and keep routing rule `protocol: dns` → direct/selected outbound as the primary path
 
 Testing
 - A minimal SOCKS5 UDP → direct NAT echo test is provided: `app/tests/socks_udp_direct_e2e.rs`
 - UDP session e2e (SS/TUIC/Hysteria2) rely on local servers and are planned to be expanded in follow‑ups
-

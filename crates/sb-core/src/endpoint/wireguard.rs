@@ -420,7 +420,8 @@ impl Endpoint for WireGuardEndpoint {
         Box::pin(async move {
             info!(tag = %self.tag, "outbound UDP listen to {}", destination);
 
-            // FIXME: Cannot support userspace UDP tunneling because Endpoint trait requires UdpSocket (OS handle).
+            // NOTE: Userspace transport cannot provide an OS-backed UdpSocket; TUN-backed
+            // endpoints (wireguard-go) are required for UDP listen_packet support.
             // Binding to 0.0.0.0 causes traffic leak (bypassing WG).
             // Returning error is safer than leaking.
             Err(io::Error::new(

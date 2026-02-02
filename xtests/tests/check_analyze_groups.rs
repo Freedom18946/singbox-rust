@@ -1,3 +1,5 @@
+use std::env;
+use std::path::PathBuf;
 use assert_cmd::Command;
 use serde_json::Value;
 use std::process::Command as StdCommand;
@@ -36,9 +38,31 @@ fn ensure_binary() {
     });
 }
 
+fn cargo_bin_path(name: &str) -> Result<PathBuf, String> {
+    let key = format!("CARGO_BIN_EXE_{name}");
+    if let Ok(path) = env::var(&key) {
+        return Ok(PathBuf::from(path));
+    }
+
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let workspace = env::var("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .map_err(|_| "CARGO_MANIFEST_DIR not set".to_string())?;
+    let path = workspace.join("target").join(profile).join(exe);
+    Ok(path)
+}
+
 fn run_check(cfg: &str, level: &str) -> Value {
     ensure_binary();
-    let mut cmd = Command::cargo_bin("singbox-rust").unwrap();
+    let bin = cargo_bin_path("singbox-rust").expect("locate singbox-rust");
+    assert!(bin.exists(), "singbox-rust binary not found at {:?}", bin);
+    let mut cmd = Command::new(bin);
     let out = cmd
         .env("SB_CHECK_ANALYZE", "1")
         .env("SB_CHECK_ANALYZE_LEVEL", level)

@@ -119,7 +119,7 @@ fn test_wireguard_endpoint_instantiation() {
 #[cfg(not(feature = "adapter-wireguard-endpoint"))]
 #[test]
 fn test_wireguard_endpoint_stub_warning() {
-    use sb_core::endpoint::EndpointContext;
+    use sb_core::endpoint::{EndpointContext, StartStage};
 
     // Register all endpoints (including stubs)
     sb_adapters::register_all();
@@ -154,6 +154,19 @@ fn test_wireguard_endpoint_stub_warning() {
     let registry = sb_core::endpoint::endpoint_registry();
     let endpoint = registry.build(&ir, &ctx);
 
-    // Stub should return an endpoint that fails on start()
-    assert!(endpoint.is_some(), "Stub should return an endpoint");
+    if sb_adapters::WIREGUARD_ENDPOINT_AVAILABLE {
+        // Real endpoint should reject incomplete config.
+        assert!(
+            endpoint.is_none(),
+            "WireGuard endpoint should reject missing config when enabled"
+        );
+        return;
+    }
+
+    // Stub should return an endpoint that fails on start().
+    let endpoint = endpoint.expect("Stub should return an endpoint");
+    assert!(
+        endpoint.start(StartStage::Initialize).is_err(),
+        "Stub endpoint should fail on start"
+    );
 }

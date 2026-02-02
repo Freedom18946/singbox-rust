@@ -135,6 +135,21 @@ impl EchClientConfig {
         })
     }
 
+    pub(crate) fn resolve_config_list(&self) -> Result<Vec<u8>, super::EchError> {
+        if let Some(config_list) = &self.config_list {
+            return Ok(config_list.clone());
+        }
+
+        let config_b64 = self.config.as_ref().ok_or_else(|| {
+            super::EchError::InvalidConfig("ECH enabled but no config provided".to_string())
+        })?;
+
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        b64.decode(config_b64)
+            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid config: {e}")))
+    }
+
     /// Validate the configuration
     ///
     /// # Errors
@@ -144,18 +159,32 @@ impl EchClientConfig {
             return Ok(());
         }
 
-        if self.config.is_none() && self.config_list.is_none() {
+        let config_list = self.resolve_config_list()?;
+        super::parser::parse_ech_config_list(&config_list)?;
+
+        Ok(())
+    }
+
+    /// Build rustls ECH mode from config list
+    ///
+    /// # Errors
+    /// Returns error if the config list is missing or incompatible with supported HPKE suites
+    pub fn to_rustls_ech_mode(&self) -> Result<rustls::client::EchMode, super::EchError> {
+        if !self.enabled {
             return Err(super::EchError::InvalidConfig(
-                "ECH enabled but no config provided".to_string(),
+                "ECH not enabled".to_string(),
             ));
         }
 
-        // Parse config list if present
-        if let Some(ref config_list) = self.config_list {
-            super::parser::parse_ech_config_list(config_list)?;
-        }
+        let config_list = self.resolve_config_list()?;
+        let ech_config_list = rustls_pki_types::EchConfigListBytes::from(config_list);
+        let ech_config = rustls::client::EchConfig::new(
+            ech_config_list,
+            rustls::crypto::aws_lc_rs::hpke::ALL_SUPPORTED_SUITES,
+        )
+        .map_err(|e| super::EchError::InvalidConfig(format!("Invalid ECH config: {e}")))?;
 
-        Ok(())
+        Ok(rustls::client::EchMode::Enable(ech_config))
     }
 
     /// Get the ECH config list bytes
@@ -391,14 +420,16 @@ mod tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
 
-        // Cipher suites length + cipher suite
-        // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        // Cipher suites length + cipher suite (KDF + AEAD)
+        config_list.extend_from_slice(&[0x00, 0x04]);
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 

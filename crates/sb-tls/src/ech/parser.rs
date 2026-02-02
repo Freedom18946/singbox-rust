@@ -22,12 +22,23 @@
 //! } ECHConfig;
 //!
 //! struct {
-//!     opaque public_key<1..2^16-1>;
-//!     HpkeSymmetricCipherSuite cipher_suites<4..2^16-4>;
+//!     HpkeKeyConfig key_config;
 //!     uint8 maximum_name_length;
 //!     opaque public_name<1..255>;
 //!     Extension extensions<0..2^16-1>;
 //! } ECHConfigContents;
+//!
+//! struct {
+//!     uint8 config_id;
+//!     uint16 kem_id;
+//!     opaque public_key<1..2^16-1>;
+//!     HpkeSymmetricCipherSuite cipher_suites<4..2^16-4>;
+//! } HpkeKeyConfig;
+//!
+//! struct {
+//!     uint16 kdf_id;
+//!     uint16 aead_id;
+//! } HpkeSymmetricCipherSuite;
 //! ```
 
 use super::{EchError, EchResult, EchVersion, HpkeAead, HpkeKdf, HpkeKem};
@@ -39,6 +50,12 @@ pub struct EchConfig {
     /// ECH version
     /// ECH 版本
     pub version: EchVersion,
+    /// HPKE key configuration ID
+    /// HPKE 密钥配置 ID
+    pub config_id: u8,
+    /// Key encapsulation mechanism
+    /// 密钥封装机制
+    pub kem_id: HpkeKem,
     /// Server public key (X25519)
     /// 服务器公钥 (X25519)
     pub public_key: Vec<u8>,
@@ -169,19 +186,28 @@ fn parse_ech_config(parser: &mut Parser) -> EchResult<EchConfig> {
 /// Parse ECHConfigContents
 /// 解析 ECHConfigContents
 fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchResult<EchConfig> {
+    // Read config id (1 byte) and KEM id (2 bytes)
+    let config_id = parser.read_u8()?;
+    let kem_u16 = parser.read_u16()?;
+    let kem_id = HpkeKem::from_u16(kem_u16)
+        .ok_or_else(|| EchError::ParseFailed(format!("Unsupported KEM: 0x{kem_u16:04x}")))?;
+
     // Read public key (variable length with 2-byte length prefix)
     let public_key = parser.read_length_prefixed_bytes()?;
+    let expected_public_key_len = match kem_id {
+        HpkeKem::X25519HkdfSha256 => 32,
+    };
 
-    if public_key.len() != 32 {
+    if public_key.len() != expected_public_key_len {
         return Err(EchError::ParseFailed(format!(
-            "Invalid public key length: expected 32, got {}",
+            "Invalid public key length: expected {expected_public_key_len}, got {}",
             public_key.len()
         )));
     }
 
     // Read cipher suites (variable length with 2-byte length prefix)
     let cipher_suites_data = parser.read_length_prefixed_bytes()?;
-    let cipher_suites = parse_cipher_suites(cipher_suites_data)?;
+    let cipher_suites = parse_cipher_suites(cipher_suites_data, kem_id)?;
 
     // Read maximum name length (1 byte)
     let maximum_name_length = parser.read_u8()?;
@@ -196,6 +222,8 @@ fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchRes
 
     Ok(EchConfig {
         version,
+        config_id,
+        kem_id,
         public_key: public_key.to_vec(),
         cipher_suites,
         maximum_name_length,
@@ -206,10 +234,10 @@ fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchRes
 
 /// Parse cipher suites
 /// 解析密码套件
-fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
-    if !data.len().is_multiple_of(6) {
+fn parse_cipher_suites(data: &[u8], kem: HpkeKem) -> EchResult<Vec<HpkeCipherSuite>> {
+    if !data.len().is_multiple_of(4) {
         return Err(EchError::ParseFailed(format!(
-            "Invalid cipher suites length: {} (must be multiple of 6)",
+            "Invalid cipher suites length: {} (must be multiple of 4)",
             data.len()
         )));
     }
@@ -218,12 +246,8 @@ fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
     let mut suites = Vec::new();
 
     while parser.remaining() > 0 {
-        let kem_u16 = parser.read_u16()?;
         let kdf_u16 = parser.read_u16()?;
         let aead_u16 = parser.read_u16()?;
-
-        let kem = HpkeKem::from_u16(kem_u16)
-            .ok_or_else(|| EchError::ParseFailed(format!("Unsupported KEM: 0x{:04x}", kem_u16)))?;
 
         let kdf = HpkeKdf::from_u16(kdf_u16)
             .ok_or_else(|| EchError::ParseFailed(format!("Unsupported KDF: 0x{:04x}", kdf_u16)))?;
@@ -370,9 +394,9 @@ mod tests {
 
     #[test]
     fn test_parse_cipher_suites() {
-        // KEM=0x0020, KDF=0x0001, AEAD=0x0001
-        let data = vec![0x00, 0x20, 0x00, 0x01, 0x00, 0x01];
-        let suites = parse_cipher_suites(&data).unwrap();
+        // KDF=0x0001, AEAD=0x0001
+        let data = vec![0x00, 0x01, 0x00, 0x01];
+        let suites = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256).unwrap();
 
         assert_eq!(suites.len(), 1);
         assert_eq!(suites[0].kem, HpkeKem::X25519HkdfSha256);
@@ -384,10 +408,10 @@ mod tests {
     fn test_parse_cipher_suites_multiple() {
         // Two cipher suites
         let data = vec![
-            0x00, 0x20, 0x00, 0x01, 0x00, 0x01, // Suite 1
-            0x00, 0x20, 0x00, 0x01, 0x00, 0x02, // Suite 2
+            0x00, 0x01, 0x00, 0x01, // Suite 1
+            0x00, 0x01, 0x00, 0x02, // Suite 2
         ];
-        let suites = parse_cipher_suites(&data).unwrap();
+        let suites = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256).unwrap();
 
         assert_eq!(suites.len(), 2);
         assert_eq!(suites[0].aead, HpkeAead::Aes128Gcm);
@@ -396,13 +420,13 @@ mod tests {
 
     #[test]
     fn test_parse_cipher_suites_invalid_length() {
-        let data = vec![0x00, 0x20, 0x00]; // Not multiple of 6
-        let result = parse_cipher_suites(&data);
+        let data = vec![0x00, 0x01, 0x00]; // Not multiple of 4
+        let result = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256);
         assert!(result.is_err());
 
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
-                assert!(msg.contains("must be multiple of 6"));
+                assert!(msg.contains("must be multiple of 4"));
             }
             _ => panic!("Expected ParseFailed error"),
         }
@@ -411,7 +435,7 @@ mod tests {
     #[test]
     fn test_parse_cipher_suites_empty() {
         let data = vec![];
-        let result = parse_cipher_suites(&data);
+        let result = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -423,25 +447,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_cipher_suites_unsupported_kem() {
-        // Invalid KEM=0xFFFF
-        let data = vec![0xFF, 0xFF, 0x00, 0x01, 0x00, 0x01];
-        let result = parse_cipher_suites(&data);
-        assert!(result.is_err());
-
-        match result.unwrap_err() {
-            EchError::ParseFailed(msg) => {
-                assert!(msg.contains("Unsupported KEM"));
-            }
-            _ => panic!("Expected ParseFailed error"),
-        }
-    }
-
-    #[test]
     fn test_parse_cipher_suites_unsupported_kdf() {
         // Invalid KDF=0xFFFF
-        let data = vec![0x00, 0x20, 0xFF, 0xFF, 0x00, 0x01];
-        let result = parse_cipher_suites(&data);
+        let data = vec![0xFF, 0xFF, 0x00, 0x01];
+        let result = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -455,8 +464,8 @@ mod tests {
     #[test]
     fn test_parse_cipher_suites_unsupported_aead() {
         // Invalid AEAD=0xFFFF
-        let data = vec![0x00, 0x20, 0x00, 0x01, 0xFF, 0xFF];
-        let result = parse_cipher_suites(&data);
+        let data = vec![0x00, 0x01, 0xFF, 0xFF];
+        let result = parse_cipher_suites(&data, HpkeKem::X25519HkdfSha256);
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -499,6 +508,8 @@ mod tests {
 
         let config = list.first().unwrap();
         assert_eq!(config.version, EchVersion::Draft13);
+        assert_eq!(config.config_id, 1);
+        assert_eq!(config.kem_id, HpkeKem::X25519HkdfSha256);
         assert_eq!(config.public_key.len(), 32);
         assert_eq!(config.public_name, "public.example.com");
         assert_eq!(config.maximum_name_length, 64);
@@ -583,6 +594,10 @@ mod tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Invalid public key length (16 bytes instead of 32)
         config_list.extend_from_slice(&[0x00, 0x10]);
         config_list.extend_from_slice(&[0x00; 16]);
@@ -621,13 +636,17 @@ mod tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&[0x00; 32]);
 
         // Cipher suites
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20, 0x00, 0x01, 0x00, 0x01]);
+        config_list.extend_from_slice(&[0x00, 0x04]);
+        config_list.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]);
 
         // Maximum name length
         config_list.push(64);
@@ -688,13 +707,16 @@ mod tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
 
-        // Cipher suites length + cipher suite
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        // Cipher suites length + cipher suite (KDF + AEAD)
+        config_list.extend_from_slice(&[0x00, 0x04]);
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 

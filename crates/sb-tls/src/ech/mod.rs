@@ -41,24 +41,24 @@
 //!
 //! - CLI keypair generation: ✅ Complete (app/src/cli/generate.rs)
 //! - CLI 密钥对生成: ✅ 完成 (app/src/cli/generate.rs)
-//! - Runtime handshake integration: 🚧 In Progress
-//! - 运行时握手集成: 🚧 进行中
-//! - rustls ECH support: ⚠️ Limited (as of rustls 0.23)
-//! - rustls ECH 支持: ⚠️ 有限 (截至 rustls 0.23)
+//! - Runtime handshake integration: ✅ Integrated (rustls ECH client, TLS 1.3 only)
+//! - 运行时握手集成: ✅ 已集成（rustls ECH 客户端，仅 TLS 1.3）
+//! - rustls ECH support: ✅ Available (rustls 0.23+)
+//! - rustls ECH 支持: ✅ 可用（rustls 0.23+）
 //!
 //! ## Implementation Notes
 //! ## 实现说明
 //!
-//! rustls 0.23 does not have native ECH support. This implementation provides:
-//! rustls 0.23 没有原生 ECH 支持。此实现提供：
+//! rustls 0.23+ has native client-side ECH support (TLS 1.3 only). This implementation provides:
+//! rustls 0.23+ 有原生客户端 ECH 支持（仅 TLS 1.3）。此实现提供：
 //! 1. ECH configuration structures compatible with sing-box
 //! 1. 与 sing-box 兼容的 ECH 配置结构
 //! 2. ECHConfigList parsing (RFC 9180 format)
 //! 2. ECHConfigList 解析 (RFC 9180 格式)
-//! 3. HPKE encryption primitives
-//! 3. HPKE 加密原语
-//! 4. Custom TLS extension handling (when rustls adds ECH support)
-//! 4. 自定义 TLS 扩展处理（当 rustls 添加 ECH 支持时）
+//! 3. HPKE encryption primitives (legacy tests/fixtures)
+//! 3. HPKE 加密原语（用于测试/固定用例）
+//! 4. rustls ECH wiring in sb-transport
+//! 4. 在 sb-transport 中接入 rustls ECH
 //!
 //! ## References
 //! ## 参考资料
@@ -128,6 +128,7 @@ pub type EchResult<T> = Result<T, EchError>;
 
 /// ECH connector for client-side ECH encryption
 /// 用于客户端 ECH 加密的 ECH 连接器
+#[derive(Debug)]
 pub struct EchConnector {
     /// ECH client configuration
     /// ECH 客户端配置
@@ -142,8 +143,9 @@ impl EchConnector {
     pub fn new(config: EchClientConfig) -> EchResult<Self> {
         config.validate()?;
 
-        let ech_config_list = if let Some(config_bytes) = config.get_config_list() {
-            Some(parser::parse_ech_config_list(config_bytes)?)
+        let ech_config_list = if config.enabled {
+            let config_bytes = config.resolve_config_list()?;
+            Some(parser::parse_ech_config_list(&config_bytes)?)
         } else {
             None
         };
@@ -572,19 +574,17 @@ mod tests {
     fn test_ech_connector_no_config_list() {
         let config = EchClientConfig {
             enabled: true,
-            config: Some("test_config".to_string()),
+            config: None,
             config_list: None,
             pq_signature_schemes_enabled: false,
             dynamic_record_sizing_disabled: None,
         };
 
-        let connector = EchConnector::new(config).unwrap();
-        let result = connector.wrap_tls("example.com");
-
+        let result = EchConnector::new(config);
         assert!(result.is_err());
         match result.unwrap_err() {
             EchError::InvalidConfig(msg) => {
-                assert!(msg.contains("No ECH config list available"));
+                assert!(msg.contains("ECH enabled but no config provided"));
             }
             _ => panic!("Expected InvalidConfig error"),
         }
@@ -827,14 +827,16 @@ mod tests {
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
 
+        // Config id + KEM id
+        config_list.push(0x01);
+        config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
 
-        // Cipher suites length + cipher suite
-        // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
-        config_list.extend_from_slice(&[0x00, 0x06]);
-        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        // Cipher suites length + cipher suite (KDF + AEAD)
+        config_list.extend_from_slice(&[0x00, 0x04]);
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 

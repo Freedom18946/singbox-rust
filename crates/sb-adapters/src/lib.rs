@@ -212,3 +212,9 @@ pub use transport_config::{TransportConfig, TransportType};
 
 /// Register adapter builders with sb-core registry (idempotent).
 pub use register::register_all;
+
+/// Whether the WireGuard endpoint adapter is compiled in this build.
+pub const WIREGUARD_ENDPOINT_AVAILABLE: bool = cfg!(feature = "adapter-wireguard-endpoint");
+
+/// Whether the Tailscale endpoint adapter is compiled in this build.
+pub const TAILSCALE_ENDPOINT_AVAILABLE: bool = cfg!(feature = "adapter-tailscale-endpoint");

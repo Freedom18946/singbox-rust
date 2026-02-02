@@ -1,6 +1,6 @@
 //! REALITY client implementation
 
-use super::auth::RealityAuth;
+use super::auth::{RealityAuth, compute_temp_cert_signature, derive_auth_key};
 use super::config::RealityClientConfig;
 use super::tls_record::{ClientHello, ContentType, HandshakeType, TlsExtension};
 use super::{RealityError, RealityResult};
@@ -9,12 +9,15 @@ use crate::TlsConnector;
 use crate::{UtlsConfig, UtlsFingerprint};
 use async_trait::async_trait;
 use rand::RngCore; // needed for thread_rng().fill_bytes
+use rustls::client::WebPkiServerVerifier;
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tracing::{debug, warn};
+use x509_parser::oid_registry::OID_SIG_ED25519;
+use x509_parser::prelude::parse_x509_certificate;
 
 /// REALITY client connector
 /// REALITY 客户端连接器
@@ -103,13 +106,13 @@ impl RealityConnector {
 
         let short_id = self.config.short_id_bytes().unwrap_or_default();
 
-        // Generate random session data for this connection
-        // This will be used as part of the TLS ClientHello random field
+        // Generate random session data for this connection.
+        // This becomes the TLS ClientHello random field for server-side verification.
         let mut session_data = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut session_data);
 
         // Perform X25519 key exchange to derive shared secret
-        let _shared_secret = self.auth.derive_shared_secret(&server_public_key);
+        let shared_secret = self.auth.derive_shared_secret(&server_public_key);
 
         // Compute authentication hash using shared secret
         let auth_hash = self
@@ -125,6 +128,24 @@ impl RealityConnector {
 
         // Step 2: Create custom TLS config with REALITY certificate verifier.
         // If uTLS is enabled, order cipher suites/ALPN per fingerprint for Go parity.
+        let auth_key = derive_auth_key(shared_secret, &session_data)
+            .map_err(RealityError::HandshakeFailed)?;
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let roots = Arc::new(roots);
+
+        let webpki = WebPkiServerVerifier::builder(roots.clone())
+            .build()
+            .map_err(|e| RealityError::HandshakeFailed(format!("WebPKI verifier init failed: {e}")))?;
+
+        let verifier = Arc::new(RealityVerifier {
+            expected_server_name: self.config.server_name.clone(),
+            auth_key,
+            webpki,
+        });
+
+        crate::ensure_rustls_crypto_provider();
         let mut config: rustls::ClientConfig = {
             #[cfg(feature = "utls")]
             {
@@ -136,22 +157,15 @@ impl RealityConnector {
                 let utls_cfg =
                     UtlsConfig::new(self.config.server_name.clone()).with_fingerprint(fp);
 
-                let mut roots = rustls::RootCertStore::empty();
-                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                let mut c = (*utls_cfg.build_client_config_with_roots(roots)).clone();
-                c.dangerous()
-                    .set_certificate_verifier(Arc::new(RealityVerifier {
-                        expected_server_name: self.config.server_name.clone(),
-                    }));
+                let mut c = (*utls_cfg.build_client_config_with_roots((*roots).clone())).clone();
+                c.dangerous().set_certificate_verifier(verifier.clone());
                 c
             }
             #[cfg(not(feature = "utls"))]
             {
                 rustls::ClientConfig::builder()
                     .dangerous()
-                    .with_custom_certificate_verifier(Arc::new(RealityVerifier {
-                        expected_server_name: self.config.server_name.clone(),
-                    }))
+                    .with_custom_certificate_verifier(verifier.clone())
                     .with_no_client_auth()
             }
         };
@@ -168,8 +182,13 @@ impl RealityConnector {
 
         // Step 3: Wrap the stream with REALITY ClientHello interceptor
         // This will inject the REALITY auth extension into the ClientHello
-        let reality_stream =
-            RealityClientStream::new(stream, self.auth.public_key_bytes(), short_id, auth_hash);
+        let reality_stream = RealityClientStream::new(
+            stream,
+            self.auth.public_key_bytes(),
+            short_id,
+            auth_hash,
+            session_data,
+        );
 
         // Step 4: Perform TLS handshake with forged SNI
         let server_name = rustls_pki_types::ServerName::try_from(self.config.server_name.clone())
@@ -218,6 +237,7 @@ struct RealityClientStream<S> {
     client_public_key: [u8; 32],
     short_id: Vec<u8>,
     auth_hash: [u8; 32],
+    session_data: [u8; 32],
     first_write: bool,
 }
 
@@ -227,12 +247,14 @@ impl<S> RealityClientStream<S> {
         client_public_key: [u8; 32],
         short_id: Vec<u8>,
         auth_hash: [u8; 32],
+        session_data: [u8; 32],
     ) -> Self {
         Self {
             inner,
             client_public_key,
             short_id,
             auth_hash,
+            session_data,
             first_write: true,
         }
     }
@@ -274,6 +296,9 @@ impl<S> RealityClientStream<S> {
         })?;
 
         debug!("Intercepted ClientHello, injecting REALITY auth extension");
+
+        // Overwrite ClientHello random with session data for server auth verification.
+        client_hello.random = self.session_data;
 
         // Add REALITY auth extension
         let reality_ext =
@@ -390,6 +415,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for RealityClientStream<S> {
 struct RealityVerifier {
     /// Expected server name (target domain)
     expected_server_name: String,
+    /// Derived auth key for temporary certificate verification
+    auth_key: [u8; 32],
+    /// WebPKI verifier for real target certificates
+    webpki: Arc<WebPkiServerVerifier>,
 }
 
 impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
@@ -397,10 +426,10 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
     fn verify_server_cert(
         &self,
         end_entity: &rustls_pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        intermediates: &[rustls_pki_types::CertificateDer<'_>],
         server_name: &rustls_pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls_pki_types::UnixTime,
+        ocsp_response: &[u8],
+        now: rustls_pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         // REALITY certificate verification logic:
         //
@@ -424,76 +453,75 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
         let server_name_str = if let rustls_pki_types::ServerName::DnsName(name) = server_name {
             name.as_ref()
         } else {
-            warn!("REALITY: Non-DNS server name, accepting certificate");
-            return Ok(rustls::client::danger::ServerCertVerified::assertion());
+            return Err(rustls::Error::General(
+                "REALITY requires DNS server name".to_string(),
+            ));
         };
 
         // Verify the server name matches our expected target
-        if server_name_str == self.expected_server_name {
-            debug!(
-                "REALITY: Certificate server name matches expected target: {}",
-                self.expected_server_name
-            );
-        } else {
-            debug!(
-                "REALITY: Certificate server name mismatch: expected={}, got={}",
+        if server_name_str != self.expected_server_name {
+            return Err(rustls::Error::General(format!(
+                "REALITY server name mismatch: expected={}, got={}",
                 self.expected_server_name, server_name_str
-            );
+            )));
         }
 
-        // In a complete implementation, we would:
         // 1. Try to verify the certificate as a REALITY temporary cert
-        //    - Derive expected cert fingerprint from shared_secret
-        //    - Compare with actual cert fingerprint
-        //    - If match: we're in proxy mode (authenticated)
-        //
-        // 2. If not a temporary cert, verify it's a valid cert for the target domain
-        //    - Use standard PKI verification
-        //    - If valid: we're in crawler mode (fallback)
-        //
-        // 3. If neither: reject the connection
-        //
-        // For now, we accept any certificate that matches the server name
-        // This allows both proxy and crawler modes to work
+        if self.verify_temporary_cert(end_entity)? {
+            debug!("REALITY: Temporary certificate verified");
+            return Ok(rustls::client::danger::ServerCertVerified::assertion());
+        }
 
-        debug!("REALITY: Accepting certificate (proxy or crawler mode)");
-
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        // 2. Otherwise, verify as a real target certificate via WebPKI
+        self.webpki
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
     }
 
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        // Accept TLS 1.2 signatures for compatibility
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.webpki.verify_tls12_signature(message, cert, dss)
     }
 
     fn verify_tls13_signature(
         &self,
-        _message: &[u8],
-        _cert: &rustls_pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls_pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        // Accept TLS 1.3 signatures
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.webpki.verify_tls13_signature(message, cert, dss)
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        // Support common signature schemes
-        vec![
-            rustls::SignatureScheme::RSA_PKCS1_SHA256,
-            rustls::SignatureScheme::RSA_PKCS1_SHA384,
-            rustls::SignatureScheme::RSA_PKCS1_SHA512,
-            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
-            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
-            rustls::SignatureScheme::ED25519,
-            rustls::SignatureScheme::RSA_PSS_SHA256,
-            rustls::SignatureScheme::RSA_PSS_SHA384,
-            rustls::SignatureScheme::RSA_PSS_SHA512,
-        ]
+        self.webpki.supported_verify_schemes()
+    }
+}
+
+impl RealityVerifier {
+    fn verify_temporary_cert(
+        &self,
+        end_entity: &rustls_pki_types::CertificateDer<'_>,
+    ) -> Result<bool, rustls::Error> {
+        let (_, cert) = parse_x509_certificate(end_entity.as_ref())
+            .map_err(|_| rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding))?;
+
+        if cert.signature_algorithm.algorithm != OID_SIG_ED25519 {
+            return Ok(false);
+        }
+
+        if cert.signature_value.unused_bits != 0 {
+            return Ok(false);
+        }
+
+        let public_key = cert.subject_pki.subject_public_key.data.as_ref();
+        let expected = compute_temp_cert_signature(&self.auth_key, public_key).map_err(|e| {
+            rustls::Error::General(format!("REALITY temp cert signature failed: {e}"))
+        })?;
+
+        Ok(cert.signature_value.data.as_ref() == expected.as_slice())
     }
 }
 
@@ -525,6 +553,7 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
 #[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
     use super::*;
+    use super::super::tls_record::ExtensionType;
 
     #[test]
     fn test_reality_connector_creation() {
@@ -556,5 +585,49 @@ mod tests {
 
         let connector = RealityConnector::new(config);
         assert!(connector.is_err());
+    }
+
+    #[test]
+    fn test_reality_client_injects_session_data_into_random() {
+        let hello = ClientHello {
+            version: 0x0303, // TLS 1.2
+            random: [0x11; 32],
+            session_id: vec![],
+            cipher_suites: vec![0x1301],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        let handshake = hello.serialize().unwrap();
+        let mut record = Vec::new();
+        record.push(ContentType::Handshake as u8);
+        record.extend_from_slice(&0x0303u16.to_be_bytes());
+        record.extend_from_slice(
+            &u16::try_from(handshake.len())
+                .unwrap_or(u16::MAX)
+                .to_be_bytes(),
+        );
+        record.extend_from_slice(&handshake);
+
+        let session_data = [0xAB; 32];
+        let stream = RealityClientStream::new(
+            (),
+            [0x22; 32],
+            vec![0x01, 0x02],
+            [0x33; 32],
+            session_data,
+        );
+
+        let modified = stream.inject_reality_extension(&record).unwrap();
+        let record_len = u16::from_be_bytes([modified[3], modified[4]]) as usize;
+        let handshake_data = &modified[5..5 + record_len];
+        let parsed = ClientHello::parse(handshake_data).unwrap();
+
+        assert_eq!(parsed.random, session_data);
+        assert!(
+            parsed
+                .find_extension(ExtensionType::RealityAuth as u16)
+                .is_some()
+        );
     }
 }

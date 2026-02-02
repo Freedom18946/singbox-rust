@@ -1,15 +1,20 @@
 //! REALITY server implementation
 
-use super::auth::RealityAuth;
+use super::auth::{RealityAuth, compute_temp_cert_signature, derive_auth_key};
 use super::config::RealityServerConfig;
 use super::{RealityError, RealityResult};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ED25519};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
+use x509_parser::extensions::GeneralName;
+use x509_parser::prelude::parse_x509_certificate;
 
 /// Combined trait for stream types used in fallback
 /// 用于回退的流类型的组合 trait
@@ -43,6 +48,7 @@ impl<T> FallbackStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 pub struct RealityAcceptor {
     config: Arc<RealityServerConfig>,
     auth: RealityAuth,
+    target_chain: Arc<RwLock<Option<TargetChain>>>,
 }
 
 impl RealityAcceptor {
@@ -72,6 +78,7 @@ impl RealityAcceptor {
         Ok(Self {
             config: Arc::new(config),
             auth,
+            target_chain: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -117,7 +124,7 @@ impl RealityAcceptor {
 
         // Step 1: Read and parse ClientHello to extract REALITY extensions
         // We need to buffer the data so we can replay it for the TLS handshake
-        let (client_public_key, short_id, auth_hash, sni, client_hello_data) =
+        let (client_public_key, short_id, auth_hash, session_data, sni, client_hello_data) =
             self.parse_and_buffer_client_hello(&mut stream).await?;
 
         debug!(
@@ -141,10 +148,7 @@ impl RealityAcceptor {
             return self.fallback_to_target(replay_stream).await;
         }
 
-        // Step 4: Verify authentication hash
-        // Note: session_data should be derived from the TLS handshake random values
-        // For now, we use a placeholder that matches the client implementation
-        let session_data = [0u8; 32];
+        // Step 4: Verify authentication hash using ClientHello random as session data
         if !self
             .auth
             .verify_auth_hash(&client_public_key, &short_id, &session_data, &auth_hash)
@@ -156,10 +160,18 @@ impl RealityAcceptor {
 
         info!("REALITY authentication successful");
 
+        let shared_secret = self.auth.derive_shared_secret(&client_public_key);
+        let auth_key = derive_auth_key(shared_secret, &session_data)
+            .map_err(RealityError::HandshakeFailed)?;
+
+        let target_chain = self.ensure_target_chain(&sni).await;
+
         // Step 5: Complete TLS handshake with temporary certificate
         // Replay the ClientHello data for rustls
         let replay_stream = ReplayStream::new(stream, client_hello_data);
-        let tls_stream = self.complete_tls_handshake(replay_stream, &sni).await?;
+        let tls_stream = self
+            .complete_tls_handshake(replay_stream, &sni, &auth_key, target_chain.as_ref())
+            .await?;
 
         Ok(RealityConnection::Proxy(tls_stream))
     }
@@ -167,13 +179,13 @@ impl RealityAcceptor {
     /// Parse `ClientHello` and buffer the data for replay
     /// 解析 `ClientHello` 并缓冲数据以供重放
     ///
-    /// Returns: (`client_public_key`, `short_id`, `auth_hash`, sni, `buffered_data`)
-    /// 返回：(`client_public_key`, `short_id`, `auth_hash`, sni, `buffered_data`)
+    /// Returns: (`client_public_key`, `short_id`, `auth_hash`, `session_data`, sni, `buffered_data`)
+    /// 返回：(`client_public_key`, `short_id`, `auth_hash`, `session_data`, sni, `buffered_data`)
     #[allow(clippy::cognitive_complexity)] // Parsing and validation sequence is linear but branching by spec; splitting reduces readability. Revisit later.
     async fn parse_and_buffer_client_hello<S>(
         &self,
         stream: &mut S,
-    ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], String, Vec<u8>)>
+    ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], [u8; 32], String, Vec<u8>)>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
@@ -221,6 +233,8 @@ impl RealityAcceptor {
             client_hello.extensions.len()
         );
 
+        let session_data = client_hello.random;
+
         // Extract SNI
         let sni = client_hello
             .get_sni()
@@ -250,7 +264,14 @@ impl RealityAcceptor {
         buffered_data.extend_from_slice(&header_buf);
         buffered_data.extend_from_slice(&handshake_data);
 
-        Ok((client_public_key, short_id, auth_hash, sni, buffered_data))
+        Ok((
+            client_public_key,
+            short_id,
+            auth_hash,
+            session_data,
+            sni,
+            buffered_data,
+        ))
     }
 
     /// Complete TLS handshake with temporary certificate
@@ -259,32 +280,30 @@ impl RealityAcceptor {
         &self,
         stream: S,
         server_name: &str,
+        auth_key: &[u8; 32],
+        target_chain: Option<&TargetChain>,
     ) -> RealityResult<crate::TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-        use std::sync::Arc;
-
         debug!("Completing TLS handshake for REALITY connection");
 
-        // Generate a temporary self-signed certificate
-        // In a production implementation, this would be derived from the shared secret
-        let cert =
-            rcgen::generate_simple_self_signed(vec![server_name.to_string()]).map_err(|e| {
-                RealityError::HandshakeFailed(format!("Failed to generate certificate: {e}"))
-            })?;
-
-        let cert_der = CertificateDer::from(cert.cert.der().to_vec());
-
-        let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der()).map_err(|_| {
-            RealityError::HandshakeFailed("Failed to serialize private key".to_string())
-        })?;
+        let (cert_der, key_der) = self.generate_temporary_certificate(
+            server_name,
+            auth_key,
+            target_chain.and_then(|c| c.template.as_ref()),
+        )?;
 
         // Create TLS server config with the temporary certificate
+        let mut chain = vec![cert_der];
+        if let Some(chain_info) = target_chain {
+            chain.extend(chain_info.intermediates.iter().cloned());
+        }
+
+        crate::ensure_rustls_crypto_provider();
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
-            .with_single_cert(vec![cert_der], key_der)
+            .with_single_cert(chain, key_der)
             .map_err(|e| {
                 RealityError::HandshakeFailed(format!("Failed to create TLS config: {e}"))
             })?;
@@ -300,6 +319,36 @@ impl RealityAcceptor {
         debug!("REALITY TLS handshake completed successfully");
 
         Ok(Box::new(tls_stream))
+    }
+
+    fn generate_temporary_certificate(
+        &self,
+        server_name: &str,
+        auth_key: &[u8; 32],
+        template: Option<&TargetCertTemplate>,
+    ) -> RealityResult<(CertificateDer<'static>, PrivateKeyDer<'static>)> {
+        let key_pair = KeyPair::generate_for(&PKCS_ED25519).map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to generate temp keypair: {e}"))
+        })?;
+
+        let params = build_certificate_params(server_name, template).map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to build cert params: {e}"))
+        })?;
+        let cert = params.self_signed(&key_pair).map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to generate certificate: {e}"))
+        })?;
+
+        let mut cert_der = cert.der().to_vec();
+        let signature = compute_temp_cert_signature(auth_key, key_pair.public_key_raw())
+            .map_err(RealityError::HandshakeFailed)?;
+        replace_cert_signature(&mut cert_der, &signature)?;
+
+        let cert_der = CertificateDer::from(cert_der);
+        let key_der = PrivateKeyDer::try_from(key_pair.serialize_der()).map_err(|_| {
+            RealityError::HandshakeFailed("Failed to serialize private key".to_string())
+        })?;
+
+        Ok((cert_der, key_der))
     }
 
     /// Fallback to target website
@@ -332,6 +381,296 @@ impl RealityAcceptor {
             target: target_stream,
         })
     }
+}
+
+#[derive(Clone, Debug)]
+struct TargetChain {
+    intermediates: Vec<CertificateDer<'static>>,
+    template: Option<TargetCertTemplate>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct TargetCertTemplate {
+    common_name: Option<String>,
+    dns_names: Vec<String>,
+    not_before: Option<time::OffsetDateTime>,
+    not_after: Option<time::OffsetDateTime>,
+}
+
+impl RealityAcceptor {
+    async fn ensure_target_chain(&self, server_name: &str) -> Option<TargetChain> {
+        {
+            let guard = self.target_chain.read().await;
+            if let Some(chain) = guard.as_ref() {
+                return Some(chain.clone());
+            }
+        }
+
+        match self.fetch_target_chain(server_name).await {
+            Ok(chain) => {
+                let mut guard = self.target_chain.write().await;
+                *guard = Some(chain.clone());
+                Some(chain)
+            }
+            Err(e) => {
+                warn!("REALITY target chain capture failed: {}", e);
+                None
+            }
+        }
+    }
+
+    async fn fetch_target_chain(&self, server_name: &str) -> RealityResult<TargetChain> {
+        let target = self.config.target.clone();
+        let stream = TcpStream::connect(&target)
+            .await
+            .map_err(|e| RealityError::TargetFailed(format!("failed to connect: {e}")))?;
+
+        crate::ensure_rustls_crypto_provider();
+        let config = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))
+            .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+
+        let server_name = rustls_pki_types::ServerName::try_from(server_name.to_string())
+            .map_err(|e| RealityError::TargetFailed(format!("invalid server name: {e:?}")))?;
+
+        let tls_stream = timeout(Duration::from_secs(5), connector.connect(server_name, stream))
+            .await
+            .map_err(|_| RealityError::TargetFailed("target TLS handshake timeout".to_string()))?
+            .map_err(|e| RealityError::TargetFailed(format!("target TLS handshake failed: {e}")))?;
+
+        let (_, session) = tls_stream.get_ref();
+        let certs = session.peer_certificates().ok_or_else(|| {
+            RealityError::TargetFailed("target did not provide certificates".to_string())
+        })?;
+
+        let mut intermediates = Vec::new();
+        for cert in certs.iter().skip(1) {
+            intermediates.push(CertificateDer::from(cert.as_ref().to_vec()));
+        }
+
+        let template = certs
+            .first()
+            .and_then(|cert| build_template_from_leaf(cert.as_ref()).ok());
+
+        Ok(TargetChain {
+            intermediates,
+            template,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct AcceptAnyCertVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for AcceptAnyCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls_pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls_pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls_pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::ED25519,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+        ]
+    }
+}
+
+fn build_certificate_params(
+    server_name: &str,
+    template: Option<&TargetCertTemplate>,
+) -> Result<CertificateParams, String> {
+    let mut dns_names = template
+        .map(|t| t.dns_names.clone())
+        .unwrap_or_default();
+    if dns_names.is_empty() {
+        dns_names.push(server_name.to_string());
+    }
+
+    let mut params = CertificateParams::new(dns_names)
+        .map_err(|e| format!("invalid SANs for cert params: {e}"))?;
+
+    let mut dn = DistinguishedName::new();
+    if let Some(t) = template
+        && let Some(cn) = &t.common_name
+    {
+        dn.push(DnType::CommonName, cn.clone());
+    } else {
+        dn.push(DnType::CommonName, server_name.to_string());
+    }
+    params.distinguished_name = dn;
+
+    if let Some(t) = template {
+        if let Some(nb) = t.not_before {
+            params.not_before = nb;
+        }
+        if let Some(na) = t.not_after {
+            params.not_after = na;
+        }
+    }
+
+    Ok(params)
+}
+
+fn build_template_from_leaf(cert_der: &[u8]) -> Result<TargetCertTemplate, String> {
+    let (_, cert) =
+        parse_x509_certificate(cert_der).map_err(|e| format!("parse x509 cert: {e}"))?;
+
+    let common_name = cert
+        .subject()
+        .iter_common_name()
+        .next()
+        .and_then(|cn| cn.as_str().ok())
+        .map(|s| s.to_string());
+
+    let mut dns_names = Vec::new();
+    if let Ok(Some(san)) = cert.subject_alternative_name() {
+        for name in san.value.general_names.iter() {
+            if let GeneralName::DNSName(dns) = name {
+                dns_names.push((*dns).to_string());
+            }
+        }
+    }
+
+    Ok(TargetCertTemplate {
+        common_name,
+        dns_names,
+        not_before: Some(cert.validity().not_before.to_datetime()),
+        not_after: Some(cert.validity().not_after.to_datetime()),
+    })
+}
+
+fn replace_cert_signature(cert_der: &mut [u8], signature: &[u8]) -> RealityResult<()> {
+    let mut idx = 0usize;
+    if cert_der.get(idx) != Some(&0x30) {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate: expected sequence".to_string(),
+        ));
+    }
+    idx += 1;
+    let (cert_len, cert_len_len) = read_der_length(&cert_der[idx..])?;
+    idx += cert_len_len;
+    if idx + cert_len > cert_der.len() {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate length".to_string(),
+        ));
+    }
+
+    if cert_der.get(idx) != Some(&0x30) {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate: expected tbsCertificate".to_string(),
+        ));
+    }
+    idx += 1;
+    let (tbs_len, tbs_len_len) = read_der_length(&cert_der[idx..])?;
+    idx += tbs_len_len + tbs_len;
+
+    if cert_der.get(idx) != Some(&0x30) {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate: expected signatureAlgorithm".to_string(),
+        ));
+    }
+    idx += 1;
+    let (alg_len, alg_len_len) = read_der_length(&cert_der[idx..])?;
+    idx += alg_len_len + alg_len;
+
+    if cert_der.get(idx) != Some(&0x03) {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate: expected signatureValue".to_string(),
+        ));
+    }
+    idx += 1;
+    let (sig_len, sig_len_len) = read_der_length(&cert_der[idx..])?;
+    idx += sig_len_len;
+    if sig_len < 1 {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate signature length".to_string(),
+        ));
+    }
+    let unused_bits = *cert_der.get(idx).ok_or_else(|| {
+        RealityError::HandshakeFailed("Invalid certificate signature".to_string())
+    })?;
+    if unused_bits != 0 {
+        return Err(RealityError::HandshakeFailed(
+            "Unsupported certificate signature padding".to_string(),
+        ));
+    }
+    idx += 1;
+
+    let sig_bytes_len = sig_len - 1;
+    if sig_bytes_len != signature.len() {
+        return Err(RealityError::HandshakeFailed(
+            "Signature length mismatch".to_string(),
+        ));
+    }
+    let end = idx + sig_bytes_len;
+    if end > cert_der.len() {
+        return Err(RealityError::HandshakeFailed(
+            "Invalid certificate signature bounds".to_string(),
+        ));
+    }
+
+    cert_der[idx..end].copy_from_slice(signature);
+    Ok(())
+}
+
+fn read_der_length(data: &[u8]) -> RealityResult<(usize, usize)> {
+    let first = *data.get(0).ok_or_else(|| {
+        RealityError::HandshakeFailed("Invalid DER length".to_string())
+    })?;
+    if first & 0x80 == 0 {
+        return Ok((first as usize, 1));
+    }
+
+    let num_bytes = (first & 0x7f) as usize;
+    if num_bytes == 0 || num_bytes > 4 {
+        return Err(RealityError::HandshakeFailed(
+            "Unsupported DER length encoding".to_string(),
+        ));
+    }
+    if data.len() < 1 + num_bytes {
+        return Err(RealityError::HandshakeFailed(
+            "Truncated DER length".to_string(),
+        ));
+    }
+    let mut len = 0usize;
+    for b in &data[1..=num_bytes] {
+        len = (len << 8) | (*b as usize);
+    }
+    Ok((len, 1 + num_bytes))
 }
 
 /// REALITY connection type
@@ -495,6 +834,8 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ReplayStream<S> {
 #[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
     use super::*;
+    use x509_parser::oid_registry::OID_SIG_ED25519;
+    use x509_parser::prelude::parse_x509_certificate;
 
     #[test]
     fn test_reality_acceptor_creation() {
@@ -526,5 +867,42 @@ mod tests {
 
         let acceptor = RealityAcceptor::new(config);
         assert!(acceptor.is_err());
+    }
+
+    #[test]
+    fn test_temporary_cert_signature_hmac() {
+        let auth_key = [0x11u8; 32];
+        let key_pair = KeyPair::generate_for(&PKCS_ED25519).unwrap();
+        let params = CertificateParams::new(vec!["example.com".to_string()]).unwrap();
+        let cert = params.self_signed(&key_pair).unwrap();
+
+        let mut cert_der = cert.der().to_vec();
+        let signature = compute_temp_cert_signature(&auth_key, key_pair.public_key_raw()).unwrap();
+        replace_cert_signature(&mut cert_der, &signature).unwrap();
+
+        let (_, parsed) = parse_x509_certificate(&cert_der).unwrap();
+        assert_eq!(parsed.signature_algorithm.algorithm, OID_SIG_ED25519);
+        assert_eq!(parsed.signature_value.data, signature.as_slice());
+    }
+
+    #[test]
+    fn test_target_template_from_leaf() {
+        let key_pair = KeyPair::generate_for(&PKCS_ED25519).unwrap();
+        let mut params = CertificateParams::new(vec![
+            "example.com".to_string(),
+            "www.example.com".to_string(),
+        ])
+        .unwrap();
+        params
+            .distinguished_name
+            .push(DnType::CommonName, "example.com");
+        let cert = params.self_signed(&key_pair).unwrap();
+
+        let template = build_template_from_leaf(cert.der().as_ref()).unwrap();
+        assert_eq!(template.common_name, Some("example.com".to_string()));
+        assert!(template.dns_names.contains(&"example.com".to_string()));
+        assert!(template.dns_names.contains(&"www.example.com".to_string()));
+        assert!(template.not_before.is_some());
+        assert!(template.not_after.is_some());
     }
 }

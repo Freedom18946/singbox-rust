@@ -1,6 +1,7 @@
 # User Guide
 
 Complete guide to configuring and using singbox-rust.
+Configuration accepts a small set of Go-compatible aliases; see the configuration overview for details.
 
 ---
 

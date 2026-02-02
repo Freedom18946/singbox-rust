@@ -256,11 +256,14 @@ outbounds:
     outbounds: [proxy-us-1, proxy-us-2, proxy-jp]
     url: https://www.google.com/generate_204
     interval: 300s
+    timeout_ms: 3000
     tolerance: 50ms
 
 route:
   default: auto-select
 ```
+
+Use `interval_ms`/`timeout_ms`/`tolerance_ms` for millisecond precision if needed. `members` is accepted as an alias for `outbounds` in selector/urltest configs.
 
 **Manual selector alternative**:
 

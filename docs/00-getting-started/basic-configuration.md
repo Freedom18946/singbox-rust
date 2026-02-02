@@ -133,7 +133,9 @@ outbounds:
 - `block` - Block/reject connection
 - `shadowsocks`, `vmess`, `vless`, `trojan` - Proxy protocols
 - `selector` - Manual outbound selection
-- `urltest` - Automatic selection based on health checks
+- `urltest` - Automatic selection based on health checks (supports `interval`/`timeout`/`tolerance` or `*_ms`)
+
+Some outbounds accept compatibility aliases (for example `user` for `username`). See [Outbound Configuration](../01-user-guide/configuration/outbounds.md) for details.
 
 See [Outbound Configuration](../01-user-guide/configuration/outbounds.md) for all types.
 

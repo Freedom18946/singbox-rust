@@ -47,6 +47,7 @@ route:
 
 - Most objects support `tag` as the primary identifier. `name` is accepted as an alias.
 - Route rules can reference outbounds by `tag`/`name` via `outbound` or `to`.
+- Compatibility aliases are accepted for select fields (for example `user` for `username`, `auth_str` for Hysteria v1, URLTest `*_ms` timing keys, and selector/urltest `outbounds` as an alias for `members`).
 
 ## Related
 

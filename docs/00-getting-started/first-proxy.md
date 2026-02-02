@@ -416,11 +416,14 @@ outbounds:
     outbounds: [proxy-us, proxy-jp]
     url: https://www.google.com/generate_204
     interval: 300s
+    timeout_ms: 3000
     tolerance: 50ms
 
 route:
   default: auto-proxy
 ```
+
+Timing fields accept seconds/duration strings or `*_ms` values for millisecond precision. `members` is accepted as an alias for `outbounds` in selector/urltest configs.
 
 See [Examples Index](../08-examples/README.md).
 

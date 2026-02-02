@@ -4,6 +4,8 @@
 
 ECH (Encrypted Client Hello) is a TLS extension that encrypts the ClientHello message to prevent traffic analysis and SNI-based blocking. This implementation provides runtime integration with rustls for ECH support.
 
+Note: For production TLS handshakes, prefer rustls ECH via `sb-transport` (it uses `ClientConfig::with_ech`). `EchConnector::wrap_tls` remains a legacy/fixture helper and is not used by the rustls handshake path.
+
 ## Features
 
 - ✅ ECH configuration parsing (ECHConfigList)
@@ -155,7 +157,7 @@ let tls_dialer = TlsDialer {
 };
 
 // The ECH payload would be embedded in the TLS handshake
-// (requires rustls ECH support or custom TLS implementation)
+// rustls ECH mode handles the extension during the handshake
 ```
 
 ## Testing
@@ -180,20 +182,21 @@ cargo run --package sb-tls --example ech_example --features ech
 - ✅ ClientHello encryption (HPKE)
 - ✅ ECH payload construction
 - ✅ ECH acceptance verification
-- ⚠️ Full rustls integration (requires rustls ECH support)
+- ✅ rustls client-side ECH integration (TLS 1.3 only)
+- ⚠️ Server-side ECH and QUIC ECH pending
 
 ### rustls 0.23 Compatibility
 
-rustls 0.23 does not have native ECH support. This implementation provides:
+rustls 0.23+ provides client-side ECH support. This implementation provides:
 
 1. ECH configuration structures
-2. HPKE encryption primitives
-3. ECH payload construction
-4. Foundation for future rustls ECH integration
+2. HPKE encryption primitives (legacy tests/fixtures)
+3. rustls ECH wiring in sb-transport
+4. Foundation for QUIC/server-side ECH integration
 
 ### Future Work
 
-- [ ] Full rustls ECH integration when available
+- [ ] Server-side ECH integration
 - [ ] ECH-QUIC alignment for QUIC transport
 - [ ] Additional cipher suite support
 - [ ] ECH retry configuration handling

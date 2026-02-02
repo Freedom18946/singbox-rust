@@ -9,8 +9,8 @@ This module provides ECH (Encrypted Client Hello) support for singbox-rust, impl
 ### ✅ Completed (Task 2.1)
 
 1. **Research**: rustls ECH support status
-   - rustls 0.23 does not have native ECH support
-   - Custom implementation required using HPKE primitives
+   - rustls 0.23+ provides client-side ECH support (TLS 1.3 only)
+   - Runtime handshakes integrate rustls ECH mode
    - Compatible with sing-box ECH configuration format
 
 2. **Module Structure**: Created `crates/sb-tls/src/ech/`
@@ -38,7 +38,11 @@ This module provides ECH (Encrypted Client Hello) support for singbox-rust, impl
    - DHKEM(X25519, HKDF-SHA256) key encapsulation
    - HKDF-SHA256 key derivation
    - AES-128-GCM authenticated encryption
-   - RFC 9180 compliant
+   - RFC 9180 compatible (used for legacy tests/fixtures)
+
+6. **Runtime Integration**:
+   - rustls ECH client handshake wiring in sb-transport (TLS 1.3 only)
+   - ECH acceptance status surfaced via rustls `EchStatus`
 
 ## Architecture
 
@@ -147,24 +151,17 @@ Compatible with sing-box ECH configuration:
 
 ## Next Steps (Future Tasks)
 
-### Task 2.2: ECH Connector Implementation
-- Implement `EchConnector` struct
-- Integrate with rustls TLS connector
-- ClientHello encryption logic
-- ECH extension handling
-
 ### Task 2.3: QUIC-ECH Alignment
 - QUIC transport ECH support
 - Different handshake flow handling
 - QUIC-specific ECH configuration
 
-### Task 2.4: Runtime Integration
-- Wire ECH into outbound adapters
-- Configuration loading
-- Error handling and fallback
+### Task 2.4: Server-Side ECH
+- ECH key schedule + decryption
+- HelloRetryRequest handling
+- Retry configs / rejection logic
 
 ### Task 2.5: Testing
-- Unit tests for encryption/decryption
 - E2E tests with packet capture
 - Compatibility tests with upstream sing-box
 
@@ -193,8 +190,9 @@ All tests passing ✅
 
 ## Notes
 
-- rustls 0.23 does not have native ECH support
-- Custom TLS extension handling will be required
+- rustls 0.23+ provides client-side ECH support (TLS 1.3 only)
+- Server-side ECH is not yet integrated
 - HPKE implementation follows RFC 9180
 - Compatible with sing-box configuration format
 - Post-quantum algorithms not yet implemented
+- `EchConnector::wrap_tls` is a legacy/fixture helper; rustls handles real ECH handshakes

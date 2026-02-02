@@ -59,7 +59,7 @@ router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess"
 observe = ["router", "sb-metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
-ssh = ["sb-core/out_ssh"]
+ssh = ["sb-adapters/ssh"]
 tools = ["sb-core", "reqwest", "router", "adapters"]
 tools_http3 = ["reqwest/http3"]
 reqwest_unstable = []
@@ -97,10 +97,10 @@ strict_warnings = []
 config_schema = ["jsonschema"]
 tls-rustls = []
 dns-proto = ["hickory-proto"]
-adapter-hysteria = ["sb-core/out_hysteria"]
-adapter-hysteria2 = ["sb-core/out_hysteria2"]
-adapter-ssh = ["sb-core/out_ssh"]
-adapter-tuic = ["sb-core/out_tuic"]
+adapter-hysteria = ["sb-adapters/adapter-hysteria"]
+adapter-hysteria2 = ["sb-adapters/adapter-hysteria2"]
+adapter-ssh = ["sb-adapters/adapter-ssh"]
+adapter-tuic = ["sb-adapters/adapter-tuic"]
 v2ray_transport = ["sb-core/v2ray_transport"]
 adapter-naive = ["sb-adapters/adapter-naive"]
 shadowsocks = ["sb-adapters/adapter-shadowsocks"]
@@ -123,6 +123,8 @@ adapters = [
     "sb-adapters/http",
     "sb-adapters/adapter-socks",
     "sb-adapters/socks",
+    "sb-adapters/dns",
+    "sb-adapters/adapter-dns",
     "sb-adapters/adapter-shadowsocks",
     "sb-adapters/shadowsocks",
     "sb-adapters/adapter-trojan",
@@ -137,6 +139,7 @@ adapters = [
     "sb-adapters/adapter-tuic",
     "sb-adapters/adapter-shadowtls",
     "sb-adapters/adapter-anytls",
+    "sb-adapters/adapter-ssh",
     "sb-adapters/adapter-wireguard",
     "adapter-wireguard-endpoint",
     "sb-adapters/adapter-tun",
@@ -171,7 +174,7 @@ hickory-proto = ["dep:hickory-proto"]
 adapter-http = ["sb-adapters/adapter-http"]
 out_tuic = ["sb-core/out_tuic"]
 out_hysteria2 = ["sb-core/out_hysteria2"]
-adapter-dns = []
+adapter-dns = ["sb-adapters/adapter-dns"]
 adapter-trojan = ["sb-adapters/adapter-trojan"]
 adapter-vless = ["sb-adapters/adapter-vless"]
 adapter-vmess = ["sb-adapters/adapter-vmess"]

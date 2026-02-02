@@ -87,14 +87,16 @@ fn create_example_ech_config() -> String {
     let config_start = config_list.len();
     config_list.extend_from_slice(&[0x00, 0x00]);
 
+    // Config id + KEM id
+    config_list.push(0x01);
+    config_list.extend_from_slice(&[0x00, 0x20]); // X25519
+
     // Public key length + public key (32 bytes for X25519)
     config_list.extend_from_slice(&[0x00, 0x20]);
     config_list.extend_from_slice(public_key.as_bytes());
 
-    // Cipher suites length + cipher suite
-    // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
-    config_list.extend_from_slice(&[0x00, 0x06]);
-    config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+    // Cipher suites length + cipher suite (KDF + AEAD)
+    config_list.extend_from_slice(&[0x00, 0x04]);
     config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
     config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
 

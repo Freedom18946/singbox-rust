@@ -85,6 +85,8 @@ bench-*.txt
 *.pid
 *.out
 *.err
+check_log.txt
+test_output.txt
 
 # Debug/Release directories (if placed outside target/)
 debug/

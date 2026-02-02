@@ -6886,6 +6886,8 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "hex",
+ "hkdf",
+ "hmac 0.12.1",
  "instant-acme",
  "rand 0.8.5",
  "rcgen 0.13.2",
@@ -6897,11 +6899,13 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.17",
+ "time",
  "tokio",
  "tokio-rustls",
  "tracing",
  "webpki-roots 0.26.11",
  "x25519-dalek",
+ "x509-parser 0.18.0",
 ]
 
 [[package]]

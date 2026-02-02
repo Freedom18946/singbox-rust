@@ -29,6 +29,10 @@ outbounds:
 
 - Some outbounds support transport and TLS options.
 - Selector/URLTest outbounds can route to other outbounds.
+- Selector/URLTest accept `members` or `outbounds` for the outbound list, and `default` to pin the initial choice.
+- URLTest timing accepts `interval`/`timeout` in seconds or duration strings (e.g., `10s`), plus `interval_ms`/`timeout_ms`/`tolerance_ms` for millisecond precision (`tolerance` also accepts duration strings).
+- Credential fields accept `user` as an alias for `username` (SSH/HTTP/SOCKS).
+- Prefer `members`; `outbounds` is kept for Go config compatibility.
 - Prefer `tag`; `name` is accepted for compatibility.
 
 ## Related

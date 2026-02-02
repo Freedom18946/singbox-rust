@@ -41,6 +41,7 @@ route:
 - Bandwidth fields are required for Hysteria2.
 - QUIC uses TLS under the hood; trust settings are shared.
 - Keep `up_mbps/down_mbps` aligned with real link capacity.
+- Hysteria v1 accepts `auth` and the Go-compatible alias `auth_str` for authentication.
 
 ## Related
 

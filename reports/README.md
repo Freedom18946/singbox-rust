@@ -1,14 +1,29 @@
 # Reports Directory
 
-This directory contains runtime-generated test reports and logs.
+This directory contains curated project reports (tracked) plus runtime-generated logs.
 
 ## Directory Structure
 
 ```
 reports/
-├── README.md           # This file
-└── stress-tests/       # Stress test execution logs (runtime-generated)
+├── README.md                      # This file
+├── ACCEPTANCE_QC_2025-11-24.md    # QA acceptance report (tracked)
+├── GO_DIFF_ANALYSIS_2026-01-31.md # Go vs Rust parity analysis (tracked)
+├── PERFORMANCE_REPORT.md          # Performance baseline summary (tracked)
+├── TEST_COVERAGE.md               # Test coverage map (tracked)
+├── VERIFICATION_RECORD.md         # Verification evidence (tracked)
+└── stress-tests/                  # Stress test execution logs (runtime-generated)
 ```
+
+## Tracked Reports
+
+Tracked reports provide authoritative status snapshots and verification evidence:
+
+- `ACCEPTANCE_QC_2025-11-24.md`: QA acceptance evidence
+- `GO_DIFF_ANALYSIS_2026-01-31.md`: Go vs Rust parity analysis
+- `PERFORMANCE_REPORT.md`: performance baseline summary
+- `TEST_COVERAGE.md`: test coverage map
+- `VERIFICATION_RECORD.md`: verification record
 
 ## Stress Tests
 
@@ -68,10 +83,11 @@ open target/criterion/report/index.html
 
 ## Important Notes
 
-- ✅ This directory contains **runtime-generated logs only**
+- ✅ Tracked reports live here and are maintained over time
+- ✅ Runtime-generated logs belong under `stress-tests/`
 - ✅ Benchmark results are in `target/criterion/` (not here)
-- ❌ Do not commit log files to git
-- ❌ Do not create manual documentation here (use `/docs/` instead)
+- ❌ Do not commit runtime log files to git
+- ❌ Do not place general documentation here (use `/docs/` instead)
 
 ## See Also
 
@@ -82,5 +98,5 @@ open target/criterion/report/index.html
 
 ---
 
-**Last updated**: 2026-01-01
-**Purpose**: Runtime test logs and monitoring data
+**Last updated**: 2026-02-01
+**Purpose**: Curated reports plus runtime test logs

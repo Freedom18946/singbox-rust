@@ -264,6 +264,22 @@ fn allowed_outbound_keys() -> &'static HashSet<String> {
         ] {
             set.insert(key.to_string());
         }
+        // Go parity: legacy outbound aliases
+        for key in [
+            "user",
+            "auth_str",
+            "url",
+            "interval",
+            "interval_ms",
+            "timeout",
+            "timeout_ms",
+            "tolerance",
+            "tolerance_ms",
+            "outbounds",
+            "default",
+        ] {
+            set.insert(key.to_string());
+        }
         set
     })
 }
@@ -1965,6 +1981,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             if ob.credentials.is_none() {
                 let top_user = o
                     .get("username")
+                    .or_else(|| o.get("user"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
                 let top_pass = o
@@ -1978,6 +1995,36 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         username_env: None,
                         password_env: None,
                     });
+                }
+            }
+
+            if matches!(ob.ty, crate::ir::OutboundType::Hysteria) {
+                if ob.hysteria_protocol.is_none() {
+                    ob.hysteria_protocol = o
+                        .get("protocol")
+                        .or_else(|| o.get("hysteria_protocol"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.hysteria_auth.is_none() {
+                    ob.hysteria_auth = o
+                        .get("auth_str")
+                        .or_else(|| o.get("hysteria_auth"))
+                        .or_else(|| o.get("auth"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.hysteria_recv_window_conn.is_none() {
+                    ob.hysteria_recv_window_conn = o
+                        .get("recv_window_conn")
+                        .or_else(|| o.get("hysteria_recv_window_conn"))
+                        .and_then(|v| v.as_u64());
+                }
+                if ob.hysteria_recv_window.is_none() {
+                    ob.hysteria_recv_window = o
+                        .get("recv_window")
+                        .or_else(|| o.get("hysteria_recv_window"))
+                        .and_then(|v| v.as_u64());
                 }
             }
 
@@ -3355,6 +3402,48 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_hysteria_auth_str_alias() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "hysteria",
+                "name": "hy1",
+                "server": "hy1.example.com",
+                "port": 443,
+                "auth_str": "secret-auth"
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        assert_eq!(outbound.ty, crate::ir::OutboundType::Hysteria);
+        assert_eq!(outbound.hysteria_auth.as_deref(), Some("secret-auth"));
+    }
+
+    #[test]
+    fn test_parse_ssh_user_alias() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "ssh",
+                "name": "ssh-out",
+                "server": "ssh.example.com",
+                "port": 22,
+                "user": "alice",
+                "password": "secret"
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        let creds = outbound.credentials.as_ref().expect("credentials");
+        assert_eq!(creds.username.as_deref(), Some("alice"));
+        assert_eq!(creds.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
     fn test_parse_experimental_block() {
         let json = serde_json::json!({
             "schema_version": 2,
@@ -3715,6 +3804,33 @@ mod tests {
         assert_eq!(auto.test_tolerance_ms, Some(75));
         assert_eq!(auto.test_url.as_deref(), Some(DEFAULT_URLTEST_URL));
         Ok(())
+    }
+
+    #[test]
+    fn test_validate_urltest_alias_fields() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "selector",
+                    "name": "manual",
+                    "outbounds": ["direct-1", "direct-2"],
+                    "default": "direct-1"
+                },
+                {
+                    "type": "urltest",
+                    "name": "auto",
+                    "outbounds": ["direct-1"],
+                    "url": "https://www.gstatic.com/generate_204",
+                    "interval": "5m",
+                    "timeout": "2s",
+                    "tolerance": "75ms"
+                }
+            ]
+        });
+
+        let issues = validate_v2(&json, false);
+        assert!(issues.is_empty(), "unexpected validation issues: {issues:?}");
     }
 
     #[test]

@@ -242,7 +242,7 @@ Matrix coverage (32 cases, `cargo run -p xtask -- feature-matrix`):
   - Shadowsocks, Trojan, VMess, VLESS now use wrapper pattern
   - Follow TUIC/Hysteria2 architecture with `OutboundTcp` trait
   - Properly integrated with switchboard registry
-- HTTP/SOCKS/DNS outbounds remain pending (require different approach)
+- HTTP/SOCKS outbounds remain pending (require different approach); DNS outbound exists but needs basic coverage
 - All adapter registry smoke tests passing (12 tests)
 
 ## Running the Tests

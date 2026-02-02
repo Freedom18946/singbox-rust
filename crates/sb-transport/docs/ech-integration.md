@@ -36,10 +36,10 @@ pub struct EchDialer<D: Dialer> {
 
 ### 2. EchConnector (crates/sb-tls/src/ech/mod.rs)
 
-The `EchConnector` handles ECH encryption:
-- Encrypts the real SNI using HPKE
-- Generates ECH ClientHello structure
-- Manages ECH configuration list
+The `EchConnector` handles ECH configuration validation:
+- Parses ECHConfigList
+- Validates public name / cipher suites
+- Feeds config into rustls ECH mode
 
 ## Usage
 
@@ -155,21 +155,20 @@ match dialer.connect("example.com", 443).await {
 - ✅ ECH connector integration
 - ✅ Transport layer wiring
 - ✅ Environment variable support
-- ⚠️ rustls ECH extension (requires rustls ECH support)
+- ✅ rustls ECH client handshake integration (TLS 1.3 only)
 
 ### rustls Compatibility
 
-As of rustls 0.23, native ECH support is limited. The current implementation:
-1. Prepares ECH ClientHello structure
-2. Uses standard TLS handshake with outer SNI
-3. Ready for rustls ECH extension when available
+rustls 0.23+ provides client-side ECH support (TLS 1.3 only). The current implementation:
+1. Enables rustls ECH mode with the provided ECHConfigList
+2. Performs standard TLS handshake; rustls builds the outer ClientHello
+3. Logs ECH acceptance status (accepted/rejected)
 
 ### Future Enhancements
 
-When rustls adds full ECH support:
-1. Pass `ech_payload` to rustls during handshake
-2. Verify ECH acceptance from server
-3. Handle ECH retry configurations
+- Server-side ECH integration
+- QUIC ECH alignment
+- ECH retry configuration handling
 
 ## Testing
 

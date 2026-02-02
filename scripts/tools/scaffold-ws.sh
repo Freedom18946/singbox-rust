@@ -34,6 +34,7 @@ tokio = { version = "1", features = ["rt-multi-thread","macros","net","io-util",
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 toml = "0.8"
 async-trait = "0.1"
 TOML
@@ -46,6 +47,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter","fmt"] }
 sb-core = { path = "../crates/sb-core" }
@@ -55,6 +57,7 @@ sb-platform = { path = "../crates/sb-platform" }
 sb-metrics = { path = "../crates/sb-metrics" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 tracing = { workspace = true }
 
 [features]
@@ -64,6 +67,8 @@ TOML
 
 cat > app/src/main.rs <<'RS'
 use clap::Parser;
+use std::fs;
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(name="singbox-rs2", version, about="Rust rewrite with clean boundaries")]
@@ -78,7 +83,26 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter("info").init();
     let opt = Opt::parse();
     if opt.dry_run {
-        println!("dry-run mode (normalize config) - TODO");
+        let path = opt
+            .config
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("--dry-run requires --config <path>"))?;
+        let contents = fs::read_to_string(path)?;
+        let normalized = match Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+        {
+            Some(ext) if ext == "yaml" || ext == "yml" => {
+                let value: serde_yaml::Value = serde_yaml::from_str(&contents)?;
+                serde_json::to_string_pretty(&value)?
+            }
+            _ => {
+                let value: serde_json::Value = serde_json::from_str(&contents)?;
+                serde_json::to_string_pretty(&value)?
+            }
+        };
+        println!("{normalized}");
         return Ok(());
     }
     Ok(())

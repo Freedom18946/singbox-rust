@@ -37,7 +37,7 @@ impl Endpoint for StubEndpoint {
 
 /// Build a WireGuard endpoint stub.
 ///
-/// Returns `None` and logs a warning that WireGuard is not implemented.
+/// Returns a stub endpoint and logs a warning that WireGuard is not implemented.
 pub fn build_wireguard_endpoint(
     ir: &EndpointIR,
     _ctx: &EndpointContext,
@@ -58,7 +58,7 @@ pub fn build_wireguard_endpoint(
 
 /// Build a Tailscale endpoint stub.
 ///
-/// Returns `None` and logs a warning that Tailscale is not implemented.
+/// Returns a stub endpoint and logs a warning that Tailscale is not implemented.
 pub fn build_tailscale_endpoint(
     ir: &EndpointIR,
     _ctx: &EndpointContext,
