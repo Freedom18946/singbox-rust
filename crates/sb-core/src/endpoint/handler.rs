@@ -1,5 +1,3 @@
-#![cfg(feature = "router")]
-
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -281,6 +279,7 @@ impl ConnectionHandler for EndpointConnectionHandler {
 }
 
 impl EndpointConnectionHandler {
+    #[allow(clippy::too_many_arguments)]
     async fn run_udp_session(
         &self,
         socket: Arc<UdpSocket>,

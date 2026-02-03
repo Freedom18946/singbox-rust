@@ -1,4 +1,5 @@
 #![cfg(feature = "router")]
+#![allow(clippy::await_holding_lock)]
 //! Tests for DNS integration in routing decision chain
 
 use std::net::IpAddr;

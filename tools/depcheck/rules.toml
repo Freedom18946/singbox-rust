@@ -1,0 +1,63 @@
+# Dependency boundary rules for depcheck
+# Format: [forbid] crate = ["dep1", "dep2", ...]
+
+[forbid]
+# sb-types must stay minimal (no heavy runtime/web/tls deps)
+sb-types = [
+  "tokio",
+  "axum",
+  "axum-server",
+  "tonic",
+  "tower",
+  "tower-http",
+  "hyper",
+  "reqwest",
+  "rustls",
+  "quinn",
+  "tokio-tungstenite",
+  "tungstenite",
+  "h2",
+  "h3",
+]
+
+# sb-core must not depend on protocol/transport/web/tls stacks or platform/control-plane crates
+sb-core = [
+  "axum",
+  "axum-server",
+  "hyper",
+  "reqwest",
+  "rustls",
+  "quinn",
+  "tokio-tungstenite",
+  "tungstenite",
+  "h2",
+  "h3",
+  "tonic",
+  "tower",
+  "tower-http",
+  "sb-adapters",
+  "sb-transport",
+  "sb-tls",
+  "sb-platform",
+  "sb-api",
+  "sb-config",
+  "sb-metrics",
+  "sb-subscribe",
+  "sb-security",
+  "sb-runtime",
+]
+
+# sb-adapters must not depend on sb-core or control-plane
+sb-adapters = ["sb-core", "sb-api"]
+
+# sb-api must not depend on sb-adapters
+sb-api = ["sb-adapters"]
+
+# sb-platform should not depend on sb-core or control-plane
+sb-platform = ["sb-core", "sb-api"]
+
+# sb-transport should not depend on sb-core or control-plane
+sb-transport = ["sb-core", "sb-api"]
+
+# sb-config should remain configuration-only
+sb-config = ["sb-core", "sb-adapters", "sb-transport", "sb-tls", "sb-platform", "sb-api", "sb-metrics", "sb-runtime"]

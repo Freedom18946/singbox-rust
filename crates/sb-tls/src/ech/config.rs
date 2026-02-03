@@ -136,6 +136,8 @@ impl EchClientConfig {
     }
 
     pub(crate) fn resolve_config_list(&self) -> Result<Vec<u8>, super::EchError> {
+        use base64::Engine;
+
         if let Some(config_list) = &self.config_list {
             return Ok(config_list.clone());
         }
@@ -144,7 +146,6 @@ impl EchClientConfig {
             super::EchError::InvalidConfig("ECH enabled but no config provided".to_string())
         })?;
 
-        use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
         b64.decode(config_b64)
             .map_err(|e| super::EchError::InvalidConfig(format!("Invalid config: {e}")))

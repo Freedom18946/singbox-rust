@@ -81,7 +81,9 @@ fn test_dns_config_custom() {
 #[test]
 fn test_dns_config_ipv6() {
     let config = DnsConfig {
-        server: IpAddr::V6(std::net::Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)),
+        server: IpAddr::V6(std::net::Ipv6Addr::new(
+            0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888,
+        )),
         port: None,
         transport: DnsTransport::Udp,
         timeout: Duration::from_secs(5),

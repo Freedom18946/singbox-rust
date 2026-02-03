@@ -1,7 +1,7 @@
-use std::env;
-use std::path::PathBuf;
 use assert_cmd::Command;
 use serde_json::Value;
+use std::env;
+use std::path::PathBuf;
 use std::process::Command as StdCommand;
 use std::sync::Once;
 

@@ -1,10 +1,10 @@
 //! REALITY authentication using X25519 key exchange
 
-use rand::rngs::OsRng;
-use hmac::{Hmac, Mac};
 use hkdf::Hkdf;
-use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+use rand::rngs::OsRng;
 use sha2::Sha512;
+use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// REALITY authentication helper
@@ -103,7 +103,10 @@ impl RealityAuth {
 /// This follows the Go reference behavior: HKDF-SHA256 with salt = session_data[0..20],
 /// info = "REALITY", output = 32 bytes.
 /// 该流程遵循 Go 参考实现：HKDF-SHA256，salt 为 session_data[0..20]，info 为 "REALITY"，输出 32 字节。
-pub fn derive_auth_key(shared_secret: [u8; 32], session_data: &[u8; 32]) -> Result<[u8; 32], String> {
+pub fn derive_auth_key(
+    shared_secret: [u8; 32],
+    session_data: &[u8; 32],
+) -> Result<[u8; 32], String> {
     let salt = &session_data[..20];
     let hkdf = Hkdf::<Sha256>::new(Some(salt), &shared_secret);
     let mut okm = [0u8; 32];

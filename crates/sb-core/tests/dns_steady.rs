@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use sb_core::dns::cache::{DnsCache, Key, QType};
 use sb_core::dns::ResolverHandle;
 use std::net::IpAddr;

@@ -161,8 +161,8 @@ impl RealityAcceptor {
         info!("REALITY authentication successful");
 
         let shared_secret = self.auth.derive_shared_secret(&client_public_key);
-        let auth_key = derive_auth_key(shared_secret, &session_data)
-            .map_err(RealityError::HandshakeFailed)?;
+        let auth_key =
+            derive_auth_key(shared_secret, &session_data).map_err(RealityError::HandshakeFailed)?;
 
         let target_chain = self.ensure_target_chain(&sni).await;
 
@@ -410,6 +410,7 @@ impl RealityAcceptor {
             Ok(chain) => {
                 let mut guard = self.target_chain.write().await;
                 *guard = Some(chain.clone());
+                drop(guard);
                 Some(chain)
             }
             Err(e) => {
@@ -435,10 +436,13 @@ impl RealityAcceptor {
         let server_name = rustls_pki_types::ServerName::try_from(server_name.to_string())
             .map_err(|e| RealityError::TargetFailed(format!("invalid server name: {e:?}")))?;
 
-        let tls_stream = timeout(Duration::from_secs(5), connector.connect(server_name, stream))
-            .await
-            .map_err(|_| RealityError::TargetFailed("target TLS handshake timeout".to_string()))?
-            .map_err(|e| RealityError::TargetFailed(format!("target TLS handshake failed: {e}")))?;
+        let tls_stream = timeout(
+            Duration::from_secs(5),
+            connector.connect(server_name, stream),
+        )
+        .await
+        .map_err(|_| RealityError::TargetFailed("target TLS handshake timeout".to_string()))?
+        .map_err(|e| RealityError::TargetFailed(format!("target TLS handshake failed: {e}")))?;
 
         let (_, session) = tls_stream.get_ref();
         let certs = session.peer_certificates().ok_or_else(|| {
@@ -513,9 +517,7 @@ fn build_certificate_params(
     server_name: &str,
     template: Option<&TargetCertTemplate>,
 ) -> Result<CertificateParams, String> {
-    let mut dns_names = template
-        .map(|t| t.dns_names.clone())
-        .unwrap_or_default();
+    let mut dns_names = template.map(|t| t.dns_names.clone()).unwrap_or_default();
     if dns_names.is_empty() {
         dns_names.push(server_name.to_string());
     }
@@ -554,11 +556,11 @@ fn build_template_from_leaf(cert_der: &[u8]) -> Result<TargetCertTemplate, Strin
         .iter_common_name()
         .next()
         .and_then(|cn| cn.as_str().ok())
-        .map(|s| s.to_string());
+        .map(ToString::to_string);
 
     let mut dns_names = Vec::new();
     if let Ok(Some(san)) = cert.subject_alternative_name() {
-        for name in san.value.general_names.iter() {
+        for name in &san.value.general_names {
             if let GeneralName::DNSName(dns) = name {
                 dns_names.push((*dns).to_string());
             }
@@ -648,9 +650,9 @@ fn replace_cert_signature(cert_der: &mut [u8], signature: &[u8]) -> RealityResul
 }
 
 fn read_der_length(data: &[u8]) -> RealityResult<(usize, usize)> {
-    let first = *data.get(0).ok_or_else(|| {
-        RealityError::HandshakeFailed("Invalid DER length".to_string())
-    })?;
+    let first = *data
+        .first()
+        .ok_or_else(|| RealityError::HandshakeFailed("Invalid DER length".to_string()))?;
     if first & 0x80 == 0 {
         return Ok((first as usize, 1));
     }

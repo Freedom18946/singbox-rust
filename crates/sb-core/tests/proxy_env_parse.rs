@@ -1,4 +1,5 @@
 #![cfg(feature = "router")]
+#![allow(clippy::await_holding_lock)]
 
 use sb_core::router::runtime::*;
 use std::sync::{Mutex, OnceLock};

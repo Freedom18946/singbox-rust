@@ -35,7 +35,11 @@ fn test_trojan_config_basic() {
     };
 
     let connector = TrojanConnector::new(config);
-    assert_eq!(connector.name(), "trojan", "Connector name should be 'trojan'");
+    assert_eq!(
+        connector.name(),
+        "trojan",
+        "Connector name should be 'trojan'"
+    );
 }
 
 #[test]
@@ -216,10 +220,7 @@ async fn test_trojan_connection_timeout() {
     let elapsed = start.elapsed();
 
     // Should fail (timeout or connection error)
-    assert!(
-        result.is_err(),
-        "Connection to non-routable IP should fail"
-    );
+    assert!(result.is_err(), "Connection to non-routable IP should fail");
 
     // Should not take too long
     assert!(

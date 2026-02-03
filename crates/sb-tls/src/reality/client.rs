@@ -128,8 +128,8 @@ impl RealityConnector {
 
         // Step 2: Create custom TLS config with REALITY certificate verifier.
         // If uTLS is enabled, order cipher suites/ALPN per fingerprint for Go parity.
-        let auth_key = derive_auth_key(shared_secret, &session_data)
-            .map_err(RealityError::HandshakeFailed)?;
+        let auth_key =
+            derive_auth_key(shared_secret, &session_data).map_err(RealityError::HandshakeFailed)?;
 
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -137,7 +137,9 @@ impl RealityConnector {
 
         let webpki = WebPkiServerVerifier::builder(roots.clone())
             .build()
-            .map_err(|e| RealityError::HandshakeFailed(format!("WebPKI verifier init failed: {e}")))?;
+            .map_err(|e| {
+                RealityError::HandshakeFailed(format!("WebPKI verifier init failed: {e}"))
+            })?;
 
         let verifier = Arc::new(RealityVerifier {
             expected_server_name: self.config.server_name.clone(),
@@ -505,8 +507,9 @@ impl RealityVerifier {
         &self,
         end_entity: &rustls_pki_types::CertificateDer<'_>,
     ) -> Result<bool, rustls::Error> {
-        let (_, cert) = parse_x509_certificate(end_entity.as_ref())
-            .map_err(|_| rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding))?;
+        let (_, cert) = parse_x509_certificate(end_entity.as_ref()).map_err(|_| {
+            rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding)
+        })?;
 
         if cert.signature_algorithm.algorithm != OID_SIG_ED25519 {
             return Ok(false);
@@ -552,8 +555,8 @@ impl RealityVerifier {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
-    use super::*;
     use super::super::tls_record::ExtensionType;
+    use super::*;
 
     #[test]
     fn test_reality_connector_creation() {
@@ -610,13 +613,8 @@ mod tests {
         record.extend_from_slice(&handshake);
 
         let session_data = [0xAB; 32];
-        let stream = RealityClientStream::new(
-            (),
-            [0x22; 32],
-            vec![0x01, 0x02],
-            [0x33; 32],
-            session_data,
-        );
+        let stream =
+            RealityClientStream::new((), [0x22; 32], vec![0x01, 0x02], [0x33; 32], session_data);
 
         let modified = stream.inject_reality_extension(&record).unwrap();
         let record_len = u16::from_be_bytes([modified[3], modified[4]]) as usize;

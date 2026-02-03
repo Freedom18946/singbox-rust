@@ -11,7 +11,7 @@
 use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 
 // ============================================================================
@@ -91,22 +91,16 @@ fn test_shadowsocks_config_invalid_method() {
 #[test]
 fn test_shadowsocks_with_config() {
     // Test the convenience constructor
-    let connector = ShadowsocksConnector::with_config(
-        "127.0.0.1:8388",
-        "aes-256-gcm",
-        "test_password",
-    );
+    let connector =
+        ShadowsocksConnector::with_config("127.0.0.1:8388", "aes-256-gcm", "test_password");
     assert!(connector.is_ok(), "with_config should succeed");
 }
 
 #[test]
 fn test_shadowsocks_with_config_invalid_method() {
     // Test with invalid method
-    let connector = ShadowsocksConnector::with_config(
-        "127.0.0.1:8388",
-        "invalid-method",
-        "test_password",
-    );
+    let connector =
+        ShadowsocksConnector::with_config("127.0.0.1:8388", "invalid-method", "test_password");
     assert!(connector.is_err(), "Invalid method should fail");
 }
 

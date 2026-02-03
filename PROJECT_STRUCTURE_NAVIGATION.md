@@ -46,6 +46,7 @@ singbox-rust/
 │   ├── 📄 TEST_COVERAGE.md
 │   └── 📄 VERIFICATION_RECORD.md
 ├── 📁 scripts/          # CI, tools, scenario scripts
+├── 📁 tools/            # Internal tooling (depcheck etc.)
 ├── 📁 target/           # Local build output (gitignored)
 ├── 📁 tests/            # Tests (Integration/E2E/Configs/Data etc.)
 ├── 📁 vendor/           # Vendor dependency overrides (e.g., tun2socks)

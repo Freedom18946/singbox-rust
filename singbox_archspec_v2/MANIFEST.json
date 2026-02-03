@@ -1,0 +1,252 @@
+{
+  "generated_at": "2026-02-02T14:08:51.190429Z",
+  "root": "singbox_archspec_v2",
+  "file_count": 49,
+  "files": [
+    {
+      "path": "00-goals/00-objectives.md",
+      "sha256_16": "f6856404a77e2ce8",
+      "bytes": 1695
+    },
+    {
+      "path": "00-goals/01-glossary.md",
+      "sha256_16": "1312e7bf9bd458fb",
+      "bytes": 1022
+    },
+    {
+      "path": "01-constitution/async-model.md",
+      "sha256_16": "d25b46321c1dd405",
+      "bytes": 1668
+    },
+    {
+      "path": "01-constitution/ci-enforcement.md",
+      "sha256_16": "2f1653b50e0607cc",
+      "bytes": 1159
+    },
+    {
+      "path": "01-constitution/dependency-constitution.md",
+      "sha256_16": "914b94b24b727f13",
+      "bytes": 2870
+    },
+    {
+      "path": "01-constitution/error-model.md",
+      "sha256_16": "88d2d51de7aa57c9",
+      "bytes": 1215
+    },
+    {
+      "path": "01-constitution/feature-strategy.md",
+      "sha256_16": "1a20003e19e8758f",
+      "bytes": 1010
+    },
+    {
+      "path": "01-constitution/performance-guidelines.md",
+      "sha256_16": "4fd93ea1c58915c5",
+      "bytes": 685
+    },
+    {
+      "path": "01-constitution/security-policy.md",
+      "sha256_16": "d52ed4d58eb1bffe",
+      "bytes": 617
+    },
+    {
+      "path": "01-constitution/testing-strategy.md",
+      "sha256_16": "8417b1d127cf2db4",
+      "bytes": 875
+    },
+    {
+      "path": "01-constitution/toolchain-policy.md",
+      "sha256_16": "1d1773fcdaae3e3c",
+      "bytes": 903
+    },
+    {
+      "path": "02-architecture/00-high-level.md",
+      "sha256_16": "84415d76e51e88f0",
+      "bytes": 3100
+    },
+    {
+      "path": "02-architecture/01-data-plane.md",
+      "sha256_16": "4de53ee9a387664a",
+      "bytes": 1033
+    },
+    {
+      "path": "02-architecture/02-control-plane.md",
+      "sha256_16": "ed72ae90dabe6487",
+      "bytes": 591
+    },
+    {
+      "path": "02-architecture/03-config-pipeline.md",
+      "sha256_16": "2f61915de899d6c7",
+      "bytes": 793
+    },
+    {
+      "path": "02-architecture/04-observability.md",
+      "sha256_16": "c30f5d03c162f02c",
+      "bytes": 755
+    },
+    {
+      "path": "03-crates/00-index.md",
+      "sha256_16": "0a5c93733ab6cd95",
+      "bytes": 616
+    },
+    {
+      "path": "03-crates/app.md",
+      "sha256_16": "0920e1d57e1f6285",
+      "bytes": 745
+    },
+    {
+      "path": "03-crates/sb-adapters.md",
+      "sha256_16": "08d34352bf16c346",
+      "bytes": 1379
+    },
+    {
+      "path": "03-crates/sb-api.md",
+      "sha256_16": "ec55faf31f726acb",
+      "bytes": 550
+    },
+    {
+      "path": "03-crates/sb-common.md",
+      "sha256_16": "6ee5dec3e258cb05",
+      "bytes": 318
+    },
+    {
+      "path": "03-crates/sb-config.md",
+      "sha256_16": "a6200ab0929cd387",
+      "bytes": 470
+    },
+    {
+      "path": "03-crates/sb-core.md",
+      "sha256_16": "a63aa4b4295fc28c",
+      "bytes": 1768
+    },
+    {
+      "path": "03-crates/sb-metrics.md",
+      "sha256_16": "f91f4768f1bf7dc1",
+      "bytes": 533
+    },
+    {
+      "path": "03-crates/sb-platform.md",
+      "sha256_16": "e30c2370481f789c",
+      "bytes": 594
+    },
+    {
+      "path": "03-crates/sb-runtime.md",
+      "sha256_16": "3e6daa3b554f85c8",
+      "bytes": 430
+    },
+    {
+      "path": "03-crates/sb-security.md",
+      "sha256_16": "ffa4e344f11a382d",
+      "bytes": 399
+    },
+    {
+      "path": "03-crates/sb-subscribe.md",
+      "sha256_16": "c1f6b09b8d0b5273",
+      "bytes": 263
+    },
+    {
+      "path": "03-crates/sb-tls.md",
+      "sha256_16": "35a40b23dc7cdd4a",
+      "bytes": 510
+    },
+    {
+      "path": "03-crates/sb-transport.md",
+      "sha256_16": "86c8670438000712",
+      "bytes": 923
+    },
+    {
+      "path": "03-crates/sb-types.md",
+      "sha256_16": "8878d378fbe689e4",
+      "bytes": 1488
+    },
+    {
+      "path": "04-interfaces/00-ports-overview.md",
+      "sha256_16": "239f0ae22e0a8341",
+      "bytes": 754
+    },
+    {
+      "path": "04-interfaces/admin.md",
+      "sha256_16": "3203bc57ec03c844",
+      "bytes": 610
+    },
+    {
+      "path": "04-interfaces/dns.md",
+      "sha256_16": "6971bb58a3ddca8d",
+      "bytes": 390
+    },
+    {
+      "path": "04-interfaces/inbound.md",
+      "sha256_16": "8414f6f084c697cd",
+      "bytes": 548
+    },
+    {
+      "path": "04-interfaces/outbound.md",
+      "sha256_16": "a679741837246ecf",
+      "bytes": 484
+    },
+    {
+      "path": "04-interfaces/router.md",
+      "sha256_16": "d25424cc00ed2ca5",
+      "bytes": 374
+    },
+    {
+      "path": "04-interfaces/session.md",
+      "sha256_16": "0a5a96c168904715",
+      "bytes": 612
+    },
+    {
+      "path": "05-reference/dependency-matrix.md",
+      "sha256_16": "a45579f2261d105f",
+      "bytes": 675
+    },
+    {
+      "path": "06-implementation-guides/config-compilation.md",
+      "sha256_16": "c126db4a497a1162",
+      "bytes": 778
+    },
+    {
+      "path": "06-implementation-guides/fuzzing.md",
+      "sha256_16": "76d9c383c4067822",
+      "bytes": 398
+    },
+    {
+      "path": "06-implementation-guides/logging-metrics.md",
+      "sha256_16": "812c8a11ed74a949",
+      "bytes": 464
+    },
+    {
+      "path": "06-implementation-guides/security.md",
+      "sha256_16": "7e564c03b6e22060",
+      "bytes": 357
+    },
+    {
+      "path": "07-migration/00-current-vs-target.md",
+      "sha256_16": "c22743a2211dacf3",
+      "bytes": 541
+    },
+    {
+      "path": "07-migration/01-step-by-step.md",
+      "sha256_16": "b80184e791fe258a",
+      "bytes": 1193
+    },
+    {
+      "path": "README.md",
+      "sha256_16": "1ac1e8ba5c7fb157",
+      "bytes": 2417
+    },
+    {
+      "path": "templates/enum-dispatch.md",
+      "sha256_16": "c5fe78295f803766",
+      "bytes": 654
+    },
+    {
+      "path": "templates/error-types.md",
+      "sha256_16": "521b07046effc445",
+      "bytes": 507
+    },
+    {
+      "path": "templates/object-safe-wrapper.md",
+      "sha256_16": "d424866675baf814",
+      "bytes": 386
+    }
+  ]
+}

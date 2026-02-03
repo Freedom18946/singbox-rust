@@ -1,4 +1,5 @@
 #![cfg(feature = "router")]
+#![allow(clippy::await_holding_lock)]
 use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::sync::Arc;

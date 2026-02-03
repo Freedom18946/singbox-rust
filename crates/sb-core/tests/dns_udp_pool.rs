@@ -1,4 +1,5 @@
 #![cfg(feature = "dns_udp")]
+#![allow(clippy::await_holding_lock)]
 use std::net::SocketAddr;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;

@@ -1246,7 +1246,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                 }
                 if let Some(version_val) = obj.get("version") {
                     let version = version_val.as_u64().and_then(|v| u8::try_from(v).ok());
-                    let valid = matches!(version, Some(1 | 2 | 3));
+                    let valid = matches!(version, Some(1..=3));
                     if !valid {
                         issues.push(emit_issue(
                             "error",
@@ -3830,7 +3830,10 @@ mod tests {
         });
 
         let issues = validate_v2(&json, false);
-        assert!(issues.is_empty(), "unexpected validation issues: {issues:?}");
+        assert!(
+            issues.is_empty(),
+            "unexpected validation issues: {issues:?}"
+        );
     }
 
     #[test]

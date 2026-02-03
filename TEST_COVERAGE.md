@@ -2,14 +2,14 @@
 
 ## Overview
 **Date**: 2026-02-02
-**Status**: 100% Protocol Integration Coverage
+**Status**: High protocol integration coverage (some suites feature-gated or temporarily disabled)
 **Parity**: 88% (aligned with Go reference)
 
 This document tracks the test coverage for the `singbox-rust` project, focusing on protocol integration, core routing logic, and service components.
 
 ---
 
-## 1. Protocol Integration Tests (sb-adapters)
+## 1. Protocol Integration Tests (sb-adapters + workspace tests)
 
 All core protocols have dedicated integration tests covering:
 - Configuration parsing
@@ -23,8 +23,9 @@ All core protocols have dedicated integration tests covering:
 | **Trojan** | `trojan_integration.rs` | 16 | ✅ 15 pass, 1 ignored | Ignored test checks timeout (requires rustls CryptoProvider) |
 | **DNS** | `dns_outbound_integration.rs` | 15 | ✅ 14 pass, 1 ignored | Ignored test checks system resolver (env dependent) |
 | **VLESS** | `vless_integration.rs` | 17 | ✅ 17 pass | Full coverage including flow control & encryption |
-| **VMess** | N/A | 0 | ⚠️ Disabled | Old tests deleted; rewritten pending |
-| **TUIC** | N/A | 0 | ⚠️ Disabled | Old tests deleted; rewritten pending |
+| **VMess** | `tests/vmess_websocket_integration.rs` | 4 | ✅ Config/transport wiring | WebSocket + TCP config coverage; no live server required |
+| **TUIC** | `crates/sb-adapters/tests/tuic_integration.rs` | 10 | ⚠️ Disabled | Guarded by `#[cfg(disabled_test_temporarily)]` + `feature = "tuic"` |
+| **Hysteria2** | `crates/sb-core/tests/hysteria2_integration.rs` | 12 | ✅ Feature-gated | Requires `feature = "out_hysteria2"`; config/behavior checks only |
 
 ---
 
@@ -60,6 +61,5 @@ To run GeoIP/GeoSite tests:
 
 ## 4. Known Gaps & Future Work
 
-1.  **VMess Integration**: Tests were deleted due to obsolescence. Need to rewrite using current `sb-adapters` API.
-2.  **Hysteria2**: Currently lacks dedicated integration tests.
-3.  **Geo-Test Data**: Add small valid MMDB/Protobuf fixtures to the repo to enable GeoIP/GeoSite tests in CI without external downloads.
+1.  **TUIC Integration**: Test suite exists but is disabled by `#[cfg(disabled_test_temporarily)]`; re-enable after updating TUIC test harness.
+2.  **Geo-Test Data**: Add small valid MMDB/Protobuf fixtures to the repo to enable GeoIP/GeoSite tests in CI without external downloads.

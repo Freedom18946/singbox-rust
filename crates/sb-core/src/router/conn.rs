@@ -1312,11 +1312,8 @@ mod tests {
     async fn test_direct_dialer_timeout() {
         let dialer = DirectDialer;
         // RFC 5737 TEST-NET-1: should be non-routable per specification
-        let result = tokio::time::timeout(
-            Duration::from_secs(2),
-            dialer.dial_tcp("192.0.2.1", 12345),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), dialer.dial_tcp("192.0.2.1", 12345)).await;
         // Should timeout or connection should fail on standard networks
         assert!(result.is_err() || result.unwrap().is_err());
     }
@@ -1407,9 +1404,9 @@ mod tests {
         write_tls_fragments(
             &mut output,
             data,
-            &[],      // empty indexes
-            true,     // split_packet
-            false,    // split_record
+            &[],   // empty indexes
+            true,  // split_packet
+            false, // split_record
             fallback_delay,
             None,
         )
@@ -1437,7 +1434,7 @@ mod tests {
             true,  // split_packet
             false, // split_record
             fallback_delay,
-            None,  // No TCP fd - uses fallback delay
+            None, // No TCP fd - uses fallback delay
         )
         .await
         .expect("write should succeed");
@@ -1625,4 +1622,3 @@ mod tests {
         assert_eq!(output, data);
     }
 }
-
