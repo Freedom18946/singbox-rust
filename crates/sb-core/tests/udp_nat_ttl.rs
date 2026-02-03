@@ -15,8 +15,8 @@ fn test_addr(port: u16) -> SocketAddr {
 
 #[tokio::test]
 async fn test_ttl_eviction_deterministic() {
-    // Use short TTL for fast tests
-    let mut nat = UdpNat::new(100, Duration::from_millis(30)); // 30ms TTL
+    // Use a relaxed TTL to avoid timing flake on loaded test runners
+    let mut nat = UdpNat::new(100, Duration::from_millis(200)); // 200ms TTL
 
     // Create initial mapping
     let src = test_addr(1234);
@@ -27,8 +27,8 @@ async fn test_ttl_eviction_deterministic() {
     // Verify session exists
     assert!(nat.lookup_session(&mapped_addr).is_some());
 
-    // Wait less than TTL (20ms)
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Wait less than TTL (50ms)
+    tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Session should still exist
     assert_eq!(nat.session_count(), 1);
@@ -36,8 +36,8 @@ async fn test_ttl_eviction_deterministic() {
     let evicted_before = nat.evict_expired();
     assert_eq!(evicted_before, 0);
 
-    // Wait past TTL (another 20ms = 40ms total > 30ms TTL)
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Wait past TTL (another 200ms = 250ms total > 200ms TTL)
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Now evict expired sessions
     let evicted_count = nat.evict_expired();

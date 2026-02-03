@@ -257,6 +257,7 @@ mod tests {
 
     #[test]
     fn test_build_client_config_tls13_only() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let config = TlsSecurityConfig {
             min_version: TlsVersion::V1_3,
             ..Default::default()
@@ -273,6 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_secure_tls_dialer_creation() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // This test verifies the dialer can be created without environment variables
         let dialer = TcpDialer::default();
         let result = SecureTlsDialer::from_env(dialer);

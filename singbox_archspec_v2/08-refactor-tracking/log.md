@@ -286,3 +286,25 @@
 - 风险与回滚：无
 - 验证方式与结果：已输出当前改动列表
 - 进度关联（整体进度规划项）：P2-依赖与构建门禁
+
+### 2026-02-03 17:37
+- 操作人：Codex
+- 操作类型：命令 / 修改 / 决策 / 验证
+- 依据规范：`singbox_archspec_v2/08-refactor-tracking/操作规程.md`；`singbox_archspec_v2/01-constitution/testing-strategy.md`
+- 目标/范围：按用户要求切换为增量测试；处理 `happy_eyeballs` 权限限制并验证
+- 具体动作：
+  - 阅读 `singbox_archspec_v2/08-refactor-tracking/操作规程.md`、`整体进度规划.md`、`本地门禁.md`、`log.md`
+  - 执行查看命令：`ls -la singbox_archspec_v2/08-refactor-tracking`，`sed -n '1,220p' crates/sb-transport/tests/happy_eyeballs.rs`，`sed -n '220,520p' crates/sb-transport/tests/happy_eyeballs.rs`
+  - 执行查看命令：`tail -n 120 singbox_archspec_v2/08-refactor-tracking/log.md`，`sed -n '1,200p' singbox_archspec_v2/08-refactor-tracking/整体进度规划.md`，`sed -n '1,200p' singbox_archspec_v2/08-refactor-tracking/本地门禁.md`
+  - 记录时间：`date '+%Y-%m-%d %H:%M'`
+  - 修改 `crates/sb-transport/tests/happy_eyeballs.rs`，为 IPv4/IPv6 监听绑定与 `local_addr` 添加 PermissionDenied 跳过逻辑
+  - 执行增量测试：`cargo test -p sb-transport --test happy_eyeballs`（通过）
+  - 更新 `本地门禁.md` 与 `整体进度规划.md`，记录增量门禁策略与执行结果
+- 影响文件：
+  - `crates/sb-transport/tests/happy_eyeballs.rs`
+  - `singbox_archspec_v2/08-refactor-tracking/本地门禁.md`
+  - `singbox_archspec_v2/08-refactor-tracking/整体进度规划.md`
+  - `singbox_archspec_v2/08-refactor-tracking/log.md`
+- 风险与回滚：受限环境下跳过权限不足测试，覆盖面下降；如需强制覆盖，可移除跳过逻辑并在具备权限的环境重跑
+- 验证方式与结果：`happy_eyeballs` 集成测试通过（6 passed，1 ignored）
+- 进度关联（整体进度规划项）：P2-依赖与构建门禁

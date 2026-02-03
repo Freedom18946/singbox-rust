@@ -1,15 +1,37 @@
 use sb_core::net::datagram::{UdpNatKey, UdpNatMap, UdpTargetAddr};
 use std::sync::Arc;
 
+async fn bind_or_skip(addr: &str) -> Option<Arc<tokio::net::UdpSocket>> {
+    match tokio::net::UdpSocket::bind(addr).await {
+        Ok(sock) => Some(Arc::new(sock)),
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skip: permission denied binding udp socket {addr}: {err}");
+            None
+        }
+        Err(err) => {
+            panic!("failed to bind udp socket {addr}: {err}");
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn nat_capacity_and_ttl() {
     // capacity = 2
     std::env::set_var("SB_UDP_NAT_MAX", "2");
     let map = Arc::new(UdpNatMap::new(None));
     // dummy sockets
-    let s1 = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
-    let s2 = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
-    let s3 = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    let s1 = match bind_or_skip("127.0.0.1:0").await {
+        Some(sock) => sock,
+        None => return,
+    };
+    let s2 = match bind_or_skip("127.0.0.1:0").await {
+        Some(sock) => sock,
+        None => return,
+    };
+    let s3 = match bind_or_skip("127.0.0.1:0").await {
+        Some(sock) => sock,
+        None => return,
+    };
     let k1 = UdpNatKey {
         client: "127.0.0.1:10001".parse().unwrap(),
         dst: UdpTargetAddr::Ip("127.0.0.1:7".parse().unwrap()),

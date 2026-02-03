@@ -1,6 +1,7 @@
 #![cfg(feature = "router")]
 use sb_core::dns::ResolverHandle;
 use std::{
+    io::ErrorKind,
     net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -15,7 +16,14 @@ use tokio::net::UdpSocket; // 引入 runtime
 #[tokio::test]
 async fn dns_inflight_global_and_per_host_gate() {
     // 黑洞 UDP "上游"
-    let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let sock = match UdpSocket::bind("127.0.0.1:0").await {
+        Ok(sock) => sock,
+        Err(err) if err.kind() == ErrorKind::PermissionDenied => {
+            eprintln!("skipping dns inflight test: PermissionDenied binding socket");
+            return;
+        }
+        Err(err) => panic!("failed to bind DNS inflight socket: {err}"),
+    };
     let addr: SocketAddr = sock.local_addr().unwrap();
     let hits_a = Arc::new(AtomicUsize::new(0));
     let hits_aaaa = Arc::new(AtomicUsize::new(0));

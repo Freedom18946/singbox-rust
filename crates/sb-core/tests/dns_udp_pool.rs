@@ -9,7 +9,9 @@ use tokio::net::UdpSocket;
 
 fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
 }
 
 struct EnvVarGuard {
@@ -34,8 +36,25 @@ impl Drop for EnvVarGuard {
     }
 }
 
-async fn start_stub(addr: SocketAddr, delay_ms: u64, v4: Option<[u8; 4]>, v6: Option<[u8; 16]>) {
-    let sock = UdpSocket::bind(addr).await.unwrap();
+fn is_permission_denied(err: &anyhow::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    if msg.contains("operation not permitted") || msg.contains("permission denied") {
+        return true;
+    }
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::PermissionDenied)
+    })
+}
+
+async fn start_stub(
+    addr: SocketAddr,
+    delay_ms: u64,
+    v4: Option<[u8; 4]>,
+    v6: Option<[u8; 16]>,
+) -> anyhow::Result<()> {
+    let sock = UdpSocket::bind(addr).await?;
     tokio::spawn(async move {
         let mut buf = [0u8; 1500];
         loop {
@@ -99,6 +118,7 @@ async fn start_stub(addr: SocketAddr, delay_ms: u64, v4: Option<[u8; 4]>, v6: Op
             let _ = sock.send_to(&out, peer).await;
         }
     });
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -107,14 +127,27 @@ async fn pool_race_picks_faster() {
     // two stubs: one slow A 1.2.3.4, one fast AAAA 2001:db8::1
     let up1: SocketAddr = "127.0.0.1:20531".parse().unwrap();
     let up2: SocketAddr = "127.0.0.1:20532".parse().unwrap();
-    start_stub(up1, 150, Some([1, 2, 3, 4]), None).await;
-    start_stub(
+    if let Err(err) = start_stub(up1, 150, Some([1, 2, 3, 4]), None).await {
+        if is_permission_denied(&err) {
+            eprintln!("skip: permission denied starting udp stub: {err}");
+            return;
+        }
+        panic!("failed to start udp stub: {err}");
+    }
+    if let Err(err) = start_stub(
         up2,
         10,
         None,
         Some([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
     )
-    .await;
+    .await
+    {
+        if is_permission_denied(&err) {
+            eprintln!("skip: permission denied starting udp stub: {err}");
+            return;
+        }
+        panic!("failed to start udp stub: {err}");
+    }
 
     let _en = EnvVarGuard::set("SB_DNS_ENABLE", "1");
     let pool = format!("udp:{},udp:{}", up1, up2);
@@ -134,7 +167,13 @@ async fn pool_sequential_fallback() {
     let up1: SocketAddr = "127.0.0.1:20541".parse().unwrap();
     let up2: SocketAddr = "127.0.0.1:20542".parse().unwrap();
     // up1: no response (not started), up2: responds A
-    start_stub(up2, 5, Some([5, 6, 7, 8]), None).await;
+    if let Err(err) = start_stub(up2, 5, Some([5, 6, 7, 8]), None).await {
+        if is_permission_denied(&err) {
+            eprintln!("skip: permission denied starting udp stub: {err}");
+            return;
+        }
+        panic!("failed to start udp stub: {err}");
+    }
     let _en = EnvVarGuard::set("SB_DNS_ENABLE", "1");
     let pool = format!("udp:{},udp:{}", up1, up2);
     let _pool = EnvVarGuard::set("SB_DNS_POOL", &pool);

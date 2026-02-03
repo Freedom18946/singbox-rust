@@ -337,7 +337,16 @@ impl DnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::EnvVarGuard;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    fn disable_fakeip_env() -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
+        (
+            EnvVarGuard::remove("SB_DNS_FAKEIP_ENABLE"),
+            EnvVarGuard::remove("SB_DNS_FAKEIP_V6"),
+            EnvVarGuard::remove("SB_DNS_FAKEIP_TTL_S"),
+        )
+    }
 
     // Mock upstream for testing
     struct MockUpstream {
@@ -393,6 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_success() {
+        let _guards = disable_fakeip_env();
         let upstream = Arc::new(
             MockUpstream::new("test")
                 .with_response(
@@ -428,6 +438,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_fallback() {
+        let _guards = disable_fakeip_env();
         let unhealthy_upstream = Arc::new(MockUpstream::new("unhealthy").set_healthy(false));
         let healthy_upstream = Arc::new(MockUpstream::new("healthy").with_response(
             "example.com",
@@ -449,6 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_no_records() {
+        let _guards = disable_fakeip_env();
         let upstream = Arc::new(MockUpstream::new("test"));
         let resolver = DnsResolver::new(vec![upstream]);
 
@@ -459,6 +471,8 @@ mod tests {
     #[tokio::test]
     async fn test_resolver_stats_tracking() {
         use std::sync::atomic::Ordering;
+
+        let _guards = disable_fakeip_env();
 
         // Provide both A and AAAA responses to avoid spurious failures from
         // concurrent resolve_both_records() which queries both record types

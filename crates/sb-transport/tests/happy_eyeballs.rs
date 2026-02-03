@@ -8,17 +8,37 @@
 
 use sb_transport::dialer::{Dialer, TcpDialer};
 use std::env;
+use std::io;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
+fn is_permission_denied_io(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(1 | 13))
+}
+
 #[tokio::test]
 async fn test_happy_eyeballs_ipv4_only() {
     // Set up IPv4-only server
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_ipv4_only: permission denied binding IPv4");
+            return;
+        }
+        Err(err) => panic!("Failed to bind IPv4 listener: {err}"),
+    };
+    let port = match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_ipv4_only: permission denied local_addr");
+            return;
+        }
+        Err(err) => panic!("Failed to get IPv4 listener port: {err}"),
+    };
 
     // Accept connections in background
     let accept_task = tokio::spawn(async move {
@@ -41,8 +61,22 @@ async fn test_happy_eyeballs_ipv4_only() {
 #[tokio::test]
 async fn test_happy_eyeballs_ipv6_only() {
     // Set up IPv6-only server
-    let listener = TcpListener::bind("[::1]:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = match TcpListener::bind("[::1]:0") {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_ipv6_only: permission denied binding IPv6");
+            return;
+        }
+        Err(err) => panic!("Failed to bind IPv6 listener: {err}"),
+    };
+    let port = match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_ipv6_only: permission denied local_addr");
+            return;
+        }
+        Err(err) => panic!("Failed to get IPv6 listener port: {err}"),
+    };
 
     // Accept connections in background
     let accept_task = tokio::spawn(async move {
@@ -66,16 +100,41 @@ async fn test_happy_eyeballs_ipv6_only() {
 #[ignore]
 async fn test_happy_eyeballs_dual_stack_ipv6_fast() {
     // Set up dual-stack servers with IPv6 responding faster
-    let ipv4_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = ipv4_listener.local_addr().unwrap().port();
+    let ipv4_listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!(
+                "Skipping test_happy_eyeballs_dual_stack_ipv6_fast: permission denied binding IPv4"
+            );
+            return;
+        }
+        Err(err) => panic!("Failed to bind IPv4 listener: {err}"),
+    };
+    let port = match ipv4_listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!(
+                "Skipping test_happy_eyeballs_dual_stack_ipv6_fast: permission denied local_addr"
+            );
+            return;
+        }
+        Err(err) => panic!("Failed to get IPv4 listener port: {err}"),
+    };
 
     // Try to bind IPv6 to same port (may fail in some environments)
-    let ipv6_result = TcpListener::bind(format!("[::1]:{}", port));
-    if ipv6_result.is_err() {
-        // Skip test if IPv6 not available
-        return;
-    }
-    let ipv6_listener = ipv6_result.unwrap();
+    let ipv6_listener = match TcpListener::bind(format!("[::1]:{}", port)) {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!(
+                "Skipping test_happy_eyeballs_dual_stack_ipv6_fast: permission denied binding IPv6"
+            );
+            return;
+        }
+        Err(_) => {
+            // Skip test if IPv6 not available
+            return;
+        }
+    };
 
     let ipv6_ready = Arc::new(AtomicBool::new(false));
     let ipv4_ready = Arc::new(AtomicBool::new(false));
@@ -133,8 +192,22 @@ async fn test_happy_eyeballs_dual_stack_ipv6_fast() {
 #[tokio::test]
 async fn test_happy_eyeballs_disabled() {
     // Set up IPv4 server
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_disabled: permission denied binding IPv4");
+            return;
+        }
+        Err(err) => panic!("Failed to bind IPv4 listener: {err}"),
+    };
+    let port = match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_disabled: permission denied local_addr");
+            return;
+        }
+        Err(err) => panic!("Failed to get IPv4 listener port: {err}"),
+    };
 
     let accept_task = tokio::spawn(async move {
         if let Ok((stream, _)) = listener.accept() {
@@ -166,8 +239,24 @@ async fn test_happy_eyeballs_custom_delay() {
     env::set_var("SB_HE_DELAY_MS", "100");
     env::remove_var("SB_HE_DISABLE");
 
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_custom_delay: permission denied binding IPv4");
+            env::remove_var("SB_HE_DELAY_MS");
+            return;
+        }
+        Err(err) => panic!("Failed to bind IPv4 listener: {err}"),
+    };
+    let port = match listener.local_addr() {
+        Ok(addr) => addr.port(),
+        Err(err) if is_permission_denied_io(&err) => {
+            eprintln!("Skipping test_happy_eyeballs_custom_delay: permission denied local_addr");
+            env::remove_var("SB_HE_DELAY_MS");
+            return;
+        }
+        Err(err) => panic!("Failed to get IPv4 listener port: {err}"),
+    };
 
     let accept_task = tokio::spawn(async move {
         if let Ok((stream, _)) = listener.accept() {

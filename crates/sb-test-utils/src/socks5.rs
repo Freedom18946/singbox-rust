@@ -290,13 +290,33 @@ async fn handle_socks5_handshake(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+
+    fn is_permission_denied(err: &anyhow::Error) -> bool {
+        err.chain().any(|cause| {
+            cause.downcast_ref::<io::Error>().is_some_and(|err| {
+                err.kind() == io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(1)
+                    || err.raw_os_error() == Some(13)
+            })
+        }) || err.to_string().contains("Operation not permitted")
+            || err.to_string().contains("Permission denied")
+    }
 
     #[tokio::test]
     async fn test_start_mock_socks5() {
         let result = start_mock_socks5().await;
-        assert!(result.is_ok());
+        let (tcp_addr, udp_addr) = match result {
+            Ok(value) => value,
+            Err(err) => {
+                if is_permission_denied(&err) {
+                    eprintln!("Skipping: permission denied starting mock socks5");
+                    return;
+                }
+                panic!("unexpected error starting mock socks5: {err:?}");
+            }
+        };
 
-        let (tcp_addr, udp_addr) = result.unwrap();
         assert!(tcp_addr.port() > 0);
         assert!(udp_addr.port() > 0);
         assert_ne!(tcp_addr.port(), udp_addr.port());
