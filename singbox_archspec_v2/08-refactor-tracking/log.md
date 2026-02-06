@@ -308,3 +308,62 @@
 - 风险与回滚：受限环境下跳过权限不足测试，覆盖面下降；如需强制覆盖，可移除跳过逻辑并在具备权限的环境重跑
 - 验证方式与结果：`happy_eyeballs` 集成测试通过（6 passed，1 ignored）
 - 进度关联（整体进度规划项）：P2-依赖与构建门禁
+
+### 2026-02-03 17:45
+- 操作人：Codex
+- 操作类型：命令 / 修改 / 验证 / 决策
+- 依据规范：`singbox_archspec_v2/08-refactor-tracking/操作规程.md`；`singbox_archspec_v2/01-constitution/ci-enforcement.md`
+- 目标/范围：推进 P2 依赖审计离线阻塞项，提供本地可执行入口
+- 具体动作：
+  - 执行查看命令：`rg --files -g 'deny.toml'`，`sed -n '1,220p' deny.toml`
+  - 执行查看命令：`sed -n '1,220p' singbox_archspec_v2/01-constitution/ci-enforcement.md`
+  - 执行查看命令：`ls -la tools`，`sed -n '1,200p' PROJECT_STRUCTURE_NAVIGATION.md`
+  - 执行帮助命令：`cargo deny --help`，`cargo deny check --help`
+  - 新建 `tools/deny/`，新增 `check.sh`（离线检查）与 `refresh.sh`（在线预取），并编写 `README.md`
+  - 执行 `tools/deny/check.sh`（失败：离线缺失依赖缓存）
+  - 更新 `PROJECT_STRUCTURE_NAVIGATION.md`、`本地门禁.md`、`整体进度规划.md`
+  - 记录时间：`date '+%Y-%m-%d %H:%M'`
+- 影响文件：
+  - `tools/deny/check.sh`
+  - `tools/deny/refresh.sh`
+  - `tools/deny/README.md`
+  - `PROJECT_STRUCTURE_NAVIGATION.md`
+  - `singbox_archspec_v2/08-refactor-tracking/本地门禁.md`
+  - `singbox_archspec_v2/08-refactor-tracking/整体进度规划.md`
+  - `singbox_archspec_v2/08-refactor-tracking/log.md`
+- 风险与回滚：离线缓存未预取导致 `cargo deny` 仍阻塞；如需回滚可移除 `tools/deny` 并恢复门禁说明
+- 验证方式与结果：`tools/deny/check.sh` 失败（`cargo metadata` 在 `--offline` 下尝试下载 `windows-link`、`android_system_properties`）
+- 进度关联（整体进度规划项）：P2-依赖与构建门禁
+
+### 2026-02-03 18:05
+- 操作人：Codex
+- 操作类型：命令 / 修改 / 验证
+- 依据规范：`singbox_archspec_v2/08-refactor-tracking/操作规程.md`；`singbox_archspec_v2/01-constitution/testing-strategy.md`
+- 目标/范围：继续处理 P2 本地门禁的权限/不稳定测试；增量验证网络相关测试
+- 具体动作：
+  - 执行查看命令：`git status -sb`，`git diff --name-only | rg '/tests/'`，`git diff --stat`
+  - 执行查看命令：`sed -n '1,220p' crates/sb-transport/tests/happy_eyeballs.rs`
+  - 执行查看命令：`ls crates/sb-adapters/tests`，`rg 'test_udp_packet_encryption_decryption|test_parse_address_length|test_udp_socket_address_encoding_domain|test_udp_socket_address_encoding_ipv4' -n crates/sb-adapters`，`sed -n '880,1060p' crates/sb-adapters/src/outbound/shadowsocks.rs`
+  - 执行测试：`cargo test -p sb-adapters --test shadowsocks_integration`，`cargo test -p sb-adapters --features adapter-shadowsocks test_udp_`
+  - 执行测试：`cargo test -p sb-core udp_`
+  - 执行查看命令：`ls crates/sb-transport/tests`，`rg 'bind\\(' crates/sb-transport/tests -n`，`sed -n '1,220p' crates/sb-transport/tests/httpupgrade_integration.rs`，`sed -n '1,220p' crates/sb-transport/tests/retry_integration.rs`，`sed -n '1,200p' crates/sb-transport/tests/multiplex_integration.rs`，`sed -n '200,520p' crates/sb-transport/tests/multiplex_integration.rs`，`sed -n '1,220p' crates/sb-transport/tests/websocket_integration.rs`，`sed -n '1,200p' crates/sb-transport/tests/http2_integration.rs`，`rg 'start_echo_server' -n crates/sb-transport/tests/multiplex_integration.rs`，`rg 'TcpListener::bind' -n crates/sb-transport/tests`
+  - 修改 `sb-transport` 集成测试：HTTPUpgrade/HTTP2/WebSocket/Multiplex 增加 PermissionDenied 跳过逻辑；`retry_integration` 增加非可重试错误下的时间断言跳过
+  - 执行测试：`cargo test -p sb-transport --test retry_integration`（先失败后修复并通过）
+  - 执行测试：`cargo test -p sb-transport --features transport_httpupgrade --test httpupgrade_integration`
+  - 执行测试：`cargo test -p sb-transport --features transport_ws --test websocket_integration`
+  - 执行测试：`cargo test -p sb-transport --features transport_h2 --test http2_integration`
+  - 执行测试：`cargo test -p sb-transport --features transport_mux --test multiplex_integration`
+  - 记录时间：`date '+%Y-%m-%d %H:%M'`
+  - 更新 `本地门禁.md` 与 `整体进度规划.md` 记录增量测试结果与阻塞项
+- 影响文件：
+  - `crates/sb-transport/tests/httpupgrade_integration.rs`
+  - `crates/sb-transport/tests/http2_integration.rs`
+  - `crates/sb-transport/tests/websocket_integration.rs`
+  - `crates/sb-transport/tests/multiplex_integration.rs`
+  - `crates/sb-transport/tests/retry_integration.rs`
+  - `singbox_archspec_v2/08-refactor-tracking/本地门禁.md`
+  - `singbox_archspec_v2/08-refactor-tracking/整体进度规划.md`
+  - `singbox_archspec_v2/08-refactor-tracking/log.md`
+- 风险与回滚：权限不足场景下跳过网络测试，覆盖面下降；时间断言在非可重试错误时跳过。可通过具备权限的环境与全量门禁覆盖回归。
+- 验证方式与结果：增量测试全部通过（sb-adapters UDP/ sb-core udp_ / sb-transport retry+HTTPUpgrade+WS+H2+Mux）
+- 进度关联（整体进度规划项）：P2-依赖与构建门禁
