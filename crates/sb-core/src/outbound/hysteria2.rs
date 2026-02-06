@@ -534,7 +534,7 @@ impl Hysteria2Outbound {
 
         // Add session ID (random 8 bytes)
         let mut rng = rand::thread_rng();
-        let session_id: [u8; 8] = rng.gen();
+        let session_id: [u8; 8] = rand::Rng::gen(&mut rng);
         init_packet.extend_from_slice(&session_id);
 
         // Apply obfuscation

@@ -374,6 +374,30 @@ impl Target {
     }
 }
 
+// ============================================================================
+// Bridge to sb-types (V2 architecture transition)
+// ============================================================================
+
+impl From<Target> for sb_types::TargetAddr {
+    fn from(target: Target) -> Self {
+        // Try parsing as IP address first
+        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+            sb_types::TargetAddr::Socket(std::net::SocketAddr::new(ip, target.port))
+        } else {
+            sb_types::TargetAddr::Domain(target.host, target.port)
+        }
+    }
+}
+
+impl From<sb_types::TargetAddr> for Target {
+    fn from(addr: sb_types::TargetAddr) -> Self {
+        match addr {
+            sb_types::TargetAddr::Domain(host, port) => Target::tcp(host, port),
+            sb_types::TargetAddr::Socket(sock) => Target::tcp(sock.ip().to_string(), sock.port()),
+        }
+    }
+}
+
 /// Boxed async stream for connections.
 /// 用于连接的装箱异步流。
 ///

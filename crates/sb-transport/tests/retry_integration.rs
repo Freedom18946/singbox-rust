@@ -21,8 +21,7 @@ use tokio::time::timeout;
 static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn is_permission_denied(err: &io::Error) -> bool {
-    err.kind() == io::ErrorKind::PermissionDenied
-        || matches!(err.raw_os_error(), Some(1 | 13))
+    err.kind() == io::ErrorKind::PermissionDenied || matches!(err.raw_os_error(), Some(1 | 13))
 }
 
 fn bind_localhost() -> Option<(TcpListener, u16)> {
@@ -158,9 +157,7 @@ async fn test_retryable_dialer_with_retry() {
     assert!(result.is_err());
     if let Err(ref error) = result {
         if !retry_conditions::is_retriable_error(error) {
-            eprintln!(
-                "Skipping retry timing assertion: non-retriable error encountered: {error}"
-            );
+            eprintln!("Skipping retry timing assertion: non-retriable error encountered: {error}");
             env::remove_var("SB_RETRY_MAX");
             env::remove_var("SB_RETRY_BASE_MS");
             return;
@@ -215,9 +212,7 @@ async fn test_custom_retry_policy() {
     assert!(result.is_err());
     if let Err(ref error) = result {
         if !retry_conditions::is_retriable_error(error) {
-            eprintln!(
-                "Skipping retry timing assertion: non-retriable error encountered: {error}"
-            );
+            eprintln!("Skipping retry timing assertion: non-retriable error encountered: {error}");
             return;
         }
     }

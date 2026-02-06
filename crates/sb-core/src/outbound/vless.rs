@@ -21,6 +21,10 @@ use super::types::{HostPort, OutboundTcp};
 
 #[cfg(feature = "out_vless")]
 #[derive(Clone, Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::vless::VlessConnector instead. This type will be removed in a future release."
+)]
 pub struct VlessConfig {
     pub server: String,
     pub port: u16,
@@ -75,6 +79,10 @@ impl Default for VlessConfig {
 
 #[cfg(feature = "out_vless")]
 #[derive(Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::vless::VlessConnector instead. This type will be removed in a future release."
+)]
 pub struct VlessOutbound {
     config: VlessConfig,
 }

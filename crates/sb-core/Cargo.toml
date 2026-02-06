@@ -79,9 +79,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 ipnet = "2.7"
 blake3 = "1.3"
 flate2 = "1.0"  # For SRS binary decompression
-lru = "0.12"    # For rule matching cache
+lru = "0.16"    # For rule matching cache (RUSTSEC-2026-0002 fix)
 glob = "0.3"
-maxminddb = "0.23"
+maxminddb = "0.27" # RUSTSEC-2025-0132 fix
 aho-corasick = "1.1"
 rustls-pki-types = "1.0"
 x509-parser = { version = "0.15", optional = true }
@@ -179,13 +179,18 @@ out_naive          = []
 out_quic           = []
 out_shadowtls      = ["tls_rustls"]
 out_ssh            = ["dep:thrussh", "dep:thrussh-keys"]
-out_ss             = []
-out_trojan         = []
+out_ss             = ["legacy_protocols"]
+out_trojan         = ["legacy_protocols"]
 out_tuic           = ["out_quic", "tls_rustls"]
-out_vless          = []
-out_vmess          = []
+out_vless          = ["legacy_protocols"]
+out_vmess          = ["legacy_protocols"]
 out_wireguard      = []
 out_tailscale      = []
+
+# Legacy protocol implementations (deprecated, use sb-adapters instead)
+# This feature enables the deprecated sb-core protocol implementations
+# note: out_trojan, out_vmess, out_vless, out_ss now depend on this feature
+legacy_protocols   = []
 platform           = []
 preview            = []
 preview_route      = []

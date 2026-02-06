@@ -3,6 +3,7 @@ name = "sb-test-utils"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["net", "io-util", "macros", "rt", "time"] }

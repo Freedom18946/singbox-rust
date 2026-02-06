@@ -134,15 +134,18 @@ impl MmdbReader {
     }
 
     fn lookup_country(&self, ip: IpAddr) -> Option<CountryRecord> {
-        self.country_db.as_ref()?.lookup(ip).ok()
+        let result = self.country_db.as_ref()?.lookup(ip).ok()?;
+        result.decode().ok().flatten()
     }
 
     fn lookup_city(&self, ip: IpAddr) -> Option<CityRecord> {
-        self.city_db.as_ref()?.lookup(ip).ok()
+        let result = self.city_db.as_ref()?.lookup(ip).ok()?;
+        result.decode().ok().flatten()
     }
 
     fn lookup_asn(&self, ip: IpAddr) -> Option<AsnRecord> {
-        self.asn_db.as_ref()?.lookup(ip).ok()
+        let result = self.asn_db.as_ref()?.lookup(ip).ok()?;
+        result.decode().ok().flatten()
     }
 }
 

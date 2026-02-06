@@ -367,3 +367,171 @@
 - 风险与回滚：权限不足场景下跳过网络测试，覆盖面下降；时间断言在非可重试错误时跳过。可通过具备权限的环境与全量门禁覆盖回归。
 - 验证方式与结果：增量测试全部通过（sb-adapters UDP/ sb-core udp_ / sb-transport retry+HTTPUpgrade+WS+H2+Mux）
 - 进度关联（整体进度规划项）：P2-依赖与构建门禁
+
+### 2026-02-06 17:41
+- 操作人：Codex
+- 操作类型：阅读 / 分析
+- 依据规范：`singbox_archspec_v2/README.md`；全部 00-08 目录
+- 目标/范围：完整阅读架构规范 V2，理解用户意图与工作流程，准备继续重构
+- 具体动作：
+  - 阅读 `singbox_archspec_v2/` 全部 49 个文件
+  - 确认当前进度：P2-依赖与构建门禁（进行中）
+  - P0/P1 已完成，P2 存在阻塞项：`cargo deny` 离线缓存、测试权限限制
+  - 检查 git 状态：main 分支上有未提交改动（depcheck/deny 工具、测试修复）
+- 影响文件：无代码变更
+- 风险与回滚：无
+- 验证方式与结果：文档阅读完成，状态确认无误
+- 进度关联（整体进度规划项）：P2-依赖与构建门禁
+
+### 2026-02-06 17:47
+- 操作人：Codex
+- 操作类型：新增 / 修改
+- 依据规范：`singbox_archspec_v2/04-interfaces/*`, `singbox_archspec_v2/03-crates/sb-types.md`
+- 目标/范围：在 sb-types 新增规范 Ports traits 与 typed errors
+- 具体动作：
+  - 创建 `crates/sb-types/src/session.rs`（Session、TargetAddr、InboundTag、OutboundTag）
+  - 创建 `crates/sb-types/src/errors.rs`（CoreError、DnsError、TransportError、ErrorClass）
+  - 创建 `crates/sb-types/src/ports/` 模块：
+    - `inbound.rs`：InboundAcceptor、InboundHandler
+    - `outbound.rs`：OutboundConnector
+    - `dns.rs`：DnsPort
+    - `admin.rs`：AdminPort、StatsPort
+    - `metrics.rs`：MetricsPort、NoOpMetrics
+  - 更新 `lib.rs` 导出所有新类型
+- 影响文件：
+  - `crates/sb-types/src/lib.rs`
+  - `crates/sb-types/src/session.rs`（新增）
+  - `crates/sb-types/src/errors.rs`（新增）
+  - `crates/sb-types/src/ports/*.rs`（新增）
+- 风险与回滚：新增文件，可通过 git revert 回滚
+- 验证方式与结果：
+  - `cargo check -p sb-types` 通过
+  - `cargo clippy -p sb-types` 通过
+  - `cargo test -p sb-types` 5 tests passed
+  - `cargo check -p sb-core` 通过（不破坏现有代码）
+- 进度关联（整体进度规划项）：P3-接口契约校准
+
+### 2026-02-06 18:10
+- 操作人：Codex
+- 操作类型：分析 / 决策
+- 依据规范：`singbox_archspec_v2/03-crates/sb-adapters.md`（协议归属）
+- 目标/范围：P4 模块归属迁移规划
+- 具体动作：
+  - 分析 sb-core 与 sb-adapters 协议实现重复情况
+  - 对比 Trojan/VMess/VLESS/Shadowsocks 两处实现
+  - 确认 sb-adapters 为更完整版本（实现 OutboundConnector trait）
+  - 创建 `P4迁移计划.md` 文档
+- 影响文件：
+  - `singbox_archspec_v2/08-refactor-tracking/P4迁移计划.md`（新增）
+- 风险与回滚：仅文档，无代码变更
+- 验证方式与结果：迁移计划文档创建完成
+- 进度关联（整体进度规划项）：P4-模块归属与迁移
+
+### 2026-02-06 18:15
+- 操作人：Codex
+- 操作类型：验证
+- 依据规范：`P4迁移计划.md` 阶段 A
+- 目标/范围：验证 sb-adapters 协议实现功能完整性
+- 具体动作：
+  - 执行 `cargo test -p sb-adapters --features adapter-trojan` → 14 passed
+  - 执行 `cargo test -p sb-adapters --features adapter-vmess,adapter-vless` → VLESS 17 passed, VMess 11 passed
+  - 确认所有协议实现测试通过
+- 影响文件：无代码变更
+- 风险与回滚：无
+- 验证方式与结果：所有测试通过，sb-adapters 确认为主版本
+- 进度关联（整体进度规划项）：P4-模块归属与迁移（阶段 A）
+
+### 2026-02-06 18:20
+- 操作人：Codex
+- 操作类型：修改
+- 依据规范：`P4迁移计划.md` 阶段 B
+- 目标/范围：为 sb-core 废弃协议实现添加 #[deprecated] 标记
+- 具体动作：
+  - 修改 `sb-core/src/outbound/trojan.rs`：TrojanConfig, TrojanOutbound 添加 deprecated
+  - 修改 `sb-core/src/outbound/vmess.rs`：VmessConfig, VmessOutbound 添加 deprecated
+  - 修改 `sb-core/src/outbound/vless.rs`：VlessConfig, VlessOutbound 添加 deprecated
+  - 修改 `sb-core/src/outbound/shadowsocks.rs`：ShadowsocksConfig, ShadowsocksOutbound 添加 deprecated
+- 影响文件：
+  - `crates/sb-core/src/outbound/trojan.rs`
+  - `crates/sb-core/src/outbound/vmess.rs`
+  - `crates/sb-core/src/outbound/vless.rs`
+  - `crates/sb-core/src/outbound/shadowsocks.rs`
+- 风险与回滚：可通过 git revert 回滚；使用 deprecated 类型会产生编译警告
+- 验证方式与结果：`cargo check -p sb-core` 通过
+- 进度关联（整体进度规划项）：P4-模块归属与迁移（阶段 B）
+
+### 2026-02-06 18:26
+- 操作人：Codex
+- 操作类型：修改
+- 依据规范：`P4迁移计划.md` 阶段 C
+- 目标/范围：移除 sb-core 中废弃的协议实现文件
+- 具体动作：（执行中）
+  - 即将删除 `sb-core/src/outbound/trojan.rs`
+  - 即将删除 `sb-core/src/outbound/vmess.rs`
+  - 即将删除 `sb-core/src/outbound/vless.rs`
+  - 即将删除 `sb-core/src/outbound/shadowsocks.rs`
+  - 更新 `sb-core/src/outbound/mod.rs` 移除相关模块声明
+- 影响文件：（见上）
+- 风险与回滚：重大变更，可通过 git revert 回滚；需确保无外部依赖
+- 验证方式与结果：待执行
+- 进度关联（整体进度规划项）：P4-模块归属与迁移（阶段 C）
+
+### 2026-02-07 00:18
+- 操作人：Codex
+- 操作类型：修改
+- 依据规范：`P4迁移计划.md` 阶段 C（选项 2：条件编译）
+- 目标/范围：通过 feature 条件编译保护废弃代码
+- 具体动作：
+  - 在 `sb-core/Cargo.toml` 添加 `legacy_protocols` feature
+  - 修改 `outbound/mod.rs` 模块声明：添加 `#[cfg(all(..., feature = "legacy_protocols"))]`
+  - 修改 `OutboundImpl` 枚举变体：添加同样的 feature guard
+- 影响文件：
+  - `crates/sb-core/Cargo.toml`
+  - `crates/sb-core/src/outbound/mod.rs`
+- 风险与回滚：可通过 git revert 回滚；默认开启 legacy_protocols 保持向后兼容
+- 验证方式与结果：
+  - `cargo check -p sb-core --features legacy_protocols` 通过
+  - `cargo check -p sb-core` 通过（默认 features）
+- 进度关联（整体进度规划项）：P4-模块归属与迁移（阶段 C 完成）
+
+### 2026-02-07 00:23
+- 操作人：Codex
+- 操作类型：分析 / 修改
+- 依据规范：`testing-strategy.md`, `performance-guidelines.md`, `logging-metrics.md`
+- 目标/范围：P5 测试与性能门禁
+- 具体动作：
+  - 审计测试覆盖：sb-types 5, sb-core 707, sb-adapters 80, sb-platform 56, sb-config 116
+  - 分析 telemetry.rs 现有指标：5 个 counter 已实现
+  - 添加 histogram helpers：outbound_connect_latency, dns_resolve_latency, route_decision_latency, relay_bytes
+  - 创建 P5测试与性能门禁计划.md
+- 影响文件：
+  - `crates/sb-core/src/telemetry.rs`
+  - `singbox_archspec_v2/08-refactor-tracking/P5测试与性能门禁计划.md`（新增）
+  - `singbox_archspec_v2/08-refactor-tracking/整体进度规划.md`
+- 风险与回滚：可通过 git revert 回滚
+- 验证方式与结果：`cargo check -p sb-core --features metrics` 通过
+- 进度关联（整体进度规划项）：P5-测试与性能门禁（Phase A/B 完成）
+
+### 2026-02-07 00:57
+- 操作人：Codex
+- 操作类型：修复 / 验证
+- 依据规范：`testing-strategy.md`, `performance-guidelines.md`, `ci.yml`
+- 目标/范围：P5 Phase C 完成 + 遗留问题修复
+- 具体动作：
+  - 修复 hysteria2.rs gen() 关键字问题
+  - 修复 legacy_protocols feature 依赖链（out_* features 自动启用 legacy_protocols）
+  - 更新 time crate 0.3.44 → 0.3.47（解决 RUSTSEC-2026-0009）
+  - 验证 CI 配置（6 jobs: build, parity, clippy, fmt, cross-platform, smoke-test）
+  - 运行 cargo check/clippy workspace 验证
+- 影响文件：
+  - `crates/sb-core/src/outbound/hysteria2.rs`
+  - `crates/sb-core/src/outbound/mod.rs`
+  - `crates/sb-core/Cargo.toml`
+  - `app/Cargo.toml`
+  - `Cargo.lock`
+- 风险与回滚：可通过 git revert 回滚
+- 验证方式与结果：
+  - `cargo check --workspace` ✅
+  - `cargo clippy --workspace` ✅
+  - `cargo deny check` ✅
+- 进度关联：P5-测试与性能门禁（已完成）

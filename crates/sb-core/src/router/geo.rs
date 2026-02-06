@@ -50,13 +50,10 @@ impl GeoIpDb {
 
     /// Look up the country code for an IP address
     pub fn lookup_country(&self, ip: IpAddr) -> Option<String> {
-        match self.reader.lookup::<maxminddb::geoip2::Country>(ip) {
-            Ok(country) => country
-                .country
-                .and_then(|c| c.iso_code)
-                .map(|s| s.to_string()),
-            Err(_) => None,
-        }
+        let result = self.reader.lookup(ip).ok()?;
+        let data: maxminddb::geoip2::Country = result.decode().ok()??;
+        // data.country is Country<'a> struct with iso_code: Option<&str>
+        data.country.iso_code.map(|s| s.to_string())
     }
 
     pub fn available_countries(&self) -> Vec<String> {

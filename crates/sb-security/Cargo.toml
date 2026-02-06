@@ -3,6 +3,7 @@ name = "sb-security"
 version = "0.1.0"
 edition = "2021"
 description = "Security utilities for SingBox - credential redaction, secure loading, etc."
+license.workspace = true
 
 [dependencies]
 # Core dependencies

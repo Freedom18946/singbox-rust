@@ -14,8 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 fn is_permission_denied(err: &io::Error) -> bool {
-    err.kind() == io::ErrorKind::PermissionDenied
-        || matches!(err.raw_os_error(), Some(1 | 13))
+    err.kind() == io::ErrorKind::PermissionDenied || matches!(err.raw_os_error(), Some(1 | 13))
 }
 
 async fn bind_localhost() -> Option<(TcpListener, SocketAddr)> {

@@ -24,6 +24,32 @@
 //!    - Keeps the dependency tree minimal to allow fast compilation and easy inclusion in any part of the system (e.g. WASM, embedded).
 //!    - 保持依赖树最小化，以允许快速编译并轻松包含在系统的任何部分（例如 WASM，嵌入式）。
 
+// ============================================================================
+// Module declarations (V2 architecture)
+// ============================================================================
+
+/// Session and data plane types.
+pub mod session;
+
+/// Typed error types for cross-crate error handling.
+pub mod errors;
+
+/// Ports (trait contracts) for cross-crate abstractions.
+pub mod ports;
+
+// Re-export commonly used types at crate root.
+pub use errors::{CoreError, DnsError, ErrorClass, TransportError};
+pub use ports::{
+    AdminPort, AsyncStream, BoxedStream, ConnSnapshot, Datagram, DnsCacheStats, DnsPort,
+    InboundAcceptor, InboundHandler, LogLevel, MetricsPort, NoOpMetrics, OutboundConnector,
+    StatsPort, TrafficSnapshot,
+};
+pub use session::{InboundTag, OutboundTag, Session, SessionId, SessionMeta, TargetAddr, UserId};
+
+// ============================================================================
+// Legacy issue codes (kept for backward compatibility)
+// ============================================================================
+
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 

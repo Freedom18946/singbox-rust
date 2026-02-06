@@ -3,6 +3,7 @@ name = "sb-common"
 version = "0.1.0"
 edition = "2021"
 description = "Common utilities for sing-box Rust implementation"
+license.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["sync", "time", "net", "io-util", "rt", "macros"] }

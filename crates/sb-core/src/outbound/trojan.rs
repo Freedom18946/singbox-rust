@@ -17,6 +17,10 @@ use tokio_rustls::TlsConnector;
 
 #[cfg(feature = "out_trojan")]
 #[derive(Clone, Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::trojan::TrojanConnector instead. This type will be removed in a future release."
+)]
 pub struct TrojanConfig {
     pub server: String,
     pub port: u16,
@@ -80,6 +84,10 @@ impl TrojanConfig {
 
 #[cfg(feature = "out_trojan")]
 #[derive(Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::trojan::TrojanConnector instead. This type will be removed in a future release."
+)]
 pub struct TrojanOutbound {
     config: TrojanConfig,
     tls_config: Arc<ClientConfig>,

@@ -16,8 +16,7 @@ use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
 fn is_permission_denied_io(err: &io::Error) -> bool {
-    err.kind() == io::ErrorKind::PermissionDenied
-        || matches!(err.raw_os_error(), Some(1 | 13))
+    err.kind() == io::ErrorKind::PermissionDenied || matches!(err.raw_os_error(), Some(1 | 13))
 }
 
 #[tokio::test]

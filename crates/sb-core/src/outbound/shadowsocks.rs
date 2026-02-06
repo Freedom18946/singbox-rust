@@ -47,6 +47,10 @@ impl ShadowsocksCipher {
 
 #[cfg(feature = "out_ss")]
 #[derive(Clone, Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::shadowsocks::ShadowsocksConnector instead. This type will be removed in a future release."
+)]
 pub struct ShadowsocksConfig {
     pub server: String,
     pub port: u16,
@@ -83,6 +87,10 @@ impl ShadowsocksConfig {
 
 #[cfg(feature = "out_ss")]
 #[derive(Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::shadowsocks::ShadowsocksConnector instead. This type will be removed in a future release."
+)]
 pub struct ShadowsocksOutbound {
     config: ShadowsocksConfig,
     key: Vec<u8>,

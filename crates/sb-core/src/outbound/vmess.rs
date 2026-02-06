@@ -34,6 +34,10 @@ use super::types::{encode_ss_addr, Addr};
 
 #[cfg(feature = "out_vmess")]
 #[derive(Clone, Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::vmess::VmessConnector instead. This type will be removed in a future release."
+)]
 pub struct VmessConfig {
     pub server: String,
     pub port: u16,
@@ -88,6 +92,10 @@ impl Default for VmessConfig {
 
 #[cfg(feature = "out_vmess")]
 #[derive(Debug)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use sb_adapters::outbound::vmess::VmessConnector instead. This type will be removed in a future release."
+)]
 pub struct VmessOutbound {
     config: VmessConfig,
 }

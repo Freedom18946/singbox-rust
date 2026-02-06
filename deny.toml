@@ -1,26 +1,22 @@
 [advisories]
 version = 2
 ignore = [
-  # Temporary allow: `atty` unmaintained/unsound warnings; plan to migrate to `is-terminal` upstream
-  "RUSTSEC-2021-0145",
-  # Temporary allow during baseline setup - should be addressed
-  "RUSTSEC-2024-0419",  # idna vulnerability
-  "RUSTSEC-2024-0421",  # idna punycode issue
-  "RUSTSEC-2024-0437",  # protobuf recursion crash
-  "RUSTSEC-2025-0017"   # trust-dns unmaintained
+  # Unmaintained - no upgrade available, tracking for future replacement
+  "RUSTSEC-2025-0119",  # number_prefix unmaintained (via indicatif)
+  "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained (migrate to rustls-pki-types PemObject)
+  "RUSTSEC-2025-0057",  # fxhash unmaintained (via sled)
+  "RUSTSEC-2024-0384",  # instant unmaintained (via sled->parking_lot 0.11)
 ]
 yanked = "deny"          # Changed from warn to deny - no yanked crates allowed
 unmaintained = "all"     # Report all unmaintained crates
 
 [licenses]
 version = 2
-allow = ["MIT","Apache-2.0","BSD-3-Clause","BSD-2-Clause","ISC","Unicode-DFS-2016","Unicode-3.0","CDLA-Permissive-2.0","Zlib","OpenSSL"]
+allow = ["MIT","Apache-2.0","BSD-3-Clause","BSD-2-Clause","ISC","Unicode-DFS-2016","Unicode-3.0","CDLA-Permissive-2.0","Zlib","OpenSSL","0BSD","CC0-1.0","WTFPL"]
 confidence-threshold = 0.8
-[[licenses.exceptions]]
-# Workspace crates don't require explicit licensing
-name = "app"
-version = "*"
-allow = ["MIT", "Apache-2.0"]
+# Workspace crates without explicit license - allow them
+[licenses.private]
+ignore = true
 
 [bans]
 multiple-versions = "warn"

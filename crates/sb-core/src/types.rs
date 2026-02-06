@@ -164,6 +164,28 @@ impl From<SocketAddr> for Endpoint {
     }
 }
 
+// ============================================================================
+// Bridge to sb-types (V2 architecture transition)
+// ============================================================================
+
+impl From<Endpoint> for sb_types::TargetAddr {
+    fn from(ep: Endpoint) -> Self {
+        match ep.host {
+            Host::Ip(ip) => sb_types::TargetAddr::Socket(std::net::SocketAddr::new(ip, ep.port)),
+            Host::Name(domain) => sb_types::TargetAddr::Domain(domain.into(), ep.port),
+        }
+    }
+}
+
+impl From<sb_types::TargetAddr> for Endpoint {
+    fn from(addr: sb_types::TargetAddr) -> Self {
+        match addr {
+            sb_types::TargetAddr::Domain(host, port) => Endpoint::new(Host::domain(host), port),
+            sb_types::TargetAddr::Socket(sock) => Endpoint::from_socket_addr(sock),
+        }
+    }
+}
+
 /// Network protocol type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Network {

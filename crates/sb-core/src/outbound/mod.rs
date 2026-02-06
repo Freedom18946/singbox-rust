@@ -83,15 +83,15 @@ pub mod ss {
 }
 #[cfg(feature = "out_naive")]
 pub mod naive_h2;
-#[cfg(feature = "out_ss")]
+#[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
 pub mod shadowsocks;
 #[cfg(feature = "out_shadowtls")]
 pub mod shadowtls;
-#[cfg(feature = "out_trojan")]
+#[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
 pub mod trojan;
-#[cfg(feature = "out_vless")]
+#[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
 pub mod vless;
-#[cfg(feature = "out_vmess")]
+#[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
 pub mod vmess;
 // QUIC types are included in crypto_types
 #[cfg(feature = "out_quic")]
@@ -254,17 +254,17 @@ pub enum OutboundImpl {
     Block,
     Socks5(Socks5Config),
     HttpProxy(HttpProxyConfig),
-    #[cfg(feature = "out_trojan")]
+    #[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
     Trojan(trojan::TrojanConfig),
-    #[cfg(feature = "out_ss")]
+    #[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
     Shadowsocks(shadowsocks::ShadowsocksConfig),
     #[cfg(feature = "out_shadowtls")]
     ShadowTls(shadowtls::ShadowTlsConfig),
     #[cfg(feature = "out_naive")]
     Naive(naive_h2::NaiveH2Config),
-    #[cfg(feature = "out_vless")]
+    #[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
     Vless(vless::VlessConfig),
-    #[cfg(feature = "out_vmess")]
+    #[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
     Vmess(vmess::VmessConfig),
     #[cfg(feature = "out_tuic")]
     Tuic(tuic::TuicConfig),
@@ -1103,7 +1103,7 @@ pub async fn socks5_connect_through_socks5(
 }
 
 // Adapter functions for encrypted protocols
-#[cfg(feature = "out_trojan")]
+#[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
 async fn trojan_connect(cfg: &trojan::TrojanConfig, ep: Endpoint) -> io::Result<TcpStream> {
     use crypto_types::{HostPort, OutboundTcp};
 
@@ -1129,7 +1129,7 @@ async fn trojan_connect(cfg: &trojan::TrojanConfig, ep: Endpoint) -> io::Result<
     }
 }
 
-#[cfg(feature = "out_ss")]
+#[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
 async fn shadowsocks_connect(
     cfg: &shadowsocks::ShadowsocksConfig,
     ep: Endpoint,
@@ -1198,7 +1198,7 @@ async fn naive_connect(cfg: &naive_h2::NaiveH2Config, ep: Endpoint) -> io::Resul
     ))
 }
 
-#[cfg(feature = "out_vless")]
+#[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
 async fn vless_connect(cfg: &vless::VlessConfig, ep: Endpoint) -> io::Result<TcpStream> {
     use crate::outbound::types::{HostPort, OutboundTcp};
 
@@ -1213,7 +1213,7 @@ async fn vless_connect(cfg: &vless::VlessConfig, ep: Endpoint) -> io::Result<Tcp
     OutboundTcp::connect(&outbound, &target).await
 }
 
-#[cfg(feature = "out_vmess")]
+#[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
 async fn vmess_connect(cfg: &vmess::VmessConfig, ep: Endpoint) -> io::Result<TcpStream> {
     use crypto_types::{HostPort, OutboundTcp};
 

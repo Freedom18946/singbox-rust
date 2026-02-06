@@ -55,6 +55,58 @@ fn cnt(name: &'static str, kv: &[(&'static str, &'static str)], v: u64) {
 #[inline]
 const fn cnt(_name: &'static str, _kv: &[(&'static str, &'static str)], _v: u64) {}
 
+// =========================
+// Histogram helpers (latency metrics)
+// =========================
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn hist(name: &'static str, kv: &[(&'static str, &'static str)], v: f64) {
+    match kv {
+        [(k1, v1)] => {
+            metrics::histogram!(name, *k1 => *v1).record(v);
+        }
+        [(k1, v1), (k2, v2)] => {
+            metrics::histogram!(name, *k1 => *v1, *k2 => *v2).record(v);
+        }
+        _ => {
+            metrics::histogram!(name).record(v);
+        }
+    }
+}
+
+#[cfg(not(feature = "metrics"))]
+#[inline]
+const fn hist(_name: &'static str, _kv: &[(&'static str, &'static str)], _v: f64) {}
+
+/// Record outbound connect latency in seconds
+#[inline]
+pub fn outbound_connect_latency(kind: &'static str, seconds: f64) {
+    hist("sb_outbound_connect_seconds", &[("kind", kind)], seconds);
+}
+
+/// Record DNS resolve latency in seconds
+#[inline]
+pub fn dns_resolve_latency(resolver: &'static str, seconds: f64) {
+    hist("sb_dns_resolve_seconds", &[("resolver", resolver)], seconds);
+}
+
+/// Record route decision latency in seconds
+#[inline]
+pub fn route_decision_latency(seconds: f64) {
+    hist("sb_route_decision_seconds", &[], seconds);
+}
+
+/// Record relay bytes (throughput tracking)
+#[inline]
+pub fn relay_bytes(direction: &'static str, bytes: u64) {
+    cnt(
+        "sb_relay_bytes_total",
+        &[("dir", direction), ("dir", direction)],
+        bytes,
+    );
+}
+
 #[inline]
 pub fn outbound_connect(kind: &'static str, result: &'static str, err: Option<&'static str>) {
     match err {
