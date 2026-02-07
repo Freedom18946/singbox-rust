@@ -27,7 +27,8 @@ agents-only/
 ├── 05-USER-ABSTRACT-REQUIREMENTS.md # 用户抽象需求
 ├── 06-STRATEGIC-ROADMAP.md         # 战略路线图
 ├── 07-DEPENDENCY-AUDIT.md          # 依赖边界审计
-└── 08-PROJECT-STRUCTURE.md         # 项目结构导航
+├── 08-PROJECT-STRUCTURE.md         # 项目结构导航
+└── 09-GO-DESIGN-REFERENCE.md       # Go 设计参考
 ```
 
 ---

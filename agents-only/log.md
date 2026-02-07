@@ -65,4 +65,22 @@
 
 ---
 
+### [2026-02-07 13:24] Agent: Gemini-CLI
+
+**任务**: 从 Go/GUI 源码提取设计信息
+**变更**:
+- 新建 `09-GO-DESIGN-REFERENCE.md` - Go 架构设计参考
+  - Box 结构体与 10 个核心 Manager
+  - 4 阶段生命周期模式
+  - Inbound/Outbound/Router 接口定义
+  - InboundContext 30+ 字段
+  - CLI 命令结构
+  - GUI 集成接口
+  - 信号处理（SIGTERM/SIGHUP）
+
+**结果**: 成功
+**备注**: 从 go_fork_source/sing-box-1.12.14 和 GUI_fork_source 提取
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
