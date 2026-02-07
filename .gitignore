@@ -186,6 +186,9 @@ vgcore.*
 # Go sing-box source code reference (external fork)
 go_fork_source/
 
+# GUI.for.SingBox source code reference (external fork)
+GUI_fork_source/
+
 # Reference materials and instructions (internal documentation)
 refs/
 instruction/

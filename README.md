@@ -7,6 +7,30 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 
 ---
 
+## 🤖 AI/Agent/LLM 必读（Required for AI Assistants）
+
+> **如果你是 AI 助手、Agent、LLM 或 CLI 工具**：必须首先查阅 [`agents-only/`](./agents-only/) 目录。
+>
+> 该目录包含整合后的需求分析、验收标准和架构规范，是 AI 工作的**唯一真相来源**。
+
+### 🚨 强制执行
+| 文档 | 要求 |
+|------|------|
+| [`init.md`](./agents-only/init.md) | **必须首先执行** - AI 初始化检查 |
+| [`log.md`](./agents-only/log.md) | **任务结束前必须写入** - AI 行为日志 |
+
+### 📚 参考文档
+| 文档 | 内容 |
+|------|------|
+| [`05-USER-ABSTRACT-REQUIREMENTS.md`](./agents-only/05-USER-ABSTRACT-REQUIREMENTS.md) | 用户抽象需求 |
+| [`06-STRATEGIC-ROADMAP.md`](./agents-only/06-STRATEGIC-ROADMAP.md) | 战略路线图 |
+| [`01-REQUIREMENTS-ANALYSIS.md`](./agents-only/01-REQUIREMENTS-ANALYSIS.md) | 需求分析 |
+| [`02-ACCEPTANCE-CRITERIA.md`](./agents-only/02-ACCEPTANCE-CRITERIA.md) | 验收标准 |
+| [`03-ARCHITECTURE-SPEC.md`](./agents-only/03-ARCHITECTURE-SPEC.md) | 架构规范 |
+| [`04-IMPLEMENTATION-GUIDE.md`](./agents-only/04-IMPLEMENTATION-GUIDE.md) | 实现指南 |
+
+---
+
 ## 🚨 IMPORTANT: Authoritative Navigation Document
 
 **⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`PROJECT_STRUCTURE_NAVIGATION.md`](./PROJECT_STRUCTURE_NAVIGATION.md).**
