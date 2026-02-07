@@ -15,44 +15,51 @@ agents-only/
 ├── README.md                   # 本文件
 │
 ├── 00-overview/                # 概览
-│   ├── PROJECT-OVERVIEW.md     # 项目概览
-│   └── USER-ABSTRACT-REQUIREMENTS.md  # 用户抽象需求
+│   ├── PROJECT-OVERVIEW.md
+│   └── USER-ABSTRACT-REQUIREMENTS.md
 │
-├── 01-spec/                    # 规范
-│   ├── REQUIREMENTS-ANALYSIS.md    # 需求分析
-│   ├── ACCEPTANCE-CRITERIA.md      # 验收标准
-│   └── ARCHITECTURE-SPEC.md        # 架构规范
+├── 01-spec/                    # 规范（权威定义）
+│   ├── REQUIREMENTS-ANALYSIS.md
+│   ├── REQUIREMENTS-CLARIFICATION.md  # 需求澄清
+│   ├── ACCEPTANCE-CRITERIA.md
+│   └── ARCHITECTURE-SPEC.md    # 架构权威文档
 │
-├── 02-reference/               # 参考
-│   ├── DEPENDENCY-AUDIT.md     # 依赖边界审计
-│   ├── PROJECT-STRUCTURE.md    # 项目结构导航
-│   └── GO-DESIGN-REFERENCE.md  # Go 设计参考
+├── 02-reference/               # 参考资料
+│   ├── DEPENDENCY-AUDIT.md
+│   ├── PROJECT-STRUCTURE.md
+│   └── GO-DESIGN-REFERENCE.md
 │
 ├── 03-planning/                # 规划
-│   ├── STRATEGIC-ROADMAP.md    # 战略路线图
-│   └── IMPLEMENTATION-GUIDE.md # 实现指南
+│   ├── STRATEGIC-ROADMAP.md
+│   └── IMPLEMENTATION-GUIDE.md
 │
-├── 04-workflows/               # 工作流程
-│   ├── README.md               # 工作流索引
-│   ├── REFACTOR-PROGRESS.md    # 重构进度追踪
-│   ├── CODE-MIGRATION.md       # 代码迁移日志
-│   ├── BLOCKERS.md             # 阻塞项清单
-│   ├── TEST-MAPPING.md         # 测试映射
-│   └── CRATE-DETAIL.md         # Crate 详细职责
+├── 04-workflows/               # 工作流程（状态追踪）
+│   ├── REFACTOR-PROGRESS.md
+│   ├── CODE-MIGRATION.md
+│   ├── BLOCKERS.md
+│   ├── TEST-MAPPING.md
+│   └── CRATE-DETAIL.md         # → 链接到 01-spec/ARCHITECTURE-SPEC
 │
-├── 05-analysis/                # 源码分析
-│   ├── README.md               # 分析索引
-│   ├── CRATE-STRUCTURE.md      # Crate 结构分析
-│   ├── VIOLATION-LOCATIONS.md  # 违规代码位置
-│   ├── DEPENDENCY-GRAPH.md     # 依赖关系图
-│   ├── FEATURE-FLAGS.md        # Feature flag 分析
-│   └── PUBLIC-API.md           # 公共 API 清单
+├── 05-analysis/                # 分析结果
+│   ├── CRATE-STRUCTURE.md
+│   ├── VIOLATION-LOCATIONS.md
+│   ├── DEPENDENCY-GRAPH.md
+│   ├── FEATURE-FLAGS.md
+│   └── PUBLIC-API.md
 │
-└── 06-scripts/                 # 辅助脚本
-    ├── README.md               # 脚本索引
-    ├── analyze-deps.sh         # 依赖分析
-    ├── find-violations.sh      # 查找违规
-    └── check-boundaries.sh     # CI 边界检查
+├── 06-scripts/                 # 辅助脚本
+│   ├── analyze-deps.sh
+│   ├── find-violations.sh
+│   └── check-boundaries.sh
+│
+├── templates/                  # 🆕 模板库
+│   ├── TASK-REPORT.template.md
+│   ├── ANALYSIS-RESULT.template.md
+│   ├── MIGRATION-RECORD.template.md
+│   └── DECISION.template.md
+│
+└── dump/                       # 🆕 临时文件
+    └── README.md               # 存放一次性生成的文档
 ```
 
 ---
@@ -62,24 +69,38 @@ agents-only/
 | 场景 | 文档 |
 |------|------|
 | 新 AI 开始工作 | [init.md](./init.md) |
-| 了解项目目标 | [00-overview/PROJECT-OVERVIEW.md](./00-overview/PROJECT-OVERVIEW.md) |
-| 理解架构约束 | [01-spec/ARCHITECTURE-SPEC.md](./01-spec/ARCHITECTURE-SPEC.md) |
+| 了解项目目标 | [00-overview/PROJECT-OVERVIEW.md](./00-overview/00-PROJECT-OVERVIEW.md) |
+| 理解架构约束 | [01-spec/ARCHITECTURE-SPEC.md](./01-spec/03-ARCHITECTURE-SPEC.md) |
 | 查看当前进度 | [workpackage_latest.md](./workpackage_latest.md) |
 | 开始重构任务 | [04-workflows/REFACTOR-PROGRESS.md](./04-workflows/REFACTOR-PROGRESS.md) |
-| 运行分析脚本 | [06-scripts/README.md](./06-scripts/README.md) |
+| 创建新文档 | [templates/README.md](./templates/README.md) |
+| 存放临时输出 | [dump/README.md](./dump/README.md) |
 
 ---
 
-## 🔗 深度参考
+## 📐 文档层次
 
-| 资料 | 位置 |
-|------|------|
-| Go 源码 | `go_fork_source/sing-box-1.12.14/` |
-| GUI 源码 | `GUI_fork_source/GUI.for.SingBox-1.19.0/` |
-| 详细 crate 规范 | `singbox_archspec_v2/03-crates/` |
-| 接口定义 | `singbox_archspec_v2/04-interfaces/` |
+```
+┌─────────────────────────────────────────────────────────────┐
+│  01-spec/                  权威定义（真相之源）              │
+│  ├── ARCHITECTURE-SPEC     架构/职责边界的权威文档           │
+│  └── REQUIREMENTS-*        需求的权威文档                   │
+└─────────────────────────────────────────────────────────────┘
+                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│  04-workflows/             状态追踪（引用 01-spec）          │
+│  ├── REFACTOR-PROGRESS     进度追踪                         │
+│  └── CRATE-DETAIL          → 链接到 ARCHITECTURE-SPEC       │
+└─────────────────────────────────────────────────────────────┘
+                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│  dump/                     临时输出（可清理）                │
+│  └── YYYY-MM-DD-*.md       一次性报告                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**原则**：避免内容重复，使用链接引用权威文档。
 
 ---
 
-*本文档由 AI 整合生成，是 AI 工作的入口点。*
 *更新时间: 2026-02-07*

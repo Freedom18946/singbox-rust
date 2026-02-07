@@ -1,153 +1,54 @@
 # Crate 详细职责（Crate Responsibilities Detail）
 
-> **用途**：明确每个 crate 的边界，作为重构的依据
+> **核心定义位置**：[01-spec/03-ARCHITECTURE-SPEC.md](../01-spec/03-ARCHITECTURE-SPEC.md) 第 1.2 节
+> 
+> 本文档扩展架构规范中的 Crate 职责定义，添加**实时状态追踪**。
 
 ---
 
-## sb-types（契约层）
+## 快速参考
 
-**职责**：定义跨 crate 共享的类型和接口
+详细的 Crate 职责边界定义见 [架构规范 §1.2](../01-spec/03-ARCHITECTURE-SPEC.md)。
 
-| 允许 | 禁止 |
-|------|------|
-| 领域类型（Address, Protocol, Network） | 任何运行时依赖（tokio, async-std） |
-| 配置 IR 类型 | I/O 操作 |
-| Ports traits 定义 | 协议实现 |
-| 错误类型（不含 anyhow） | Web 框架 |
-| serde, bytes, ipnet | |
-
-**当前状态**：⬜ 待审计
+本文档仅追踪各 Crate 的**当前审计状态**：
 
 ---
 
-## sb-core（引擎层）
+## 审计状态追踪
 
-**职责**：路由引擎、DNS 策略、会话管理
 
-| 允许 | 禁止 |
-|------|------|
-| 路由决策、规则匹配 | 协议实现（VMess/VLESS 等） |
-| DNS 缓存、FakeIP 策略 | 平台服务（NTP/DERP） |
-| 会话生命周期管理 | Web 框架（axum/tonic） |
-| 通过 Ports 调用外部 | TLS/QUIC/WS 实现 |
-| tokio 基础运行时 | 直接 HTTP 客户端（reqwest） |
-
-**当前状态**：🔴 违规严重（见 DEPENDENCY-AUDIT.md）
-
----
-
-## sb-adapters（协议层）
-
-**职责**：所有协议实现
-
-| 允许 | 禁止 |
-|------|------|
-| Inbound 协议（SOCKS/HTTP/TUN 等） | 反向依赖 sb-core |
-| Outbound 协议（SS/Trojan/VMess 等） | 路由决策 |
-| 协议握手、加密 | 控制面 API |
-| 使用 sb-transport/sb-tls | |
-
-**当前状态**：🟠 有违规（依赖 sb-core）
+| Crate | 审计状态 | 违规数 | 最后审计 | 备注 |
+|-------|---------|-------|---------|------|
+| sb-types | ⬜ 待审计 | ? | - | |
+| sb-core | 🔴 违规严重 | 3+ | - | 见 [DEPENDENCY-AUDIT](../02-reference/07-DEPENDENCY-AUDIT.md) |
+| sb-adapters | 🟠 有违规 | 1+ | - | 反向依赖 sb-core |
+| sb-config | ⬜ 待审计 | ? | - | |
+| sb-transport | ⬜ 待审计 | ? | - | |
+| sb-tls | ⬜ 待审计 | ? | - | |
+| sb-platform | ⬜ 待审计 | ? | - | |
+| sb-api | ⬜ 待审计 | ? | - | |
+| sb-metrics | ⬜ 待审计 | ? | - | |
+| sb-runtime | ⬜ 待审计 | ? | - | |
+| sb-security | ⬜ 待审计 | ? | - | |
+| sb-common | ⬜ 待审计 | ? | - | |
+| sb-proto | ⬜ 待审计 | ? | - | |
+| sb-subscribe | ⬜ 待审计 | ? | - | |
+| sb-test-utils | ⬜ 待审计 | ? | - | |
+| sb-admin-contract | ⬜ 待审计 | ? | - | |
 
 ---
 
-## sb-config（配置层）
+## 状态图例
 
-**职责**：配置解析、验证、编译
-
-| 允许 | 禁止 |
+| 状态 | 含义 |
 |------|------|
-| JSON/YAML 解析 | 运行时对象创建 |
-| Schema 验证 | 协议实现 |
-| IR 生成 | 网络 I/O |
-| 错误报告 | |
-
-**当前状态**：⬜ 待审计
+| ⬜ 待审计 | 未开始审计 |
+| 🔴 违规严重 | 存在严重违规 |
+| 🟠 有违规 | 存在轻微违规 |
+| 🟡 审计中 | 正在审计 |
+| ✅ 已通过 | 审计通过 |
 
 ---
 
-## sb-transport（传输层）
+*详细职责定义见 [架构规范](../01-spec/03-ARCHITECTURE-SPEC.md)*
 
-**职责**：底层传输抽象
-
-| 允许 | 禁止 |
-|------|------|
-| TCP/UDP 传输 | 协议实现 |
-| WebSocket 升级 | 路由决策 |
-| HTTP/2、gRPC 传输 | 配置解析 |
-| QUIC 传输 | |
-
-**当前状态**：⬜ 待审计
-
----
-
-## sb-tls（TLS 层）
-
-**职责**：TLS 相关功能
-
-| 允许 | 禁止 |
-|------|------|
-| Standard TLS (rustls) | 协议实现 |
-| REALITY | 路由决策 |
-| ECH | |
-| uTLS 指纹 | |
-
-**当前状态**：⬜ 待审计
-
----
-
-## sb-platform（平台层）
-
-**职责**：平台特定功能
-
-| 允许 | 禁止 |
-|------|------|
-| TUN 管理 | 协议实现 |
-| Socket options | 路由决策 |
-| Netlink | 配置解析 |
-| systemd-resolved | |
-
-**当前状态**：⬜ 待审计
-
----
-
-## sb-api（控制面）
-
-**职责**：外部 API
-
-| 允许 | 禁止 |
-|------|------|
-| Clash API | 直接调用 sb-adapters |
-| V2Ray Stats API | 协议实现 |
-| axum/tonic 框架 | 数据面逻辑 |
-| 通过 Ports 调用 sb-core | |
-
-**当前状态**：⬜ 待审计
-
----
-
-## sb-metrics（可观测性）
-
-**职责**：指标收集和导出
-
-| 允许 | 禁止 |
-|------|------|
-| Prometheus 导出 | 业务逻辑 |
-| 指标定义 | 协议实现 |
-| Tracing 集成 | |
-
-**当前状态**：⬜ 待审计
-
----
-
-## sb-common（共享工具）
-
-**职责**：跨 crate 工具函数
-
-| 允许 | 禁止 |
-|------|------|
-| 通用工具函数 | 业务逻辑 |
-| 编解码辅助 | 协议实现 |
-| 日志辅助 | |
-
-**当前状态**：⬜ 待审计
