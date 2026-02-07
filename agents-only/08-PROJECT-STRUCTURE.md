@@ -1,14 +1,9 @@
-# SingBox-Rust Project Structure Navigation
+# 项目结构导航（Project Structure Navigation）
 
-> **🚨 Authoritative Documentation Declaration**
+> **位置**：已迁移至 `agents-only/08-PROJECT-STRUCTURE.md`
+> **最后更新**：2026-02-07
 >
-> This document is the **SOLE authoritative reference** for the SingBox-Rust project structure. Any developer, AI assistant, or automation tool must perform the following before starting work:
-> 1. ✅ Verify consistency between this document and the actual project structure
-> 2. 🔄 Update this document immediately if inconsistencies are found
-> 3. 📋 Plan development paths based on this document
->
-> **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: February 1, 2026 (Validated against current repository structure)
+> 此文档是项目结构的权威参考。AI 初始化时需验证结构一致性。
 
 ## Project Overview
 
@@ -60,8 +55,7 @@ singbox-rust/
 ├── 📄 Dockerfile        # Container build file
 ├── 📄 GO_PARITY_MATRIX.md  # Parity matrix with sing-box
 ├── 📄 minimal.yaml      # Minimal config example
-├── 📄 NEXT_STEPS.md     # Next milestones and workflow
-├── 📄 PROJECT_STRUCTURE_NAVIGATION.md   # Project structure navigation (Current)
+├── 📁 agents-only/      # AI 专用文档（需求分析、验收标准、战略规划）
 ├── 📄 .gitignore        # Git ignore rules
 ├── 📄 .gitmodules       # Git submodule configuration
 ├── 📄 public-api-baseline.txt # Public API baseline
@@ -346,7 +340,7 @@ scripts/
 
 ### 📝 Important Files
 
-- Project Planning: `NEXT_STEPS.md` - Next milestones and workflows
+- 项目战略: `agents-only/06-STRATEGIC-ROADMAP.md` - 战略路线图
 - Go Parity Matrix: `GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
 - Migration Guide: `docs/MIGRATION_GUIDE.md` - Go → Rust full migration path
 - Performance Benchmarks: `benchmark_results/`, `reports/PERFORMANCE_REPORT.md`, and legacy `docs/archive/root-legacy/BENCHMARKS.md`
@@ -450,4 +444,4 @@ When updating, please follow this format:
 
 **⚠️ Important Reminder**: The accuracy of this document directly impacts development efficiency and code quality. Please strictly abide by the maintenance guidelines to ensure the document stays in sync with the actual project structure.
 
-*Document Version: v1.9 | Last Updated: February 1, 2026 | Last Verified: February 1, 2026*
+*Document Version: v2.0 | Last Updated: February 7, 2026 | Location: agents-only/*

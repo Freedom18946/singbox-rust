@@ -33,7 +33,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 
 ## 🚨 IMPORTANT: Authoritative Navigation Document
 
-**⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`PROJECT_STRUCTURE_NAVIGATION.md`](./PROJECT_STRUCTURE_NAVIGATION.md).**
+**⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`agents-only/08-PROJECT-STRUCTURE.md`](./agents-only/08-PROJECT-STRUCTURE.md).**
 
 - 📋 **Authoritative**: This document is the *sole* source of truth for project structure.
 - 🔄 **Update Responsibility**: Any developer modifying the project structure MUST sync this document.
