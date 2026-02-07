@@ -25,7 +25,8 @@ agents-only/
 ├── 03-ARCHITECTURE-SPEC.md         # 架构规范
 ├── 04-IMPLEMENTATION-GUIDE.md      # 实现指南
 ├── 05-USER-ABSTRACT-REQUIREMENTS.md # 用户抽象需求
-└── 06-STRATEGIC-ROADMAP.md         # 战略路线图
+├── 06-STRATEGIC-ROADMAP.md         # 战略路线图
+└── 07-DEPENDENCY-AUDIT.md          # 依赖边界审计
 ```
 
 ---
@@ -96,7 +97,11 @@ cargo fmt --check && cargo clippy --workspace && cargo test --workspace && cargo
 | `05-reference/` | 依赖矩阵 |
 | `06-implementation-guides/` | 配置编译、模糊测试、日志等 |
 | `07-migration/` | 迁移计划 |
+| `08-refactor-tracking/` | 重构追踪日志 |
 | `templates/` | 代码模板 |
+
+> **注意**：singbox_archspec_v2 作为**深度参考**保留，日常开发以 agents-only 为准。
+> 需要详细 crate 规范或接口定义时再查阅 archspec。
 
 ---
 
