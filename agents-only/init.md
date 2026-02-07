@@ -6,60 +6,56 @@
 
 ## 🚨 初始化流程（必须按顺序执行）
 
-### Step 1: 读取最新日志
+### Step 1: 读取当前上下文（优先）
 ```
-查阅 agents-only/log.md 中的最新 3-5 条日志记录
+查阅 agents-only/active_context.md
 ```
-**目的**：了解上一个 AI 做了什么，避免重复或冲突
+**目的**：瞬间抓住当前聚焦模块、活跃阻碍项、最近构建状态
 
-### Step 2: 检查代码库变更
+> ⚠️ **DRP（灾难恢复）**：如果 `active_context.md` 为空或损坏，立即执行：
+> ```bash
+> ./agents-only/06-scripts/restore-context.sh
+> ```
+
+### Step 2: 验证战略一致性
 ```bash
-# 查看最近的 git 提交
-git log --oneline -10
+./agents-only/06-scripts/verify-consistency.sh
+```
+**目的**：防止战术-战略漂移
 
-# 查看未提交的变更
-git status
-git diff --stat
+### Step 3: 检查长期记忆
+```
+查阅 agents-only/07-memory/LEARNED-PATTERNS.md
+查阅 agents-only/07-memory/TROUBLESHOOTING.md
+```
+**目的**：避免重复踩坑，复用已积累的经验
+
+### Step 4: 检查代码库变更
+```bash
+git log --oneline -5 && git status --short
 ```
 **目的**：确认当前代码状态，识别进行中的工作
 
-### Step 2.5: 验证项目结构
+### Step 5: 了解可用工具
 ```
-查阅 agents-only/08-PROJECT-STRUCTURE.md
-验证实际目录结构与文档一致
+查阅 agents-only/06-scripts/TOOLS_DEF.md
 ```
-**目的**：确保对项目布局的理解准确
+**目的**：了解可调用的脚本，避免重复造轮子
 
-### Step 3: 验证关键状态
-| 检查项 | 当前值 | 验证方式 |
-|--------|--------|---------|
-| Parity 百分比 | 88% | 查看 `GO_PARITY_MATRIX.md` 顶部 |
-| Rust 版本 | 1.92+ | 查看 `rust-toolchain.toml` |
-| 上次更新日期 | 2026-02-07 | 查看 `log.md` 最新条目 |
-
-### Step 4: 更新过期信息
-如果发现以下信息过期，必须更新：
-- [ ] `00-PROJECT-OVERVIEW.md` 中的状态数据
-- [ ] `01-REQUIREMENTS-ANALYSIS.md` 中的 Gap 分析
-- [ ] `02-ACCEPTANCE-CRITERIA.md` 中的验收指标
-
-### Step 5: 记录初始化
-在 `log.md` 中追加初始化记录：
-```markdown
-### [YYYY-MM-DD HH:MM] Agent: [Your ID]
-
-**任务**: 初始化检查
-**变更**: 无 / [列出更新的文件]
-**结果**: 成功
-**备注**: 已确认信息最新 / [说明发现的不一致]
+### Step 6: 归档过期 dump 文件（软删除）
+```bash
+# 将 7 天前的 dump 文件移动到归档（可选执行）
+mkdir -p agents-only/archive/dump
+find agents-only/dump -type f -mtime +7 -name "*.md" \
+  -exec mv {} agents-only/archive/dump/ \;
 ```
+**目的**：防止僵尸文件误导，但保留可恢复性
 
 ---
 
 ## ⚡ 快速校验命令
 
 ```bash
-# 一键检查项目状态
 cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
 
 # Git 状态
@@ -67,9 +63,6 @@ git log --oneline -5 && git status --short
 
 # 构建验证
 cargo check -p app 2>&1 | tail -5
-
-# 测试快速验证
-cargo test --lib -p sb-types 2>&1 | tail -3
 ```
 
 ---
@@ -77,21 +70,23 @@ cargo test --lib -p sb-types 2>&1 | tail -3
 ## 📋 AI 行为准则
 
 1. **先读后写**：执行任何修改前，先完成初始化检查
-2. **写日志**：任务完成前，必须更新 `log.md`
-3. **保持同步**：如果修改了架构或状态，更新相关 agents-only 文档
-4. **不要假设**：如果信息可能过期，重新验证
-5. **接续工作**：基于上一个 AI 的进度继续，不要重新开始
-6. **渐进式规划**：不做超前规划，详见 `06-STRATEGIC-ROADMAP.md` 中的规划原则
+2. **验证一致性**：确保 active_context 与 workpackage 同步
+3. **更新上下文**：任务结束前，更新 `active_context.md`
+4. **记录经验**：遇到问题或学到模式，更新 `07-memory/`
+5. **遵守规则**：严格遵守 `AI-RULES.md`
+6. **查阅术语**：不确定术语时查阅 `02-reference/GLOSSARY.md`
 
 ---
 
 ## 🔍 上下文获取优先级
 
-1. `agents-only/log.md` - 最新 AI 活动
-2. `agents-only/06-STRATEGIC-ROADMAP.md` - 当前战略目标
-3. `NEXT_STEPS.md` - 里程碑状态
-4. `GO_PARITY_MATRIX.md` - 详细对齐状态
-5. `git log` / `git status` - 代码变更
+| 优先级 | 文件 | 用途 |
+|--------|------|------|
+| 1️⃣ | `active_context.md` | 当前状态快照 |
+| 2️⃣ | `workpackage_latest.md` | 战略验证 |
+| 3️⃣ | `07-memory/*.md` | 经验积累 |
+| 4️⃣ | `02-reference/GLOSSARY.md` | 术语确认 |
+| 5️⃣ | `log.md` | 历史记录（按需） |
 
 ---
 
