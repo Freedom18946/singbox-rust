@@ -132,30 +132,37 @@ pub struct ConnectionMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proxy {
     /// Proxy name/tag
-    /// 代理名称/标签
     pub name: String,
     /// Proxy type (direct, http, socks5, vmess, etc.)
-    /// 代理类型（direct, http, socks5, vmess 等）
     pub r#type: String,
+    /// UDP support
+    pub udp: bool,
+    /// Delay test history
+    pub history: Vec<DelayHistory>,
     /// All available proxies (for groups)
-    /// 所有可用代理（用于组）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all: Vec<String>,
     /// Currently selected proxy (for groups)
-    /// 当前选定的代理（用于组）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub now: String,
     /// Proxy health status
-    /// 代理健康状态
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alive: Option<bool>,
-    /// Latency in milliseconds
-    /// 延迟（毫秒）
+    /// Latency in milliseconds (convenience field)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<u32>,
     /// Additional proxy metadata
-    /// 额外代理元数据
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// URL test delay history entry — mirrors Go's adapter.URLTestHistory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelayHistory {
+    /// Timestamp of the test (ISO 8601)
+    pub time: String,
+    /// Measured delay in milliseconds
+    pub delay: u16,
 }
 
 /// Request to select a proxy
@@ -244,35 +251,42 @@ pub struct Rule {
     pub order: Option<u32>,
 }
 
-/// Configuration information
+/// Configuration information — mirrors Go's configSchema (configs.go)
+/// 配置信息 — 与 Go configSchema 1:1 对齐
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// HTTP proxy port
-    /// HTTP 代理端口
     pub port: u16,
     /// SOCKS proxy port
-    /// SOCKS 代理端口
     #[serde(rename = "socks-port")]
     pub socks_port: u16,
-    /// HTTP proxy port (alternative field name)
-    /// HTTP 代理端口（备用字段名）
-    #[serde(rename = "mixed-port", skip_serializing_if = "Option::is_none")]
-    pub mixed_port: Option<u16>,
-    /// API server port
-    /// API 服务器端口
-    #[serde(rename = "controller-port", skip_serializing_if = "Option::is_none")]
-    pub controller_port: Option<u16>,
-    /// API server address
-    /// API 服务器地址
-    #[serde(
-        rename = "external-controller",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub external_controller: Option<String>,
-    /// Additional configuration
-    /// 额外配置
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    /// Redirect port (Linux)
+    #[serde(rename = "redir-port")]
+    pub redir_port: u16,
+    /// TProxy port (Linux)
+    #[serde(rename = "tproxy-port")]
+    pub tproxy_port: u16,
+    /// Mixed (HTTP+SOCKS) port
+    #[serde(rename = "mixed-port")]
+    pub mixed_port: u16,
+    /// Allow LAN connections
+    #[serde(rename = "allow-lan")]
+    pub allow_lan: bool,
+    /// Bind address
+    #[serde(rename = "bind-address")]
+    pub bind_address: String,
+    /// Routing mode (rule / global / direct)
+    pub mode: String,
+    /// Available mode list
+    #[serde(rename = "mode-list")]
+    pub mode_list: Vec<String>,
+    /// Log level
+    #[serde(rename = "log-level")]
+    pub log_level: String,
+    /// IPv6 support
+    pub ipv6: bool,
+    /// TUN configuration
+    pub tun: serde_json::Value,
 }
 
 /// Provider information (for proxy/rule providers)

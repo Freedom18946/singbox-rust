@@ -173,6 +173,8 @@ fn test_api_data_structures() -> anyhow::Result<()> {
     let proxy = Proxy {
         name: "DIRECT".to_string(),
         r#type: "Direct".to_string(),
+        udp: true,
+        history: vec![],
         all: vec!["DIRECT".to_string(), "PROXY".to_string()],
         now: "DIRECT".to_string(),
         alive: Some(true),

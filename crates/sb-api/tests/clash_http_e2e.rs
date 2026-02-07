@@ -185,29 +185,27 @@ async fn test_patch_configs_valid() -> anyhow::Result<()> {
     });
 
     let response = server.patch("/configs", body).await?;
-    assert_eq!(response.status(), StatusCode::OK); // Returns 200, not 204
+    assert_eq!(response.status(), StatusCode::NO_CONTENT); // Matches Go: render.NoContent
     Ok(())
 }
 
-/// Test PATCH /configs - Invalid port (error case)
+/// Test PATCH /configs - Extra fields are silently ignored (matches Go behavior)
 #[tokio::test]
 async fn test_patch_configs_invalid_port() -> anyhow::Result<()> {
     let Some(server) = TestServer::start().await? else {
         return Ok(());
     };
     let body = serde_json::json!({
-        "port": 99999  // Invalid port > 65535
+        "port": 99999  // Go ignores all fields except mode
     });
 
     let response = server.patch("/configs", body).await?;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-    let json: serde_json::Value = response.json().await?;
-    assert!(json.get("error").is_some());
+    // Go's patchConfigs only processes mode, ignoring everything else → 204
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
 
-/// Test PUT /configs - Full configuration replacement (valid)
+/// Test PUT /configs - Full configuration replacement (matches Go: no-op, returns 204)
 #[tokio::test]
 async fn test_put_configs_valid() -> anyhow::Result<()> {
     let Some(server) = TestServer::start().await? else {
@@ -224,7 +222,7 @@ async fn test_put_configs_valid() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test PUT /configs - Missing required fields (error case)
+/// Test PUT /configs - Go returns 204 regardless of body content
 #[tokio::test]
 async fn test_put_configs_missing_fields() -> anyhow::Result<()> {
     let Some(server) = TestServer::start().await? else {
@@ -232,14 +230,11 @@ async fn test_put_configs_missing_fields() -> anyhow::Result<()> {
     };
     let body = serde_json::json!({
         "port": 7890
-        // Missing required: socks-port, mode
+        // Go returns 204 regardless
     });
 
     let response = server.put("/configs", body).await?;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-    let json: serde_json::Value = response.json().await?;
-    assert!(json.get("error").is_some());
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -319,7 +314,7 @@ async fn test_get_connections() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test DELETE /connections - Close all connections
+/// Test DELETE /connections - Close all connections (returns 204)
 #[tokio::test]
 async fn test_close_all_connections() -> anyhow::Result<()> {
     let Some(server) = TestServer::start().await? else {
@@ -327,11 +322,7 @@ async fn test_close_all_connections() -> anyhow::Result<()> {
     };
     let response = server.delete("/connections").await?;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let json: serde_json::Value = response.json().await?;
-
-    // Should return count of closed connections
-    assert!(json.get("closed").is_some());
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -559,7 +550,7 @@ async fn test_dns_query_missing_name() -> anyhow::Result<()> {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await?;
-    assert!(json.get("error").is_some());
+    assert!(json.get("message").is_some());
     Ok(())
 }
 
@@ -578,7 +569,7 @@ async fn test_get_meta_groups() -> anyhow::Result<()> {
     assert_eq!(response.status(), StatusCode::OK);
     let json: serde_json::Value = response.json().await?;
 
-    assert!(json.get("groups").is_some());
+    assert!(json.get("proxies").is_some());
     Ok(())
 }
 
@@ -620,9 +611,9 @@ async fn test_get_meta_memory() -> anyhow::Result<()> {
     assert_eq!(response.status(), StatusCode::OK);
     let json: serde_json::Value = response.json().await?;
 
-    // Should contain memory statistics
+    // Should contain Go-compatible memory statistics
     assert!(json.get("inuse").is_some());
-    assert!(json.get("sys").is_some());
+    assert!(json.get("oslimit").is_some());
     Ok(())
 }
 

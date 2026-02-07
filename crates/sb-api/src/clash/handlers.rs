@@ -19,7 +19,6 @@ use axum::{
 use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
 use serde_json::json;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 // ===== Constants =====
 
@@ -31,7 +30,6 @@ const DEFAULT_PROCESS_NAME: &str = "unknown";
 const DEFAULT_PORT: &str = "0";
 const DEFAULT_DELAY_TIMEOUT_MS: u32 = 5000;
 const DEFAULT_TEST_URL: &str = "http://www.google.com/generate_204";
-const MAX_PORT_NUMBER: u64 = 65535;
 
 const PROXY_TYPE_DIRECT: &str = "Direct";
 const PROXY_TYPE_REJECT: &str = "Reject";
@@ -209,17 +207,6 @@ fn parse_destination_port(destination: &str) -> String {
     DEFAULT_PORT.to_string()
 }
 
-/// Validate port value is within valid range (1-65535)
-fn validate_port(port: u64) -> Result<(), String> {
-    if (1..=MAX_PORT_NUMBER).contains(&port) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Port value {port} out of range (valid: 1..={MAX_PORT_NUMBER})"
-        ))
-    }
-}
-
 /// Convert internal Provider to API Provider format
 fn convert_provider_to_api(
     name: String,
@@ -248,29 +235,100 @@ fn convert_provider_to_api(
     )
 }
 
-/// Simulate random proxy delay for testing purposes
-fn simulate_proxy_delay(proxy_name: &str) -> i32 {
-    use rand::Rng;
-    if proxy_name == DIRECT_PROXY_NAME {
-        0
-    } else if proxy_name == REJECT_PROXY_NAME {
-        -1
+/// Parse URL into (host, port, path) components
+fn parse_url_components(url: &str) -> (&str, u16, &str) {
+    let (scheme_stripped, default_port) = if let Some(u) = url.strip_prefix("https://") {
+        (u, 443u16)
+    } else if let Some(u) = url.strip_prefix("http://") {
+        (u, 80u16)
     } else {
-        let mut rng = rand::thread_rng();
-        rng.gen_range(10..200)
+        (url, 80u16)
+    };
+
+    let (host_port, path) = scheme_stripped
+        .split_once('/')
+        .map(|(hp, p)| (hp, p))
+        .unwrap_or((scheme_stripped, ""));
+
+    let (host, port) = host_port
+        .split_once(':')
+        .map(|(h, p)| (h, p.parse::<u16>().unwrap_or(default_port)))
+        .unwrap_or((host_port, default_port));
+
+    let path = if path.is_empty() { "/" } else {
+        // path doesn't include the leading '/', reconstruct from original
+        let idx = url.find(host_port).unwrap_or(0) + host_port.len();
+        &url[idx..]
+    };
+
+    (host, port, path)
+}
+
+/// Perform an HTTP URL test through an outbound — matches Go's urltest.URLTest()
+///
+/// Connects through the outbound, sends an HTTP/1.1 GET, reads the first response bytes,
+/// and returns the elapsed time in ms. Returns Err on timeout or failure.
+async fn http_url_test(
+    outbound: Option<&OutboundImpl>,
+    url: &str,
+    timeout: std::time::Duration,
+) -> Result<u16, StatusCode> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (host, port, path) = parse_url_components(url);
+    let start = std::time::Instant::now();
+
+    // Connect through the outbound
+    let connect_result = match outbound {
+        Some(OutboundImpl::Connector(c)) => {
+            tokio::time::timeout(timeout, c.connect(host, port)).await
+        }
+        Some(OutboundImpl::Direct) | None => {
+            let fut = tokio::net::TcpStream::connect((host, port));
+            tokio::time::timeout(timeout, fut).await
+        }
+        _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    let mut stream = match connect_result {
+        Ok(Ok(s)) => s,
+        Ok(Err(_)) => return Err(StatusCode::SERVICE_UNAVAILABLE), // 503 connect error
+        Err(_) => return Err(StatusCode::GATEWAY_TIMEOUT),         // 504 timeout
+    };
+
+    // Send HTTP/1.1 GET request
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: singbox-rust/urltest\r\nConnection: close\r\n\r\n",
+        path, host
+    );
+    let remaining = timeout.saturating_sub(start.elapsed());
+    match tokio::time::timeout(remaining, stream.write_all(request.as_bytes())).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => return Err(StatusCode::SERVICE_UNAVAILABLE),
+        Err(_) => return Err(StatusCode::GATEWAY_TIMEOUT),
     }
+
+    // Read first response bytes (status line is enough)
+    let mut buf = [0u8; 128];
+    let remaining = timeout.saturating_sub(start.elapsed());
+    match tokio::time::timeout(remaining, stream.read(&mut buf)).await {
+        Ok(Ok(n)) if n > 0 => {}
+        Ok(_) => return Err(StatusCode::SERVICE_UNAVAILABLE),
+        Err(_) => return Err(StatusCode::GATEWAY_TIMEOUT),
+    }
+
+    Ok(start.elapsed().as_millis() as u16)
 }
 
 // ===== API Handlers =====
 
-/// Get all proxies
-/// 获取所有代理
+/// Get all proxies — matches Go's getProxies() + proxyInfo()
 ///
-/// Returns a list of all available proxies from the outbound manager,
-/// including default DIRECT and REJECT proxies.
-/// 从出站管理器返回所有可用代理的列表，包括默认的 DIRECT 和 REJECT 代理。
+/// Returns a map of all available proxies including the GLOBAL virtual group.
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
+    let mut all_proxy_tags: Vec<String> = Vec::new();
+    let mut default_tag = String::new();
 
     // Get proxies from outbound registry
     let entries = if let Some(registry) = &state.outbound_registry {
@@ -286,10 +344,126 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
         Vec::new()
     };
 
-    for (key, outbound) in entries {
+    for (key, outbound) in &entries {
+        let proxy_type = infer_proxy_type(key, Some(outbound));
+
+        // Skip Direct/Block/DNS from GLOBAL's all list (matches Go behavior)
+        let type_lower = proxy_type.to_ascii_lowercase();
+        if type_lower != "direct" && type_lower != "reject" && type_lower != "dns" {
+            all_proxy_tags.push(key.clone());
+        }
+
         let mut proxy = Proxy {
             name: key.clone(),
-            r#type: infer_proxy_type(&key, Some(&outbound)),
+            r#type: proxy_type,
+            udp: true,
+            history: vec![],
+            all: vec![],
+            now: String::new(),
+            alive: Some(true),
+            delay: None,
+            extra: HashMap::new(),
+        };
+
+        if let OutboundImpl::Connector(c) = outbound {
+            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                proxy.all = group
+                    .get_members()
+                    .into_iter()
+                    .map(|(tag, _, _)| tag)
+                    .collect();
+                proxy.now = group.get_selected().await.unwrap_or_default();
+                proxy.r#type = "Selector".to_string();
+            }
+        }
+
+        if default_tag.is_empty() {
+            default_tag.clone_from(&key);
+        }
+        proxies.insert(key.clone(), proxy);
+    }
+
+    // Add default proxies if not present
+    if !proxies.contains_key(DIRECT_PROXY_NAME) {
+        proxies.insert(
+            DIRECT_PROXY_NAME.to_string(),
+            Proxy {
+                name: DIRECT_PROXY_NAME.to_string(),
+                r#type: PROXY_TYPE_DIRECT.to_string(),
+                udp: true,
+                history: vec![],
+                all: vec![],
+                now: String::new(),
+                alive: Some(true),
+                delay: Some(0),
+                extra: HashMap::new(),
+            },
+        );
+    }
+
+    if !proxies.contains_key(REJECT_PROXY_NAME) {
+        proxies.insert(
+            REJECT_PROXY_NAME.to_string(),
+            Proxy {
+                name: REJECT_PROXY_NAME.to_string(),
+                r#type: PROXY_TYPE_REJECT.to_string(),
+                udp: false,
+                history: vec![],
+                all: vec![],
+                now: String::new(),
+                alive: Some(true),
+                delay: None,
+                extra: HashMap::new(),
+            },
+        );
+    }
+
+    // Inject GLOBAL virtual group (matches Go's getProxies behavior)
+    // GLOBAL is a Fallback group containing all non-direct/block/dns outbounds
+    if default_tag.is_empty() {
+        default_tag = DIRECT_PROXY_NAME.to_string();
+    }
+    proxies.insert(
+        "GLOBAL".to_string(),
+        Proxy {
+            name: "GLOBAL".to_string(),
+            r#type: "Fallback".to_string(),
+            udp: true,
+            history: vec![],
+            all: all_proxy_tags,
+            now: default_tag,
+            alive: None,
+            delay: None,
+            extra: HashMap::new(),
+        },
+    );
+
+    Json(json!({ "proxies": proxies }))
+}
+
+/// Get a single proxy — matches Go's getProxy() / proxyInfo()
+///
+/// Returns detailed information about a specific proxy by name.
+pub async fn get_proxy(
+    State(state): State<ApiState>,
+    Path(proxy_name): Path<String>,
+) -> impl IntoResponse {
+    // Check outbound registry
+    let outbound_opt = state
+        .outbound_registry
+        .as_ref()
+        .and_then(|registry| {
+            let reg = registry.read();
+            reg.get(&proxy_name).cloned()
+        });
+
+    if let Some(outbound) = outbound_opt {
+        let proxy_type = infer_proxy_type(&proxy_name, Some(&outbound));
+        let mut proxy = Proxy {
+            name: proxy_name.clone(),
+            r#type: proxy_type,
+            udp: true,
+            history: vec![],
             all: vec![],
             now: String::new(),
             alive: Some(true),
@@ -308,41 +482,46 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
                 proxy.r#type = "Selector".to_string();
             }
         }
-        proxies.insert(key, proxy);
+
+        return (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response();
     }
 
-    // Add default proxies if not present
-    if !proxies.contains_key(DIRECT_PROXY_NAME) {
-        proxies.insert(
-            DIRECT_PROXY_NAME.to_string(),
-            Proxy {
+    // Check built-in proxies
+    match proxy_name.as_str() {
+        DIRECT_PROXY_NAME => {
+            let proxy = Proxy {
                 name: DIRECT_PROXY_NAME.to_string(),
                 r#type: PROXY_TYPE_DIRECT.to_string(),
+                udp: true,
+                history: vec![],
                 all: vec![],
-                now: DIRECT_PROXY_NAME.to_string(),
+                now: String::new(),
                 alive: Some(true),
                 delay: Some(0),
                 extra: HashMap::new(),
-            },
-        );
-    }
-
-    if !proxies.contains_key(REJECT_PROXY_NAME) {
-        proxies.insert(
-            REJECT_PROXY_NAME.to_string(),
-            Proxy {
+            };
+            (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response()
+        }
+        REJECT_PROXY_NAME => {
+            let proxy = Proxy {
                 name: REJECT_PROXY_NAME.to_string(),
                 r#type: PROXY_TYPE_REJECT.to_string(),
+                udp: false,
+                history: vec![],
                 all: vec![],
-                now: REJECT_PROXY_NAME.to_string(),
+                now: String::new(),
                 alive: Some(true),
                 delay: None,
                 extra: HashMap::new(),
-            },
-        );
+            };
+            (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response()
+        }
+        _ => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"message": "Proxy not found"})),
+        )
+            .into_response(),
     }
-
-    Json(json!({ "proxies": proxies }))
 }
 
 /// Select a proxy for a proxy group
@@ -379,9 +558,10 @@ pub async fn select_proxy(
     StatusCode::SERVICE_UNAVAILABLE
 }
 
-/// Get proxy delay/latency
+/// Get proxy delay/latency — matches Go's getProxyDelay()
 ///
-/// Tests the latency of a specific proxy by making a request to the test URL.
+/// Tests the latency of a specific proxy via HTTP URL test.
+/// Returns `{"delay": N}` on success, 504 on timeout, 503 on connect error.
 pub async fn get_proxy_delay(
     State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
@@ -394,10 +574,6 @@ pub async fn get_proxy_delay(
         None
     };
 
-    let Some(outbound) = outbound_opt else {
-        return Json(json!({ "delay": -1 })).into_response();
-    };
-
     let timeout_ms = params
         .get("timeout")
         .and_then(|t| t.parse::<u64>().ok())
@@ -408,58 +584,20 @@ pub async fn get_proxy_delay(
         .map(std::string::String::as_str)
         .unwrap_or(DEFAULT_TEST_URL);
 
-    let (host, port) = if let Some(u) = url.strip_prefix("http://") {
-        u.split_once('/').map(|(h, _)| h).unwrap_or(u)
-    } else if let Some(u) = url.strip_prefix("https://") {
-        u.split_once('/').map(|(h, _)| h).unwrap_or(u)
-    } else {
-        url
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+
+    match http_url_test(outbound_opt.as_ref(), url, timeout).await {
+        Ok(delay) => Json(json!({"delay": delay})).into_response(),
+        Err(status) => (status, Json(json!({"message": "An error occurred"}))).into_response(),
     }
-    .split_once(':')
-    .unwrap_or((url, "80"));
-
-    let port = port.parse::<u16>().unwrap_or(80);
-
-    // Measure latency
-    let delay = match outbound {
-        OutboundImpl::Connector(c) => {
-            let start = std::time::Instant::now();
-            if tokio::time::timeout(
-                std::time::Duration::from_millis(timeout_ms),
-                c.connect(host, port),
-            )
-            .await
-            .is_ok()
-            {
-                start.elapsed().as_millis() as i32
-            } else {
-                -1
-            }
-        }
-        OutboundImpl::Direct => {
-            let start = std::time::Instant::now();
-            match tokio::net::TcpStream::connect((host, port)).await {
-                Ok(_) => start.elapsed().as_millis() as i32,
-                Err(_) => -1,
-            }
-        }
-        _ => -1,
-    };
-
-    Json(json!({
-        "delay": delay,
-        "meanDelay": delay
-    }))
-    .into_response()
 }
 
-/// Get all active connections
-/// 获取所有活动连接
+/// Get all active connections — matches Go's Snapshot.MarshalJSON()
 ///
-/// Returns a list of all currently active network connections managed by the connection manager.
-/// 返回由连接管理器管理的所有当前活动网络连接的列表。
+/// Returns connections with top-level traffic totals and memory, matching the
+/// Go Snapshot format: `{downloadTotal, uploadTotal, connections, memory}`.
 pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse {
-    let connections = if let Some(connection_manager) = &state.connection_manager {
+    let connections: Vec<Connection> = if let Some(connection_manager) = &state.connection_manager {
         match connection_manager.get_connections().await {
             Ok(internal_connections) => internal_connections
                 .iter()
@@ -471,46 +609,22 @@ pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse
             }
         }
     } else {
-        // Fallback to demo connection when no connection manager is available
-        let start_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .to_string();
-
-        vec![Connection {
-            id: Uuid::new_v4().to_string(),
-            metadata: ConnectionMetadata {
-                network: "tcp".to_string(),
-                r#type: PROXY_TYPE_HTTP.to_string(),
-                source_ip: "192.168.1.100".to_string(),
-                source_port: "12345".to_string(),
-                destination_ip: "8.8.8.8".to_string(),
-                destination_port: "80".to_string(),
-                inbound_ip: DEFAULT_INBOUND_IP.to_string(),
-                inbound_port: "7890".to_string(),
-                inbound_name: "http".to_string(),
-                inbound_user: String::new(),
-                host: "www.google.com".to_string(),
-                dns_mode: DEFAULT_DNS_MODE.to_string(),
-                uid: 1000,
-                process: "firefox".to_string(),
-                process_path: "/usr/bin/firefox".to_string(),
-                special_proxy: String::new(),
-                special_rules: String::new(),
-                remote_destination: "8.8.8.8:80".to_string(),
-                sniff_host: String::new(),
-            },
-            upload: 1024,
-            download: 4096,
-            start: start_time,
-            chains: vec![DIRECT_PROXY_NAME.to_string()],
-            rule: "DOMAIN".to_string(),
-            rule_payload: "www.google.com".to_string(),
-        }]
+        Vec::new()
     };
 
-    Json(json!({ "connections": connections }))
+    // Compute totals from current connections (approximation until global counters exist)
+    let upload_total: u64 = connections.iter().map(|c| c.upload).sum();
+    let download_total: u64 = connections.iter().map(|c| c.download).sum();
+
+    // Report real process memory where possible
+    let memory = crate::clash::websocket::get_process_memory_pub();
+
+    Json(json!({
+        "downloadTotal": download_total,
+        "uploadTotal": upload_total,
+        "connections": connections,
+        "memory": memory
+    }))
 }
 
 /// Close a specific connection
@@ -545,25 +659,21 @@ pub async fn close_connection(
     }
 }
 
-/// Close all connections
+/// Close all connections — matches Go's closeAllConnections()
 ///
-/// Terminates all active connections managed by the connection manager.
+/// Closes all active connections and returns 204 NoContent.
 pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoResponse {
     if let Some(connection_manager) = &state.connection_manager {
         match connection_manager.close_all_connections().await {
             Ok(closed_count) => {
                 log::info!("Closed {} connections", closed_count);
-                Json(json!({ "closed": closed_count }))
             }
             Err(e) => {
                 log::error!("Error closing all connections: {}", e);
-                Json(json!({ "error": e.to_string(), "closed": 0 }))
             }
         }
-    } else {
-        log::info!("Connection manager not available, logging close all request");
-        Json(json!({ "closed": 0 }))
     }
+    StatusCode::NO_CONTENT
 }
 
 /// Get routing rules
@@ -626,90 +736,135 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
     Json(json!({ "rules": rules }))
 }
 
-/// Get current configuration
+/// Get current configuration — matches Go's getConfigs() / configSchema
 ///
-/// Returns the current runtime configuration of the service.
-pub async fn get_configs(State(_state): State<ApiState>) -> impl IntoResponse {
-    // Demo config for compatibility; integration point for runtime config
+/// Returns the current runtime configuration matching the Go configSchema exactly.
+pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
+    // Read mode from cache file if available
+    let mode = state
+        .cache_file
+        .as_ref()
+        .and_then(|cache| cache.get_clash_mode())
+        .unwrap_or_else(|| "rule".to_string());
+
+    // Read actual ports from config IR if available
+    let (port, socks_port, mixed_port) = if let Some(config) = &state.global_config {
+        extract_ports_from_config(config)
+    } else {
+        (0u16, 0u16, None)
+    };
+
+    // Determine allow-lan from inbound listen addresses
+    let allow_lan = if let Some(config) = &state.global_config {
+        config.inbounds.iter().any(|ib| {
+            ib.listen == "0.0.0.0" || ib.listen == "::"
+        })
+    } else {
+        false
+    };
+
+    // Build tun info from config IR
+    let tun = if let Some(config) = &state.global_config {
+        let tun_ib = config.inbounds.iter().find(|ib| {
+            matches!(ib.ty, sb_config::ir::InboundType::Tun)
+        });
+        if let Some(tun_ib) = tun_ib {
+            json!({
+                "enable": true,
+                "device": tun_ib.tag.as_deref().unwrap_or(""),
+                "stack": ""
+            })
+        } else {
+            json!({})
+        }
+    } else {
+        json!({})
+    };
+
     let config = Config {
-        port: 7890,
-        socks_port: 7891,
-        mixed_port: Some(7892),
-        controller_port: Some(9090),
-        external_controller: Some("127.0.0.1:9090".to_string()),
-        extra: HashMap::new(),
+        port,
+        socks_port,
+        redir_port: 0,
+        tproxy_port: 0,
+        mixed_port: mixed_port.unwrap_or(0),
+        allow_lan,
+        bind_address: "*".to_string(),
+        mode,
+        mode_list: vec![
+            "rule".to_string(),
+            "global".to_string(),
+            "direct".to_string(),
+        ],
+        log_level: "info".to_string(),
+        ipv6: false,
+        tun,
     };
 
     Json(config)
 }
 
-/// Update configuration
+/// Extract inbound listen ports from ConfigIR
+fn extract_ports_from_config(config: &sb_config::ir::ConfigIR) -> (u16, u16, Option<u16>) {
+    let mut http_port = 0u16;
+    let mut socks_port = 0u16;
+    let mut mixed_port = None;
+
+    for ib in &config.inbounds {
+        match ib.ty {
+            sb_config::ir::InboundType::Http => {
+                if http_port == 0 {
+                    http_port = ib.port;
+                }
+            }
+            sb_config::ir::InboundType::Socks => {
+                if socks_port == 0 {
+                    socks_port = ib.port;
+                }
+            }
+            sb_config::ir::InboundType::Mixed => {
+                if mixed_port.is_none() {
+                    mixed_port = Some(ib.port);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (http_port, socks_port, mixed_port)
+}
+
+/// Update configuration (PATCH /configs) — matches Go's patchConfigs()
 ///
-/// Merges partial configuration updates into the current configuration.
+/// Handles partial configuration updates. Currently only processes `mode` changes.
 pub async fn update_configs(
     State(_state): State<ApiState>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     log::info!("Configuration update requested with payload: {:?}", config);
 
-    // Validate configuration structure
     let obj = match config.as_object() {
         Some(o) => o,
         None => {
             log::warn!("Invalid configuration format: expected object");
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "Invalid configuration format",
-                    "message": "Configuration must be a valid JSON object"
-                })),
+                Json(json!({"message": "Body invalid"})),
             )
                 .into_response();
         }
     };
 
-    // Validate port ranges if provided
-    for port_key in &["port", "socks-port", "mixed-port", "controller-port"] {
-        if let Some(port_val) = obj.get(*port_key) {
-            if let Some(port) = port_val.as_u64() {
-                if let Err(err) = validate_port(port) {
-                    log::warn!("Invalid port value for {}: {}", port_key, err);
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "error": "Invalid port",
-                            "message": err
-                        })),
-                    )
-                        .into_response();
-                }
-            }
-        }
-    }
-
-    // In a full implementation, this would:
-    // 1. Validate the full configuration schema
-    // 2. Apply changes to runtime configuration
-    // 3. Reload affected components (inbounds, outbounds, router, DNS)
-    // 4. Handle graceful degradation if reload fails
-
-    // Persist mode change if present
+    // Process mode change (the only field Go actually handles)
     if let Some(mode) = obj.get("mode").and_then(|v| v.as_str()) {
-        if let Some(cache) = &_state.cache_file {
-            cache.set_clash_mode(mode.to_string());
+        if !mode.is_empty() {
+            if let Some(cache) = &_state.cache_file {
+                cache.set_clash_mode(mode.to_string());
+            }
+            log::info!("Updated mode: {}", mode);
         }
     }
 
-    log::info!("Configuration validation passed. Runtime reload would be triggered here.");
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "accepted",
-            "message": "Configuration update queued for processing"
-        })),
-    )
-        .into_response()
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Get proxy providers
@@ -1039,25 +1194,22 @@ pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse
     }
 }
 
-/// Get version information
+/// Get version information — matches Go's version() handler
 ///
-/// Returns version and build information about the service.
+/// Returns version info compatible with Clash dashboards.
 pub async fn get_version(State(_state): State<ApiState>) -> impl IntoResponse {
     Json(json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "premium": false,
+        "version": format!("sing-box {}", env!("CARGO_PKG_VERSION")),
+        "premium": true,
         "meta": true
     }))
 }
 
-/// Get status/health check
+/// Get status/health check — matches Go's hello() handler
 ///
-/// Simple health check endpoint to verify the API server is running.
+/// Returns `{"hello": "clash"}` as expected by Clash-compatible dashboards.
 pub async fn get_status(State(_state): State<ApiState>) -> impl IntoResponse {
-    Json(json!({
-        "status": "ok",
-        "message": "Clash API server is running"
-    }))
+    Json(json!({"hello": "clash"}))
 }
 
 /// Query DNS for a domain
@@ -1075,7 +1227,6 @@ pub async fn get_dns_query(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Missing required parameter",
                     "message": "Query parameter 'name' is required"
                 })),
             )
@@ -1140,7 +1291,6 @@ pub async fn get_dns_query(
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({
-                        "error": "DNS query failed",
                         "message": format!("Failed to resolve {}: {}", name, e)
                     })),
                 )
@@ -1152,7 +1302,6 @@ pub async fn get_dns_query(
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
-                "error": "DNS resolver unavailable",
                 "message": "DNS resolver is not configured"
             })),
         )
@@ -1160,13 +1309,11 @@ pub async fn get_dns_query(
     }
 }
 
-/// Get all proxy groups
+/// Get all proxy groups — matches Go's getGroupProxies()
 ///
-/// Returns all proxy groups including individual proxies and default groups.
+/// Returns only OutboundGroup proxies as an array, using proxyInfo format.
 pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse {
-    log::info!("Meta groups list requested");
-
-    let mut groups = HashMap::new();
+    let mut groups = Vec::new();
 
     let entries = if let Some(registry) = &state.outbound_registry {
         let reg = registry.read();
@@ -1181,69 +1328,32 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
         Vec::new()
     };
 
-    // Get all proxies from outbound registry
+    // Only include OutboundGroup types (Selector, URLTest, Fallback, LoadBalance)
     for (tag, outbound) in entries {
-        let mut all = vec![tag.clone()];
-        let mut now = tag.clone();
-        let mut proxy_type = infer_proxy_type(&tag, Some(&outbound));
-
         if let OutboundImpl::Connector(c) = &outbound {
             if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                all = group
+                let all: Vec<String> = group
                     .get_members()
                     .into_iter()
                     .map(|(member, _, _)| member)
                     .collect();
-                now = group.get_selected().await.unwrap_or_default();
-                proxy_type = "Selector".to_string();
+                let now = group.get_selected().await.unwrap_or_default();
+
+                groups.push(json!({
+                    "name": tag,
+                    "type": "Selector",
+                    "udp": true,
+                    "history": [],
+                    "all": all,
+                    "now": now,
+                    "hidden": false,
+                    "icon": "",
+                }));
             }
         }
-
-        let group = json!({
-            "name": tag,
-            "type": proxy_type,
-            "all": all,
-            "now": now,
-            "hidden": false,
-            "icon": "",
-            "udp": true,
-        });
-        groups.insert(tag, group);
     }
 
-    // Add default groups
-    if !groups.contains_key(DIRECT_PROXY_NAME) {
-        groups.insert(
-            DIRECT_PROXY_NAME.to_string(),
-            json!({
-                "name": DIRECT_PROXY_NAME,
-                "type": PROXY_TYPE_DIRECT,
-                "all": vec![DIRECT_PROXY_NAME],
-                "now": DIRECT_PROXY_NAME,
-                "hidden": false,
-                "icon": "",
-                "udp": true,
-            }),
-        );
-    }
-
-    if !groups.contains_key(REJECT_PROXY_NAME) {
-        groups.insert(
-            REJECT_PROXY_NAME.to_string(),
-            json!({
-                "name": REJECT_PROXY_NAME,
-                "type": PROXY_TYPE_REJECT,
-                "all": vec![REJECT_PROXY_NAME],
-                "now": REJECT_PROXY_NAME,
-                "hidden": false,
-                "icon": "",
-                "udp": false,
-            }),
-        );
-    }
-
-    log::info!("Returning {} proxy groups", groups.len());
-    Json(json!({ "groups": groups }))
+    Json(json!({ "proxies": groups }))
 }
 
 /// Get specific proxy group
@@ -1321,7 +1431,6 @@ pub async fn get_meta_group(
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({
-                    "error": "Group not found",
                     "message": format!("Proxy group '{}' does not exist", group_name)
                 })),
             )
@@ -1330,87 +1439,109 @@ pub async fn get_meta_group(
     }
 }
 
-/// Test proxy group delay
+/// Test proxy group delay — matches Go's getGroupDelay()
 ///
-/// Tests the latency of all proxies in a group.
+/// Concurrently tests latency of all member proxies in a group.
+/// Returns `{tag1: delay1, tag2: delay2, ...}` map.
 pub async fn get_meta_group_delay(
     State(state): State<ApiState>,
     Path(group_name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    log::info!("Meta group delay test requested for '{}'", group_name);
-
-    // Extract parameters
-    let timeout = params
+    let timeout_ms = params
         .get("timeout")
-        .and_then(|t| t.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS);
+        .and_then(|t| t.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS as u64);
 
     let url = params
         .get("url")
-        .map(std::string::String::as_str)
-        .unwrap_or(DEFAULT_TEST_URL);
+        .cloned()
+        .unwrap_or_else(|| DEFAULT_TEST_URL.to_string());
 
-    // Check if group exists
-    let exists = if let Some(registry) = &state.outbound_registry {
-        registry.read().get(&group_name).is_some()
+    let timeout_dur = std::time::Duration::from_millis(timeout_ms);
+
+    // Collect group members
+    let members: Vec<(String, Option<OutboundImpl>)> = if let Some(registry) = &state.outbound_registry {
+        let reg = registry.read();
+        if let Some(outbound) = reg.get(&group_name) {
+            if let OutboundImpl::Connector(c) = outbound {
+                if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                    group
+                        .get_members()
+                        .into_iter()
+                        .map(|(tag, _, _)| {
+                            let ob = reg.get(&tag).cloned();
+                            (tag, ob)
+                        })
+                        .collect()
+                } else {
+                    // Not a group — test the single outbound
+                    vec![(group_name.clone(), Some(outbound.clone()))]
+                }
+            } else {
+                vec![(group_name.clone(), Some(outbound.clone()))]
+            }
+        } else if group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME {
+            vec![]
+        } else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"message": format!("Group '{}' not found", group_name)})),
+            )
+                .into_response();
+        }
     } else {
-        group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME
-    };
-
-    if !exists {
-        log::warn!("Proxy group '{}' not found for delay test", group_name);
         return (
             StatusCode::NOT_FOUND,
-            Json(json!({
-                "error": "Group not found",
-                "message": format!("Proxy group '{}' does not exist", group_name)
-            })),
+            Json(json!({"message": format!("Group '{}' not found", group_name)})),
         )
+            .into_response();
+    };
+
+    // Concurrently test all members
+    let mut handles = Vec::with_capacity(members.len());
+    for (tag, outbound) in members {
+        let url = url.clone();
+        handles.push(tokio::spawn(async move {
+            let delay = match http_url_test(outbound.as_ref(), &url, timeout_dur).await {
+                Ok(d) => d as i32,
+                Err(_) => 0,
+            };
+            (tag, delay)
+        }));
+    }
+
+    let mut results = serde_json::Map::new();
+    for handle in handles {
+        if let Ok((tag, delay)) = handle.await {
+            results.insert(tag, json!(delay));
+        }
+    }
+
+    Json(serde_json::Value::Object(results)).into_response()
+}
+
+/// Get memory usage — matches Go's memory() handler
+///
+/// Supports both HTTP (returns current stats) and WebSocket (pushes every second).
+/// Go checks `Upgrade: websocket` header; Axum uses `Option<WebSocketUpgrade>`.
+pub async fn get_meta_memory(
+    ws: Option<axum::extract::ws::WebSocketUpgrade>,
+    State(state): State<ApiState>,
+) -> impl IntoResponse {
+    if let Some(ws) = ws {
+        return ws
+            .on_upgrade(move |socket| crate::clash::websocket::handle_memory_websocket_inner(socket, state))
             .into_response();
     }
 
-    log::info!(
-        "Testing delay for group '{}' with URL '{}' and timeout {}ms",
-        group_name,
-        url,
-        timeout
-    );
-
-    // Simulate delay test
-    let simulated_delay = simulate_proxy_delay(&group_name);
-
-    log::info!(
-        "Group '{}' delay test result: {}ms",
-        group_name,
-        simulated_delay
-    );
-
+    // HTTP fallback — return current snapshot
+    let inuse = crate::clash::websocket::get_process_memory_pub();
     Json(json!({
-        "delay": simulated_delay,
-        "meanDelay": simulated_delay
+        "inuse": inuse,
+        "oslimit": 0
     }))
     .into_response()
-}
-
-/// Get memory usage statistics
-///
-/// Returns memory usage information for the service process.
-pub async fn get_meta_memory(State(_state): State<ApiState>) -> impl IntoResponse {
-    log::info!("Memory usage statistics requested");
-
-    // Get process memory statistics
-    // In a real implementation, this would use platform-specific APIs
-    // For now, return simulated memory statistics
-    let memory_stats = json!({
-        "inuse": 52_428_800_u64,        // 50 MB in use
-        "oslimit": 4_294_967_296_u64,   // 4 GB OS limit
-        "sys": 71_303_168_u64,          // 68 MB system memory
-        "gc": 24_u32                    // GC runs
-    });
-
-    log::info!("Returning memory statistics: {}", memory_stats);
-    Json(memory_stats)
 }
 
 /// Trigger garbage collection
@@ -1429,93 +1560,14 @@ pub async fn trigger_gc(State(_state): State<ApiState>) -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
-/// Replace entire configuration (PUT /configs)
+/// Replace entire configuration (PUT /configs) — matches Go behavior
 ///
-/// Unlike PATCH /configs which merges changes, this replaces the entire config.
+/// Go's handler does nothing and returns 204 NoContent.
 pub async fn replace_configs(
     State(_state): State<ApiState>,
-    Json(config): Json<serde_json::Value>,
+    Json(_config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    log::info!("Configuration replacement requested");
-
-    // Validate configuration structure
-    let obj = match config.as_object() {
-        Some(o) => o,
-        None => {
-            log::warn!("Invalid configuration format: expected object");
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "Invalid configuration format",
-                    "message": "Configuration must be a valid JSON object"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Validate required fields for full config replacement
-    let required_fields = ["port", "socks-port", "mode"];
-    for field in &required_fields {
-        if !obj.contains_key(*field) {
-            log::warn!("Missing required field '{}' in configuration", field);
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "Missing required field",
-                    "message": format!("Field '{}' is required for full configuration replacement", field)
-                }))
-            ).into_response();
-        }
-    }
-
-    // Validate port ranges
-    for port_key in &["port", "socks-port", "mixed-port", "controller-port"] {
-        if let Some(port_val) = obj.get(*port_key) {
-            if let Some(port) = port_val.as_u64() {
-                if let Err(err) = validate_port(port) {
-                    log::warn!("Invalid port value for {}: {}", port_key, err);
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "error": "Invalid port",
-                            "message": err
-                        })),
-                    )
-                        .into_response();
-                }
-            }
-        }
-    }
-
-    // Validate mode field
-    if let Some(mode) = obj.get("mode") {
-        if let Some(mode_str) = mode.as_str() {
-            let valid_modes = ["direct", "global", "rule"];
-            if !valid_modes.contains(&mode_str.to_lowercase().as_str()) {
-                log::warn!("Invalid mode value: {}", mode_str);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "error": "Invalid mode",
-                        "message": format!("Mode '{}' is not valid. Must be one of: direct, global, rule", mode_str)
-                    }))
-                ).into_response();
-            }
-        }
-    }
-
-    log::info!("Full configuration replacement validated successfully");
-
-    // In a full implementation, this would:
-    // 1. Validate the complete configuration schema
-    // 2. Stop all running services
-    // 3. Replace the entire runtime configuration
-    // 4. Restart all services with new configuration
-    // 5. Handle graceful rollback if startup fails
-
-    log::info!("Configuration replacement accepted. Full reload would be triggered here.");
-
+    log::info!("Configuration replacement requested (no-op, returns 204)");
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1586,7 +1638,6 @@ pub async fn update_script(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Invalid script format",
                     "message": "Script configuration must be a valid JSON object"
                 })),
             )
@@ -1604,7 +1655,6 @@ pub async fn update_script(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Invalid script code",
                     "message": "Script code must be a non-empty string"
                 })),
             )
@@ -1615,7 +1665,6 @@ pub async fn update_script(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Missing field",
                     "message": "Field 'code' is required for script configuration"
                 })),
             )
@@ -1652,7 +1701,6 @@ pub async fn test_script(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Invalid request format",
                     "message": "Test request must be a valid JSON object"
                 })),
             )
@@ -1669,7 +1717,6 @@ pub async fn test_script(
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(json!({
-                        "error": "Missing field",
                         "message": "Field 'script' is required and must be a non-empty string"
                     })),
                 )
@@ -1681,7 +1728,6 @@ pub async fn test_script(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
-                    "error": "Missing field",
                     "message": "Field 'script' is required and must be a non-empty string"
                 })),
             )
@@ -1759,7 +1805,6 @@ pub async fn upgrade_external_ui(
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "Missing URL",
                 "message": "Field 'url' is required for UI upgrade"
             })),
         )
@@ -1772,7 +1817,6 @@ pub async fn upgrade_external_ui(
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "Invalid URL",
                 "message": "URL must start with http:// or https://"
             })),
         )

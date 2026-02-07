@@ -41,6 +41,76 @@ pub async fn logs_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>)
     ws.on_upgrade(move |socket| handle_logs_websocket(socket, state))
 }
 
+/// Handle memory WebSocket connections — matches Go's memory() handler
+///
+/// Pushes `{"inuse": N, "oslimit": 0}` every second. First push has inuse=0.
+pub async fn memory_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {
+    ws.on_upgrade(move |socket| handle_memory_websocket_inner(socket, state))
+}
+
+/// Get process memory usage in bytes.
+pub fn get_process_memory_pub() -> u64 {
+    get_process_memory()
+}
+
+fn get_process_memory() -> u64 {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+            if let Some(resident_pages) = statm.split_whitespace().nth(1) {
+                if let Ok(pages) = resident_pages.parse::<u64>() {
+                    return pages * 4096;
+                }
+            }
+        }
+        0
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // On macOS and other platforms, return 0.
+        // Real measurement requires platform-specific APIs (mach_task_info on macOS).
+        0
+    }
+}
+
+/// Handle memory WebSocket — pushes `{"inuse": N, "oslimit": 0}` every second
+/// Public so handlers.rs can call it for the dual HTTP/WS pattern.
+pub async fn handle_memory_websocket_inner(socket: WebSocket, _state: ApiState) {
+    let (mut sender, mut receiver) = socket.split();
+    let mut tick = interval(Duration::from_secs(1));
+    let mut first = true;
+
+    loop {
+        tokio::select! {
+            msg = receiver.next() => {
+                match msg {
+                    Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
+                    Some(Ok(axum::extract::ws::Message::Ping(data))) => {
+                        let _ = sender.send(axum::extract::ws::Message::Pong(data)).await;
+                    }
+                    _ => {}
+                }
+            }
+            _ = tick.tick() => {
+                // Go sends inuse=0 on first push (for chart.js initialization)
+                let inuse = if first {
+                    first = false;
+                    0
+                } else {
+                    get_process_memory()
+                };
+                let msg = json!({"inuse": inuse, "oslimit": 0});
+                if let Ok(text) = serde_json::to_string(&msg) {
+                    if sender.send(axum::extract::ws::Message::Text(text)).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let _ = sender.send(axum::extract::ws::Message::Close(None)).await;
+}
+
 /// Handle traffic WebSocket connection
 async fn handle_traffic_websocket(socket: WebSocket, state: ApiState) {
     let client_id = uuid::Uuid::new_v4();

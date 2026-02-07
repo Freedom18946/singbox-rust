@@ -217,7 +217,7 @@ impl ClashApiServer {
         let mut app = Router::new()
             // Proxy management
             .route("/proxies", get(handlers::get_proxies))
-            .route("/proxies/:name", put(handlers::select_proxy))
+            .route("/proxies/:name", get(handlers::get_proxy).put(handlers::select_proxy))
             .route("/proxies/:name/delay", get(handlers::get_proxy_delay))
             // Connection management
             .route("/connections", get(handlers::get_connections))
