@@ -7,21 +7,75 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: L2 功能对齐 — Tier 1 ✅，L2.1 审计 ✅，**L2.6 ✅**，**L2.7 ✅ 完成**
+**当前阶段**: L2 功能对齐 — Tier 1 ✅，L2.1 审计 ✅，**L2.6 ✅**，**L2.7 ✅**，**L2.8 ✅ 完成**
 **L1 架构整固**: ✅ **全部完成**（M1.1 + M1.2 + M1.3，0 违规）
 **L1 回归验证**: ✅ 4 处回归已修复，1431 tests passed
 **L2 Tier 1 初步**: ✅ 完成（L2.2 maxminddb + L2.3 schema + L2.4 Clash API 初步 + L2.5 CLI）
 **L2.1 审计**: ✅ **全部完成** — 18 项偏差修复 (12 BREAK + 5 DEGRADE + 1 COSMETIC)
 **L2.6 Selector 持久化**: ✅ **全部完成** — OutboundGroup trait + CacheFile 联通 + as_group() bug 修复
 **L2.7 URLTest 历史**: ✅ **全部完成** — URLTestHistoryStorage + history 填充 + tolerance 防抖 + 默认值 Go 对齐
+**L2.8 ConnectionTracker**: ✅ **全部完成** — 全局 ConnTracker 接入 I/O + CancellationToken + /connections WS + /traffic 真实化
 **L2 缺口分析**: ✅ 完成 → `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
 **Clash API 审计报告**: ✅ → `agents-only/05-analysis/CLASH-API-AUDIT.md`
-**Parity**: ~92% (192/209)，目标 Tier 2 完成后 →96%
-**Tier 2 进度**: L2.6 ✅ / L2.7 ✅ / L2.8 分析完成 / L2.9 待做 / L2.10 待做
+**Parity**: ~93% (194/209)，目标 Tier 2 完成后 →96%
+**Tier 2 进度**: L2.6 ✅ / L2.7 ✅ / L2.8 ✅ / L2.9 待做 / L2.10 待做
 
 ---
 
-## ✅ 最新完成：L2.7 URLTest 历史 + 健康检查对齐
+## ✅ 最新完成：L2.8 ConnectionTracker + 连接面板
+
+**日期**: 2026-02-08
+**Commit**: `d708ecb`
+**Parity**: 92% → 93%
+
+### 修复的核心问题
+
+1. **全链路断裂** — `sb-common::ConnTracker` 有完善的 DashMap + 原子计数器，但从未被调用。`/connections` GET 始终返回空列表，`/traffic` WS 发送 mock 数据 (+1000/+4000)，`close_connection()` 仅删 HashMap 不关闭 socket
+2. **I/O path 未注册** — `new_connection()`/`new_packet_connection()` 做 dial + 双向拷贝，但不通知任何 tracker
+3. **ConnectionManager 空壳** — `sb-api/managers.rs::ConnectionManager` 从未被填充，是死代码
+
+### 核心策略
+
+复用 `sb-common::conntrack::ConnTracker` 作为全局连接跟踪器（已有 DashMap、per-connection `Arc<AtomicU64>` 计数器、proper register/unregister lifecycle、全局 upload/download 累计）。只需: (1) 在 I/O path 注册连接 + 传入 byte counters, (2) 暴露给 API 层, (3) 添加 CancellationToken close 能力。
+
+### 子任务
+
+| 步骤 | 子任务 | 状态 |
+|------|--------|------|
+| L2.8.1 | ConnMetadata 扩展 + CancellationToken (sb-common) | ✅ |
+| L2.8.2 | I/O path 注册 + 字节计数 (sb-core/router/conn.rs) | ✅ |
+| L2.8.3 | ApiState 接线 (移除 ConnectionManager, 添加 sb-common dep) | ✅ |
+| L2.8.4 | /connections WebSocket handler | ✅ |
+| L2.8.5 | handlers.rs 重写 (GET + DELETE) | ✅ |
+| L2.8.6 | /traffic WebSocket 真实化 | ✅ |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `crates/sb-common/Cargo.toml` | +tokio-util (CancellationToken) |
+| `crates/sb-common/src/conntrack.rs` | ConnMetadata +5 字段, +6 builder 方法, close/close_all cancel token |
+| `crates/sb-core/Cargo.toml` | +sb-common 依赖 |
+| `crates/sb-core/src/router/conn.rs` | new_connection/new_packet_connection 注册 tracker, copy_with_recording/tls_fragment +conn_counter, cancel token select 分支 |
+| `crates/sb-api/Cargo.toml` | +sb-common 依赖 |
+| `crates/sb-api/src/clash/server.rs` | 移除 connection_manager 字段, /connections 路由改为双模式 |
+| `crates/sb-api/src/clash/handlers.rs` | 新增 get_connections_or_ws (双HTTP/WS), 重写 close_connection/close_all, 移除 convert_connection 及 dead helpers |
+| `crates/sb-api/src/clash/websocket.rs` | 新增 handle_connections_websocket + build_connections_snapshot, 重写 handle_traffic_websocket (真实 delta) |
+| `crates/sb-api/tests/clash_endpoints_integration.rs` | 移除 connection_manager 断言 |
+
+### 构建验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo check --workspace` | ✅ |
+| `cargo check -p app --features router` | ✅ |
+| `cargo check -p app --features parity` | ✅ |
+| `cargo test --workspace` | ✅ all passed |
+| `make boundaries` | ✅ exit 0 |
+
+---
+
+## ✅ 已完成：L2.7 URLTest 历史 + 健康检查对齐
 
 **日期**: 2026-02-08
 **Parity**: 91% → 92%
@@ -109,7 +163,7 @@
 |--------|-----|--------|------|------------|
 | **L2.6** Selector 持久化 + Proxy 状态真实化 | PX-006, PX-013 | 中 | ✅ | →91% |
 | **L2.7** URLTest 历史 + 健康检查对齐 | PX-006 | 中 | ✅ | →92% |
-| **L2.8** ConnectionTracker + 连接面板 | PX-005, PX-012 | 中 | 待做 | →93% |
+| **L2.8** ConnectionTracker + 连接面板 | PX-005, PX-012 | 中 | ✅ | →93% |
 | **L2.9** Lifecycle 编排 | PX-006 | 中 | 待做 | →94% |
 | **L2.10** DNS 栈对齐 | PX-004, PX-008 | 大 | 待做 | →96% |
 
@@ -125,6 +179,11 @@
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-02-08 | L2.8 复用 sb-common::ConnTracker 而非 sb-api::ConnectionManager | ConnTracker 已有 DashMap + 原子计数 + register/unregister；ConnectionManager 从未被填充，是死代码 |
+| 2026-02-08 | L2.8 handlers 直接调用 global_tracker() | 全局单例无需注入 ApiState，减少接线代码 |
+| 2026-02-08 | L2.8 CancellationToken 替代 socket shutdown | tokio_util::CancellationToken 可从 API handler 触发，通过 select! 分支中断 I/O loop |
+| 2026-02-08 | L2.8 copy_with_recording 添加 conn_counter 参数 | per-connection 原子计数器通过参数传入，每次 I/O 一次 fetch_add，性能影响可忽略 |
+| 2026-02-08 | L2.8 延后 chain/rule 字段填充 | 需要 Router 层统一路由入口，当前 inbound adapter 直连 outbound；L2.9 后自然填充 |
 | 2026-02-08 | L2.7 URLTestHistoryStorage 用 DashMap | 已是 sb-core 依赖，无锁并发 map，与 Go sync.Map 语义一致 |
 | 2026-02-08 | 每 tag 仅存最新一条历史 | Go 对齐：adapter.URLTestHistory 是单条而非数组 |
 | 2026-02-08 | tolerance 使用 try_read() 读取 selected | 与 OutboundGroup::now() 同模式，非 async trait 约束 |
@@ -144,4 +203,4 @@
 
 ---
 
-*最后更新：2026-02-08（L2.7 URLTest 历史 + 健康检查对齐 全部完成）*
+*最后更新：2026-02-08（L2.8 ConnectionTracker + 连接面板 全部完成）*

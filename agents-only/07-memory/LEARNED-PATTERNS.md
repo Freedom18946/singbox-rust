@@ -80,6 +80,20 @@
 | DashMap 共享历史 | 无锁并发 map 适合高频读少量写场景，每 tag 仅保存最新值（与 Go sync.Map 对齐） |
 | 健康检查写入历史 | spawn 前 clone Arc，Ok → store，Err → delete |
 
+## 连接跟踪模式
+
+| 模式 | 说明 |
+|------|------|
+| 全局 ConnTracker 单例 | `global_tracker()` 返回 `&ConnTracker`（OnceLock），handlers 直接调用，无需注入 ApiState |
+| CancellationToken 连接关闭 | 每个连接一个 `CancellationToken`，I/O 热路径用 `tokio::select! { _ = cancel.cancelled() => break }`，API handler 调用 `cancel()` 立即中断 |
+| per-connection 原子计数器 | `Arc<AtomicU64>` 传入 copy 函数，每次 read 后 `fetch_add(n, Relaxed)`，开销极低（<1ns per operation） |
+| 全局累计 = 注册时快照 + 活跃连接求和 | `total_upload()` = `total_upload(atomic)` + `Σ connection.upload_bytes`，避免高频全局 fetch_add |
+| builder pattern 构造 ConnMetadata | `ConnMetadata::new(...).with_host(h).with_inbound_tag(t)` — 新字段全有默认值（None/vec![]/CancellationToken::new()），不破坏现有调用 |
+| 复用已有基础设施 > 新建 | sb-common::ConnTracker 已有完善实现，只需接线；sb-api::ConnectionManager 从未被填充 → 直接移除 |
+| copy 函数签名扩展用 Option | `conn_counter: Option<Arc<AtomicU64>>` — 现有调用传 None 即可，无需修改 |
+
+---
+
 ## 规划模式
 
 | 模式 | 说明 |
@@ -104,4 +118,4 @@
 
 ---
 
-*最后更新：2026-02-08*
+*最后更新：2026-02-08（L2.8 ConnectionTracker 模式）*

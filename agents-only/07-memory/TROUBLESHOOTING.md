@@ -119,6 +119,16 @@
 | 31 | tolerance 对未测试代理 (rtt=0) 不应 sticky | rtt=0 意味着从未收到健康检查结果 | 在 tolerance 条件中加 `current_rtt > 0` guard |
 | 32 | SelectorGroup 构造函数参数扩展影响 ~35 call sites | 新增 Option 字段导致所有 new_* 调用需改 | 用 agent 批量修改，测试代码全传 None |
 
+### ConnectionTracker / L2.8 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 33 | `balancer_socks5_ok` 测试偶发失败 | 全量 workspace 测试时资源竞争导致 SOCKS5 握手超时 | 非代码 bug，单独 `cargo test -p sb-core --test udp_balancer` 始终通过（flaky） |
+| 34 | copy_with_recording 签名变更影响多处调用 | 新增 conn_counter 参数 | 所有调用点统一加 `None` 或 `Some(counter)`，tls_fragment 也需同步更新 |
+| 35 | sb-core 需要 sb-common 依赖 | conn.rs 调用 global_tracker() 需要 sb-common | 在 sb-core/Cargo.toml 添加 `sb-common = { path = "../sb-common" }` |
+| 36 | UDP cancel token 需 select! 包裹 timeout | 原代码用 `tokio::time::timeout(udp_timeout, recv)` 单层 | 改为 `select! { r = timeout(..) => r, _ = cancel.cancelled() => break }` |
+| 37 | git stash 会恢复到 linter 修改前状态 | 系统提醒中显示旧代码导致误以为改动丢失 | git stash pop 恢复后验证文件状态即可 |
+
 ---
 
-*最后更新：2026-02-08*
+*最后更新：2026-02-08（L2.8）*

@@ -398,4 +398,102 @@
 
 ---
 
+## WP-L2.8 ConnectionTracker + 连接面板
+
+### 核心问题
+
+全链路断裂：sb-common 有完善的 ConnTracker 但从未被调用，sb-api 有 ConnectionManager 但从未被填充。
+
+三个缺陷同时修复：
+1. **I/O path 未注册**：`new_connection()`/`new_packet_connection()` 做 dial + 双向拷贝，不通知 tracker
+2. **API 数据为空/mock**：`/connections` GET 返回空列表，`/traffic` WS 发送 +1000/+4000 mock 数据
+3. **close 无效**：`close_connection()` 仅删 HashMap 记录，不关闭真实 socket
+
+### L2.8.1 ConnMetadata 扩展 + CancellationToken
+
+**sb-common/Cargo.toml**:
+- 新增 `tokio-util = { version = "0.7", features = ["rt"] }`
+
+**sb-common/src/conntrack.rs**:
+- ConnMetadata 新增 5 字段: `host`, `rule`, `chains`, `inbound_type`, `cancel: CancellationToken`
+- 新增 6 个 builder 方法: `with_host()`, `with_rule()`, `with_chains()`, `with_inbound_type()`, `with_inbound_tag()`, `with_outbound_tag()`
+- `close()`: 先 `cancel()` token 再 `unregister()`
+- `close_all()`: 遍历所有连接 cancel + unregister
+
+### L2.8.2 I/O path 注册 + 字节计数
+
+**sb-core/Cargo.toml**:
+- 新增 `sb-common` 依赖
+
+**sb-core/src/router/conn.rs**:
+
+TCP (`new_connection`):
+- dial 成功后调用 `global_tracker().register()` 注册 ConnMetadata
+- clone cancel_token + upload_counter + download_counter
+- upload/download spawn 中添加 `cancel_token.cancelled()` select 分支
+- `copy_with_recording()` 签名新增 `conn_counter: Option<Arc<AtomicU64>>`，每次 read 后 `fetch_add`
+- `copy_with_tls_fragment()` 同理新增 conn_counter 参数
+- `tokio::join!` 完成后调用 `tracker.unregister(tracker_id)`
+
+UDP (`new_packet_connection`):
+- 同理注册 `Network::Udp`
+- upload/download loop 中添加 cancel select 分支
+- 每次 send/recv 后 counter.fetch_add
+- 结束时 unregister
+
+### L2.8.3 ApiState 接线
+
+**sb-api/Cargo.toml**: 新增 `sb-common` 依赖
+
+**sb-api/src/clash/server.rs**:
+- 移除 `connection_manager: Option<Arc<ConnectionManager>>` 字段
+- 移除 `use crate::managers::ConnectionManager`
+- 两个构造函数移除 `connection_manager: None`
+- `/connections` 路由: `get(handlers::get_connections)` → `get(handlers::get_connections_or_ws)`
+- `/connectionsUpgrade` 路由: `get(handlers::upgrade_connections)` → `get(handlers::get_connections_or_ws)`
+
+### L2.8.4 /connections WebSocket handler
+
+**sb-api/src/clash/websocket.rs** — 新增两个公开函数:
+
+- `handle_connections_websocket()`: 每秒推送 `build_connections_snapshot()` 结果
+- `build_connections_snapshot()`: 遍历 `global_tracker().list()`，构建 Go Snapshot 兼容格式:
+  ```json
+  {
+    "downloadTotal": N,
+    "uploadTotal": N,
+    "connections": [{ "id", "metadata": {...}, "upload", "download", "start", "chains", "rule" }],
+    "memory": N
+  }
+  ```
+- start 时间用 `humantime::format_rfc3339()` 格式化
+
+### L2.8.5 handlers.rs 重写
+
+- `get_connections_or_ws()`: `Option<WebSocketUpgrade>` 双模式（WS → snapshot stream，HTTP → 单次 snapshot）
+- `close_connection()`: `global_tracker().close(id)` — cancel token + unregister，始终返回 204
+- `close_all_connections()`: `global_tracker().close_all()` — 遍历 cancel + unregister
+- 移除 `upgrade_connections()` stub
+- 移除 `convert_connection()` 及关联 helper (`determine_connection_type`, `parse_destination_ip/port`)
+- 移除未使用常量: `PROXY_TYPE_VLESS/VMESS/TROJAN/SHADOWSOCKS/RELAY`, `DEFAULT_INBOUND_*`, `DEFAULT_DNS_MODE`, `DEFAULT_PROCESS_NAME`, `DEFAULT_PORT`
+
+### L2.8.6 /traffic WebSocket 真实化
+
+- `handle_traffic_websocket()` 完全重写:
+  - 旧: 复杂的 mock 数据生成 (welcome msg + heartbeat + mock_traffic_interval += 1000/4000 + broadcast)
+  - 新: 简洁的 1s ticker + `global_tracker().total_upload()/total_download()` delta 计算
+  - 输出格式: `{"up": delta, "down": delta}`（与 Go 完全一致）
+
+### 验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo check --workspace` | ✅ |
+| `cargo check -p app --features router` | ✅ |
+| `cargo check -p app --features parity` | ✅ |
+| `cargo test --workspace` | ✅ all passed |
+| `make boundaries` | ✅ exit 0 |
+
+---
+
 *最后更新：2026-02-08*

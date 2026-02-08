@@ -511,4 +511,54 @@ Phase 3 P2 修复 (3 项完整性):
 
 ---
 
+---
+
+### [2026-02-08 ~08:00] Agent: Claude Code (Opus 4.6) — 会话 11
+
+**任务**: WP-L2.8 ConnectionTracker + 连接面板 — 全链路联通
+
+**变更**:
+
+L2.8.1 ConnMetadata 扩展:
+- 修改 `crates/sb-common/Cargo.toml` — +tokio-util for CancellationToken
+- 修改 `crates/sb-common/src/conntrack.rs` — ConnMetadata +5 字段 (host/rule/chains/inbound_type/cancel), +6 builder 方法, close/close_all cancel token
+
+L2.8.2 I/O path 注册:
+- 修改 `crates/sb-core/Cargo.toml` — +sb-common 依赖
+- 修改 `crates/sb-core/src/router/conn.rs` — new_connection/new_packet_connection 注册全局 tracker, copy_with_recording/tls_fragment +conn_counter, cancel token select 分支, unregister on completion
+
+L2.8.3 ApiState 接线:
+- 修改 `crates/sb-api/Cargo.toml` — +sb-common 依赖
+- 修改 `crates/sb-api/src/clash/server.rs` — 移除 connection_manager 字段, /connections 路由改为双模式
+- 修改 `crates/sb-api/tests/clash_endpoints_integration.rs` — 移除 connection_manager 断言
+
+L2.8.4-6 Handlers + WebSocket:
+- 重写 `crates/sb-api/src/clash/websocket.rs` — 新增 handle_connections_websocket + build_connections_snapshot, 重写 handle_traffic_websocket (真实 delta), 移除 mock 数据生成
+- 修改 `crates/sb-api/src/clash/handlers.rs` — 新增 get_connections_or_ws (双HTTP/WS), 重写 close_connection/close_all (global_tracker), 移除 convert_connection + 12 个 dead helpers/constants
+
+文档更新:
+- `CLAUDE.md` — L2.8 完成状态 + Parity 93%
+- `agents-only/active_context.md` — L2.8 完成记录 + 5 个决策 + 子任务表
+- `agents-only/07-memory/implementation-history.md` — WP-L2.8 完整实施详情
+- `agents-only/07-memory/LEARNED-PATTERNS.md` — 新增 7 个连接跟踪模式
+- `agents-only/07-memory/TROUBLESHOOTING.md` — 新增 5 条踩坑 (#33-#37)
+- `agents-only/log.md` — 本条目
+
+**结果**: 成功 — WP-L2.8 全部完成
+
+**量化指标**:
+- Parity: 92% → 93% (192/209 → 194/209)
+- 文件变更: 9 files (code), 116 files total (含前序未提交的 L1/L2.6/L2.7)
+- 代码净减: +8105 -12511
+- Commit: `d708ecb`
+
+**关键设计决策**:
+1. 复用 sb-common::ConnTracker 全局单例，不注入 ApiState
+2. CancellationToken 实现真实连接关闭（API handler → cancel → I/O select break）
+3. per-connection Arc<AtomicU64> 计数器通过 copy 函数参数传入
+4. 移除空壳 ConnectionManager（从未被填充）
+5. chain/rule 字段延后填充（需 L2.9 Router 统一入口）
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

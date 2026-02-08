@@ -16,13 +16,14 @@
 ## 项目概况
 
 - **项目**: singbox-rust — Go sing-box 1.12.14 的 Rust 重写，与 GUI.for SingBox 完全兼容
-- **阶段**: L2 功能对齐（Tier 1 ✅，L2.1 审计 ✅，L2.6 ✅，L2.7 ✅，Tier 2 进行中）
-- **Parity**: ~92% (192/209)
+- **阶段**: L2 功能对齐（Tier 1 ✅，L2.1 审计 ✅，L2.6 ✅，L2.7 ✅，**L2.8 ✅**，Tier 2 进行中）
+- **Parity**: ~93% (194/209)
 - **L1 架构整固**: ✅ 完成（check-boundaries.sh exit 0）
 - **L2 Tier 1**: ✅（maxminddb + Config schema + Clash API + CLI）
 - **L2.1 Clash API 审计**: ✅ 完成（18 项偏差修复，GUI.for 完全兼容）
 - **L2.6 Selector 持久化**: ✅ 完成（OutboundGroup trait + CacheFile 联通 + as_group() bug 修复）
 - **L2.7 URLTest 历史**: ✅ 完成（URLTestHistoryStorage + history 填充 + tolerance 防抖）
+- **L2.8 ConnectionTracker**: ✅ 完成（全局 ConnTracker 接入 I/O + Clash API + 真实 close）
 - **当前状态**: 见 `agents-only/active_context.md`
 
 ### L2 Tier 2 工作包（按 GUI 可感知度排序）
@@ -31,7 +32,7 @@
 |----|------|--------|------|---------|
 | L2.6 | Selector 持久化 + Proxy 状态真实化 | 中 | ✅ | OutboundGroup trait + CacheFile 联通 + as_group() 转发修复 |
 | L2.7 | URLTest 历史 + 健康检查对齐 | 中 | ✅ | URLTestHistoryStorage + history 填充 + tolerance 防抖 |
-| L2.8 | ConnectionTracker + 连接面板 | 中 | 待做 | Router 级 connection table + 真实 close |
+| L2.8 | ConnectionTracker + 连接面板 | 中 | ✅ | 全局 ConnTracker 接入 I/O + CancellationToken 真实 close + /connections WS + /traffic 真实化 |
 | L2.9 | Lifecycle 编排 | 中 | 待做 | start_all 接入拓扑排序 + staged startup |
 | L2.10 | DNS 栈对齐 | 大 | 待做 | DNSRouter / EDNS0 / FakeIP / RDRC |
 
@@ -81,7 +82,7 @@ sb-types (契约) → sb-config → sb-core (引擎) → sb-adapters (协议) �
 | `cargo check --workspace` | ✅ |
 | `cargo check -p app --features router` | ✅ |
 | `cargo check -p app --features parity` | ✅ |
-| `cargo test --workspace` | ✅ 1441 passed |
+| `cargo test --workspace` | ✅ 1441+ passed |
 | `check-boundaries.sh` | ✅ exit 0 |
 
 ---
