@@ -63,6 +63,8 @@ pub mod http_util;
 #[cfg(feature = "panic_log")]
 pub mod panic;
 pub mod run_engine;
+#[cfg(feature = "router")]
+pub mod reqwest_http;
 pub mod telemetry;
 #[cfg(feature = "dev-cli")]
 pub mod tracing_init;

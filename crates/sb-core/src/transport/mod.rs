@@ -1,4 +1,5 @@
 pub mod tcp;
+#[cfg(feature = "tls_rustls")]
 pub mod tls;
 
 // Type alias for TLS stream

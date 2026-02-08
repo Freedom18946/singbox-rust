@@ -37,6 +37,101 @@ type OutboundBuilderResult = Option<(
     Option<Arc<dyn UdpOutboundFactory>>,
 )>;
 
+/// Bridge wrapper: adapts an `sb_adapters::traits::OutboundConnector` (returns BoxedStream)
+/// into an `sb_core::adapter::OutboundConnector` (returns TcpStream / IoStream).
+///
+/// The `connect()` method returns an error (encrypted protocols can't return raw TcpStream).
+/// The `connect_io()` method delegates to the inner adapter's `dial()`, returning a layered stream.
+struct AdapterIoBridge<A: crate::traits::OutboundConnector + 'static> {
+    inner: Arc<A>,
+    name: &'static str,
+}
+
+impl<A: crate::traits::OutboundConnector + 'static> std::fmt::Debug for AdapterIoBridge<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdapterIoBridge")
+            .field("name", &self.name)
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for AdapterIoBridge<A> {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::other(format!(
+            "{} adapter uses encrypted stream for {}:{}; use connect_io() instead",
+            self.name, host, port
+        )))
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    async fn connect_io(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> std::io::Result<sb_transport::IoStream> {
+        use crate::traits::{DialOpts, Target, TransportKind};
+
+        let target = Target {
+            host: host.to_string(),
+            port,
+            kind: TransportKind::Tcp,
+        };
+        let opts = DialOpts::default();
+
+        let boxed_stream = self
+            .inner
+            .dial(target, opts)
+            .await
+            .map_err(|e| std::io::Error::other(format!("{} dial failed: {}", self.name, e)))?;
+
+        // Convert BoxedStream to IoStream via adapter wrapper
+        Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
+    }
+}
+
+/// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
+/// Both have identical bounds (AsyncRead + AsyncWrite + Unpin + Send).
+#[cfg(feature = "v2ray_transport")]
+struct BoxedStreamAdapter(crate::traits::BoxedStream);
+
+#[cfg(feature = "v2ray_transport")]
+impl tokio::io::AsyncRead for BoxedStreamAdapter {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.0).poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "v2ray_transport")]
+impl tokio::io::AsyncWrite for BoxedStreamAdapter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.0).poll_shutdown(cx)
+    }
+}
+
 static REGISTER_ONCE: Once = Once::new();
 
 /// Register adapter-provided builders with sb-core registry. Safe to call multiple times.
@@ -518,77 +613,50 @@ fn build_socks4_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-shadowsocks", feature = "out_ss"))]
+#[cfg(feature = "adapter-shadowsocks")]
 fn build_shadowsocks_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::shadowsocks::{
-        ShadowsocksCipher, ShadowsocksConfig, ShadowsocksOutbound,
-    };
+    use crate::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
 
-    // Map method string to cipher enum (default to AES-256-GCM)
+    // Map method string (default to AES-256-GCM)
     let method = ir
         .method
         .as_deref()
         .unwrap_or("aes-256-gcm")
         .to_ascii_lowercase();
-    let cipher = match method.as_str() {
-        "chacha20-poly1305" | "chacha20-ietf-poly1305" => ShadowsocksCipher::Chacha20Poly1305,
-        _ => ShadowsocksCipher::Aes256Gcm,
+
+    let server_addr = format!("{}:{}", server, port);
+
+    let cfg = ShadowsocksConfig {
+        server: server_addr,
+        tag: ir.name.clone(),
+        method,
+        password,
+        connect_timeout_sec: ir.connect_timeout_sec.map(|s| s as u64),
+        multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
     };
 
-    // Build config using core constructor (no plugin support yet)
-    let cfg = ShadowsocksConfig::new(server.clone(), port, password, cipher);
+    // Create adapter connector
+    let connector = ShadowsocksConnector::new(cfg).ok()?;
+    let connector_arc = Arc::new(connector);
 
-    // Wire multiplex config if v2ray_transport feature is enabled
-    #[cfg(feature = "v2ray_transport")]
-    let cfg = cfg.with_multiplex(ir.multiplex.clone().or(param.multiplex.clone()));
-
-    // Create outbound
-    let outbound = ShadowsocksOutbound::new(cfg);
-    let outbound_arc = Arc::new(outbound);
-
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct ShadowsocksConnectorWrapper {
-        inner: Arc<ShadowsocksOutbound>,
-    }
-
-    impl std::fmt::Debug for ShadowsocksConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("ShadowsocksConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for ShadowsocksConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Shadowsocks uses encrypted stream; adapter path should use switchboard instead.
-            Err(std::io::Error::other(
-                "Shadowsocks adapter connector is not usable directly; use switchboard registry instead",
-            ))
-        }
-    }
-
-    let wrapper = ShadowsocksConnectorWrapper {
-        inner: outbound_arc,
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "shadowsocks",
     };
 
-    // Adapter-level Shadowsocks currently exposes TCP only; UDP factory is handled
-    // by core QUIC/UDP traits when available.
-    Some((Arc::new(wrapper), None))
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
+#[cfg(not(feature = "adapter-shadowsocks"))]
 #[allow(dead_code)]
 fn build_shadowsocks_outbound(
     _param: &OutboundParam,
@@ -648,83 +716,61 @@ fn build_shadowsocksr_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-trojan", feature = "out_trojan"))]
+#[cfg(feature = "adapter-trojan")]
 fn build_trojan_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::trojan::{TrojanConfig, TrojanOutbound};
+    use crate::outbound::trojan::{TrojanConfig, TrojanConnector};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
-    let sni = ir.tls_sni.clone().unwrap_or(server.clone());
 
-    // Base config
-    let mut cfg = TrojanConfig::new(server.clone(), port, password, sni);
+    // Build server address (host:port)
+    let server_addr = format!("{}:{}", server, port);
 
-    // Optional ALPN list (tls_alpn or legacy alpn CSV)
-    if let Some(alpn) = ir.tls_alpn.clone().or_else(|| {
-        ir.alpn.as_ref().map(|raw| {
-            raw.split(',')
-                .map(|x| x.trim().to_string())
-                .filter(|x| !x.is_empty())
-                .collect::<Vec<_>>()
-        })
-    }) {
-        cfg = cfg.with_alpn(alpn);
-    }
+    // Build transport config from IR
+    let transport_layer = build_transport_config(ir);
 
-    // Optional skip_cert_verify
-    if let Some(skip) = ir.skip_cert_verify {
-        cfg = cfg.with_skip_cert_verify(skip);
-    }
-
-    // Optional uTLS fingerprint
-    cfg.utls_fingerprint = ir.utls_fingerprint.clone();
-
-    // Multiplex options
-    cfg.multiplex = ir.multiplex.clone().or(param.multiplex.clone());
-
-    // Create outbound
-    let outbound = TrojanOutbound::new(cfg).ok()?;
-    let outbound_arc = Arc::new(outbound);
-
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct TrojanConnectorWrapper {
-        inner: Arc<TrojanOutbound>,
-    }
-
-    impl std::fmt::Debug for TrojanConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("TrojanConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for TrojanConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Trojan uses encrypted stream; adapter path should use switchboard instead.
-            Err(std::io::Error::other(
-                "Trojan adapter connector is not usable directly; use switchboard registry instead",
-            ))
-        }
-    }
-
-    let wrapper = TrojanConnectorWrapper {
-        inner: outbound_arc,
+    // Build adapter-level TrojanConfig
+    let cfg = TrojanConfig {
+        server: server_addr,
+        tag: ir.name.clone(),
+        password,
+        connect_timeout_sec: ir.connect_timeout_sec.map(|s| s as u64),
+        sni: ir.tls_sni.clone().or_else(|| Some(server.clone())),
+        alpn: ir.tls_alpn.clone().or_else(|| {
+            ir.alpn.as_ref().map(|raw| {
+                raw.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect::<Vec<_>>()
+            })
+        }),
+        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        transport_layer,
+        #[cfg(feature = "tls_reality")]
+        reality: None, // TODO: wire REALITY config from IR
+        multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
     };
 
-    // Adapter-level Trojan currently exposes TCP only; UDP factory is not implemented.
-    Some((Arc::new(wrapper), None))
+    // Create adapter connector
+    let connector = TrojanConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Use AdapterIoBridge to wrap the adapter connector
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "trojan",
+    };
+
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-trojan", feature = "out_trojan")))]
+#[cfg(not(feature = "adapter-trojan"))]
 #[allow(dead_code)]
 fn build_trojan_outbound(
     _param: &OutboundParam,
@@ -734,13 +780,14 @@ fn build_trojan_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-vmess", feature = "out_vmess"))]
+#[cfg(feature = "adapter-vmess")]
 fn build_vmess_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::vmess::{VmessConfig, VmessOutbound};
+    use crate::outbound::vmess::{Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport};
+    use std::collections::HashMap;
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -748,79 +795,54 @@ fn build_vmess_outbound(
     let uuid_str = ir.uuid.as_ref()?;
     let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
 
-    // Build config
+    // Parse server to SocketAddr (try IP:port first, then resolve)
+    let server_addr = format!("{}:{}", server, port)
+        .parse::<SocketAddr>()
+        .ok()?;
+
+    // Map security string
+    let security = match ir.security.as_deref() {
+        Some("none") => Security::None,
+        Some("chacha20-poly1305") | Some("chacha20-ietf-poly1305") => Security::ChaCha20Poly1305,
+        Some("auto") => Security::Auto,
+        _ => Security::Aes128Gcm,
+    };
+
+    let auth = VmessAuth {
+        uuid,
+        alter_id: ir.alter_id.unwrap_or(0) as u16,
+        security,
+        additional_data: None,
+    };
+
+    let transport_layer = build_transport_config(ir);
+
     let cfg = VmessConfig {
-        server: server.clone(),
-        port,
-        id: uuid,
-        security: ir
-            .security
-            .clone()
-            .unwrap_or_else(|| "aes-128-gcm".to_string()),
-        alter_id: ir.alter_id.unwrap_or(0),
-        transport: ir.transport.clone(),
-        ws_path: ir.ws_path.clone(),
-        ws_host: ir.ws_host.clone(),
-        h2_path: ir.h2_path.clone(),
-        h2_host: ir.h2_host.clone(),
-        tls_sni: ir.tls_sni.clone(),
-        tls_alpn: ir.tls_alpn.clone(),
-        utls_fingerprint: ir.utls_fingerprint.clone(),
-        grpc_service: ir.grpc_service.clone(),
-        grpc_method: ir.grpc_method.clone(),
-        grpc_authority: ir.grpc_authority.clone(),
-        grpc_metadata: ir
-            .grpc_metadata
-            .iter()
-            .map(|e| (e.key.clone(), e.value.clone()))
-            .collect(),
-        http_upgrade_path: ir.http_upgrade_path.clone(),
-        http_upgrade_headers: ir
-            .http_upgrade_headers
-            .iter()
-            .map(|e| (e.key.clone(), e.value.clone()))
-            .collect(),
-        multiplex: ir.multiplex.clone().or(param.multiplex.clone()),
+        server_addr,
+        auth,
+        transport: VmessTransport::default(),
+        transport_layer,
+        timeout: Some(std::time::Duration::from_secs(30)),
+        packet_encoding: false,
+        headers: HashMap::new(),
+        #[cfg(feature = "transport_mux")]
+        multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
+        #[cfg(feature = "transport_tls")]
+        tls: None,
     };
 
-    // Create outbound
-    let outbound = VmessOutbound::new(cfg).ok()?;
-    let outbound_arc = Arc::new(outbound);
+    let connector = VmessConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct VmessConnectorWrapper {
-        inner: Arc<VmessOutbound>,
-    }
-
-    impl std::fmt::Debug for VmessConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("VmessConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for VmessConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // VMess uses encrypted stream, cannot return TcpStream directly
-            // Use switchboard registry instead
-            Err(std::io::Error::other(
-                "VMess uses encrypted stream; use switchboard registry instead",
-            ))
-        }
-    }
-
-    let wrapper = VmessConnectorWrapper {
-        inner: outbound_arc.clone(),
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "vmess",
     };
 
-    // Return TCP connector wrapper (VMess doesn't support UDP factory yet)
-    Some((Arc::new(wrapper), None))
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-vmess", feature = "out_vmess")))]
+#[cfg(not(feature = "adapter-vmess"))]
 #[allow(dead_code)]
 fn build_vmess_outbound(
     _param: &OutboundParam,
@@ -830,13 +852,14 @@ fn build_vmess_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-vless", feature = "out_vless"))]
+#[cfg(feature = "adapter-vless")]
 fn build_vless_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::vless::{VlessConfig, VlessOutbound};
+    use crate::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
+    use std::collections::HashMap;
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -844,76 +867,56 @@ fn build_vless_outbound(
     let uuid_str = ir.uuid.as_ref()?;
     let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
 
-    // Build config
+    // Parse server to SocketAddr
+    let server_addr = format!("{}:{}", server, port)
+        .parse::<SocketAddr>()
+        .ok()?;
+
+    // Map flow control
+    let flow = match ir.flow.as_deref() {
+        Some("xtls-rprx-vision") => FlowControl::XtlsRprxVision,
+        Some("xtls-rprx-direct") => FlowControl::XtlsRprxDirect,
+        _ => FlowControl::None,
+    };
+
+    // Map encryption
+    let encryption = match ir.encryption.as_deref() {
+        Some("aes-128-gcm") => Encryption::Aes128Gcm,
+        Some("chacha20-poly1305") | Some("chacha20-ietf-poly1305") => Encryption::ChaCha20Poly1305,
+        _ => Encryption::None,
+    };
+
+    let transport_layer = build_transport_config(ir);
+
     let cfg = VlessConfig {
-        server: server.clone(),
-        port,
+        server_addr,
         uuid,
-        flow: ir.flow.clone(),
-        encryption: ir.encryption.clone(),
-        transport: ir.transport.clone(),
-        ws_path: ir.ws_path.clone(),
-        ws_host: ir.ws_host.clone(),
-        h2_path: ir.h2_path.clone(),
-        h2_host: ir.h2_host.clone(),
-        tls_sni: ir.tls_sni.clone(),
-        tls_alpn: ir.tls_alpn.clone(),
-        utls_fingerprint: ir.utls_fingerprint.clone(),
-        grpc_service: ir.grpc_service.clone(),
-        grpc_method: ir.grpc_method.clone(),
-        grpc_authority: ir.grpc_authority.clone(),
-        grpc_metadata: ir
-            .grpc_metadata
-            .iter()
-            .map(|e| (e.key.clone(), e.value.clone()))
-            .collect(),
-        http_upgrade_path: ir.http_upgrade_path.clone(),
-        http_upgrade_headers: ir
-            .http_upgrade_headers
-            .iter()
-            .map(|e| (e.key.clone(), e.value.clone()))
-            .collect(),
-        multiplex: ir.multiplex.clone().or(param.multiplex.clone()),
+        flow,
+        encryption,
+        headers: HashMap::new(),
+        timeout: Some(30),
+        tcp_fast_open: false,
+        transport_layer,
+        #[cfg(feature = "transport_mux")]
+        multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
+        #[cfg(feature = "tls_reality")]
+        reality: None, // TODO: wire REALITY config from IR
+        #[cfg(feature = "transport_ech")]
+        ech: None,
     };
 
-    // Create outbound
-    let outbound = VlessOutbound::new(cfg).ok()?;
-    let outbound_arc = Arc::new(outbound);
+    let connector = VlessConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct VlessConnectorWrapper {
-        inner: Arc<VlessOutbound>,
-    }
-
-    impl std::fmt::Debug for VlessConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("VlessConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for VlessConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // VLESS uses encrypted stream, cannot return TcpStream directly
-            // Use switchboard registry instead
-            Err(std::io::Error::other(
-                "VLESS uses encrypted stream; use switchboard registry instead",
-            ))
-        }
-    }
-
-    let wrapper = VlessConnectorWrapper {
-        inner: outbound_arc.clone(),
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "vless",
     };
 
-    // Return TCP connector wrapper (VLESS doesn't support UDP factory yet)
-    Some((Arc::new(wrapper), None))
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-vless", feature = "out_vless")))]
+#[cfg(not(feature = "adapter-vless"))]
 #[allow(dead_code)]
 fn build_vless_outbound(
     _param: &OutboundParam,
@@ -1040,6 +1043,96 @@ fn convert_multiplex_config(
     if let Some(_b) = &ir.brutal {
         // Assuming BrutalIR has compatible fields or just skip for now to pass check
         // config.brutal = ...
+    }
+    Some(config)
+}
+
+/// Build transport config from IR fields.
+/// Maps IR transport fields to sb-adapters' TransportConfig.
+#[allow(dead_code)]
+fn build_transport_config(ir: &OutboundIR) -> crate::transport_config::TransportConfig {
+    use crate::transport_config::*;
+
+    // Transport field is Vec<String>, take first element as transport type
+    let transport_type = ir
+        .transport
+        .as_ref()
+        .and_then(|v| v.first())
+        .map(|s| s.as_str());
+
+    match transport_type {
+        Some("ws") | Some("websocket") => {
+            let ws_cfg = WebSocketTransportConfig {
+                path: ir.ws_path.clone().unwrap_or_else(|| "/".to_string()),
+                headers: ir
+                    .ws_host
+                    .as_ref()
+                    .map(|h| vec![("Host".to_string(), h.clone())])
+                    .unwrap_or_default(),
+                ..Default::default()
+            };
+            TransportConfig::WebSocket(ws_cfg)
+        }
+        Some("grpc") => {
+            let grpc_cfg = GrpcTransportConfig {
+                service_name: ir
+                    .grpc_service
+                    .clone()
+                    .unwrap_or_else(|| "TunnelService".to_string()),
+                method_name: ir
+                    .grpc_method
+                    .clone()
+                    .unwrap_or_else(|| "Tunnel".to_string()),
+                metadata: ir
+                    .grpc_metadata
+                    .iter()
+                    .map(|e| (e.key.clone(), e.value.clone()))
+                    .collect(),
+            };
+            TransportConfig::Grpc(grpc_cfg)
+        }
+        Some("httpupgrade") => {
+            let mut headers: Vec<(String, String)> = ir
+                .http_upgrade_headers
+                .iter()
+                .map(|e| (e.key.clone(), e.value.clone()))
+                .collect();
+            // Add Host header if not already present
+            if let Some(host) = ir.ws_host.as_ref().or(ir.tls_sni.as_ref()) {
+                if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
+                    headers.push(("Host".to_string(), host.clone()));
+                }
+            }
+            let hu_cfg = HttpUpgradeTransportConfig {
+                path: ir
+                    .http_upgrade_path
+                    .clone()
+                    .unwrap_or_else(|| "/".to_string()),
+                headers,
+            };
+            TransportConfig::HttpUpgrade(hu_cfg)
+        }
+        _ => TransportConfig::Tcp,
+    }
+}
+
+/// Build client-side multiplex config from IR.
+#[cfg(feature = "sb-transport")]
+#[allow(dead_code)]
+fn build_multiplex_config_client(
+    ir: &Option<sb_config::ir::MultiplexOptionsIR>,
+) -> Option<sb_transport::multiplex::MultiplexConfig> {
+    let ir = ir.as_ref()?;
+    if !ir.enabled {
+        return None;
+    }
+
+    let mut config = sb_transport::multiplex::MultiplexConfig::default();
+    if let Some(n) = ir.max_streams {
+        config.max_num_streams = n;
+    }
+    if let Some(p) = ir.padding {
+        config.enable_padding = p;
     }
     Some(config)
 }
@@ -2250,71 +2343,42 @@ fn build_anytls_outbound(
     }
 }
 
-#[cfg(all(feature = "adapter-wireguard", feature = "out_wireguard"))]
+#[cfg(feature = "adapter-wireguard-outbound")]
 fn build_wireguard_outbound(
     _param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::crypto_types::{HostPort, OutboundTcp};
-    use sb_core::outbound::wireguard::{WireGuardConfig, WireGuardOutbound};
+    use crate::outbound::wireguard::{LazyWireGuardConnector, WireGuardOutboundConfig};
 
-    let cfg = match WireGuardConfig::from_ir(ir) {
+    // Parse config from IR
+    let cfg = match WireGuardOutboundConfig::try_from(ir) {
         Ok(cfg) => cfg,
-        Err(msg) => {
+        Err(e) => {
             warn!(
                 target: "wireguard",
                 "failed to build WireGuard config: {}",
-                msg
+                e
             );
             return None;
         }
     };
 
-    let outbound = match WireGuardOutbound::new(cfg) {
-        Ok(outbound) => outbound,
-        Err(err) => {
-            warn!(
-                target: "wireguard",
-                "failed to initialize WireGuard outbound: {}",
-                err
-            );
-            return None;
-        }
+    // Lazy init — transport created on first dial()
+    let connector = LazyWireGuardConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "wireguard",
     };
 
-    let shared = Arc::new(outbound);
-
-    #[derive(Clone)]
-    struct WireGuardAdapterConnector {
-        inner: Arc<WireGuardOutbound>,
-    }
-
-    impl std::fmt::Debug for WireGuardAdapterConnector {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("WireGuardAdapterConnector")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for WireGuardAdapterConnector {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            let hp = HostPort::new(host.to_string(), port);
-            self.inner.connect(&hp).await
-        }
-    }
-
-    let connector = WireGuardAdapterConnector {
-        inner: shared.clone(),
-    };
-    let udp: Arc<dyn UdpOutboundFactory> = shared.clone();
-
-    Some((Arc::new(connector), Some(udp)))
+    // No UDP factory from adapter layer (sb-core's WireGuardOutbound had UdpOutboundFactory)
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-wireguard", feature = "out_wireguard")))]
+#[cfg(not(feature = "adapter-wireguard-outbound"))]
+#[allow(dead_code)]
 fn build_wireguard_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -2440,38 +2504,13 @@ fn build_hysteria_outbound(
     let connector = HysteriaConnector::new(cfg);
     let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct HysteriaConnectorWrapper {
-        inner: Arc<HysteriaConnector>,
-    }
-
-    impl std::fmt::Debug for HysteriaConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("HysteriaConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for HysteriaConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Hysteria v1 uses QUIC stream, cannot return raw TcpStream
-            // Use switchboard registry instead
-            Err(std::io::Error::other(format!(
-                "Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead",
-                host, port
-            )))
-        }
-    }
-
-    let wrapper = HysteriaConnectorWrapper {
+    let bridge = AdapterIoBridge {
         inner: connector_arc,
+        name: "hysteria",
     };
 
-    // No UDP factory for Hysteria v1 yet (can be added later if needed)
-    Some((Arc::new(wrapper), None))
+    // No UDP factory for Hysteria v1 yet
+    Some((Arc::new(bridge), None))
 }
 
 #[cfg(not(feature = "adapter-hysteria"))]
@@ -2519,38 +2558,13 @@ fn build_shadowtls_outbound(
     let connector = ShadowTlsConnector::new(cfg);
     let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct ShadowTlsConnectorWrapper {
-        inner: Arc<ShadowTlsConnector>,
-    }
-
-    impl std::fmt::Debug for ShadowTlsConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("ShadowTlsConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for ShadowTlsConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // ShadowTLS uses encrypted TLS stream, cannot return raw TcpStream
-            // Use switchboard registry instead
-            Err(std::io::Error::other(format!(
-                "ShadowTLS uses encrypted TLS stream for {}:{}; use switchboard registry instead",
-                host, port
-            )))
-        }
-    }
-
-    let wrapper = ShadowTlsConnectorWrapper {
+    let bridge = AdapterIoBridge {
         inner: connector_arc,
+        name: "shadowtls",
     };
 
     // ShadowTLS only supports TCP, no UDP factory
-    Some((Arc::new(wrapper), None))
+    Some((Arc::new(bridge), None))
 }
 
 #[cfg(not(feature = "adapter-shadowtls"))]
@@ -2563,13 +2577,13 @@ fn build_shadowtls_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-tuic", feature = "out_tuic"))]
+#[cfg(feature = "adapter-tuic")]
 fn build_tuic_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
+    use crate::outbound::tuic::{TuicAdapterConfig, TuicConnector, TuicUdpRelayMode};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -2579,13 +2593,13 @@ fn build_tuic_outbound(
     let token = ir.token.as_ref()?.clone();
 
     // Map UDP relay mode
-    let relay_mode = match ir.udp_relay_mode.as_deref() {
-        Some(m) if m.eq_ignore_ascii_case("quic") => UdpRelayMode::Quic,
-        _ => UdpRelayMode::Native,
+    let udp_relay_mode = match ir.udp_relay_mode.as_deref() {
+        Some(m) if m.eq_ignore_ascii_case("quic") => TuicUdpRelayMode::Quic,
+        _ => TuicUdpRelayMode::Native,
     };
 
-    // Build config
-    let cfg = TuicConfig {
+    // Build adapter config
+    let cfg = TuicAdapterConfig {
         server: server.clone(),
         port,
         uuid,
@@ -2595,58 +2609,26 @@ fn build_tuic_outbound(
         alpn: ir
             .alpn
             .as_ref()
-            .map(|s| vec![s.clone()])
-            .or_else(|| ir.tls_alpn.clone()),
+            .cloned()
+            .or_else(|| ir.tls_alpn.as_ref().map(|v| v.join(","))),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
-        sni: ir.tls_sni.clone(),
-        tls_ca_paths: ir.tls_ca_paths.clone(),
-        tls_ca_pem: ir.tls_ca_pem.clone(),
-        udp_relay_mode: relay_mode,
+        udp_relay_mode,
         udp_over_stream: ir.udp_over_stream.unwrap_or(false),
-        zero_rtt_handshake: ir.zero_rtt_handshake.unwrap_or(false),
     };
 
-    // Create outbound
-    let outbound = TuicOutbound::new(cfg).ok()?;
-    let outbound_arc = Arc::new(outbound);
+    let connector = TuicConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct TuicConnectorWrapper {
-        inner: Arc<TuicOutbound>,
-    }
-
-    impl std::fmt::Debug for TuicConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("TuicConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for TuicConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // TUIC is QUIC-based, cannot return TcpStream directly
-            // This is a fundamental architecture limitation
-            Err(std::io::Error::other(
-                "TUIC is QUIC-based and cannot provide TcpStream; use switchboard registry instead",
-            ))
-        }
-    }
-
-    let wrapper = TuicConnectorWrapper {
-        inner: outbound_arc.clone(),
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "tuic",
     };
 
-    // Return both TCP connector and UDP factory
-    Some((
-        Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
-    ))
+    // No UDP factory from adapter layer yet (sb-core's TuicOutbound had one)
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-tuic", feature = "out_tuic")))]
+#[cfg(not(feature = "adapter-tuic"))]
 fn build_tuic_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -2656,91 +2638,47 @@ fn build_tuic_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
+#[cfg(feature = "adapter-hysteria2")]
 fn build_hysteria2_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::hysteria2::{BrutalConfig, Hysteria2Config, Hysteria2Outbound};
+    use crate::outbound::hysteria2::{Hysteria2AdapterConfig, Hysteria2Connector};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
 
-    // Build brutal config if both up/down specified
-    let brutal = match (ir.brutal_up_mbps, ir.brutal_down_mbps) {
-        (Some(up), Some(down)) => Some(BrutalConfig {
-            up_mbps: up,
-            down_mbps: down,
-        }),
-        _ => None,
-    };
-
-    // Parse ALPN list
-    let alpn_list = ir.tls_alpn.clone();
-
-    // Build config
-    let cfg = Hysteria2Config {
+    // Build adapter config
+    let cfg = Hysteria2AdapterConfig {
         server: server.clone(),
         port,
         password,
+        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        sni: ir.tls_sni.clone(),
+        alpn: ir.tls_alpn.clone(),
         congestion_control: ir.congestion_control.clone(),
         up_mbps: ir.up_mbps,
         down_mbps: ir.down_mbps,
         obfs: ir.obfs.clone(),
-        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
-        sni: ir.tls_sni.clone(),
-        alpn: alpn_list,
         salamander: ir.salamander.clone(),
-        brutal,
-        tls_ca_paths: ir.tls_ca_paths.clone(),
-        tls_ca_pem: ir.tls_ca_pem.clone(),
-        zero_rtt_handshake: ir.zero_rtt_handshake.unwrap_or(false),
     };
 
-    // Create outbound
-    let outbound = Hysteria2Outbound::new(cfg).ok()?;
-    let outbound_arc = Arc::new(outbound);
+    let connector = Hysteria2Connector::new(cfg);
+    let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct Hysteria2ConnectorWrapper {
-        inner: Arc<Hysteria2Outbound>,
-    }
-
-    impl std::fmt::Debug for Hysteria2ConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("Hysteria2ConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for Hysteria2ConnectorWrapper {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Hysteria2 is QUIC-based, cannot return TcpStream directly
-            // This is a fundamental architecture limitation
-            Err(std::io::Error::other(
-                "Hysteria2 is QUIC-based and cannot provide TcpStream; use switchboard registry instead"
-            ))
-        }
-    }
-
-    let wrapper = Hysteria2ConnectorWrapper {
-        inner: outbound_arc.clone(),
+    let bridge = AdapterIoBridge {
+        inner: connector_arc,
+        name: "hysteria2",
     };
 
-    // Return both TCP connector and UDP factory
-    Some((
-        Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
-    ))
+    // No UDP factory from adapter layer yet
+    Some((Arc::new(bridge), None))
 }
 
-#[cfg(not(all(feature = "adapter-hysteria2", feature = "out_hysteria2")))]
+#[cfg(not(feature = "adapter-hysteria2"))]
 fn build_hysteria2_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -2802,38 +2740,13 @@ fn build_ssh_outbound(
     let connector = SshConnector::new(cfg);
     let connector_arc = Arc::new(connector);
 
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    #[derive(Clone)]
-    struct SshConnectorWrapper {
-        inner: Arc<SshConnector>,
-    }
-
-    impl std::fmt::Debug for SshConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("SshConnectorWrapper")
-                .field("inner", &self.inner)
-                .finish()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for SshConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // SSH uses tunnel proxy protocol, cannot return raw TcpStream
-            // Use switchboard registry instead
-            Err(std::io::Error::other(format!(
-                "SSH uses tunnel proxy for {}:{}; use switchboard registry instead",
-                host, port
-            )))
-        }
-    }
-
-    let wrapper = SshConnectorWrapper {
+    let bridge = AdapterIoBridge {
         inner: connector_arc,
+        name: "ssh",
     };
 
     // SSH only supports TCP, no UDP factory
-    Some((Arc::new(wrapper), None))
+    Some((Arc::new(bridge), None))
 }
 
 #[cfg(not(feature = "adapter-ssh"))]

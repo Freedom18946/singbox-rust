@@ -144,8 +144,8 @@ pub struct GlobalArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "app")]
-#[command(about = "Sing CLI", long_about = None)]
+#[command(name = "sing-box")]
+#[command(about = "sing-box service", long_about = None)]
 pub struct Args {
     #[command(flatten)]
     pub global: GlobalArgs,
@@ -185,7 +185,8 @@ pub enum Commands {
     #[cfg(feature = "bench-cli")]
     Bench(bench::BenchArgs),
     /// 生成 shell 补全脚本
-    GenCompletions(completion::CompletionArgs),
+    #[command(alias = "gen-completions")]
+    Completion(completion::CompletionArgs),
     /// Generate cryptographic keys (REALITY, ECH)
     Generate(generate::GenerateArgs),
     /// Merge configuration files/directories

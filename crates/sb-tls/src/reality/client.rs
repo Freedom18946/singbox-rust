@@ -147,7 +147,7 @@ impl RealityConnector {
             webpki,
         });
 
-        crate::ensure_rustls_crypto_provider();
+        crate::ensure_crypto_provider();
         let mut config: rustls::ClientConfig = {
             #[cfg(feature = "utls")]
             {

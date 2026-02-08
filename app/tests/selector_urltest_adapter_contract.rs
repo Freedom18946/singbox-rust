@@ -415,6 +415,8 @@ async fn test_selectorgroup_manual_mode() {
         "test-selector".to_string(),
         members,
         Some("proxy-1".to_string()),
+        None,
+        None,
     );
 
     // Verify initial selection
@@ -470,6 +472,8 @@ async fn test_selectorgroup_urltest_mode() {
         std::time::Duration::from_secs(60),
         std::time::Duration::from_secs(5),
         50,
+        None,
+        None,
     );
 
     // Verify members
@@ -515,6 +519,8 @@ async fn test_selectorgroup_loadbalancing_modes() {
         "round-robin".to_string(),
         members.clone(),
         SelectMode::RoundRobin,
+        None,
+        None,
     );
     assert_eq!(rr_selector.mode, SelectMode::RoundRobin);
 
@@ -523,12 +529,14 @@ async fn test_selectorgroup_loadbalancing_modes() {
         "least-conn".to_string(),
         members.clone(),
         SelectMode::LeastConnections,
+        None,
+        None,
     );
     assert_eq!(lc_selector.mode, SelectMode::LeastConnections);
 
     // Test random mode
     let random_selector =
-        SelectorGroup::new_load_balancer("random".to_string(), members, SelectMode::Random);
+        SelectorGroup::new_load_balancer("random".to_string(), members, SelectMode::Random, None, None);
     assert_eq!(random_selector.mode, SelectMode::Random);
 }
 

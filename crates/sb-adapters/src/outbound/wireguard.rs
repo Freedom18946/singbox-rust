@@ -139,6 +139,55 @@ impl OutboundConnector for WireGuardOutbound {
     }
 }
 
+/// Lazy-initialized WireGuard connector.
+///
+/// Holds config and initializes transport on first `dial()` call.
+/// This allows sync construction from builder functions.
+pub struct LazyWireGuardConnector {
+    config: WireGuardOutboundConfig,
+    inner: tokio::sync::OnceCell<Arc<WireGuardOutbound>>,
+}
+
+impl std::fmt::Debug for LazyWireGuardConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LazyWireGuardConnector")
+            .field("config", &self.config)
+            .field("initialized", &self.inner.initialized())
+            .finish()
+    }
+}
+
+impl LazyWireGuardConnector {
+    /// Create a lazy WireGuard connector (sync, no IO).
+    pub fn new(config: WireGuardOutboundConfig) -> Self {
+        Self {
+            config,
+            inner: tokio::sync::OnceCell::new(),
+        }
+    }
+
+    async fn get_or_init(&self) -> Result<&Arc<WireGuardOutbound>> {
+        self.inner
+            .get_or_try_init(|| async {
+                let outbound = WireGuardOutbound::new(self.config.clone()).await?;
+                Ok(Arc::new(outbound))
+            })
+            .await
+    }
+}
+
+#[async_trait]
+impl OutboundConnector for LazyWireGuardConnector {
+    fn name(&self) -> &'static str {
+        "wireguard"
+    }
+
+    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+        let inner = self.get_or_init().await?;
+        inner.dial(target, opts).await
+    }
+}
+
 /// Build WireGuard outbound from IR configuration.
 impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
     type Error = AdapterError;

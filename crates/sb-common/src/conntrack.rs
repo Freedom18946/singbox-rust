@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 /// Unique identifier for a tracked connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -72,6 +73,16 @@ pub struct ConnMetadata {
     pub upload_bytes: Arc<AtomicU64>,
     /// Bytes downloaded (server -> client).
     pub download_bytes: Arc<AtomicU64>,
+    /// Host/domain name (SNI or CONNECT host).
+    pub host: Option<String>,
+    /// Matched routing rule description.
+    pub rule: Option<String>,
+    /// Proxy chain (reversed: leaf → ... → matched outbound).
+    pub chains: Vec<String>,
+    /// Inbound type string (e.g., "mixed", "http", "socks5").
+    pub inbound_type: Option<String>,
+    /// Cancellation token for closing the connection.
+    pub cancel: CancellationToken,
 }
 
 impl ConnMetadata {
@@ -96,7 +107,48 @@ impl ConnMetadata {
             process_path: None,
             upload_bytes: Arc::new(AtomicU64::new(0)),
             download_bytes: Arc::new(AtomicU64::new(0)),
+            host: None,
+            rule: None,
+            chains: vec![],
+            inbound_type: None,
+            cancel: CancellationToken::new(),
         }
+    }
+
+    /// Set host/domain name.
+    pub fn with_host(mut self, host: String) -> Self {
+        self.host = Some(host);
+        self
+    }
+
+    /// Set matched routing rule.
+    pub fn with_rule(mut self, rule: String) -> Self {
+        self.rule = Some(rule);
+        self
+    }
+
+    /// Set proxy chain.
+    pub fn with_chains(mut self, chains: Vec<String>) -> Self {
+        self.chains = chains;
+        self
+    }
+
+    /// Set inbound type string.
+    pub fn with_inbound_type(mut self, t: String) -> Self {
+        self.inbound_type = Some(t);
+        self
+    }
+
+    /// Set inbound adapter tag.
+    pub fn with_inbound_tag(mut self, tag: String) -> Self {
+        self.inbound_tag = Some(tag);
+        self
+    }
+
+    /// Set outbound adapter tag.
+    pub fn with_outbound_tag(mut self, tag: String) -> Self {
+        self.outbound_tag = Some(tag);
+        self
     }
 
     /// Add uploaded bytes.
@@ -234,8 +286,11 @@ impl ConnTracker {
         self.connections.iter().map(|r| r.value().clone()).collect()
     }
 
-    /// Close a connection by ID (removes from tracker).
+    /// Close a connection by ID (cancels token and removes from tracker).
     pub fn close(&self, id: ConnId) -> bool {
+        if let Some(meta) = self.get(id) {
+            meta.cancel.cancel();
+        }
         self.unregister(id).is_some()
     }
 
@@ -244,6 +299,9 @@ impl ConnTracker {
         let ids: Vec<ConnId> = self.connections.iter().map(|r| *r.key()).collect();
         let count = ids.len();
         for id in ids {
+            if let Some(meta) = self.get(id) {
+                meta.cancel.cancel();
+            }
             self.unregister(id);
         }
         count

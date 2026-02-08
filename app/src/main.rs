@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
         cli::Commands::Report(a) => cli::report::main(a),
         #[cfg(feature = "bench-cli")]
         cli::Commands::Bench(a) => cli::bench::main(a).await,
-        cli::Commands::GenCompletions(a) => {
+        cli::Commands::Completion(a) => {
             cli::completion::main(a)?;
             Ok(())
         }

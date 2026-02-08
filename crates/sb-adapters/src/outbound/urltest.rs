@@ -31,6 +31,14 @@ impl OutboundConnector for UrlTestOutbound {
     async fn connect(&self, host: &str, port: u16) -> io::Result<TcpStream> {
         self.inner.connect(host, port).await
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        self.inner.as_any()
+    }
+
+    fn as_group(&self) -> Option<&dyn sb_core::adapter::OutboundGroup> {
+        self.inner.as_group()
+    }
 }
 
 impl UdpOutboundFactory for UrlTestOutbound {
@@ -122,7 +130,9 @@ pub fn build_urltest_outbound(
     let timeout = Duration::from_millis(ir.test_timeout_ms.unwrap_or(5000));
     let tolerance = ir.test_tolerance_ms.unwrap_or(50);
 
-    let group = SelectorGroup::new_urltest(name, members, test_url, interval, timeout, tolerance);
+    let cache_file = ctx.context.cache_file.clone();
+    let urltest_history = ctx.context.urltest_history.clone();
+    let group = SelectorGroup::new_urltest(name, members, test_url, interval, timeout, tolerance, cache_file, urltest_history);
     let outbound = Arc::new(UrlTestOutbound::new(Arc::new(group)));
 
     Some((outbound.clone(), Some(outbound)))

@@ -436,12 +436,28 @@ impl CacheFileService {
 }
 
 impl crate::context::CacheFile for CacheFileService {
+    fn get_clash_mode(&self) -> Option<String> {
+        self.get_clash_mode()
+    }
+
     fn set_clash_mode(&self, mode: String) {
         self.set_clash_mode(mode);
     }
 
     fn set_selected(&self, group: &str, selected: &str) {
         self.set_selected(group, selected);
+    }
+
+    fn get_selected(&self, group: &str) -> Option<String> {
+        self.get_selected(group)
+    }
+
+    fn get_expand(&self, group: &str) -> Option<bool> {
+        self.get_expand(group)
+    }
+
+    fn set_expand(&self, group: &str, expand: bool) {
+        self.set_expand(group, expand);
     }
 }
 

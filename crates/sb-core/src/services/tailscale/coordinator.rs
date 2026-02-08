@@ -1,7 +1,5 @@
 use std::io;
-use std::time::Duration;
 
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tracing::{debug, info};
@@ -18,9 +16,6 @@ use std::path::PathBuf;
 /// - DERP Map retrieval
 #[derive(Debug)]
 pub struct Coordinator {
-    /// HttpClient for API requests.
-    #[allow(dead_code)]
-    client: Client,
     /// Control plane URL.
     control_url: String,
     /// Auth key for registration.
@@ -118,10 +113,6 @@ impl Coordinator {
         });
 
         Self {
-            client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("Failed to build HTTP client"),
             control_url: control_url.into(),
             auth_key: None,
             machine_key: state.machine_key,

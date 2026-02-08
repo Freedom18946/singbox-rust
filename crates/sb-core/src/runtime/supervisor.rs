@@ -124,6 +124,10 @@ impl Supervisor {
     /// Start supervisor with initial configuration
     #[cfg(feature = "router")]
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
+        // Ensure TLS crypto provider is installed before any TLS usage
+        #[cfg(feature = "tls_rustls")]
+        crate::tls::ensure_rustls_crypto_provider();
+
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
 
@@ -245,6 +249,10 @@ impl Supervisor {
     /// Start supervisor with initial configuration (router feature disabled)
     #[cfg(not(feature = "router"))]
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
+        // Ensure TLS crypto provider is installed before any TLS usage
+        #[cfg(feature = "tls_rustls")]
+        crate::tls::ensure_rustls_crypto_provider();
+
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
 
@@ -979,18 +987,15 @@ async fn ensure_geo_assets(ir: &sb_config::ir::ConfigIR) {
 }
 
 async fn download_file(url: &str, path: &str) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("build http client for geo download")?;
-    let resp = client
-        .get(url)
-        .send()
+    use sb_types::ports::http::HttpRequest;
+    let req = HttpRequest::get(url, 30);
+    let resp = crate::http_client::http_execute(req)
         .await
-        .context("send geo download request")?
-        .error_for_status()
-        .context("geo download http status")?;
-    let bytes = resp.bytes().await.context("read geo download body")?;
+        .map_err(|e| anyhow::anyhow!("http client error: {}", e))?;
+    if !resp.is_success() {
+        anyhow::bail!("geo download HTTP error: status {}", resp.status);
+    }
+    let bytes = resp.body;
 
     if let Some(parent) = Path::new(path).parent() {
         tokio::fs::create_dir_all(parent)

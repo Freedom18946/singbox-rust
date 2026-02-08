@@ -665,6 +665,9 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 4) Apply debug options
     apply_debug_options(&ir);
 
+    // 4.5) Install global HTTP client for sb-core (geo downloads, remote rulesets)
+    app::reqwest_http::install_global_http_client();
+
     // 5) Start Supervisor
     info!("Calling Supervisor::start");
     let supervisor = Arc::new(

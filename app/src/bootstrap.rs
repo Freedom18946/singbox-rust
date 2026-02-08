@@ -21,9 +21,9 @@ use sb_core::router::RouterHandle;
 #[cfg(feature = "router")]
 use std::collections::HashMap;
 
-const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
-const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
-const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
+const DEFAULT_URLTEST_URL: &str = "https://www.gstatic.com/generate_204";
+const DEFAULT_URLTEST_INTERVAL_MS: u64 = 180_000;
+const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
 
 fn parse_alpn_tokens(src: &str) -> Vec<String> {
@@ -511,6 +511,8 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         name.clone(),
                         group_members,
                         ob.default_member.clone(),
+                        cache_service.clone(),
+                        Some(urltest_history.clone()),
                     );
                     let selector = Arc::new(selector);
                     map.insert(name.clone(), OutboundImpl::Connector(selector.clone()));
@@ -570,6 +572,8 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         Duration::from_millis(interval_ms),
                         Duration::from_millis(timeout_ms),
                         tolerance_ms,
+                        cache_service.clone(),
+                        Some(urltest_history.clone()),
                     );
                     let selector = Arc::new(selector);
                     // Start health checker only if a Tokio runtime is available
@@ -788,7 +792,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(c) = cache_service.clone() {
         ctx = ctx.with_cache_file(c);
     }
-    // NOTE: Additional services can be wired here using ctx.with_*()
+    let urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage> =
+        Arc::new(sb_core::services::urltest_history::URLTestHistoryService::new());
+    ctx = ctx.with_urltest_history(urltest_history.clone());
     sb_core::context::install_context_registry(&ctx);
 
     // Optionally configure DNS via config (env bridge for sb-core)
@@ -843,6 +849,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
                     oh.clone(),
                     cfg_ir.clone(),
                     cache_service.clone(),
+                    Some(urltest_history.clone()),
                 ) {
                     service_handles.push(handle);
                 }
@@ -896,6 +903,7 @@ fn start_clash_api_server(
     outbounds: Arc<OutboundRegistryHandle>,
     config_ir: Arc<sb_config::ir::ConfigIR>,
     cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
+    urltest_history: Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
 ) -> Option<ServiceHandle> {
     use std::net::SocketAddr;
 
@@ -926,6 +934,10 @@ fn start_clash_api_server(
 
             if let Some(c) = cache_file {
                 server = server.with_cache_file(c);
+            }
+
+            if let Some(h) = urltest_history {
+                server = server.with_urltest_history(h);
             }
 
             #[cfg(feature = "router")]

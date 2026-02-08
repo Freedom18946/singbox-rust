@@ -28,6 +28,10 @@ pub mod pipelistener;
 /// Compatibility utilities.
 pub mod compatible;
 
+/// Minimal JSON builder utilities.
+#[allow(missing_docs)]
+pub mod minijson;
+
 pub use badtls::{is_valid_tls, is_weak_cipher, TlsAnalyzer, TlsIssue, TlsVersion};
 pub use conntrack::{global_tracker, ConnId, ConnMetadata, ConnTracker, Network};
 pub use ja3::Ja3Fingerprint;

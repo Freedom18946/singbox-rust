@@ -162,22 +162,45 @@ pub struct SelectorGroup {
     test_interval: Duration,
     test_timeout: Duration,
     tolerance_ms: u64,
+    // CacheFile for persistence
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+    // URLTest history storage
+    urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
 }
 
 impl SelectorGroup {
     /// Create a new manual selector
-    pub fn new_manual(name: String, members: Vec<ProxyMember>, default: Option<String>) -> Self {
+    pub fn new_manual(
+        name: String,
+        members: Vec<ProxyMember>,
+        default: Option<String>,
+        cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+        urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
+    ) -> Self {
+        // Three-stage restore (Go parity):
+        // 1. CacheFile.get_selected(name) — if value exists and member is present → use it
+        // 2. default config → if value exists and member is present → use it
+        // 3. Fallback: None (select_best will pick default or members[0])
+        let restored = cache_file
+            .as_ref()
+            .and_then(|c| c.get_selected(&name))
+            .filter(|tag| members.iter().any(|m| m.tag == *tag));
+
+        let initial_selected = restored.or_else(|| default.clone());
+
         Self {
             name,
             mode: SelectMode::Manual,
             members,
-            selected: Arc::new(RwLock::new(default.clone())),
+            selected: Arc::new(RwLock::new(initial_selected)),
             default_member: default,
             round_robin_index: AtomicUsize::new(0),
             test_url: String::new(),
             test_interval: Duration::from_secs(60),
             test_timeout: Duration::from_secs(5),
             tolerance_ms: 50,
+            cache_file,
+            urltest_history,
         }
     }
 
@@ -189,6 +212,8 @@ impl SelectorGroup {
         interval: Duration,
         timeout: Duration,
         tolerance_ms: u64,
+        cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+        urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
     ) -> Self {
         Self {
             name,
@@ -201,11 +226,19 @@ impl SelectorGroup {
             test_interval: interval,
             test_timeout: timeout,
             tolerance_ms,
+            cache_file,
+            urltest_history,
         }
     }
 
     /// Create a load balancing selector
-    pub fn new_load_balancer(name: String, members: Vec<ProxyMember>, mode: SelectMode) -> Self {
+    pub fn new_load_balancer(
+        name: String,
+        members: Vec<ProxyMember>,
+        mode: SelectMode,
+        cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+        urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
+    ) -> Self {
         Self {
             name,
             mode,
@@ -217,6 +250,8 @@ impl SelectorGroup {
             test_interval: Duration::from_secs(60),
             test_timeout: Duration::from_secs(5),
             tolerance_ms: 50,
+            cache_file,
+            urltest_history,
         }
     }
 
@@ -239,6 +274,10 @@ impl SelectorGroup {
 
         let mut selected = self.selected.write().await;
         *selected = Some(tag.to_string());
+        // Persist to cache file
+        if let Some(cache) = &self.cache_file {
+            cache.set_selected(&self.name, tag);
+        }
         tracing::info!(
             selector = %self.name,
             proxy = %tag,
@@ -268,7 +307,7 @@ impl SelectorGroup {
         }
     }
 
-    /// Select by lowest latency (`URLTest` mode)
+    /// Select by lowest latency (`URLTest` mode) with tolerance-based sticky switching
     fn select_by_latency(&self) -> Option<&ProxyMember> {
         let healthy: Vec<_> = self
             .members
@@ -287,17 +326,25 @@ impl SelectorGroup {
                 .find(|m| !m.health.is_permanently_failed());
         }
 
-        // Find the one with lowest RTT
-        // tolerance_ms is used to avoid switching too frequently for small differences
         let best = healthy
             .iter()
             .min_by_key(|m| m.health.get_rtt_ms())
-            .copied();
+            .copied()?;
 
-        // If we have a current selection, only switch if the difference exceeds tolerance
-        // For now, just return the best (tolerance-based switching can be added later)
-        let _ = self.tolerance_ms; // Mark as intentionally unused for now
-        best
+        // Tolerance: keep current selection if within tolerance of best
+        if let Ok(current_tag) = self.selected.try_read() {
+            if let Some(tag) = current_tag.as_ref() {
+                if let Some(current) = healthy.iter().find(|m| m.tag == *tag).copied() {
+                    let current_rtt = current.health.get_rtt_ms();
+                    let best_rtt = best.health.get_rtt_ms();
+                    if current_rtt > 0 && current_rtt <= best_rtt + self.tolerance_ms {
+                        return Some(current); // sticky: current is close enough
+                    }
+                }
+            }
+        }
+
+        Some(best)
     }
 
     /// Round-robin selection
@@ -372,11 +419,18 @@ impl SelectorGroup {
             let health = member.health.clone();
             let url = url.clone();
             let connector = member.connector.clone();
+            let urltest_history = self.urltest_history.clone();
 
             tokio::spawn(async move {
                 match health_check_via(connector, &url, timeout).await {
                     Ok(rtt_ms) => {
                         health.record_success(rtt_ms);
+                        if let Some(h) = &urltest_history {
+                            h.store(&tag, crate::context::URLTestHistory {
+                                time: std::time::SystemTime::now(),
+                                delay: rtt_ms as u16,
+                            });
+                        }
                         tracing::trace!(
                             proxy = %tag,
                             rtt_ms = rtt_ms,
@@ -407,6 +461,9 @@ impl SelectorGroup {
                             } else {
                                 sb_metrics::inc_health_check(&tag, "fail");
                             }
+                        }
+                        if let Some(h) = &urltest_history {
+                            h.delete(&tag);
                         }
                     }
                 }
@@ -502,6 +559,42 @@ impl OutboundConnector for SelectorGroup {
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
+    }
+
+    fn as_group(&self) -> Option<&dyn crate::adapter::OutboundGroup> {
+        Some(self)
+    }
+}
+
+impl crate::adapter::OutboundGroup for SelectorGroup {
+    fn now(&self) -> String {
+        self.selected
+            .try_read()
+            .ok()
+            .and_then(|g| g.clone())
+            .or_else(|| self.default_member.clone())
+            .or_else(|| self.members.first().map(|m| m.tag.clone()))
+            .unwrap_or_default()
+    }
+
+    fn all(&self) -> Vec<String> {
+        self.members.iter().map(|m| m.tag.clone()).collect()
+    }
+
+    fn group_type(&self) -> &str {
+        match self.mode {
+            SelectMode::Manual => "Selector",
+            SelectMode::UrlTest => "URLTest",
+            SelectMode::RoundRobin | SelectMode::LeastConnections | SelectMode::Random => "LoadBalance",
+        }
+    }
+
+    fn members_health(&self) -> Vec<(String, bool, u64)> {
+        self.get_members()
+    }
+
+    fn select_outbound<'a>(&'a self, tag: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>> {
+        Box::pin(self.select_by_name(tag))
     }
 }
 

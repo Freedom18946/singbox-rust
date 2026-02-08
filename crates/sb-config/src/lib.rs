@@ -933,4 +933,52 @@ endpoints:
         assert!(rule.rules[0].domain.contains(&"example.com".to_string()));
         assert!(rule.rules[1].port.contains(&"80".to_string()));
     }
+
+    #[test]
+    fn test_go_format_config_with_schema() {
+        // Go sing-box format: uses $schema URL, tag (not name), server_port (not port)
+        // GUI.for SingBox generates configs in this format
+        let json = r#"{
+            "$schema": "https://sing-box.sagernet.org/schemas/config.json",
+            "inbounds": [
+                {"type": "http", "tag": "http-in", "listen": "127.0.0.1", "listen_port": 8080}
+            ],
+            "outbounds": [
+                {"type": "direct", "tag": "direct"},
+                {"type": "block", "tag": "block"}
+            ],
+            "route": {
+                "rules": [
+                    {"domain_suffix": [".example.com"], "outbound": "direct"}
+                ]
+            }
+        }"#;
+        let raw: Value = serde_json::from_str(json).unwrap();
+
+        // Full pipeline: migrate + validate + parse
+        let migrated = crate::compat::migrate_to_v2(&raw);
+
+        // $schema should be preserved but not cause errors
+        assert!(migrated.get("$schema").is_some());
+
+        // schema_version should be injected
+        assert_eq!(migrated.get("schema_version").and_then(|v| v.as_u64()), Some(2));
+
+        // tag should be renamed to name
+        let first_outbound = &migrated["outbounds"][0];
+        assert_eq!(first_outbound.get("name").and_then(|v| v.as_str()), Some("direct"));
+        assert!(first_outbound.get("tag").is_none());
+
+        // Validation should pass (no errors)
+        let issues = crate::validator::v2::validate_v2(&migrated, false);
+        let errors: Vec<_> = issues
+            .iter()
+            .filter(|i| i.get("kind").and_then(|k| k.as_str()) == Some("error"))
+            .collect();
+        assert!(errors.is_empty(), "Go-format config should validate: {:?}", errors);
+
+        // Full pipeline should succeed
+        let result = config_from_raw_value(raw);
+        assert!(result.is_ok(), "Go-format config should parse: {:?}", result.err());
+    }
 }

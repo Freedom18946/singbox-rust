@@ -119,7 +119,7 @@ async fn test_manual_selector_multi_proxy_switching() {
         member("slow", MockConnector::new(25)),
     ];
 
-    let selector = SelectorGroup::new_manual("manual".to_string(), members, Some("fast".to_string()));
+    let selector = SelectorGroup::new_manual("manual".to_string(), members, Some("fast".to_string()), None, None);
 
     selector.select_by_name("slow").await.expect("select slow");
     assert_eq!(selector.get_selected().await, Some("slow".to_string()));
@@ -145,6 +145,8 @@ async fn test_urltest_automatic_failover() {
         Duration::from_millis(50),
         Duration::from_secs(1),
         10,
+        None,
+        None,
     ));
 
     selector.clone().start_health_check();
@@ -174,6 +176,8 @@ async fn test_load_balancer_distribution() {
         "lb".to_string(),
         members,
         SelectMode::RoundRobin,
+        None,
+        None,
     );
 
     let mut counts = std::collections::HashMap::new();
@@ -191,7 +195,7 @@ async fn test_load_balancer_distribution() {
 #[tokio::test]
 async fn test_selector_with_config_reload() {
     let members = vec![member("alpha", MockConnector::new(1))];
-    let selector = SelectorGroup::new_manual("reload".to_string(), members, Some("alpha".to_string()));
+    let selector = SelectorGroup::new_manual("reload".to_string(), members, Some("alpha".to_string()), None, None);
 
     selector.select_by_name("alpha").await.expect("select alpha");
     assert_eq!(selector.get_selected().await, Some("alpha".to_string()));
@@ -204,6 +208,8 @@ async fn test_selector_with_config_reload() {
         "reload".to_string(),
         new_members,
         Some("beta".to_string()),
+        None,
+        None,
     );
 
     assert!(reloaded.select_by_name("alpha").await.is_err());
@@ -221,6 +227,8 @@ async fn test_concurrent_selector_access() {
         "concurrent".to_string(),
         members,
         SelectMode::Random,
+        None,
+        None,
     ));
 
     let mut tasks = Vec::new();
@@ -250,6 +258,8 @@ async fn test_health_check_recovery() {
         Duration::from_millis(50),
         Duration::from_secs(1),
         10,
+        None,
+        None,
     ));
 
     selector.clone().start_health_check();

@@ -10,12 +10,16 @@
 
 pub mod admin;
 pub mod dns;
+pub mod http;
 pub mod inbound;
 pub mod metrics;
 pub mod outbound;
+pub mod service;
 
 pub use admin::*;
 pub use dns::*;
+pub use http::*;
 pub use inbound::*;
 pub use metrics::*;
 pub use outbound::*;
+pub use service::*;

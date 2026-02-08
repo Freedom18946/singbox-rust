@@ -1,6 +1,7 @@
 //! Background services (NTP, Resolved, DERP, SSM, etc.)
 
 pub mod cache_file;
+pub mod urltest_history;
 
 #[cfg(feature = "service_derp")]
 pub mod derp;

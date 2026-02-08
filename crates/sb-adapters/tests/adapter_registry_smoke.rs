@@ -80,17 +80,15 @@ fn test_dns_feature_enabled() {
 }
 
 #[test]
-#[cfg(all(feature = "adapter-tuic", feature = "out_tuic"))]
+#[cfg(feature = "adapter-tuic")]
 fn test_tuic_feature_enabled() {
-    // If this compiles, the out_tuic feature is working
-    // assert!(true, "TUIC outbound feature is enabled");
+    // If this compiles, the adapter-tuic feature is working (self-contained, no sb-core delegation)
 }
 
 #[test]
-#[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
+#[cfg(feature = "adapter-hysteria2")]
 fn test_hysteria2_feature_enabled() {
-    // If this compiles, the out_hysteria2 feature is working
-    // assert!(true, "Hysteria2 outbound feature is enabled");
+    // If this compiles, the adapter-hysteria2 feature is working (self-contained, no sb-core delegation)
 }
 
 /// Test that the documented inbound count stays in sync with the parity matrix

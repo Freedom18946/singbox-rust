@@ -48,15 +48,18 @@ instant-acme = { version = "0.7", optional = true }
 
 # Logging
 tracing = "0.1"
-rustls-pemfile = { version = "2.2.0", optional = true }
+rustls-pemfile = "2.2.0"
+
+# Concurrency
+parking_lot = "0.12"
+once_cell = "1"
 
 [features]
 default = ["reality", "utls"]
 reality = []
 ech = ["rustls/aws_lc_rs", "tokio-rustls/aws_lc_rs"]
-acme = ["dep:instant-acme", "dep:rustls-pemfile"]
+acme = ["dep:instant-acme"]
 utls = []  # uTLS client fingerprinting
-rustls-pemfile = ["dep:rustls-pemfile"]
 
 
 [lints]

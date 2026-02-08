@@ -21,31 +21,22 @@ fn version_json_contract() {
     let actual: Value = serde_json::from_str(json_part).unwrap();
     let expected: Value = serde_json::from_str(EXPECTED_VERSION_OUTPUT).unwrap();
 
-    // Check required fields are present and have correct types
-    assert!(actual.get("name").unwrap().is_string());
+    // Check required fields are present and have correct types (Go-aligned format)
     assert!(actual.get("version").unwrap().is_string());
-    assert!(actual.get("commit").unwrap().is_string());
-    assert!(actual.get("date").unwrap().is_string());
-    assert!(actual.get("features").unwrap().is_array());
+    assert!(actual.get("environment").unwrap().is_string());
+    assert!(actual.get("tags").unwrap().is_array());
 
-    // Check that name and version match expected values
-    assert_eq!(actual.get("name"), expected.get("name"));
+    // Check that version matches expected value
     assert_eq!(actual.get("version"), expected.get("version"));
 
-    // Check commit is 8+ characters (git short hash)
-    let commit = actual.get("commit").unwrap().as_str().unwrap();
-    assert!(commit.len() >= 8);
+    // Check environment contains "rust" and OS/arch info
+    let env_str = actual.get("environment").unwrap().as_str().unwrap();
+    assert!(env_str.contains("rust"));
 
-    // Check date is ISO 8601 format
-    let date = actual.get("date").unwrap().as_str().unwrap();
-    assert!(date.contains('T'));
-    assert!(date.contains('+') || date.contains('Z'));
-
-    // Check features array contains at least something and is valid
-    let features = actual.get("features").unwrap().as_array().unwrap();
-    // Features array should be sorted alphabetically and contain strings
-    for feature in features {
-        assert!(feature.is_string());
+    // Check tags array contains strings
+    let tags = actual.get("tags").unwrap().as_array().unwrap();
+    for tag in tags {
+        assert!(tag.is_string());
     }
 }
 
@@ -61,8 +52,7 @@ fn version_human_format() {
         .clone();
 
     let output = String::from_utf8(out).unwrap();
-    assert!(output.contains("app"));
+    assert!(output.contains("sing-box"));
     assert!(output.contains("0.1.0"));
-    assert!(output.contains("Built:"));
-    assert!(output.contains("Features:"));
+    assert!(output.contains("Environment:"));
 }

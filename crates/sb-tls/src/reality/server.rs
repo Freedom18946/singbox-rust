@@ -300,7 +300,7 @@ impl RealityAcceptor {
             chain.extend(chain_info.intermediates.iter().cloned());
         }
 
-        crate::ensure_rustls_crypto_provider();
+        crate::ensure_crypto_provider();
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(chain, key_der)
@@ -426,7 +426,7 @@ impl RealityAcceptor {
             .await
             .map_err(|e| RealityError::TargetFailed(format!("failed to connect: {e}")))?;
 
-        crate::ensure_rustls_crypto_provider();
+        crate::ensure_crypto_provider();
         let config = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))

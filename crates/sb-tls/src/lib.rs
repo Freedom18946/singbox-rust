@@ -33,7 +33,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 static RUSTLS_CRYPTO_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
 
-pub(crate) fn ensure_rustls_crypto_provider() {
+/// Ensure the rustls crypto provider is installed process-wide.
+///
+/// This function is safe to call multiple times; only the first call has effect.
+/// It selects the `ring` provider for consistency when multiple providers are available.
+pub fn ensure_crypto_provider() {
     RUSTLS_CRYPTO_PROVIDER_INSTALLED.get_or_init(|| {
         // Prefer ring for consistency when multiple providers are enabled.
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -88,6 +92,12 @@ pub trait TlsConnector: Send + Sync {
 /// Standard TLS connector (rustls)
 /// 标准 TLS 连接器 (rustls)
 pub mod standard;
+
+/// Dangerous TLS certificate verifiers (NoVerify, PinVerify)
+pub mod danger;
+
+/// Global TLS configuration (root stores, certificate overrides)
+pub mod global;
 
 /// REALITY anti-censorship protocol
 /// REALITY 抗审查协议

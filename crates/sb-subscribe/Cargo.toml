@@ -13,15 +13,15 @@ subs_clash = ["dep:serde_yaml"]
 subs_singbox = []
 subs_hash = ["dep:blake3"]
 subs_bindings = []   # 与 app/features 对齐
-subs_bindings_dry = ["subs_bindings", "dep:tokio", "sb-core/dns_udp"]
+subs_bindings_dry = ["subs_bindings", "dep:tokio", "dep:sb-core", "sb-core/dns_udp"]
 subs_view = []       # 视图功能显式 feature（与 app/subs_view 对齐）
-subs_full = ["subs_view","subs_bindings"]   # R100：full 视图聚合（hash 可选）
+subs_full = ["subs_view","subs_bindings","dep:sb-core","sb-core/router"]   # R100：full 视图聚合（hash 可选）
 subs_diff = ["subs_full"]  # R106: diff 功能建立在 full 聚合之上（纯离线）
-subs_preview_plan = ["subs_full","subs_lint","sb-core/router"]  # R117：需要 sb-core 路由模块
+subs_preview_plan = ["subs_full","subs_lint","dep:sb-core","sb-core/router"]  # R117：需要 sb-core 路由模块
 subs_preview_apply = ["subs_preview_plan"]                      # R118：dry-run 应用（开关桩）
 subs_preview_batch = ["subs_full"]                             # R139：批量预演
 subs_ruleset_cache = []                                   # R140：Provider 缓存
-subs_lint = []                     # R108: 订阅 Lint（纯离线）
+subs_lint = ["dep:sb-core","sb-core/router"]                     # R108: 订阅 Lint（需要 rules_normalize）
 subs_lint_patch = ["subs_lint"]    # R109: 生成 CLI patch 建议（作用于 DSL 文本）
 subs_schema = ["dep:jsonschema"]   # JSON Schema validation for subscriptions
 
@@ -34,4 +34,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio = { workspace = true, features = ["rt", "macros"], optional = true }
 blake3 = { version = "1.5", optional = true }
 jsonschema = { version = "0.17", optional = true }
-sb-core = { path = "../sb-core" }
+sb-core = { path = "../sb-core", optional = true }
+sb-common = { path = "../sb-common" }

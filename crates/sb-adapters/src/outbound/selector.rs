@@ -30,6 +30,14 @@ impl OutboundConnector for SelectorOutbound {
     async fn connect(&self, host: &str, port: u16) -> io::Result<TcpStream> {
         self.inner.connect(host, port).await
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        self.inner.as_any()
+    }
+
+    fn as_group(&self) -> Option<&dyn sb_core::adapter::OutboundGroup> {
+        self.inner.as_group()
+    }
 }
 
 impl UdpOutboundFactory for SelectorOutbound {
@@ -125,7 +133,9 @@ pub fn build_selector_outbound(
     }
 
     let default = ir.default_member.clone();
-    let group = SelectorGroup::new_manual(name, members, default);
+    let cache_file = ctx.context.cache_file.clone();
+    let urltest_history = ctx.context.urltest_history.clone();
+    let group = SelectorGroup::new_manual(name, members, default, cache_file, urltest_history);
     let outbound = Arc::new(SelectorOutbound::new(Arc::new(group)));
 
     Some((outbound.clone(), Some(outbound)))

@@ -95,10 +95,10 @@ pub fn main(a: CompletionArgs) -> Result<()> {
 
 fn print_install_hints(_a: &CompletionArgs) {
     use std::env;
-    let exe = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "app".into());
+    let exe = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "sing-box".into());
     eprintln!("# install hints (macOS/Linux)");
-    eprintln!("# Bash   : ~/.bashrc    -> source <(./{exe} gen-completions --shell bash)");
-    eprintln!("# Zsh    : ~/.zshrc     -> source <(./{exe} gen-completions --shell zsh)");
+    eprintln!("# Bash   : ~/.bashrc    -> source <(./{exe} completion --shell bash)");
+    eprintln!("# Zsh    : ~/.zshrc     -> source <(./{exe} completion --shell zsh)");
     eprintln!("# Fish   : ~/.config/fish/completions/{exe}.fish  (mkdir -p 其目录后拷贝生成文件)");
     eprintln!("# PowerSh: $PROFILE     -> 取生成的 ps1 并 dot-source");
     eprintln!("# Elvish : ~/.elvish/lib/completions/{exe}.elv (拷贝后 use completions/{exe})");

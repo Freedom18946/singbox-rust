@@ -28,7 +28,7 @@ const DNS_DELAY_ENCRYPTED_MS: u64 = 10;
 const DNS_DELAY_DIRECT_MS: u64 = 5;
 
 pub fn bindings_minijson(p: &Profile) -> String {
-    use sb_core::router::minijson::{obj, Val};
+    use sb_common::minijson::{obj, Val};
     // Output format: {"outbounds":[{"name":"a","kind":"trojan"},...]}
     // [Chinese] 输出形如：{"outbounds":[{"name":"a","kind":"trojan"},...]}
     let mut items = Vec::with_capacity(p.outbounds.len());
@@ -74,7 +74,7 @@ impl TestResult {
 /// [Chinese] R134: 干运行连接测试（仅解析+DNS，无实际连接）。
 #[cfg(feature = "subs_bindings_dry")]
 pub async fn dry_connect_test(p: &Profile, target: Option<&str>) -> String {
-    use sb_core::router::minijson::{obj, Val};
+    use sb_common::minijson::{obj, Val};
     let mut results = Vec::with_capacity(p.outbounds.len());
 
     let test_target = target.unwrap_or(DEFAULT_TEST_TARGET);
@@ -155,7 +155,7 @@ pub async fn bindings_enhanced_minijson(
     test_connect: bool,
     target: Option<&str>,
 ) -> String {
-    use sb_core::router::minijson::{obj, Val};
+    use sb_common::minijson::{obj, Val};
     let mut items = Vec::with_capacity(p.outbounds.len());
 
     let test_target = target.unwrap_or(DEFAULT_TEST_TARGET);

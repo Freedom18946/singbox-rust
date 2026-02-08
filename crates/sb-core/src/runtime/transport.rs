@@ -34,8 +34,11 @@ pub mod map {
         grpc_method: Option<&str>,
         grpc_authority: Option<&str>,
         grpc_metadata: &[(String, String)],
-        // Optional TLS config override
+        // Optional TLS config override (only available with tls_rustls feature)
+        #[cfg(feature = "tls_rustls")]
         tls_cfg_override: Option<std::sync::Arc<rustls::ClientConfig>>,
+        #[cfg(not(feature = "tls_rustls"))]
+        _tls_cfg_override: Option<()>,
         // Multiplex config
         multiplex: Option<&sb_config::ir::MultiplexOptionsIR>,
     ) -> TransportBuilder {
@@ -77,6 +80,7 @@ pub mod map {
         );
         for layer in &chain_buf {
             match layer.to_ascii_lowercase().as_str() {
+                #[cfg(feature = "tls_rustls")]
                 "tls" => {
                     // Prefer provided TLS config override, otherwise global effective
                     let cfg = tls_cfg_override
@@ -91,6 +95,10 @@ pub mod map {
                     });
                     builder = builder.tls(cfg, tls_sni.map(ToOwned::to_owned), alpn);
                     saw_tls = true;
+                }
+                #[cfg(not(feature = "tls_rustls"))]
+                "tls" => {
+                    tracing::warn!(target: "sb_core::transport", "TLS layer requested but tls_rustls feature is not enabled");
                 }
                 "ws" => {
                     let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
@@ -381,6 +389,7 @@ pub mod map {
 
     /// Build a TLS config override for an outbound if it specifies skip-verify,
     /// client cert, or custom CA; otherwise return None and use the global config.
+    #[cfg(feature = "tls_rustls")]
     pub fn tls_override_from_ob(ob: &OutboundIR) -> Option<std::sync::Arc<rustls::ClientConfig>> {
         use rustls::{ClientConfig, RootCertStore};
         use rustls_pki_types::{CertificateDer, PrivateKeyDer};

@@ -83,6 +83,7 @@ pub mod admin {
 pub mod dns;
 pub mod geoip;
 pub mod http;
+pub mod http_client;
 
 pub mod obs;
 

@@ -99,42 +99,36 @@ async fn download_with_cache(
     url: &str,
     cached_meta: &Option<CacheMeta>,
 ) -> SbResult<DownloadResult> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| SbError::Config {
-            code: crate::error::IssueCode::MissingRequired,
-            ptr: "/rule_set/download".to_string(),
-            msg: format!("failed to create HTTP client: {}", e),
-            hint: None,
-        })?;
+    use sb_types::ports::http::HttpRequest;
 
-    let mut request = client.get(url);
+    let mut req = HttpRequest::get(url, 30);
 
     // Add conditional headers if we have cached metadata
     if let Some(meta) = cached_meta {
         if let Some(ref etag) = meta.etag {
-            request = request.header("If-None-Match", etag);
+            req = req.with_header("If-None-Match", etag.as_str());
         }
         if let Some(ref last_modified) = meta.last_modified {
-            request = request.header("If-Modified-Since", last_modified);
+            req = req.with_header("If-Modified-Since", last_modified.as_str());
         }
     }
 
-    let response = request.send().await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::MissingRequired,
-        ptr: "/rule_set/download/request".to_string(),
-        msg: format!("failed to download rule-set: {}", e),
-        hint: Some(format!("Check network connectivity and URL: {}", url)),
-    })?;
+    let response = crate::http_client::http_execute(req)
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::MissingRequired,
+            ptr: "/rule_set/download/request".to_string(),
+            msg: format!("failed to download rule-set: {}", e),
+            hint: Some(format!("Check network connectivity and URL: {}", url)),
+        })?;
 
-    let status = response.status();
+    let status = response.status;
 
-    if status == reqwest::StatusCode::NOT_MODIFIED {
+    if status == 304 {
         return Ok(DownloadResult::NotModified);
     }
 
-    if !status.is_success() {
+    if !response.is_success() {
         return Err(SbError::Config {
             code: crate::error::IssueCode::MissingRequired,
             ptr: "/rule_set/download/status".to_string(),
@@ -144,28 +138,9 @@ async fn download_with_cache(
     }
 
     // Extract caching headers
-    let etag = response
-        .headers()
-        .get("ETag")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    let last_modified = response
-        .headers()
-        .get("Last-Modified")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    let data = response
-        .bytes()
-        .await
-        .map_err(|e| SbError::Config {
-            code: crate::error::IssueCode::InvalidType,
-            ptr: "/rule_set/download/body".to_string(),
-            msg: format!("failed to read response body: {}", e),
-            hint: None,
-        })?
-        .to_vec();
+    let etag = response.header("ETag").map(|s| s.to_string());
+    let last_modified = response.header("Last-Modified").map(|s| s.to_string());
+    let data = response.body;
 
     Ok(DownloadResult::Downloaded {
         data,

@@ -1,4 +1,4 @@
-#[cfg(feature = "adapters")]
+#[cfg(any(feature = "adapters", feature = "router"))]
 use anyhow::{Context, Result};
 #[cfg(any(feature = "router", feature = "adapters"))]
 use sb_config::ir::{InboundIR, InboundType};
@@ -6,7 +6,7 @@ use sb_config::ir::{InboundIR, InboundType};
 use sb_core::adapter::InboundService;
 #[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
-#[cfg(feature = "adapters")]
+#[cfg(any(feature = "adapters", feature = "router"))]
 use std::net::SocketAddr;
 #[cfg(any(feature = "router", feature = "adapters"))]
 use std::sync::Arc;
@@ -74,7 +74,7 @@ impl InboundHandle {
 }
 
 /// Convert string like "127.0.0.1:8080" to `SocketAddr` with friendly error.
-#[cfg(feature = "adapters")]
+#[cfg(any(feature = "adapters", feature = "router"))]
 fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
     s.parse::<SocketAddr>()
         .or_else(|_| {

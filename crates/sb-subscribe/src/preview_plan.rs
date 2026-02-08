@@ -3,7 +3,7 @@
 //!
 //! { ok, meta{format,mode,normalized,ordered,kinds,apply}, dsl_in, dsl_in_hash, lint, plan_summary, patch, dsl_out? }
 use crate::model::Profile;
-use sb_core::router::minijson::{obj, Val};
+use sb_common::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

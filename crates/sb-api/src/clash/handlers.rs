@@ -12,80 +12,29 @@
 
 use crate::{clash::server::ApiState, types::*};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{ws::WebSocketUpgrade, Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
 };
-use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
+use sb_core::outbound::OutboundImpl;
 use serde_json::json;
 use std::collections::HashMap;
 
 // ===== Constants =====
 
-const DEFAULT_INBOUND_IP: &str = "127.0.0.1";
-const DEFAULT_INBOUND_PORT: &str = "0";
-const DEFAULT_INBOUND_NAME: &str = "unknown";
-const DEFAULT_DNS_MODE: &str = "normal";
-const DEFAULT_PROCESS_NAME: &str = "unknown";
-const DEFAULT_PORT: &str = "0";
-const DEFAULT_DELAY_TIMEOUT_MS: u32 = 5000;
-const DEFAULT_TEST_URL: &str = "http://www.google.com/generate_204";
+const DEFAULT_DELAY_TIMEOUT_MS: u32 = 15000;
+const DEFAULT_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 
 const PROXY_TYPE_DIRECT: &str = "Direct";
 const PROXY_TYPE_REJECT: &str = "Reject";
 const PROXY_TYPE_SOCKS5: &str = "SOCKS5";
 const PROXY_TYPE_HTTP: &str = "HTTP";
-const PROXY_TYPE_VLESS: &str = "VLESS";
-const PROXY_TYPE_VMESS: &str = "VMESS";
-const PROXY_TYPE_TROJAN: &str = "TROJAN";
-const PROXY_TYPE_SHADOWSOCKS: &str = "SHADOWSOCKS";
-const PROXY_TYPE_RELAY: &str = "RELAY";
 const PROXY_TYPE_UNKNOWN: &str = "Unknown";
 
 const DIRECT_PROXY_NAME: &str = "DIRECT";
 const REJECT_PROXY_NAME: &str = "REJECT";
 
 // ===== Helper Functions =====
-
-/// Convert internal `Connection` to API `Connection` type
-fn convert_connection(conn: &crate::managers::Connection) -> Connection {
-    // Compute connection start as UNIX epoch ms using monotonic elapsed
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let start_ms = now_ms.saturating_sub(conn.start_time.elapsed().as_millis());
-    Connection {
-        id: conn.id.clone(),
-        metadata: ConnectionMetadata {
-            network: conn.network.clone(),
-            r#type: determine_connection_type(&conn.network, &conn.proxy),
-            source_ip: conn.source.ip().to_string(),
-            source_port: conn.source.port().to_string(),
-            destination_ip: parse_destination_ip(&conn.destination),
-            destination_port: parse_destination_port(&conn.destination),
-            inbound_ip: DEFAULT_INBOUND_IP.to_string(),
-            inbound_port: DEFAULT_INBOUND_PORT.to_string(),
-            inbound_name: DEFAULT_INBOUND_NAME.to_string(),
-            inbound_user: String::new(),
-            host: conn.destination.clone(),
-            dns_mode: DEFAULT_DNS_MODE.to_string(),
-            uid: 0,
-            process: DEFAULT_PROCESS_NAME.to_string(),
-            process_path: String::new(),
-            special_proxy: String::new(),
-            special_rules: String::new(),
-            remote_destination: conn.destination.clone(),
-            sniff_host: String::new(),
-        },
-        upload: conn.get_upload(),
-        download: conn.get_download(),
-        start: start_ms.to_string(),
-        chains: conn.chains.clone(),
-        rule: conn.rule.clone(),
-        rule_payload: String::new(),
-    }
-}
 
 /// Infer proxy type from OutboundImpl
 fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
@@ -96,11 +45,8 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
             OutboundImpl::Socks5(_) => PROXY_TYPE_SOCKS5.to_string(),
             OutboundImpl::HttpProxy(_) => PROXY_TYPE_HTTP.to_string(),
             OutboundImpl::Connector(c) => {
-                if c.as_any()
-                    .and_then(|a| a.downcast_ref::<SelectorGroup>())
-                    .is_some()
-                {
-                    "Selector".to_string()
+                if let Some(group) = c.as_group() {
+                    group.group_type().to_string()
                 } else {
                     "Unknown".to_string()
                 }
@@ -119,92 +65,6 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
         return PROXY_TYPE_REJECT.to_string();
     }
     PROXY_TYPE_UNKNOWN.to_string()
-}
-
-/// Determine connection type based on network protocol and proxy type
-fn determine_connection_type(network: &str, proxy: &str) -> String {
-    match network.to_ascii_lowercase().as_str() {
-        "tcp" => {
-            let p = proxy.to_ascii_lowercase();
-            if p.contains("direct") {
-                PROXY_TYPE_DIRECT.to_string()
-            } else if p.contains("socks") {
-                PROXY_TYPE_SOCKS5.to_string()
-            } else if p.contains("http") {
-                PROXY_TYPE_HTTP.to_string()
-            } else if p.contains("vless") {
-                PROXY_TYPE_VLESS.to_string()
-            } else if p.contains("vmess") {
-                PROXY_TYPE_VMESS.to_string()
-            } else if p.contains("trojan") {
-                PROXY_TYPE_TROJAN.to_string()
-            } else if p.contains("shadowsocks") || p.contains("ss") {
-                PROXY_TYPE_SHADOWSOCKS.to_string()
-            } else {
-                PROXY_TYPE_HTTP.to_string()
-            }
-        }
-        "udp" => {
-            if proxy.eq_ignore_ascii_case("direct") {
-                PROXY_TYPE_DIRECT.to_string()
-            } else {
-                PROXY_TYPE_RELAY.to_string()
-            }
-        }
-        _ => PROXY_TYPE_UNKNOWN.to_string(),
-    }
-}
-
-/// Parse destination IP from destination string
-fn parse_destination_ip(destination: &str) -> String {
-    // Try to parse as SocketAddr first (IP:port format)
-    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
-        return addr.ip().to_string();
-    }
-
-    // Try to extract IP from host:port format
-    if let Some(colon_pos) = destination.rfind(':') {
-        let host_part = &destination[..colon_pos];
-
-        // Check if it's an IPv6 address in brackets
-        if let Some(stripped) = host_part.strip_prefix('[') {
-            if let Some(inner) = stripped.strip_suffix(']') {
-                return inner.to_string();
-            }
-        }
-
-        // Try to parse as IP address
-        if let Ok(ip) = host_part.parse::<std::net::IpAddr>() {
-            return ip.to_string();
-        }
-
-        // If not an IP, it's probably a hostname
-        return host_part.to_string();
-    }
-
-    // If no port separator found, assume it's just a hostname
-    destination.to_string()
-}
-
-/// Parse destination port from destination string
-fn parse_destination_port(destination: &str) -> String {
-    // Try to parse as SocketAddr first
-    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
-        return addr.port().to_string();
-    }
-
-    // Try to extract port from host:port format
-    if let Some(colon_pos) = destination.rfind(':') {
-        let port_part = &destination[colon_pos + 1..];
-
-        // Validate port is numeric
-        if let Ok(port) = port_part.parse::<u16>() {
-            return port.to_string();
-        }
-    }
-
-    // Default port if none found or invalid
-    DEFAULT_PORT.to_string()
 }
 
 /// Convert internal Provider to API Provider format
@@ -322,6 +182,35 @@ async fn http_url_test(
 
 // ===== API Handlers =====
 
+/// Look up delay history for a proxy.
+/// For groups, uses group.now() as lookup key (Go OutboundTag behavior).
+fn lookup_proxy_history(
+    history: &Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
+    tag: &str,
+    outbound: Option<&OutboundImpl>,
+) -> Vec<crate::types::DelayHistory> {
+    let storage = match history {
+        Some(h) => h,
+        None => return vec![],
+    };
+    // For groups, look up by currently selected member (Go parity)
+    let lookup_tag = match outbound {
+        Some(OutboundImpl::Connector(c)) => {
+            c.as_group().map(|g| g.now()).unwrap_or_else(|| tag.to_string())
+        }
+        _ => tag.to_string(),
+    };
+    match storage.load(&lookup_tag) {
+        Some(entry) => {
+            let time_str = humantime::format_rfc3339(entry.time).to_string();
+            vec![crate::types::DelayHistory { time: time_str, delay: entry.delay }]
+        }
+        None => vec![],
+    }
+}
+
+use std::sync::Arc;
+
 /// Get all proxies — matches Go's getProxies() + proxyInfo()
 ///
 /// Returns a map of all available proxies including the GLOBAL virtual group.
@@ -353,11 +242,13 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             all_proxy_tags.push(key.clone());
         }
 
+        let history = lookup_proxy_history(&state.urltest_history, key, Some(outbound));
+
         let mut proxy = Proxy {
             name: key.clone(),
             r#type: proxy_type,
             udp: true,
-            history: vec![],
+            history,
             all: vec![],
             now: String::new(),
             alive: Some(true),
@@ -366,14 +257,13 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
         };
 
         if let OutboundImpl::Connector(c) = outbound {
-            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                proxy.all = group
-                    .get_members()
-                    .into_iter()
-                    .map(|(tag, _, _)| tag)
-                    .collect();
-                proxy.now = group.get_selected().await.unwrap_or_default();
-                proxy.r#type = "Selector".to_string();
+            if let Some(group) = c.as_group() {
+                proxy.all = group.all();
+                proxy.now = group.now();
+                proxy.r#type = group.group_type().to_string();
+                // Group-level alive/delay are None (matches Go behavior)
+                proxy.alive = None;
+                proxy.delay = None;
             }
         }
 
@@ -459,11 +349,12 @@ pub async fn get_proxy(
 
     if let Some(outbound) = outbound_opt {
         let proxy_type = infer_proxy_type(&proxy_name, Some(&outbound));
+        let history = lookup_proxy_history(&state.urltest_history, &proxy_name, Some(&outbound));
         let mut proxy = Proxy {
             name: proxy_name.clone(),
             r#type: proxy_type,
             udp: true,
-            history: vec![],
+            history,
             all: vec![],
             now: String::new(),
             alive: Some(true),
@@ -472,14 +363,12 @@ pub async fn get_proxy(
         };
 
         if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                proxy.all = group
-                    .get_members()
-                    .into_iter()
-                    .map(|(tag, _, _)| tag)
-                    .collect();
-                proxy.now = group.get_selected().await.unwrap_or_default();
-                proxy.r#type = "Selector".to_string();
+            if let Some(group) = c.as_group() {
+                proxy.all = group.all();
+                proxy.now = group.now();
+                proxy.r#type = group.group_type().to_string();
+                proxy.alive = None;
+                proxy.delay = None;
             }
         }
 
@@ -539,17 +428,26 @@ pub async fn select_proxy(
         };
 
         if let Some(OutboundImpl::Connector(c)) = outbound_opt {
-            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                if group.select_by_name(&request.name).await.is_ok() {
-                    log::info!(
-                        "Selected proxy '{}' for group '{}'",
-                        request.name,
-                        proxy_name
-                    );
-                    if let Some(cache) = &state.cache_file {
-                        cache.set_selected(&proxy_name, &request.name);
+            if let Some(group) = c.as_group() {
+                match group.select_outbound(&request.name).await {
+                    Ok(()) => {
+                        log::info!(
+                            "Selected proxy '{}' for group '{}'",
+                            request.name,
+                            proxy_name
+                        );
+                        // CacheFile write is handled inside SelectorGroup (L2.6.3)
+                        return StatusCode::NO_CONTENT;
                     }
-                    return StatusCode::NO_CONTENT;
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to select proxy '{}' for group '{}': {}",
+                            request.name,
+                            proxy_name,
+                            e
+                        );
+                        return StatusCode::BAD_REQUEST;
+                    }
                 }
             }
         }
@@ -587,92 +485,64 @@ pub async fn get_proxy_delay(
     let timeout = std::time::Duration::from_millis(timeout_ms);
 
     match http_url_test(outbound_opt.as_ref(), url, timeout).await {
-        Ok(delay) => Json(json!({"delay": delay})).into_response(),
-        Err(status) => (status, Json(json!({"message": "An error occurred"}))).into_response(),
+        Ok(delay) => {
+            if let Some(h) = &state.urltest_history {
+                h.store(&proxy_name, sb_core::context::URLTestHistory {
+                    time: std::time::SystemTime::now(),
+                    delay,
+                });
+            }
+            Json(json!({"delay": delay})).into_response()
+        }
+        Err(status) => {
+            if let Some(h) = &state.urltest_history {
+                h.delete(&proxy_name);
+            }
+            (status, Json(json!({"message": "An error occurred"}))).into_response()
+        }
     }
 }
 
-/// Get all active connections — matches Go's Snapshot.MarshalJSON()
+/// Get connections — dual HTTP/WebSocket mode, matches Go's getConnections()
 ///
-/// Returns connections with top-level traffic totals and memory, matching the
-/// Go Snapshot format: `{downloadTotal, uploadTotal, connections, memory}`.
-pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse {
-    let connections: Vec<Connection> = if let Some(connection_manager) = &state.connection_manager {
-        match connection_manager.get_connections().await {
-            Ok(internal_connections) => internal_connections
-                .iter()
-                .map(convert_connection)
-                .collect(),
-            Err(e) => {
-                log::error!("Failed to get connections: {}", e);
-                Vec::new()
-            }
-        }
+/// HTTP: returns single snapshot. WebSocket: pushes snapshot every second.
+pub async fn get_connections_or_ws(
+    ws: Option<WebSocketUpgrade>,
+    State(state): State<ApiState>,
+) -> Response {
+    if let Some(ws) = ws {
+        ws.on_upgrade(move |socket| {
+            crate::clash::websocket::handle_connections_websocket(socket, state)
+        })
+        .into_response()
     } else {
-        Vec::new()
-    };
-
-    // Compute totals from current connections (approximation until global counters exist)
-    let upload_total: u64 = connections.iter().map(|c| c.upload).sum();
-    let download_total: u64 = connections.iter().map(|c| c.download).sum();
-
-    // Report real process memory where possible
-    let memory = crate::clash::websocket::get_process_memory_pub();
-
-    Json(json!({
-        "downloadTotal": download_total,
-        "uploadTotal": upload_total,
-        "connections": connections,
-        "memory": memory
-    }))
+        let snapshot = crate::clash::websocket::build_connections_snapshot();
+        Json(snapshot).into_response()
+    }
 }
 
 /// Close a specific connection
 ///
 /// Terminates an active connection identified by its connection ID.
+/// Always returns 204 (Go behavior: silent success even if ID not found).
 pub async fn close_connection(
-    State(state): State<ApiState>,
+    State(_state): State<ApiState>,
     Path(connection_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some(connection_manager) = &state.connection_manager {
-        match connection_manager.remove_connection(&connection_id).await {
-            Ok(success) => {
-                if success {
-                    log::info!("Successfully closed connection: {}", connection_id);
-                    StatusCode::NO_CONTENT
-                } else {
-                    log::warn!("Connection not found: {}", connection_id);
-                    StatusCode::NOT_FOUND
-                }
-            }
-            Err(e) => {
-                log::error!("Error closing connection {}: {}", connection_id, e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-        }
-    } else {
-        log::info!(
-            "Connection manager not available, logging close request for: {}",
-            connection_id
-        );
-        StatusCode::NO_CONTENT
+    let tracker = sb_common::conntrack::global_tracker();
+    if let Ok(id) = connection_id.parse::<u64>() {
+        tracker.close(sb_common::conntrack::ConnId::new(id));
     }
+    StatusCode::NO_CONTENT
 }
 
 /// Close all connections — matches Go's closeAllConnections()
 ///
 /// Closes all active connections and returns 204 NoContent.
-pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoResponse {
-    if let Some(connection_manager) = &state.connection_manager {
-        match connection_manager.close_all_connections().await {
-            Ok(closed_count) => {
-                log::info!("Closed {} connections", closed_count);
-            }
-            Err(e) => {
-                log::error!("Error closing all connections: {}", e);
-            }
-        }
-    }
+pub async fn close_all_connections(State(_state): State<ApiState>) -> impl IntoResponse {
+    let tracker = sb_common::conntrack::global_tracker();
+    let count = tracker.close_all();
+    log::info!("Closed {} connections", count);
     StatusCode::NO_CONTENT
 }
 
@@ -1331,19 +1201,16 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
     // Only include OutboundGroup types (Selector, URLTest, Fallback, LoadBalance)
     for (tag, outbound) in entries {
         if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                let all: Vec<String> = group
-                    .get_members()
-                    .into_iter()
-                    .map(|(member, _, _)| member)
-                    .collect();
-                let now = group.get_selected().await.unwrap_or_default();
+            if let Some(group) = c.as_group() {
+                let all = group.all();
+                let now = group.now();
+                let history = lookup_proxy_history(&state.urltest_history, &tag, Some(&outbound));
 
                 groups.push(json!({
                     "name": tag,
-                    "type": "Selector",
+                    "type": group.group_type(),
                     "udp": true,
-                    "history": [],
+                    "history": history,
                     "all": all,
                     "now": now,
                     "hidden": false,
@@ -1377,16 +1244,14 @@ pub async fn get_meta_group(
         let mut proxy_type = infer_proxy_type(&group_name, Some(&outbound));
 
         if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                all = group
-                    .get_members()
-                    .into_iter()
-                    .map(|(member, _, _)| member)
-                    .collect();
-                now = group.get_selected().await.unwrap_or_default();
-                proxy_type = "Selector".to_string();
+            if let Some(group) = c.as_group() {
+                all = group.all();
+                now = group.now();
+                proxy_type = group.group_type().to_string();
             }
         }
+
+        let history = lookup_proxy_history(&state.urltest_history, &group_name, Some(&outbound));
 
         let group = json!({
             "name": group_name,
@@ -1396,6 +1261,7 @@ pub async fn get_meta_group(
             "hidden": false,
             "icon": "",
             "udp": true,
+            "history": history,
         });
         return (StatusCode::OK, Json(group)).into_response();
     }
@@ -1465,11 +1331,11 @@ pub async fn get_meta_group_delay(
         let reg = registry.read();
         if let Some(outbound) = reg.get(&group_name) {
             if let OutboundImpl::Connector(c) = outbound {
-                if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                if let Some(group) = c.as_group() {
                     group
-                        .get_members()
+                        .all()
                         .into_iter()
-                        .map(|(tag, _, _)| {
+                        .map(|tag| {
                             let ob = reg.get(&tag).cloned();
                             (tag, ob)
                         })
@@ -1502,12 +1368,25 @@ pub async fn get_meta_group_delay(
     let mut handles = Vec::with_capacity(members.len());
     for (tag, outbound) in members {
         let url = url.clone();
+        let history_store = state.urltest_history.clone();
         handles.push(tokio::spawn(async move {
-            let delay = match http_url_test(outbound.as_ref(), &url, timeout_dur).await {
-                Ok(d) => d as i32,
-                Err(_) => 0,
-            };
-            (tag, delay)
+            match http_url_test(outbound.as_ref(), &url, timeout_dur).await {
+                Ok(d) => {
+                    if let Some(h) = &history_store {
+                        h.store(&tag, sb_core::context::URLTestHistory {
+                            time: std::time::SystemTime::now(),
+                            delay: d,
+                        });
+                    }
+                    (tag, d as i32)
+                }
+                Err(_) => {
+                    if let Some(h) = &history_store {
+                        h.delete(&tag);
+                    }
+                    (tag, 0)
+                }
+            }
         }));
     }
 
@@ -1748,23 +1627,6 @@ pub async fn test_script(
                 "execution_time_ms": 5
             },
             "message": "Script test completed"
-        })),
-    )
-        .into_response()
-}
-
-/// Upgrade connections to WebSocket (GET /connectionsUpgrade)
-///
-/// This endpoint would upgrade HTTP connections to WebSocket for real-time connection monitoring.
-pub async fn upgrade_connections(State(_state): State<ApiState>) -> impl IntoResponse {
-    log::info!("Connection upgrade to WebSocket requested");
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "message": "WebSocket upgrade endpoint",
-            "note": "Use /connections endpoint with WebSocket upgrade headers",
-            "alternative": "Use /traffic and /logs WebSocket endpoints for real-time monitoring"
         })),
     )
         .into_response()

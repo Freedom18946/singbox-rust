@@ -22,16 +22,9 @@
 #[cfg(any(
     feature = "out_socks",
     feature = "out_http",
-    feature = "out_trojan",
-    feature = "out_ss",
-    feature = "out_vmess",
-    feature = "out_vless",
     feature = "out_hysteria",
     feature = "out_hysteria2",
-    feature = "out_tuic",
-    feature = "out_shadowtls",
     feature = "out_naive",
-    feature = "out_wireguard"
 ))]
 pub mod block_connector;
 pub mod direct_connector;
@@ -75,24 +68,10 @@ pub mod p3_selector;
 pub mod address;
 pub mod crypto_types;
 pub mod ss {
-    #[cfg(feature = "out_ss")]
-    pub mod aead_tcp;
-    #[cfg(feature = "out_ss")]
-    pub mod aead_udp;
     pub mod hkdf;
 }
 #[cfg(feature = "out_naive")]
 pub mod naive_h2;
-#[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
-pub mod shadowsocks;
-#[cfg(feature = "out_shadowtls")]
-pub mod shadowtls;
-#[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
-pub mod trojan;
-#[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
-pub mod vless;
-#[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
-pub mod vmess;
 // QUIC types are included in crypto_types
 #[cfg(feature = "out_quic")]
 pub mod quic {
@@ -103,12 +82,6 @@ pub mod quic {
 pub mod hysteria;
 #[cfg(feature = "out_hysteria2")]
 pub mod hysteria2;
-#[cfg(feature = "out_ssh")]
-pub mod ssh;
-#[cfg(feature = "out_tuic")]
-pub mod tuic;
-#[cfg(feature = "out_wireguard")]
-pub mod wireguard;
 
 // Performance optimizations for P0 protocols
 pub mod optimizations;
@@ -205,26 +178,10 @@ pub enum OutboundKind {
     Block,
     Socks,
     Http,
-    #[cfg(feature = "out_trojan")]
-    Trojan,
-    #[cfg(feature = "out_ss")]
-    Shadowsocks,
-    #[cfg(feature = "out_shadowtls")]
-    ShadowTls,
     #[cfg(feature = "out_naive")]
     Naive,
-    #[cfg(feature = "out_vless")]
-    Vless,
-    #[cfg(feature = "out_vmess")]
-    Vmess,
-    #[cfg(feature = "out_tuic")]
-    Tuic,
     #[cfg(feature = "out_hysteria2")]
     Hysteria2,
-    #[cfg(feature = "out_wireguard")]
-    WireGuard,
-    #[cfg(feature = "out_ssh")]
-    Ssh,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -254,26 +211,10 @@ pub enum OutboundImpl {
     Block,
     Socks5(Socks5Config),
     HttpProxy(HttpProxyConfig),
-    #[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
-    Trojan(trojan::TrojanConfig),
-    #[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
-    Shadowsocks(shadowsocks::ShadowsocksConfig),
-    #[cfg(feature = "out_shadowtls")]
-    ShadowTls(shadowtls::ShadowTlsConfig),
     #[cfg(feature = "out_naive")]
     Naive(naive_h2::NaiveH2Config),
-    #[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
-    Vless(vless::VlessConfig),
-    #[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
-    Vmess(vmess::VmessConfig),
-    #[cfg(feature = "out_tuic")]
-    Tuic(tuic::TuicConfig),
     #[cfg(feature = "out_hysteria2")]
     Hysteria2(hysteria2::Hysteria2Config),
-    #[cfg(feature = "out_wireguard")]
-    WireGuard(wireguard::WireGuardConfig),
-    #[cfg(feature = "out_ssh")]
-    Ssh(ssh::SshConfig),
     /// Generic trait-based connector (e.g., `SelectorGroup`)
     Connector(Arc<dyn AdapterConnector>),
 }
@@ -347,26 +288,10 @@ impl OutboundRegistryHandle {
                         };
                         conn.connect(&host, port).await
                     }
-                    #[cfg(feature = "out_trojan")]
-                    Some(OutboundImpl::Trojan(cfg)) => trojan_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_ss")]
-                    Some(OutboundImpl::Shadowsocks(cfg)) => shadowsocks_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_shadowtls")]
-                    Some(OutboundImpl::ShadowTls(cfg)) => shadowtls_connect(&cfg, ep).await,
                     #[cfg(feature = "out_naive")]
                     Some(OutboundImpl::Naive(cfg)) => naive_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_vless")]
-                    Some(OutboundImpl::Vless(cfg)) => vless_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_vmess")]
-                    Some(OutboundImpl::Vmess(cfg)) => vmess_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_tuic")]
-                    Some(OutboundImpl::Tuic(cfg)) => tuic_connect(&cfg, ep).await,
                     #[cfg(feature = "out_hysteria2")]
                     Some(OutboundImpl::Hysteria2(cfg)) => hysteria2_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_wireguard")]
-                    Some(OutboundImpl::WireGuard(cfg)) => wireguard_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_ssh")]
-                    Some(OutboundImpl::Ssh(cfg)) => ssh_connect(&cfg, ep).await,
                     None => Err(io::Error::new(
                         io::ErrorKind::NotFound,
                         "outbound not found",
@@ -426,85 +351,7 @@ impl OutboundRegistryHandle {
                             Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
                             Endpoint::Domain(h, p) => (h, p),
                         };
-                        let s = conn.connect(&host, port).await?;
-                        let boxed: sb_transport::IoStream = Box::new(s);
-                        Ok(boxed)
-                    }
-                    #[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
-                    Some(OutboundImpl::Trojan(cfg)) => {
-                        use crate::outbound::crypto_types::HostPort as Hp;
-                        use crate::outbound::traits::OutboundConnectorIo;
-                        use crate::outbound::trojan::TrojanOutbound;
-                        use crate::types::{
-                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
-                        };
-                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-                        let _target_hp = match ep.clone() {
-                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => Hp::new(host, port),
-                        };
-
-                        let dst = match ep {
-                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => {
-                                CEndpoint::new(CHost::domain(host), port)
-                            }
-                        };
-                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
-
-                        let outbound = TrojanOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("Trojan setup failed: {}", e)))?;
-
-                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
-                            .await
-                            .map_err(|e| {
-                                io::Error::other(format!("Trojan connect_io failed: {}", e))
-                            })?;
-                        Ok(stream)
-                    }
-                    #[cfg(feature = "out_ss")]
-                    Some(OutboundImpl::Shadowsocks(cfg)) => {
-                        use crate::outbound::shadowsocks::ShadowsocksOutbound;
-                        use crate::outbound::traits::OutboundConnectorIo;
-                        use crate::types::{
-                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
-                        };
-                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-                        let dst = match ep {
-                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => {
-                                CEndpoint::new(CHost::domain(host), port)
-                            }
-                        };
-                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
-
-                        let outbound = ShadowsocksOutbound::new(cfg.clone());
-                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
-                            .await
-                            .map_err(|e| {
-                                io::Error::other(format!("Shadowsocks connect_io failed: {}", e))
-                            })?;
-                        Ok(stream)
-                    }
-                    #[cfg(feature = "out_shadowtls")]
-                    Some(OutboundImpl::ShadowTls(cfg)) => {
-                        use crate::outbound::shadowtls::ShadowTlsOutbound;
-                        use crate::outbound::types::{HostPort, OutboundTcp};
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
-                            io::Error::other(format!("ShadowTLS setup failed: {}", e))
-                        })?;
-                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                        Ok(Box::new(stream))
+                        conn.connect_io(&host, port).await
                     }
                     #[cfg(feature = "out_naive")]
                     Some(OutboundImpl::Naive(cfg)) => {
@@ -518,91 +365,6 @@ impl OutboundRegistryHandle {
 
                         let outbound = NaiveH2Outbound::new(cfg.clone())
                             .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
-                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                        Ok(Box::new(stream))
-                    }
-                    #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
-                    Some(OutboundImpl::Vless(cfg)) => {
-                        use crate::outbound::crypto_types::HostPort as Hp;
-                        use crate::outbound::traits::OutboundConnectorIo;
-                        use crate::outbound::vless::VlessOutbound;
-                        use crate::types::{
-                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
-                        };
-                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-                        let _target_hp = match ep.clone() {
-                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => Hp::new(host, port),
-                        };
-
-                        let dst = match ep {
-                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => {
-                                CEndpoint::new(CHost::domain(host), port)
-                            }
-                        };
-                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
-
-                        let outbound = VlessOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("VLESS setup failed: {}", e)))?;
-
-                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
-                            .await
-                            .map_err(|e| {
-                                io::Error::other(format!("VLESS connect_io failed: {}", e))
-                            })?;
-                        Ok(stream)
-                    }
-                    #[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
-                    Some(OutboundImpl::Vmess(cfg)) => {
-                        // Use vmess connector to establish layered transport
-                        use crate::outbound::crypto_types::HostPort as Hp;
-                        use crate::outbound::traits::OutboundConnectorIo;
-                        use crate::outbound::vmess::VmessOutbound;
-                        use crate::types::{
-                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
-                        };
-                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-                        let _target_hp = match ep.clone() {
-                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => Hp::new(host, port),
-                        };
-
-                        // Build minimal ConnCtx
-                        let dst = match ep {
-                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => {
-                                CEndpoint::new(CHost::domain(host), port)
-                            }
-                        };
-                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
-
-                        let outbound = VmessOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("VMess setup failed: {}", e)))?;
-
-                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
-                            .await
-                            .map_err(|e| {
-                                io::Error::other(format!("VMess connect_io failed: {}", e))
-                            })?;
-                        Ok(stream)
-                    }
-                    #[cfg(feature = "out_tuic")]
-                    Some(OutboundImpl::Tuic(cfg)) => {
-                        use crate::outbound::tuic::TuicOutbound;
-                        use crate::outbound::types::{HostPort, OutboundTcp};
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = TuicOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("TUIC setup failed: {}", e)))?;
                         let stream = OutboundTcp::connect(&outbound, &hp).await?;
                         Ok(Box::new(stream))
                     }
@@ -620,37 +382,6 @@ impl OutboundRegistryHandle {
                             io::Error::other(format!("Hysteria2 setup failed: {}", e))
                         })?;
                         let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                        Ok(Box::new(stream))
-                    }
-                    #[cfg(feature = "out_wireguard")]
-                    Some(OutboundImpl::WireGuard(cfg)) => {
-                        use crate::outbound::crypto_types::{HostPort, OutboundTcp};
-                        use crate::outbound::wireguard::WireGuardOutbound;
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = WireGuardOutbound::new(cfg.clone()).map_err(|e| {
-                            io::Error::other(format!("WireGuard setup failed: {}", e))
-                        })?;
-                        let stream = outbound.connect(&hp).await?;
-                        Ok(Box::new(stream))
-                    }
-                    #[cfg(feature = "out_ssh")]
-                    Some(OutboundImpl::Ssh(cfg)) => {
-                        use crate::outbound::crypto_types::{HostPort, OutboundTcp};
-                        use crate::outbound::ssh::SshOutbound;
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = SshOutbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("SSH setup failed: {}", e)))?;
-                        let stream = outbound.connect(&hp).await?;
                         Ok(Box::new(stream))
                     }
                     None => Err(io::Error::new(
@@ -712,55 +443,15 @@ async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<Tc
             io::ErrorKind::Unsupported,
             "builtin proxy not wired",
         )),
-        #[cfg(feature = "out_trojan")]
-        OutboundKind::Trojan => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin trojan not wired",
-        )),
-        #[cfg(feature = "out_ss")]
-        OutboundKind::Shadowsocks => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin shadowsocks not wired",
-        )),
-        #[cfg(feature = "out_shadowtls")]
-        OutboundKind::ShadowTls => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin shadowtls not wired",
-        )),
         #[cfg(feature = "out_naive")]
         OutboundKind::Naive => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "builtin naive not wired",
         )),
-        #[cfg(feature = "out_vless")]
-        OutboundKind::Vless => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin vless not wired",
-        )),
-        #[cfg(feature = "out_vmess")]
-        OutboundKind::Vmess => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin vmess not wired",
-        )),
-        #[cfg(feature = "out_tuic")]
-        OutboundKind::Tuic => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin tuic not wired",
-        )),
         #[cfg(feature = "out_hysteria2")]
         OutboundKind::Hysteria2 => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "builtin hysteria2 not wired",
-        )),
-        #[cfg(feature = "out_wireguard")]
-        OutboundKind::WireGuard => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin wireguard not wired",
-        )),
-        #[cfg(feature = "out_ssh")]
-        OutboundKind::Ssh => Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "builtin ssh not wired",
         )),
     }
 }
@@ -1102,83 +793,7 @@ pub async fn socks5_connect_through_socks5(
     socks5_connect(&cfg, Endpoint::Domain(target_host.to_string(), target_port)).await
 }
 
-// Adapter functions for encrypted protocols
-#[cfg(all(feature = "out_trojan", feature = "legacy_protocols"))]
-async fn trojan_connect(cfg: &trojan::TrojanConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = trojan::TrojanOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("Trojan setup failed: {}", e)))?;
-
-    // Connect and convert to TcpStream
-    match outbound.connect(&target).await {
-        Ok(_tls_stream) => {
-            // For compatibility with existing code that expects TcpStream,
-            // we need to wrap or extract the underlying stream
-            // This is a simplification - in practice you might need a proper wrapper
-            Err(io::Error::other(
-                "Trojan connection established but stream conversion not implemented",
-            ))
-        }
-        Err(e) => Err(e),
-    }
-}
-
-#[cfg(all(feature = "out_ss", feature = "legacy_protocols"))]
-async fn shadowsocks_connect(
-    cfg: &shadowsocks::ShadowsocksConfig,
-    ep: Endpoint,
-) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = shadowsocks::ShadowsocksOutbound::new(cfg.clone());
-
-    // Connect and convert to TcpStream
-    match outbound.connect(&target).await {
-        Ok(_ss_stream) => {
-            // For compatibility with existing code that expects TcpStream,
-            // we need to wrap or extract the underlying stream
-            // This is a simplification - in practice you might need a proper wrapper
-            Err(io::Error::other(
-                "Shadowsocks connection established but stream conversion not implemented",
-            ))
-        }
-        Err(e) => Err(e),
-    }
-}
-
-// Adapter functions for new encrypted protocols
-#[cfg(feature = "out_shadowtls")]
-async fn shadowtls_connect(
-    cfg: &shadowtls::ShadowTlsConfig,
-    ep: Endpoint,
-) -> io::Result<TcpStream> {
-    use crypto_types::HostPort;
-
-    let _target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let _outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("ShadowTLS setup failed: {}", e)))?;
-
-    // Note: ShadowTLS returns a TLS stream, not a TcpStream
-    // For now, return an error indicating this needs proper handling
-    Err(io::Error::other(
-        "ShadowTLS connection requires TLS stream handling",
-    ))
-}
+// Adapter functions for retained encrypted protocols
 
 #[cfg(feature = "out_naive")]
 async fn naive_connect(cfg: &naive_h2::NaiveH2Config, ep: Endpoint) -> io::Result<TcpStream> {
@@ -1195,54 +810,6 @@ async fn naive_connect(cfg: &naive_h2::NaiveH2Config, ep: Endpoint) -> io::Resul
     // Note: Naive returns a compat stream, not a TcpStream
     Err(io::Error::other(
         "Naive HTTP/2 connection requires compat stream handling",
-    ))
-}
-
-#[cfg(all(feature = "out_vless", feature = "legacy_protocols"))]
-async fn vless_connect(cfg: &vless::VlessConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crate::outbound::types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = vless::VlessOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("VLESS setup failed: {}", e)))?;
-
-    OutboundTcp::connect(&outbound, &target).await
-}
-
-#[cfg(all(feature = "out_vmess", feature = "legacy_protocols"))]
-async fn vmess_connect(cfg: &vmess::VmessConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = vmess::VmessOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("VMess setup failed: {}", e)))?;
-
-    OutboundTcp::connect(&outbound, &target).await
-}
-
-#[cfg(feature = "out_tuic")]
-async fn tuic_connect(cfg: &tuic::TuicConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::HostPort;
-
-    let _target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let _outbound = tuic::TuicOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("TUIC setup failed: {}", e)))?;
-
-    // Note: TUIC returns a compat stream, not a TcpStream
-    Err(io::Error::other(
-        "TUIC connection requires compat stream handling",
     ))
 }
 
@@ -1265,42 +832,4 @@ async fn hysteria2_connect(
     Err(io::Error::other(
         "Hysteria2 connection requires compat stream handling",
     ))
-}
-
-#[cfg(feature = "out_wireguard")]
-async fn wireguard_connect(
-    cfg: &wireguard::WireGuardConfig,
-    ep: Endpoint,
-) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = wireguard::WireGuardOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("WireGuard setup failed: {}", e)))?;
-
-    outbound.connect(&target).await
-}
-
-#[cfg(feature = "out_ssh")]
-async fn ssh_connect(cfg: &ssh::SshConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
-
-    let target = match ep {
-        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-        Endpoint::Domain(host, port) => HostPort::new(host, port),
-    };
-
-    let outbound = ssh::SshOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::other(format!("SSH setup failed: {}", e)))?;
-
-    outbound.connect(&target).await.map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::ConnectionRefused,
-            format!("Failed to connect via SSH proxy: {}", e),
-        )
-    })
 }

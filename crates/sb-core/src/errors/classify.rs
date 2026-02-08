@@ -26,6 +26,7 @@ pub fn classify_io(e: &std::io::Error) -> NetClass {
     }
 }
 
+#[cfg(feature = "tls_rustls")]
 pub const fn classify_tls(err: &rustls::Error) -> NetClass {
     use rustls::Error::InvalidCertificate;
     match err {

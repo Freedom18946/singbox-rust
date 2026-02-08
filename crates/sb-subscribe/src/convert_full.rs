@@ -4,7 +4,7 @@
 //!   - Dependencies: subs_full (internally enables subs_view + subs_bindings), optional subs_hash for blake3.
 //!   - [Chinese] 依赖：subs_full（内部启用 subs_view + subs_bindings），可选 subs_hash 计算 blake3。
 use crate::model::Profile;
-use sb_core::router::minijson::{obj, Val};
+use sb_common::minijson::{obj, Val};
 
 /// Average estimated line length for DSL generation
 const ESTIMATED_LINE_LENGTH: usize = 50;

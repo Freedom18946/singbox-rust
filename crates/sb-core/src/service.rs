@@ -10,81 +10,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Lifecycle stages for service initialization.
-/// 服务初始化的生命周期阶段。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartStage {
-    /// Initialize resources.
-    /// 初始化资源。
-    Initialize,
-    /// Start the service.
-    /// 启动服务。
-    Start,
-    /// Post-start configuration.
-    /// 启动后配置。
-    PostStart,
-    /// Finalize startup.
-    /// 完成启动。
-    Started,
-}
-
-/// Service trait for background services.
-/// 后台服务的 Service trait。
-///
-/// Services (like Resolved/DERP/SSM) implement this trait to provide
-/// background functionality with lifecycle management.
-/// 服务（如 Resolved/DERP/SSM）实现此 trait 以提供具有生命周期管理的后台功能。
-pub trait Service: Send + Sync {
-    /// Return the service type (e.g., "resolved", "derp", "ssm-api").
-    /// 返回服务类型（例如 "resolved", "derp", "ssm-api"）。
-    fn service_type(&self) -> &str;
-
-    /// Return the service tag/identifier.
-    /// 返回服务标签/标识符。
-    fn tag(&self) -> &str;
-
-    /// Start the service at a specific lifecycle stage.
-    /// 在特定的生命周期阶段启动服务。
-    ///
-    /// # Errors
-    /// Returns an error if the service fails to start.
-    /// 如果服务启动失败，则返回错误。
-    fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-
-    /// Stop and clean up the service.
-    /// 停止并清理服务。
-    ///
-    /// # Errors
-    /// Returns an error if cleanup fails.
-    /// 如果清理失败，则返回错误。
-    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-}
-
-/// Lifecycle trait for components with staged initialization.
-/// 具有分阶段初始化的组件的生命周期 trait。
-///
-/// This trait is similar to `Service` but without service-specific methods like
-/// `service_type()` and `tag()`. It's used by inbound/outbound handlers that
-/// need lifecycle management but aren't full services.
-/// 此 trait 类似于 `Service`，但没有特定于服务的方法，如 `service_type()` 和 `tag()`。
-/// 它用于需要生命周期管理但不是完整服务的 inbound/outbound 处理程序。
-pub trait Lifecycle: Send + Sync {
-    /// Start at a specific lifecycle stage.
-    /// 在特定的生命周期阶段启动。
-    ///
-    /// # Errors
-    /// Returns an error if starting at this stage fails.
-    /// 如果在此阶段启动失败，则返回错误。
-    fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-
-    /// Stop and clean up resources.
-    /// 停止并清理资源。
-    ///
-    /// # Errors
-    /// Returns an error if cleanup fails.
-    /// 如果清理失败，则返回错误。
-    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-}
+// Re-export canonical definitions from sb-types.
+// These were previously defined here; now sb-types is the single source of truth.
+pub use sb_types::ports::service::{Lifecycle, Service, StartStage};
 
 /// Context for building services.
 /// 构建服务的上下文。

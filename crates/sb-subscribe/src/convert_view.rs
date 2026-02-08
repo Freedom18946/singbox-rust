@@ -4,7 +4,7 @@
 //! R97: View functionality behind features (controlled by lib.rs).
 //! [Chinese] R97: 视图功能 behind features（由 lib.rs 控制导出）。
 use crate::model::Profile;
-use sb_core::router::minijson::{arr_str, obj, Val};
+use sb_common::minijson::{arr_str, obj, Val};
 
 #[cfg(feature = "subs_hash")]
 fn b3_hex(s: &str) -> String {

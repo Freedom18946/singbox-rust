@@ -174,26 +174,10 @@ pub fn router_select(mode: &'static str, target: &RouteTarget) {
                 OutboundKind::Socks => "socks5",
                 OutboundKind::Http => "http",
                 OutboundKind::Block => "block",
-                #[cfg(feature = "out_trojan")]
-                OutboundKind::Trojan => "trojan",
-                #[cfg(feature = "out_ss")]
-                OutboundKind::Shadowsocks => "shadowsocks",
-                #[cfg(feature = "out_shadowtls")]
-                OutboundKind::ShadowTls => "shadowtls",
                 #[cfg(feature = "out_naive")]
                 OutboundKind::Naive => "naive",
-                #[cfg(feature = "out_vless")]
-                OutboundKind::Vless => "vless",
-                #[cfg(feature = "out_vmess")]
-                OutboundKind::Vmess => "vmess",
-                #[cfg(feature = "out_tuic")]
-                OutboundKind::Tuic => "tuic",
                 #[cfg(feature = "out_hysteria2")]
                 OutboundKind::Hysteria2 => "hysteria2",
-                #[cfg(feature = "out_wireguard")]
-                OutboundKind::WireGuard => "wireguard",
-                #[cfg(feature = "out_ssh")]
-                OutboundKind::Ssh => "ssh",
             };
             let _ = kind; // 值不再作为标签输出，避免高基数
             "kind"

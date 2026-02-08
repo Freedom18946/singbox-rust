@@ -1,7 +1,8 @@
 //! SSH outbound adapter implementation
 //!
-//! This module provides SSH tunnel support for outbound connections.
-//! It bridges the adapter config to the sb-core SSH implementation.
+//! Fully self-contained SSH tunnel support using the `russh` library.
+//! Supports password and key-based authentication, host key verification,
+//! connection pooling, and TCP forwarding via `direct-tcpip` channels.
 
 use crate::outbound::prelude::*;
 
@@ -41,13 +42,18 @@ impl Default for SshAdapterConfig {
     }
 }
 
-/// SSH outbound connector
+/// SSH outbound connector — fully self-contained, no sb-core dependency.
 #[derive(Clone)]
 pub struct SshConnector {
-    #[allow(dead_code)]
     config: SshAdapterConfig,
     #[cfg(feature = "adapter-ssh")]
-    core: std::sync::Arc<sb_core::outbound::ssh::SshOutbound>,
+    pool: std::sync::Arc<tokio::sync::Mutex<SshPool>>,
+}
+
+#[cfg(feature = "adapter-ssh")]
+struct SshPool {
+    connections: Vec<std::sync::Arc<inner::SshConnection>>,
+    rr: usize,
 }
 
 impl std::fmt::Debug for SshConnector {
@@ -62,90 +68,13 @@ impl SshConnector {
     pub fn new(config: SshAdapterConfig) -> Self {
         #[cfg(feature = "adapter-ssh")]
         {
-            // Skip core creation if config is invalid - validation will happen in start()
-            // This allows creating the connector with invalid config for testing
-            if config.server.is_empty() || config.username.is_empty() {
-                // Create a dummy core that will fail validation in start()
-                let dummy_config = sb_core::outbound::ssh::SshConfig {
-                    server: "invalid".to_string(),
-                    port: 22,
-                    username: "invalid".to_string(),
-                    password: Some("invalid".to_string()),
-                    ..Default::default()
-                };
-                let core = match sb_core::outbound::ssh::SshOutbound::new(dummy_config) {
-                    Ok(c) => std::sync::Arc::new(c),
-                    Err(e) => {
-                        tracing::error!(error=%e, "Failed to create dummy SSH core; using safe fallback config");
-                        // Safe fallback config to satisfy constructor validation
-                        let fb = sb_core::outbound::ssh::SshConfig {
-                            server: "127.0.0.1".to_string(),
-                            port: 22,
-                            username: "dummy".to_string(),
-                            password: Some("dummy".to_string()),
-                            ..Default::default()
-                        };
-                        let c = sb_core::outbound::ssh::SshOutbound::new(fb)
-                            .map_err(|e2| {
-                                tracing::error!(error=%e2, "SSH fallback core creation failed");
-                                e2
-                            })
-                            .expect("SSH fallback core must construct");
-                        std::sync::Arc::new(c)
-                    }
-                };
-                return Self { config, core };
+            Self {
+                config,
+                pool: std::sync::Arc::new(tokio::sync::Mutex::new(SshPool {
+                    connections: Vec::new(),
+                    rr: 0,
+                })),
             }
-
-            // Convert adapter config to core config
-            let core_config = sb_core::outbound::ssh::SshConfig {
-                server: config.server.clone(),
-                port: config.port,
-                username: config.username.clone(),
-                password: config.password.clone(),
-                private_key: config.private_key.clone(),
-                private_key_passphrase: config.private_key_passphrase.clone(),
-                host_key_verification: config.host_key_verification,
-                compression: config.compression,
-                keepalive_interval: config.keepalive_interval,
-                connect_timeout: config.connect_timeout,
-                connection_pool_size: config.connection_pool_size,
-                known_hosts_path: config.known_hosts_path.clone(),
-            };
-
-            // Create core SSH outbound
-            let core = match sb_core::outbound::ssh::SshOutbound::new(core_config) {
-                Ok(outbound) => std::sync::Arc::new(outbound),
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to create SSH outbound");
-                    // Create a dummy core that will fail validation in start()
-                    let dummy_config = sb_core::outbound::ssh::SshConfig {
-                        server: "invalid".to_string(),
-                        port: 22,
-                        username: "invalid".to_string(),
-                        password: Some("invalid".to_string()),
-                        ..Default::default()
-                    };
-                    match sb_core::outbound::ssh::SshOutbound::new(dummy_config) {
-                        Ok(c) => std::sync::Arc::new(c),
-                        Err(e2) => {
-                            tracing::error!(error=%e2, "Failed to create dummy SSH core; using safe fallback config");
-                            let fb = sb_core::outbound::ssh::SshConfig {
-                                server: "127.0.0.1".to_string(),
-                                port: 22,
-                                username: "dummy".to_string(),
-                                password: Some("dummy".to_string()),
-                                ..Default::default()
-                            };
-                            let c = sb_core::outbound::ssh::SshOutbound::new(fb)
-                                .expect("SSH fallback core must construct");
-                            std::sync::Arc::new(c)
-                        }
-                    }
-                }
-            };
-
-            Self { config, core }
         }
 
         #[cfg(not(feature = "adapter-ssh"))]
@@ -158,6 +87,291 @@ impl Default for SshConnector {
         Self::new(SshAdapterConfig::default())
     }
 }
+
+// ── Internals (behind feature gate) ──────────────────────────────────
+
+#[cfg(feature = "adapter-ssh")]
+mod inner {
+    use super::*;
+    use sha2::{Digest as ShaDigest, Sha256};
+    use std::collections::HashMap;
+    use std::io;
+    use std::net::SocketAddr;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::io::{split, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::{mpsc, Mutex as AsyncMutex};
+
+    // ── Known hosts verification ─────────────────────────────────────
+
+    struct SshShared {
+        rx_map: AsyncMutex<HashMap<russh::ChannelId, mpsc::Sender<Vec<u8>>>>,
+        host_id: String,
+        known_hosts: Option<PathBuf>,
+        verify: bool,
+    }
+
+    impl SshShared {
+        fn new(host_id: String, known_hosts: Option<PathBuf>, verify: bool) -> Self {
+            Self {
+                rx_map: AsyncMutex::new(HashMap::new()),
+                host_id,
+                known_hosts,
+                verify,
+            }
+        }
+    }
+
+    // ── SSH client handler ───────────────────────────────────────────
+
+    struct SshClient {
+        shared: Arc<SshShared>,
+    }
+
+    #[async_trait::async_trait]
+    impl russh::client::Handler for SshClient {
+        type Error = russh::Error;
+
+        async fn check_server_key(
+            &mut self,
+            server_public_key: &ssh_key::PublicKey,
+        ) -> Result<bool, Self::Error> {
+            if !self.shared.verify {
+                return Ok(true);
+            }
+            let host = &self.shared.host_id;
+            let path_opt = &self.shared.known_hosts;
+            let fp = {
+                let s = format!("{:?}", server_public_key);
+                let mut hasher = Sha256::new();
+                hasher.update(s.as_bytes());
+                hex::encode(hasher.finalize())
+            };
+            let ok = (|| -> Result<bool, ()> {
+                let Some(path) = path_opt.as_ref() else {
+                    return Ok(true);
+                };
+                if let Ok(txt) = std::fs::read_to_string(path) {
+                    for line in txt.lines() {
+                        let mut it = line.split_whitespace();
+                        if let (Some(h), Some(stored)) = (it.next(), it.next()) {
+                            if h == host {
+                                return Ok(stored == fp);
+                            }
+                        }
+                    }
+                }
+                // Not recorded: append (TOFU)
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    use std::io::Write;
+                    let _ = f.write_all(format!("{} {}\n", host, fp).as_bytes());
+                }
+                Ok(true)
+            })()
+            .unwrap_or(true);
+            Ok(ok)
+        }
+
+        async fn data(
+            &mut self,
+            channel: russh::ChannelId,
+            data: &[u8],
+            _session: &mut russh::client::Session,
+        ) -> Result<(), Self::Error> {
+            if let Some(tx) = self.shared.rx_map.lock().await.get(&channel).cloned() {
+                let _ = tx.send(data.to_vec()).await;
+            }
+            Ok(())
+        }
+
+        async fn channel_close(
+            &mut self,
+            channel: russh::ChannelId,
+            _session: &mut russh::client::Session,
+        ) -> Result<(), Self::Error> {
+            self.shared.rx_map.lock().await.remove(&channel);
+            Ok(())
+        }
+
+        async fn channel_eof(
+            &mut self,
+            channel: russh::ChannelId,
+            _session: &mut russh::client::Session,
+        ) -> Result<(), Self::Error> {
+            self.shared.rx_map.lock().await.remove(&channel);
+            Ok(())
+        }
+    }
+
+    // ── Connection wrapper ───────────────────────────────────────────
+
+    pub(super) struct SshConnection {
+        session: tokio::sync::Mutex<russh::client::Handle<SshClient>>,
+        shared: Arc<SshShared>,
+    }
+
+    impl SshConnection {
+        pub(super) async fn new(config: &SshAdapterConfig) -> anyhow::Result<Self> {
+            let client_config = Arc::new(russh::client::Config::default());
+            let host_id = format!("{}:{}", config.server, config.port);
+            let known_hosts = if let Some(p) = config.known_hosts_path.as_ref() {
+                Some(PathBuf::from(p))
+            } else {
+                std::env::var("SB_SSH_KNOWN_HOSTS")
+                    .ok()
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        std::env::var("HOME")
+                            .ok()
+                            .map(|h| PathBuf::from(h).join(".ssh").join("sb_known_hosts"))
+                    })
+            };
+            let verify = config.host_key_verification;
+            let shared = Arc::new(SshShared::new(host_id, known_hosts, verify));
+            let client_handler = SshClient {
+                shared: shared.clone(),
+            };
+
+            let server_addr: SocketAddr = format!("{}:{}", config.server, config.port)
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid SSH server address: {}", e))?;
+
+            let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(10));
+
+            let mut session = tokio::time::timeout(
+                timeout,
+                russh::client::connect(client_config, server_addr, client_handler),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("SSH connection timeout"))?
+            .map_err(|e| anyhow::anyhow!("SSH handshake failed: {}", e))?;
+
+            // Authenticate
+            let authenticated = if let Some(password) = &config.password {
+                session
+                    .authenticate_password(&config.username, password)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("SSH password auth failed: {}", e))?
+            } else if let Some(private_key_data) = &config.private_key {
+                let private_key = if private_key_data.starts_with("-----BEGIN") {
+                    russh_keys::decode_secret_key(
+                        private_key_data,
+                        config.private_key_passphrase.as_deref(),
+                    )
+                    .map_err(|e| anyhow::anyhow!("Failed to decode private key: {}", e))?
+                } else {
+                    russh_keys::load_secret_key(
+                        private_key_data,
+                        config.private_key_passphrase.as_deref(),
+                    )
+                    .map_err(|e| anyhow::anyhow!("Failed to load private key: {}", e))?
+                };
+                let key_with_hash = russh_keys::key::PrivateKeyWithHashAlg::new(
+                    Arc::new(private_key),
+                    None,
+                ).map_err(|e| anyhow::anyhow!("Failed to create key hash alg: {}", e))?;
+                session
+                    .authenticate_publickey(&config.username, key_with_hash)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("SSH pubkey auth failed: {}", e))?
+            } else {
+                return Err(anyhow::anyhow!("No SSH authentication method provided"));
+            };
+
+            if !authenticated {
+                return Err(anyhow::anyhow!("SSH authentication failed"));
+            }
+
+            Ok(Self {
+                session: tokio::sync::Mutex::new(session),
+                shared,
+            })
+        }
+
+        pub(super) async fn create_tunnel_tcp(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> io::Result<TcpStream> {
+            let session = self.session.lock().await;
+            let channel = session
+                .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+                .await
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::ConnectionRefused,
+                        format!("Failed to create SSH tunnel: {}", e),
+                    )
+                })?;
+            drop(session);
+
+            // Register data receiver for this channel
+            let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+            {
+                let mut map = self.shared.rx_map.lock().await;
+                map.insert(channel.id(), tx);
+            }
+
+            // Bridge via local loopback
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+
+            tokio::spawn(async move {
+                let (sock, _) = match listener.accept().await {
+                    Ok(x) => x,
+                    Err(_) => return,
+                };
+                let (mut rd, mut wr) = split(sock);
+                let ch_writer = channel;
+                // local → SSH channel
+                let a = async {
+                    let _ = ch_writer.data(&mut rd).await;
+                    let _ = ch_writer.eof().await;
+                };
+                // SSH channel → local
+                let b = async {
+                    while let Some(buf) = rx.recv().await {
+                        if wr.write_all(&buf).await.is_err() {
+                            break;
+                        }
+                    }
+                    let _ = wr.shutdown().await;
+                };
+                let _ = tokio::join!(a, b);
+            });
+
+            TcpStream::connect(addr).await
+        }
+    }
+
+    impl SshConnector {
+        pub(super) async fn get_or_create_connection(
+            &self,
+        ) -> anyhow::Result<Arc<SshConnection>> {
+            let pool_size = self.config.connection_pool_size.unwrap_or(4).max(1);
+            let mut pool = self.pool.lock().await;
+            if pool.connections.len() < pool_size {
+                let conn = Arc::new(SshConnection::new(&self.config).await?);
+                pool.connections.push(conn.clone());
+                return Ok(conn);
+            }
+            let idx = pool.rr % pool.connections.len();
+            pool.rr = pool.rr.wrapping_add(1);
+            Ok(pool.connections[idx].clone())
+        }
+    }
+}
+
+// ── OutboundConnector impl ───────────────────────────────────────────
 
 #[async_trait]
 impl OutboundConnector for SshConnector {
@@ -173,7 +387,6 @@ impl OutboundConnector for SshConnector {
 
         #[cfg(feature = "adapter-ssh")]
         {
-            // Validate configuration
             if self.config.server.is_empty() {
                 return Err(AdapterError::InvalidConfig(
                     "SSH server address is required",
@@ -213,30 +426,23 @@ impl OutboundConnector for SshConnector {
         {
             let _span = crate::outbound::span_dial("ssh", &target);
 
-            // Start metrics timing
             #[cfg(feature = "metrics")]
             let start_time = sb_metrics::start_adapter_timer();
 
-            // Only support TCP connections
             if target.kind != TransportKind::Tcp {
                 return Err(AdapterError::Protocol(
                     "SSH only supports TCP connections".to_string(),
                 ));
             }
 
-            // Convert target to HostPort
-            let host_port = sb_core::outbound::crypto_types::HostPort {
-                host: target.host.clone(),
-                port: target.port,
-            };
-
-            // Dial through SSH tunnel
             let dial_result = async {
-                use sb_core::outbound::crypto_types::OutboundTcp;
+                let conn = self
+                    .get_or_create_connection()
+                    .await
+                    .map_err(|e| AdapterError::Network(format!("SSH connection failed: {}", e)))?;
 
-                let stream = self
-                    .core
-                    .connect(&host_port)
+                let stream = conn
+                    .create_tunnel_tcp(&target.host, target.port)
                     .await
                     .map_err(|e| AdapterError::Network(format!("SSH tunnel failed: {}", e)))?;
 
@@ -244,7 +450,6 @@ impl OutboundConnector for SshConnector {
             }
             .await;
 
-            // Record metrics for the dial attempt (both success and failure)
             #[cfg(feature = "metrics")]
             {
                 let result = match &dial_result {
@@ -254,13 +459,11 @@ impl OutboundConnector for SshConnector {
                 sb_metrics::record_adapter_dial("ssh", start_time, result);
             }
 
-            // Handle the result
             match dial_result {
                 Ok(stream) => {
                     tracing::debug!(
                         server = %self.config.server,
                         target = %format!("{}:{}", target.host, target.port),
-                        username = %self.config.username,
                         "SSH tunnel established"
                     );
                     Ok(Box::new(stream) as BoxedStream)
@@ -269,7 +472,6 @@ impl OutboundConnector for SshConnector {
                     tracing::debug!(
                         server = %self.config.server,
                         target = %format!("{}:{}", target.host, target.port),
-                        username = %self.config.username,
                         error = %e,
                         "SSH tunnel failed"
                     );

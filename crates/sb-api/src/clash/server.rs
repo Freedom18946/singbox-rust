@@ -9,7 +9,7 @@
 //! 本模块实现了模拟 Clash API 的 HTTP 服务器。
 //! 它允许 singbox-rust 被任何兼容 Clash 的仪表盘（例如 Yacd, Metacubexd）管理。
 
-use crate::managers::{ConnectionManager, DnsResolver, ProviderManager};
+use crate::managers::{DnsResolver, ProviderManager};
 use crate::{
     clash::{handlers, websocket},
     error::{ApiError, ApiResult},
@@ -46,8 +46,6 @@ pub struct ApiState {
     pub router: Option<Arc<RouterHandle>>,
     /// Outbound registry handle for proxy operations
     pub outbound_registry: Option<Arc<OutboundRegistryHandle>>,
-    /// Connection manager for active connection tracking
-    pub connection_manager: Option<Arc<ConnectionManager>>,
     /// DNS resolver for cache operations
     pub dns_resolver: Option<Arc<DnsResolver>>,
     /// Provider manager for proxy and rule providers
@@ -56,6 +54,8 @@ pub struct ApiState {
     pub global_config: Option<Arc<ConfigIR>>,
     /// Cache file service for persistence
     pub cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
+    /// URL test history storage for delay tracking
+    pub urltest_history: Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
 }
 
 impl ApiState {
@@ -77,11 +77,11 @@ impl ApiState {
             monitoring: None,
             router: None,
             outbound_registry: None,
-            connection_manager: None,
             dns_resolver: None,
             provider_manager: None,
             global_config: None,
             cache_file: None,
+            urltest_history: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -106,11 +106,11 @@ impl ApiState {
             monitoring: Some(monitoring),
             router: None,
             outbound_registry: None,
-            connection_manager: None,
             dns_resolver: None,
             provider_manager: None,
             global_config: None,
             cache_file: None,
+            urltest_history: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -171,6 +171,12 @@ impl ClashApiServer {
         self
     }
 
+    /// Set URL test history storage
+    pub fn with_urltest_history(mut self, h: Arc<dyn sb_core::context::URLTestHistoryStorage>) -> Self {
+        self.state.urltest_history = Some(h);
+        self
+    }
+
     /// Start the API server
     pub async fn start(&self) -> ApiResult<()> {
         let app = self.create_app();
@@ -220,7 +226,7 @@ impl ClashApiServer {
             .route("/proxies/:name", get(handlers::get_proxy).put(handlers::select_proxy))
             .route("/proxies/:name/delay", get(handlers::get_proxy_delay))
             // Connection management
-            .route("/connections", get(handlers::get_connections))
+            .route("/connections", get(handlers::get_connections_or_ws))
             .route("/connections/:id", delete(handlers::close_connection))
             .route("/connections", delete(handlers::close_all_connections))
             // Rules
@@ -274,7 +280,7 @@ impl ClashApiServer {
             // Profile/tracing endpoints
             .route("/profile/tracing", get(handlers::get_profile_tracing))
             // Upgrade endpoints
-            .route("/connectionsUpgrade", get(handlers::upgrade_connections))
+            .route("/connectionsUpgrade", get(handlers::get_connections_or_ws))
             .route("/metaUpgrade", get(handlers::get_meta_upgrade))
             .route("/meta/upgrade/ui", post(handlers::upgrade_external_ui))
             // Version and status

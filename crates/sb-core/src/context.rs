@@ -11,19 +11,8 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-/// Trait for components that support lifecycle stages.
-/// 支持生命周期阶段的组件的 trait。
-pub trait Startable: Send + Sync {
-    /// Start the component at a specific lifecycle stage.
-    /// 在特定的生命周期阶段启动组件。
-    fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-
-    /// Close the component and release resources.
-    /// 关闭组件并释放资源。
-    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-}
+// Re-export Startable from sb-types (canonical definition).
+pub use sb_types::ports::service::Startable;
 
 impl Startable for crate::inbound::InboundManager {
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -86,6 +75,7 @@ pub struct Context {
     pub endpoint_manager: Arc<crate::endpoint::EndpointManager>,
     pub service_manager: Arc<crate::service::ServiceManager>,
     pub cache_file: Option<Arc<dyn CacheFile>>,
+    pub urltest_history: Option<Arc<dyn URLTestHistoryStorage>>,
 
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
@@ -107,6 +97,7 @@ pub struct ContextRegistry {
     pub endpoint_manager: Arc<crate::endpoint::EndpointManager>,
     pub service_manager: Arc<crate::service::ServiceManager>,
     pub cache_file: Option<Arc<dyn CacheFile>>,
+    pub urltest_history: Option<Arc<dyn URLTestHistoryStorage>>,
 
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
@@ -126,6 +117,7 @@ impl From<&Context> for ContextRegistry {
             endpoint_manager: ctx.endpoint_manager.clone(),
             service_manager: ctx.service_manager.clone(),
             cache_file: ctx.cache_file.clone(),
+            urltest_history: ctx.urltest_history.clone(),
 
             v2ray_server: ctx.v2ray_server.clone(),
             ntp_service: ctx.ntp_service.clone(),
@@ -161,6 +153,7 @@ impl Context {
             endpoint_manager: Arc::new(crate::endpoint::EndpointManager::new()),
             service_manager: Arc::new(crate::service::ServiceManager::new()),
             cache_file: None,
+            urltest_history: None,
 
             v2ray_server: None,
             ntp_service: None,
@@ -179,6 +172,11 @@ impl Context {
 
     pub fn with_cache_file(mut self, cache_file: Arc<dyn CacheFile>) -> Self {
         self.cache_file = Some(cache_file);
+        self
+    }
+
+    pub fn with_urltest_history(mut self, history: Arc<dyn URLTestHistoryStorage>) -> Self {
+        self.urltest_history = Some(history);
         self
     }
 
@@ -740,9 +738,29 @@ impl Startable for PlatformInterface {
 }
 
 // Service traits
+
+/// URL test history entry — mirrors Go adapter.URLTestHistory
+#[derive(Debug, Clone)]
+pub struct URLTestHistory {
+    pub time: std::time::SystemTime,
+    pub delay: u16,
+}
+
+/// Shared URL test history storage — mirrors Go adapter.URLTestHistoryStorage.
+/// Each tag stores only the latest entry (Go parity).
+pub trait URLTestHistoryStorage: Send + Sync + std::fmt::Debug {
+    fn load(&self, tag: &str) -> Option<URLTestHistory>;
+    fn store(&self, tag: &str, history: URLTestHistory);
+    fn delete(&self, tag: &str);
+}
+
 pub trait CacheFile: Send + Sync + std::fmt::Debug {
+    fn get_clash_mode(&self) -> Option<String>;
     fn set_clash_mode(&self, mode: String);
     fn set_selected(&self, group: &str, selected: &str);
+    fn get_selected(&self, group: &str) -> Option<String>;
+    fn get_expand(&self, group: &str) -> Option<bool>;
+    fn set_expand(&self, group: &str, expand: bool);
 }
 
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {

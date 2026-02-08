@@ -41,7 +41,8 @@ pub mod ports;
 pub use errors::{CoreError, DnsError, ErrorClass, TransportError};
 pub use ports::{
     AdminPort, AsyncStream, BoxedStream, ConnSnapshot, Datagram, DnsCacheStats, DnsPort,
-    InboundAcceptor, InboundHandler, LogLevel, MetricsPort, NoOpMetrics, OutboundConnector,
+    HttpClient, HttpMethod, HttpRequest, HttpResponse, InboundAcceptor, InboundHandler, Lifecycle,
+    LogLevel, MetricsPort, NoOpMetrics, OutboundConnector, Service, StartStage, Startable,
     StatsPort, TrafficSnapshot,
 };
 pub use session::{InboundTag, OutboundTag, Session, SessionId, SessionMeta, TargetAddr, UserId};

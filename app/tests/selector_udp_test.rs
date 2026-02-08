@@ -171,7 +171,7 @@ async fn test_selector_udp_support() {
         ),
     ];
 
-    let group = SelectorGroup::new_manual(selector_tag.clone(), members, Some(member1_tag.clone()));
+    let group = SelectorGroup::new_manual(selector_tag.clone(), members, Some(member1_tag.clone()), None, None);
     let group = Arc::new(group);
     let outbound = SelectorOutbound::new(group.clone());
 
@@ -235,6 +235,8 @@ async fn test_urltest_udp_support() {
         Duration::from_secs(60),
         Duration::from_secs(5),
         50,
+        None,
+        None,
     );
     let group = Arc::new(group);
     let outbound = UrlTestOutbound::new(group.clone());

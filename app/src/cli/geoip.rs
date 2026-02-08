@@ -92,10 +92,12 @@ async fn geoip_lookup(path: &PathBuf, address: &str) -> Result<()> {
     // Try MMDB (sing-geoip) first
     if let Ok(reader) = maxminddb::Reader::open_readfile(path) {
         // sing-geoip stores string code as value
-        if let Ok(code) = reader.lookup::<String>(ip) {
-            if !code.is_empty() {
-                println!("{}", code);
-                return Ok(());
+        if let Ok(result) = reader.lookup(ip) {
+            if let Ok(Some(code)) = result.decode::<String>() {
+                if !code.is_empty() {
+                    println!("{}", code);
+                    return Ok(());
+                }
             }
         }
         // Fallback: try country record decode for generic GeoLite2
@@ -109,14 +111,16 @@ async fn geoip_lookup(path: &PathBuf, address: &str) -> Result<()> {
             #[serde(rename = "iso_code")]
             iso: Option<String>,
         }
-        if let Ok(rec) = reader.lookup::<CountryRecord>(ip) {
-            let code = rec
-                .country
-                .and_then(|c| c.iso)
-                .or_else(|| rec.registered_country.and_then(|c| c.iso));
-            if let Some(code) = code {
-                println!("{}", code);
-                return Ok(());
+        if let Ok(result) = reader.lookup(ip) {
+            if let Ok(Some(rec)) = result.decode::<CountryRecord>() {
+                let code = rec
+                    .country
+                    .and_then(|c| c.iso)
+                    .or_else(|| rec.registered_country.and_then(|c| c.iso));
+                if let Some(code) = code {
+                    println!("{}", code);
+                    return Ok(());
+                }
             }
         }
         println!("unknown");
@@ -173,12 +177,16 @@ async fn geoip_export(path: &PathBuf, country: &str, output: &str) -> Result<()>
         for net_str in ["0.0.0.0/0", "::/0"] {
             let net: ipnetwork::IpNetwork = net_str.parse().unwrap();
             let iter = reader
-                .within::<String>(net)
+                .within(net, Default::default())
                 .map_err(|e| anyhow::anyhow!("mmdb within failed: {}", e))?;
             for next in iter {
                 let item = next.map_err(|e| anyhow::anyhow!("mmdb iter error: {}", e))?;
-                if item.info.to_lowercase() == target {
-                    cidrs.push(item.ip_net.to_string());
+                if let Ok(Some(code)) = item.decode::<String>() {
+                    if code.to_lowercase() == target {
+                        if let Ok(network) = item.network() {
+                            cidrs.push(network.to_string());
+                        }
+                    }
                 }
             }
         }

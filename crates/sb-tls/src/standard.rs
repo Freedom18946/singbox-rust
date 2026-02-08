@@ -38,7 +38,7 @@ impl StandardTlsConnector {
     /// Returns an error if the TLS client configuration cannot be constructed.
     /// 如果无法构建 TLS 客户端配置，则返回错误。
     pub fn new() -> TlsResult<Self> {
-        crate::ensure_rustls_crypto_provider();
+        crate::ensure_crypto_provider();
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -56,7 +56,7 @@ impl StandardTlsConnector {
     /// 创建具有自定义根证书的连接器
     #[must_use]
     pub fn with_root_store(root_store: RootCertStore) -> Self {
-        crate::ensure_rustls_crypto_provider();
+        crate::ensure_crypto_provider();
         let config = ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();

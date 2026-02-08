@@ -522,6 +522,30 @@ impl ConnectionManager {
             "TCP connection established"
         );
 
+        // Register with global connection tracker
+        let tracker = sb_common::conntrack::global_tracker();
+        let tracker_id = tracker.next_id();
+        let conn_meta = sb_common::conntrack::ConnMetadata::new(
+            tracker_id,
+            sb_common::conntrack::Network::Tcp,
+            metadata.source.parse().unwrap_or_else(|_| {
+                std::net::SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    0,
+                )
+            }),
+            metadata.destination_host.clone(),
+            metadata.destination_port,
+        )
+        .with_host(metadata.destination_host.clone())
+        .with_inbound_tag(metadata.inbound_tag.clone().unwrap_or_default())
+        .with_outbound_tag(dialer.tag().to_string());
+
+        let conn_handle = tracker.register(conn_meta);
+        let cancel_token = conn_handle.cancel.clone();
+        let upload_counter = conn_handle.upload_bytes.clone();
+        let download_counter = conn_handle.download_bytes.clone();
+
         if metadata.tls_fragment {
             if let Err(err) = remote.set_nodelay(true) {
                 warn!(conn_id, error = %err, "failed to enable TCP_NODELAY for TLS fragment");
@@ -558,6 +582,11 @@ impl ConnectionManager {
         let traffic_upload = traffic.clone();
         let traffic_download = traffic.clone();
 
+        let upload_ctr = upload_counter.clone();
+        let download_ctr = download_counter.clone();
+        let cancel_up = cancel_token.clone();
+        let cancel_down = cancel_token.clone();
+
         let upload = tokio::spawn(async move {
             #[cfg(unix)]
             let tcp_fd = Some(remote_writer.as_ref().as_raw_fd());
@@ -565,25 +594,34 @@ impl ConnectionManager {
             let tcp_fd = Some(remote_writer.as_ref().as_raw_socket());
             #[cfg(not(any(unix, windows)))]
             let tcp_fd = None;
-            let result = if tls_fragment || tls_record_fragment {
-                copy_with_tls_fragment(
-                    &mut local_reader,
-                    &mut remote_writer,
-                    tls_fragment,
-                    tls_record_fragment,
-                    fallback_delay,
-                    tcp_fd,
-                    traffic_upload.clone(),
-                )
-                .await
-            } else {
-                copy_with_recording(
-                    &mut local_reader,
-                    &mut remote_writer,
-                    traffic_upload.clone(),
-                    true,
-                )
-                .await
+            let result = tokio::select! {
+                r = async {
+                    if tls_fragment || tls_record_fragment {
+                        copy_with_tls_fragment(
+                            &mut local_reader,
+                            &mut remote_writer,
+                            tls_fragment,
+                            tls_record_fragment,
+                            fallback_delay,
+                            tcp_fd,
+                            traffic_upload.clone(),
+                            Some(upload_ctr),
+                        )
+                        .await
+                    } else {
+                        copy_with_recording(
+                            &mut local_reader,
+                            &mut remote_writer,
+                            traffic_upload.clone(),
+                            true,
+                            Some(upload_ctr),
+                        )
+                        .await
+                    }
+                } => r,
+                _ = cancel_up.cancelled() => {
+                    Err(io::Error::new(io::ErrorKind::Interrupted, "connection closed by API"))
+                }
             };
             let _ = remote_writer.shutdown().await;
             handle_upload.mark_closed();
@@ -591,13 +629,18 @@ impl ConnectionManager {
         });
 
         let download = tokio::spawn(async move {
-            let result = copy_with_recording(
-                &mut remote_reader,
-                &mut local_writer,
-                traffic_download,
-                false,
-            )
-            .await;
+            let result = tokio::select! {
+                r = copy_with_recording(
+                    &mut remote_reader,
+                    &mut local_writer,
+                    traffic_download,
+                    false,
+                    Some(download_ctr),
+                ) => r,
+                _ = cancel_down.cancelled() => {
+                    Err(io::Error::new(io::ErrorKind::Interrupted, "connection closed by API"))
+                }
+            };
             let _ = local_writer.shutdown().await;
             handle_download.mark_closed();
             result
@@ -631,6 +674,9 @@ impl ConnectionManager {
         if let Some(on_close) = on_close {
             on_close(error);
         }
+
+        // Unregister from global connection tracker
+        tracker.unregister(tracker_id);
 
         self.remove_connection(conn_id);
     }
@@ -720,6 +766,30 @@ impl ConnectionManager {
             )
         });
 
+        // Register with global connection tracker
+        let tracker = sb_common::conntrack::global_tracker();
+        let tracker_id = tracker.next_id();
+        let conn_meta = sb_common::conntrack::ConnMetadata::new(
+            tracker_id,
+            sb_common::conntrack::Network::Udp,
+            metadata.source.parse().unwrap_or_else(|_| {
+                std::net::SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    0,
+                )
+            }),
+            metadata.destination_host.clone(),
+            metadata.destination_port,
+        )
+        .with_host(metadata.destination_host.clone())
+        .with_inbound_tag(metadata.inbound_tag.clone().unwrap_or_default())
+        .with_outbound_tag(dialer.tag().to_string());
+
+        let conn_handle_track = tracker.register(conn_meta);
+        let cancel_token = conn_handle_track.cancel.clone();
+        let upload_counter = conn_handle_track.upload_bytes.clone();
+        let download_counter = conn_handle_track.download_bytes.clone();
+
         // Bidirectional UDP copy with timeout
         let local_for_upload = local_socket.clone();
         let remote_for_upload = remote_socket.clone();
@@ -727,12 +797,19 @@ impl ConnectionManager {
         let dest_host = metadata.destination_host.clone();
         let dest_port = metadata.destination_port;
         let traffic_upload = traffic.clone();
+        let upload_ctr = upload_counter;
+        let cancel_up = cancel_token.clone();
 
         let upload = tokio::spawn(async move {
             let mut buf = [0u8; 65535];
             loop {
-                let recv_result =
-                    tokio::time::timeout(udp_timeout, local_for_upload.recv(&mut buf)).await;
+                let recv_result = tokio::select! {
+                    r = tokio::time::timeout(udp_timeout, local_for_upload.recv(&mut buf)) => r,
+                    _ = cancel_up.cancelled() => {
+                        trace!("UDP upload cancelled by API");
+                        break;
+                    }
+                };
 
                 match recv_result {
                     Ok(Ok(n)) if n > 0 => {
@@ -740,6 +817,7 @@ impl ConnectionManager {
                             recorder.record_up(n as u64);
                             recorder.record_up_packet(1);
                         }
+                        upload_ctr.fetch_add(n as u64, Ordering::Relaxed);
                         let addr = format!("{}:{}", dest_host, dest_port);
                         if let Err(e) = remote_for_upload.send_to(&buf[..n], &addr).await {
                             trace!("UDP upload send error: {}", e);
@@ -764,18 +842,22 @@ impl ConnectionManager {
         let remote_for_download = remote_socket;
         let handle_download = handle.clone();
         let traffic_download = traffic;
+        let download_ctr = download_counter;
+        let cancel_down = cancel_token;
 
         let download = tokio::spawn(async move {
             let mut buf = [0u8; 65535];
             loop {
-                let recv_result =
-                    tokio::time::timeout(udp_timeout, remote_for_download.recv_from(&mut buf))
-                        .await;
+                let recv_result = tokio::select! {
+                    r = tokio::time::timeout(udp_timeout, remote_for_download.recv_from(&mut buf)) => r,
+                    _ = cancel_down.cancelled() => {
+                        trace!("UDP download cancelled by API");
+                        break;
+                    }
+                };
 
                 match recv_result {
                     Ok(Ok((n, _addr))) if n > 0 => {
-                        // In a full implementation, we would apply NAT remapping here
-                        // based on udp_disable_domain_unmapping and route_original_destination
                         if let Err(e) = local_for_download.send(&buf[..n]).await {
                             trace!("UDP download send error: {}", e);
                             break;
@@ -784,6 +866,7 @@ impl ConnectionManager {
                             recorder.record_down(n as u64);
                             recorder.record_down_packet(1);
                         }
+                        download_ctr.fetch_add(n as u64, Ordering::Relaxed);
                     }
                     Ok(Ok(_)) => break,
                     Ok(Err(e)) => {
@@ -816,6 +899,9 @@ impl ConnectionManager {
         if let Some(on_close) = on_close {
             on_close(error);
         }
+
+        // Unregister from global connection tracker
+        tracker.unregister(tracker_id);
 
         self.remove_connection(conn_id);
     }
@@ -1038,6 +1124,7 @@ async fn copy_with_tls_fragment<R, W>(
     fallback_delay: Duration,
     tcp_fd: Option<TcpFd>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
+    conn_counter: Option<Arc<AtomicU64>>,
 ) -> io::Result<u64>
 where
     R: AsyncRead + Unpin,
@@ -1071,6 +1158,9 @@ where
                     if let Some(ref recorder) = traffic {
                         recorder.record_up(n as u64);
                     }
+                    if let Some(ref counter) = conn_counter {
+                        counter.fetch_add(n as u64, Ordering::Relaxed);
+                    }
                     total += n as u64;
                     continue;
                 }
@@ -1081,6 +1171,9 @@ where
         if let Some(ref recorder) = traffic {
             recorder.record_up(n as u64);
         }
+        if let Some(ref counter) = conn_counter {
+            counter.fetch_add(n as u64, Ordering::Relaxed);
+        }
         total += n as u64;
     }
 }
@@ -1090,6 +1183,7 @@ async fn copy_with_recording<R, W>(
     writer: &mut W,
     traffic: Option<Arc<dyn TrafficRecorder>>,
     is_up: bool,
+    conn_counter: Option<Arc<AtomicU64>>,
 ) -> io::Result<u64>
 where
     R: AsyncRead + Unpin,
@@ -1110,6 +1204,9 @@ where
             } else {
                 recorder.record_down(n as u64);
             }
+        }
+        if let Some(ref counter) = conn_counter {
+            counter.fetch_add(n as u64, Ordering::Relaxed);
         }
     }
 }

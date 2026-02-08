@@ -6,43 +6,55 @@ use serde::Serialize;
 
 #[derive(Serialize, Debug)]
 pub struct VersionInfo {
-    pub name: String,
     pub version: String,
-    pub commit: String,
-    pub date: String,
-    pub features: Vec<String>,
+    pub environment: String,
+    pub tags: Vec<String>,
+    /// Revision (git commit hash).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub revision: String,
 }
 
 pub fn run(args: VersionArgs) -> Result<()> {
     let build = buildinfo::current();
 
     // Collect enabled features from build environment
-    let features = collect_features();
+    let tags = collect_features();
+
+    let environment = format!(
+        "rust {}, {}/{}",
+        rustc_version(),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
 
     let version_info = VersionInfo {
-        name: build.name.to_string(),
         version: build.version.to_string(),
-        commit: build.git_sha.to_string(),
-        date: build.build_ts.to_string(),
-        features,
+        environment,
+        tags,
+        revision: build.git_sha.to_string(),
     };
 
     output::emit(
         args.format,
         || {
-            format!(
-                "{} {} ({})\nBuilt: {}\nFeatures: {}",
-                version_info.name,
-                version_info.version,
-                version_info.commit,
-                version_info.date,
-                version_info.features.join(", ")
-            )
+            let mut out = format!("sing-box version {}", version_info.version);
+            if !version_info.revision.is_empty() {
+                out.push_str(&format!(" ({})", version_info.revision));
+            }
+            out.push_str(&format!("\n\nEnvironment: {}", version_info.environment));
+            if !version_info.tags.is_empty() {
+                out.push_str(&format!("\nTags: {}", version_info.tags.join(",")));
+            }
+            out
         },
         &version_info,
     );
 
     Ok(())
+}
+
+fn rustc_version() -> &'static str {
+    option_env!("RUSTC_VERSION").unwrap_or(env!("CARGO_PKG_RUST_VERSION"))
 }
 
 /// Collect enabled features from cargo feature flags

@@ -159,6 +159,8 @@ async fn test_urltest_health_checking() {
         Duration::from_millis(100), // Fast interval for testing
         Duration::from_secs(1),
         10,
+        None,
+        None,
     ));
 
     // Start health check in background
@@ -208,6 +210,8 @@ async fn test_urltest_failover() {
         Duration::from_millis(100),
         Duration::from_secs(1),
         10,
+        None,
+        None,
     ));
 
     let s = selector.clone();
@@ -252,6 +256,8 @@ async fn test_selector_manual_switching() {
         "manual-selector".to_string(),
         members,
         Some("proxy-a".to_string()),
+        None,
+        None,
     );
 
     // Default
@@ -284,6 +290,8 @@ async fn test_selector_permanent_failure_handling() {
         Duration::from_millis(100),
         Duration::from_secs(1),
         10,
+        None,
+        None,
     ));
 
     let s = selector.clone();
@@ -329,6 +337,8 @@ async fn test_urltest_tolerance() {
         Duration::from_millis(100),
         Duration::from_secs(1),
         50,
+        None,
+        None,
     ));
 
     let s = selector.clone();

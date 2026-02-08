@@ -6,7 +6,7 @@
 //!   - Output: minijson: { ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }.
 //!   - [Chinese] 输出：minijson：{ ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }。
 use crate::model::Profile;
-use sb_core::router::minijson::{obj, Val};
+use sb_common::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

@@ -12,7 +12,7 @@
 //! Report fields: {ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
 //! [Chinese] 报告字段：{ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
 use crate::model::Profile;
-use sb_core::router::minijson::{obj, Val};
+use sb_common::minijson::{obj, Val};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn parse_profile(text: &str, format: &str, use_keyword: bool) -> Result<Profile, String> {

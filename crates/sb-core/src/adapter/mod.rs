@@ -87,10 +87,45 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
     /// 建立到指定主机和端口的 TCP 连接。
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
 
+    /// Establish a generic IO stream connection (supports encrypted protocols).
+    /// 建立通用 IO 流连接（支持加密协议）。
+    ///
+    /// Default implementation delegates to `connect()` and boxes the TcpStream.
+    /// Encrypted protocol adapters should override this to return their layered stream.
+    #[cfg(feature = "v2ray_transport")]
+    async fn connect_io(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> std::io::Result<sb_transport::IoStream> {
+        let stream = self.connect(host, port).await?;
+        Ok(Box::new(stream))
+    }
+
     /// Allow downcasting to concrete type
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         None
     }
+
+    /// If this connector is an outbound group, return the group trait object
+    fn as_group(&self) -> Option<&dyn OutboundGroup> {
+        None
+    }
+}
+
+/// Trait for outbound groups (Selector, URLTest, Fallback, etc.)
+/// Go adapter.OutboundGroup interface equivalent.
+pub trait OutboundGroup: Send + Sync {
+    /// Currently selected outbound tag
+    fn now(&self) -> String;
+    /// All member tags
+    fn all(&self) -> Vec<String>;
+    /// Group type name ("Selector", "URLTest", "Fallback", etc.)
+    fn group_type(&self) -> &str;
+    /// All members' health status: (tag, is_alive, rtt_ms)
+    fn members_health(&self) -> Vec<(String, bool, u64)>;
+    /// Select a specific outbound (only effective in Manual mode)
+    fn select_outbound<'a>(&'a self, tag: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>>;
 }
 
 /// UDP session for datagram-based outbound protocols (e.g. QUIC-based).
@@ -622,40 +657,8 @@ impl Bridge {
                     }
                 }
                 sb_config::ir::OutboundType::Vless => {
-                    #[cfg(feature = "out_vless")]
-                    {
-                        use crate::outbound::vless::VlessConfig;
-                        use crate::outbound::vless::VlessOutbound;
-
-                        if let (Some(server), Some(port)) = (&outbound.server, outbound.port) {
-                            let config = VlessConfig {
-                                server: server.clone(),
-                                port,
-                                uuid: uuid::Uuid::new_v4(), // Would need to parse from IR
-                                flow: None,
-                                encryption: Some("none".to_string()),
-                                ..Default::default()
-                            };
-
-                            match VlessOutbound::new(config) {
-                                Ok(vless_outbound) => {
-                                    Arc::new(vless_outbound) as Arc<dyn OutboundConnector>
-                                }
-                                Err(_) => {
-                                    use crate::outbound::direct_connector::DirectConnector;
-                                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
-                                }
-                            }
-                        } else {
-                            use crate::outbound::direct_connector::DirectConnector;
-                            Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
-                        }
-                    }
-                    #[cfg(not(feature = "out_vless"))]
-                    {
-                        use crate::outbound::direct_connector::DirectConnector;
-                        Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
-                    }
+                    // VLESS handled by sb-adapters; core bridge falls back to direct
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Selector => {
                     // Selector outbound would be implemented here
@@ -673,68 +676,8 @@ impl Bridge {
                     direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Tuic => {
-                    #[cfg(feature = "out_tuic")]
-                    {
-                        use crate::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
-                        let fallback = || {
-                            use crate::outbound::direct_connector::DirectConnector;
-                            Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
-                        };
-                        match (
-                            outbound.server.as_ref(),
-                            outbound.port,
-                            outbound.uuid.as_ref(),
-                            outbound.token.as_ref(),
-                        ) {
-                            (Some(server), Some(port), Some(uuid_str), Some(token)) => {
-                                match uuid::Uuid::parse_str(uuid_str) {
-                                    Ok(uuid) => {
-                                        let relay_mode = match outbound.udp_relay_mode.as_deref() {
-                                            Some(mode) if mode.eq_ignore_ascii_case("quic") => {
-                                                UdpRelayMode::Quic
-                                            }
-                                            _ => UdpRelayMode::Native,
-                                        };
-                                        let cfg = TuicConfig {
-                                            server: server.clone(),
-                                            port,
-                                            uuid,
-                                            token: token.clone(),
-                                            password: outbound.password.clone(),
-                                            congestion_control: outbound.congestion_control.clone(),
-                                            alpn: outbound.tls_alpn.clone(),
-                                            skip_cert_verify: outbound
-                                                .skip_cert_verify
-                                                .unwrap_or(false),
-                                            sni: outbound.tls_sni.clone(),
-                                            tls_ca_paths: outbound.tls_ca_paths.clone(),
-                                            tls_ca_pem: outbound.tls_ca_pem.clone(),
-                                            udp_relay_mode: relay_mode,
-                                            udp_over_stream: outbound
-                                                .udp_over_stream
-                                                .unwrap_or(false),
-                                            zero_rtt_handshake: outbound
-                                                .zero_rtt_handshake
-                                                .unwrap_or(false),
-                                        };
-                                        match TuicOutbound::new(cfg) {
-                                            Ok(connector) => {
-                                                Arc::new(connector) as Arc<dyn OutboundConnector>
-                                            }
-                                            Err(_) => fallback(),
-                                        }
-                                    }
-                                    Err(_) => fallback(),
-                                }
-                            }
-                            _ => fallback(),
-                        }
-                    }
-                    #[cfg(not(feature = "out_tuic"))]
-                    {
-                        use crate::outbound::direct_connector::DirectConnector;
-                        Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
-                    }
+                    // TUIC handled by sb-adapters; core bridge falls back to direct
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Vmess => {
                     // VMess connector not wired in adapter bridge yet; fall back to direct

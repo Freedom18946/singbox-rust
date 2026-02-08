@@ -1,11 +1,9 @@
 //! ShadowTLS outbound connector adapter
 //!
-//! This adapter wraps the sb-core ShadowTLS outbound implementation and exposes
-//! a unified `OutboundConnector` interface for the adapters crate.
+//! Fully self-contained ShadowTLS implementation using sb-tls for TLS configuration.
+//! No dependency on sb-core's protocol stack.
 
 use crate::outbound::prelude::*;
-#[cfg(feature = "adapter-shadowtls")]
-use sb_core::outbound::types::OutboundTcp;
 
 /// Configuration for ShadowTLS outbound adapter
 #[derive(Debug, Clone)]
@@ -41,11 +39,72 @@ impl Default for ShadowTlsAdapterConfig {
 #[derive(Debug, Clone)]
 pub struct ShadowTlsConnector {
     cfg: ShadowTlsAdapterConfig,
+    #[cfg(feature = "adapter-shadowtls")]
+    tls_config: std::sync::Arc<rustls::ClientConfig>,
 }
 
 impl ShadowTlsConnector {
     pub fn new(cfg: ShadowTlsAdapterConfig) -> Self {
+        #[cfg(feature = "adapter-shadowtls")]
+        {
+            let tls_config = Self::build_tls_config(&cfg);
+            Self { cfg, tls_config }
+        }
+        #[cfg(not(feature = "adapter-shadowtls"))]
         Self { cfg }
+    }
+
+    #[cfg(feature = "adapter-shadowtls")]
+    fn build_tls_config(cfg: &ShadowTlsAdapterConfig) -> std::sync::Arc<rustls::ClientConfig> {
+        use std::sync::Arc;
+
+        sb_tls::ensure_crypto_provider();
+
+        let insecure_env = std::env::var("SB_STL_ALLOW_INSECURE")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let insecure = cfg.skip_cert_verify || insecure_env;
+
+        let alpn_list: Option<Vec<String>> = cfg.alpn.as_ref().map(|s| {
+            s.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
+        });
+
+        #[cfg(feature = "tls_reality")]
+        if let Some(fp_name) = cfg.utls_fingerprint.as_deref() {
+            if let Ok(fp) = fp_name.parse::<sb_tls::UtlsFingerprint>() {
+                let mut utls_cfg = sb_tls::UtlsConfig::new(cfg.sni.clone())
+                    .with_fingerprint(fp)
+                    .with_insecure(insecure);
+                if let Some(alpn) = alpn_list.clone() {
+                    utls_cfg = utls_cfg.with_alpn(alpn);
+                }
+                let roots = sb_tls::global::base_root_store();
+                return utls_cfg.build_client_config_with_roots(roots);
+            }
+        }
+
+        let roots = sb_tls::global::base_root_store();
+        let mut tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        if insecure {
+            tracing::warn!("ShadowTLS: insecure mode enabled, certificate verification disabled");
+            let v = sb_tls::danger::NoVerify::new();
+            tls_config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(v));
+        }
+
+        if let Some(alpn) = &alpn_list {
+            tls_config.alpn_protocols = alpn.iter().map(|p| p.as_bytes().to_vec()).collect();
+        }
+
+        Arc::new(tls_config)
     }
 }
 
@@ -73,6 +132,9 @@ impl OutboundConnector for ShadowTlsConnector {
 
         #[cfg(feature = "adapter-shadowtls")]
         {
+            use tokio::io::AsyncWriteExt;
+            use tokio::net::TcpStream;
+
             if target.kind != TransportKind::Tcp {
                 return Err(AdapterError::Protocol(
                     "ShadowTLS outbound only supports TCP".to_string(),
@@ -81,26 +143,52 @@ impl OutboundConnector for ShadowTlsConnector {
 
             let _span = crate::outbound::span_dial("shadowtls", &target);
 
-            // Bridge to sb-core implementation
-            let core_cfg = sb_core::outbound::shadowtls::ShadowTlsConfig {
-                server: self.cfg.server.clone(),
-                port: self.cfg.port,
-                sni: self.cfg.sni.clone(),
-                alpn: self.cfg.alpn.as_ref().map(|s| {
-                    s.split(',')
-                        .map(|x| x.trim().to_string())
-                        .filter(|x| !x.is_empty())
-                        .collect()
-                }),
-                skip_cert_verify: self.cfg.skip_cert_verify,
-                utls_fingerprint: self.cfg.utls_fingerprint.clone(),
-            };
+            #[cfg(feature = "metrics")]
+            let start_time = sb_metrics::start_adapter_timer();
 
-            let core = sb_core::outbound::shadowtls::ShadowTlsOutbound::new(core_cfg)
-                .map_err(|e| AdapterError::Other(e.to_string()))?;
+            // Connect to the ShadowTLS server (decoy)
+            let tcp_stream =
+                TcpStream::connect((self.cfg.server.as_str(), self.cfg.port))
+                    .await
+                    .map_err(|e| AdapterError::Network(format!("ShadowTLS TCP connect failed: {}", e)))?;
 
-            let hp = sb_core::outbound::types::HostPort::new(target.host.clone(), target.port);
-            let tls_stream = core.connect(&hp).await.map_err(AdapterError::Io)?;
+            // Establish TLS connection with specified SNI
+            let server_name =
+                rustls::pki_types::ServerName::try_from(self.cfg.sni.clone()).map_err(|e| {
+                    AdapterError::Protocol(format!("Invalid SNI: {}", e))
+                })?;
+
+            let connector = tokio_rustls::TlsConnector::from(self.tls_config.clone());
+            let mut tls_stream = connector
+                .connect(server_name, tcp_stream)
+                .await
+                .map_err(|e| AdapterError::Network(format!("ShadowTLS TLS handshake failed: {}", e)))?;
+
+            // Tunneling header: CONNECT to target through the TLS channel
+            let connect_line = format!(
+                "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+                target.host, target.port, target.host, target.port
+            );
+            tls_stream
+                .write_all(connect_line.as_bytes())
+                .await
+                .map_err(|e| AdapterError::Network(format!("tunnel header write failed: {}", e)))?;
+            tls_stream
+                .flush()
+                .await
+                .map_err(|e| AdapterError::Network(format!("tunnel header flush failed: {}", e)))?;
+
+            #[cfg(feature = "metrics")]
+            {
+                sb_metrics::record_adapter_dial("shadowtls", start_time, Ok::<(), &dyn core::fmt::Display>(()));
+            }
+
+            tracing::debug!(
+                server = %self.cfg.server,
+                sni = %self.cfg.sni,
+                target = %format!("{}:{}", target.host, target.port),
+                "ShadowTLS tunnel established"
+            );
 
             Ok(Box::new(tls_stream) as BoxedStream)
         }

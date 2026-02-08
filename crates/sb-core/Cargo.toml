@@ -23,7 +23,7 @@ hex = "0.4"
 hmac = "0.12"
 http = "1.3"
 httparse = "1.8"
-hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"] }
+hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"], optional = true }
 lazy_static = "1.5"
 libc = "0.2"
 log = "0.4"
@@ -33,8 +33,9 @@ publicsuffix = "2.2"
 rand = "0.8"
 regex = "1.10"
 ring = "0.17"
-rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
-rustls-pemfile = "2.0"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"], optional = true }
+rustls-pemfile = { version = "2.0", optional = true }
+sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform", features = ["tun"] }
@@ -48,18 +49,17 @@ sha1 = "0.10"
 sha2 = "0.10"
 smallvec = "1.15"  # 新增：用于小向量（如 DNS addrs）
 smoltcp = { version = "0.11", default-features = false, features = ["std", "log", "medium-ip", "medium-ethernet", "proto-ipv4", "proto-ipv6", "proto-dhcpv4", "socket-tcp", "socket-udp"] }
-snow = "0.9"
+snow = { version = "0.9", optional = true }
 socket2 = "0.6"  # 新增：用于 socket 配置
 thiserror = "1.0"
 tokio = { version = "1.47", features = ["full"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"], optional = true }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-tungstenite = { version = "0.24", optional = true }
-tower = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
-webpki-roots = "0.26"  # 新增：用于 TLS root certs
+webpki-roots = { version = "0.26", optional = true }
 fail = { version = "0.5", optional = true }
 notify = { version = "6.0", optional = true }
 prometheus = { workspace = true }
@@ -71,10 +71,10 @@ md5 = "0.7"
 hkdf = "0.12"
 digest = "0.10"
 # QUIC + HTTP client for DNS over HTTPS
-quinn = "0.11"
+quinn = { version = "0.11", optional = true }
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
 # Additional dependencies for router functionality
 ipnet = "2.7"
 blake3 = "1.3"
@@ -83,12 +83,11 @@ lru = "0.16"    # For rule matching cache (RUSTSEC-2026-0002 fix)
 glob = "0.3"
 maxminddb = "0.27" # RUSTSEC-2025-0132 fix
 aho-corasick = "1.1"
-rustls-pki-types = "1.0"
+rustls-pki-types = { version = "1.0", optional = true }
 x509-parser = { version = "0.15", optional = true }
 humantime = "2.1"
 idna = { version = "1.0", optional = true }
-thrussh = { version = "0.35", optional = true }
-thrussh-keys = { version = "=0.22.1", optional = true }
+# thrussh/thrussh-keys removed — SSH now handled by sb-adapters via russh
 loom = { version = "0.7", optional = true }
 axum = { version = "0.7", optional = true }
 axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
@@ -109,6 +108,8 @@ tokio = { version = "1.47", features = ["full", "test-util"] }
 rcgen = "0.13"
 criterion = "0.5"
 prost = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"] }
 
 [build-dependencies]
 tonic-build = { version = "0.11", optional = true, default-features = false, features = ["transport", "prost"] }
@@ -143,15 +144,15 @@ cache_stats_wire   = []
 chaos              = []
 dev-cli            = []
 dns_cache          = []
-dns_doh            = ["dns_udp"]
-dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn"]
+dns_doh            = ["dns_udp", "dep:reqwest"]
+dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn", "dep:quinn"]
 dns_dot            = ["dns_udp", "tls_rustls"]
-dns_doq            = ["dns_udp", "tls_rustls"]
+dns_doq            = ["dns_udp", "tls_rustls", "dep:quinn"]
 dns_dhcp           = ["dep:notify"]
 dns_http           = []
 dns_udp            = []
 dns_resolved       = ["dep:notify"]
-dns_tailscale      = []
+dns_tailscale      = ["dep:snow"]
 dsl_analyze        = []
 dsl_derive         = []
 dsl_plus           = []
@@ -175,17 +176,17 @@ minijson           = []
 obs                = []
 out_hysteria       = ["out_quic", "tls_rustls"]
 out_hysteria2      = ["out_quic", "tls_rustls"]
-out_naive          = []
-out_quic           = []
-out_shadowtls      = ["tls_rustls"]
-out_ssh            = ["dep:thrussh", "dep:thrussh-keys"]
-out_ss             = ["legacy_protocols"]
-out_trojan         = ["legacy_protocols"]
-out_tuic           = ["out_quic", "tls_rustls"]
-out_vless          = ["legacy_protocols"]
-out_vmess          = ["legacy_protocols"]
-out_wireguard      = []
-out_tailscale      = []
+out_naive          = ["dep:hyper"]
+out_quic           = ["dep:quinn"]
+out_shadowtls      = []  # Legacy: protocol code removed, handled by sb-adapters
+out_ssh            = []  # Legacy: protocol code removed, handled by sb-adapters
+out_ss             = []  # Legacy: protocol code removed, handled by sb-adapters
+out_trojan         = []  # Legacy: protocol code removed, handled by sb-adapters
+out_tuic           = []  # Legacy: protocol code removed, handled by sb-adapters
+out_vless          = []  # Legacy: protocol code removed, handled by sb-adapters
+out_vmess          = []  # Legacy: protocol code removed, handled by sb-adapters
+out_wireguard      = []  # Legacy: protocol code removed, handled by sb-adapters
+out_tailscale      = ["dep:snow"]
 
 # Legacy protocol implementations (deprecated, use sb-adapters instead)
 # This feature enables the deprecated sb-core protocol implementations
@@ -214,7 +215,7 @@ socks              = []
 subs_clash         = []
 subs_http          = []
 subs_singbox       = []
-tls_rustls         = ["dep:x509-parser"]  # rustls-based TLS, with x509-parser for pinning
+tls_rustls         = ["dep:x509-parser", "dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile", "dep:webpki-roots", "dep:rustls-pki-types"]  # rustls-based TLS
 geoip_hot          = []
 geoip_mmdb         = []
 idna               = ["dep:idna"]
@@ -238,7 +239,7 @@ service_ntp        = []
 service_ssmapi     = ["dep:axum", "dep:axum-server"]
 service_clash_api  = ["dep:axum"]
 service_v2ray_api  = ["dep:axum", "dep:tonic", "dep:tonic-build"]
-service_derp       = ["dep:tokio-tungstenite"]
+service_derp       = ["dep:tokio-tungstenite", "dep:hyper", "dep:reqwest", "tls_rustls"]
 service_resolved   = []
 # Network monitor for tracking network changes (Linux netlink)
 network_monitor    = []
