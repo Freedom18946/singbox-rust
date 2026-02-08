@@ -862,7 +862,7 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 
 | 包 | 内容 | 来源 |
 |----|------|------|
-| L3.1 | SSMAPI (PX-011) | L2 Tier 3 |
+| L3.1 | SSMAPI (PX-011) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.2 | DERP (PX-014) | L2 Tier 3 |
 | L3.3 | Resolved (PX-015) | L2 Tier 3 |
 | L3.4 | Cache File 深度对齐 (PX-009/013) | PX-009 残余 |
@@ -872,3 +872,38 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 
 - **PX-007 Adapter 接口抽象**: Rust IR-based 架构是合理差异
 - **6 项 TLS/WireGuard**: rustls/平台库限制 (Accepted Limitation)
+
+---
+
+## ✅ L3.1 SSMAPI 对齐（PX-011）
+
+**日期**: 2026-02-09
+**目标**: 将 SSMAPI 从“可启动但不绑定/不生效”的状态，补齐到 Go `service/ssmapi` 的关键语义（per-endpoint 绑定、API 行为、cache 格式与保存节奏、tracker 统计可用）。
+
+### 核心交付
+
+- per-endpoint 绑定闭环：按 `servers(endpoint -> inbound_tag)` 为每个 endpoint 构建独立 EndpointCtx，并在启动阶段校验 inbound tag 与类型（要求 shadowsocks managed inbound）
+- ManagedSSMServer 接线：Shadowsocks inbound 构建时注册到全局 registry（tag -> Weak）；SSMAPI 构造时获取并绑定 `set_tracker()` + `UserManager::with_server(...)`
+- API 行为对齐：`{endpoint}/server/v1/...` 路由，`GET /server/v1` 返回 `server: "sing-box <version>"` + `apiVersion: "v1"`；`GET /users` 包含密码字段，`GET /stats?clear=true` 不包含密码字段；错误体为 `text/plain` 且关键状态码对齐
+- cache 对齐：读兼容 Go(snake_case) + legacy Rust(camelCase)，写统一 Go(snake_case)，1min ticker 定时保存 + diff-write；解码失败时删除坏 cache 文件（Go-like）
+- Shadowsocks inbound：TCP 多用户鉴权通过“尝试解密 length chunk 选 key”，UDP response 加密 key 修复，TCP/UDP 明文 payload 处接线 tracker 统计（bytes/packets/sessions）
+
+### 关键文件
+
+- `crates/sb-core/src/services/ssmapi/registry.rs`
+- `crates/sb-core/src/services/ssmapi/server.rs`
+- `crates/sb-core/src/services/ssmapi/api.rs`
+- `crates/sb-adapters/src/register.rs`
+- `crates/sb-adapters/src/inbound/shadowsocks.rs`
+
+### 验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo test -p sb-core --features service_ssmapi` | ✅ |
+| `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"` | ✅ |
+| `cargo check -p sb-core --all-features` | ✅ |
+
+---
+
+*最后更新：2026-02-09（L3.1 PX-011 SSMAPI 对齐完成）*

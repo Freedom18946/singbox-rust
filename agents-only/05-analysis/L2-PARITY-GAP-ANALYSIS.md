@@ -62,7 +62,7 @@
 
 | PX ID | 服务 | 缺口 | 工作量 |
 |-------|------|------|--------|
-| PX-011 | SSMAPI | per-endpoint binding/tracker/API 偏差 | 中 |
+| PX-011 | SSMAPI | ✅ 已对齐（2026-02-09）：per-endpoint binding + tracker/API/cache 行为闭环 | 中 |
 | PX-012 | V2Ray API | router-wide ConnectionTracker + HTTP JSON | 中 |
 | PX-013 | Cache File | BoltDB buckets/cache_id/FakeIP metadata/RDRC | 大 |
 | PX-014 | DERP | config/behavior 偏差 | 中 |
@@ -106,7 +106,7 @@
 
 | 工作项 | 对应 PX | 影响 | 说明 |
 |--------|---------|------|------|
-| **SSMAPI 对齐** | PX-011 | SS 管理面 | per-endpoint binding |
+| **SSMAPI 对齐** | PX-011 | SS 管理面 | ✅ 已完成（2026-02-09）：per-endpoint binding + tracker/API/cache 闭环 |
 | **DERP 配置对齐** | PX-014 | mesh 网络 | config schema |
 | **Resolved 完整化** | PX-015 | Linux DNS 集成 | resolve1 API |
 

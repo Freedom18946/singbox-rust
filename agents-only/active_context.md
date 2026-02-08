@@ -287,11 +287,28 @@
 
 | 包 | 名称 | 来源 PX | 工作量 | 优先级 | 说明 |
 |----|------|---------|--------|--------|------|
-| L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | Shadowsocks 管理 API: per-endpoint binding/tracker/API 偏差。仅 SS 部署场景需要 |
+| L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | ✅ 已完成（2026-02-09）：per-endpoint 绑定闭环 + API 行为对齐 + cache 兼容 + Shadowsocks tracker 接线 |
 | L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | mesh 网络 config/behavior 偏差。非核心代理场景 |
 | L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | Linux-only systemd-resolved D-Bus: resolve1 methods。macOS 不需要 |
 | L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | bbolt bucket 级别持久化: cache_id, FakeIP metadata 10s 去抖, rule_set caching。当前内存/简化持久化可工作 |
 | L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
+
+### ✅ 已完成：L3.1 SSMAPI 对齐（PX-011）
+
+**日期**: 2026-02-09
+**范围**: SSMAPI per-endpoint 绑定闭环 + HTTP API 行为对齐 + cache 读兼容/写 Go 格式 + Shadowsocks inbound 动态用户/多用户鉴权/流量统计接线。
+
+**关键落点**:
+- `crates/sb-core/src/services/ssmapi/registry.rs`：ManagedSSMServer 注册表（tag -> Weak<dyn ManagedSSMServer>）
+- `crates/sb-adapters/src/register.rs`：Shadowsocks inbound build 时注册 managed server
+- `crates/sb-core/src/services/ssmapi/server.rs`：按 endpoint 构建独立 EndpointCtx，并启动 1min 定时保存 cache（diff-write）
+- `crates/sb-core/src/services/ssmapi/api.rs`：路由/状态码/错误体（text/plain）与字段行为对齐
+- `crates/sb-adapters/src/inbound/shadowsocks.rs`：update_users 生效、TCP 多用户鉴权、UDP correctness 修复、tracker 统计接线
+
+**验证**:
+- `cargo test -p sb-core --features service_ssmapi`
+- `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"`
+- `cargo check -p sb-core --all-features`
 
 ### 已关闭 / Won't Fix
 
@@ -375,4 +392,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-08（L2 Closed，L3 Scope 创建）*
+*最后更新：2026-02-09（L3.1 PX-011 SSMAPI 对齐完成）*

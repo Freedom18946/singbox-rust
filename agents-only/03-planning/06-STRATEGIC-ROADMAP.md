@@ -243,19 +243,19 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 - [x] CLI 参数对齐（binary name sing-box + Go version JSON + completion 子命令）
 - 验收：1432 tests passed, router/parity build ✅
 
-#### M2.3: Tier 2 — 运行时引擎 ⬜ 已规划
+#### M2.3: Tier 2 — 运行时引擎 ✅ 已完成
 
 > **调整**（2026-02-08）：基于 L2.1 源码审查，按 GUI 可感知度重排为 5 个均匀包。
 
-- [ ] L2.6 Selector 持久化 + Proxy 状态真实化（PX-006, PX-013: CacheFile trait 扩展 + SelectorGroup 联通 + OutboundGroup trait）
-- [ ] L2.7 URLTest 历史 + 健康检查对齐（PX-006: URLTestHistoryStorage + HTTP URL test 健康检查 + tolerance）
-- [ ] L2.8 ConnectionTracker + 连接面板（PX-005, PX-012: Router 级 connection table + 真实 close + V2Ray API）
-- [ ] L2.9 Lifecycle 编排（PX-006: start_all 接入拓扑排序 + staged startup + rollback）
-- [ ] L2.10 DNS 栈对齐（PX-004, PX-008: DNSRouter/TransportManager/EDNS0/FakeIP/RDRC）
+- [x] L2.6 Selector 持久化 + Proxy 状态真实化（PX-006, PX-013: CacheFile trait 扩展 + SelectorGroup 联通 + OutboundGroup trait）
+- [x] L2.7 URLTest 历史 + 健康检查对齐（PX-006: URLTestHistoryStorage + HTTP URL test 健康检查 + tolerance）
+- [x] L2.8 ConnectionTracker + 连接面板（PX-005, PX-012: Router 级 connection table + 真实 close + V2Ray API）
+- [x] L2.9 Lifecycle 编排（PX-006: start_all 接入拓扑排序 + staged startup + rollback）
+- [x] L2.10 DNS 栈对齐（PX-004, PX-008: DNSRouter/TransportManager/EDNS0/FakeIP/RDRC）
 - 验收：Parity ≥ 96%
 
-#### M2.4: Tier 3 — 服务补全 ⬜ 未开始
-- [ ] SSMAPI 对齐（PX-011: per-endpoint binding）
+#### M2.4: Tier 3 — 服务补全 ◐ 部分完成
+- [x] SSMAPI 对齐（PX-011: per-endpoint binding）
 - [ ] DERP 配置对齐（PX-014: config/behavior 偏差）
 - [ ] Resolved 完整化（PX-015: resolve1 D-Bus methods）
 - 验收：Parity ≥ 98%

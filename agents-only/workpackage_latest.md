@@ -1,11 +1,34 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-08
-> **当前阶段**：L2 功能对齐（Tier 1 ✅，L2.1 审计 ✅ 完成，Tier 2 已规划）
+> **最后更新**：2026-02-09
+> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅）
 
 ---
 
-## ✅ 最新完成：WP-L2.1 Clash API 对接审计
+## ✅ 最新完成：L3.1 SSMAPI 对齐（PX-011）
+
+**状态**：✅ 完成
+**交付**：
+- per-endpoint 绑定闭环：`servers(endpoint -> inbound_tag)` 为每个 endpoint 创建独立 `TrafficManager/UserManager/ManagedSSMServer`，启动时验证 inbound tag 与类型
+- API 行为对齐：`{endpoint}/server/v1/...` 路由，纯文本错误体（text/plain），关键字段与状态码对齐 Go
+- cache：读兼容 Go(snake_case) + 旧 Rust(camelCase)，写统一 Go(snake_case)，1min 定时保存 + diff-write
+- Shadowsocks inbound：`set_tracker()`/`update_users()` 真正影响鉴权与统计（TCP 多用户鉴权 + UDP correctness + tracker 统计接线）
+
+**关键落点**：
+- `crates/sb-core/src/services/ssmapi/registry.rs`
+- `crates/sb-core/src/services/ssmapi/server.rs`
+- `crates/sb-core/src/services/ssmapi/api.rs`
+- `crates/sb-adapters/src/register.rs`
+- `crates/sb-adapters/src/inbound/shadowsocks.rs`
+
+**验证**：
+- `cargo test -p sb-core --features service_ssmapi`
+- `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"`
+- `cargo check -p sb-core --all-features`
+
+---
+
+## ✅ 已完成：WP-L2.1 Clash API 对接审计
 
 **状态**：✅ 全部完成
 **Commit**：`9bd745a`

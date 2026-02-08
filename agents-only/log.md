@@ -23,6 +23,27 @@
 
 ## 日志记录
 
+### [2026-02-09 01:27] Agent: Codex (GPT-5)
+
+**任务**: 实现 L3.1.x SSMAPI 对齐（PX-011）并同步更新 agents-only 文档到最新状态
+**变更**:
+- 新增 `crates/sb-core/src/services/ssmapi/registry.rs`（ManagedSSMServer 注册表：tag -> Weak）
+- 修改 `crates/sb-adapters/src/register.rs`（Shadowsocks inbound build 时注册 managed server）
+- 修改 `crates/sb-core/src/services/ssmapi/server.rs`（per-endpoint EndpointCtx，启动时绑定 set_tracker + user_manager，cache 读双格式/写 Go snake_case，1min ticker + diff-write）
+- 修改 `crates/sb-core/src/services/ssmapi/api.rs`（Go parity：路径/字段/状态码，错误体 text/plain，list_users 包含密码，stats 不包含密码）
+- 修改 `crates/sb-adapters/src/inbound/shadowsocks.rs`（update_users 生效，TCP 多用户鉴权，UDP 响应加密 key 修复，tracker 统计接线）
+- 修改 `crates/sb-adapters/src/service_stubs.rs`（service_ssmapi feature 下接线真实 builder）
+- 修改 `crates/sb-core/src/metrics/outbound.rs`（sb-core --all-features 编译修复）
+- 更新 `agents-only/active_context.md` 等文档（记录 L3.1 完成现状）
+
+**结果**: 成功
+**验证**:
+- `cargo test -p sb-core --features service_ssmapi`
+- `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"`
+- `cargo check -p sb-core --all-features`
+
+---
+
 ### [2026-02-07 23:30] Agent: Claude Opus 4.6
 
 **工作包**: WP-L1.3 深度解耦

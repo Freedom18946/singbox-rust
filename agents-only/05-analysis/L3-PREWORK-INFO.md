@@ -1,6 +1,7 @@
 # L3 前置信息收集与差距分析（Polish / Edge Services + Quality）
 
 > **日期**：2026-02-08  
+> **更新**：2026-02-09（L3.1 SSMAPI PX-011 已实现，本文件第 1 节已同步为“现状/已修复/残留风险”）  
 > **用途**：为 L3 阶段开工前提供“现状-差距-落点文件-最小验收”清单，避免边做边考古。  
 > **范围来源**：`agents-only/active_context.md` 的 L3 scope（L3.1~L3.5） + `agents-only/03-planning/06-STRATEGIC-ROADMAP.md` 的质量里程碑（M3.1~M3.3）。
 
@@ -20,10 +21,21 @@
 
 ## 1. L3.1 SSMAPI 对齐（PX-011）
 
-### 1.1 Rust 现状（已读代码定位）
+### 1.0 状态（2026-02-09）
+
+**结论**: ✅ 已完成（按 Go `service/ssmapi` 的关键语义对齐）。
+
+已落地能力：
+- per-endpoint 绑定：`servers(endpoint -> inbound_tag)` 为每个 endpoint 创建独立 `TrafficManager/UserManager/ManagedSSMServer` 绑定闭环
+- HTTP API 行为：路径/字段/状态码/错误体（text/plain）与 Go 对齐
+- cache：读兼容 Go(snake_case) + 旧 Rust(camelCase)，写统一 Go(snake_case)，并实现 1min 定时保存 + diff-write
+- Shadowsocks inbound：`set_tracker()`/`update_users()` 真正影响运行时鉴权与统计（含 TCP 多用户鉴权 + UDP correctness 修复）
+
+### 1.1 Rust 现状（已实现落点定位）
 
 - 实现位置：
   - `crates/sb-core/src/services/ssmapi/mod.rs`
+  - `crates/sb-core/src/services/ssmapi/registry.rs`（ManagedSSMServer 注册表）
   - `crates/sb-core/src/services/ssmapi/server.rs`
   - `crates/sb-core/src/services/ssmapi/api.rs`
   - `crates/sb-core/src/services/ssmapi/user.rs`
@@ -32,42 +44,31 @@
 - 配置字段（IR）：
   - `crates/sb-config/src/ir/mod.rs`：`ServiceIR.servers`（endpoint -> inbound_tag）, `ServiceIR.cache_path`, `ServiceIR.tls`, `ServiceIR.listen*`
 
-### 1.2 关键差距（对照 Go 行为）
+### 1.2 已修复项（对照 Go 行为）
 
 Go 参考：
 - `go_fork_source/sing-box-1.12.14/service/ssmapi/server.go`
+- `go_fork_source/sing-box-1.12.14/service/ssmapi/api.go`
 - `go_fork_source/sing-box-1.12.14/service/ssmapi/cache.go`
 
-差距结论（以“可导致功能不可用/偏差”优先排序）：
-- **未做 per-endpoint inbound 绑定**：Go 在 `NewService()` 中按 `servers` 映射逐条：
-  - 通过 `InboundManager.Get(tag)` 找 inbound
-  - 校验 `adapter.ManagedSSMServer`
-  - `managedServer.SetTracker(traffic)`
-  - `NewUserManager(managedServer, traffic)`
-  - 按 endpoint mount API routes
-  Rust `SsmapiService` 当前仅创建单一 `UserManager`/`TrafficManager`，并未按 `servers` 查找/绑定 inbound，也未调用 `ManagedSSMServer::set_tracker()`（导致 SS inbound 的 tracker 永远是 `None`）。
-- **Cache JSON 格式不一致**：Go cache 字段是 snake_case（如 `global_uplink`），Rust 当前使用了 camelCase（如 `globalUplink`，见 `EndpointCache` 上 `rename = "globalUplink"`），会导致与 Go/GUI 的缓存文件不兼容。
-- **缺少周期性保存**：Go `Start()` 启动后 `time.NewTicker(1m)` 周期 `saveCache()`；Rust 当前只在 `Close()` 时保存（中途崩溃/kill 会丢统计与用户映射）。
-- **每 endpoint 独立 Traffic/User 管理**：Go 的 `traffics/users` 是 endpoint 级别 map；Rust API state 当前是全局单例（无法做到“endpoint 维度”隔离）。
+修复点（原差距全部闭合）：
+- **per-endpoint inbound 绑定**：采用全局注册表（tag -> Weak<dyn ManagedSSMServer>）在构建 Shadowsocks inbound 时注册，SSMAPI 启动时按 `servers` 逐条完成 `set_tracker()` + `UserManager::with_server()` 绑定，并在启动前校验 inbound tag 存在且类型为 shadowsocks（配置错误直接失败且包含 endpoint + inbound_tag）。
+- **API 行为对齐**：路由前缀为 `{endpoint}/server/v1/...`，`GET /server/v1` 返回 `server: "sing-box <version>"` + `apiVersion: "v1"`，`GET /users` 包含密码字段，`GET /stats?clear=true` 返回 users 且不含密码；错误体为 `text/plain`，并对齐关键状态码（400/404）。
+- **cache 读写与保存节奏**：读取顺序为 Go(snake_case) -> legacy Rust(camelCase)，两者都失败时按 Go 行为删除坏文件；写入统一 Go(snake_case)；实现 1min 定时保存（延迟首 tick）+ diff-write 避免无变更写盘。
+- **流量统计语义可用**：Shadowsocks inbound 在 TCP/UDP 明文 payload 处记录 uplink/downlink bytes/packets，并对 TCP/UDP session 进行“只加一次”的计数。
 
-### 1.3 落点建议（最小变更路径）
+### 1.3 残留风险与后续增强（非阻塞）
 
-- 服务侧：
-  - 让 `SsmapiService` 按 `servers` 构造 `endpoint -> (traffic_manager, user_manager, inbound_tag)` 的表，并在启动前完成绑定：
-    - 从 Rust 的 `InboundManager` 拉取 inbound 实例（候选：`crate::context::context_registry().inbound_manager`，或在 `ServiceContext` 显式注入 inbound_manager 句柄）。
-    - 对 inbound 做 `ManagedSSMServer` trait object 适配/暴露，调用 `set_tracker() / update_users()`
-- API 侧：
-  - 路由仍可按 endpoint mount，但 state 需按 endpoint 选择对应的 manager（而非全局单例）
-- Cache 侧：
-  - 改为 Go 的 snake_case 字段名，补齐“增量变化才写盘”的逻辑（Go 用 `lastSavedCache` 比对）
-  - 增加后台定时保存（tokio interval 或独立任务）
+风险与建议：
+- TCP 多用户鉴权通过“尝试解密 length chunk 选 key”的方式实现，建议后续补充更强的端到端集成测试（真实 SS client 连通 + 多用户切换）。
+- registry 存储 Weak，upgrade 失败时会清理 entry；若未来引入 inbound 热重载/卸载，建议在 close/drop 处显式 unregister 以减少短期悬挂。
+- 大用户量时每连接遍历 keys 的成本可能上升，若需要可引入更强的 key lookup（例如缓存近期成功 key 或更紧凑的数据结构），当前优先正确性与 parity。
 
 ### 1.4 最小验收（建议）
 
-- 单元/集成测试（不需要真实网络）：
-  - 为 `ManagedSSMServer` 提供 test stub：验证 `set_tracker()` 被调用、`update_users()` 被调用
-  - 验证每 endpoint 的 stats 隔离（A endpoint 的 traffic 不影响 B）
-  - cache 编解码 round-trip 与 Go 字段名一致（至少断言 JSON key）
+已落地验证（单测为主）：
+- sb-core：registry / per-endpoint 绑定 / API 状态码与错误体 / cache 读写兼容
+- sb-adapters：TCP 多用户鉴权选择正确 user / update_users 触发 key 重建
 
 ---
 
@@ -238,4 +239,3 @@ Go 参考：
 - 以 L3.5（ConnMetadata）与 L3.4（CacheFile cache_id/debounce）作为“低风险、收益高”的先手
 - L3.1 SSMAPI 属于功能闭环缺口（需要做绑定与 cache 格式对齐），但更改面较集中，适合单独工作包推进
 - L3.3 Resolved 在 Linux-only 上要谨慎推进，优先补齐 Resolve* 方法与 DNSRouter 接线，再处理 TCP/并行化等行为细节
-
