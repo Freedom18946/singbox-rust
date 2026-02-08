@@ -35,26 +35,10 @@ fn label_kind(k: OutboundKind) -> &'static str {
         OutboundKind::Socks => "socks5",
         OutboundKind::Http => "http",
         OutboundKind::Block => "block",
-        #[cfg(feature = "out_trojan")]
-        OutboundKind::Trojan => "trojan",
-        #[cfg(feature = "out_ss")]
-        OutboundKind::Shadowsocks => "shadowsocks",
-        #[cfg(feature = "out_shadowtls")]
-        OutboundKind::ShadowTls => "shadowtls",
         #[cfg(feature = "out_naive")]
         OutboundKind::Naive => "naive",
-        #[cfg(feature = "out_vless")]
-        OutboundKind::Vless => "vless",
-        #[cfg(feature = "out_vmess")]
-        OutboundKind::Vmess => "vmess",
-        #[cfg(feature = "out_tuic")]
-        OutboundKind::Tuic => "tuic",
         #[cfg(feature = "out_hysteria2")]
         OutboundKind::Hysteria2 => "hysteria2",
-        #[cfg(feature = "out_wireguard")]
-        OutboundKind::WireGuard => "wireguard",
-        #[cfg(feature = "out_ssh")]
-        OutboundKind::Ssh => "ssh",
     }
 }
 

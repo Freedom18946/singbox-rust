@@ -2,6 +2,7 @@
 
 use super::{traffic::TrafficManager, user::UserManager};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -26,7 +27,7 @@ pub struct ServerInfo {
 }
 
 /// Add user request.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct AddUserRequest {
     username: String,
     #[serde(rename = "uPSK")]
@@ -34,7 +35,7 @@ pub struct AddUserRequest {
 }
 
 /// Update user request.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct UpdateUserRequest {
     #[serde(rename = "uPSK")]
     password: String,
@@ -72,15 +73,8 @@ pub struct StatsResponse {
 }
 
 /// Error response.
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    error: String,
-}
-
-impl IntoResponse for ErrorResponse {
-    fn into_response(self) -> Response {
-        (StatusCode::BAD_REQUEST, Json(self)).into_response()
-    }
+fn bad_request(msg: impl Into<String>) -> (StatusCode, String) {
+    (StatusCode::BAD_REQUEST, msg.into())
 }
 
 /// Create v1 API routes that can be nested under different prefixes.
@@ -90,6 +84,7 @@ pub fn api_routes() -> axum::Router<ApiState> {
 
     axum::Router::new()
         .route("/v1", get(get_server_info))
+        .route("/v1/", get(get_server_info))
         .route("/v1/users", get(list_users).post(add_user))
         .route(
             "/v1/users/:username",
@@ -101,7 +96,7 @@ pub fn api_routes() -> axum::Router<ApiState> {
 /// GET /server/v1 - Server info.
 pub async fn get_server_info() -> Json<ServerInfo> {
     Json(ServerInfo {
-        server: format!("singbox-rust {}", env!("CARGO_PKG_VERSION")),
+        server: format!("sing-box {}", env!("CARGO_PKG_VERSION")),
         api_version: "v1".to_string(),
     })
 }
@@ -110,22 +105,20 @@ pub async fn get_server_info() -> Json<ServerInfo> {
 pub async fn list_users(State(state): State<ApiState>) -> Json<ListUsersResponse> {
     let mut users = state.user_manager.list();
     state.traffic_manager.read_users(&mut users, false);
-    // Remove passwords from response (Go parity: users contain stats but no password)
-    let users: Vec<_> = users.into_iter().map(|u| u.without_password()).collect();
     Json(ListUsersResponse { users })
 }
 
 /// POST /server/v1/users - Add new user.
 pub async fn add_user(
     State(state): State<ApiState>,
-    Json(req): Json<AddUserRequest>,
-) -> Result<StatusCode, ErrorResponse> {
+    body: Bytes,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let req: AddUserRequest =
+        serde_json::from_slice(&body).map_err(|e| bad_request(e.to_string()))?;
     state
         .user_manager
         .add(req.username, req.password)
-        .map_err(|e| ErrorResponse {
-            error: e.to_string(),
-        })?;
+        .map_err(|e| bad_request(e.to_string()))?;
     Ok(StatusCode::CREATED)
 }
 
@@ -149,46 +142,40 @@ pub async fn get_user(
 pub async fn update_user(
     State(state): State<ApiState>,
     Path(username): Path<String>,
-    Json(req): Json<UpdateUserRequest>,
-) -> Result<StatusCode, ErrorResponse> {
+    body: Bytes,
+) -> Response {
+    let req: UpdateUserRequest = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return bad_request(e.to_string()).into_response(),
+    };
+
     if !state.user_manager.contains(&username) {
-        return Err(ErrorResponse {
-            error: format!("user '{}' not found", username),
-        });
+        return StatusCode::NOT_FOUND.into_response();
     }
 
-    state
-        .user_manager
-        .update(&username, req.password)
-        .map_err(|e| ErrorResponse {
-            error: e.to_string(),
-        })?;
-
-    Ok(StatusCode::NO_CONTENT)
+    match state.user_manager.update(&username, req.password) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => bad_request(e.to_string()).into_response(),
+    }
 }
 
 /// DELETE /server/v1/users/{username} - Delete user.
 pub async fn delete_user(
     State(state): State<ApiState>,
     Path(username): Path<String>,
-) -> Result<StatusCode, ErrorResponse> {
+) -> Response {
     if !state.user_manager.contains(&username) {
-        return Err(ErrorResponse {
-            error: format!("user '{}' not found", username),
-        });
+        return StatusCode::NOT_FOUND.into_response();
     }
 
-    state
-        .user_manager
-        .delete(&username)
-        .map_err(|e| ErrorResponse {
-            error: e.to_string(),
-        })?;
+    if let Err(e) = state.user_manager.delete(&username) {
+        return bad_request(e.to_string()).into_response();
+    }
 
     // Also clear traffic stats for this user
     state.traffic_manager.clear_user(&username);
 
-    Ok(StatusCode::NO_CONTENT)
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// GET /server/v1/stats - Get global and per-user stats.
@@ -231,7 +218,7 @@ mod tests {
     #[tokio::test]
     async fn test_server_info() {
         let info = get_server_info().await;
-        assert!(info.0.server.starts_with("singbox-rust"));
+        assert!(info.0.server.starts_with("sing-box "));
         assert_eq!(info.0.api_version, "v1");
     }
 
@@ -240,18 +227,19 @@ mod tests {
         let state = create_test_state();
 
         // Add user
-        let add_req = AddUserRequest {
+        let add_body = serde_json::to_vec(&AddUserRequest {
             username: "alice".to_string(),
             password: "pass123".to_string(),
-        };
-        let result = add_user(State(state.clone()), Json(add_req)).await;
+        })
+        .unwrap();
+        let result = add_user(State(state.clone()), Bytes::from(add_body)).await;
         assert!(result.is_ok());
 
         // List users
         let list_resp = list_users(State(state.clone())).await;
         assert_eq!(list_resp.0.users.len(), 1);
         assert_eq!(list_resp.0.users[0].user_name, "alice");
-        assert!(list_resp.0.users[0].password.is_none()); // Password stripped in list
+        assert_eq!(list_resp.0.users[0].password.as_deref(), Some("pass123")); // Go parity: list includes password
 
         // Get user
         let user_resp = get_user(State(state.clone()), Path("alice".to_string())).await;
@@ -261,16 +249,17 @@ mod tests {
         assert_eq!(user.password, Some("pass123".to_string()));
 
         // Update user
-        let update_req = UpdateUserRequest {
+        let update_body = serde_json::to_vec(&UpdateUserRequest {
             password: "newpass".to_string(),
-        };
+        })
+        .unwrap();
         let result = update_user(
             State(state.clone()),
             Path("alice".to_string()),
-            Json(update_req),
+            Bytes::from(update_body),
         )
         .await;
-        assert!(result.is_ok());
+        assert_eq!(result.status(), StatusCode::NO_CONTENT);
 
         // Verify update
         let user_resp = get_user(State(state.clone()), Path("alice".to_string())).await;
@@ -278,11 +267,38 @@ mod tests {
 
         // Delete user
         let result = delete_user(State(state.clone()), Path("alice".to_string())).await;
-        assert!(result.is_ok());
+        assert_eq!(result.status(), StatusCode::NO_CONTENT);
 
         // Verify deletion
         let list_resp = list_users(State(state.clone())).await;
         assert_eq!(list_resp.0.users.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_errors_and_status_codes() {
+        let state = create_test_state();
+
+        // Bad JSON on add -> 400 text/plain
+        let bad = add_user(State(state.clone()), Bytes::from_static(b"{")).await;
+        assert!(bad.is_err());
+        assert_eq!(bad.unwrap_err().0, StatusCode::BAD_REQUEST);
+
+        // Update non-existent -> 404
+        let update_body = serde_json::to_vec(&UpdateUserRequest {
+            password: "pw".to_string(),
+        })
+        .unwrap();
+        let resp = update_user(
+            State(state.clone()),
+            Path("missing".to_string()),
+            Bytes::from(update_body),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // Delete non-existent -> 404
+        let resp = delete_user(State(state.clone()), Path("missing".to_string())).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

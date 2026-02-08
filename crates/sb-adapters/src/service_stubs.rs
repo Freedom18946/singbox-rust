@@ -61,12 +61,16 @@ pub fn build_resolved_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Ar
     }))
 }
 
-/// Build a SSM API service stub.
+/// Build a SSM API service.
 ///
-/// Returns `Some` with the full SSMAPI implementation.
-/// Build a SSM API service stub.
-///
-/// Returns `Some` and logs a warning that SSM API is not implemented.
+/// When `service_ssmapi` is enabled, this delegates to the real implementation in `sb-core`.
+/// Otherwise, it returns a stub that fails on `start()`.
+#[cfg(feature = "service_ssmapi")]
+pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
+    sb_core::services::ssmapi::build_ssmapi_service(ir, ctx)
+}
+
+#[cfg(not(feature = "service_ssmapi"))]
 pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     let _ = ctx;
     let tag = ir.tag.as_deref().unwrap_or("ssm-api");
@@ -199,6 +203,43 @@ mod tests {
             listen_port: Some(6001),
             servers: Some(HashMap::from([("/".to_string(), "ss-in".to_string())])),
             ..Default::default()
+        };
+
+        #[cfg(feature = "service_ssmapi")]
+        let _keepalive = {
+            use sb_core::services::ssmapi::{registry as ssm_registry, ManagedSSMServer, TrafficTracker};
+            use std::sync::Arc;
+
+            struct DummyManagedServer {
+                tag: String,
+            }
+
+            impl ManagedSSMServer for DummyManagedServer {
+                fn set_tracker(&self, _tracker: Arc<dyn TrafficTracker>) {}
+
+                fn tag(&self) -> &str {
+                    &self.tag
+                }
+
+                fn inbound_type(&self) -> &str {
+                    "shadowsocks"
+                }
+
+                fn update_users(
+                    &self,
+                    _users: Vec<String>,
+                    _passwords: Vec<String>,
+                ) -> Result<(), String> {
+                    Ok(())
+                }
+            }
+
+            let srv = Arc::new(DummyManagedServer {
+                tag: "ss-in".to_string(),
+            });
+            let srv_dyn: Arc<dyn ManagedSSMServer> = srv.clone();
+            ssm_registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+            srv
         };
 
         let service = registry.build(&ir, &ctx);

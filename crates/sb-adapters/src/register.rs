@@ -1013,7 +1013,19 @@ fn build_shadowsocks_inbound(
     } else {
         ShadowsocksInboundAdapter::new(config)
     };
-    Some(Arc::new(adapter))
+    let adapter = Arc::new(adapter);
+    #[cfg(feature = "service_ssmapi")]
+    {
+        use sb_core::services::ssmapi::registry::register_managed_ssm_server;
+        use sb_core::services::ssmapi::ManagedSSMServer;
+
+        let tag = ManagedSSMServer::tag(adapter.as_ref()).to_string();
+        if !tag.trim().is_empty() {
+            let srv: Arc<dyn ManagedSSMServer> = adapter.clone();
+            register_managed_ssm_server(&tag, Arc::downgrade(&srv));
+        }
+    }
+    Some(adapter)
 }
 
 #[cfg(feature = "sb-transport")]

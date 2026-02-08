@@ -32,7 +32,10 @@ use sb_core::services::v2ray_api::StatsManager;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc;
@@ -161,9 +164,9 @@ fn evp_bytes_to_key(password: &str, key_len: usize) -> Vec<u8> {
     out
 }
 
-fn hkdf_subkey(master: &[u8], salt: &[u8]) -> Result<[u8; 32]> {
+fn hkdf_subkey(master: &[u8], salt: &[u8], out_len: usize) -> Result<Vec<u8>> {
     let hk = HkdfSha1::new(Some(salt), master);
-    let mut okm = [0u8; 32];
+    let mut okm = vec![0u8; out_len];
     hk.expand(b"ss-subkey", &mut okm)
         .map_err(|_| anyhow!("hkdf expand failed"))?;
     Ok(okm)
@@ -173,6 +176,103 @@ async fn read_exact_n(r: &mut (impl tokio::io::AsyncRead + Unpin), n: usize) -> 
     let mut buf = vec![0u8; n];
     r.read_exact(&mut buf).await?;
     Ok(buf)
+}
+
+/// AsyncRead/AsyncWrite wrapper that replays a prefix before reading from the inner stream.
+/// Used to "put back" bytes consumed during authentication.
+struct PrefixStream<T> {
+    prefix: Vec<u8>,
+    pos: usize,
+    inner: T,
+}
+
+impl<T> PrefixStream<T> {
+    fn new(prefix: Vec<u8>, inner: T) -> Self {
+        Self {
+            prefix,
+            pos: 0,
+            inner,
+        }
+    }
+}
+
+impl<T: AsyncRead + Unpin> AsyncRead for PrefixStream<T> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if self.pos < self.prefix.len() {
+            let remaining = &self.prefix[self.pos..];
+            let to_copy = remaining.len().min(buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            self.pos += to_copy;
+            return Poll::Ready(Ok(()));
+        }
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<T: AsyncWrite + Unpin> AsyncWrite for PrefixStream<T> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, data)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[derive(Clone)]
+struct RuntimeShared {
+    user_keys: Arc<parking_lot::RwLock<HashMap<Vec<u8>, String>>>,
+    #[cfg(feature = "service_ssmapi")]
+    tracker: Arc<parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>>,
+    #[cfg(feature = "service_ssmapi")]
+    udp_sessions_seen: Arc<dashmap::DashMap<SocketAddr, String>>,
+}
+
+fn select_user_by_len_chunk(
+    cipher: &AeadCipherKind,
+    salt: &[u8],
+    enc_len_chunk: &[u8],
+    user_keys: &HashMap<Vec<u8>, String>,
+) -> Option<(String, Vec<u8>)> {
+    if enc_len_chunk.len() != 2 + cipher.tag_len() {
+        return None;
+    }
+    for (master_key, username) in user_keys {
+        let subkey = match hkdf_subkey(master_key, salt, cipher.key_len()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let plain = match aead_decrypt(cipher, &subkey, 0, enc_len_chunk) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if plain.len() != 2 {
+            continue;
+        }
+        let mut lbytes = [0u8; 2];
+        lbytes.copy_from_slice(&plain);
+        let plen = u16::from_be_bytes(lbytes) as usize;
+        if plen == 0 {
+            continue;
+        }
+        return Some((username.clone(), master_key.clone()));
+    }
+    None
 }
 
 fn aead_decrypt(
@@ -367,7 +467,7 @@ async fn handle_udp_relay(
     socket: Arc<tokio::net::UdpSocket>,
     cfg: ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
-    user_map: HashMap<Vec<u8>, String>,
+    shared: RuntimeShared,
     _rate_limiter: TcpRateLimiter,
     mut stop_rx: mpsc::Receiver<()>,
 ) -> Result<()> {
@@ -387,24 +487,43 @@ async fn handle_udp_relay(
                         // Extract salt
                         let salt = &buf[..cipher.salt_len()];
 
-                        // Try to authenticate - derive subkey with each user's master key
-                        let mut authenticated = false;
-                        let mut auth_user = String::new();
-                        for (master_key, username) in &user_map {
-                            if let Ok(subkey) = hkdf_subkey(master_key, salt) {
-                                // Try to decrypt first packet
-                                let encrypted_data = &buf[cipher.salt_len()..n];
-                                if aead_decrypt_udp(&cipher, &subkey, 0, encrypted_data).is_ok() {
-                                    authenticated = true;
-                                    auth_user = username.clone();
-                                    break;
+                        // Authenticate and decrypt.
+                        let encrypted_data = &buf[cipher.salt_len()..n];
+                        let mut auth_user: Option<String> = None;
+                        let mut master_key: Option<Vec<u8>> = None;
+                        let mut decrypted: Option<Vec<u8>> = None;
+                        {
+                            let user_keys = shared.user_keys.read();
+                            for (mk, username) in user_keys.iter() {
+                                if let Ok(subkey) = hkdf_subkey(mk, salt, cipher.key_len()) {
+                                    if let Ok(plain) =
+                                        aead_decrypt_udp(&cipher, &subkey, 0, encrypted_data)
+                                    {
+                                        auth_user = Some(username.clone());
+                                        master_key = Some(mk.clone());
+                                        decrypted = Some(plain);
+                                        break;
+                                    }
                                 }
                             }
                         }
 
-                        if !authenticated {
+                        let Some(auth_user) = auth_user else {
                             debug!(?peer, "shadowsocks: UDP auth failed");
                             continue;
+                        };
+                        let master_key = master_key.expect("set alongside auth_user");
+                        let decrypted = decrypted.expect("set alongside auth_user");
+
+                        #[cfg(feature = "service_ssmapi")]
+                        if let Some(tracker) = shared.tracker.read().clone() {
+                            if shared
+                                .udp_sessions_seen
+                                .insert(peer, auth_user.clone())
+                                .is_none()
+                            {
+                                tracker.increment_udp_sessions(&auth_user, 1);
+                            }
                         }
 
                         debug!(?peer, user=%auth_user, "shadowsocks: UDP packet authenticated");
@@ -420,15 +539,18 @@ async fn handle_udp_relay(
                         // Spawn task for this UDP packet
                         let socket_clone = socket.clone();
                         let cipher_clone = cipher.clone();
-                        let data = buf[..n].to_vec();
+                        let shared_clone = shared.clone();
 
                         tokio::spawn(async move {
                             if let Err(e) = handle_udp_packet(
                                 socket_clone,
                                 cipher_clone,
-                                data,
+                                decrypted,
                                 peer,
+                                master_key,
+                                auth_user,
                                 traffic,
+                                shared_clone,
                             ).await {
                                 debug!(error=%e, ?peer, "shadowsocks: UDP packet error");
                             }
@@ -450,19 +572,13 @@ async fn handle_udp_relay(
 async fn handle_udp_packet(
     listen_socket: Arc<tokio::net::UdpSocket>,
     cipher: AeadCipherKind,
-    data: Vec<u8>,
+    decrypted: Vec<u8>,
     peer: SocketAddr,
+    master_key: Vec<u8>,
+    auth_user: String,
     traffic: Option<Arc<dyn TrafficRecorder>>,
+    shared: RuntimeShared,
 ) -> Result<()> {
-    // Extract salt and derive subkey
-    let salt = &data[..cipher.salt_len()];
-    let master_key = &data[..32]; // Placeholder - should use authenticated user's key
-    let subkey = hkdf_subkey(master_key, salt)?;
-
-    // Decrypt packet
-    let encrypted = &data[cipher.salt_len()..];
-    let decrypted = aead_decrypt_udp(&cipher, &subkey, 0, encrypted)?;
-
     // Parse target address
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
@@ -470,6 +586,10 @@ async fn handle_udp_packet(
     if let Some(ref recorder) = traffic {
         recorder.record_up(payload.len() as u64);
         recorder.record_up_packet(1);
+    }
+    #[cfg(feature = "service_ssmapi")]
+    if let Some(tracker) = shared.tracker.read().clone() {
+        tracker.record_uplink(&auth_user, payload.len() as i64, 1);
     }
 
     // Create upstream socket and send
@@ -491,7 +611,7 @@ async fn handle_udp_packet(
             use rand::Rng;
             rand::thread_rng().fill(&mut resp_salt[..]);
 
-            let resp_subkey = hkdf_subkey(master_key, &resp_salt)?;
+            let resp_subkey = hkdf_subkey(&master_key, &resp_salt, cipher.key_len())?;
             let encrypted_resp = aead_encrypt_udp(&cipher, &resp_subkey, 0, response_data)?;
 
             let mut full_resp = Vec::new();
@@ -502,6 +622,10 @@ async fn handle_udp_packet(
                 if let Some(ref recorder) = traffic {
                     recorder.record_down(response_data.len() as u64);
                     recorder.record_down_packet(1);
+                }
+                #[cfg(feature = "service_ssmapi")]
+                if let Some(tracker) = shared.tracker.read().clone() {
+                    tracker.record_downlink(&auth_user, response_data.len() as i64, 1);
                 }
             }
         }
@@ -533,20 +657,42 @@ fn aead_encrypt_udp(
     aead_encrypt(cipher, key, nonce_val, data)
 }
 
-pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
+pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     let method =
         AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
 
-    // Build user map for authentication
     let user_map = cfg.build_user_map(&method);
+    let shared = RuntimeShared {
+        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+        #[cfg(feature = "service_ssmapi")]
+        tracker: Arc::new(parking_lot::RwLock::new(None)),
+        #[cfg(feature = "service_ssmapi")]
+        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
+    };
 
-    if user_map.is_empty() {
+    serve_run(cfg, stop_rx, method, shared).await
+}
+
+#[cfg(feature = "service_ssmapi")]
+async fn serve_with_shared(
+    cfg: ShadowsocksInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    shared: RuntimeShared,
+) -> Result<()> {
+    let method =
+        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+    serve_run(cfg, stop_rx, method, shared).await
+}
+
+async fn serve_run(
+    cfg: ShadowsocksInboundConfig,
+    mut stop_rx: mpsc::Receiver<()>,
+    method: AeadCipherKind,
+    shared: RuntimeShared,
+) -> Result<()> {
+    if shared.user_keys.read().is_empty() {
         return Err(anyhow!("shadowsocks: no users configured"));
     }
-
-    // Get default master key (first user's key) for single-user connections
-    // For multi-user setups, authentication happens per-connection
-    let master = user_map.keys().next().unwrap().clone();
 
     // Create TCP listener based on transport configuration
     let transport = cfg.transport_layer.clone().unwrap_or_default();
@@ -573,7 +719,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
     let (_udp_stop_tx, udp_stop_rx) = mpsc::channel(1);
     let udp_cfg = cfg.clone();
     let udp_method = method.clone();
-    let udp_user_map = user_map.clone();
+    let udp_shared = shared.clone();
     let udp_rate_limiter = rate_limiter.clone();
 
     tokio::spawn(async move {
@@ -581,7 +727,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
             udp_socket,
             udp_cfg,
             udp_method,
-            udp_user_map,
+            udp_shared,
             udp_rate_limiter,
             udp_stop_rx,
         )
@@ -634,7 +780,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
 
                     let cfg_clone = cfg.clone();
                     let method_clone = method.clone();
-                    let master_clone = master.clone();
+                    let shared_clone = shared.clone();
                     let rate_limiter_clone = rate_limiter.clone();
 
                     rate_limit_metrics::inc_active_connections("shadowsocks");
@@ -647,7 +793,16 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         // 对于多路复用流或非 TCP 传输，我们没有对端地址
                         // But we have it from accept() now if it's TCP
                         // 但如果是 TCP，我们现在从 accept() 中获取了它
-                        if let Err(e) = handle_conn_stream(&cfg_clone, method_clone, &master_clone, stream, peer, &rate_limiter_clone).await {
+                        if let Err(e) = handle_conn_stream(
+                            &cfg_clone,
+                            method_clone,
+                            stream,
+                            peer,
+                            &rate_limiter_clone,
+                            shared_clone,
+                        )
+                        .await
+                        {
                             sb_core::metrics::http::record_error_display(&e);
                             sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             warn!(%peer, error=%e, "ss: multiplex session error");
@@ -691,7 +846,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
 
                     let cfg_clone = cfg.clone();
                     let method_clone = method.clone();
-                    let master_clone = master.clone();
+                    let shared_clone = shared.clone();
                     let rate_limiter_clone = rate_limiter.clone();
 
                     rate_limit_metrics::inc_active_connections("shadowsocks");
@@ -700,7 +855,16 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         let _guard = scopeguard::guard((), |_| {
                             rate_limit_metrics::dec_active_connections("shadowsocks");
                         });
-                        if let Err(e) = handle_conn_stream(&cfg_clone, method_clone, &master_clone, stream, peer, &rate_limiter_clone).await {
+                        if let Err(e) = handle_conn_stream(
+                            &cfg_clone,
+                            method_clone,
+                            stream,
+                            peer,
+                            &rate_limiter_clone,
+                            shared_clone,
+                        )
+                        .await
+                        {
                             sb_core::metrics::http::record_error_display(&e);
                             sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             warn!(%peer, error=%e, "ss: session error");
@@ -718,32 +882,53 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
 async fn handle_conn_stream<T>(
     _cfg: &ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
-    master_key: &[u8],
     cli: T,
     peer: SocketAddr,
     rate_limiter: &TcpRateLimiter,
+    shared: RuntimeShared,
 ) -> Result<()>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    handle_conn_impl(_cfg, cipher, master_key, cli, peer, rate_limiter).await
+    handle_conn_impl(_cfg, cipher, cli, peer, rate_limiter, shared).await
 }
 
 async fn handle_conn_impl<T>(
     _cfg: &ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
-    master_key: &[u8],
     mut cli: T,
     peer: SocketAddr,
     rate_limiter: &TcpRateLimiter,
+    shared: RuntimeShared,
 ) -> Result<()>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    // Step 1: read client salt
-    // 步骤 1：读取客户端 salt
+    // Step 1: authenticate user using salt + encrypted length chunk.
     let csalt = read_exact_n(&mut cli, cipher.salt_len()).await?;
-    let c_subkey = hkdf_subkey(master_key, &csalt)?;
+    let enc_len_chunk = read_exact_n(&mut cli, 2 + cipher.tag_len()).await?;
+    let (auth_user, master_key) = {
+        let user_keys = shared.user_keys.read();
+        if let Some(v) = select_user_by_len_chunk(&cipher, &csalt, &enc_len_chunk, &user_keys) {
+            v
+        } else {
+            let banned = rate_limiter.record_auth_failure(peer.ip());
+            if banned {
+                debug!(%peer, "ss: IP banned due to excessive auth failures");
+            }
+            return Err(anyhow!("ss: auth failed"));
+        }
+    };
+
+    #[cfg(feature = "service_ssmapi")]
+    let tracker = shared.tracker.read().clone();
+    #[cfg(feature = "service_ssmapi")]
+    if let Some(t) = &tracker {
+        t.increment_tcp_sessions(&auth_user, 1);
+    }
+
+    let c_subkey = hkdf_subkey(&master_key, &csalt, cipher.key_len())?;
+    let cli = PrefixStream::new(enc_len_chunk, cli);
 
     // Create duplex pipe for cleartext traffic
     // 创建用于明文流量的双工管道
@@ -755,11 +940,18 @@ where
 
     // Spawn Decrypt Pump: CLI(Encrypted) -> Remote(Clear)
     // 启动解密泵：CLI(加密) -> Remote(明文)
+    let auth_user_uplink = auth_user.clone();
+    #[cfg(feature = "service_ssmapi")]
+    let tracker_uplink = tracker.clone();
     tokio::spawn(async move {
         let mut nonce = 0u64;
         while let Ok(payload) =
             read_aead_chunk(&cipher_read, &c_subkey, &mut nonce, &mut cli_r).await
         {
+            #[cfg(feature = "service_ssmapi")]
+            if let Some(t) = &tracker_uplink {
+                t.record_uplink(&auth_user_uplink, payload.len() as i64, 0);
+            }
             if remote_w.write_all(&payload).await.is_err() {
                 break;
             }
@@ -789,7 +981,7 @@ where
     let mut ssalt = vec![0u8; cipher.salt_len()];
     use rand::Rng;
     rand::thread_rng().fill(&mut ssalt[..]);
-    let s_subkey = hkdf_subkey(master_key, &ssalt)?;
+    let s_subkey = hkdf_subkey(&master_key, &ssalt, cipher.key_len())?;
 
     // Send server salt to client
     cli_w.write_all(&ssalt).await?;
@@ -799,6 +991,9 @@ where
 
     // Spawn Encrypt Pump: Remote(Clear) -> CLI(Encrypted)
     // 启动加密泵：Remote(明文) -> CLI(加密)
+    let auth_user_downlink = auth_user.clone();
+    #[cfg(feature = "service_ssmapi")]
+    let tracker_downlink = tracker.clone();
     tokio::spawn(async move {
         let mut nonce = 0u64;
         let mut buf = vec![0u8; 65536];
@@ -806,6 +1001,10 @@ where
             match remote_r.read(&mut buf).await {
                 Ok(0) => break, // EOF
                 Ok(n) => {
+                    #[cfg(feature = "service_ssmapi")]
+                    if let Some(t) = &tracker_downlink {
+                        t.record_downlink(&auth_user_downlink, n as i64, 0);
+                    }
                     if write_aead_chunk(
                         &cipher_write,
                         &key_write,
@@ -887,11 +1086,17 @@ pub struct ShadowsocksInboundAdapter {
     stop_tx: Mutex<Option<mpsc::Sender<()>>>,
     tag: String,
     #[cfg(feature = "service_ssmapi")]
-    tracker: parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>,
+    tracker: Arc<parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>>,
     /// Dynamic user map for SSMAPI integration: username -> password
     /// Updated via ManagedSSMServer::update_users()
     #[cfg(feature = "service_ssmapi")]
-    users_map: parking_lot::RwLock<HashMap<String, String>>,
+    users_map: Arc<parking_lot::RwLock<HashMap<String, String>>>,
+    /// Map of (master_key -> username) for auth selection.
+    #[cfg(feature = "service_ssmapi")]
+    user_keys: Arc<parking_lot::RwLock<HashMap<Vec<u8>, String>>>,
+    /// Best-effort UDP "session" approximation: peer -> username.
+    #[cfg(feature = "service_ssmapi")]
+    udp_sessions_seen: Arc<dashmap::DashMap<SocketAddr, String>>,
 }
 
 impl std::fmt::Debug for ShadowsocksInboundAdapter {
@@ -909,14 +1114,33 @@ impl ShadowsocksInboundAdapter {
     }
 
     pub fn with_tag(config: ShadowsocksInboundConfig, tag: String) -> Self {
-        // Initialize users_map from config
+        // Initialize users_map + user_keys from config.
         #[cfg(feature = "service_ssmapi")]
-        let users_map = {
+        let (tracker, users_map, user_keys, udp_sessions_seen) = {
+            let tracker = Arc::new(parking_lot::RwLock::new(None));
             let mut map = HashMap::new();
             for user in &config.users {
                 map.insert(user.name.clone(), user.password.clone());
             }
-            parking_lot::RwLock::new(map)
+            let users_map = Arc::new(parking_lot::RwLock::new(map));
+
+            let key_len = AeadCipherKind::from_method(&config.method)
+                .map(|c| c.key_len())
+                .unwrap_or(32);
+
+            let mut keys = HashMap::new();
+            for (username, password) in users_map.read().iter() {
+                keys.insert(evp_bytes_to_key(password, key_len), username.clone());
+            }
+            #[allow(deprecated)]
+            if let Some(ref pwd) = config.password {
+                if !pwd.is_empty() {
+                    keys.insert(evp_bytes_to_key(pwd, key_len), "default".to_string());
+                }
+            }
+            let user_keys = Arc::new(parking_lot::RwLock::new(keys));
+            let udp_sessions_seen = Arc::new(dashmap::DashMap::new());
+            (tracker, users_map, user_keys, udp_sessions_seen)
         };
 
         Self {
@@ -924,9 +1148,13 @@ impl ShadowsocksInboundAdapter {
             stop_tx: Mutex::new(None),
             tag,
             #[cfg(feature = "service_ssmapi")]
-            tracker: parking_lot::RwLock::new(None),
+            tracker,
             #[cfg(feature = "service_ssmapi")]
             users_map,
+            #[cfg(feature = "service_ssmapi")]
+            user_keys,
+            #[cfg(feature = "service_ssmapi")]
+            udp_sessions_seen,
         }
     }
 }
@@ -950,15 +1178,38 @@ impl ManagedSSMServer for ShadowsocksInboundAdapter {
             return Err("users and passwords must have the same length".to_string());
         }
 
-        let mut map = self.users_map.write();
-        map.clear();
-        for (username, password) in users.into_iter().zip(passwords.into_iter()) {
-            map.insert(username, password);
+        let Some(kind) = AeadCipherKind::from_method(&self.config.method) else {
+            return Err("unsupported method".to_string());
+        };
+
+        {
+            let mut map = self.users_map.write();
+            map.clear();
+            for (username, password) in users.into_iter().zip(passwords.into_iter()) {
+                map.insert(username, password);
+            }
         }
+
+        {
+            let mut keys = self.user_keys.write();
+            keys.clear();
+            for (username, password) in self.users_map.read().iter() {
+                keys.insert(evp_bytes_to_key(password, kind.key_len()), username.clone());
+            }
+            #[allow(deprecated)]
+            if let Some(ref pwd) = self.config.password {
+                if !pwd.is_empty() {
+                    keys.insert(evp_bytes_to_key(pwd, kind.key_len()), "default".to_string());
+                }
+            }
+        }
+
+        // Clear UDP session cache to avoid attributing new users to old peers.
+        self.udp_sessions_seen.clear();
 
         tracing::debug!(
             tag = self.tag,
-            user_count = map.len(),
+            user_count = self.users_map.read().len(),
             "SS inbound: updated users via SSMAPI"
         );
 
@@ -972,8 +1223,21 @@ impl InboundService for ShadowsocksInboundAdapter {
         *self.stop_tx.lock() = Some(tx);
 
         let rt = tokio::runtime::Handle::current();
-        rt.block_on(async { serve(self.config.clone(), rx).await })
-            .map_err(|e| std::io::Error::other(e.to_string()))
+        #[cfg(feature = "service_ssmapi")]
+        {
+            let shared = RuntimeShared {
+                user_keys: self.user_keys.clone(),
+                tracker: self.tracker.clone(),
+                udp_sessions_seen: self.udp_sessions_seen.clone(),
+            };
+            rt.block_on(async { serve_with_shared(self.config.clone(), rx, shared).await })
+                .map_err(|e| std::io::Error::other(e.to_string()))
+        }
+        #[cfg(not(feature = "service_ssmapi"))]
+        {
+            rt.block_on(async { serve(self.config.clone(), rx).await })
+                .map_err(|e| std::io::Error::other(e.to_string()))
+        }
     }
 
     fn request_shutdown(&self) {
@@ -1181,4 +1445,62 @@ where
     )
     .await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authenticate_len_chunk_selects_correct_user() {
+        let cipher = AeadCipherKind::Aes256Gcm;
+        let salt = vec![7u8; cipher.salt_len()];
+
+        let mk1 = evp_bytes_to_key("p1", cipher.key_len());
+        let mk2 = evp_bytes_to_key("p2", cipher.key_len());
+
+        let subkey2 = hkdf_subkey(&mk2, &salt, cipher.key_len()).unwrap();
+        let len_be = (123u16).to_be_bytes();
+        let enc_len = aead_encrypt(&cipher, &subkey2, 0, &len_be).unwrap();
+
+        let mut keys = HashMap::new();
+        keys.insert(mk1, "u1".to_string());
+        keys.insert(mk2.clone(), "u2".to_string());
+
+        let (user, picked_mk) = select_user_by_len_chunk(&cipher, &salt, &enc_len, &keys).unwrap();
+        assert_eq!(user, "u2");
+        assert_eq!(picked_mk, mk2);
+    }
+
+    #[cfg(feature = "service_ssmapi")]
+    #[test]
+    fn update_users_rebuilds_user_keys() {
+        use sb_core::services::ssmapi::ManagedSSMServer;
+
+        let router = Arc::new(sb_core::router::RouterHandle::from_env());
+        let cfg = ShadowsocksInboundConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            method: "aes-256-gcm".to_string(),
+            #[allow(deprecated)]
+            password: None,
+            users: vec![ShadowsocksUser::new("old".to_string(), "oldpwd".to_string())],
+            router,
+            tag: Some("ss-in".to_string()),
+            stats: None,
+            multiplex: None,
+            transport_layer: None,
+        };
+
+        let adapter = ShadowsocksInboundAdapter::with_tag(cfg, "ss-in".to_string());
+        let key_len = AeadCipherKind::from_method("aes-256-gcm").unwrap().key_len();
+        let old_key = evp_bytes_to_key("oldpwd", key_len);
+        assert!(adapter.user_keys.read().contains_key(&old_key));
+
+        adapter
+            .update_users(vec!["new".to_string()], vec!["newpwd".to_string()])
+            .unwrap();
+        let new_key = evp_bytes_to_key("newpwd", key_len);
+        assert!(adapter.user_keys.read().contains_key(&new_key));
+        assert!(!adapter.user_keys.read().contains_key(&old_key));
+    }
 }

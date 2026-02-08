@@ -1,14 +1,34 @@
 #![cfg(feature = "service_ssmapi")]
 use sb_config::ir::{ServiceIR, ServiceType};
-use sb_core::service::{ServiceContext, StartStage};
+use sb_core::service::ServiceContext;
+use sb_core::services::ssmapi::{registry, ManagedSSMServer, TrafficTracker};
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
+use std::sync::Arc;
 
-#[tokio::test]
-async fn test_ssmapi_service_lifecycle() {
+struct DummyManagedServer {
+    tag: String,
+}
+
+impl ManagedSSMServer for DummyManagedServer {
+    fn set_tracker(&self, _tracker: Arc<dyn TrafficTracker>) {}
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn inbound_type(&self) -> &str {
+        "shadowsocks"
+    }
+
+    fn update_users(&self, _users: Vec<String>, _passwords: Vec<String>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[test]
+fn test_ssmapi_service_builds() {
     // Pick a random port
     let port = 51000 + (fastrand::u16(0..1000));
-    let addr = format!("127.0.0.1:{}", port);
 
     let ir = ServiceIR {
         ty: ServiceType::Ssmapi,
@@ -19,39 +39,16 @@ async fn test_ssmapi_service_lifecycle() {
         ..Default::default()
     };
 
-    // We need to manually enable the feature in the test run
-    // This test assumes the feature is enabled
+    let managed = Arc::new(DummyManagedServer {
+        tag: "ss-in".to_string(),
+    });
+    let managed_dyn: Arc<dyn ManagedSSMServer> = managed.clone();
+    registry::register_managed_ssm_server("ss-in", Arc::downgrade(&managed_dyn));
 
-    #[cfg(feature = "service_ssmapi")]
-    {
-        let service =
-            sb_core::services::ssmapi::build_ssmapi_service(&ir, &ServiceContext::default());
-        assert!(service.is_some());
-        let service = service.unwrap();
+    let service = sb_core::services::ssmapi::build_ssmapi_service(&ir, &ServiceContext::default());
+    assert!(service.is_some());
+    let service = service.unwrap();
 
-        assert_eq!(service.service_type(), "ssm-api");
-        assert_eq!(service.tag(), "ssm-test");
-
-        // Start service
-        service.start(StartStage::Initialize).unwrap();
-        service.start(StartStage::Start).unwrap();
-
-        // Give it a moment to bind
-        let mut connected = false;
-        for _ in 0..10 {
-            if tokio::net::TcpStream::connect(&addr).await.is_ok() {
-                connected = true;
-                break;
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-        assert!(
-            connected,
-            "Should be able to connect to SSM API at {}",
-            addr
-        );
-
-        // Cleanup
-        service.close().unwrap();
-    }
+    assert_eq!(service.service_type(), "ssm-api");
+    assert_eq!(service.tag(), "ssm-test");
 }

@@ -561,4 +561,28 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-02-08] Agent: Codex — L3 前置信息收集
+
+**任务**: 开始 L3（Polish / Edge Services + Quality）前置分析与信息收集
+
+**产出**:
+- 新建 `agents-only/05-analysis/L3-PREWORK-INFO.md` — 汇总 L3.1~L3.5（SSMAPI/DERP/Resolved/CacheFile/ConnMetadata）现状、差距、落点文件与最小验收建议
+
+**备注**:
+- 本次仅做信息收集与差距归纳，不做代码实现与行为改动。
+
+---
+
+### [2026-02-08] Agent: Codex — L3 一级工作包规划
+
+**任务**: 基于收集到的差距信息，完成 L3.1~L3.5 一级工作包的规划设计（先规划，不实现）
+
+**产出**:
+- 新建 `agents-only/03-planning/L3-WORKPACKAGES.md` — 覆盖每个 L3.x 的目标/范围/关键设计选择/验收/依赖与建议排序
+
+**备注**:
+- 规划遵循“先对齐 schema/接线，再补齐行为，再加测试”的顺序，避免大范围重构。
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

@@ -15,6 +15,7 @@
 use std::sync::Arc;
 
 pub mod api;
+pub mod registry;
 pub mod server;
 pub mod traffic;
 pub mod user;

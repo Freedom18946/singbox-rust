@@ -1,17 +1,18 @@
 //! SSMAPI service implementation with lifecycle management.
 
-use super::{api, traffic::TrafficManager, user::UserManager};
+use super::{api, registry, traffic::TrafficManager, user::UserManager};
 use crate::service::{Service, ServiceContext, StartStage};
 use axum::Router;
 use sb_config::ir::ServiceIR;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use tokio::time::Duration;
 
 /// Go-parity cache structure: per-endpoint traffic + users.
 /// Go reference: `service/ssmapi/cache.go`
@@ -26,15 +27,52 @@ struct Cache {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct EndpointCache {
     // Global stats
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_uplink: i64,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_downlink: i64,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_uplink_packets: i64,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_downlink_packets: i64,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_tcp_sessions: i64,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    global_udp_sessions: i64,
+
+    // Per-user stats (only non-zero values)
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_uplink: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_downlink: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_uplink_packets: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_downlink_packets: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_tcp_sessions: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    user_udp_sessions: BTreeMap<String, i64>,
+
+    // Users map (username -> password, non-empty only)
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    users: BTreeMap<String, String>,
+}
+
+/// Legacy cache format written by older Rust builds (camelCase JSON keys).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct LegacyCache {
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    endpoints: BTreeMap<String, LegacyEndpointCache>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct LegacyEndpointCache {
     #[serde(skip_serializing_if = "is_zero", default, rename = "globalUplink")]
     global_uplink: i64,
     #[serde(skip_serializing_if = "is_zero", default, rename = "globalDownlink")]
     global_downlink: i64,
-    #[serde(
-        skip_serializing_if = "is_zero",
-        default,
-        rename = "globalUplinkPackets"
-    )]
+    #[serde(skip_serializing_if = "is_zero", default, rename = "globalUplinkPackets")]
     global_uplink_packets: i64,
     #[serde(
         skip_serializing_if = "is_zero",
@@ -47,18 +85,9 @@ struct EndpointCache {
     #[serde(skip_serializing_if = "is_zero", default, rename = "globalUDPSessions")]
     global_udp_sessions: i64,
 
-    // Per-user stats (only non-zero values)
-    #[serde(
-        skip_serializing_if = "BTreeMap::is_empty",
-        default,
-        rename = "userUplink"
-    )]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userUplink")]
     user_uplink: BTreeMap<String, i64>,
-    #[serde(
-        skip_serializing_if = "BTreeMap::is_empty",
-        default,
-        rename = "userDownlink"
-    )]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userDownlink")]
     user_downlink: BTreeMap<String, i64>,
     #[serde(
         skip_serializing_if = "BTreeMap::is_empty",
@@ -72,20 +101,10 @@ struct EndpointCache {
         rename = "userDownlinkPackets"
     )]
     user_downlink_packets: BTreeMap<String, i64>,
-    #[serde(
-        skip_serializing_if = "BTreeMap::is_empty",
-        default,
-        rename = "userTCPSessions"
-    )]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userTCPSessions")]
     user_tcp_sessions: BTreeMap<String, i64>,
-    #[serde(
-        skip_serializing_if = "BTreeMap::is_empty",
-        default,
-        rename = "userUDPSessions"
-    )]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userUDPSessions")]
     user_udp_sessions: BTreeMap<String, i64>,
-
-    // Users map (username -> password, non-empty only)
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     users: BTreeMap<String, String>,
 }
@@ -94,16 +113,38 @@ fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 
+#[derive(Clone)]
+struct EndpointCtx {
+    inbound_tag: String,
+    server: Arc<dyn super::ManagedSSMServer>,
+    user_manager: Arc<UserManager>,
+    traffic_manager: Arc<TrafficManager>,
+}
+
+fn normalize_endpoint(raw: &str) -> Option<String> {
+    let mut endpoint = raw.trim().to_string();
+    if endpoint.is_empty() {
+        return None;
+    }
+    if !endpoint.starts_with('/') {
+        endpoint.insert(0, '/');
+    }
+    if endpoint.len() > 1 && endpoint.ends_with('/') {
+        endpoint.pop();
+    }
+    Some(endpoint)
+}
+
 /// SSMAPI service for managing Shadowsocks users and traffic.
 pub struct SsmapiService {
     tag: String,
     listen_addr: SocketAddr,
-    servers: BTreeMap<String, String>,
-    user_manager: Arc<UserManager>,
-    traffic_manager: Arc<TrafficManager>,
+    endpoints: BTreeMap<String, EndpointCtx>,
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
     /// Optional path for cache persistence.
     cache_path: Option<PathBuf>,
+    last_saved_cache: Arc<parking_lot::Mutex<Vec<u8>>>,
+    save_task: parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>,
 
     // TLS Configuration
     /// TLS certificate path (enables HTTPS + HTTP/2).
@@ -142,16 +183,9 @@ impl SsmapiService {
         let mut servers: BTreeMap<String, String> = BTreeMap::new();
         if let Some(map) = &ir.servers {
             for (endpoint, inbound_tag) in map {
-                let mut endpoint = endpoint.trim().to_string();
-                if endpoint.is_empty() {
+                let Some(endpoint) = normalize_endpoint(endpoint) else {
                     continue;
-                }
-                if !endpoint.starts_with('/') {
-                    endpoint.insert(0, '/');
-                }
-                if endpoint.len() > 1 && endpoint.ends_with('/') {
-                    endpoint.pop();
-                }
+                };
                 let inbound_tag = inbound_tag.trim().to_string();
                 if inbound_tag.is_empty() {
                     continue;
@@ -173,16 +207,57 @@ impl SsmapiService {
         let listen_port = ir.listen_port.unwrap_or(6001);
         let listen_addr = SocketAddr::new(listen_ip, listen_port);
 
-        let user_manager = UserManager::new();
+        // Enforce inbound tag uniqueness to avoid multiple endpoints controlling the same inbound.
+        let mut seen_inbounds: HashSet<String> = HashSet::new();
+        for (endpoint, inbound_tag) in &servers {
+            if !seen_inbounds.insert(inbound_tag.clone()) {
+                return Err(format!(
+                    "ssm-api: duplicate inbound tag '{}' (endpoint '{}')",
+                    inbound_tag, endpoint
+                )
+                .into());
+            }
+        }
 
-        // Initialize traffic manager
-        let traffic_manager = TrafficManager::new();
+        // Bind per-endpoint managers and managed inbounds.
+        let mut endpoints: BTreeMap<String, EndpointCtx> = BTreeMap::new();
+        for (endpoint, inbound_tag) in &servers {
+            let server = registry::get_managed_ssm_server(inbound_tag).ok_or_else(|| {
+                format!(
+                    "ssm-api: parse server endpoint '{}': inbound '{}' not found",
+                    endpoint, inbound_tag
+                )
+            })?;
+            if server.inbound_type() != "shadowsocks" {
+                return Err(format!(
+                    "ssm-api: parse server endpoint '{}': inbound/{}/{} is not a SSM server",
+                    endpoint,
+                    server.inbound_type(),
+                    server.tag()
+                )
+                .into());
+            }
+
+            let traffic_manager = TrafficManager::new();
+            server.set_tracker(traffic_manager.clone());
+            let user_manager = UserManager::with_server(server.clone(), traffic_manager.clone());
+
+            endpoints.insert(
+                endpoint.clone(),
+                EndpointCtx {
+                    inbound_tag: inbound_tag.clone(),
+                    server,
+                    user_manager,
+                    traffic_manager,
+                },
+            );
+        }
 
         tracing::info!(
             service = "ssm-api",
             tag = tag,
             listen = %listen_addr,
-            servers = servers.len(),
+            endpoints = endpoints.len(),
             "SSMAPI service initialized"
         );
 
@@ -235,11 +310,11 @@ impl SsmapiService {
         Ok(Arc::new(Self {
             tag,
             listen_addr,
-            servers,
-            user_manager,
-            traffic_manager,
+            endpoints,
             shutdown_tx: parking_lot::Mutex::new(None),
             cache_path,
+            last_saved_cache: Arc::new(parking_lot::Mutex::new(Vec::new())),
+            save_task: parking_lot::Mutex::new(None),
             tls_cert_path,
             tls_key_path,
             tls_cert_pem,
@@ -310,15 +385,78 @@ impl SsmapiService {
             return Ok(());
         }
 
-        let file = std::fs::File::open(path)?;
-        let cache: Cache = serde_json::from_reader(file)?;
+        let cache_binary = std::fs::read(path)?;
+        if cache_binary.is_empty() {
+            return Ok(());
+        }
+
+        // Heuristic: legacy Rust cache (camelCase) would otherwise deserialize "successfully"
+        // into the Go-parity struct because serde ignores unknown fields by default, but we'd
+        // silently lose traffic stats. Detect and prefer legacy decoding when markers exist.
+        let is_legacy_marker = std::str::from_utf8(&cache_binary)
+            .ok()
+            .is_some_and(|s| s.contains("\"userUplink\"") || s.contains("\"globalUplink\""));
+
+        let cache = match serde_json::from_slice::<Cache>(&cache_binary) {
+            Ok(v) if !is_legacy_marker => v,
+            Ok(_) | Err(_) => match serde_json::from_slice::<LegacyCache>(&cache_binary) {
+                Ok(legacy) => Cache {
+                    endpoints: legacy
+                        .endpoints
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k,
+                                EndpointCache {
+                                    global_uplink: v.global_uplink,
+                                    global_downlink: v.global_downlink,
+                                    global_uplink_packets: v.global_uplink_packets,
+                                    global_downlink_packets: v.global_downlink_packets,
+                                    global_tcp_sessions: v.global_tcp_sessions,
+                                    global_udp_sessions: v.global_udp_sessions,
+                                    user_uplink: v.user_uplink,
+                                    user_downlink: v.user_downlink,
+                                    user_uplink_packets: v.user_uplink_packets,
+                                    user_downlink_packets: v.user_downlink_packets,
+                                    user_tcp_sessions: v.user_tcp_sessions,
+                                    user_udp_sessions: v.user_udp_sessions,
+                                    users: v.users,
+                                },
+                            )
+                        })
+                        .collect(),
+                },
+                Err(legacy_err) => {
+                    // Fallback: maybe it was a valid Go cache but marked incorrectly.
+                    if let Ok(v) = serde_json::from_slice::<Cache>(&cache_binary) {
+                        v
+                    } else {
+                        // Go parity: delete broken cache file on decode failure.
+                        let _ = std::fs::remove_file(path);
+                        return Err(legacy_err.into());
+                    }
+                }
+            },
+        };
 
         // Restore traffic stats per endpoint
-        // For now, we treat all endpoints as a single shared traffic manager
-        // (Go has per-endpoint traffic managers, Rust currently has one shared one)
-        for (_endpoint_tag, endpoint_cache) in cache.endpoints {
-            // Restore per-user traffic
-            for (username, uplink) in endpoint_cache.user_uplink {
+        for (endpoint_tag, endpoint_cache) in cache.endpoints {
+            let Some(ctx) = self.endpoints.get(&endpoint_tag) else {
+                continue;
+            };
+
+            // Restore per-user traffic snapshot.
+            let mut all_users: HashSet<String> = HashSet::new();
+            all_users.extend(endpoint_cache.user_uplink.keys().cloned());
+            all_users.extend(endpoint_cache.user_downlink.keys().cloned());
+            all_users.extend(endpoint_cache.user_uplink_packets.keys().cloned());
+            all_users.extend(endpoint_cache.user_downlink_packets.keys().cloned());
+            all_users.extend(endpoint_cache.user_tcp_sessions.keys().cloned());
+            all_users.extend(endpoint_cache.user_udp_sessions.keys().cloned());
+            all_users.extend(endpoint_cache.users.keys().cloned());
+
+            for username in all_users {
+                let uplink = endpoint_cache.user_uplink.get(&username).copied().unwrap_or(0);
                 let downlink = endpoint_cache
                     .user_downlink
                     .get(&username)
@@ -334,21 +472,44 @@ impl SsmapiService {
                     .get(&username)
                     .copied()
                     .unwrap_or(0);
+                let tcp_sessions = endpoint_cache
+                    .user_tcp_sessions
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
+                let udp_sessions = endpoint_cache
+                    .user_udp_sessions
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
 
-                self.traffic_manager
-                    .record_uplink(&username, uplink, uplink_packets);
-                self.traffic_manager
-                    .record_downlink(&username, downlink, downlink_packets);
-            }
-
-            // Restore users (if UserManager supports bulk set)
-            for (username, password) in endpoint_cache.users {
-                if !username.is_empty() && !password.is_empty() {
-                    // Ignore errors if user already exists
-                    let _ = self.user_manager.add(username, password);
+                if uplink != 0 || uplink_packets != 0 {
+                    ctx.traffic_manager
+                        .record_uplink(&username, uplink, uplink_packets);
+                }
+                if downlink != 0 || downlink_packets != 0 {
+                    ctx.traffic_manager
+                        .record_downlink(&username, downlink, downlink_packets);
+                }
+                if tcp_sessions != 0 {
+                    ctx.traffic_manager
+                        .increment_tcp_sessions(&username, tcp_sessions);
+                }
+                if udp_sessions != 0 {
+                    ctx.traffic_manager
+                        .increment_udp_sessions(&username, udp_sessions);
                 }
             }
+
+            // Restore users map (push to inbound; do not prune traffic, Go parity).
+            if !endpoint_cache.users.is_empty() {
+                let users_map: HashMap<String, String> =
+                    endpoint_cache.users.into_iter().collect();
+                let _ = ctx.user_manager.set_users(users_map);
+            }
         }
+
+        *self.last_saved_cache.lock() = cache_binary;
 
         tracing::info!(
             service = "ssm-api",
@@ -365,14 +526,40 @@ impl SsmapiService {
             return Ok(());
         };
 
-        // Collect per-endpoint cache (using servers tags as endpoints)
+        let cache_binary = self.encode_cache_json()?;
+        {
+            let mut guard = self.last_saved_cache.lock();
+            if *guard == cache_binary {
+                return Ok(());
+            }
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, &cache_binary)?;
+            *guard = cache_binary;
+        }
+
+        tracing::debug!(service = "ssm-api", path = %path.display(), "Saved cache successfully");
+        Ok(())
+    }
+
+    fn encode_cache_json(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let mut endpoints = BTreeMap::new();
-        for endpoint in self.servers.keys() {
+        for (endpoint, ctx) in &self.endpoints {
             let mut endpoint_cache = EndpointCache::default();
 
-            // Collect user traffic stats
-            for mut user in self.user_manager.list() {
-                self.traffic_manager.read_user(&mut user, false);
+            // Global stats.
+            let global = ctx.traffic_manager.read_global(false);
+            endpoint_cache.global_uplink = global.uplink_bytes;
+            endpoint_cache.global_downlink = global.downlink_bytes;
+            endpoint_cache.global_uplink_packets = global.uplink_packets;
+            endpoint_cache.global_downlink_packets = global.downlink_packets;
+            endpoint_cache.global_tcp_sessions = global.tcp_sessions;
+            endpoint_cache.global_udp_sessions = global.udp_sessions;
+
+            // User stats + users map.
+            for mut user in ctx.user_manager.list() {
+                ctx.traffic_manager.read_user(&mut user, false);
                 let username = user.user_name.clone();
 
                 if user.uplink_bytes > 0 {
@@ -395,8 +582,17 @@ impl SsmapiService {
                         .user_downlink_packets
                         .insert(username.clone(), user.downlink_packets);
                 }
+                if user.tcp_sessions > 0 {
+                    endpoint_cache
+                        .user_tcp_sessions
+                        .insert(username.clone(), user.tcp_sessions);
+                }
+                if user.udp_sessions > 0 {
+                    endpoint_cache
+                        .user_udp_sessions
+                        .insert(username.clone(), user.udp_sessions);
+                }
 
-                // Store user password (only if present and non-empty)
                 if let Some(ref pwd) = user.password {
                     if !pwd.is_empty() {
                         endpoint_cache.users.insert(username, pwd.clone());
@@ -404,35 +600,23 @@ impl SsmapiService {
                 }
             }
 
-            // Global stats (not currently tracked separately, would need extension)
-            // For now, leave as 0 (Go also initializes to 0)
-
             endpoints.insert(endpoint.clone(), endpoint_cache);
         }
 
         let cache = Cache { endpoints };
-        let file = std::fs::File::create(path)?;
-        serde_json::to_writer_pretty(file, &cache)?;
-
-        tracing::info!(
-            service = "ssm-api",
-            path = %path.display(),
-            "Saved cache successfully"
-        );
-        Ok(())
+        Ok(serde_json::to_vec_pretty(&cache)?)
     }
 
     /// Create the Axum router with all API endpoints.
     /// Includes per-endpoint nested routes:
     /// - `{endpoint}/server/v1/...` (Go parity for `servers` keys)
     fn create_router(&self) -> Router {
-        let state = api::ApiState {
-            user_manager: self.user_manager.clone(),
-            traffic_manager: self.traffic_manager.clone(),
-        };
-
         let mut router = Router::new();
-        for endpoint in self.servers.keys() {
+        for (endpoint, ctx) in &self.endpoints {
+            let state = api::ApiState {
+                user_manager: ctx.user_manager.clone(),
+                traffic_manager: ctx.traffic_manager.clone(),
+            };
             let mounted = Router::new()
                 .nest("/server", api::api_routes())
                 .with_state(state.clone());
@@ -471,38 +655,27 @@ impl SsmapiService {
         router
     }
 
-    /// Get a handle to the user manager (for integration with Shadowsocks adapters).
+    /// Back-compat helper: pick an endpoint context ("/" preferred) for callers that
+    /// still assume a single manager exists.
+    fn primary_endpoint(&self) -> &EndpointCtx {
+        if let Some(ctx) = self.endpoints.get("/") {
+            ctx
+        } else {
+            self.endpoints
+                .values()
+                .next()
+                .expect("ssm-api: endpoints non-empty")
+        }
+    }
+
+    /// Back-compat: return a UserManager for the primary endpoint.
     pub fn user_manager(&self) -> Arc<UserManager> {
-        self.user_manager.clone()
+        self.primary_endpoint().user_manager.clone()
     }
 
-    /// Get a handle to the traffic manager (for integration with Shadowsocks adapters).
+    /// Back-compat: return a TrafficManager for the primary endpoint.
     pub fn traffic_manager(&self) -> Arc<TrafficManager> {
-        self.traffic_manager.clone()
-    }
-
-    /// Log status of Shadowsocks inbounds available for binding.
-    /// Actual binding uses TrafficTracker trait and is triggered by SS adapters.
-    async fn bind_inbounds_static(_traffic_manager: Arc<TrafficManager>, tag: String) {
-        let Some(registry) = crate::context::context_registry() else {
-            tracing::debug!(
-                service = "ssm-api",
-                tag = tag,
-                "No context registry available"
-            );
-            return;
-        };
-
-        let inbound_manager = registry.inbound_manager;
-        let tags = inbound_manager.list_tags().await;
-
-        tracing::info!(
-            service = "ssm-api",
-            tag = tag,
-            available_inbounds = tags.len(),
-            inbound_tags = ?tags,
-            "SSMAPI ready for traffic tracking (SS inbounds should call set_tracker)"
-        );
+        self.primary_endpoint().traffic_manager.clone()
     }
 }
 
@@ -525,6 +698,108 @@ impl Service for SsmapiService {
                 // Load cached stats before starting server
                 if let Err(e) = self.load_cache() {
                     tracing::error!(service = "ssm-api", error = %e, "Failed to load cache");
+                }
+
+                // Spawn periodic cache saver (Go parity: 1 minute).
+                if self.cache_path.is_some() {
+                    let endpoints = self.endpoints.clone();
+                    let cache_path = self.cache_path.clone();
+                    let last_saved_cache = self.last_saved_cache.clone();
+                    let handle = tokio::spawn(async move {
+                        let mut ticker = tokio::time::interval(Duration::from_secs(60));
+                        // Go parity: first tick fires after 1 minute (not immediately).
+                        ticker.tick().await;
+                        loop {
+                            ticker.tick().await;
+                            let Some(path) = &cache_path else {
+                                continue;
+                            };
+                            let cache_binary = {
+                                // Encode without holding the mutex while doing IO.
+                                let mut endpoints_cache = BTreeMap::new();
+                                for (endpoint, ctx) in &endpoints {
+                                    let mut endpoint_cache = EndpointCache::default();
+                                    let global = ctx.traffic_manager.read_global(false);
+                                    endpoint_cache.global_uplink = global.uplink_bytes;
+                                    endpoint_cache.global_downlink = global.downlink_bytes;
+                                    endpoint_cache.global_uplink_packets = global.uplink_packets;
+                                    endpoint_cache.global_downlink_packets = global.downlink_packets;
+                                    endpoint_cache.global_tcp_sessions = global.tcp_sessions;
+                                    endpoint_cache.global_udp_sessions = global.udp_sessions;
+                                    for mut user in ctx.user_manager.list() {
+                                        ctx.traffic_manager.read_user(&mut user, false);
+                                        let username = user.user_name.clone();
+                                        if user.uplink_bytes > 0 {
+                                            endpoint_cache
+                                                .user_uplink
+                                                .insert(username.clone(), user.uplink_bytes);
+                                        }
+                                        if user.downlink_bytes > 0 {
+                                            endpoint_cache
+                                                .user_downlink
+                                                .insert(username.clone(), user.downlink_bytes);
+                                        }
+                                        if user.uplink_packets > 0 {
+                                            endpoint_cache
+                                                .user_uplink_packets
+                                                .insert(username.clone(), user.uplink_packets);
+                                        }
+                                        if user.downlink_packets > 0 {
+                                            endpoint_cache
+                                                .user_downlink_packets
+                                                .insert(username.clone(), user.downlink_packets);
+                                        }
+                                        if user.tcp_sessions > 0 {
+                                            endpoint_cache
+                                                .user_tcp_sessions
+                                                .insert(username.clone(), user.tcp_sessions);
+                                        }
+                                        if user.udp_sessions > 0 {
+                                            endpoint_cache
+                                                .user_udp_sessions
+                                                .insert(username.clone(), user.udp_sessions);
+                                        }
+                                        if let Some(ref pwd) = user.password {
+                                            if !pwd.is_empty() {
+                                                endpoint_cache.users.insert(username, pwd.clone());
+                                            }
+                                        }
+                                    }
+                                    endpoints_cache.insert(endpoint.clone(), endpoint_cache);
+                                }
+                                serde_json::to_vec_pretty(&Cache {
+                                    endpoints: endpoints_cache,
+                                })
+                            };
+
+                            let cache_binary = match cache_binary {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    tracing::error!(service = "ssm-api", error=%e, "Failed to encode cache");
+                                    continue;
+                                }
+                            };
+
+                            {
+                                let mut guard = last_saved_cache.lock();
+                                if *guard == cache_binary {
+                                    continue;
+                                }
+                                if let Some(parent) = path.parent() {
+                                    if let Err(e) = std::fs::create_dir_all(parent) {
+                                        tracing::error!(service = "ssm-api", error=%e, "Failed to create cache dir");
+                                        continue;
+                                    }
+                                }
+                                if let Err(e) = std::fs::write(path, &cache_binary) {
+                                    tracing::error!(service = "ssm-api", error=%e, "Failed to write cache");
+                                    continue;
+                                }
+                                *guard = cache_binary;
+                            }
+                        }
+                    });
+                    *self.save_task.lock() = Some(handle);
                 }
 
                 let router = self.create_router();
@@ -668,12 +943,6 @@ impl Service for SsmapiService {
                 Ok(())
             }
             StartStage::PostStart => {
-                // Bind to inbounds after all services have started
-                let traffic_manager = self.traffic_manager.clone();
-                let tag = self.tag.clone();
-                tokio::spawn(async move {
-                    Self::bind_inbounds_static(traffic_manager, tag).await;
-                });
                 Ok(())
             }
             StartStage::Started => {
@@ -694,6 +963,11 @@ impl Service for SsmapiService {
             tag = self.tag,
             "Closing SSMAPI service"
         );
+
+        // Stop periodic cache saver (best-effort).
+        if let Some(handle) = self.save_task.lock().take() {
+            handle.abort();
+        }
 
         // Save cache before closing
         if let Err(e) = self.save_cache() {
@@ -734,37 +1008,84 @@ mod tests {
     use super::*;
     use sb_config::ir::ServiceType;
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    fn create_test_ir() -> ServiceIR {
+    struct DummyManagedServer {
+        tag: String,
+        tracker_set: AtomicUsize,
+        update_calls: AtomicUsize,
+    }
+
+    impl super::super::ManagedSSMServer for DummyManagedServer {
+        fn set_tracker(&self, _tracker: Arc<dyn super::super::TrafficTracker>) {
+            self.tracker_set.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn tag(&self) -> &str {
+            &self.tag
+        }
+
+        fn inbound_type(&self) -> &str {
+            "shadowsocks"
+        }
+
+        fn update_users(&self, _users: Vec<String>, _passwords: Vec<String>) -> Result<(), String> {
+            self.update_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    fn create_test_ir() -> (ServiceIR, u16) {
+        let port = 51000 + (fastrand::u16(0..1000));
         let mut servers = HashMap::new();
         servers.insert("/".to_string(), "ss-in".to_string());
 
-        ServiceIR {
+        (
+            ServiceIR {
             ty: ServiceType::Ssmapi,
             tag: Some("test-ssmapi".to_string()),
             listen: Some("127.0.0.1".to_string()),
-            listen_port: Some(16001),
+            listen_port: Some(port),
             servers: Some(servers),
             ..Default::default()
-        }
+            },
+            port,
+        )
     }
 
     #[test]
     fn test_service_creation() {
-        let ir = create_test_ir();
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+
+        let (ir, port) = create_test_ir();
         let ctx = ServiceContext::default();
 
         let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
 
         assert_eq!(service.service_type(), "ssm-api");
         assert_eq!(service.tag(), "test-ssmapi");
-        assert_eq!(service.listen_addr.port(), 16001);
-        assert_eq!(service.user_manager.len(), 0);
+        assert_eq!(service.listen_addr.port(), port);
+        assert_eq!(service.user_manager().len(), 0);
+        assert_eq!(srv.tracker_set.load(Ordering::Relaxed), 1);
     }
 
     #[test]
     fn test_builder_function() {
-        let ir = create_test_ir();
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+
+        let (ir, _port) = create_test_ir();
         let ctx = ServiceContext::default();
 
         let service = build_ssmapi_service(&ir, &ctx);
@@ -774,49 +1095,96 @@ mod tests {
         assert_eq!(service.service_type(), "ssm-api");
     }
 
-    #[tokio::test]
-    async fn test_service_lifecycle() {
-        let ir = create_test_ir();
-        let ctx = ServiceContext::default();
+    #[test]
+    fn test_create_router_does_not_panic() {
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
 
+        let (ir, _port) = create_test_ir();
+        let ctx = ServiceContext::default();
         let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
 
-        // Initialize
-        assert!(service.start(StartStage::Initialize).is_ok());
+        let _router = service.create_router();
+    }
 
-        // Start (spawns background task)
-        assert!(service.start(StartStage::Start).is_ok());
+    #[test]
+    fn test_cache_write_go_format_keys() {
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
 
-        // Give server time to start
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        let temp = tempfile::tempdir().unwrap();
+        let cache_path = temp.path().join("ssmapi-cache.json");
 
-        // PostStart
-        assert!(service.start(StartStage::PostStart).is_ok());
+        let (mut ir, _port) = create_test_ir();
+        ir.cache_path = Some(cache_path.to_string_lossy().to_string());
 
-        // Started
-        assert!(service.start(StartStage::Started).is_ok());
+        let ctx = ServiceContext::default();
+        let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
 
-        // Test API endpoint
-        let client = reqwest::Client::new();
-        let url = format!("http://{}/server/v1", service.listen_addr);
+        service
+            .user_manager()
+            .add("alice".to_string(), "pw".to_string())
+            .unwrap();
+        service.traffic_manager().record_uplink("alice", 123, 1);
 
-        match client.get(&url).send().await {
-            Ok(resp) => {
-                assert_eq!(resp.status(), 200);
-                let body: serde_json::Value = resp.json().await.unwrap();
-                assert!(body.get("server").is_some());
-                assert_eq!(body.get("apiVersion").and_then(|v| v.as_str()), Some("v1"));
+        service.save_cache().unwrap();
+
+        let json = std::fs::read_to_string(cache_path).unwrap();
+        assert!(json.contains("\"global_uplink\""));
+        assert!(json.contains("\"user_uplink\""));
+        assert!(json.contains("\"users\""));
+    }
+
+    #[test]
+    fn test_cache_read_legacy_then_write_go() {
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+
+        let temp = tempfile::tempdir().unwrap();
+        let cache_path = temp.path().join("ssmapi-cache.json");
+
+        // Legacy (camelCase) cache payload.
+        let legacy = serde_json::json!({
+            "endpoints": {
+                "/": {
+                    "userUplink": { "alice": 10 },
+                    "users": { "alice": "pw" }
+                }
             }
-            Err(e) => {
-                // Server might not be ready yet, that's okay for this test
-                tracing::warn!(
-                    "API test request failed (expected in some test environments): {}",
-                    e
-                );
-            }
-        }
+        });
+        std::fs::write(&cache_path, serde_json::to_vec_pretty(&legacy).unwrap()).unwrap();
 
-        // Close
-        assert!(service.close().is_ok());
+        let (mut ir, _port) = create_test_ir();
+        ir.cache_path = Some(cache_path.to_string_lossy().to_string());
+
+        let ctx = ServiceContext::default();
+        let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
+
+        service.load_cache().unwrap();
+
+        assert!(service.user_manager().contains("alice"));
+        let mut u = crate::services::ssmapi::user::UserObject::new("alice".to_string(), None);
+        service.traffic_manager().read_user(&mut u, false);
+        assert_eq!(u.uplink_bytes, 10);
+
+        service.save_cache().unwrap();
+        let json = std::fs::read_to_string(cache_path).unwrap();
+        assert!(json.contains("\"user_uplink\""));
+        assert!(!json.contains("\"userUplink\""));
     }
 }

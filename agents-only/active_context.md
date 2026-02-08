@@ -281,6 +281,8 @@
 
 **目标**: 边缘服务补全 + 残余 polish，从 99% → 99.5%+ parity
 
+**规划**: `agents-only/03-planning/L3-WORKPACKAGES.md`（一级工作包的范围/依赖/验收/排序）
+
 ### L3 工作包
 
 | 包 | 名称 | 来源 PX | 工作量 | 优先级 | 说明 |
