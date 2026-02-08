@@ -713,9 +713,37 @@ impl Bridge {
             }
         }
 
+        // Build a minimal outbounds registry handle for service detour support.
+        // This mirrors adapter/bridge.rs's helper and is intentionally best-effort.
+        let outbounds_handle: Arc<crate::outbound::OutboundRegistryHandle> = {
+            use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+            let mut reg = OutboundRegistry::default();
+            for (name, _kind, conn) in &bridge.outbounds {
+                reg.insert(name.clone(), OutboundImpl::Connector(conn.clone()));
+            }
+            Arc::new(OutboundRegistryHandle::new(reg))
+        };
+
+        let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
+            Arc::new(
+                bridge
+                    .endpoints
+                    .iter()
+                    .map(|ep| (ep.tag().to_string(), ep.clone()))
+                    .collect(),
+            );
+
+        // Best-effort DNSRouter for services (e.g., DERP /bootstrap-dns).
+        let dns_router = crate::dns::config_builder::build_dns_components(ir, None)
+            .ok()
+            .and_then(|(_resolver, router)| router);
+
         // Build services from IR
         for service_ir in &ir.services {
-            let ctx = ServiceContext::default();
+            let mut ctx = ServiceContext::default()
+                .with_outbounds(outbounds_handle.clone())
+                .with_endpoints(endpoints_map.clone());
+            ctx.dns_router = dns_router.clone();
             if let Some(service) = service_registry().build(service_ir, &ctx) {
                 bridge.add_service(service);
             } else {

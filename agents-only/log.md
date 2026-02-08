@@ -23,6 +23,18 @@
 
 ## 日志记录
 
+### [2026-02-09 01:46] Agent: Codex (GPT-5)
+
+**任务**: L3.2 DERP 配置对齐（PX-014）前置信息收集与差距分析
+**变更**:
+- 新增 `agents-only/05-analysis/L3.2-DERP-GAP-ANALYSIS.md`（对照 Go/Rust 的 schema + runtime 差距，列出 IR 扩展与接线建议、最小验收点）
+
+**结果**: 成功
+**备注**:
+- 本条仅做分析与建议，不做任何代码实现/行为改动。
+
+---
+
 ### [2026-02-09 01:27] Agent: Codex (GPT-5)
 
 **任务**: 实现 L3.1.x SSMAPI 对齐（PX-011）并同步更新 agents-only 文档到最新状态

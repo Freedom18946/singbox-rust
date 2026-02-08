@@ -196,6 +196,8 @@ pub struct TcpDialer {
     pub bind_v6: Option<std::net::Ipv6Addr>,
     pub routing_mark: Option<u32>,
     pub reuse_addr: bool,
+    /// Network namespace path (Linux only).
+    pub netns: Option<String>,
     pub connect_timeout: Option<Duration>,
     pub tcp_fast_open: bool,
     pub tcp_multi_path: bool,
@@ -424,6 +426,18 @@ impl TcpDialer {
 
     /// Helper to connect a TCP stream with platform-specific protection and socket options
     async fn connect_tcp_stream(&self, addr: SocketAddr) -> std::io::Result<TcpStream> {
+        #[cfg(target_os = "linux")]
+        if let Some(netns) = self.netns.as_deref() {
+            return self.connect_tcp_stream_netns(addr, netns.to_string()).await;
+        }
+        #[cfg(not(target_os = "linux"))]
+        if self.netns.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "netns is only supported on Linux",
+            ));
+        }
+
         #[cfg(any(
             target_os = "android",
             target_os = "linux",
@@ -496,7 +510,15 @@ impl TcpDialer {
 
             // Convert to tokio TcpStream via TcpSocket to ensure correct registration
             let tokio_socket = tokio::net::TcpSocket::from_std_stream(socket.into());
-            tokio_socket.connect(addr).await
+            let fut = tokio_socket.connect(addr);
+            if let Some(to) = self.connect_timeout {
+                match tokio::time::timeout(to, fut).await {
+                    Ok(r) => r,
+                    Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "connect timeout")),
+                }
+            } else {
+                fut.await
+            }
         }
 
         #[cfg(not(any(
@@ -510,6 +532,96 @@ impl TcpDialer {
             // Fallback for other platforms (e.g. WASM if supported, or obscure unix)
             TcpStream::connect(addr).await
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl TcpDialer {
+    async fn connect_tcp_stream_netns(&self, addr: SocketAddr, netns: String) -> std::io::Result<TcpStream> {
+        use std::fs::File;
+        use std::os::unix::io::AsRawFd;
+
+        // Run the setns + connect on a dedicated blocking thread, then hand the
+        // connected fd back to tokio. We also restore the original netns to avoid
+        // leaking namespace changes across the blocking thread pool.
+        let bind_interface = self.bind_interface.clone();
+        let routing_mark = self.routing_mark;
+        let reuse_addr = self.reuse_addr;
+        let bind_v4 = self.bind_v4;
+        let bind_v6 = self.bind_v6;
+        let connect_timeout = self.connect_timeout;
+
+        let std_stream = tokio::task::spawn_blocking(move || -> std::io::Result<std::net::TcpStream> {
+            extern "C" {
+                fn setns(fd: i32, nstype: i32) -> i32;
+            }
+
+            let orig = File::open("/proc/self/ns/net")?;
+            let target = File::open(&netns)?;
+
+            unsafe {
+                if setns(target.as_raw_fd(), 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+
+            struct Restore(std::fs::File);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    extern "C" {
+                        fn setns(fd: i32, nstype: i32) -> i32;
+                    }
+                    unsafe {
+                        let _ = setns(self.0.as_raw_fd(), 0);
+                    }
+                }
+            }
+            let _restore = Restore(orig);
+
+            let domain = if addr.is_ipv4() {
+                socket2::Domain::IPV4
+            } else {
+                socket2::Domain::IPV6
+            };
+            let socket = socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
+
+            if reuse_addr {
+                let _ = socket.set_reuse_address(true);
+                #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
+                let _ = socket.set_reuse_port(true);
+            }
+
+            if addr.is_ipv4() {
+                if let Some(bind_v4) = bind_v4 {
+                    let sa = std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0);
+                    let _ = socket.bind(&sa.into());
+                }
+            } else if let Some(bind_v6) = bind_v6 {
+                let sa = std::net::SocketAddr::new(std::net::IpAddr::V6(bind_v6), 0);
+                let _ = socket.bind(&sa.into());
+            }
+
+            if let Some(iface) = bind_interface.as_deref() {
+                let _ = socket.bind_device(Some(iface.as_bytes()));
+            }
+            if let Some(mark) = routing_mark {
+                let _ = socket.set_mark(mark);
+            }
+
+            // Use blocking connect; when a timeout is configured, fall back to
+            // `std::net::TcpStream::connect_timeout` (does not preserve socket options).
+            if let Some(to) = connect_timeout {
+                std::net::TcpStream::connect_timeout(&addr, to)
+            } else {
+                socket.connect(&addr.into())?;
+                Ok(socket.into())
+            }
+        })
+        .await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("spawn_blocking: {e}")))??;
+
+        std_stream.set_nonblocking(true)?;
+        TcpStream::from_std(std_stream)
     }
 }
 
@@ -541,6 +653,7 @@ impl RetryableTcpDialer {
                 bind_v6: None,
                 routing_mark: None,
                 reuse_addr: false,
+                netns: None,
                 connect_timeout: None,
                 tcp_fast_open: false,
                 tcp_multi_path: false,
@@ -560,6 +673,7 @@ impl RetryableTcpDialer {
                 bind_v6: None,
                 routing_mark: None,
                 reuse_addr: false,
+                netns: None,
                 connect_timeout: None,
                 tcp_fast_open: false,
                 tcp_multi_path: false,

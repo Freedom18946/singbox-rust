@@ -56,6 +56,7 @@ impl TransportBuilder {
                 bind_v6: None,
                 routing_mark: None,
                 reuse_addr: false,
+                netns: None,
                 connect_timeout: None,
                 tcp_fast_open: false,
                 tcp_multi_path: false,
@@ -132,6 +133,18 @@ impl TransportBuilder {
             .downcast_mut::<crate::dialer::TcpDialer>()
         {
             tcp.connect_timeout = Some(timeout);
+        }
+        self
+    }
+
+    /// Set network namespace path (Linux only) (if underlying dialer is TCP)
+    pub fn netns(mut self, netns: String) -> Self {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
+            tcp.netns = Some(netns);
         }
         self
     }

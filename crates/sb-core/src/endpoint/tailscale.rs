@@ -24,6 +24,7 @@ use super::{
 };
 use ipnet::IpNet;
 use sb_config::ir::{EndpointIR, EndpointType};
+use std::any::Any;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
@@ -37,7 +38,7 @@ use tracing::{debug, info, warn};
 /// Implementors provide the actual connection to Tailscale control plane.
 /// This could be via tsnet FFI, tailscale daemon, or a stub for testing.
 #[async_trait::async_trait]
-pub trait TailscaleControlPlane: Send + Sync {
+pub trait TailscaleControlPlane: Send + Sync + Any {
     /// Start the control plane and authenticate.
     async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -297,6 +298,11 @@ impl DaemonControlPlane {
             config,
             status: RwLock::new(None),
         }
+    }
+
+    /// Get the LocalAPI socket path used by this control plane.
+    pub fn socket_path(&self) -> &std::path::Path {
+        &self.socket_path
     }
 
     /// Find the tailscaled socket path.
@@ -571,6 +577,39 @@ impl TailscaleEndpoint {
     /// Set the control plane provider.
     pub fn set_control_plane(&self, cp: Arc<dyn TailscaleControlPlane>) {
         *self.control_plane.write() = Some(cp);
+    }
+
+    /// Return the tailscaled LocalAPI socket path for daemon-only mode.
+    ///
+    /// Used by DERP `verify_client_endpoint` (Go parity: LocalClient/WhoIsNodeKey).
+    pub fn localapi_socket_path(
+        &self,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        #[cfg(unix)]
+        {
+            let cp = self
+                .control_plane
+                .read()
+                .clone()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "no control plane"))?;
+            let any = cp.as_ref() as &dyn Any;
+            if let Some(daemon) = any.downcast_ref::<DaemonControlPlane>() {
+                return Ok(daemon.socket_path().to_string_lossy().to_string());
+            }
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "tailscale endpoint control plane has no LocalAPI socket",
+            )
+            .into())
+        }
+        #[cfg(not(unix))]
+        {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "LocalAPI socket not supported on this platform",
+            )
+            .into())
+        }
     }
 
     /// Get current state.

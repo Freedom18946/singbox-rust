@@ -21,6 +21,15 @@ pub struct ServiceContext {
     /// Optional DNS resolver for services that need routing.
     /// 可选的 DNS 解析器，用于需要路由的服务。
     pub dns_resolver: Option<Arc<dyn crate::dns::DnsResolver>>,
+    /// Optional DNS router (Go parity: adapter.DNSRouter) for service handlers (e.g., DERP bootstrap-dns).
+    /// 可选的 DNS 路由器（Go 对齐：adapter.DNSRouter），供服务 handler 使用（例如 DERP /bootstrap-dns）。
+    pub dns_router: Option<Arc<dyn crate::dns::dns_router::DnsRouter>>,
+    /// Optional outbounds registry for detour-capable dialing (Go parity: Dial Fields detour).
+    /// 可选出站注册表，用于支持 detour 拨号（Go 对齐：Dial Fields detour）。
+    pub outbounds: Option<Arc<crate::outbound::OutboundRegistryHandle>>,
+    /// Optional endpoints map (tag -> endpoint) for services that reference endpoint tags (e.g., DERP verify_client_endpoint).
+    /// 可选 endpoints 映射（tag -> endpoint），用于服务引用 endpoint tag（例如 DERP verify_client_endpoint）。
+    pub endpoints: Option<Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>>>,
     /// Optional network monitor for tracking network changes.
     /// 可选的网络监视器，用于跟踪网络变化。
     #[cfg(feature = "network_monitor")]
@@ -41,9 +50,45 @@ impl ServiceContext {
     pub fn with_dns_resolver(resolver: Arc<dyn crate::dns::DnsResolver>) -> Self {
         Self {
             dns_resolver: Some(resolver),
+            dns_router: None,
+            outbounds: None,
+            endpoints: None,
             #[cfg(feature = "network_monitor")]
             network_monitor: None,
         }
+    }
+
+    /// Create a context with a DNS router.
+    /// 创建一个带有 DNS 路由器的上下文。
+    #[must_use]
+    pub fn with_dns_router(router: Arc<dyn crate::dns::dns_router::DnsRouter>) -> Self {
+        Self {
+            dns_resolver: None,
+            dns_router: Some(router),
+            outbounds: None,
+            endpoints: None,
+            #[cfg(feature = "network_monitor")]
+            network_monitor: None,
+        }
+    }
+
+    /// Attach an outbounds registry.
+    /// 附加出站注册表。
+    #[must_use]
+    pub fn with_outbounds(mut self, outbounds: Arc<crate::outbound::OutboundRegistryHandle>) -> Self {
+        self.outbounds = Some(outbounds);
+        self
+    }
+
+    /// Attach an endpoints map (tag -> endpoint).
+    /// 附加 endpoints 映射（tag -> endpoint）。
+    #[must_use]
+    pub fn with_endpoints(
+        mut self,
+        endpoints: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>>,
+    ) -> Self {
+        self.endpoints = Some(endpoints);
+        self
     }
 
     /// Set the network monitor.

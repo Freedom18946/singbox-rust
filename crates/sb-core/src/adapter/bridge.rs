@@ -672,9 +672,28 @@ pub fn build_bridge<'a>(
         }
     }
 
+    let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
+        Arc::new(
+            br.endpoints
+                .iter()
+                .map(|ep| (ep.tag().to_string(), ep.clone()))
+                .collect(),
+        );
+
     // Step 5: Services
     for service_ir in &cfg.services {
-        let ctx = ServiceContext::default();
+        let ctx = ServiceContext::default()
+            .with_outbounds(outbound_handle.clone())
+            .with_endpoints(endpoints_map.clone());
+        let ctx = if let Some(router) = dns_router.clone() {
+            // Prefer DNSRouter when available (DERP /bootstrap-dns, domain_resolver, etc.)
+            ServiceContext {
+                dns_router: Some(router),
+                ..ctx
+            }
+        } else {
+            ctx
+        };
         if let Some(service) = service_registry().build(service_ir, &ctx) {
             br.add_service(service);
         } else {
@@ -745,9 +764,19 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         }
     }
 
+    let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
+        Arc::new(
+            br.endpoints
+                .iter()
+                .map(|ep| (ep.tag().to_string(), ep.clone()))
+                .collect(),
+        );
+
     // Step 5: Services
     for service_ir in &cfg.services {
-        let ctx = ServiceContext::default();
+        let ctx = ServiceContext::default()
+            .with_outbounds(outbound_handle.clone())
+            .with_endpoints(endpoints_map.clone());
         if let Some(service) = service_registry().build(service_ir, &ctx) {
             br.add_service(service);
         } else {

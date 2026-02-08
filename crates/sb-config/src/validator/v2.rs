@@ -1,5 +1,9 @@
-use crate::ir::{ConfigIR, Credentials, DerpStunOptionsIR, HeaderEntry, InboundTlsOptionsIR};
+use crate::ir::{
+    ConfigIR, Credentials, DerpMeshPeerIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, HeaderEntry,
+    InboundTlsOptionsIR, Listable, StringOrObj,
+};
 use sb_types::IssueCode;
+use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -336,6 +340,33 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
     }
 }
 
+fn extract_listable_strings(value: Option<&Value>) -> Option<Listable<String>> {
+    extract_string_list(value).map(|items| Listable { items })
+}
+
+fn parse_listable<T>(value: Option<&Value>) -> Option<Listable<T>>
+where
+    T: DeserializeOwned,
+{
+    let v = value?.clone();
+    serde_json::from_value::<Listable<T>>(v).ok()
+}
+
+fn parse_derp_verify_client_urls(
+    value: Option<&Value>,
+) -> Option<Listable<StringOrObj<DerpVerifyClientUrlIR>>> {
+    if let Some(parsed) = parse_listable::<StringOrObj<DerpVerifyClientUrlIR>>(value) {
+        return Some(parsed);
+    }
+    // Legacy fallback: keep accepting strings/arrays of strings.
+    extract_string_list(value).map(|items| Listable {
+        items: items
+            .into_iter()
+            .map(|s| StringOrObj(DerpVerifyClientUrlIR::from(s)))
+            .collect(),
+    })
+}
+
 fn parse_seconds_field_to_millis(value: Option<&Value>) -> Option<u64> {
     match value {
         Some(Value::Number(num)) => num.as_u64().map(|secs| secs.saturating_mul(1_000)),
@@ -460,14 +491,20 @@ fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsI
     })
 }
 
-fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Vec<String>> {
+fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Listable<StringOrObj<DerpMeshPeerIR>>> {
+    if let Some(parsed) = parse_listable::<StringOrObj<DerpMeshPeerIR>>(value) {
+        return Some(parsed);
+    }
+
+    // Legacy fallback: accept strings and array entries as strings; also accept object
+    // entries with `server` + optional `server_port`, and convert to the string shorthand.
     let value = value?;
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<StringOrObj<DerpMeshPeerIR>> = Vec::new();
     match value {
         Value::String(s) => {
             let s = s.trim();
             if !s.is_empty() {
-                out.push(s.to_string());
+                out.push(StringOrObj(DerpMeshPeerIR::from(s.to_string())));
             }
         }
         Value::Array(arr) => {
@@ -476,16 +513,22 @@ fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Vec<String>> {
                     Value::String(s) => {
                         let s = s.trim();
                         if !s.is_empty() {
-                            out.push(s.to_string());
+                            out.push(StringOrObj(DerpMeshPeerIR::from(s.to_string())));
                         }
                     }
                     Value::Object(obj) => {
                         let server = obj.get("server").and_then(|v| v.as_str()).map(str::trim);
                         let port = parse_u16_field(obj.get("server_port"));
-                        if let (Some(server), Some(port)) = (server, port) {
-                            if !server.is_empty() {
-                                out.push(format!("{server}:{port}"));
+                        if let Some(server) = server {
+                            if server.is_empty() {
+                                continue;
                             }
+                            let shorthand = if let Some(port) = port {
+                                format!("{server}:{port}")
+                            } else {
+                                server.to_string()
+                            };
+                            out.push(StringOrObj(DerpMeshPeerIR::from(shorthand)));
                         }
                     }
                     _ => {}
@@ -497,7 +540,7 @@ fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Vec<String>> {
     if out.is_empty() {
         None
     } else {
-        Some(out)
+        Some(Listable { items: out })
     }
 }
 
@@ -3237,11 +3280,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .or_else(|| s.get("derp_server_key_path"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
-                    service_ir.verify_client_endpoint = extract_string_list(
+                    service_ir.verify_client_endpoint = extract_listable_strings(
                         s.get("verify_client_endpoint")
                             .or_else(|| s.get("derp_verify_client_endpoint")),
                     );
-                    service_ir.verify_client_url = extract_string_list(
+                    service_ir.verify_client_url = parse_derp_verify_client_urls(
                         s.get("verify_client_url")
                             .or_else(|| s.get("derp_verify_client_url")),
                     );
