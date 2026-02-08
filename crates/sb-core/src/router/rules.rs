@@ -43,6 +43,10 @@ pub enum Decision {
     /// Require DNS resolution before continuing.
     /// 在继续前需要 DNS 解析。
     Resolve,
+    /// Hijack DNS queries to the DnsRouter (L2.10.17).
+    /// Intercepts DNS traffic and routes through the built-in DNS router.
+    /// 将 DNS 查询劫持到 DnsRouter。
+    HijackDns,
 }
 
 impl Decision {
@@ -56,6 +60,7 @@ impl Decision {
             Decision::Hijack { .. } => "hijack",
             Decision::Sniff => "sniff",
             Decision::Resolve => "resolve",
+            Decision::HijackDns => "hijack-dns",
         }
     }
 
@@ -70,6 +75,7 @@ impl Decision {
                 | Decision::Reject
                 | Decision::RejectDrop
                 | Decision::Hijack { .. }
+                | Decision::HijackDns
         )
     }
 
@@ -101,7 +107,7 @@ impl Decision {
                 address: override_address,
                 port: override_port,
             },
-            RuleAction::HijackDns => Decision::Reject, // DNS hijack not applicable for generic routing
+            RuleAction::HijackDns => Decision::HijackDns,
             RuleAction::Sniff => Decision::Sniff,
             RuleAction::Resolve => Decision::Resolve,
             RuleAction::RouteOptions => Decision::Direct, // NOTE: RouteOptions defaults to Direct
@@ -1794,6 +1800,7 @@ fn decision_label(d: &Decision) -> &'static str {
         Decision::Hijack { .. } => "hijack",
         Decision::Sniff => "sniff",
         Decision::Resolve => "resolve",
+        Decision::HijackDns => "hijack-dns",
     }
 }
 

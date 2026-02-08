@@ -51,11 +51,17 @@ impl Rcode {
     }
 }
 
-/// DNS cache query key for lookups
+/// DNS cache query key for lookups.
+///
+/// When `independent_cache` is enabled, `transport_tag` is populated so that
+/// different upstreams maintain separate cache entries for the same domain+qtype.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Key {
     pub name: String,
     pub qtype: QType,
+    /// When independent_cache is enabled, this field contains the upstream/transport
+    /// tag so that different transports don't share cached results.
+    pub transport_tag: Option<String>,
 }
 
 /// DNS query type
@@ -164,6 +170,9 @@ pub struct DnsCache {
     min_ttl: Duration,
     /// 最大 TTL（防止过长的 TTL）
     max_ttl: Duration,
+    /// When true, cached entries never expire based on TTL; only LRU eviction removes them.
+    /// Corresponds to `disable_expire` in sing-box Go configuration.
+    disable_expire: bool,
 }
 
 impl DnsCache {
@@ -196,7 +205,23 @@ impl DnsCache {
             negative_ttl,
             min_ttl,
             max_ttl,
+            disable_expire: false,
         }
+    }
+
+    /// Set whether TTL-based expiry is disabled.
+    ///
+    /// When `disable_expire` is `true`, entries are never considered expired by
+    /// TTL; only LRU eviction removes them. This is useful for environments
+    /// where stale answers are preferred over re-querying.
+    pub fn with_disable_expire(mut self, disable: bool) -> Self {
+        self.disable_expire = disable;
+        self
+    }
+
+    /// Returns whether TTL-based expiry is disabled.
+    pub fn disable_expire(&self) -> bool {
+        self.disable_expire
     }
 
     /// 从缓存获取 DNS 答案
@@ -210,7 +235,9 @@ impl DnsCache {
         };
 
         if let Some(entry) = cache.get_mut(key) {
-            if entry.is_expired() {
+            // When disable_expire is true, skip the TTL expiry check entirely;
+            // entries are only removed via LRU eviction.
+            if !self.disable_expire && entry.is_expired() {
                 // 条目已过期，移除
                 cache.remove(key);
 
@@ -228,7 +255,11 @@ impl DnsCache {
 
             // 返回带有剩余 TTL 的答案
             let mut answer = entry.answer.clone();
-            answer.ttl = entry.remaining_ttl();
+            // When disable_expire is true, return the original TTL so callers
+            // don't see a zero/negative value.
+            if !self.disable_expire {
+                answer.ttl = entry.remaining_ttl();
+            }
 
             Some(answer)
         } else {
@@ -302,7 +333,14 @@ impl DnsCache {
     }
 
     /// 清除过期条目
+    ///
+    /// When `disable_expire` is `true`, this is a no-op since entries are never
+    /// considered expired by TTL.
     pub fn cleanup_expired(&self) {
+        if self.disable_expire {
+            return;
+        }
+
         let mut cache = match self.cache.lock() {
             Ok(g) => g,
             Err(_e) => {
@@ -365,7 +403,7 @@ impl DnsCache {
         let mut negative_count = 0;
 
         for entry in cache.values() {
-            if entry.is_expired() {
+            if !self.disable_expire && entry.is_expired() {
                 expired_count += 1;
             }
             if entry.is_negative {
@@ -392,8 +430,11 @@ impl DnsCache {
         };
 
         if let Some(entry) = cache.get(key) {
-            if entry.is_expired() {
+            if !self.disable_expire && entry.is_expired() {
                 None
+            } else if self.disable_expire {
+                // Return original TTL when expiry is disabled
+                Some(entry.answer.ttl)
             } else {
                 Some(entry.remaining_ttl())
             }
@@ -420,7 +461,12 @@ impl DnsCache {
             #[cfg(feature = "metrics")]
             metrics::counter!("dns_cache_evict_total", "reason" => "lru").increment(1);
 
-            tracing::debug!("Evicted DNS cache entry: {}:{:?}", key.name, key.qtype);
+            tracing::debug!(
+                "Evicted DNS cache entry: {}:{:?} (transport: {:?})",
+                key.name,
+                key.qtype,
+                key.transport_tag,
+            );
         }
     }
 }
@@ -481,27 +527,45 @@ mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
 
+    /// Helper to create a basic Key without transport_tag.
+    fn make_key(name: &str) -> Key {
+        Key {
+            name: name.to_string(),
+            qtype: QType::A,
+            transport_tag: None,
+        }
+    }
+
+    /// Helper to create a Key with a transport_tag (for independent_cache tests).
+    fn make_key_with_transport(name: &str, tag: &str) -> Key {
+        Key {
+            name: name.to_string(),
+            qtype: QType::A,
+            transport_tag: Some(tag.to_string()),
+        }
+    }
+
+    /// Helper to create a simple DnsAnswer.
+    fn make_answer(ip_last: u8, ttl: Duration) -> DnsAnswer {
+        DnsAnswer {
+            ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, ip_last))],
+            ttl,
+            source: Source::System,
+            rcode: Rcode::NoError,
+            created_at: Instant::now(),
+        }
+    }
+
     #[test]
     fn test_cache_basic_operations() {
         let cache = DnsCache::new(10);
-        let domain = "example.com";
-
-        let key = Key {
-            name: domain.to_string(),
-            qtype: QType::A,
-        };
+        let key = make_key("example.com");
 
         // 缓存未命中
         assert!(cache.get(&key).is_none());
 
         // 存入缓存
-        let answer = DnsAnswer {
-            ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
-            ttl: Duration::from_secs(300),
-            source: Source::System,
-            rcode: Rcode::NoError,
-            created_at: Instant::now(),
-        };
+        let answer = make_answer(4, Duration::from_secs(300));
         cache.put(key.clone(), answer.clone());
 
         // 缓存命中
@@ -513,11 +577,7 @@ mod tests {
     #[test]
     fn test_negative_cache() {
         let cache = DnsCache::new(10);
-        let domain = "nonexistent.com";
-        let key = Key {
-            name: domain.to_string(),
-            qtype: QType::A,
-        };
+        let key = make_key("nonexistent.com");
 
         // 存入负缓存
         cache.put_negative(key.clone());
@@ -533,21 +593,10 @@ mod tests {
         std::env::set_var("SB_DNS_MIN_TTL_S", "0");
 
         let cache = DnsCache::new(10);
-        let domain = "example.com";
-
-        let key = Key {
-            name: domain.to_string(),
-            qtype: QType::A,
-        };
+        let key = make_key("example.com");
 
         // 存入短 TTL 的条目
-        let answer = DnsAnswer {
-            ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
-            ttl: Duration::from_millis(10),
-            source: Source::System,
-            rcode: Rcode::NoError,
-            created_at: Instant::now(),
-        };
+        let answer = make_answer(4, Duration::from_millis(10));
         cache.put(key.clone(), answer);
 
         // 等待过期
@@ -570,22 +619,14 @@ mod tests {
             let key = Key {
                 name: domain,
                 qtype: QType::A,
+                transport_tag: None,
             };
-            let answer = DnsAnswer {
-                ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, i as u8))],
-                ttl: Duration::from_secs(300),
-                source: Source::System,
-                rcode: Rcode::NoError,
-                created_at: Instant::now(),
-            };
+            let answer = make_answer(i as u8, Duration::from_secs(300));
             cache.put(key, answer);
         }
 
         // 添加负缓存
-        let neg_key = Key {
-            name: "nonexistent.com".to_string(),
-            qtype: QType::A,
-        };
+        let neg_key = make_key("nonexistent.com");
         cache.put_negative(neg_key);
 
         let stats = cache.stats();
@@ -603,17 +644,8 @@ mod tests {
         let _manager = CacheManager::new(cache.clone());
 
         // 添加一个短 TTL 的条目
-        let answer = DnsAnswer {
-            ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
-            ttl: Duration::from_millis(50),
-            source: Source::System,
-            rcode: Rcode::NoError,
-            created_at: Instant::now(),
-        };
-        let key = Key {
-            name: "example.com".to_string(),
-            qtype: QType::A,
-        };
+        let answer = make_answer(4, Duration::from_millis(50));
+        let key = make_key("example.com");
         cache.put(key.clone(), answer);
 
         // 启动清理任务（短间隔用于测试）
@@ -633,6 +665,235 @@ mod tests {
         assert!(cache.get(&key).is_none());
 
         // 清理环境变量
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    // =========================================================================
+    // L2.10.18: Independent cache per-transport
+    // =========================================================================
+
+    #[test]
+    fn test_independent_cache_different_transport_tags_are_separate() {
+        let cache = DnsCache::new(100);
+
+        // Same domain, same qtype, but different transport tags.
+        let key_upstream_a = make_key_with_transport("example.com", "google-dns");
+        let key_upstream_b = make_key_with_transport("example.com", "cloudflare-dns");
+
+        let answer_a = make_answer(1, Duration::from_secs(300));
+        let answer_b = make_answer(2, Duration::from_secs(300));
+
+        cache.put(key_upstream_a.clone(), answer_a.clone());
+        cache.put(key_upstream_b.clone(), answer_b.clone());
+
+        // Each transport tag should return its own answer.
+        let cached_a = cache.get(&key_upstream_a).unwrap();
+        assert_eq!(cached_a.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 1)));
+
+        let cached_b = cache.get(&key_upstream_b).unwrap();
+        assert_eq!(cached_b.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 2)));
+    }
+
+    #[test]
+    fn test_independent_cache_none_tag_separate_from_tagged() {
+        let cache = DnsCache::new(100);
+
+        // Key without transport_tag (shared cache mode)
+        let key_shared = make_key("example.com");
+        // Key with transport_tag (independent cache mode)
+        let key_tagged = make_key_with_transport("example.com", "upstream-1");
+
+        let answer_shared = make_answer(10, Duration::from_secs(300));
+        let answer_tagged = make_answer(20, Duration::from_secs(300));
+
+        cache.put(key_shared.clone(), answer_shared);
+        cache.put(key_tagged.clone(), answer_tagged);
+
+        let cached_shared = cache.get(&key_shared).unwrap();
+        assert_eq!(cached_shared.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 10)));
+
+        let cached_tagged = cache.get(&key_tagged).unwrap();
+        assert_eq!(cached_tagged.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 20)));
+    }
+
+    #[test]
+    fn test_independent_cache_same_tag_shares() {
+        let cache = DnsCache::new(100);
+
+        let key1 = make_key_with_transport("example.com", "upstream-1");
+        let key2 = make_key_with_transport("example.com", "upstream-1");
+
+        let answer = make_answer(42, Duration::from_secs(300));
+        cache.put(key1.clone(), answer);
+
+        // Same transport_tag should share the entry.
+        let cached = cache.get(&key2).unwrap();
+        assert_eq!(cached.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 42)));
+    }
+
+    #[test]
+    fn test_independent_cache_stats_counts_all_entries() {
+        let cache = DnsCache::new(100);
+
+        // Insert same domain with two different transport tags.
+        let key_a = make_key_with_transport("example.com", "dns-a");
+        let key_b = make_key_with_transport("example.com", "dns-b");
+
+        cache.put(key_a, make_answer(1, Duration::from_secs(300)));
+        cache.put(key_b, make_answer(2, Duration::from_secs(300)));
+
+        let stats = cache.stats();
+        // Two separate entries for the same domain but different transport tags.
+        assert_eq!(stats.total_entries, 2);
+    }
+
+    // =========================================================================
+    // L2.10.19: disable_expire support
+    // =========================================================================
+
+    #[test]
+    fn test_disable_expire_entries_never_expire() {
+        // Use min_ttl=0 so the short TTL isn't clamped up.
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        let cache = DnsCache::new(10).with_disable_expire(true);
+        assert!(cache.disable_expire());
+
+        let key = make_key("example.com");
+        let answer = make_answer(4, Duration::from_millis(10));
+        cache.put(key.clone(), answer.clone());
+
+        // Wait well past the TTL.
+        std::thread::sleep(Duration::from_millis(50));
+
+        // Entry should still be returned because disable_expire is true.
+        let cached = cache.get(&key);
+        assert!(cached.is_some(), "entry should not expire when disable_expire is true");
+        let cached = cached.unwrap();
+        assert_eq!(cached.ips, answer.ips);
+        // TTL should be the original value, not a decremented one.
+        assert_eq!(cached.ttl, Duration::from_millis(10));
+
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    #[test]
+    fn test_disable_expire_false_entries_still_expire() {
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        let cache = DnsCache::new(10).with_disable_expire(false);
+        assert!(!cache.disable_expire());
+
+        let key = make_key("expire-test.com");
+        let answer = make_answer(5, Duration::from_millis(10));
+        cache.put(key.clone(), answer);
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        // Should expire normally.
+        assert!(cache.get(&key).is_none());
+
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    #[test]
+    fn test_disable_expire_cleanup_is_noop() {
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        let cache = DnsCache::new(10).with_disable_expire(true);
+
+        let key = make_key("cleanup-test.com");
+        let answer = make_answer(6, Duration::from_millis(10));
+        cache.put(key.clone(), answer);
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        // cleanup_expired should be a no-op when disable_expire is true.
+        cache.cleanup_expired();
+
+        let stats = cache.stats();
+        assert_eq!(stats.total_entries, 1, "cleanup_expired should not remove entries when disable_expire is true");
+        assert_eq!(stats.expired_entries, 0, "no entries should be counted as expired when disable_expire is true");
+
+        // Entry should still be accessible.
+        assert!(cache.get(&key).is_some());
+
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    #[test]
+    fn test_disable_expire_lru_eviction_still_works() {
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        // Cache with capacity of 2.
+        let cache = DnsCache::new(2).with_disable_expire(true);
+
+        let key1 = make_key("first.com");
+        let key2 = make_key("second.com");
+        let key3 = make_key("third.com");
+
+        cache.put(key1.clone(), make_answer(1, Duration::from_millis(10)));
+        cache.put(key2.clone(), make_answer(2, Duration::from_millis(10)));
+
+        // Access key2 to make key1 the LRU candidate.
+        let _ = cache.get(&key2);
+
+        // Inserting key3 should evict the LRU entry (key1).
+        cache.put(key3.clone(), make_answer(3, Duration::from_millis(10)));
+
+        assert!(cache.get(&key1).is_none(), "LRU entry should be evicted even with disable_expire");
+        assert!(cache.get(&key2).is_some(), "recently accessed entry should survive");
+        assert!(cache.get(&key3).is_some(), "newly inserted entry should exist");
+
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    #[test]
+    fn test_disable_expire_peek_remaining_returns_original_ttl() {
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        let cache = DnsCache::new(10).with_disable_expire(true);
+
+        let key = make_key("peek-test.com");
+        let ttl = Duration::from_millis(10);
+        cache.put(key.clone(), make_answer(7, ttl));
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        // peek_remaining should return the original TTL when disable_expire is true.
+        let remaining = cache.peek_remaining(&key);
+        assert!(remaining.is_some(), "peek_remaining should return Some when disable_expire is true");
+        assert_eq!(remaining.unwrap(), ttl);
+
+        std::env::remove_var("SB_DNS_MIN_TTL_S");
+    }
+
+    // =========================================================================
+    // Combined: independent_cache + disable_expire
+    // =========================================================================
+
+    #[test]
+    fn test_independent_cache_with_disable_expire() {
+        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
+
+        let cache = DnsCache::new(100).with_disable_expire(true);
+
+        let key_a = make_key_with_transport("example.com", "dns-a");
+        let key_b = make_key_with_transport("example.com", "dns-b");
+
+        cache.put(key_a.clone(), make_answer(1, Duration::from_millis(10)));
+        cache.put(key_b.clone(), make_answer(2, Duration::from_millis(10)));
+
+        // Wait past TTL.
+        std::thread::sleep(Duration::from_millis(50));
+
+        // Both entries should still be present (disable_expire) and independent.
+        let cached_a = cache.get(&key_a).unwrap();
+        assert_eq!(cached_a.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 1)));
+
+        let cached_b = cache.get(&key_b).unwrap();
+        assert_eq!(cached_b.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 2)));
+
         std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 }

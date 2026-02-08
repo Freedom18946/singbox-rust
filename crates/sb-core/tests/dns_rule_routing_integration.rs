@@ -118,6 +118,9 @@ async fn test_dns_rule_routing_integration() {
             answer: None,
             ns: None,
             extra: None,
+            disable_cache: None,
+            rewrite_ttl: None,
+            client_subnet: None,
         },
         DnsRoutingRule {
             rule_set: cn_rules,
@@ -129,6 +132,9 @@ async fn test_dns_rule_routing_integration() {
             answer: None,
             ns: None,
             extra: None,
+            disable_cache: None,
+            rewrite_ttl: None,
+            client_subnet: None,
         },
     ];
 

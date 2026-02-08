@@ -7,22 +7,142 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: L2 功能对齐 — Tier 1 ✅，L2.1 审计 ✅，**L2.6 ✅**，**L2.7 ✅**，**L2.8 ✅ 完成**
-**L1 架构整固**: ✅ **全部完成**（M1.1 + M1.2 + M1.3，0 违规）
-**L1 回归验证**: ✅ 4 处回归已修复，1431 tests passed
-**L2 Tier 1 初步**: ✅ 完成（L2.2 maxminddb + L2.3 schema + L2.4 Clash API 初步 + L2.5 CLI）
-**L2.1 审计**: ✅ **全部完成** — 18 项偏差修复 (12 BREAK + 5 DEGRADE + 1 COSMETIC)
-**L2.6 Selector 持久化**: ✅ **全部完成** — OutboundGroup trait + CacheFile 联通 + as_group() bug 修复
-**L2.7 URLTest 历史**: ✅ **全部完成** — URLTestHistoryStorage + history 填充 + tolerance 防抖 + 默认值 Go 对齐
-**L2.8 ConnectionTracker**: ✅ **全部完成** — 全局 ConnTracker 接入 I/O + CancellationToken + /connections WS + /traffic 真实化
-**L2 缺口分析**: ✅ 完成 → `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
-**Clash API 审计报告**: ✅ → `agents-only/05-analysis/CLASH-API-AUDIT.md`
-**Parity**: ~93% (194/209)，目标 Tier 2 完成后 →96%
-**Tier 2 进度**: L2.6 ✅ / L2.7 ✅ / L2.8 ✅ / L2.9 待做 / L2.10 待做
+**当前阶段**: **L3 Polish / Edge Services** （L1 ✅ Closed, L2 ✅ Closed）
+**Parity**: ~99% (208/209)
+**Tests**: 1492+ passed, boundaries clean
+
+### 已关闭里程碑
+
+| 里程碑 | 关闭日期 | 内容 |
+|--------|---------|------|
+| **L1 架构整固** | 2026-02-07 | M1.1 + M1.2 + M1.3，check-boundaries.sh exit 0 |
+| **L2 功能对齐** | 2026-02-08 | Tier 1 (L2.1-L2.5) + Tier 2 (L2.6-L2.10)，88% → 99% parity |
+
+### 关键参考
+
+- **Clash API 审计报告**: `agents-only/05-analysis/CLASH-API-AUDIT.md`
+- **L2 缺口分析**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
+- **DNS 栈分析**: `agents-only/05-analysis/L2.10-DNS-STACK-ANALYSIS.md`
+- **L3 Scope**: 见下方
 
 ---
 
-## ✅ 最新完成：L2.8 ConnectionTracker + 连接面板
+<details>
+<summary>L2 详细实施记录（已归档至 implementation-history.md）</summary>
+
+## ✅ L2.10 DNS 栈对齐
+
+**日期**: 2026-02-08
+**Parity**: 94% → ~99%
+
+### 修复的核心问题
+
+1. **DnsRouter.exchange() 死代码** — 返回 "not yet supported"。实现: parse query → resolve_with_context → build_dns_response wire-format 往返
+2. **RDRC 从未调用** — CacheFileService 有 RDRC 存储但无 transport-aware API。新增 `check_rdrc_rejection(transport, domain, qtype)` / `save_rdrc_rejection()`
+3. **FakeIP 全局 env-gated 而非规则驱动** — 新增 `FakeIpUpstream` adapter 实现 DnsUpstream trait，由规则路由；lookup() 跳过 FakeIP
+4. **无 Hosts upstream** — 新增 `HostsUpstream` adapter，支持 predefined JSON + /etc/hosts 文件
+5. **DnsServerIR 缺 server_type** — GUI 生成 `type: "fakeip"/"hosts"` 等，IR 只有 address 前缀判断
+6. **DNS 规则动作不完整** — 新增 RouteOptions（修改选项继续匹配）、Predefined（返回预定义响应）
+7. **DNS hijack 路由动作为占位** — `Decision::HijackDns` 从 Reject 变为独立决策
+8. **缓存无 transport 隔离** — 新增 independent_cache: Key 包含 transport_tag
+9. **缓存无 disable_expire** — 新增 disable_expire: 跳过 TTL 过期检查
+10. **ECS 仅 UDP 注入** — 新增 wire-format 层 `inject_edns0_client_subnet()` / `parse_edns0_client_subnet()`
+11. **无反向映射** — 新增 reverse_mapping LruCache(1024) + `DnsRouter.lookup_reverse_mapping(ip)`
+
+### 4 Phase 实施
+
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| Phase 1 | 核心链路联通 (exchange, RDRC, DNS inbound, bootstrap wiring) | ✅ |
+| Phase 2 | Transport 类型补齐 (server_type, FakeIP, Hosts, 规则驱动, 反向映射) | ✅ |
+| Phase 3 | DNS 规则动作补齐 (route-options, predefined, address-limit, hijack-dns) | ✅ |
+| Phase 4 | 缓存增强 + EDNS0 (independent cache, disable_expire, ECS inject, per-rule subnet) | ✅ |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `crates/sb-core/src/dns/message.rs` | +build_dns_response(), +extract_rcode(), +parse_all_answer_ips(), +get_query_id(), +set_response_id(), +inject_edns0_client_subnet(), +parse_edns0_client_subnet(), +18 tests |
+| `crates/sb-core/src/dns/rule_engine.rs` | exchange() 实现, +RouteOptions/Predefined actions, +fakeip_tags, +reverse_mapping, +client_subnet propagation |
+| `crates/sb-core/src/dns/config_builder.rs` | +cache_file param, +fakeip/hosts support, +mark_fakeip_upstream, +route-options/predefined parsing |
+| `crates/sb-core/src/dns/dns_router.rs` | +lookup_reverse_mapping() trait method |
+| `crates/sb-core/src/dns/upstream.rs` | +FakeIpUpstream, +HostsUpstream, +11 tests |
+| `crates/sb-core/src/dns/cache.rs` | +transport_tag in Key, +disable_expire, +10 tests |
+| `crates/sb-core/src/services/cache_file.rs` | +check_rdrc_rejection(), +save_rdrc_rejection(), +1 test |
+| `crates/sb-config/src/ir/mod.rs` | DnsServerIR +server_type/inet4_range/inet6_range/hosts_path/predefined, DnsIR +disable_expire |
+| `crates/sb-adapters/src/inbound/dns.rs` | +dns_router field, +DnsRouter exchange path with fallback |
+| `crates/sb-core/src/router/rules.rs` | +Decision::HijackDns variant |
+| `crates/sb-core/src/router/engine.rs` | +HijackDns match arm |
+| `crates/sb-core/src/endpoint/handler.rs` | +HijackDns match arm |
+| `crates/sb-adapters/src/inbound/{socks,http,anytls}` | +HijackDns match arm |
+
+### 构建验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo check --workspace` | ✅ |
+| `cargo check -p app --features router` | ✅ |
+| `cargo check -p app --features parity` | ✅ |
+| `cargo test --workspace` | ✅ 1492 passed (+51 new) |
+| `make boundaries` | ✅ exit 0 |
+
+---
+
+## ✅ 已完成：L2.9 Lifecycle 编排
+
+**日期**: 2026-02-08
+**Parity**: 93% → 94%
+
+### 修复的核心问题
+
+1. **拓扑排序死代码** — `OutboundManager` 有完整的 Kahn's 算法和 `add_dependency()` 方法，但**从未被调用**。`get_startup_order()` 存在但 `start_all()` 不使用它
+2. **Outbound 未注册到 OutboundManager** — `populate_bridge_managers()` 显式跳过 outbound 注册（"Skip for now" 注释），导致 dependency tracking 和 default resolution 无效
+3. **无默认 outbound 解析** — Go 有完整的 default outbound 解析（explicit tag → first → direct fallback），Rust 没有
+4. **无启动失败回滚** — supervisor `start()` 中间阶段失败后不清理已启动的组件
+
+### 核心策略
+
+提取纯函数 `compute_outbound_deps()` + `validate_and_sort()` 实现依赖解析和拓扑排序，在 `populate_bridge_managers()` 中接线到 OutboundManager，两路径（Supervisor + legacy bootstrap）同步改。
+
+### 子任务
+
+| 步骤 | 子任务 | 状态 |
+|------|--------|------|
+| L2.9.1 | compute_outbound_deps + validate_and_sort 纯函数 | ✅ |
+| L2.9.2 | Bridge 新增 outbound_deps 字段 + build_bridge 填充 | ✅ |
+| L2.9.3 | Supervisor populate_bridge_managers 接线 (Result + 注册 + 验证) | ✅ |
+| L2.9.4 | Legacy bootstrap 依赖验证 + default 解析 | ✅ |
+| L2.9.5 | OutboundManager::resolve_default() (Go parity) | ✅ |
+| L2.9.6 | Startup checkpoint 日志 (OUTBOUND READY CHECKPOINT) | ✅ |
+| L2.9.7 | 失败回滚 (shutdown_context + stop endpoints/services/inbounds) | ✅ |
+| L2.9.8 | OutboundManager Startable impl 升级 (info 日志) | ✅ |
+| L2.9.9 | 12 新测试 (topo sort, cycle, default, resolve) | ✅ |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `crates/sb-core/src/outbound/manager.rs` | +compute_outbound_deps(), +validate_and_sort(), +resolve_default(), 重构 get_startup_order(), +12 tests |
+| `crates/sb-core/src/adapter/mod.rs` | Bridge +outbound_deps 字段, Bridge::new() 初始化, Debug impl |
+| `crates/sb-core/src/adapter/bridge.rs` | build_bridge() 两变体: 调用 compute_outbound_deps() |
+| `crates/sb-core/src/runtime/supervisor.rs` | populate_bridge_managers → Result + outbound 注册 + 验证 + default + 回滚 |
+| `crates/sb-core/src/context.rs` | OutboundManager Startable: no-op → info 日志 |
+| `app/src/bootstrap.rs` | +deps 验证 + default 解析 |
+
+### 构建验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo check --workspace` | ✅ |
+| `cargo check -p app --features router` | ✅ |
+| `cargo check -p app --features parity` | ✅ |
+| `cargo test -p sb-core -- manager::tests` | ✅ 16 passed (12 new) |
+| `cargo test --workspace` | ✅ |
+| `make boundaries` | ✅ exit 0 |
+
+---
+
+## ✅ 已完成：L2.8 ConnectionTracker + 连接面板
 
 **日期**: 2026-02-08
 **Commit**: `d708ecb`
@@ -153,25 +273,59 @@
 **Commit**: `9bd745a`
 **审计报告**: `agents-only/05-analysis/CLASH-API-AUDIT.md`
 
+</details>
+
 ---
 
-## 📋 下一步行动
+## 📋 L3 Scope: Polish / Edge Services
 
-### L2 Tier 2（运行时正确性）— 按 GUI 可感知度排序
+**目标**: 边缘服务补全 + 残余 polish，从 99% → 99.5%+ parity
 
-| 工作项 | PX | 工作量 | 状态 | 预估 Parity |
-|--------|-----|--------|------|------------|
-| **L2.6** Selector 持久化 + Proxy 状态真实化 | PX-006, PX-013 | 中 | ✅ | →91% |
-| **L2.7** URLTest 历史 + 健康检查对齐 | PX-006 | 中 | ✅ | →92% |
-| **L2.8** ConnectionTracker + 连接面板 | PX-005, PX-012 | 中 | ✅ | →93% |
-| **L2.9** Lifecycle 编排 | PX-006 | 中 | 待做 | →94% |
-| **L2.10** DNS 栈对齐 | PX-004, PX-008 | 大 | 待做 | →96% |
+### L3 工作包
 
-### L2 Tier 3（边缘服务，可选）
+| 包 | 名称 | 来源 PX | 工作量 | 优先级 | 说明 |
+|----|------|---------|--------|--------|------|
+| L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | Shadowsocks 管理 API: per-endpoint binding/tracker/API 偏差。仅 SS 部署场景需要 |
+| L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | mesh 网络 config/behavior 偏差。非核心代理场景 |
+| L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | Linux-only systemd-resolved D-Bus: resolve1 methods。macOS 不需要 |
+| L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | bbolt bucket 级别持久化: cache_id, FakeIP metadata 10s 去抖, rule_set caching。当前内存/简化持久化可工作 |
+| L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
 
-- SSMAPI (PX-011)
-- DERP (PX-014)
-- Resolved (PX-015)
+### 已关闭 / Won't Fix
+
+| 项目 | 决策 | 理由 |
+|------|------|------|
+| PX-007 Adapter 接口抽象 | **Won't Fix** | Rust 用 IR-based 架构替代 Go adapter.Router/RuleSet 接口，是合理的架构差异 |
+| 6 项 TLS/WireGuard 限制 | **Accepted Limitation** | uTLS/REALITY/ECH/TLS fragment/WireGuard endpoint — rustls/平台库限制 |
+
+---
+
+## ✅ L2 关闭总结
+
+**关闭日期**: 2026-02-08
+**Parity 提升**: 88% (183/209) → 99% (208/209)
+**新增测试**: +61 (1431 → 1492)
+
+### L2 完成工作包
+
+| Tier | 工作包 | 关键交付 |
+|------|--------|---------|
+| Tier 1 | L2.2 maxminddb | GeoIP 查询修复 |
+| Tier 1 | L2.3 Config schema | Go configSchema 1:1 对齐 |
+| Tier 1 | L2.4 Clash API 初步 | 基础端点 + GLOBAL 组注入 |
+| Tier 1 | L2.5 CLI | `-c`/`-C`/`-D` 参数对齐 |
+| Tier 1 | L2.1 审计 | 18 项偏差修复 (12 BREAK + 5 DEGRADE + 1 COSMETIC) |
+| Tier 2 | L2.6 Selector 持久化 | OutboundGroup trait + CacheFile + as_group() fix |
+| Tier 2 | L2.7 URLTest 历史 | URLTestHistoryStorage + tolerance 防抖 |
+| Tier 2 | L2.8 ConnectionTracker | ConnTracker I/O 接入 + WS + 真实 close |
+| Tier 2 | L2.9 Lifecycle 编排 | 拓扑排序 + 依赖验证 + default outbound + 回滚 |
+| Tier 2 | L2.10 DNS 栈对齐 | exchange() + RDRC + FakeIP/Hosts + 规则动作 + 缓存 + ECS |
+
+### L2 覆盖的 PX 项
+
+PX-004 ✅, PX-005 ✅, PX-006 ✅, PX-008 ✅, PX-010 ✅, PX-012 ✅
+PX-009 ◐ (核心功能完成，深度持久化移入 L3.4)
+PX-007 Won't Fix (架构差异)
 
 ---
 
@@ -179,10 +333,24 @@
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-02-08 | **L2 关闭，创建 L3 scope** | Tier 1+2 全部完成，99% parity，GUI.for 兼容性目标达成；Tier 3 边缘服务移入 L3 |
+| 2026-02-08 | PX-007 Won't Fix | Rust IR-based 架构是合理差异，非缺口 |
+| 2026-02-08 | ConnMetadata chain/rule 延后至 L3.5 | 需 Router 层统一路由入口，不影响 GUI 显示 |
+| 2026-02-08 | Cache File 深度对齐移入 L3.4 | 当前内存/简化持久化可工作，bbolt 级别是优化 |
+
+<details>
+<summary>L2 期间决策记录（已归档）</summary>
+
+| 日期 | 决策 | 原因 |
+|------|------|------|
 | 2026-02-08 | L2.8 复用 sb-common::ConnTracker 而非 sb-api::ConnectionManager | ConnTracker 已有 DashMap + 原子计数 + register/unregister；ConnectionManager 从未被填充，是死代码 |
 | 2026-02-08 | L2.8 handlers 直接调用 global_tracker() | 全局单例无需注入 ApiState，减少接线代码 |
 | 2026-02-08 | L2.8 CancellationToken 替代 socket shutdown | tokio_util::CancellationToken 可从 API handler 触发，通过 select! 分支中断 I/O loop |
 | 2026-02-08 | L2.8 copy_with_recording 添加 conn_counter 参数 | per-connection 原子计数器通过参数传入，每次 I/O 一次 fetch_add，性能影响可忽略 |
+| 2026-02-08 | L2.9 拓扑排序提取为纯函数 validate_and_sort() | 同步、无 RwLock、可测试、两路径（Supervisor + legacy）直接复用 |
+| 2026-02-08 | L2.9 OutboundManager 注册 DirectConnector 占位 | Bridge 用 adapter::OutboundConnector trait，OutboundManager 用 traits::OutboundConnector — 类型不兼容，注册占位即可满足 tag 跟踪需求 |
+| 2026-02-08 | L2.9 populate_bridge_managers 改为 Result | 依赖验证（cycle detection）和 default 解析可能失败，需向调用方传播错误 |
+| 2026-02-08 | L2.9 Startable impl 用轻量日志而非 try_read | tokio::sync::RwLock 无 try_read()，且 Startable::start() 是同步方法 |
 | 2026-02-08 | L2.8 延后 chain/rule 字段填充 | 需要 Router 层统一路由入口，当前 inbound adapter 直连 outbound；L2.9 后自然填充 |
 | 2026-02-08 | L2.7 URLTestHistoryStorage 用 DashMap | 已是 sb-core 依赖，无锁并发 map，与 Go sync.Map 语义一致 |
 | 2026-02-08 | 每 tag 仅存最新一条历史 | Go 对齐：adapter.URLTestHistory 是单条而非数组 |
@@ -201,6 +369,8 @@
 | 2026-02-07 | B2: 共享契约放 sb-types | 最小依赖, 已有 Port traits 基础 |
 | 2026-02-07 | AdapterIoBridge + connect_io() | 加密协议适配器返回 IoStream |
 
+</details>
+
 ---
 
-*最后更新：2026-02-08（L2.8 ConnectionTracker + 连接面板 全部完成）*
+*最后更新：2026-02-08（L2 Closed，L3 Scope 创建）*

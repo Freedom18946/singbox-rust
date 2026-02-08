@@ -626,7 +626,7 @@ where
             // Should be filtered earlier; return explicit error to avoid panic paths.
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
             // Not directly handled by HTTP inbound; fall back to direct
             outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;

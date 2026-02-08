@@ -28,12 +28,22 @@ impl Startable for crate::inbound::InboundManager {
 
 impl Startable for crate::outbound::OutboundManager {
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::debug!(target: "sb_core::context", ?stage, "OutboundManager stage");
+        match stage {
+            StartStage::Initialize => {
+                tracing::debug!(target: "sb_core::context", "OutboundManager initializing");
+            }
+            StartStage::Start => {
+                tracing::info!(target: "sb_core::context", "OutboundManager started");
+            }
+            StartStage::PostStart | StartStage::Started => {
+                tracing::debug!(target: "sb_core::context", ?stage, "OutboundManager stage complete");
+            }
+        }
         Ok(())
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::debug!(target: "sb_core::context", "OutboundManager closing");
+        tracing::info!(target: "sb_core::context", "OutboundManager closing");
         Ok(())
     }
 }

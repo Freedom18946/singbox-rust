@@ -69,6 +69,7 @@ fn cache_hit_and_expire() {
     let key = Key {
         name: "test.example".to_string(),
         qtype: QType::A,
+        transport_tag: None,
     };
     let ans = sb_core::dns::DnsAnswer::new(
         vec!["127.0.0.1".parse::<IpAddr>().unwrap()],

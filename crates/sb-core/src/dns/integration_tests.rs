@@ -45,6 +45,7 @@ mod tests {
         let key = crate::dns::cache::Key {
             name: "example.com".to_string(),
             qtype: crate::dns::cache::QType::A,
+            transport_tag: None,
         };
 
         // 测试缓存未命中
@@ -61,6 +62,7 @@ mod tests {
         let key = crate::dns::cache::Key {
             name: "example.com".to_string(),
             qtype: crate::dns::cache::QType::A,
+            transport_tag: None,
         };
         cache.put(key.clone(), answer.clone());
 

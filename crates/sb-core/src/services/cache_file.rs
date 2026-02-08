@@ -303,6 +303,64 @@ impl CacheFileService {
         }
     }
 
+    /// Check if a domain was previously rejected by RDRC for a specific transport.
+    /// Go parity: adapter.RDRCStore.LoadRDRC(transportName, qName, qType) -> bool
+    pub fn check_rdrc_rejection(&self, transport_tag: &str, domain: &str, qtype: u16) -> bool {
+        if !self.store_rdrc {
+            return false;
+        }
+        let key = format!("{}\x00{}\x00{}", transport_tag, domain, qtype);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.rdrc.read().get(&key).map_or(false, |entry| entry.expires_at > now)
+            }
+            CacheBackend::Persistence(db) => {
+                db.open_tree("rdrc")
+                    .ok()
+                    .and_then(|tree| tree.get(&key).ok().flatten())
+                    .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
+                    .map_or(false, |entry| entry.expires_at > now)
+            }
+        }
+    }
+
+    /// Save an RDRC rejection for a specific transport + domain + qtype.
+    /// Go parity: adapter.RDRCStore.SaveRDRC(transportName, qName, qType)
+    pub fn save_rdrc_rejection(&self, transport_tag: &str, domain: &str, qtype: u16) {
+        if !self.store_rdrc {
+            return;
+        }
+        let key = format!("{}\x00{}\x00{}", transport_tag, domain, qtype);
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            + self.rdrc_timeout.as_secs();
+
+        let entry = RdrcEntry {
+            ips: Vec::new(),
+            expires_at,
+        };
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.rdrc.write().insert(key, entry);
+            }
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("rdrc") {
+                    if let Ok(val) = serde_json::to_vec(&entry) {
+                        let _ = tree.insert(key.as_bytes(), val);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn set_clash_mode(&self, mode: String) {
         if !self.enabled {
             return;
@@ -593,6 +651,37 @@ mod tests {
             let ips = ips.unwrap();
             assert_eq!(ips.len(), 2);
         }
+    }
+
+    #[test]
+    fn test_rdrc_transport_aware_api() {
+        let config = CacheFileIR {
+            enabled: true,
+            path: None,
+            store_fakeip: false,
+            store_rdrc: true,
+            rdrc_timeout: Some("1h".to_string()),
+        };
+
+        let svc = CacheFileService::new(&config);
+
+        // Initially no rejection
+        assert!(!svc.check_rdrc_rejection("dns-google", "example.com", 1));
+
+        // Save rejection
+        svc.save_rdrc_rejection("dns-google", "example.com", 1);
+
+        // Now it should be rejected
+        assert!(svc.check_rdrc_rejection("dns-google", "example.com", 1));
+
+        // Different transport should not be rejected
+        assert!(!svc.check_rdrc_rejection("dns-cf", "example.com", 1));
+
+        // Different qtype should not be rejected
+        assert!(!svc.check_rdrc_rejection("dns-google", "example.com", 28));
+
+        // Different domain should not be rejected
+        assert!(!svc.check_rdrc_rejection("dns-google", "other.com", 1));
     }
 
     #[test]

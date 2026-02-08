@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use sb_core::adapter::InboundService;
-use sb_core::dns::ResolverHandle;
+use sb_core::dns::{DnsQueryContext, DnsRouter, ResolverHandle};
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::services::v2ray_api::StatsManager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -19,7 +19,6 @@ use tokio::sync::Notify;
 use tracing::{debug, info, warn};
 
 /// DNS inbound adapter that provides local DNS server functionality.
-#[derive(Debug)]
 pub struct DnsInboundAdapter {
     /// Listen address for DNS server
     listen: SocketAddr,
@@ -27,6 +26,8 @@ pub struct DnsInboundAdapter {
     tcp_enabled: bool,
     /// DNS resolver handle for query resolution (uses configurable upstream)
     resolver: Arc<ResolverHandle>,
+    /// Optional DNS Router for rule-based DNS routing (Go parity)
+    dns_router: Option<Arc<dyn DnsRouter>>,
     /// Inbound tag for stats tracking
     tag: Option<String>,
     /// Optional V2Ray stats manager
@@ -39,8 +40,19 @@ pub struct DnsInboundAdapter {
     active_queries: Arc<AtomicU64>,
 }
 
+impl std::fmt::Debug for DnsInboundAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DnsInboundAdapter")
+            .field("listen", &self.listen)
+            .field("tcp_enabled", &self.tcp_enabled)
+            .field("dns_router", &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"))
+            .field("tag", &self.tag)
+            .finish()
+    }
+}
+
 /// DNS inbound configuration parameters
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DnsInboundConfig {
     /// Listen address (e.g., "127.0.0.1")
     pub listen: String,
@@ -50,10 +62,24 @@ pub struct DnsInboundConfig {
     pub tcp_enabled: bool,
     /// Optional custom resolver (uses env-based default if None)
     pub resolver: Option<Arc<ResolverHandle>>,
+    /// Optional DNS Router for wire-format exchange
+    pub dns_router: Option<Arc<dyn DnsRouter>>,
     /// Inbound tag for stats tracking
     pub tag: Option<String>,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+}
+
+impl std::fmt::Debug for DnsInboundConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DnsInboundConfig")
+            .field("listen", &self.listen)
+            .field("port", &self.port)
+            .field("tcp_enabled", &self.tcp_enabled)
+            .field("dns_router", &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"))
+            .field("tag", &self.tag)
+            .finish()
+    }
 }
 
 impl DnsInboundAdapter {
@@ -82,6 +108,7 @@ impl DnsInboundAdapter {
             listen,
             tcp_enabled: config.tcp_enabled,
             resolver,
+            dns_router: config.dns_router,
             tag: config.tag,
             stats: config.stats,
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -110,6 +137,7 @@ impl DnsInboundAdapter {
                 .map(|n| n.to_lowercase().contains("tcp"))
                 .unwrap_or(true), // Default: enable both UDP and TCP
             resolver: None, // Use env-based default
+            dns_router: None,
             tag: param.tag.clone(),
             stats,
         };
@@ -121,6 +149,12 @@ impl DnsInboundAdapter {
     /// Create with a specific resolver handle
     pub fn with_resolver(mut self, resolver: Arc<ResolverHandle>) -> Self {
         self.resolver = resolver;
+        self
+    }
+
+    /// Set a DNS Router for rule-based exchange
+    pub fn with_dns_router(mut self, router: Arc<dyn DnsRouter>) -> Self {
+        self.dns_router = Some(router);
         self
     }
 
@@ -156,6 +190,7 @@ impl DnsInboundAdapter {
                             let active_queries = self.active_queries.clone();
                             let resolver = self.resolver.clone();
                             let traffic = traffic.clone();
+                            let dns_router = self.dns_router.clone();
 
                             // Spawn task with resolver
                             tokio::spawn(async move {
@@ -164,6 +199,7 @@ impl DnsInboundAdapter {
                                     src,
                                     &query,
                                     resolver,
+                                    dns_router,
                                     traffic,
                                 )
                                 .await
@@ -196,9 +232,32 @@ impl DnsInboundAdapter {
         src: SocketAddr,
         query: &[u8],
         resolver: Arc<ResolverHandle>,
+        dns_router: Option<Arc<dyn DnsRouter>>,
         traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> std::io::Result<()> {
-        // Forward to DNS resolver and get response
+        // Try DnsRouter first if available (wire-format exchange, Go parity)
+        if let Some(router) = &dns_router {
+            let ctx = DnsQueryContext::new()
+                .with_transport("udp")
+                .with_client(src);
+            match router.exchange(&ctx, query).await {
+                Ok(response) => {
+                    if socket.send_to(&response, src).await.is_ok() {
+                        if let Some(ref recorder) = traffic {
+                            recorder.record_down(response.len() as u64);
+                            recorder.record_down_packet(1);
+                        }
+                    }
+                    debug!(src = %src, query_len = query.len(), response_len = response.len(), "DNS query handled via DnsRouter");
+                    return Ok(());
+                }
+                Err(e) => {
+                    debug!(src = %src, error = %e, "DnsRouter exchange failed, falling back to resolver");
+                }
+            }
+        }
+
+        // Fallback: forward to DNS resolver and get response
         match Self::resolve_query(query, &resolver).await {
             Ok(response) => {
                 if socket.send_to(&response, src).await.is_ok() {
@@ -421,6 +480,7 @@ impl DnsInboundAdapter {
                             let active_queries = self.active_queries.clone();
                             let resolver = self.resolver.clone();
                             let traffic = traffic.clone();
+                            let dns_router = self.dns_router.clone();
 
                             tokio::spawn(async move {
                                 // Read 2-byte length prefix
@@ -441,7 +501,33 @@ impl DnsInboundAdapter {
                                     recorder.record_up((2 + msg_len) as u64);
                                 }
 
-                                // Resolve and send response
+                                // Try DnsRouter first if available (wire-format exchange, Go parity)
+                                if let Some(router) = &dns_router {
+                                    let ctx = DnsQueryContext::new()
+                                        .with_transport("tcp")
+                                        .with_client(peer_addr);
+                                    match router.exchange(&ctx, &query).await {
+                                        Ok(response) => {
+                                            let resp_len = (response.len() as u16).to_be_bytes();
+                                            if stream.write_all(&resp_len).await.is_ok()
+                                                && stream.write_all(&response).await.is_ok()
+                                            {
+                                                if let Some(ref recorder) = traffic {
+                                                    recorder
+                                                        .record_down((2 + response.len()) as u64);
+                                                }
+                                            }
+                                            debug!(peer = %peer_addr, "DNS TCP query handled via DnsRouter");
+                                            active_queries.fetch_sub(1, Ordering::Relaxed);
+                                            return;
+                                        }
+                                        Err(e) => {
+                                            debug!(peer = %peer_addr, error = %e, "DnsRouter exchange failed, falling back to resolver");
+                                        }
+                                    }
+                                }
+
+                                // Fallback: resolve and send response
                                 match Self::resolve_query(&query, &resolver).await {
                                     Ok(response) => {
                                         let resp_len = (response.len() as u16).to_be_bytes();
@@ -509,6 +595,7 @@ impl InboundService for DnsInboundAdapter {
         let active_queries = self.active_queries.clone();
         let tcp_enabled = self.tcp_enabled;
         let resolver = self.resolver.clone();
+        let dns_router = self.dns_router.clone();
 
         rt.block_on(async move {
             info!(addr = ?listen, tcp = tcp_enabled, "DNS inbound starting");
@@ -517,6 +604,7 @@ impl InboundService for DnsInboundAdapter {
                 listen,
                 tcp_enabled,
                 resolver: resolver.clone(),
+                dns_router: dns_router.clone(),
                 tag: None,
                 stats: None,
                 shutdown: shutdown.clone(),
@@ -530,6 +618,7 @@ impl InboundService for DnsInboundAdapter {
                     listen,
                     tcp_enabled,
                     resolver: resolver.clone(),
+                    dns_router: dns_router.clone(),
                     tag: None,
                     stats: None,
                     shutdown: shutdown.clone(),
@@ -577,6 +666,9 @@ mod tests {
             port: 5353,
             tcp_enabled: true,
             resolver: None,
+            dns_router: None,
+            tag: None,
+            stats: None,
         };
 
         let adapter = DnsInboundAdapter::new(config).unwrap();

@@ -598,6 +598,8 @@ pub fn build_bridge<'a>(
     // Step 1 & 2: Outbounds and selectors
     assemble_outbounds(cfg, &mut br);
     assemble_selectors(cfg, &mut br);
+    // Extract dependency graph from IR (L2.9)
+    br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
     #[cfg(feature = "router")]
     let router_handle = router_handle_from_ir(cfg);
@@ -623,7 +625,7 @@ pub fn build_bridge<'a>(
         Arc::new(crate::router::RouteConnectionManager::new().with_stats(stats));
 
     // Build DNS components for inbound context
-    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg)
+    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg, None)
         .ok()
         .unzip();
     let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
@@ -701,6 +703,8 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
     // Step 1 & 2: Outbounds and selectors
     assemble_outbounds(cfg, &mut br);
     assemble_selectors(cfg, &mut br);
+    // Extract dependency graph from IR (L2.9)
+    br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
 
     // Step 3: Inbounds (without engine)

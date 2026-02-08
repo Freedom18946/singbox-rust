@@ -92,7 +92,7 @@ impl EndpointConnectionHandler {
                 "direct".to_string(),
                 true,
             ),
-            Decision::Hijack { .. } | Decision::Sniff | Decision::Resolve => (
+            Decision::Hijack { .. } | Decision::Sniff | Decision::Resolve | Decision::HijackDns => (
                 RouteTarget::Kind(OutboundKind::Direct),
                 "direct".to_string(),
                 true,

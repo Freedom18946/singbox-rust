@@ -110,6 +110,15 @@ pub trait DnsRouter: Send + Sync {
     /// 将域名解析为完整的 DNS 答案。
     async fn resolve(&self, ctx: &DnsQueryContext, domain: &str) -> Result<DnsAnswer>;
 
+    /// Look up the domain name for a given IP from the reverse mapping cache.
+    /// 从反向映射缓存中查找给定 IP 的域名。
+    ///
+    /// Returns None if no mapping exists.
+    /// 如果不存在映射则返回 None。
+    fn lookup_reverse_mapping(&self, _ip: &IpAddr) -> Option<String> {
+        None // default implementation
+    }
+
     /// Clear the DNS cache.
     /// 清除 DNS 缓存。
     fn clear_cache(&self);

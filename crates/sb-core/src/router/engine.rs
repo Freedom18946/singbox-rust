@@ -1212,6 +1212,7 @@ fn decision_to_route_result(
         }
         Decision::Sniff => RouteResult::new(Decision::Sniff),
         Decision::Resolve => RouteResult::new(Decision::Resolve),
+        Decision::HijackDns => RouteResult::new(Decision::HijackDns),
     }
 }
 

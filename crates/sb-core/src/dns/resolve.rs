@@ -530,6 +530,7 @@ where
             QType::AAAA => CacheQType::AAAA,
             _ => return Err(anyhow::anyhow!("Unsupported query type")),
         },
+        transport_tag: None,
     };
 
     // Check cache first
@@ -588,6 +589,7 @@ async fn resolve_cached_qtype(
             QType::AAAA => CacheQType::AAAA,
             _ => return Err(anyhow::anyhow!("Unsupported query type")),
         },
+        transport_tag: None,
     };
 
     // 命中缓存

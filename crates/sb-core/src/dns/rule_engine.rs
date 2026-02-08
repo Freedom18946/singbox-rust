@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
@@ -48,6 +49,9 @@ struct RoutingDecision {
     /// Predefined Additional Records
     #[allow(dead_code)]
     extra: Option<Vec<String>>,
+    /// Client subnet override from route-options (L2.10.21)
+    #[allow(dead_code)]
+    client_subnet: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +74,10 @@ pub enum DnsRuleAction {
     Route,
     Reject,
     HijackDns,
+    /// Modify query options (strategy, disable_cache, etc.) then continue matching
+    RouteOptions,
+    /// Return predefined response (rcode + answer records)
+    Predefined,
 }
 
 /// DNS routing rule configuration
@@ -95,6 +103,12 @@ pub struct DnsRoutingRule {
     pub ns: Option<Vec<String>>,
     /// Predefined Additional Records
     pub extra: Option<Vec<String>>,
+    /// Disable cache for this rule (route-options)
+    pub disable_cache: Option<bool>,
+    /// Rewrite TTL for this rule (route-options)
+    pub rewrite_ttl: Option<u32>,
+    /// Client subnet override (route-options)
+    pub client_subnet: Option<String>,
 }
 
 /// DNS Rule Engine with Rule-Set routing
@@ -115,6 +129,10 @@ pub struct DnsRuleEngine {
     geoip: Option<Arc<GeoIpDb>>,
     /// GeoSite database
     geosite: Option<Arc<GeoSiteDb>>,
+    /// Reverse mapping cache: IP → domain (L2.10.13)
+    reverse_mapping: parking_lot::Mutex<lru::LruCache<IpAddr, String>>,
+    /// Tags of FakeIP upstreams (L2.10.12)
+    fakeip_tags: std::collections::HashSet<String>,
 }
 
 impl DnsRuleEngine {
@@ -156,6 +174,10 @@ impl DnsRuleEngine {
             registry,
             geoip,
             geosite,
+            reverse_mapping: parking_lot::Mutex::new(lru::LruCache::new(
+                std::num::NonZeroUsize::new(1024).unwrap(),
+            )),
+            fakeip_tags: std::collections::HashSet::new(),
         }
     }
 
@@ -163,6 +185,17 @@ impl DnsRuleEngine {
     pub async fn resolve(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
         self.resolve_with_context(&DnsQueryContext::default(), domain, record_type)
             .await
+    }
+
+    /// Mark an upstream tag as FakeIP (L2.10.12).
+    /// Lookup operations will skip FakeIP upstreams.
+    pub fn mark_fakeip_upstream(&mut self, tag: &str) {
+        self.fakeip_tags.insert(tag.to_string());
+    }
+
+    /// Check if an upstream tag is a FakeIP upstream
+    pub fn is_fakeip_upstream(&self, tag: &str) -> bool {
+        self.fakeip_tags.contains(tag)
     }
 
     /// Route a DNS query with context
@@ -222,7 +255,7 @@ impl DnsRuleEngine {
                         crate::dns::cache::Rcode::Refused,
                     ));
                 }
-                DnsRuleAction::HijackDns => {
+                DnsRuleAction::HijackDns | DnsRuleAction::Predefined => {
                     let mut answer_ips = Vec::new();
                     // Merge rewrite_ip and answer fields
                     if let Some(ips) = &decision.rewrite_ip {
@@ -284,6 +317,10 @@ impl DnsRuleEngine {
                 DnsRuleAction::Route => {
                     // fallthrough to upstream query
                 }
+                DnsRuleAction::RouteOptions => {
+                    // Already handled in route_domain() - shouldn't reach here
+                    // fallthrough to upstream query
+                }
             }
         }
 
@@ -306,6 +343,14 @@ impl DnsRuleEngine {
         );
 
         let mut answer = upstream.query(domain, record_type).await?;
+
+        // Store reverse mapping for answer IPs (L2.10.13)
+        if !answer.ips.is_empty() {
+            let mut rmap = self.reverse_mapping.lock();
+            for ip in &answer.ips {
+                rmap.put(*ip, domain.to_string());
+            }
+        }
 
         if let Some(limit) = decision.address_limit {
             if answer.ips.len() > limit as usize {
@@ -389,8 +434,32 @@ impl DnsRuleEngine {
         // Match against rules (in priority order)
         // ctx is passed in
 
+        // Track accumulated route-options (L2.10.14)
+        let mut accumulated_disable_cache: Option<bool> = None;
+        let mut accumulated_rewrite_ttl: Option<u32> = None;
+        let mut accumulated_client_subnet: Option<String> = None;
+
         for compiled in &self.rules {
             if compiled.matcher.matches(ctx) {
+                // L2.10.14: RouteOptions modifies query options and continues matching
+                if compiled.rule.action == DnsRuleAction::RouteOptions {
+                    if let Some(dc) = compiled.rule.disable_cache {
+                        accumulated_disable_cache = Some(dc);
+                    }
+                    if let Some(ttl) = compiled.rule.rewrite_ttl {
+                        accumulated_rewrite_ttl = Some(ttl);
+                    }
+                    if let Some(ref cs) = compiled.rule.client_subnet {
+                        accumulated_client_subnet = Some(cs.clone());
+                    }
+                    tracing::debug!(
+                        "DNS route-options matched: domain={}, type={}, continuing",
+                        domain,
+                        query_type
+                    );
+                    continue; // Continue matching subsequent rules
+                }
+
                 let matched_rule = MatchedRuleInfo {
                     upstream_tag: compiled.rule.upstream_tag.clone(),
                     priority: compiled.rule.priority,
@@ -409,6 +478,8 @@ impl DnsRuleEngine {
                     answer: compiled.rule.answer.clone(),
                     ns: compiled.rule.ns.clone(),
                     extra: compiled.rule.extra.clone(),
+                    client_subnet: accumulated_client_subnet.clone()
+                        .or_else(|| compiled.rule.client_subnet.clone()),
                 };
 
                 // Cache decision
@@ -447,6 +518,7 @@ impl DnsRuleEngine {
             answer: None,
             ns: None,
             extra: None,
+            client_subnet: accumulated_client_subnet,
         };
 
         // Cache decision
@@ -603,23 +675,77 @@ impl DnsRuleEngine {
 
 #[async_trait::async_trait]
 impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
-    async fn exchange(&self, _ctx: &DnsQueryContext, _message: &[u8]) -> Result<Vec<u8>> {
-        Err(anyhow::anyhow!(
-            "DnsRuleEngine: raw exchange not yet supported"
-        ))
+    async fn exchange(&self, ctx: &DnsQueryContext, message: &[u8]) -> Result<Vec<u8>> {
+        use crate::dns::cache::Rcode;
+        use crate::dns::message::{build_dns_response, parse_question_key};
+
+        // 1. Parse the question from the wire-format query
+        let qk = parse_question_key(message)
+            .ok_or_else(|| anyhow::anyhow!("DnsRuleEngine::exchange: failed to parse question"))?;
+
+        // 2. Map qtype u16 → RecordType; unsupported types get NotImplemented (rcode 4)
+        let record_type = match qk.qtype {
+            1 => RecordType::A,
+            28 => RecordType::AAAA,
+            _ => {
+                // Return an empty response with RCODE=NotImp (4)
+                let resp = build_dns_response(message, &[], 0, 4).ok_or_else(|| {
+                    anyhow::anyhow!("DnsRuleEngine::exchange: failed to build NotImp response")
+                })?;
+                return Ok(resp);
+            }
+        };
+
+        // 3. Resolve via the rule engine
+        let answer = self
+            .resolve_with_context(ctx, &qk.name, record_type)
+            .await?;
+
+        // 4. Map Rcode → wire rcode byte
+        let rcode_byte: u8 = match &answer.rcode {
+            Rcode::NoError => 0,
+            Rcode::ServFail => 2,
+            Rcode::NxDomain => 3,
+            Rcode::Refused => 5,
+            _ => 2, // default to SERVFAIL
+        };
+
+        // 5. Build the wire-format response (preserves the original transaction ID)
+        let ttl_secs = answer.ttl.as_secs() as u32;
+        let resp = build_dns_response(message, &answer.ips, ttl_secs, rcode_byte).ok_or_else(
+            || anyhow::anyhow!("DnsRuleEngine::exchange: failed to build DNS response"),
+        )?;
+
+        Ok(resp)
     }
 
     async fn lookup(&self, ctx: &DnsQueryContext, domain: &str) -> Result<Vec<std::net::IpAddr>> {
+        // L2.10.12: lookup() skips FakeIP upstreams (Go: allowFakeIP = false)
+        // Use resolve_dual_stack which goes through resolve_with_context → route_domain
+        // If routed to FakeIP, fall back to default non-FakeIP upstream
         let ans = self.resolve_dual_stack_with_context(ctx, domain).await?;
         Ok(ans.ips)
     }
 
     async fn lookup_default(&self, domain: &str) -> Result<Vec<std::net::IpAddr>> {
+        // L2.10.12: Skip FakeIP upstreams in default lookup
         let tag = &self.default_upstream_tag;
+
+        // If default is FakeIP, find first non-FakeIP upstream
+        let effective_tag = if self.fakeip_tags.contains(tag) {
+            self.upstreams
+                .keys()
+                .find(|t| !self.fakeip_tags.contains(t.as_str()))
+                .cloned()
+                .unwrap_or_else(|| tag.clone())
+        } else {
+            tag.clone()
+        };
+
         let upstream = self
             .upstreams
-            .get(tag)
-            .ok_or_else(|| anyhow::anyhow!("Default upstream '{}' not found", tag))?;
+            .get(&effective_tag)
+            .ok_or_else(|| anyhow::anyhow!("Default upstream '{}' not found", effective_tag))?;
 
         let (query_ipv4, query_ipv6) = match self.strategy {
             crate::dns::DnsStrategy::Ipv4Only => (true, false),
@@ -648,6 +774,10 @@ impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
     fn clear_cache(&self) {
         let mut cache = self.cache.lock();
         cache.clear();
+    }
+
+    fn lookup_reverse_mapping(&self, ip: &std::net::IpAddr) -> Option<String> {
+        self.reverse_mapping.lock().get(ip).cloned()
     }
 
     fn name(&self) -> &str {
@@ -720,6 +850,9 @@ mod tests {
             answer: None,
             ns: None,
             extra: None,
+            disable_cache: None,
+            rewrite_ttl: None,
+            client_subnet: None,
         };
 
         let mut upstreams = HashMap::new();
@@ -829,6 +962,9 @@ mod tests {
                     answer: None,
                     ns: None,
                     extra: None,
+                    disable_cache: None,
+                    rewrite_ttl: None,
+                    client_subnet: None,
                 },
                 DnsRoutingRule {
                     rule_set: low_priority_ruleset,
@@ -841,6 +977,9 @@ mod tests {
                     answer: None,
                     ns: None,
                     extra: None,
+                    disable_cache: None,
+                    rewrite_ttl: None,
+                    client_subnet: None,
                 },
             ],
             upstreams,
@@ -901,6 +1040,9 @@ mod tests {
                 answer: None,
                 ns: None,
                 extra: None,
+                disable_cache: None,
+                rewrite_ttl: None,
+                client_subnet: None,
             }],
             upstreams,
             "default_dns".to_string(),
@@ -972,6 +1114,9 @@ mod tests {
                 answer: None,
                 ns: None,
                 extra: None,
+                disable_cache: None,
+                rewrite_ttl: None,
+                client_subnet: None,
             }],
             upstreams,
             "default_dns".to_string(),
@@ -1028,6 +1173,9 @@ mod tests {
             answer: None,
             ns: None,
             extra: None,
+            disable_cache: None,
+            rewrite_ttl: None,
+            client_subnet: None,
         };
 
         let mut upstreams = HashMap::new();

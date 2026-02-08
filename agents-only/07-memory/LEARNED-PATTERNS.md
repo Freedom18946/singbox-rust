@@ -94,6 +94,21 @@
 
 ---
 
+## Lifecycle 编排模式
+
+| 模式 | 说明 |
+|------|------|
+| 纯函数提取 > 方法内嵌 | `validate_and_sort()` 是同步纯函数，不依赖 RwLock/async，可被两路径直接调用，可单元测试 |
+| BinaryHeap 确定性排序 | Kahn's 算法用 `BinaryHeap<Reverse<&String>>` 而非 Vec + sort，保证输出顺序确定 |
+| 占位注册模式 | 当 trait 类型不兼容时（adapter::OutboundConnector ≠ traits::OutboundConnector），用 DirectConnector 占位注册满足 tag 追踪需求 |
+| populate → Result 传播 | 注册/验证函数可能失败时，签名改为 `→ Result<()>`，调用处加 `?` 或 `.map_err()` |
+| rollback 按阶段渐进 | 越后期的失败需要清理越多组件：Initialize 失败仅需 shutdown_context，PostStart 失败需关闭 inbound+endpoint+service+context |
+| Missing dep 静默忽略 | 拓扑排序中依赖项不在 all_tags 中时跳过（Go 对齐），不报错 |
+| resolve_default 三阶段 | Go parity: explicit config tag → first registered → "direct" fallback，每阶段 info 日志标注 source |
+| Bridge 是连接 source of truth | OutboundManager 用于生命周期管理（tag 追踪/依赖/default），实际连接路由走 Bridge/OutboundRegistryHandle |
+
+---
+
 ## 规划模式
 
 | 模式 | 说明 |
@@ -116,6 +131,24 @@
 | Tolerance sticky 防抖 | select_by_latency: 当前选择在 `best_rtt + tolerance` 范围内则保持不变，current_rtt=0 (未测试) 不 sticky |
 | 构造函数参数扩展模式 | 新增 Option 字段时：struct + 3 个构造函数各加参数，adapter builder 传入，test 全传 None。与 L2.6 cache_file 模式一致 |
 
+## DNS 栈对齐模式
+
+| 模式 | 说明 |
+|------|------|
+| wire-format 翻译层 | `exchange()` 不做端到端 wire-format 处理；解析 query → 提取 domain+qtype → 走高层 `resolve_with_context()` → 用 `build_dns_response()` 构建 wire 响应。复用已有解析管线 |
+| name pointer 0xC00C | DNS wire response 中 answer record 的 name 字段用指针 `0xC00C` 指向 question section 的 domain，而非重复写入完整域名，节省空间且符合 RFC 1035 |
+| FakeIP adapter 模式 > Transport 改造 | 实现 `DnsUpstream` trait 的 `FakeIpUpstream` adapter，被规则路由选择。比改造为完整 Transport 更安全（不影响现有 transport 层），向后兼容 env-var 短路 |
+| HostsUpstream 双源加载 | `from_json_predefined()` + `parse_hosts_file()`：先加载 JSON predefined 条目，再解析 /etc/hosts 格式文件。case-insensitive 查找，未找到返回 NxDomain |
+| Decision enum 扩展清单 | 新增 enum variant 必须检查: `rules.rs` (is_terminal, as_str, label), `engine.rs` match, `handler.rs` match, 各 inbound adapter (socks/http/anytls) match, **特别是 parity feature 下的文件** |
+| RouteOptions 累积模式 | `DnsRuleAction::RouteOptions` 不选择 transport，而是在 rule matching loop 中累积选项 (`accumulated_disable_cache`, `accumulated_rewrite_ttl`, `accumulated_client_subnet`)，然后 `continue` 匹配下一条规则 |
+| transport-tag 扩展 Key | 缓存 Key 新增 `transport_tag: Option<String>` 实现 per-transport 隔离（`independent_cache: true`）。默认 None = 共享缓存。所有 Key 构造处需同步更新 |
+| disable_expire 修改 get/cleanup | 设置 `disable_expire: true` 时：`get()` 跳过 TTL 过期检查，`cleanup_expired()` 变为 no-op，`peek_remaining()` 返回原始 TTL。仅靠 LRU 淘汰控制缓存大小 |
+| EDNS0 OPT record 操作 | OPT pseudo-RR: TYPE=41, NAME=0x00 (root), CLASS=UDP payload size. ECS option: code=8, family=1(IPv4)/2(IPv6), source prefix length, scope=0. 注入时检查已有 OPT → 追加 option vs 新建 OPT record |
+| fakeip_tags HashSet 注册 | config_builder 构建 FakeIP upstream 后调用 `engine.mark_fakeip_upstream(tag)` 注册到 HashSet，`is_fakeip_upstream()` O(1) 查找。避免运行时类型检查 (nightly `type_name_of_val`) |
+| RDRC transport-aware key | key 格式 `"{transport_tag}\x00{domain}\x00{qtype}"`，用 NUL 分隔避免歧义。check_rdrc_rejection() 在 upstream query 前调用，save_rdrc_rejection() 在 address_limit 拒绝后调用 |
+| reverse_mapping 用 parking_lot::Mutex | `parking_lot::Mutex<lru::LruCache<IpAddr, String>>`（1024 entries）。非 async，同步短锁。每次成功解析后存储 IP→domain 映射，由 `lookup_reverse_mapping()` 暴露 |
+| lookup 跳过 FakeIP | `DnsRouter.lookup()` / `lookup_default()` 禁止 FakeIP upstream（Go: `allowFakeIP = false`）。若 default 是 FakeIP，找第一个非 FakeIP upstream 替代 |
+
 ---
 
-*最后更新：2026-02-08（L2.8 ConnectionTracker 模式）*
+*最后更新：2026-02-08（L2.10 DNS 栈对齐模式）*

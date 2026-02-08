@@ -14,6 +14,7 @@ fn basic_positive_and_negative_entries() {
     let key_example = Key {
         name: "example.com".to_string(),
         qtype: QType::A,
+        transport_tag: None,
     };
     let ans_example = DnsAnswer {
         ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
@@ -29,6 +30,7 @@ fn basic_positive_and_negative_entries() {
     let key_neg = Key {
         name: "nx.example".to_string(),
         qtype: QType::A,
+        transport_tag: None,
     };
     c.put_negative(key_neg.clone());
     let neg = c.get(&key_neg).unwrap();

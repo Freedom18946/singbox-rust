@@ -804,6 +804,25 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     let reg = build_outbound_registry_from_ir(&cfg_ir);
     let oh = Arc::new(OutboundRegistryHandle::new(reg));
 
+    // Validate outbound dependency topology (L2.9)
+    let outbound_deps = sb_core::outbound::manager::compute_outbound_deps(&cfg_ir.outbounds);
+    let all_tags: Vec<String> = cfg_ir.outbounds.iter()
+        .filter_map(|ob| ob.name.clone())
+        .filter(|n| !n.is_empty())
+        .collect();
+    sb_core::outbound::manager::validate_and_sort(&all_tags, &outbound_deps)
+        .map_err(|e| anyhow!("outbound {}", e))?;
+
+    // Resolve default outbound in context (L2.9)
+    ctx.outbound_manager.ensure_fallback_direct().await;
+    let default_tag = cfg_ir.route.final_outbound.as_deref()
+        .or(cfg_ir.route.default.as_deref());
+    if let Some(tag) = default_tag {
+        if !tag.is_empty() {
+            ctx.outbound_manager.set_default(Some(tag.to_string())).await;
+        }
+    }
+
     // Create router and install index from IR
     #[cfg(feature = "router")]
     let rh = {

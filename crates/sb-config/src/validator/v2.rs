@@ -2840,6 +2840,28 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                 .get("detour")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
+                            server_type: map
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            inet4_range: map
+                                .get("inet4_range")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            inet6_range: map
+                                .get("inet6_range")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            hosts_path: map
+                                .get("hosts_path")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                            predefined: map.get("predefined").cloned(),
                         });
                     }
                 }
@@ -2971,6 +2993,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         dd.independent_cache = dns.get("independent_cache").and_then(|v| v.as_bool());
+        dd.disable_expire = dns.get("disable_expire").and_then(|v| v.as_bool());
         // Global knobs
         if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) {
             dd.timeout_ms = Some(v);

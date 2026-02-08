@@ -129,6 +129,30 @@
 | 36 | UDP cancel token 需 select! 包裹 timeout | 原代码用 `tokio::time::timeout(udp_timeout, recv)` 单层 | 改为 `select! { r = timeout(..) => r, _ = cancel.cancelled() => break }` |
 | 37 | git stash 会恢复到 linter 修改前状态 | 系统提醒中显示旧代码导致误以为改动丢失 | git stash pop 恢复后验证文件状态即可 |
 
+### Lifecycle / L2.9 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 38 | Bridge 的 `Arc<dyn adapter::OutboundConnector>` 无法加入 OutboundManager | OutboundManager 用 `traits::OutboundConnector`，两个 trait 接口完全不同（connect vs connect_tcp） | 用 DirectConnector 占位注册，OutboundManager 此阶段仅做 tag 追踪 |
+| 39 | tokio::sync::RwLock 没有 `try_read()` | std::sync::RwLock 有 try_read 但 tokio 版没有 | Startable::start() 是 sync 方法，不能 .await → 改用轻量日志，真正的统计信息放在 async 的 populate_bridge_managers 中 |
+| 40 | populate_bridge_managers 签名改 Result 后 4 处调用需更新 | 原函数无返回值，新增 Result 后所有调用处需加 `?` 或 `.map_err()` | grep 所有调用处逐一加 `?`，含 reload 路径中的两处 |
+| 41 | `balancer_socks5_ok` 仍偶发失败 | 全量测试环境下的端口竞争 | 与 L2.9 无关，是 #33 的重现，单独运行始终通过 |
+
+### DNS 栈 / L2.10 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 42 | `type_name_of_val()` 编译失败 | nightly-only API，stable 不可用 | 改用显式 `HashSet<String>` 追踪 FakeIP tags，config_builder 注册 `mark_fakeip_upstream(tag)` |
+| 43 | DnsUpstream trait 方法名不匹配 | Plan 写 `tag()` 但实际是 `name()` | 使用 `name()` 方法 |
+| 44 | DnsAnswer 构造 4 参数 | Plan 假设 struct literal，实际是 `DnsAnswer::new(ips, ttl, Source, Rcode)` | 用正确的构造函数 + `cache::Source::Static` / `cache::Rcode::NoError` |
+| 45 | RecordType 有 5 个变体 | 无 `Any` 变体，但有 CNAME/MX/TXT | exchange() 中用 `_ => rcode=4 (NotImpl)` 通配 |
+| 46 | Decision::HijackDns 导致 5+ 处 non-exhaustive match | 新增 enum variant 后所有 match 必须覆盖 | 逐一在 engine.rs, handler.rs, socks/{mod,udp}.rs, http.rs, anytls.rs 添加 arm |
+| 47 | parity feature 编译额外文件 | `cargo check --workspace` 不编译 http.rs/anytls.rs，需 `--features parity` | 构建验证必须包含 `cargo check -p app --features parity` |
+| 48 | DnsRoutingRule 新字段破坏 ~8 处测试 | 新增 disable_cache/rewrite_ttl/client_subnet 字段 | 所有测试构造处补 `None` 值 |
+| 49 | rewrite_ttl 类型不匹配 u64 vs u32 | IR 定义为 u32，plan 写 u64 | 统一为 `Option<u32>` |
+| 50 | Cache Key 新增 transport_tag 字段 | `Key { name, qtype }` → `Key { name, qtype, transport_tag }` | grep 所有 `Key {` 构造处加 `transport_tag: None` (~8 处) |
+| 51 | Agent 403 配额错误中断 Task | opus agent token 配额用尽 | 验证 agent 已完成工作后标记任务完成，后续任务用新 agent |
+
 ---
 
-*最后更新：2026-02-08（L2.8）*
+*最后更新：2026-02-08（L2.10 DNS 栈对齐）*

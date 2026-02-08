@@ -6,10 +6,109 @@
 
 use crate::outbound::traits::OutboundConnector;
 use crate::service::{Lifecycle, StartStage};
+use sb_config::ir::{OutboundIR, OutboundType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+// =========================================================================
+// Pure functions for dependency extraction and topological sort (L2.9)
+// =========================================================================
+
+/// Extract outbound dependency graph from IR: Selector/UrlTest → members list.
+/// 从 IR 提取出站依赖图：Selector/UrlTest → 成员列表。
+///
+/// Returns a map of tag → list of tags it depends on.
+pub fn compute_outbound_deps(outbounds: &[OutboundIR]) -> HashMap<String, Vec<String>> {
+    let mut deps = HashMap::new();
+    for ob in outbounds {
+        if ob.ty == OutboundType::Selector || ob.ty == OutboundType::UrlTest {
+            let tag = match &ob.name {
+                Some(n) if !n.is_empty() => n.clone(),
+                _ => continue,
+            };
+            if let Some(members) = &ob.members {
+                if !members.is_empty() {
+                    deps.insert(tag, members.clone());
+                }
+            }
+        }
+    }
+    deps
+}
+
+/// Kahn's topological sort — pure sync function.
+/// 拓扑排序（纯同步函数）。
+///
+/// Returns ordered tags (dependencies first) or Err with cycle info.
+/// Missing deps (tag in deps but not in all_tags) are silently ignored,
+/// matching Go behavior where unknown outbounds are skipped.
+pub fn validate_and_sort(
+    all_tags: &[String],
+    deps: &HashMap<String, Vec<String>>,
+) -> Result<Vec<String>, String> {
+    let tag_set: std::collections::HashSet<&String> = all_tags.iter().collect();
+
+    // Build in-degree map and adjacency list
+    let mut in_degree: HashMap<&String, usize> = HashMap::new();
+    let mut graph: HashMap<&String, Vec<&String>> = HashMap::new();
+
+    for tag in all_tags {
+        in_degree.entry(tag).or_insert(0);
+        graph.entry(tag).or_default();
+    }
+
+    // Build graph: if A depends on B, edge B → A (B must start before A)
+    for (tag, dep_list) in deps {
+        if !tag_set.contains(tag) {
+            continue;
+        }
+        for dep in dep_list {
+            if tag_set.contains(dep) {
+                graph.entry(dep).or_default().push(tag);
+                *in_degree.entry(tag).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // Seed queue with zero in-degree nodes (sorted for determinism)
+    let mut queue: std::collections::BinaryHeap<std::cmp::Reverse<&String>> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(&tag, _)| std::cmp::Reverse(tag))
+        .collect();
+
+    let mut result = Vec::with_capacity(all_tags.len());
+
+    while let Some(std::cmp::Reverse(node)) = queue.pop() {
+        result.push(node.clone());
+        if let Some(neighbors) = graph.get(node) {
+            for &neighbor in neighbors {
+                if let Some(deg) = in_degree.get_mut(neighbor) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push(std::cmp::Reverse(neighbor));
+                    }
+                }
+            }
+        }
+    }
+
+    if result.len() != all_tags.len() {
+        let cycle_nodes: Vec<String> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg > 0)
+            .map(|(&tag, _)| tag.clone())
+            .collect();
+        return Err(format!(
+            "dependency cycle detected involving: {:?}",
+            cycle_nodes
+        ));
+    }
+
+    Ok(result)
+}
 
 /// Outbound adapter trait for connectors with lifecycle and tag.
 /// 具有生命周期和标签的出站适配器 trait。
@@ -307,68 +406,53 @@ impl OutboundManager {
         let legacy = self.legacy_connectors.read().await;
         let deps = self.dependencies.read().await;
 
-        // Collect all tags
         let mut all_tags: Vec<String> = adapters.keys().cloned().collect();
         all_tags.extend(legacy.keys().cloned());
 
-        // Kahn's algorithm for topological sort
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        let mut graph: HashMap<String, Vec<String>> = HashMap::new();
+        validate_and_sort(&all_tags, &deps)
+    }
 
-        // Initialize in-degree for all nodes
-        for tag in &all_tags {
-            in_degree.entry(tag.clone()).or_insert(0);
-            graph.entry(tag.clone()).or_default();
-        }
-
-        // Build graph (reverse: if A depends on B, add edge B -> A)
-        for (tag, dep_list) in deps.iter() {
-            for dep in dep_list {
-                if all_tags.contains(dep) {
-                    graph.entry(dep.clone()).or_default().push(tag.clone());
-                    *in_degree.entry(tag.clone()).or_insert(0) += 1;
-                }
+    /// Resolve default outbound (Go parity: explicit tag → first → "direct" fallback).
+    /// 解析默认出站（Go 对等：显式标签 → 第一个 → "direct" 后备）。
+    pub async fn resolve_default(&self, config_tag: Option<&str>) -> Result<String, String> {
+        // 1. Explicit tag from config (route.final / route.default)
+        if let Some(tag) = config_tag {
+            if !tag.is_empty() && self.contains(tag).await {
+                self.set_default(Some(tag.to_string())).await;
+                info!(
+                    target: "sb_core::outbound",
+                    default = %tag,
+                    source = "config",
+                    "default outbound resolved"
+                );
+                return Ok(tag.to_string());
+            }
+            if !tag.is_empty() {
+                return Err(format!("default outbound not found: {}", tag));
             }
         }
-
-        // Queue nodes with in-degree 0
-        let mut queue: Vec<String> = in_degree
-            .iter()
-            .filter(|(_, &deg)| deg == 0)
-            .map(|(tag, _)| tag.clone())
-            .collect();
-        queue.sort(); // Deterministic order
-
-        let mut result = Vec::new();
-        while let Some(node) = queue.pop() {
-            result.push(node.clone());
-            if let Some(neighbors) = graph.get(&node) {
-                for neighbor in neighbors {
-                    if let Some(deg) = in_degree.get_mut(neighbor) {
-                        *deg -= 1;
-                        if *deg == 0 {
-                            queue.push(neighbor.clone());
-                            queue.sort();
-                        }
-                    }
-                }
-            }
+        // 2. First registered outbound
+        let tags = self.list_tags().await;
+        if let Some(first) = tags.first() {
+            self.set_default(Some(first.clone())).await;
+            info!(
+                target: "sb_core::outbound",
+                default = %first,
+                source = "first_registered",
+                "default outbound resolved"
+            );
+            return Ok(first.clone());
         }
-
-        if result.len() != all_tags.len() {
-            // Cycle detected - find a node still with non-zero in-degree
-            let cycle_nodes: Vec<_> = in_degree
-                .iter()
-                .filter(|(_, &deg)| deg > 0)
-                .map(|(tag, _)| tag.clone())
-                .collect();
-            return Err(format!(
-                "Dependency cycle detected involving: {:?}",
-                cycle_nodes
-            ));
-        }
-
-        Ok(result)
+        // 3. Fallback: create "direct"
+        self.ensure_fallback_direct().await;
+        self.set_default(Some("direct".to_string())).await;
+        info!(
+            target: "sb_core::outbound",
+            default = "direct",
+            source = "fallback",
+            "default outbound resolved"
+        );
+        Ok("direct".to_string())
     }
 
     /// Ensure a fallback "direct" outbound exists.
@@ -458,5 +542,224 @@ mod tests {
         // Clear default
         manager.set_default(None).await;
         assert!(manager.get_default().await.is_none());
+    }
+
+    // =========================================================================
+    // L2.9 Tests: compute_outbound_deps, validate_and_sort, resolve_default
+    // =========================================================================
+
+    #[test]
+    fn test_compute_outbound_deps_extracts_selector_members() {
+        let outbounds = vec![
+            OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("direct-a".to_string()),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("direct-b".to_string()),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Selector,
+                name: Some("manual".to_string()),
+                members: Some(vec!["direct-a".to_string(), "direct-b".to_string()]),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::UrlTest,
+                name: Some("auto".to_string()),
+                members: Some(vec!["direct-a".to_string()]),
+                ..Default::default()
+            },
+        ];
+
+        let deps = compute_outbound_deps(&outbounds);
+        assert_eq!(deps.len(), 2);
+        assert_eq!(
+            deps.get("manual").unwrap(),
+            &vec!["direct-a".to_string(), "direct-b".to_string()]
+        );
+        assert_eq!(
+            deps.get("auto").unwrap(),
+            &vec!["direct-a".to_string()]
+        );
+        // Direct outbounds should not appear as keys
+        assert!(!deps.contains_key("direct-a"));
+    }
+
+    #[test]
+    fn test_compute_outbound_deps_skips_empty_members() {
+        let outbounds = vec![
+            OutboundIR {
+                ty: OutboundType::Selector,
+                name: Some("empty".to_string()),
+                members: Some(vec![]),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Selector,
+                name: Some("none".to_string()),
+                members: None,
+                ..Default::default()
+            },
+        ];
+
+        let deps = compute_outbound_deps(&outbounds);
+        assert!(deps.is_empty());
+    }
+
+    #[test]
+    fn test_validate_and_sort_linear() {
+        // C depends on nothing, B depends on C, A depends on B
+        // Expected order: C, B, A (or any valid topo order)
+        let all_tags = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let mut deps = HashMap::new();
+        deps.insert("A".to_string(), vec!["B".to_string()]);
+        deps.insert("B".to_string(), vec!["C".to_string()]);
+
+        let result = validate_and_sort(&all_tags, &deps).unwrap();
+        assert_eq!(result.len(), 3);
+
+        // C must come before B, B must come before A
+        let pos_a = result.iter().position(|t| t == "A").unwrap();
+        let pos_b = result.iter().position(|t| t == "B").unwrap();
+        let pos_c = result.iter().position(|t| t == "C").unwrap();
+        assert!(pos_c < pos_b);
+        assert!(pos_b < pos_a);
+    }
+
+    #[test]
+    fn test_validate_and_sort_cycle_detected() {
+        let all_tags = vec!["A".to_string(), "B".to_string()];
+        let mut deps = HashMap::new();
+        deps.insert("A".to_string(), vec!["B".to_string()]);
+        deps.insert("B".to_string(), vec!["A".to_string()]);
+
+        let result = validate_and_sort(&all_tags, &deps);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("cycle"));
+    }
+
+    #[test]
+    fn test_validate_and_sort_missing_dep_ignored() {
+        // A depends on X which doesn't exist in all_tags — should be silently ignored
+        let all_tags = vec!["A".to_string(), "B".to_string()];
+        let mut deps = HashMap::new();
+        deps.insert("A".to_string(), vec!["X".to_string()]);
+
+        let result = validate_and_sort(&all_tags, &deps).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_and_sort_no_deps() {
+        let all_tags = vec!["C".to_string(), "A".to_string(), "B".to_string()];
+        let deps = HashMap::new();
+
+        let result = validate_and_sort(&all_tags, &deps).unwrap();
+        assert_eq!(result.len(), 3);
+        // With no deps, should be sorted alphabetically (deterministic)
+        assert_eq!(result, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_validate_and_sort_diamond() {
+        // D depends on B and C; B and C depend on A
+        let all_tags = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
+        let mut deps = HashMap::new();
+        deps.insert("B".to_string(), vec!["A".to_string()]);
+        deps.insert("C".to_string(), vec!["A".to_string()]);
+        deps.insert("D".to_string(), vec!["B".to_string(), "C".to_string()]);
+
+        let result = validate_and_sort(&all_tags, &deps).unwrap();
+        let pos_a = result.iter().position(|t| t == "A").unwrap();
+        let pos_b = result.iter().position(|t| t == "B").unwrap();
+        let pos_c = result.iter().position(|t| t == "C").unwrap();
+        let pos_d = result.iter().position(|t| t == "D").unwrap();
+        assert!(pos_a < pos_b);
+        assert!(pos_a < pos_c);
+        assert!(pos_b < pos_d);
+        assert!(pos_c < pos_d);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_default_explicit() {
+        let manager = OutboundManager::new();
+        manager
+            .add_connector("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager
+            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+
+        let result = manager.resolve_default(Some("proxy")).await;
+        assert_eq!(result.unwrap(), "proxy");
+        assert_eq!(manager.get_default().await, Some("proxy".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_default_not_found() {
+        let manager = OutboundManager::new();
+        manager
+            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+
+        let result = manager.resolve_default(Some("nonexistent")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_default_first_registered() {
+        let manager = OutboundManager::new();
+        manager
+            .add_connector("alpha".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager
+            .add_connector("beta".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+
+        let result = manager.resolve_default(None).await;
+        assert!(result.is_ok());
+        // Should pick one of the registered connectors
+        let default = result.unwrap();
+        assert!(default == "alpha" || default == "beta");
+        assert!(manager.get_default().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_default_fallback_direct() {
+        let manager = OutboundManager::new();
+        // No outbounds registered at all
+
+        let result = manager.resolve_default(None).await;
+        assert_eq!(result.unwrap(), "direct");
+        assert_eq!(manager.get_default().await, Some("direct".to_string()));
+        // Should have auto-created the direct connector
+        assert!(manager.contains("direct").await);
+    }
+
+    #[tokio::test]
+    async fn test_get_startup_order_delegates_to_validate_and_sort() {
+        let manager = OutboundManager::new();
+        manager
+            .add_connector("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager
+            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager.add_dependency("proxy", "direct").await;
+
+        let order = manager.get_startup_order().await.unwrap();
+        let pos_direct = order.iter().position(|t| t == "direct").unwrap();
+        let pos_proxy = order.iter().position(|t| t == "proxy").unwrap();
+        assert!(pos_direct < pos_proxy);
     }
 }

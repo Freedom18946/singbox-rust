@@ -2049,7 +2049,7 @@ pub struct ServiceIR {
 }
 
 /// Complete configuration intermediate representation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ConfigIR {
     /// Inbound listeners.
     #[serde(default)]
@@ -2635,7 +2635,7 @@ pub struct NtpIR {
 }
 
 /// DNS server entry (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct DnsServerIR {
     /// Upstream tag (unique)
     pub tag: String,
@@ -2683,6 +2683,22 @@ pub struct DnsServerIR {
     /// Outbound detour for this server
     #[serde(default)]
     pub detour: Option<String>,
+    /// Server type hint from GUI (e.g. "fakeip", "hosts", "local", etc.)
+    /// When present, takes priority over address-prefix guessing.
+    #[serde(default, rename = "type")]
+    pub server_type: Option<String>,
+    /// FakeIP: IPv4 range (default "198.18.0.0/15")
+    #[serde(default)]
+    pub inet4_range: Option<String>,
+    /// FakeIP: IPv6 range (default "fc00::/18")
+    #[serde(default)]
+    pub inet6_range: Option<String>,
+    /// Hosts: file paths to load /etc/hosts-format files
+    #[serde(default)]
+    pub hosts_path: Vec<String>,
+    /// Hosts: predefined domain→IP mappings
+    #[serde(default)]
+    pub predefined: Option<serde_json::Value>,
 }
 
 /// DNS routing rule (IR)
@@ -2784,7 +2800,7 @@ pub struct DnsRuleIR {
 }
 
 /// DNS configuration (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct DnsIR {
     /// Upstream servers
     #[serde(default)]
@@ -2829,6 +2845,10 @@ pub struct DnsIR {
     /// 为此服务器/配置使用独立缓存。
     #[serde(default)]
     pub independent_cache: Option<bool>,
+    /// When true, cached DNS entries never expire based on TTL;
+    /// only LRU eviction removes them. (Go parity: disable_expire)
+    #[serde(default)]
+    pub disable_expire: Option<bool>,
     /// FakeIP settings
     #[serde(default)]
     pub fakeip_enabled: Option<bool>,

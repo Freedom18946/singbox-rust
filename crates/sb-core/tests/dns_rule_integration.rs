@@ -104,6 +104,9 @@ async fn test_dns_rule_query_type_matching() {
         answer: None,
         ns: None,
         extra: None,
+        disable_cache: None,
+        rewrite_ttl: None,
+        client_subnet: None,
     };
 
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
@@ -164,6 +167,9 @@ async fn test_dns_rule_action_hijack() {
         answer: None,
         ns: None,
         extra: None,
+        disable_cache: None,
+        rewrite_ttl: None,
+        client_subnet: None,
     };
 
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
@@ -220,6 +226,9 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
         answer: None,
         ns: None,
         extra: None,
+        disable_cache: None,
+        rewrite_ttl: None,
+        client_subnet: None,
     };
 
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
@@ -305,6 +314,9 @@ async fn test_dns_rule_action_address_limit() {
         answer: None,
         ns: None,
         extra: None,
+        disable_cache: None,
+        rewrite_ttl: None,
+        client_subnet: None,
     };
 
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();

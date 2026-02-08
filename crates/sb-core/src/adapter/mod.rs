@@ -414,6 +414,8 @@ pub struct Bridge {
     pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
     /// UDP outbound factories by name
     pub udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>>,
+    /// Outbound dependency graph: tag → depends-on tags (group members)
+    pub outbound_deps: HashMap<String, Vec<String>>,
     /// Endpoints (WireGuard, Tailscale, etc.)
     pub endpoints: Vec<Arc<dyn Endpoint>>,
 
@@ -435,6 +437,7 @@ impl Bridge {
             inbound_kinds: vec![],
             outbounds: vec![],
             udp_factories: HashMap::new(),
+            outbound_deps: HashMap::new(),
             endpoints: vec![],
             services: vec![],
             context,
@@ -820,6 +823,7 @@ impl std::fmt::Debug for Bridge {
                 "udp_factories",
                 &format!("{} factories", self.udp_factories.len()),
             )
+            .field("outbound_deps", &format!("{} deps", self.outbound_deps.len()))
             .field("endpoints", &format!("{} endpoints", self.endpoints.len()))
             .field("services", &format!("{} services", self.services.len()))
             .finish()

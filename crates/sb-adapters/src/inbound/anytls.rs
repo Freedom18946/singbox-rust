@@ -475,7 +475,7 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("destination rejected by router"))
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
             // Not directly handled by AnyTLS inbound; fall back to direct
             direct_connect_hostport(&dest.host, dest.port, &opts).await?
         }

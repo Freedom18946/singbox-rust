@@ -154,7 +154,10 @@ impl Supervisor {
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
 
         // Start context managers (after bridge is built but before inbounds start)
-        run_context_stage(&context, ServiceStage::Start)?;
+        run_context_stage(&context, ServiceStage::Start).map_err(|e| {
+            shutdown_context(&context);
+            e
+        })?;
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
         // Configure DNS resolver from IR (if provided)
@@ -167,7 +170,11 @@ impl Supervisor {
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
         let initial_state = State::new(engine_static, bridge, context, ir);
-        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await;
+        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await.map_err(|e| {
+            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration, rolling back");
+            shutdown_context(&initial_state.context);
+            e
+        })?;
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -196,8 +203,22 @@ impl Supervisor {
         // PostStart stage for context managers (after all inbounds/endpoints/services started)
         {
             let state_guard = state.read().await;
-            run_context_stage(&state_guard.context, ServiceStage::PostStart)?;
-            run_context_stage(&state_guard.context, ServiceStage::Started)?;
+            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
+                tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed, rolling back");
+                for ib in &inbounds { ib.request_shutdown(); }
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state_guard.context);
+                return Err(e);
+            }
+            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
+                tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed, rolling back");
+                for ib in &inbounds { ib.request_shutdown(); }
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state_guard.context);
+                return Err(e);
+            }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete");
         }
 
@@ -274,11 +295,18 @@ impl Supervisor {
         let bridge = crate::adapter::bridge::build_bridge(&ir, (), context.clone());
 
         // Start context managers
-        run_context_stage(&context, ServiceStage::Start)?;
+        run_context_stage(&context, ServiceStage::Start).map_err(|e| {
+            shutdown_context(&context);
+            e
+        })?;
         tracing::info!(target: "sb_core::runtime", "Context managers started (no-router)");
 
         let initial_state = State::new((), bridge, context, ir);
-        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await;
+        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await.map_err(|e| {
+            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration (no-router), rolling back");
+            shutdown_context(&initial_state.context);
+            e
+        })?;
 
         let state = Arc::new(RwLock::new(initial_state));
 
@@ -313,8 +341,22 @@ impl Supervisor {
         // PostStart stage for context managers
         {
             let state_guard = state.read().await;
-            run_context_stage(&state_guard.context, ServiceStage::PostStart)?;
-            run_context_stage(&state_guard.context, ServiceStage::Started)?;
+            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
+                tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed (no-router), rolling back");
+                for ib in &inbounds { ib.request_shutdown(); }
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state_guard.context);
+                return Err(e);
+            }
+            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
+                tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed (no-router), rolling back");
+                for ib in &inbounds { ib.request_shutdown(); }
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state_guard.context);
+                return Err(e);
+            }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete (no-router)");
         }
 
@@ -482,7 +524,7 @@ impl Supervisor {
         let new_bridge_arc = Arc::new(new_bridge);
         let new_endpoints = new_bridge_arc.endpoints.clone();
         let new_services = new_bridge_arc.services.clone();
-        populate_bridge_managers(&new_context, &new_bridge_arc).await;
+        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -605,7 +647,7 @@ impl Supervisor {
         let new_bridge_arc = Arc::new(new_bridge);
         let new_endpoints = new_bridge_arc.endpoints.clone();
         let new_services = new_bridge_arc.services.clone();
-        populate_bridge_managers(&new_context, &new_bridge_arc).await;
+        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -1086,16 +1128,49 @@ async fn install_ntp_task(state: &Arc<RwLock<State>>, cfg: Option<sb_config::ir:
 }
 
 /// Populate endpoint/service managers from the assembled bridge for parity with Go managers.
-async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) {
+async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> {
     // Note: Bridge maintains its own `inbounds` vector for legacy InboundService types.
     // InboundManager now expects Arc<dyn InboundAdapter> with lifecycle support.
     // New inbound adapters should be registered via InboundManager.add_handler().
     // Legacy inbounds are started via bridge.inbounds directly, not through InboundManager.
 
-    // Register outbounds with OutboundManager
-    // Outbounds are stored as (name, kind, connector) tuples
-    // OutboundManager likely has a different API or doesn't need explicit registration since
-    // Bridge already maintains outbounds vector. Skip for now as there's no add_outbound method.
+    // Register outbound tags with OutboundManager for lifecycle tracking (L2.9)
+    // The actual connectors remain in Bridge/OutboundRegistryHandle for connection routing.
+    // OutboundManager tracks tags + dependencies for startup ordering + default resolution.
+    for (name, _kind, _connector) in &bridge.outbounds {
+        // Use ensure_fallback_direct pattern: register a DirectConnector placeholder
+        // so OutboundManager knows this tag exists for dependency/default resolution.
+        ctx.outbound_manager
+            .add_connector(name.clone(), std::sync::Arc::new(
+                crate::outbound::direct_connector::DirectConnector::new()
+            ))
+            .await;
+    }
+
+    // Register dependency edges
+    for (tag, deps) in &bridge.outbound_deps {
+        for dep in deps {
+            ctx.outbound_manager.add_dependency(tag, dep).await;
+        }
+    }
+
+    // Validate dependency topology (cycle detection)
+    let all_tags: Vec<String> = bridge.outbounds.iter().map(|(n, _, _)| n.clone()).collect();
+    if let Err(cycle_err) = crate::outbound::manager::validate_and_sort(&all_tags, &bridge.outbound_deps) {
+        return Err(anyhow::anyhow!("outbound {}", cycle_err));
+    }
+
+    // Resolve default outbound (Go parity: route.final → first → "direct")
+    let route_opts = ctx.network.route_options();
+    let default_tag = route_opts.final_outbound.as_deref()
+        .or(route_opts.default_outbound.as_deref());
+    ctx.outbound_manager.resolve_default(default_tag).await
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    tracing::info!(
+        target: "sb_core::runtime",
+        "===== OUTBOUND READY CHECKPOINT ====="
+    );
 
     // Register endpoints with EndpointManager
     for ep in &bridge.endpoints {
@@ -1119,6 +1194,8 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) {
         services = bridge.services.len(),
         "Bridge components registered with context managers"
     );
+
+    Ok(())
 }
 
 /// Start all endpoints through their lifecycle stages. Uses best-effort logging on failure.

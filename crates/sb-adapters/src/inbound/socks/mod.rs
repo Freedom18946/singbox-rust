@@ -927,7 +927,7 @@ where
             // Should have been filtered earlier; return explicit error to avoid panic.
             return Err(io::Error::other("socks: rejected by rules"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
             // Not handled by SOCKS inbound directly; fall back to direct
             outbound_tag = Some("direct".to_string());
             match &endpoint {

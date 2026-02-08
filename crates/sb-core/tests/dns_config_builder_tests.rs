@@ -150,6 +150,7 @@ fn test_doh3_server_ir_parsing() -> Result<()> {
         ca_paths: Vec::new(),
         ca_pem: Vec::new(),
         skip_cert_verify: Some(false),
+        ..Default::default()
     };
 
     let registry = sb_core::dns::transport::TransportRegistry::new();
@@ -173,6 +174,7 @@ fn test_doh3_server_ir_with_tls_options() -> Result<()> {
         ca_paths: vec!["/path/to/ca.pem".to_string()],
         ca_pem: vec!["-----BEGIN CERTIFICATE-----\n...\n".to_string()],
         skip_cert_verify: Some(false),
+        ..Default::default()
     };
 
     let registry = sb_core::dns::transport::TransportRegistry::new();

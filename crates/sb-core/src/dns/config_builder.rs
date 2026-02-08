@@ -15,7 +15,13 @@ type DnsComponents = (
 );
 
 /// Build DNS components (Resolver and Router) from sb-config IR.
-pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponents> {
+///
+/// `cache_file` is an optional `CacheFileService` for future RDRC (Resolver DNS Result Cache)
+/// integration. When `Some`, the DNS resolver can persist and reuse cached transport results.
+pub fn build_dns_components(
+    ir: &sb_config::ir::ConfigIR,
+    cache_file: Option<Arc<crate::services::cache_file::CacheFileService>>,
+) -> Result<DnsComponents> {
     let dns_ir = ir
         .dns
         .as_ref()
@@ -23,6 +29,10 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
     let dns = hydrate_dns_ir_from_env(dns_ir);
     // Apply IR-level global knobs to env for compatibility with existing components
     apply_env_from_ir(&dns);
+
+    if let Some(ref _cf) = cache_file {
+        tracing::debug!(target: "sb_core::dns", "CacheFileService available for DNS RDRC");
+    }
 
     // Parse strategy
     let strategy = if let Some(s) = &dns.strategy {
@@ -37,9 +47,15 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
 
     // 1) Build upstream registry
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
+    let mut fakeip_tags: Vec<String> = Vec::new();
     for s in &dns.servers {
+        // Track FakeIP upstreams (L2.10.12)
+        let is_fakeip = s.server_type.as_deref() == Some("fakeip");
         if let Some(up) = build_upstream_from_server(s, &registry)? {
             upstreams.insert(s.tag.clone(), up);
+            if is_fakeip {
+                fakeip_tags.push(s.tag.clone());
+            }
         }
     }
 
@@ -94,6 +110,8 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
             let action = match r.action.as_deref() {
                 Some("reject") => DnsRuleAction::Reject,
                 Some("hijack-dns") => DnsRuleAction::HijackDns,
+                Some("route-options") => DnsRuleAction::RouteOptions,
+                Some("predefined") => DnsRuleAction::Predefined,
                 _ => DnsRuleAction::Route,
             };
 
@@ -124,6 +142,9 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
                 answer: None,
                 ns: None,
                 extra: None,
+                disable_cache: r.disable_cache,
+                rewrite_ttl: r.rewrite_ttl,
+                client_subnet: r.client_subnet.clone(),
             });
         }
 
@@ -136,6 +157,11 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
             geoip_db,
             geosite_db,
         );
+        // Mark FakeIP upstreams (L2.10.12)
+        let mut engine = engine;
+        for tag in &fakeip_tags {
+            engine.mark_fakeip_upstream(tag);
+        }
         let engine_arc = Arc::new(engine);
         // EngineResolver clones the engine (cheap clone if Arc fields, but DnsRuleEngine fields are expensive to clone?
         // DnsRuleEngine struct fields are Vecs and Maps. Cloning DnsRuleEngine is somewhat expensive.
@@ -167,8 +193,11 @@ pub fn build_dns_components(ir: &sb_config::ir::ConfigIR) -> Result<DnsComponent
 }
 
 /// Build a DNS resolver from sb-config IR (DnsIR).
+///
+/// Convenience wrapper around `build_dns_components` that discards the optional DnsRouter
+/// and passes `None` for the cache file (no RDRC persistence).
 pub fn resolver_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Arc<dyn Resolver>> {
-    let (resolver, _) = build_dns_components(ir)?;
+    let (resolver, _) = build_dns_components(ir, None)?;
     Ok(resolver)
 }
 
@@ -256,11 +285,37 @@ pub fn build_upstream_from_server(
     srv: &sb_config::ir::DnsServerIR,
     _registry: &crate::dns::transport::TransportRegistry,
 ) -> Result<Option<Arc<dyn DnsUpstream>>> {
+    // L2.10.11: Check server_type first (GUI generates "type" field)
+    if let Some(ref st) = srv.server_type {
+        match st.as_str() {
+            "fakeip" => {
+                let up = super::upstream::FakeIpUpstream::new(
+                    srv.tag.clone(),
+                    srv.inet4_range.clone(),
+                    srv.inet6_range.clone(),
+                );
+                return Ok(Some(Arc::new(up)));
+            }
+            "hosts" => {
+                let up = super::upstream::HostsUpstream::from_json_predefined(
+                    srv.tag.clone(),
+                    srv.predefined.as_ref(),
+                    &srv.hosts_path,
+                );
+                return Ok(Some(Arc::new(up)));
+            }
+            _ => {
+                // Fall through to address-based detection
+            }
+        }
+    }
+
     // Prefer detailed builder for DoT/DoQ when extras are present
     let a = srv.address.trim();
-    if a.is_empty() {
+    if a.is_empty() && srv.server_type.is_none() {
         return Ok(None);
     }
+    let a = if a.is_empty() { "system" } else { a };
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
     }

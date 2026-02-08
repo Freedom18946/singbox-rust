@@ -455,6 +455,7 @@ impl ResolverHandle {
         let cache_key = CacheKey {
             name: host.to_ascii_lowercase(),
             qtype: CacheQType::A, // Default to A record query
+            transport_tag: None,
         };
         let key = host.to_ascii_lowercase();
         #[cfg(feature = "dns_cache")]

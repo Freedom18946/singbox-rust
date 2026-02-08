@@ -70,6 +70,7 @@ fn dns_cache_basic_operations() {
     let key = sb_core::dns::cache::Key {
         name: "test.example".to_string(),
         qtype: sb_core::dns::cache::QType::A,
+        transport_tag: None,
     };
     cache.put(key.clone(), answer.clone());
     let cached_answer = cache.get(&key);
@@ -82,6 +83,7 @@ fn dns_cache_basic_operations() {
     let negative_key = sb_core::dns::cache::Key {
         name: "nonexistent.example".to_string(),
         qtype: sb_core::dns::cache::QType::A,
+        transport_tag: None,
     };
     cache.put_negative(negative_key.clone());
     let negative_result = cache.get(&negative_key);

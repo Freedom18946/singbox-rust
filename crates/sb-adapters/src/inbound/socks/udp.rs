@@ -1125,7 +1125,7 @@ pub async fn serve_udp_datagrams(
                     _decision_label = "direct".to_string();
                 }
                 // Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
-                RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve => {
+                RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
                     _decision_label = "direct".to_string();
                 }
             }

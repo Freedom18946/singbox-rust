@@ -2278,6 +2278,338 @@ impl DnsUpstream for TailscaleLocalUpstream {
     }
 }
 
+// ============================================================================
+// FakeIP Upstream (L2.10.9)
+// ============================================================================
+
+/// FakeIP upstream: allocates fake IPs from the global FakeIP pool.
+/// Implements DnsUpstream so it can be routed to by DNS rules.
+#[derive(Debug)]
+pub struct FakeIpUpstream {
+    tag_name: String,
+    inet4_range: Option<String>,
+    inet6_range: Option<String>,
+}
+
+impl FakeIpUpstream {
+    /// Create a new FakeIP upstream.
+    ///
+    /// If inet4_range/inet6_range are provided, they override the global defaults.
+    /// The FakeIP pool itself is managed by `crate::dns::fakeip`.
+    pub fn new(tag: String, inet4_range: Option<String>, inet6_range: Option<String>) -> Self {
+        // Apply range overrides to global FakeIP pool if provided
+        if let Some(ref v4) = inet4_range {
+            if let Some((base, mask)) = parse_cidr_v4(v4) {
+                std::env::set_var("SB_FAKEIP_V4_BASE", base.to_string());
+                std::env::set_var("SB_FAKEIP_V4_MASK", mask.to_string());
+            }
+        }
+        if let Some(ref v6) = inet6_range {
+            if let Some((base, mask)) = parse_cidr_v6(v6) {
+                std::env::set_var("SB_FAKEIP_V6_BASE", base.to_string());
+                std::env::set_var("SB_FAKEIP_V6_MASK", mask.to_string());
+            }
+        }
+        Self {
+            tag_name: tag,
+            inet4_range,
+            inet6_range,
+        }
+    }
+}
+
+fn parse_cidr_v4(cidr: &str) -> Option<(Ipv4Addr, u8)> {
+    let (addr_str, mask_str) = cidr.split_once('/')?;
+    let addr: Ipv4Addr = addr_str.parse().ok()?;
+    let mask: u8 = mask_str.parse().ok()?;
+    Some((addr, mask))
+}
+
+fn parse_cidr_v6(cidr: &str) -> Option<(Ipv6Addr, u8)> {
+    let (addr_str, mask_str) = cidr.split_once('/')?;
+    let addr: Ipv6Addr = addr_str.parse().ok()?;
+    let mask: u8 = mask_str.parse().ok()?;
+    Some((addr, mask))
+}
+
+#[async_trait]
+impl DnsUpstream for FakeIpUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        use crate::dns::fakeip;
+        match record_type {
+            RecordType::A => {
+                let ip = fakeip::allocate_v4(domain);
+                Ok(DnsAnswer::new(
+                    vec![ip],
+                    Duration::from_secs(600),
+                    super::cache::Source::Static,
+                    super::cache::Rcode::NoError,
+                ))
+            }
+            RecordType::AAAA => {
+                let ip = fakeip::allocate_v6(domain);
+                Ok(DnsAnswer::new(
+                    vec![ip],
+                    Duration::from_secs(600),
+                    super::cache::Source::Static,
+                    super::cache::Rcode::NoError,
+                ))
+            }
+            _ => {
+                // For Any/CNAME/MX/TXT, return both v4 and v6
+                let v4 = fakeip::allocate_v4(domain);
+                let v6 = fakeip::allocate_v6(domain);
+                Ok(DnsAnswer::new(
+                    vec![v4, v6],
+                    Duration::from_secs(600),
+                    super::cache::Source::Static,
+                    super::cache::Rcode::NoError,
+                ))
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.tag_name
+    }
+
+    async fn health_check(&self) -> bool {
+        // FakeIP upstream is always available — it generates addresses locally
+        true
+    }
+}
+
+// ============================================================================
+// Hosts Upstream (L2.10.10)
+// ============================================================================
+
+/// Hosts upstream: returns predefined domain->IP mappings.
+/// Supports loading from /etc/hosts format files and predefined JSON entries.
+#[derive(Debug)]
+pub struct HostsUpstream {
+    tag_name: String,
+    entries: std::collections::HashMap<String, Vec<IpAddr>>,
+}
+
+impl HostsUpstream {
+    /// Create from predefined map and optional hosts file paths.
+    pub fn new(
+        tag: String,
+        predefined: std::collections::HashMap<String, Vec<IpAddr>>,
+        hosts_paths: &[String],
+    ) -> Self {
+        let mut entries = predefined;
+        for path in hosts_paths {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                Self::parse_hosts_file(&content, &mut entries);
+            } else {
+                tracing::warn!(path = %path, "Failed to read hosts file");
+            }
+        }
+        Self {
+            tag_name: tag,
+            entries,
+        }
+    }
+
+    /// Parse /etc/hosts format: "IP domain [domain ...]" lines
+    fn parse_hosts_file(content: &str, map: &mut std::collections::HashMap<String, Vec<IpAddr>>) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.split_whitespace();
+            let Some(ip_str) = parts.next() else {
+                continue;
+            };
+            let Ok(ip) = ip_str.parse::<IpAddr>() else {
+                continue;
+            };
+            for domain in parts {
+                let domain = domain.to_ascii_lowercase();
+                map.entry(domain).or_default().push(ip);
+            }
+        }
+    }
+
+    /// Create from a serde_json::Value of predefined entries.
+    /// Expected format: {"domain": "ip"} or {"domain": ["ip1", "ip2"]}
+    pub fn from_json_predefined(
+        tag: String,
+        predefined: Option<&serde_json::Value>,
+        hosts_paths: &[String],
+    ) -> Self {
+        let mut entries = std::collections::HashMap::new();
+        if let Some(serde_json::Value::Object(map)) = predefined {
+            for (domain, value) in map {
+                let domain = domain.to_ascii_lowercase();
+                let mut ips = Vec::new();
+                match value {
+                    serde_json::Value::String(s) => {
+                        if let Ok(ip) = s.parse::<IpAddr>() {
+                            ips.push(ip);
+                        }
+                    }
+                    serde_json::Value::Array(arr) => {
+                        for v in arr {
+                            if let Some(s) = v.as_str() {
+                                if let Ok(ip) = s.parse::<IpAddr>() {
+                                    ips.push(ip);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if !ips.is_empty() {
+                    entries.insert(domain, ips);
+                }
+            }
+        }
+        Self::new(tag, entries, hosts_paths)
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for HostsUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let domain_lower = domain.to_ascii_lowercase();
+        match self.entries.get(&domain_lower) {
+            Some(ips) => {
+                let filtered: Vec<IpAddr> = ips
+                    .iter()
+                    .filter(|ip| match record_type {
+                        RecordType::A => ip.is_ipv4(),
+                        RecordType::AAAA => ip.is_ipv6(),
+                        _ => true,
+                    })
+                    .copied()
+                    .collect();
+                if filtered.is_empty() {
+                    Ok(DnsAnswer::new(
+                        Vec::new(),
+                        Duration::from_secs(3600),
+                        super::cache::Source::Static,
+                        super::cache::Rcode::NoError,
+                    ))
+                } else {
+                    Ok(DnsAnswer::new(
+                        filtered,
+                        Duration::from_secs(3600),
+                        super::cache::Source::Static,
+                        super::cache::Rcode::NoError,
+                    ))
+                }
+            }
+            None => Ok(DnsAnswer::new(
+                Vec::new(),
+                Duration::from_secs(0),
+                super::cache::Source::Static,
+                super::cache::Rcode::NxDomain,
+            )),
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.tag_name
+    }
+
+    async fn health_check(&self) -> bool {
+        // Hosts upstream is always available -- it serves from an in-memory map
+        true
+    }
+}
+
+#[cfg(test)]
+mod hosts_upstream_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn hosts_returns_predefined_ipv4() {
+        let mut entries = HashMap::new();
+        entries.insert("example.com".to_string(), vec!["1.2.3.4".parse().unwrap()]);
+        let upstream = HostsUpstream::new("hosts".to_string(), entries, &[]);
+        let answer = upstream.query("example.com", RecordType::A).await.unwrap();
+        assert_eq!(answer.ips.len(), 1);
+        assert_eq!(answer.ips[0], "1.2.3.4".parse::<IpAddr>().unwrap());
+    }
+
+    #[tokio::test]
+    async fn hosts_nxdomain_for_unknown() {
+        let upstream = HostsUpstream::new("hosts".to_string(), HashMap::new(), &[]);
+        let answer = upstream.query("unknown.com", RecordType::A).await.unwrap();
+        assert!(answer.ips.is_empty());
+        assert_eq!(answer.rcode, super::super::cache::Rcode::NxDomain);
+    }
+
+    #[tokio::test]
+    async fn hosts_filters_by_record_type() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "dual.com".to_string(),
+            vec![
+                "1.2.3.4".parse().unwrap(),
+                "2001:db8::1".parse().unwrap(),
+            ],
+        );
+        let upstream = HostsUpstream::new("hosts".to_string(), entries, &[]);
+
+        let a_answer = upstream.query("dual.com", RecordType::A).await.unwrap();
+        assert_eq!(a_answer.ips.len(), 1);
+        assert!(a_answer.ips[0].is_ipv4());
+
+        let aaaa_answer = upstream.query("dual.com", RecordType::AAAA).await.unwrap();
+        assert_eq!(aaaa_answer.ips.len(), 1);
+        assert!(aaaa_answer.ips[0].is_ipv6());
+    }
+
+    #[test]
+    fn hosts_parse_file() {
+        let content =
+            "# Comment\n127.0.0.1 localhost\n::1 localhost\n10.0.0.1 my.host other.host\n";
+        let mut map = HashMap::new();
+        HostsUpstream::parse_hosts_file(content, &mut map);
+        assert!(map.contains_key("localhost"));
+        assert_eq!(map["localhost"].len(), 2);
+        assert!(map.contains_key("my.host"));
+        assert!(map.contains_key("other.host"));
+    }
+
+    #[test]
+    fn hosts_upstream_name() {
+        let upstream = HostsUpstream::new("my-hosts".to_string(), HashMap::new(), &[]);
+        assert_eq!(upstream.name(), "my-hosts");
+    }
+
+    #[test]
+    fn hosts_from_json_predefined_single() {
+        let json = serde_json::json!({
+            "example.com": "10.0.0.1",
+            "dual.example.com": ["10.0.0.2", "2001:db8::2"]
+        });
+        let upstream =
+            HostsUpstream::from_json_predefined("json-hosts".to_string(), Some(&json), &[]);
+        assert!(upstream.entries.contains_key("example.com"));
+        assert_eq!(upstream.entries["example.com"].len(), 1);
+        assert!(upstream.entries.contains_key("dual.example.com"));
+        assert_eq!(upstream.entries["dual.example.com"].len(), 2);
+    }
+
+    #[tokio::test]
+    async fn hosts_case_insensitive_lookup() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "example.com".to_string(),
+            vec!["1.2.3.4".parse().unwrap()],
+        );
+        let upstream = HostsUpstream::new("hosts".to_string(), entries, &[]);
+        let answer = upstream.query("EXAMPLE.COM", RecordType::A).await.unwrap();
+        assert_eq!(answer.ips.len(), 1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2737,5 +3069,41 @@ nameserver 2001:4860:4860::8888
             "expected resolved reload to pick new nameserver, got {}",
             snap[0].name()
         );
+    }
+
+    #[tokio::test]
+    async fn fakeip_upstream_allocates_v4() {
+        let upstream = FakeIpUpstream::new("fakeip".to_string(), None, None);
+        let answer = upstream
+            .query("test.example.com", RecordType::A)
+            .await
+            .unwrap();
+        assert_eq!(answer.ips.len(), 1);
+        assert!(answer.ips[0].is_ipv4());
+        assert_eq!(answer.rcode, crate::dns::cache::Rcode::NoError);
+        assert_eq!(answer.ttl, Duration::from_secs(600));
+    }
+
+    #[tokio::test]
+    async fn fakeip_upstream_allocates_v6() {
+        let upstream = FakeIpUpstream::new("fakeip".to_string(), None, None);
+        let answer = upstream
+            .query("test.example.com", RecordType::AAAA)
+            .await
+            .unwrap();
+        assert_eq!(answer.ips.len(), 1);
+        assert!(answer.ips[0].is_ipv6());
+    }
+
+    #[test]
+    fn fakeip_upstream_tag() {
+        let upstream = FakeIpUpstream::new("my-fakeip".to_string(), None, None);
+        assert_eq!(upstream.name(), "my-fakeip");
+    }
+
+    #[tokio::test]
+    async fn fakeip_upstream_health_check_always_true() {
+        let upstream = FakeIpUpstream::new("fakeip".to_string(), None, None);
+        assert!(upstream.health_check().await);
     }
 }
