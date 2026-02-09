@@ -76,8 +76,8 @@ use sb_core::outbound::{
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::Decision as RDecision;
+use sb_core::router::{RouteCtx, Transport};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 
@@ -394,36 +394,23 @@ where
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
 
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     let proxy = default_proxy();
 
-    // Runtime rule engine (decide first)
-    // 运行态规则引擎（先判决）
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(host),
-            ip: None,
-            transport_udp: false,
-            port: Some(port),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let d = eng.decide(&ctx);
-        #[cfg(feature = "metrics")]
-        {
-            metrics::counter!(
-                "router_decide_total",
-                "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }
-            ).increment(1);
-        }
-        if matches!(d, RDecision::Reject) {
-            // Explicit reject
-            // 明确拒绝
-            let resp = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
-            let _ = cli.write_all(resp).await;
-            return Ok(());
-        }
-        decision = d;
-    }
+    // Routing via cfg.router (from config IR) with minimal matched rule metadata.
+    // 路由统一走 cfg.router（来自配置 IR），并携带最小命中规则标识。
+    let route_ctx = RouteCtx {
+        host: Some(host),
+        ip: None,
+        port: Some(port),
+        transport: Transport::Tcp,
+        network: "tcp",
+        inbound_tag: cfg.tag.as_deref(),
+        ..Default::default()
+    };
+    let meta = cfg.router.decide_with_meta(&route_ctx);
+    rule = meta.rule;
+    decision = meta.decision;
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
@@ -463,7 +450,7 @@ where
     // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）
     let mut outbound_tag: Option<String>;
-    let mut upstream: IoStream = match decision {
+    let mut upstream: IoStream = match &decision {
         RDecision::Direct => {
             outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;
@@ -472,106 +459,8 @@ where
         RDecision::Proxy(pool_name) => {
             if let Some(name) = pool_name {
                 outbound_tag = Some(name.clone());
-                // Named proxy pool selection
-                let sel = SELECTOR.get_or_init(|| {
-                    let _ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(10_000);
-                    let _cap = std::env::var("SB_PROXY_STICKY_CAP")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(4096);
-                    PoolSelector::new("http_proxy".to_string(), "default".to_string())
-                });
-                let _health = MultiHealthView;
-
-                if let Some(reg) = registry::global() {
-                    if let Some(_pool) = reg.pools.get(&name) {
-                        if let Some(ep) =
-                            sel.select(&name, peer, &format!("{}:{}", host, port), &())
-                        {
-                            match ep.kind {
-                                sb_core::outbound::endpoint::ProxyKind::Http => {
-                                    let s = http_proxy_connect_through_proxy(
-                                        &ep.addr.to_string(),
-                                        host,
-                                        port,
-                                        &opts,
-                                    )
-                                    .await?;
-                                    Box::new(s)
-                                }
-                                sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                    let s = socks5_connect_through_socks5(
-                                        &ep.addr.to_string(),
-                                        host,
-                                        port,
-                                        &opts,
-                                    )
-                                    .await?;
-                                    Box::new(s)
-                                }
-                            }
-                        } else if let Ok(s) = cfg
-                            .outbounds
-                            .connect_io(
-                                &OutRouteTarget::Named(name.clone()),
-                                OutEndpoint::Domain(host.to_string(), port),
-                            )
-                            .await
-                        {
-                            s
-                        } else {
-                            // Pool empty or all endpoints down - fallback to direct or default proxy
-                            match fallback_enabled {
-                                true => {
-                                    #[cfg(feature = "metrics")]
-                                    metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
-                                    outbound_tag = Some("direct".to_string());
-                                    let s = direct_connect_hostport(host, port, &opts).await?;
-                                    Box::new(s)
-                                }
-                                false => {
-                                    return Err(anyhow!(
-                                        "proxy pool '{}' has no available endpoints",
-                                        name
-                                    ));
-                                }
-                            }
-                        }
-                    } else if let Ok(s) = cfg
-                        .outbounds
-                        .connect_io(
-                            &OutRouteTarget::Named(name.clone()),
-                            OutEndpoint::Domain(host.to_string(), port),
-                        )
-                        .await
-                    {
-                        s
-                    } else {
-                        // Pool not found - fallback to default proxy or direct
-                        match proxy {
-                            ProxyChoice::Direct => {
-                                outbound_tag = Some("direct".to_string());
-                                let s = direct_connect_hostport(host, port, &opts).await?;
-                                Box::new(s)
-                            }
-                            ProxyChoice::Http(addr) => {
-                                outbound_tag = Some("http".to_string());
-                                let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                    .await?;
-                                Box::new(s)
-                            }
-                            ProxyChoice::Socks5(addr) => {
-                                outbound_tag = Some("socks5".to_string());
-                                let s =
-                                    socks5_connect_through_socks5(addr, host, port, &opts).await?;
-                                Box::new(s)
-                            }
-                        }
-                    }
-                } else if let Ok(s) = cfg
+                // Prefer registry-based outbound first (Go-style: route -> outbound by tag).
+                if let Ok(s) = cfg
                     .outbounds
                     .connect_io(
                         &OutRouteTarget::Named(name.clone()),
@@ -581,23 +470,119 @@ where
                 {
                     s
                 } else {
-                    // No proxy pool registry - fallback to default proxy
-                    match proxy {
-                        ProxyChoice::Direct => {
-                            outbound_tag = Some("direct".to_string());
-                            let s = direct_connect_hostport(host, port, &opts).await?;
-                            Box::new(s)
+                    // Named proxy pool selection
+                    let sel = SELECTOR.get_or_init(|| {
+                        let _ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(10_000);
+                        let _cap = std::env::var("SB_PROXY_STICKY_CAP")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(4096);
+                        PoolSelector::new("http_proxy".to_string(), "default".to_string())
+                    });
+                    let _health = MultiHealthView;
+
+                    if let Some(reg) = registry::global() {
+                        if let Some(_pool) = reg.pools.get(name) {
+                            if let Some(ep) =
+                                sel.select(name, peer, &format!("{}:{}", host, port), &())
+                            {
+                                match ep.kind {
+                                    sb_core::outbound::endpoint::ProxyKind::Http => {
+                                        let s = http_proxy_connect_through_proxy(
+                                            &ep.addr.to_string(),
+                                            host,
+                                            port,
+                                            &opts,
+                                        )
+                                        .await?;
+                                        Box::new(s)
+                                    }
+                                    sb_core::outbound::endpoint::ProxyKind::Socks5 => {
+                                        let s = socks5_connect_through_socks5(
+                                            &ep.addr.to_string(),
+                                            host,
+                                            port,
+                                            &opts,
+                                        )
+                                        .await?;
+                                        Box::new(s)
+                                    }
+                                }
+                            } else {
+                                // Pool empty or all endpoints down - fallback to direct or error
+                                match fallback_enabled {
+                                    true => {
+                                        #[cfg(feature = "metrics")]
+                                        metrics::counter!(
+                                            "router_route_fallback_total",
+                                            "from" => "proxy",
+                                            "to" => "direct",
+                                            "reason" => "pool_empty"
+                                        )
+                                        .increment(1);
+                                        outbound_tag = Some("direct".to_string());
+                                        let s = direct_connect_hostport(host, port, &opts).await?;
+                                        Box::new(s)
+                                    }
+                                    false => {
+                                        return Err(anyhow!(
+                                            "proxy pool '{}' has no available endpoints",
+                                            name
+                                        ));
+                                    }
+                                }
+                            }
+                        } else {
+                            // Pool not found - fallback to default proxy or direct
+                            match proxy {
+                                ProxyChoice::Direct => {
+                                    outbound_tag = Some("direct".to_string());
+                                    let s = direct_connect_hostport(host, port, &opts).await?;
+                                    Box::new(s)
+                                }
+                                ProxyChoice::Http(addr) => {
+                                    outbound_tag = Some("http".to_string());
+                                    let s = http_proxy_connect_through_proxy(
+                                        addr, host, port, &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                                ProxyChoice::Socks5(addr) => {
+                                    outbound_tag = Some("socks5".to_string());
+                                    let s = socks5_connect_through_socks5(
+                                        addr, host, port, &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
+                                }
+                            }
                         }
-                        ProxyChoice::Http(addr) => {
-                            outbound_tag = Some("http".to_string());
-                            let s =
-                                http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
-                            Box::new(s)
-                        }
-                        ProxyChoice::Socks5(addr) => {
-                            outbound_tag = Some("socks5".to_string());
-                            let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
-                            Box::new(s)
+                    } else {
+                        // No proxy pool registry - fallback to default proxy
+                        match proxy {
+                            ProxyChoice::Direct => {
+                                outbound_tag = Some("direct".to_string());
+                                let s = direct_connect_hostport(host, port, &opts).await?;
+                                Box::new(s)
+                            }
+                            ProxyChoice::Http(addr) => {
+                                outbound_tag = Some("http".to_string());
+                                let s =
+                                    http_proxy_connect_through_proxy(addr, host, port, &opts)
+                                        .await?;
+                                Box::new(s)
+                            }
+                            ProxyChoice::Socks5(addr) => {
+                                outbound_tag = Some("socks5".to_string());
+                                let s =
+                                    socks5_connect_through_socks5(addr, host, port, &opts)
+                                        .await?;
+                                Box::new(s)
+                            }
                         }
                     }
                 }
@@ -650,17 +635,45 @@ where
             auth_user.as_deref(),
         )
     });
-    let _ = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+
+    let chains = match (&decision, outbound_tag.as_deref()) {
+        (RDecision::Direct, _) => vec!["DIRECT".to_string()],
+        (RDecision::Proxy(Some(tag)), Some(ob_tag)) if ob_tag == tag => {
+            sb_core::outbound::chain::compute_chain_leaf_to_matched(cfg.outbounds.as_ref(), tag)
+        }
+        _ => vec!["PROXY".to_string()],
+    };
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.to_string(),
+        port,
+        host.to_string(),
+        "http",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,
         "http",
         std::time::Duration::from_secs(1),
         rt,
         wt,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
-    .await?;
+    .await;
+    match copy_res {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+        Err(e) => return Err(e.into()),
+    }
     Ok(())
 }
 

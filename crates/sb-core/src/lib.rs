@@ -43,6 +43,7 @@
 pub mod adapter;
 pub mod adapter_error;
 pub mod context;
+pub mod conntrack;
 pub mod error;
 pub mod error_map;
 pub mod errors;

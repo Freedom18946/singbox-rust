@@ -412,13 +412,35 @@ impl Socks5Connector {
             .socks5_udp_associate(&mut control_stream, opts.connect_timeout)
             .await?;
 
-        // Create UDP socket (dual-stack to support IPv6 relay addresses)
-        // 创建 UDP socket（双栈以支持 IPv6 中继地址）
-        let udp_socket = match UdpSocket::bind("[::]:0").await {
-            Ok(s) => s,
-            Err(_) => UdpSocket::bind("0.0.0.0:0")
-                .await
-                .map_err(AdapterError::Io)?,
+        // Create UDP socket.
+        //
+        // Prefer binding to loopback when the relay is loopback, which avoids
+        // platform sandbox restrictions that sometimes reject wildcard binds
+        // in test environments, while keeping the normal dual-stack wildcard
+        // behavior for real remote relays.
+        let udp_socket = if relay_addr.ip().is_loopback() {
+            match relay_addr.ip() {
+                IpAddr::V4(_) => match UdpSocket::bind("127.0.0.1:0").await {
+                    Ok(s) => s,
+                    Err(_) => UdpSocket::bind("0.0.0.0:0")
+                        .await
+                        .map_err(AdapterError::Io)?,
+                },
+                IpAddr::V6(_) => match UdpSocket::bind("[::1]:0").await {
+                    Ok(s) => s,
+                    Err(_) => UdpSocket::bind("[::]:0")
+                        .await
+                        .map_err(AdapterError::Io)?,
+                },
+            }
+        } else {
+            // Dual-stack to support IPv6 relay addresses.
+            match UdpSocket::bind("[::]:0").await {
+                Ok(s) => s,
+                Err(_) => UdpSocket::bind("0.0.0.0:0")
+                    .await
+                    .map_err(AdapterError::Io)?,
+            }
         };
 
         // Connect to relay address

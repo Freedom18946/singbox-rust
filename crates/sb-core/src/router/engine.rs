@@ -80,6 +80,13 @@ pub struct RouterHandle {
     rule_set_db: Option<std::sync::Arc<crate::router::rule_set::RuleSetDb>>,
 }
 
+/// Decision result with minimal metadata for `/connections` display.
+#[derive(Debug, Clone)]
+pub struct DecideWithMeta {
+    pub decision: crate::router::rules::Decision,
+    pub rule: Option<String>,
+}
+
 impl std::fmt::Debug for RouterHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RouterHandle")
@@ -1143,6 +1150,112 @@ impl RouterHandle {
             }
         }
         RouteTarget::Named(idx.default.to_string())
+    }
+
+    /// Decide with minimal matched rule metadata (best-effort).
+    ///
+    /// This does NOT change routing behavior: it mirrors `decide()` and only adds
+    /// a `rule` string that is stable enough for UI display and debugging.
+    pub fn decide_with_meta(&self, ctx: &crate::router::RouteCtx) -> DecideWithMeta {
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+
+        // 1) Composite rules: expose rule index as "rule#<idx>"
+        if !idx.rules.is_empty() {
+            let mut rules_ctx = crate::router::rules::RouteCtx {
+                domain: ctx.host,
+                ip: ctx.ip,
+                port: ctx.port,
+                network: Some(ctx.network),
+                protocol: None,
+                user_agent: ctx.user_agent,
+                geosite_codes: vec![],
+                geoip_code: None,
+                source_geoip_code: None,
+                rule_sets: vec![],
+                source_ip: ctx.source_ip,
+                source_port: ctx.source_port,
+                process_name: ctx.process_name,
+                process_path: ctx.process_path,
+                wifi_ssid: ctx.wifi_ssid,
+                wifi_bssid: ctx.wifi_bssid,
+                inbound_tag: ctx.inbound_tag,
+                auth_user: ctx.auth_user,
+                query_type: ctx.query_type,
+                clash_mode: ctx.clash_mode,
+                client: ctx.client,
+                package_name: ctx.package_name,
+                network_type: ctx.network_type,
+                network_is_expensive: ctx.network_is_expensive,
+                network_is_constrained: ctx.network_is_constrained,
+                outbound_tag: ctx.outbound_tag,
+                ..Default::default()
+            };
+
+            if let Some(host) = ctx.host {
+                if let Some(geosite_db) = &self.geosite_db {
+                    rules_ctx.geosite_codes = geosite_db.lookup_categories(host);
+                }
+                if let Some(rule_set_db) = &self.rule_set_db {
+                    let mut matched_tags = Vec::new();
+                    rule_set_db.match_host(host, &mut matched_tags);
+                    rules_ctx.rule_sets.extend(matched_tags);
+                }
+            }
+            if let Some(ip) = ctx.ip {
+                if let Some(geoip_db) = &self.geoip_db {
+                    if let Some(code) = geoip_db.lookup_country(ip) {
+                        rules_ctx.geoip_code = Some(code);
+                    }
+                }
+                if let Some(rule_set_db) = &self.rule_set_db {
+                    let mut matched_tags = Vec::new();
+                    rule_set_db.match_ip(ip, &mut matched_tags);
+                    rules_ctx.rule_sets.extend(matched_tags);
+                }
+            }
+            if let Some(ip) = ctx.source_ip {
+                if let Some(geoip_db) = &self.geoip_db {
+                    if let Some(code) = geoip_db.lookup_country(ip) {
+                        rules_ctx.source_geoip_code = Some(code);
+                    }
+                }
+            }
+
+            for (i, rule) in idx.rules.iter().enumerate() {
+                if rule.matches(&rules_ctx) {
+                    return DecideWithMeta {
+                        decision: rule.decision.clone(),
+                        rule: Some(format!("rule#{i}")),
+                    };
+                }
+            }
+
+            // No composite rule matched: fall back to the actual decide() result.
+            return DecideWithMeta {
+                decision: self.decide(ctx),
+                rule: Some("final".to_string()),
+            };
+        }
+
+        // 2) Fast path: attempt to label host-based match kind when rules list is empty.
+        if let Some(host) = ctx.host {
+            if let Some(_d) = super::router_index_decide_exact_suffix(&idx, host) {
+                let kind = if idx.exact.contains_key(host) {
+                    "exact"
+                } else {
+                    "suffix"
+                };
+                return DecideWithMeta {
+                    decision: self.decide(ctx),
+                    rule: Some(kind.to_string()),
+                };
+            }
+        }
+
+        DecideWithMeta {
+            decision: self.decide(ctx),
+            rule: Some("final".to_string()),
+        }
     }
 }
 

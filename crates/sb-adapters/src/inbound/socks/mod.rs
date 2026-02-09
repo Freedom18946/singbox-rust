@@ -32,8 +32,7 @@ use sb_core::outbound::{
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
+use sb_core::router::rules::Decision as RDecision;
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::router::{RouteCtx, RouterHandle, Transport};
 use sb_core::services::v2ray_api::StatsManager;
@@ -517,34 +516,44 @@ where
     }
 
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     let proxy = default_proxy();
 
-    // 运行态规则引擎（先判决）
-    // Runtime rule engine (decide first)
-    if let Some(eng) = rules_global::global() {
-        let (dom, ip, port) = match &endpoint {
-            Endpoint::Domain(h, p) => (Some(h.as_str()), None, Some(*p)),
-            Endpoint::Ip(sa) => (None, Some(sa.ip()), Some(sa.port())),
-        };
-        let ctx = RulesRouteCtx {
-            domain: dom,
-            ip,
-            transport_udp: false,
-            port,
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let d = eng.decide(&ctx);
-        #[cfg(feature = "metrics")]
-        {
-            metrics::counter!("router_decide_total", "decision"=> match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
-        }
-        if matches!(d, RDecision::Reject) {
-            // SOCKS5: REP=0x02 (connection not allowed by ruleset)
-            reply(cli, 0x02, None).await?;
-            return Ok(());
-        }
-        decision = d;
+    // Routing via cfg.router (from config IR) with minimal matched rule metadata.
+    let (host_opt, ip_opt, port_opt) = match &endpoint {
+        Endpoint::Domain(h, p) => (Some(h.as_str()), None, Some(*p)),
+        Endpoint::Ip(sa) => (None, Some(sa.ip()), Some(sa.port())),
+    };
+    let route_ctx = RouteCtx {
+        host: host_opt,
+        ip: ip_opt,
+        port: port_opt,
+        transport: Transport::Tcp,
+        network: "tcp",
+        inbound_tag: cfg.tag.as_deref(),
+        ..Default::default()
+    };
+    let meta = cfg.router.decide_with_meta(&route_ctx);
+    rule = meta.rule;
+    decision = meta.decision;
+
+    #[cfg(feature = "metrics")]
+    {
+        metrics::counter!(
+            "router_decide_total",
+            "decision" => match &decision {
+                RDecision::Direct => "direct",
+                RDecision::Proxy(_) => "proxy",
+                RDecision::Reject | RDecision::RejectDrop => "reject",
+                _ => "other",
+            }
+        )
+        .increment(1);
+    }
+    if matches!(decision, RDecision::Reject) {
+        // SOCKS5: REP=0x02 (connection not allowed by ruleset)
+        reply(cli, 0x02, None).await?;
+        return Ok(());
     }
 
     #[cfg(feature="metrics")]
@@ -617,24 +626,53 @@ where
                     auth_user.as_deref(),
                 )
             });
-            let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+            let (dst_host, dst_port) = match &endpoint {
+                Endpoint::Domain(h, p) => (h.clone(), *p),
+                Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+            };
+            let chains = sb_core::outbound::chain::compute_chain_leaf_to_matched(
+                cfg.outbounds.as_ref(),
+                name,
+            );
+            let wiring = sb_core::conntrack::register_inbound_tcp(
+                peer,
+                dst_host.clone(),
+                dst_port,
+                dst_host,
+                "socks",
+                cfg.tag.clone(),
+                outbound_tag.clone(),
+                chains,
+                rule.clone(),
+                None,
+                None,
+                traffic,
+            );
+            let _guard = wiring.guard;
+
+            let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
                 cli,
                 &mut s,
                 "socks",
                 std::time::Duration::from_secs(1),
                 rt,
                 wt,
-                None,
-                traffic,
+                Some(wiring.cancel),
+                Some(wiring.traffic),
             )
-            .await?;
+            .await;
+            match copy_res {
+                Ok(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
             return Ok(());
         }
     }
 
     // 与上游建立连接（根据决策与默认代理）
     // Establish connection with upstream (based on decision and default proxy)
-    let mut srv: IoStream = match decision {
+    let mut srv: IoStream = match &decision {
         RDecision::Direct => {
             outbound_tag = Some("direct".to_string());
             match &endpoint {
@@ -670,8 +708,8 @@ where
                 };
 
                 if let Some(reg) = registry::global() {
-                    if let Some(_pool) = reg.pools.get(&name) {
-                        if let Some(ep) = sel.select(&name, peer, &target_str, &()) {
+                    if let Some(_pool) = reg.pools.get(name) {
+                        if let Some(ep) = sel.select(name, peer, &target_str, &()) {
                             match ep.kind {
                                 sb_core::outbound::endpoint::ProxyKind::Http => match &endpoint {
                                     Endpoint::Domain(host, port) => Box::new(
@@ -972,18 +1010,49 @@ where
             auth_user.as_deref(),
         )
     });
-    let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+    let (dst_host, dst_port) = match &endpoint {
+        Endpoint::Domain(h, p) => (h.clone(), *p),
+        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+    };
+    let chains = match (&decision, outbound_tag.as_deref()) {
+        (RDecision::Direct, _) => vec!["DIRECT".to_string()],
+        (RDecision::Proxy(Some(tag)), Some(ob_tag)) if ob_tag == tag => {
+            sb_core::outbound::chain::compute_chain_leaf_to_matched(cfg.outbounds.as_ref(), tag)
+        }
+        _ => vec!["PROXY".to_string()],
+    };
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        dst_host.clone(),
+        dst_port,
+        dst_host,
+        "socks",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+
+    let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         cli,
         &mut srv,
         "socks",
         std::time::Duration::from_secs(1),
         rt,
         wt,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
-    .await?;
-    Ok(())
+    .await;
+    match copy_res {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 // 握手开始处（收到 VERS/NMETHODS 等）

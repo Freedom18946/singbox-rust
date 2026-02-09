@@ -27,6 +27,7 @@
     feature = "out_naive",
 ))]
 pub mod block_connector;
+pub mod chain;
 pub mod direct_connector;
 #[cfg(feature = "out_http")]
 // direct_simple currently used by http connector specifically? Check usage. Assuming general utility for non-complex outbounds.

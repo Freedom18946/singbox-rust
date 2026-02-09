@@ -340,6 +340,23 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
     }
 }
 
+fn infer_dns_server_type_from_address(address: &str) -> Option<String> {
+    let addr = address.trim();
+    if addr.is_empty() {
+        return None;
+    }
+    if addr.eq_ignore_ascii_case("resolved") {
+        return Some("resolved".to_string());
+    }
+    let (scheme, _) = addr.split_once("://")?;
+    let scheme = scheme.trim();
+    if scheme.is_empty() {
+        None
+    } else {
+        Some(scheme.to_ascii_lowercase())
+    }
+}
+
 fn extract_listable_strings(value: Option<&Value>) -> Option<Listable<String>> {
     extract_string_list(value).map(|items| Listable { items })
 }
@@ -2855,15 +2872,20 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             }
                             _ => {}
                         }
-                        let client_subnet = map
-                            .get("client_subnet")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty());
-                        dd.servers.push(crate::ir::DnsServerIR {
-                            tag,
-                            address,
-                            sni: map
+	                        let client_subnet = map
+	                            .get("client_subnet")
+	                            .and_then(|v| v.as_str())
+	                            .map(|s| s.trim().to_string())
+	                            .filter(|s| !s.is_empty());
+	                        let server_type = map
+	                            .get("type")
+	                            .and_then(|v| v.as_str())
+	                            .map(|s| s.to_string())
+	                            .or_else(|| infer_dns_server_type_from_address(&address));
+	                        dd.servers.push(crate::ir::DnsServerIR {
+	                            tag,
+	                            address,
+	                            sni: map
                                 .get("sni")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
@@ -2887,18 +2909,15 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                 .get("strategy")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            detour: map
-                                .get("detour")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            server_type: map
-                                .get("type")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            service: map
-                                .get("service")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
+	                            detour: map
+	                                .get("detour")
+	                                .and_then(|v| v.as_str())
+	                                .map(|s| s.to_string()),
+	                            server_type,
+	                            service: map
+	                                .get("service")
+	                                .and_then(|v| v.as_str())
+	                                .map(|s| s.to_string()),
                             accept_default_resolvers: map
                                 .get("accept_default_resolvers")
                                 .and_then(|v| v.as_bool()),
@@ -2927,27 +2946,23 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
         if let Some(rules) = dns.get("rules").and_then(|v| v.as_array()) {
             for (idx, r) in rules.iter().enumerate() {
-                if let Some(obj) = r.as_object() {
-                    let server = obj
-                        .get("server")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.trim().to_string());
-                    let action = obj
-                        .get("action")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-
-                    // If neither server nor action is present/valid (and action is not "reject" etc which might work without server?
-                    // actually if action is missing, server MUST be present. If action is present, server might be optional depending on action.
-                    // For now, if both are missing, skip.
-                    if server.is_none() && action.is_none() {
-                        continue;
-                    }
-
-                    let mut dr = crate::ir::DnsRuleIR {
-                        server,
-                        action,
-                        priority: Some(idx as u32 + 1),
+	                if let Some(obj) = r.as_object() {
+	                    let server = obj
+	                        .get("server")
+	                        .and_then(|v| v.as_str())
+	                        .map(|s| s.trim().to_string());
+	                    let action = obj
+	                        .get("action")
+	                        .and_then(|v| v.as_str())
+	                        .map(|s| s.to_string());
+	                    // Go parity: allow rules that omit both `server` and `action`.
+	                    // In that case we infer the server tag by rule index (falling back
+	                    // to the last configured server).
+	
+	                    let mut dr = crate::ir::DnsRuleIR {
+	                        server,
+	                        action,
+	                        priority: Some(idx as u32 + 1),
                         rewrite_ttl: parse_u32_field(obj.get("rewrite_ttl")),
                         client_subnet: obj
                             .get("client_subnet")
@@ -3025,12 +3040,20 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     // Wait, struct has `keyword`, I removed `keyword` field? No.
                     // Line 2566 says `keyword: Vec<String>`.
                     // I should map both `domain_keyword` and `keyword` config to `keyword` IR field.
-                    // Correcting logic below:
+	                    // Correcting logic below:
+	
+	                    if dr.server.is_none() && dr.action.is_none() {
+	                        if let Some(srv) = dd.servers.get(idx).or_else(|| dd.servers.last()) {
+	                            dr.server = Some(srv.tag.clone());
+	                        } else {
+	                            continue;
+	                        }
+	                    }
 
-                    dd.rules.push(dr);
-                }
-            }
-        }
+	                    dd.rules.push(dr);
+	                }
+	            }
+	        }
         dd.default = dns
             .get("final")
             .or_else(|| dns.get("default"))
