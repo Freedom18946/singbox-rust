@@ -23,7 +23,11 @@ use std::{
 #[cfg(feature = "metrics")]
 use super::metrics;
 use super::{DnsAnswer, DnsUpstream, RecordType};
+use crate::dns::message::inject_edns0_client_subnet;
 use crate::dns::transport::{DnsTransport, LocalTransport};
+
+#[cfg(feature = "service_resolved")]
+use crate::dns::transport::resolved::{ResolvedTransport, ResolvedTransportConfig};
 
 #[cfg(any(feature = "dns_dhcp", feature = "dns_resolved"))]
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -457,28 +461,14 @@ impl UdpUpstream {
         packet.extend_from_slice(&record_type.as_u16().to_be_bytes());
         packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
 
-        // Optional EDNS0 Client Subnet (global env-driven)
-        if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
-            // Increase ARCOUNT to 1
-            packet[10] = 0;
-            packet[11] = 1;
-            // OPT RR
-            packet.push(0); // NAME root
-            packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
-            packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
-            packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
-                                                           // ECS option
-            let mut opt = Vec::new();
-            opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
-            let data_len = 4u16 + (addr_bytes.len() as u16);
-            opt.extend_from_slice(&data_len.to_be_bytes());
-            opt.extend_from_slice(&family.to_be_bytes());
-            opt.push(src_prefix);
-            opt.push(scope_prefix);
-            opt.extend_from_slice(&addr_bytes);
-            // RDLEN + OPT data
-            packet.extend_from_slice(&(opt.len() as u16).to_be_bytes());
-            packet.extend_from_slice(&opt);
+        // Optional EDNS0 Client Subnet:
+        // - prefer per-upstream ECS, else fall back to global env.
+        let ecs = self
+            .client_subnet
+            .clone()
+            .or_else(|| std::env::var("SB_DNS_CLIENT_SUBNET").ok());
+        if let Some(ecs) = ecs {
+            let _ = inject_edns0_client_subnet(&mut packet, ecs.trim());
         }
 
         Ok(packet)
@@ -662,6 +652,47 @@ impl DnsUpstream for UdpUpstream {
             Some(err) => Err(err),
             None => Err(anyhow::anyhow!("All UDP DNS queries failed")),
         }
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        use tokio::net::UdpSocket;
+        use tokio::time::timeout;
+
+        let mut last_error: Option<anyhow::Error> = None;
+
+        for attempt in 0..=self.retries {
+            let mut req = packet.to_vec();
+            if let Some(ecs) = &self.client_subnet {
+                let _ = inject_edns0_client_subnet(&mut req, ecs.trim());
+            }
+
+            let res = async {
+                let socket = UdpSocket::bind("0.0.0.0:0").await?;
+                socket.connect(self.server).await?;
+                socket.send(&req).await?;
+
+                // EDNS0 can exceed 512; use a larger buffer.
+                let mut buf = vec![0u8; 4096];
+                let n = timeout(self.timeout, socket.recv(&mut buf))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("DNS exchange timeout"))??;
+                buf.truncate(n);
+                Ok::<_, anyhow::Error>(buf)
+            }
+            .await;
+
+            match res {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    last_error = Some(err);
+                    if attempt < self.retries {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("UDP DNS exchange failed")))
     }
 
     fn name(&self) -> &str {
@@ -933,6 +964,73 @@ impl DnsUpstream for DhcpUpstream {
         self.fallback.query(domain, record_type).await
     }
 
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        for attempt in 0..2 {
+            let upstreams = self.snapshot();
+            if upstreams.is_empty() {
+                if attempt == 0 {
+                    reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    if self.snapshot().is_empty() {
+                        tracing::warn!(
+                            target: "sb_core::dns",
+                            upstream = %self.name,
+                            "DHCP upstream has no servers; cannot raw-exchange via system resolver"
+                        );
+                        record_upstream_fallback("dhcp", &self.name, "empty_exchange");
+                        return Err(anyhow::anyhow!(
+                            "dhcp upstream {} has no servers for raw exchange",
+                            self.name
+                        ));
+                    }
+                    continue;
+                }
+                return Err(anyhow::anyhow!(
+                    "dhcp upstream {} has no servers for raw exchange",
+                    self.name
+                ));
+            }
+
+            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let mut last_error: Option<anyhow::Error> = None;
+            for offset in 0..upstreams.len() {
+                let idx = (start + offset) % upstreams.len();
+                match upstreams[idx].exchange(packet).await {
+                    Ok(resp) => return Ok(resp),
+                    Err(err) => {
+                        tracing::debug!(
+                            target: "sb_core::dns",
+                            upstream = %self.name,
+                            member = %upstreams[idx].name(),
+                            error = %err,
+                            "DHCP upstream member raw exchange failed; trying next"
+                        );
+                        last_error = Some(err);
+                    }
+                }
+            }
+
+            if attempt == 0 {
+                reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+            }
+
+            if let Some(err) = last_error {
+                // keep the most recent error for context if second attempt also fails
+                if attempt == 1 {
+                    return Err(err.context(format!(
+                        "dhcp upstream {} exhausted {} members for raw exchange",
+                        self.name,
+                        upstreams.len()
+                    )));
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "dhcp upstream {} raw exchange exhausted members",
+            self.name
+        ))
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -1033,6 +1131,43 @@ impl DnsUpstream for StaticMultiUpstream {
                 self.name
             ))
         }
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        if self.members.is_empty() {
+            #[cfg(feature = "metrics")]
+            metrics::inc_resolve_err("tailscale_empty_exchange");
+            return Err(anyhow::anyhow!(
+                "tailscale upstream {} has no nameserver addresses for raw exchange",
+                self.name
+            ));
+        }
+        let start = self.index.fetch_add(1, Ordering::Relaxed);
+        let mut last_error: Option<anyhow::Error> = None;
+        for offset in 0..self.members.len() {
+            let idx = (start + offset) % self.members.len();
+            match self.members[idx].exchange(packet).await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    tracing::debug!(
+                        target: "sb_core::dns",
+                        upstream = %self.name,
+                        member = %self.members[idx].name(),
+                        error = %err,
+                        "tailscale upstream member raw exchange failed"
+                    );
+                    last_error = Some(err);
+                }
+            }
+        }
+        #[cfg(feature = "metrics")]
+        metrics::inc_resolve_err("tailscale_members_failed_exchange");
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::anyhow!(
+                "tailscale upstream {} has no reachable members for raw exchange",
+                self.name
+            )
+        }))
     }
 
     fn name(&self) -> &str {
@@ -1262,6 +1397,59 @@ impl DnsUpstream for ResolvedUpstream {
         self.fallback.query(domain, record_type).await
     }
 
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        for attempt in 0..2 {
+            let upstreams = self.snapshot();
+            if upstreams.is_empty() {
+                if attempt == 0 {
+                    reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    continue;
+                }
+                record_upstream_fallback("resolved", &self.name, "empty_exchange");
+                return Err(anyhow::anyhow!(
+                    "resolved upstream {} has no nameservers for raw exchange",
+                    self.name
+                ));
+            }
+
+            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let mut last_error: Option<anyhow::Error> = None;
+            for offset in 0..upstreams.len() {
+                let idx = (start + offset) % upstreams.len();
+                match upstreams[idx].exchange(packet).await {
+                    Ok(resp) => return Ok(resp),
+                    Err(err) => {
+                        tracing::debug!(
+                            target: "sb_core::dns",
+                            upstream = %self.name,
+                            member = %upstreams[idx].name(),
+                            error = %err,
+                            "resolved upstream member raw exchange failed"
+                        );
+                        last_error = Some(err);
+                    }
+                }
+            }
+
+            if attempt == 0 {
+                reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+            }
+            if attempt == 1 {
+                return Err(last_error.unwrap_or_else(|| {
+                    anyhow::anyhow!(
+                        "resolved upstream {} members failed for raw exchange",
+                        self.name
+                    )
+                }));
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "resolved upstream {} raw exchange exhausted members",
+            self.name
+        ))
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -1273,6 +1461,71 @@ impl DnsUpstream for ResolvedUpstream {
         } else {
             self.fallback.health_check().await
         }
+    }
+}
+
+/// DNS upstream backed by `ResolvedTransport` (Go parity: DNS server `type: "resolved"`).
+///
+/// This consumes link configuration from `RESOLVED_STATE` (populated by the
+/// Resolved service's D-Bus Manager implementation).
+#[cfg(feature = "service_resolved")]
+pub struct ResolvedTransportUpstream {
+    name: String,
+    transport: Arc<ResolvedTransport>,
+}
+
+#[cfg(feature = "service_resolved")]
+impl ResolvedTransportUpstream {
+    pub fn new(tag: String, config: ResolvedTransportConfig) -> Self {
+        let transport = Arc::new(ResolvedTransport::new(tag.clone(), config));
+        Self {
+            name: format!("resolved-transport::{tag}"),
+            transport,
+        }
+    }
+}
+
+#[cfg(feature = "service_resolved")]
+#[async_trait]
+impl DnsUpstream for ResolvedTransportUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let qtype = record_type.as_u16();
+        let req = crate::dns::udp::build_query(domain.trim_end_matches('.'), qtype)?;
+        let resp = self.transport.query(&req).await?;
+        let (ips, ttl) = crate::dns::udp::parse_answers(&resp, qtype)?;
+        let ttl = ttl
+            .map(|s| Duration::from_secs(u64::from(s)))
+            .unwrap_or(Duration::from_secs(60));
+        Ok(DnsAnswer::new(
+            ips,
+            ttl,
+            super::cache::Source::Upstream,
+            super::cache::Rcode::NoError,
+        ))
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        self.transport.query(packet).await
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(5), self.query("dns.google", RecordType::A))
+                .await,
+            Ok(Ok(_))
+        )
+    }
+
+    async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        self.transport.start(stage).await
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.transport.close().await
     }
 }
 
@@ -1353,6 +1606,38 @@ impl DnsUpstream for DotUpstream {
         #[cfg(not(feature = "dns_dot"))]
         {
             let _ = (domain, record_type);
+            Err(anyhow::anyhow!("DoT support requires dns_dot feature"))
+        }
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        #[cfg(feature = "dns_dot")]
+        {
+            let mut req = packet.to_vec();
+            if let Some(ecs) = &self.ecs {
+                let _ = inject_edns0_client_subnet(&mut req, ecs.trim());
+            }
+
+            if let Some(t) = &self.transport {
+                return Ok(tokio::time::timeout(self.timeout, t.query(&req))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))??);
+            }
+
+            let transport = crate::dns::transport::DotTransport::new_with_tls(
+                self.server,
+                self.server_name.clone(),
+                self.extra_ca_paths.clone(),
+                self.extra_ca_pem.clone(),
+                self.skip_verify,
+            )?;
+            return Ok(tokio::time::timeout(self.timeout, transport.query(&req))
+                .await
+                .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))??);
+        }
+        #[cfg(not(feature = "dns_dot"))]
+        {
+            let _ = packet;
             Err(anyhow::anyhow!("DoT support requires dns_dot feature"))
         }
     }
@@ -1709,6 +1994,38 @@ impl DnsUpstream for DoqUpstream {
         }
     }
 
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        #[cfg(feature = "dns_doq")]
+        {
+            let mut req = packet.to_vec();
+            if let Some(ecs) = &self.ecs {
+                let _ = inject_edns0_client_subnet(&mut req, ecs.trim());
+            }
+
+            if let Some(t) = &self.transport {
+                return Ok(tokio::time::timeout(self.timeout, t.query(&req))
+                    .await
+                    .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))??);
+            }
+
+            let transport = crate::dns::transport::DoqTransport::new_with_tls(
+                self.server,
+                self.server_name.clone(),
+                self.extra_ca_paths.clone(),
+                self.extra_ca_pem.clone(),
+                self.skip_verify,
+            )?;
+            return Ok(tokio::time::timeout(self.timeout, transport.query(&req))
+                .await
+                .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))??);
+        }
+        #[cfg(not(feature = "dns_doq"))]
+        {
+            let _ = packet;
+            Err(anyhow::anyhow!("DoQ support requires dns_doq feature"))
+        }
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -1823,6 +2140,44 @@ impl DnsUpstream for DohUpstream {
         #[cfg(not(feature = "dns_doh"))]
         {
             let _ = (domain, record_type);
+            Err(anyhow::anyhow!("DoH support requires dns_doh feature"))
+        }
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        #[cfg(feature = "dns_doh")]
+        {
+            let mut req = packet.to_vec();
+            if let Some(ecs) = &self.ecs {
+                let _ = inject_edns0_client_subnet(&mut req, ecs.trim());
+            }
+
+            let resp = self
+                .client
+                .post(&self.url)
+                .header("Content-Type", "application/dns-message")
+                .header("Accept", "application/dns-message")
+                .body(req)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("DoH request failed: {e}"))?;
+
+            if !resp.status().is_success() {
+                return Err(anyhow::anyhow!(
+                    "DoH request failed with status: {}",
+                    resp.status()
+                ));
+            }
+
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to read DoH response: {e}"))?;
+            Ok(body.to_vec())
+        }
+        #[cfg(not(feature = "dns_doh"))]
+        {
+            let _ = packet;
             Err(anyhow::anyhow!("DoH support requires dns_doh feature"))
         }
     }
@@ -1990,6 +2345,25 @@ impl DnsUpstream for Doh3Upstream {
         #[cfg(not(feature = "dns_doh3"))]
         {
             let _ = (domain, record_type);
+            Err(anyhow::anyhow!("DoH3 support requires dns_doh3 feature"))
+        }
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        #[cfg(feature = "dns_doh3")]
+        {
+            use crate::dns::transport::DnsTransport as _;
+            let mut req = packet.to_vec();
+            if let Some(ecs) = &self.ecs {
+                let _ = inject_edns0_client_subnet(&mut req, ecs.trim());
+            }
+            tokio::time::timeout(self.timeout, self.transport.query(&req))
+                .await
+                .map_err(|_| anyhow::anyhow!("DoH3 exchange timeout"))?
+        }
+        #[cfg(not(feature = "dns_doh3"))]
+        {
+            let _ = packet;
             Err(anyhow::anyhow!("DoH3 support requires dns_doh3 feature"))
         }
     }

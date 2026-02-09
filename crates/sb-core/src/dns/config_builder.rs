@@ -288,6 +288,37 @@ pub fn build_upstream_from_server(
     // L2.10.11: Check server_type first (GUI generates "type" field)
     if let Some(ref st) = srv.server_type {
         match st.as_str() {
+            "resolved" => {
+                #[cfg(all(target_os = "linux", feature = "service_resolved"))]
+                {
+                    let service = srv
+                        .service
+                        .clone()
+                        .unwrap_or_else(|| "resolved".to_string());
+                    let current = crate::dns::transport::resolved::RESOLVED_STATE.get_service_tag();
+                    if service != current {
+                        tracing::warn!(
+                            target: "sb_core::dns",
+                            server = %srv.tag,
+                            service = %service,
+                            current = %current,
+                            "resolved DNS server service tag does not match active resolved service tag; continuing"
+                        );
+                    }
+
+                    let mut cfg = crate::dns::transport::resolved::ResolvedTransportConfig::default();
+                    cfg.accept_default_resolvers = srv.accept_default_resolvers.unwrap_or(false);
+
+                    let up = super::upstream::ResolvedTransportUpstream::new(srv.tag.clone(), cfg);
+                    return Ok(Some(Arc::new(up)));
+                }
+                #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
+                {
+                    anyhow::bail!(
+                        "dns server type 'resolved' requires Linux + sb-core feature `service_resolved`"
+                    );
+                }
+            }
             "fakeip" => {
                 let up = super::upstream::FakeIpUpstream::new(
                     srv.tag.clone(),

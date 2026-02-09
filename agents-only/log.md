@@ -23,6 +23,18 @@
 
 ## 日志记录
 
+### [2026-02-09 03:37] Agent: Codex (GPT-5)
+
+**任务**: 开始 L3.3 Resolved 完整化（PX-015）前置信息收集与差距分析
+**变更**:
+- 新增 `agents-only/05-analysis/L3.3-RESOLVED-PREWORK.md`（Go/Rust 运行模型对照、Resolve* 方法签名与语义要点、Rust 侧阻塞点与最小闭环建议）
+
+**结果**: 成功
+**备注**:
+- 本条仅做分析与建议，不做任何代码实现/行为改动。
+
+---
+
 ### [2026-02-09 01:46] Agent: Codex (GPT-5)
 
 **任务**: L3.2 DERP 配置对齐（PX-014）前置信息收集与差距分析
@@ -615,6 +627,29 @@ L2.8.4-6 Handlers + WebSocket:
 
 **备注**:
 - 规划遵循“先对齐 schema/接线，再补齐行为，再加测试”的顺序，避免大范围重构。
+
+---
+
+### [2026-02-09 03:30] Agent: Codex (GPT-5)
+
+**任务**: 实现 L3.2.x DERP 配置对齐（PX-014），并更新 agents-only 文档到最新状态
+**变更**:
+- 修改 `crates/sb-config/src/ir/mod.rs`（新增 `Listable`/`StringOrObj` + DERP IR：Dial/VerifyURL/MeshPeer/TLS；`stun` 支持 `bool|number|object`）
+- 修改 `crates/sb-config/src/validator/v2.rs`（兼容旧 schema 到新 IR）
+- 修改 `crates/sb-core/src/service.rs`（`ServiceContext` 注入：dns_router/outbounds/endpoints）
+- 修改 `crates/sb-core/src/adapter/{bridge.rs,mod.rs}`（bridge 构建阶段注入 ServiceContext）
+- 修改 `crates/sb-core/src/services/derp/server.rs`（verify_client_url per-URL dialer + hyper POST；mesh_with per-peer dial/TLS + PostStart；bootstrap-dns 注入 DNSRouter；ListenOptions/STUN bind honor；verify_client_endpoint tag 语义）
+- 修改 `crates/sb-core/src/services/derp/mesh_test.rs`（适配新 IR + 绑定权限受限时 skip）
+- 修改 `crates/sb-core/src/endpoint/tailscale.rs`（暴露 tailscaled LocalAPI unix socket path，用于 tag 语义）
+- 修改 `crates/sb-transport/src/{dialer.rs,builder.rs}`（`connect_timeout` 生效；Linux netns 支持；非 Linux 明确 NotSupported）
+- 更新 `agents-only/05-analysis/L3.2-DERP-GAP-ANALYSIS.md`（增加“状态更新”与交付现状）
+
+**结果**: 成功
+**验证**:
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
+**备注**:
+- 使用 `CARGO_TARGET_DIR=target-alt` 绕开并行 cargo 导致的 build 目录锁等待问题。
 
 ---
 

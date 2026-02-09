@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tracing::{debug, info};
+use futures::stream::{FuturesUnordered, StreamExt};
 
 /// Shared state for the resolved transport/service.
 pub static RESOLVED_STATE: Lazy<Arc<Resolve1ManagerState>> =
@@ -103,6 +104,8 @@ pub struct Resolve1ManagerState {
     pub delete_callback: RwLock<Option<DeleteCallback>>,
     /// DNS router for cache management (wired by supervisor).
     pub dns_router: RwLock<Option<Arc<dyn crate::dns::DnsRouter>>>,
+    /// Service tag used as inbound tag for DNSRouter context (Go parity).
+    pub service_tag: RwLock<String>,
 }
 
 impl Default for Resolve1ManagerState {
@@ -119,12 +122,21 @@ impl Resolve1ManagerState {
             update_callback: RwLock::new(None),
             delete_callback: RwLock::new(None),
             dns_router: RwLock::new(None),
+            service_tag: RwLock::new("resolved".to_string()),
         }
     }
 
     /// Set the DNS router for cache management.
     pub fn set_dns_router(&self, router: Arc<dyn crate::dns::DnsRouter>) {
         *self.dns_router.write() = Some(router);
+    }
+
+    pub fn set_service_tag(&self, tag: String) {
+        *self.service_tag.write() = tag;
+    }
+
+    pub fn get_service_tag(&self) -> String {
+        self.service_tag.read().clone()
     }
 
     /// Clear the DNS cache if router is wired.
@@ -197,7 +209,7 @@ impl Default for ResolvedTransportConfig {
             rotate: false,
             attempts: 2,
             timeout: Duration::from_secs(5),
-            accept_default_resolvers: true,
+            accept_default_resolvers: false,
         }
     }
 }
@@ -446,20 +458,80 @@ impl ResolvedTransport {
     }
 
     /// Exchange DNS query with a single server.
-    async fn exchange_with_server(&self, server: &DnsServer, packet: &[u8]) -> Result<Vec<u8>> {
+    async fn exchange_with_server(
+        &self,
+        servers: &LinkServers,
+        server: &DnsServer,
+        packet: &[u8],
+    ) -> Result<Vec<u8>> {
         let addr = std::net::SocketAddr::new(server.addr, server.effective_port());
 
         if server.use_dot {
             // DNS-over-TLS exchange
-            self.exchange_dot(addr, &server.server_name, packet).await
+            self.exchange_dot(servers, addr, &server.server_name, packet)
+                .await
         } else {
             // UDP exchange
-            self.exchange_udp(addr, packet).await
+            self.exchange_udp(servers, addr, packet).await
         }
     }
 
     /// Exchange via UDP.
-    async fn exchange_udp(&self, addr: std::net::SocketAddr, packet: &[u8]) -> Result<Vec<u8>> {
+    async fn exchange_udp(
+        &self,
+        servers: &LinkServers,
+        addr: std::net::SocketAddr,
+        packet: &[u8],
+    ) -> Result<Vec<u8>> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::net::{Ipv4Addr, Ipv6Addr};
+
+            let domain = match addr {
+                std::net::SocketAddr::V4(_) => socket2::Domain::IPV4,
+                std::net::SocketAddr::V6(_) => socket2::Domain::IPV6,
+            };
+            let socket = socket2::Socket::new(
+                domain,
+                socket2::Type::DGRAM,
+                Some(socket2::Protocol::UDP),
+            )?;
+
+            // Best-effort bind to interface; ignore failures to match Go behavior.
+            if !servers.if_name.is_empty() {
+                let _ = socket.bind_device(Some(servers.if_name.as_bytes()));
+            }
+
+            socket.set_nonblocking(true).ok();
+            let bind_addr = match addr {
+                std::net::SocketAddr::V4(_) => {
+                    std::net::SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
+                }
+                std::net::SocketAddr::V6(_) => {
+                    std::net::SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0)
+                }
+            };
+            socket.bind(&socket2::SockAddr::from(bind_addr))?;
+
+            let std_udp: std::net::UdpSocket = socket.into();
+            let socket = UdpSocket::from_std(std_udp)?;
+            socket.connect(addr).await?;
+            socket.send(packet).await?;
+
+            let mut buf = vec![0u8; 4096];
+            let timeout = tokio::time::timeout(self.config.timeout, socket.recv(&mut buf)).await;
+            return match timeout {
+                Ok(Ok(len)) => {
+                    buf.truncate(len);
+                    Ok(buf)
+                }
+                Ok(Err(e)) => Err(anyhow!("UDP recv error: {}", e)),
+                Err(_) => Err(anyhow!("UDP timeout")),
+            };
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        let _ = servers;
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
         socket.connect(addr).await?;
         socket.send(packet).await?;
@@ -480,6 +552,7 @@ impl ResolvedTransport {
     /// Exchange via DNS-over-TLS (simplified - delegates to DoT transport).
     async fn exchange_dot(
         &self,
+        servers: &LinkServers,
         addr: std::net::SocketAddr,
         server_name: &Option<String>,
         packet: &[u8],
@@ -490,7 +563,7 @@ impl ResolvedTransport {
 
             let sni = server_name.clone().unwrap_or_else(|| addr.ip().to_string());
 
-            let dot = DotTransport::new(addr, sni)?;
+            let dot = DotTransport::new(addr, sni)?.with_bind_interface(Some(servers.if_name.clone()));
             dot.query(packet).await
         }
 
@@ -535,7 +608,7 @@ impl ResolvedTransport {
                     "Trying DNS server"
                 );
 
-                match self.exchange_with_server(server, &packet).await {
+                match self.exchange_with_server(servers, server, &packet).await {
                     Ok(response) => return Ok(response),
                     Err(e) => {
                         debug!(error = %e, "DNS query failed");
@@ -554,10 +627,32 @@ impl ResolvedTransport {
     /// this currently uses sequential execution. A fully parallel
     /// implementation would require Arc<Self> or similar refactoring.
     async fn exchange_parallel(&self, servers: &LinkServers, packet: &[u8]) -> Result<Vec<u8>> {
-        // NOTE: Sequential execution used; parallel requires Arc<Self> refactoring
-        // The Go implementation uses goroutines which don't have the same
-        // lifetime constraints as Rust's async tasks.
-        self.exchange_sequential(servers, packet).await
+        let qname = extract_qname(packet).unwrap_or_default();
+        let names = servers.name_list(self.config.ndots, &qname);
+
+        if names.is_empty() {
+            return Err(anyhow!("No valid names to query"));
+        }
+
+        let mut futs: FuturesUnordered<_> = names
+            .iter()
+            .map(|fqdn| self.try_one_name(servers, packet, fqdn))
+            .collect();
+
+        let mut errs = Vec::new();
+        while let Some(res) = futs.next().await {
+            match res {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    errs.push(e);
+                    if errs.len() == names.len() {
+                        return Err(anyhow!("all parallel name racers failed ({})", errs.len()));
+                    }
+                }
+            }
+        }
+
+        Err(anyhow!("No valid names to query"))
     }
 
     /// Exchange with sequential queries.

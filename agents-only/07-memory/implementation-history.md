@@ -863,7 +863,7 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 | 包 | 内容 | 来源 |
 |----|------|------|
 | L3.1 | SSMAPI (PX-011) ✅ 2026-02-09 | L2 Tier 3 |
-| L3.2 | DERP (PX-014) | L2 Tier 3 |
+| L3.2 | DERP (PX-014) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.3 | Resolved (PX-015) | L2 Tier 3 |
 | L3.4 | Cache File 深度对齐 (PX-009/013) | PX-009 残余 |
 | L3.5 | ConnMetadata chain/rule | L2.8 延后决策 |
@@ -906,4 +906,45 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 
 ---
 
-*最后更新：2026-02-09（L3.1 PX-011 SSMAPI 对齐完成）*
+## ✅ L3.2 DERP 配置对齐（PX-014）
+
+**日期**: 2026-02-09
+**目标**: 对齐 Go sing-box 的 DERP 配置 schema 与关键运行时语义（verify_client_url / mesh_with / verify_client_endpoint / STUN / ListenOptions / bootstrap-dns）。
+
+### 核心交付
+
+- 配置 schema 对齐（sb-config IR）：
+  - `verify_client_url`：支持 string/object + Listable，Dial Fields `#[serde(flatten)]`
+  - `mesh_with`：支持 string/object + Listable，per-peer Dial/TLS options
+  - `verify_client_endpoint`：按 endpoint tag 列表语义（支持单字符串/数组）
+  - `stun`：支持 `bool|number|object`，对齐 Go 的启用逻辑与默认值（启用时 listen=`::`、port=`3478`）
+- 运行时语义对齐（sb-core DERP）：
+  - `/bootstrap-dns` 使用注入的 DNSRouter（无注入返回空并 warn）
+  - `verify_client_url`：每条 URL 独立 dialer（detour/domain_resolver/netns/connect_timeout 等）；基于 hyper 在 dialer stream 上执行 POST；任意 2xx 即允许
+  - `mesh_with`：PostStart 启动 mesh；per-peer dialer/TLS；mesh_with 非空但缺 PSK 报错
+  - `verify_client_endpoint`：PostStart 解析 tailscale endpoint tag，获取 tailscaled LocalAPI unix socket path（daemon-only control plane）
+  - ListenOptions/STUN bind：DERP TCP + STUN UDP 使用 socket2 预绑定并 honor bind fields（平台 gating）
+- Transport 能力补齐（sb-transport）：
+  - `connect_timeout` 生效
+  - Linux netns 支持；非 Linux 配置 netns 明确报 NotSupported（不静默忽略）
+
+### 关键文件
+
+- `crates/sb-config/src/ir/mod.rs`
+- `crates/sb-config/src/validator/v2.rs`
+- `crates/sb-core/src/service.rs`
+- `crates/sb-core/src/adapter/{bridge.rs,mod.rs}`
+- `crates/sb-core/src/services/derp/{server.rs,mesh_test.rs}`
+- `crates/sb-core/src/endpoint/tailscale.rs`
+- `crates/sb-transport/src/{dialer.rs,builder.rs}`
+
+### 验证
+
+| 构建 | 状态 |
+|------|------|
+| `CARGO_TARGET_DIR=target-alt cargo test -p sb-config` | ✅ |
+| `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp` | ✅ |
+
+---
+
+*最后更新：2026-02-09（L3.2 PX-014 DERP 配置对齐完成）*

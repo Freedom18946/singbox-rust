@@ -148,6 +148,16 @@ pub trait DnsUpstream: Send + Sync {
     /// 执行 DNS 查询
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer>;
 
+    /// Raw DNS wire-format exchange.
+    ///
+    /// Used for non-A/AAAA qtypes (PTR/SRV/TXT/...) and resolve1 Resolve* parity.
+    ///
+    /// Default implementation returns an error so existing upstreams aren't
+    /// forced to implement it immediately.
+    async fn exchange(&self, _packet: &[u8]) -> Result<Vec<u8>> {
+        anyhow::bail!("dns upstream does not support raw exchange")
+    }
+
     /// 获取上游名称
     fn name(&self) -> &str;
 

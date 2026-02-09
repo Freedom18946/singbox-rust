@@ -136,6 +136,115 @@ pub fn parse_min_ttl(pkt: &[u8]) -> Option<u64> {
     min_ttl.map(u64::from)
 }
 
+/// Parse DNS answer records (ANCOUNT) from a wire-format response.
+///
+/// - Names are decompressed (RFC 1035).
+/// - For record types that embed domain names in RDATA (PTR/CNAME/NS/MX/SRV),
+///   the returned `Record.data` is rewritten to an uncompressed form.
+pub fn parse_answer_records(pkt: &[u8]) -> Option<Vec<Record>> {
+    if pkt.len() < 12 {
+        return None;
+    }
+
+    let qd = u16::from_be_bytes([pkt[4], pkt[5]]) as usize;
+    let an = u16::from_be_bytes([pkt[6], pkt[7]]) as usize;
+
+    // Skip question section.
+    let mut off = 12usize;
+    for _ in 0..qd {
+        let (_qname, noff) = read_name(pkt, off, 0).ok()?;
+        off = noff + 4; // QTYPE + QCLASS
+        if off > pkt.len() {
+            return None;
+        }
+    }
+
+    let mut out = Vec::with_capacity(an);
+    for _ in 0..an {
+        let (name, noff) = read_name(pkt, off, 0).ok()?;
+        off = noff;
+        if pkt.len() < off + 10 {
+            return None;
+        }
+
+        let rtype = u16::from_be_bytes([pkt[off], pkt[off + 1]]);
+        let class = u16::from_be_bytes([pkt[off + 2], pkt[off + 3]]);
+        let ttl = u32::from_be_bytes([pkt[off + 4], pkt[off + 5], pkt[off + 6], pkt[off + 7]]);
+        let rdlen = u16::from_be_bytes([pkt[off + 8], pkt[off + 9]]) as usize;
+        let rdata_off = off + 10;
+        let rdata_end = rdata_off + rdlen;
+        if pkt.len() < rdata_end {
+            return None;
+        }
+
+        let data = match rtype {
+            12 | 5 | 2 => {
+                // PTR/CNAME/NS: a domain name.
+                let (target, _) = read_name(pkt, rdata_off, 0).ok()?;
+                pack_name_uncompressed(&target)?
+            }
+            15 => {
+                // MX: preference(2) + exchange(name)
+                if rdlen < 3 {
+                    return None;
+                }
+                let pref = [pkt[rdata_off], pkt[rdata_off + 1]];
+                let (exchange, _) = read_name(pkt, rdata_off + 2, 0).ok()?;
+                let mut v = Vec::with_capacity(2 + exchange.len() + 2);
+                v.extend_from_slice(&pref);
+                v.extend_from_slice(&pack_name_uncompressed(&exchange)?);
+                v
+            }
+            33 => {
+                // SRV: priority(2)+weight(2)+port(2)+target(name)
+                if rdlen < 7 {
+                    return None;
+                }
+                let head = &pkt[rdata_off..rdata_off + 6];
+                let (target, _) = read_name(pkt, rdata_off + 6, 0).ok()?;
+                let mut v = Vec::with_capacity(6 + target.len() + 2);
+                v.extend_from_slice(head);
+                v.extend_from_slice(&pack_name_uncompressed(&target)?);
+                v
+            }
+            _ => pkt[rdata_off..rdata_end].to_vec(),
+        };
+
+        out.push(Record::new(name, rtype, class, ttl, data));
+        off = rdata_end;
+    }
+
+    Some(out)
+}
+
+/// Pack a single RR in wire format without name compression.
+///
+/// This matches `miekg/dns.PackRR(..., compress=false)` semantics as used in
+/// Go sing-box resolved implementation.
+pub fn pack_rr_uncompressed(
+    name: &str,
+    rtype: u16,
+    class: u16,
+    ttl: u32,
+    rdata: &[u8],
+) -> Option<Vec<u8>> {
+    // For unknown types we conservatively reject RDATA that may contain
+    // compression pointers. (False positives are acceptable for unknown types.)
+    let known = matches!(rtype, 1 | 28 | 16 | 12 | 5 | 2 | 15 | 33);
+    if !known && rdata.iter().any(|b| (b & 0xC0) == 0xC0) {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(name.len() + 16 + rdata.len());
+    out.extend_from_slice(&pack_name_uncompressed(name)?);
+    out.extend_from_slice(&rtype.to_be_bytes());
+    out.extend_from_slice(&class.to_be_bytes());
+    out.extend_from_slice(&ttl.to_be_bytes());
+    out.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    out.extend_from_slice(rdata);
+    Some(out)
+}
+
 /// 读取 DNS 名称（支持压缩），返回 (name, `new_off`)
 fn read_name(pkt: &[u8], off: usize, depth: usize) -> Result<(String, usize), ()> {
     if depth > 8 {
@@ -183,6 +292,23 @@ fn read_name(pkt: &[u8], off: usize, depth: usize) -> Result<(String, usize), ()
     let name = labels.join(".");
     let new_off = if jumped { off + 2 } else { cur_off };
     Ok((name, new_off))
+}
+
+fn pack_name_uncompressed(name: &str) -> Option<Vec<u8>> {
+    let name = name.trim_end_matches('.');
+    if name.is_empty() {
+        return Some(vec![0]);
+    }
+    let mut out = Vec::with_capacity(name.len() + 2);
+    for label in name.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return None;
+        }
+        out.push(label.len() as u8);
+        out.extend_from_slice(label.as_bytes());
+    }
+    out.push(0);
+    Some(out)
 }
 
 fn normalize_name(name: &str) -> String {
@@ -716,6 +842,90 @@ mod tests {
         ]);
         let ttl = parse_min_ttl(&resp).expect("ttl");
         assert_eq!(ttl, 5);
+    }
+
+    #[test]
+    fn parse_and_pack_ptr_rr_uncompressed() {
+        // Response with one PTR answer; both NAME and RDATA use compression pointers to QNAME.
+        //
+        // QNAME = example.com
+        // ANSWER: NAME = ptr to QNAME, TYPE=PTR, RDATA = ptr to QNAME
+        let mut resp = vec![
+            0x12, 0x34, 0x81, 0x80, // ID + flags
+            0x00, 0x01, // QDCOUNT=1
+            0x00, 0x01, // ANCOUNT=1
+            0x00, 0x00, // NSCOUNT=0
+            0x00, 0x00, // ARCOUNT=0
+        ];
+        // Question: example.com PTR IN
+        resp.extend_from_slice(&[
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00,
+            0x0c, 0x00, 0x01,
+        ]);
+        // Answer: NAME ptr, TYPE PTR, CLASS IN, TTL=60, RDLEN=2, RDATA ptr to QNAME
+        resp.extend_from_slice(&[
+            0xC0, 0x0C, // NAME = ptr to QNAME
+            0x00, 0x0C, // TYPE = PTR
+            0x00, 0x01, // CLASS = IN
+            0x00, 0x00, 0x00, 60, // TTL
+            0x00, 0x02, // RDLEN
+            0xC0, 0x0C, // RDATA = ptr to QNAME
+        ]);
+
+        let records = parse_answer_records(&resp).expect("records");
+        assert_eq!(records.len(), 1);
+        let rr = &records[0];
+        assert_eq!(rr.rtype, 12);
+
+        let packed =
+            pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data).expect("pack");
+
+        // Packed RR must not contain compression pointers.
+        assert!(!packed.iter().any(|b| (b & 0xC0) == 0xC0));
+    }
+
+    #[test]
+    fn parse_and_pack_srv_rr_uncompressed() {
+        // Response with one SRV answer.
+        //
+        // Question: svc.example.com SRV IN
+        // Answer: NAME ptr to QNAME, RDATA target = "host" + ptr to "example.com"
+        let mut resp = vec![
+            0x12, 0x34, 0x81, 0x80, // ID + flags
+            0x00, 0x01, // QDCOUNT=1
+            0x00, 0x01, // ANCOUNT=1
+            0x00, 0x00, // NSCOUNT=0
+            0x00, 0x00, // ARCOUNT=0
+        ];
+        // QNAME: svc.example.com (example label starts at offset 16 / 0x10)
+        resp.extend_from_slice(&[
+            0x03, b's', b'v', b'c', 0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c',
+            b'o', b'm', 0x00, 0x00, 0x21, 0x00, 0x01,
+        ]);
+        // Answer header
+        resp.extend_from_slice(&[
+            0xC0, 0x0C, // NAME ptr
+            0x00, 0x21, // TYPE SRV
+            0x00, 0x01, // CLASS IN
+            0x00, 0x00, 0x00, 120, // TTL
+            0x00, 0x0D, // RDLEN = 13
+            0x00, 0x01, // priority
+            0x00, 0x02, // weight
+            0x00, 0x50, // port=80
+            0x04, b'h', b'o', b's', b't', // "host"
+            0xC0, 0x10, // ptr to "example.com"
+        ]);
+
+        let records = parse_answer_records(&resp).expect("records");
+        assert_eq!(records.len(), 1);
+        let rr = &records[0];
+        assert_eq!(rr.rtype, 33);
+
+        let packed =
+            pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data).expect("pack");
+
+        // Packed RR must not contain compression pointers.
+        assert!(!packed.iter().any(|b| (b & 0xC0) == 0xC0));
     }
 
     // ===== L2.10.1 tests =====

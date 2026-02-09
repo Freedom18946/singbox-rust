@@ -22,6 +22,8 @@ pub struct DotTransport {
     server_name: String,
     /// 连接超时
     timeout: Duration,
+    /// Best-effort bind to interface name (Linux only).
+    bind_interface: Option<String>,
     /// TLS 配置
     #[cfg(any(feature = "tls", feature = "tls_rustls"))]
     tls_config: std::sync::Arc<rustls::ClientConfig>,
@@ -89,6 +91,7 @@ impl DotTransport {
             server,
             server_name,
             timeout,
+            bind_interface: None,
             #[cfg(any(feature = "tls", feature = "tls_rustls"))]
             tls_config,
         })
@@ -100,6 +103,60 @@ impl DotTransport {
         self
     }
 
+    /// Set the interface name to bind the TCP socket to (best-effort, Linux only).
+    pub fn with_bind_interface(mut self, iface: Option<String>) -> Self {
+        self.bind_interface = iface;
+        self
+    }
+
+    #[cfg(any(feature = "tls", feature = "tls_rustls"))]
+    async fn connect_tcp(&self) -> Result<tokio::net::TcpStream> {
+        use anyhow::Context as _;
+
+        #[cfg(target_os = "linux")]
+        if let Some(iface) = self.bind_interface.as_deref() {
+            use std::io::ErrorKind;
+
+            let domain = match self.server {
+                SocketAddr::V4(_) => socket2::Domain::IPV4,
+                SocketAddr::V6(_) => socket2::Domain::IPV6,
+            };
+            let socket = socket2::Socket::new(
+                domain,
+                socket2::Type::STREAM,
+                Some(socket2::Protocol::TCP),
+            )
+            .context("DoT: create TCP socket")?;
+
+            // Best-effort bind to device; ignore errors to match Go behavior.
+            let _ = socket.bind_device(Some(iface.as_bytes()));
+            socket.set_nonblocking(true).ok();
+
+            let addr = socket2::SockAddr::from(self.server);
+            match socket.connect(&addr) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e).context("DoT: connect failed"),
+            }
+
+            let stream = tokio::net::TcpStream::from_std(socket.into())
+                .context("DoT: convert std socket to tokio")?;
+            tokio::time::timeout(self.timeout, stream.writable())
+                .await
+                .context("DoT TCP connection timeout")?
+                .context("DoT: TCP connect not writable")?;
+            if let Some(err) = stream.take_error().context("DoT: take_error")? {
+                return Err(anyhow::anyhow!("DoT: TCP connect failed: {err}"));
+            }
+            return Ok(stream);
+        }
+
+        tokio::time::timeout(self.timeout, tokio::net::TcpStream::connect(self.server))
+            .await
+            .context("DoT TCP connection timeout")?
+            .context("Failed to establish TCP connection")
+    }
+
     #[cfg(any(feature = "tls", feature = "tls_rustls"))]
     async fn establish_tls_connection(
         &self,
@@ -107,12 +164,8 @@ impl DotTransport {
         use anyhow::Context as _;
         use tokio_rustls::TlsConnector;
 
-        // 建立 TCP 连接
-        let tcp_stream =
-            tokio::time::timeout(self.timeout, tokio::net::TcpStream::connect(self.server))
-                .await
-                .context("DoT TCP connection timeout")?
-                .context("Failed to establish TCP connection")?;
+        // 建立 TCP 连接（Linux 可 best-effort 绑定到接口）
+        let tcp_stream = self.connect_tcp().await?;
 
         // 建立 TLS 连接
         let connector = TlsConnector::from(self.tls_config.clone());

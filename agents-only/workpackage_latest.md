@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-09
-> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅）
+> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅；L3.2 ✅）
 
 ---
 
@@ -25,6 +25,29 @@
 - `cargo test -p sb-core --features service_ssmapi`
 - `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"`
 - `cargo check -p sb-core --all-features`
+
+---
+
+## ✅ 最新完成：L3.2 DERP 配置对齐（PX-014）
+
+**状态**：✅ 完成
+**交付**：
+- 配置 schema：`verify_client_url`/`mesh_with` 支持 string/object + Listable，并引入 DERP Dial/TLS IR（Dial Fields flatten）
+- runtime：`verify_client_url` 每条 URL 独立 dialer（detour/domain_resolver/netns/connect_timeout 等）并用 hyper POST 校验；`mesh_with` per-peer dial/TLS + PostStart 启动；`verify_client_endpoint` 按 tailscale endpoint tag 在 PostStart 解析 LocalAPI socket path
+- STUN：仅当配置存在且 enabled=true 才启用；启用时默认 listen=`::`、port=`3478`；TCP/UDP bind honor listen fields（socket2）
+- `/bootstrap-dns`：使用注入的 DNSRouter（无注入返回空 `{}` 并 warn）
+
+**关键落点**：
+- `crates/sb-config/src/ir/mod.rs`
+- `crates/sb-config/src/validator/v2.rs`
+- `crates/sb-core/src/service.rs` + `crates/sb-core/src/adapter/{bridge.rs,mod.rs}`
+- `crates/sb-core/src/services/derp/{server.rs,mesh_test.rs}`
+- `crates/sb-core/src/endpoint/tailscale.rs`
+- `crates/sb-transport/src/{dialer.rs,builder.rs}`
+
+**验证**：
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
 
 ---
 

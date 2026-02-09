@@ -256,7 +256,7 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 
 #### M2.4: Tier 3 — 服务补全 ◐ 部分完成
 - [x] SSMAPI 对齐（PX-011: per-endpoint binding）
-- [ ] DERP 配置对齐（PX-014: config/behavior 偏差）
+- [x] DERP 配置对齐（PX-014: config/behavior 偏差）✅ 2026-02-09
 - [ ] Resolved 完整化（PX-015: resolve1 D-Bus methods）
 - 验收：Parity ≥ 98%
 

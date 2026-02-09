@@ -213,8 +213,8 @@ impl DnsRuleEngine {
             destination_ip: None,
             destination_port: 0,
             network: ctx.transport.clone().or(Some("udp".to_string())), // Default to UDP if unspecified
-            process_name: None,
-            process_path: None,
+            process_name: ctx.process_name.clone(),
+            process_path: ctx.process_path.clone(),
             source_ip: ctx.client.map(|a| a.ip()),
             source_port: ctx.client.map(|a| a.port()),
             query_type: Some(qt.clone()),
@@ -677,46 +677,122 @@ impl DnsRuleEngine {
 impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
     async fn exchange(&self, ctx: &DnsQueryContext, message: &[u8]) -> Result<Vec<u8>> {
         use crate::dns::cache::Rcode;
-        use crate::dns::message::{build_dns_response, parse_question_key};
+        use crate::dns::message::{build_dns_response, inject_edns0_client_subnet, parse_question_key};
 
         // 1. Parse the question from the wire-format query
         let qk = parse_question_key(message)
             .ok_or_else(|| anyhow::anyhow!("DnsRuleEngine::exchange: failed to parse question"))?;
 
-        // 2. Map qtype u16 → RecordType; unsupported types get NotImplemented (rcode 4)
-        let record_type = match qk.qtype {
-            1 => RecordType::A,
-            28 => RecordType::AAAA,
-            _ => {
-                // Return an empty response with RCODE=NotImp (4)
-                let resp = build_dns_response(message, &[], 0, 4).ok_or_else(|| {
-                    anyhow::anyhow!("DnsRuleEngine::exchange: failed to build NotImp response")
-                })?;
-                return Ok(resp);
+        // 2. A/AAAA: preserve existing "answer builder" path with rule actions.
+        if qk.qtype == 1 || qk.qtype == 28 {
+            let record_type = if qk.qtype == 1 {
+                RecordType::A
+            } else {
+                RecordType::AAAA
+            };
+
+            // Resolve via the rule engine
+            let answer = self
+                .resolve_with_context(ctx, &qk.name, record_type)
+                .await?;
+
+            // Map Rcode → wire rcode byte
+            let rcode_byte: u8 = match &answer.rcode {
+                Rcode::NoError => 0,
+                Rcode::ServFail => 2,
+                Rcode::NxDomain => 3,
+                Rcode::Refused => 5,
+                _ => 2, // default to SERVFAIL
+            };
+
+            // Build the wire-format response (preserves the original transaction ID)
+            let ttl_secs = answer.ttl.as_secs() as u32;
+            let resp = build_dns_response(message, &answer.ips, ttl_secs, rcode_byte).ok_or_else(
+                || anyhow::anyhow!("DnsRuleEngine::exchange: failed to build DNS response"),
+            )?;
+
+            return Ok(resp);
+        }
+
+        // 3. Non-A/AAAA: do a raw passthrough based on routing decision.
+        fn qtype_to_string(qtype: u16) -> String {
+            match qtype {
+                1 => "A".to_string(),
+                2 => "NS".to_string(),
+                5 => "CNAME".to_string(),
+                12 => "PTR".to_string(),
+                15 => "MX".to_string(),
+                16 => "TXT".to_string(),
+                28 => "AAAA".to_string(),
+                33 => "SRV".to_string(),
+                41 => "OPT".to_string(),
+                _ => format!("TYPE{qtype}"),
             }
+        }
+
+        let qt = qtype_to_string(qk.qtype);
+
+        // Build MatchContext mirroring resolve_with_context()
+        let mut match_ctx = MatchContext {
+            domain: Some(qk.name.clone()),
+            destination_ip: None,
+            destination_port: 0,
+            network: ctx.transport.clone().or(Some("udp".to_string())),
+            process_name: ctx.process_name.clone(),
+            process_path: ctx.process_path.clone(),
+            source_ip: ctx.client.map(|a| a.ip()),
+            source_port: ctx.client.map(|a| a.port()),
+            query_type: Some(qt.clone()),
+            clash_mode: None,
+            geosite_codes: if let Some(db) = &self.geosite {
+                db.lookup_categories(&qk.name)
+            } else {
+                Vec::new()
+            },
+            geoip_code: None,
+            inbound_tag: ctx.inbound.clone(),
         };
 
-        // 3. Resolve via the rule engine
-        let answer = self
-            .resolve_with_context(ctx, &qk.name, record_type)
-            .await?;
+        if let Some(ip) = match_ctx.source_ip {
+            if let Some(db) = &self.geoip {
+                if let Some(code) = db.lookup_country(ip) {
+                    match_ctx.geoip_code = Some(code);
+                }
+            }
+        }
 
-        // 4. Map Rcode → wire rcode byte
-        let rcode_byte: u8 = match &answer.rcode {
-            Rcode::NoError => 0,
-            Rcode::ServFail => 2,
-            Rcode::NxDomain => 3,
-            Rcode::Refused => 5,
-            _ => 2, // default to SERVFAIL
-        };
+        let decision = self.route_domain(&match_ctx, &qk.name, &qt);
 
-        // 5. Build the wire-format response (preserves the original transaction ID)
-        let ttl_secs = answer.ttl.as_secs() as u32;
-        let resp = build_dns_response(message, &answer.ips, ttl_secs, rcode_byte).ok_or_else(
-            || anyhow::anyhow!("DnsRuleEngine::exchange: failed to build DNS response"),
-        )?;
+        // For non-A/AAAA, avoid fabricating answers for hijack/predefined; return REFUSED.
+        if let Some(action) = &decision.action {
+            match action {
+                DnsRuleAction::Reject | DnsRuleAction::HijackDns | DnsRuleAction::Predefined => {
+                    let resp = build_dns_response(message, &[], 0, 5).ok_or_else(|| {
+                        anyhow::anyhow!("DnsRuleEngine::exchange: failed to build REFUSED response")
+                    })?;
+                    return Ok(resp);
+                }
+                DnsRuleAction::Route | DnsRuleAction::RouteOptions => {
+                    // continue to upstream exchange
+                }
+            }
+        }
 
-        Ok(resp)
+        let tag = decision
+            .upstream_tag
+            .as_deref()
+            .unwrap_or(&self.default_upstream_tag);
+        let upstream = self
+            .upstreams
+            .get(tag)
+            .ok_or_else(|| anyhow::anyhow!("Upstream '{}' not found for domain '{}'", tag, qk.name))?;
+
+        let mut packet = message.to_vec();
+        if let Some(ref subnet) = decision.client_subnet {
+            let _ = inject_edns0_client_subnet(&mut packet, subnet);
+        }
+
+        upstream.exchange(&packet).await
     }
 
     async fn lookup(&self, ctx: &DnsQueryContext, domain: &str) -> Result<Vec<std::net::IpAddr>> {
@@ -789,6 +865,8 @@ impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
 mod tests {
     use super::*;
     use crate::router::ruleset::{DefaultRule, Rule, RuleSetFormat};
+    use crate::dns::dns_router::DnsQueryContext;
+    use crate::dns::dns_router::DnsRouter as _;
     use std::net::IpAddr;
     use std::time::SystemTime;
 
@@ -815,6 +893,126 @@ mod tests {
         async fn health_check(&self) -> bool {
             true
         }
+    }
+
+    /// Mock upstream that supports raw exchange.
+    struct MockExchangeUpstream {
+        tag: String,
+        resp: Vec<u8>,
+        seen: parking_lot::Mutex<Option<Vec<u8>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsUpstream for MockExchangeUpstream {
+        async fn query(&self, _domain: &str, _record_type: RecordType) -> Result<DnsAnswer> {
+            Err(anyhow::anyhow!("not implemented"))
+        }
+
+        async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+            *self.seen.lock() = Some(packet.to_vec());
+            Ok(self.resp.clone())
+        }
+
+        fn name(&self) -> &str {
+            &self.tag
+        }
+
+        async fn health_check(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dns_rule_engine_exchange_passthrough_non_a_aaaa() {
+        let resp = vec![0xde, 0xad, 0xbe, 0xef];
+        let up = Arc::new(MockExchangeUpstream {
+            tag: "mock".to_string(),
+            resp: resp.clone(),
+            seen: parking_lot::Mutex::new(None),
+        }) as Arc<dyn DnsUpstream>;
+
+        let mut upstreams = HashMap::new();
+        upstreams.insert("mock".to_string(), up.clone());
+
+        let engine = DnsRuleEngine::new(
+            vec![],
+            upstreams,
+            "mock".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
+        );
+
+        let req = crate::dns::udp::build_query("example.com", 12).expect("ptr query");
+        let ctx = DnsQueryContext::new().with_inbound("resolved").with_transport("udp");
+        let got = engine.exchange(&ctx, &req).await.expect("exchange");
+        assert_eq!(got, resp);
+    }
+
+    #[tokio::test]
+    async fn test_dns_rule_engine_exchange_reject_non_a_aaaa_returns_refused() {
+        // Reject *.example.com
+        let rule = Rule::Default(DefaultRule {
+            domain_suffix: vec!["example.com".to_string()],
+            ..Default::default()
+        });
+
+        let ruleset = Arc::new(RuleSet {
+            source: crate::router::ruleset::RuleSetSource::Local(std::path::PathBuf::from("test")),
+            format: RuleSetFormat::Binary,
+            version: 1,
+            rules: vec![rule],
+            #[cfg(feature = "suffix_trie")]
+            domain_trie: Arc::new(Default::default()),
+            #[cfg(not(feature = "suffix_trie"))]
+            domain_suffixes: Arc::new(vec![]),
+            ip_tree: Arc::new(Default::default()),
+            last_updated: SystemTime::now(),
+            etag: None,
+        });
+
+        let routing_rule = DnsRoutingRule {
+            rule_set: ruleset,
+            upstream_tag: None,
+            action: DnsRuleAction::Reject,
+            priority: 10,
+            address_limit: None,
+            rewrite_ip: None,
+            rcode: None,
+            answer: None,
+            ns: None,
+            extra: None,
+            disable_cache: None,
+            rewrite_ttl: None,
+            client_subnet: None,
+        };
+
+        let mut upstreams = HashMap::new();
+        upstreams.insert(
+            "default_dns".to_string(),
+            Arc::new(MockUpstream {
+                tag: "default_dns".to_string(),
+            }) as Arc<dyn DnsUpstream>,
+        );
+
+        let engine = DnsRuleEngine::new(
+            vec![routing_rule],
+            upstreams,
+            "default_dns".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
+        );
+
+        let req = crate::dns::udp::build_query("www.example.com", 12).expect("ptr query");
+        let ctx = DnsQueryContext::new();
+        let resp = engine.exchange(&ctx, &req).await.expect("exchange");
+        assert!(resp.len() >= 4);
+        let flags = u16::from_be_bytes([resp[2], resp[3]]);
+        let rcode = flags & 0x000F;
+        assert_eq!(rcode, 5); // REFUSED
     }
 
     #[tokio::test]

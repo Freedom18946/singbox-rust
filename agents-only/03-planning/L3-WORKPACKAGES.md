@@ -1,7 +1,7 @@
 # L3 一级工作包规划（Polish / Edge Services）
 
 > **日期**：2026-02-08  
-> **更新**：2026-02-09（L3.1 PX-011 SSMAPI 对齐已实现；本文件第 1 节已同步为“已完成”记录）  
+> **更新**：2026-02-09（L3.1 PX-011 + L3.2 PX-014 已实现；本文件第 1/2 节已同步为“已完成”记录）  
 > **目标**：基于已收集到的差距信息，将 L3.1~L3.5 拆成可交付的一级工作包，明确范围、关键设计选择、验收与依赖。  
 > **输入**：`agents-only/active_context.md`（L3 Scope 表）、`agents-only/05-analysis/L3-PREWORK-INFO.md`（差距与落点）、`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-011/013/014/015）。
 
@@ -14,10 +14,11 @@
 1. **L3.5 ConnMetadata chain/rule 填充**（收益高，主要是接线与元信息传播，不涉及协议栈）
 2. **L3.4 Cache File 深度对齐（cache_id + debounce + ruleset cache 接线）**（影响面可控，但需注意兼容旧 cache.db）
 3. **L3.3 Resolved 完整化（resolve1 Resolve*）**（Linux-only，需 D-Bus + DNSRouter 接线，环境敏感）
-4. **L3.2 DERP 配置对齐**（改 IR + 运行时语义较多，建议最后做，避免阻塞前面工作）
+4. **L3.2 DERP 配置对齐**（✅ 已完成 2026-02-09）
 
 已完成：
 - **L3.1 SSMAPI 对齐（PX-011）**（✅ 2026-02-09）
+- **L3.2 DERP 配置对齐（PX-014）**（✅ 2026-02-09）
 
 并行原则：
 - **L3.5 与 L3.4 可并行设计/实现**（互不依赖）
@@ -73,7 +74,9 @@
 
 ---
 
-## L3.2 DERP 配置对齐（PX-014）
+## L3.2 DERP 配置对齐（PX-014）✅ 已完成
+
+**日期**: 2026-02-09
 
 ### 目标
 
@@ -100,13 +103,13 @@
    - 选项 A（推荐）：从 `ServiceContext` 注入 `dns_resolver`/`dns_router`，derp 用它处理 bootstrap-dns
    - 选项 B：继续使用全局，但允许按 tag 安装（仍然是 global，耦合更强）
 
-### 子任务（建议）
+### 子任务（落地）
 
-- L3.2.1 IR 扩展：新增 `DerpVerifyClientUrlIR` / `DerpMeshPeerIR`（含 dialer options）
-- L3.2.2 verify_client_url 行为对齐：独立 http client + dialer
-- L3.2.3 mesh_with 行为对齐：peer dialer/TLS options
-- L3.2.4 ListenOptions/STUN 默认值对齐：bind 与默认 listen 值
-- L3.2.5 /bootstrap-dns 对齐：resolver/router 注入 + 测试
+- ✅ L3.2.1 IR 扩展（Listable/StringOrObj + DERP Dial/VerifyURL/MeshPeer/TLS；stun 支持 `bool|number|object`）
+- ✅ L3.2.2 verify_client_url 行为对齐（per-URL dialer + hyper POST；detour/domain_resolver/netns）
+- ✅ L3.2.3 mesh_with 行为对齐（per-peer dialer/TLS；PostStart 启动；缺 PSK 报错）
+- ✅ L3.2.4 ListenOptions/STUN 默认值对齐（socket2 bind honor；STUN enable/defaults 对齐 Go）
+- ✅ L3.2.5 /bootstrap-dns 对齐（注入 DNSRouter；无注入返回空并 warn）
 
 ### 验收标准（最小可验证）
 
@@ -114,11 +117,21 @@
 - verify_client_url：能根据 dialer options 决定连接路径（可用 mock dialer/trait 注入测试）
 - /bootstrap-dns：不依赖 global resolver（测试中可注入 fake resolver）
 
-### 主要文件落点（预估）
+### 主要文件落点（已落地）
 
 - `crates/sb-config/src/ir/mod.rs`（ServiceIR 扩展）
+- `crates/sb-config/src/validator/v2.rs`（旧 schema 兼容）
+- `crates/sb-core/src/service.rs`（ServiceContext 注入：dns_router/outbounds/endpoints）
+- `crates/sb-core/src/adapter/{bridge.rs,mod.rs}`（接线注入）
 - `crates/sb-core/src/services/derp/server.rs`
-- （可能）`crates/sb-core/src/service.rs`（注入 dns_router/resolver）
+- `crates/sb-core/src/services/derp/mesh_test.rs`（mesh 集成测试）
+- `crates/sb-core/src/endpoint/tailscale.rs`（LocalAPI socket path 支持）
+- `crates/sb-transport/src/{dialer.rs,builder.rs}`（dialer：connect_timeout/netns）
+
+### 验收与验证（已执行）
+
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
 
 ---
 

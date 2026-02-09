@@ -65,7 +65,7 @@
 | PX-011 | SSMAPI | ✅ 已对齐（2026-02-09）：per-endpoint binding + tracker/API/cache 行为闭环 | 中 |
 | PX-012 | V2Ray API | router-wide ConnectionTracker + HTTP JSON | 中 |
 | PX-013 | Cache File | BoltDB buckets/cache_id/FakeIP metadata/RDRC | 大 |
-| PX-014 | DERP | config/behavior 偏差 | 中 |
+| PX-014 | DERP | ✅ 已对齐（2026-02-09）：schema + runtime 语义闭环（verify_client_url/mesh_with/endpoint tag/STUN/bootstrap-dns/ListenOptions） | 中 |
 | PX-015 | Resolved | UDP-only, 缺 resolve1 D-Bus methods | 中 |
 
 ---
@@ -107,7 +107,7 @@
 | 工作项 | 对应 PX | 影响 | 说明 |
 |--------|---------|------|------|
 | **SSMAPI 对齐** | PX-011 | SS 管理面 | ✅ 已完成（2026-02-09）：per-endpoint binding + tracker/API/cache 闭环 |
-| **DERP 配置对齐** | PX-014 | mesh 网络 | config schema |
+| **DERP 配置对齐** | PX-014 | mesh 网络 | ✅ 已完成（2026-02-09）：schema + runtime 语义对齐 |
 | **Resolved 完整化** | PX-015 | Linux DNS 集成 | resolve1 API |
 
 ### Tier 4: 已接受限制（不动）

@@ -10,10 +10,12 @@ use std::sync::Arc;
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
 mod dbus_impl {
     use super::*;
-    use sb_core::dns::DnsResolver;
+    use sb_core::dns::dns_router::{DnsQueryContext, DnsRouter};
+    use sb_core::dns::message::build_dns_response;
     use sb_core::service::StartStage;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use tokio::net::UdpSocket;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream, UdpSocket};
     use tokio::task::JoinHandle;
 
     /// Resolved service implementation using systemd-resolved D-Bus interface.
@@ -26,11 +28,11 @@ mod dbus_impl {
         tag: String,
         listen_addr: String,
         listen_port: u16,
-        connection: parking_lot::Mutex<Option<zbus::Connection>>,
         started: AtomicBool,
-        server_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
-        /// DNS resolver for query handling
-        resolver: Arc<dyn DnsResolver>,
+        udp_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
+        tcp_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
+        /// DNS router for query handling (Go parity: adapter.DNSRouter).
+        dns_router: Arc<dyn DnsRouter>,
         /// D-Bus server state for per-link DNS configuration
         resolve1_state: Arc<crate::service::resolve1::Resolve1ManagerState>,
         /// D-Bus server connection (for cleanup)
@@ -52,25 +54,24 @@ mod dbus_impl {
             let listen_addr = ir.listen.as_deref().unwrap_or("127.0.0.53").to_string();
             let listen_port = ir.listen_port.unwrap_or(53);
 
-            // Use injected DNS resolver from context, or fallback to system resolver
-            // 使用上下文中注入的 DNS 解析器，或回退到系统解析器
-            let resolver = ctx.dns_resolver.clone().unwrap_or_else(|| {
-                Arc::new(sb_core::dns::system::SystemResolver::new(
-                    std::time::Duration::from_secs(60),
-                )) as Arc<dyn DnsResolver>
-            });
+            let dns_router = ctx
+                .dns_router
+                .clone()
+                .ok_or("Resolved service requires ServiceContext.dns_router")?;
 
             // Use the shared singleton state so updates are seen by ResolvedTransport
             let resolve1_state = sb_core::dns::transport::resolved::RESOLVED_STATE.clone();
+            resolve1_state.set_dns_router(dns_router.clone());
+            resolve1_state.set_service_tag(tag.clone());
 
             Ok(Self {
                 tag,
                 listen_addr,
                 listen_port,
-                connection: parking_lot::Mutex::new(None),
                 started: AtomicBool::new(false),
-                server_task: parking_lot::Mutex::new(None),
-                resolver,
+                udp_task: parking_lot::Mutex::new(None),
+                tcp_task: parking_lot::Mutex::new(None),
+                dns_router,
                 resolve1_state,
                 dbus_server_connection: parking_lot::Mutex::new(None),
                 #[cfg(feature = "network_monitor")]
@@ -80,279 +81,154 @@ mod dbus_impl {
             })
         }
 
-        /// Connect to systemd-resolved via D-Bus.
-        async fn connect_dbus(
-            &self,
-        ) -> Result<zbus::Connection, Box<dyn std::error::Error + Send + Sync>> {
-            // Reuse if already connected
-            if let Some(conn) = self.connection.lock().clone() {
-                return Ok(conn);
-            }
-
-            let conn = zbus::Connection::system()
-                .await
-                .map_err(|e| format!("Failed to connect to system D-Bus: {}", e))?;
-
-            // Verify systemd-resolved is available
-            let proxy = zbus::fdo::DBusProxy::new(&conn)
-                .await
-                .map_err(|e| format!("Failed to create D-Bus proxy: {}", e))?;
-
-            let has_resolved = proxy
-                .list_names()
-                .await
-                .map_err(|e| format!("Failed to list D-Bus names: {}", e))?
-                .iter()
-                .any(|name| name.as_str() == "org.freedesktop.resolve1");
-
-            if !has_resolved {
-                return Err("systemd-resolved is not available on D-Bus".into());
-            }
-
-            tracing::info!(
-                target: "sb_adapters::service",
-                service = "resolved",
-                tag = %self.tag,
-                "Connected to systemd-resolved via D-Bus"
-            );
-
-            *self.connection.lock() = Some(conn.clone());
-            Ok(conn)
-        }
-
-        /// Resolve hostname via systemd-resolved D-Bus.
-        async fn resolve_via_resolved(
-            &self,
-            name: &str,
-            qtype: u16,
-        ) -> Result<Vec<IpAddr>, Box<dyn std::error::Error + Send + Sync>> {
-            // family: AF_INET(2) or AF_INET6(10) or 0 (unspecified)
-            let family = match qtype {
-                1 => 2,   // A
-                28 => 10, // AAAA
-                _ => 0,   // fallback
-            };
-
-            let conn = self.connect_dbus().await?;
-            let proxy = zbus::ProxyBuilder::new_bare(&conn)
-                .destination("org.freedesktop.resolve1")?
-                .path("/org/freedesktop/resolve1")?
-                .interface("org.freedesktop.resolve1.Manager")?
-                .build()
-                .await?;
-
-            // ResolveHostname(ifindex=0, name, family, flags=0) -> (addresses, canonical)
-            let (addresses, _canonical): (Vec<(i32, i32, Vec<u8>)>, String) = proxy
-                .call("ResolveHostname", &(0i32, name, family, 0u32))
-                .await?;
-
-            let mut ips = Vec::new();
-            for (_family, _ifindex, raw) in addresses {
-                if raw.len() == 4 {
-                    let octets: [u8; 4] = raw
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| "invalid IPv4 length")?;
-                    ips.push(IpAddr::from(octets));
-                } else if raw.len() == 16 {
-                    let octets: [u8; 16] = raw
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| "invalid IPv6 length")?;
-                    ips.push(IpAddr::from(octets));
-                }
-            }
-
-            if ips.is_empty() {
-                return Err("systemd-resolved returned no addresses".into());
-            }
-
-            Ok(ips)
-        }
-
-        /// Handle a single DNS query and return a response packet.
-        async fn handle_dns_query(
-            query_packet: &[u8],
-            resolver: Arc<dyn DnsResolver>,
-        ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-            // Parse the DNS query to extract the domain name and query type
-            if query_packet.len() < 12 {
-                return Err("DNS query too short".into());
-            }
-
-            let transaction_id = u16::from_be_bytes([query_packet[0], query_packet[1]]);
-
-            // Extract QNAME (domain name) from question section
-            let mut i = 12;
-            let mut domain_labels = Vec::new();
-
-            while i < query_packet.len() && query_packet[i] != 0 {
-                let label_len = query_packet[i] as usize;
-                i += 1;
-                if i + label_len > query_packet.len() {
-                    return Err("Invalid domain name in query".into());
-                }
-                let label = String::from_utf8_lossy(&query_packet[i..i + label_len]).to_string();
-                domain_labels.push(label);
-                i += label_len;
-            }
-
-            let domain = domain_labels.join(".");
-            i += 1; // Skip the zero byte
-
-            if i + 4 > query_packet.len() {
-                return Err("Query packet truncated".into());
-            }
-
-            let qtype = u16::from_be_bytes([query_packet[i], query_packet[i + 1]]);
-
-            tracing::debug!(
-                target: "sb_adapters::service",
-                service = "resolved",
-                domain = %domain,
-                qtype = ?qtype,
-                "Received DNS query"
-            );
-
-            // Use systemd-resolved via D-Bus; fallback to core resolver on failure.
-            let ips = match Self::resolve_via_resolved(self, &domain, qtype).await {
-                Ok(addrs) => addrs,
-                Err(e) => {
-                    tracing::warn!(
-                        target: "sb_adapters::service",
-                        service = "resolved",
-                        domain = %domain,
-                        error = %e,
-                        "D-Bus resolve failed; falling back to core resolver"
-                    );
-                    resolver
-                        .resolve(&domain)
-                        .await
-                        .map(|ans| ans.ips)
-                        .unwrap_or_default()
-                }
-            };
-
-            let ttl = 60; // placeholder TTL; systemd-resolved does not expose TTL via this call
-
-            // Build DNS response packet
-            let mut response = Vec::with_capacity(512);
-
-            // Header
-            response.extend_from_slice(&transaction_id.to_be_bytes()); // Transaction ID
-            response.extend_from_slice(&0x8180u16.to_be_bytes()); // Flags: response, recursion available
-            response.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT = 1
-            response.extend_from_slice(&(ips.len() as u16).to_be_bytes()); // ANCOUNT
-            response.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT = 0
-            response.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT = 0
-
-            // Question section (copy from query)
-            response.extend_from_slice(&query_packet[12..i + 4]);
-
-            // Answer section
-            for ip in ips {
-                // NAME (pointer to question)
-                response.extend_from_slice(&0xC00Cu16.to_be_bytes());
-
-                match ip {
-                    std::net::IpAddr::V4(ipv4) => {
-                        response.extend_from_slice(&1u16.to_be_bytes()); // TYPE = A
-                        response.extend_from_slice(&1u16.to_be_bytes()); // CLASS = IN
-                        response.extend_from_slice(&ttl.to_be_bytes()); // TTL from resolver
-                        response.extend_from_slice(&4u16.to_be_bytes()); // RDLENGTH = 4
-                        response.extend_from_slice(&ipv4.octets()); // IPv4 address
-                    }
-                    std::net::IpAddr::V6(ipv6) => {
-                        response.extend_from_slice(&28u16.to_be_bytes()); // TYPE = AAAA
-                        response.extend_from_slice(&1u16.to_be_bytes()); // CLASS = IN
-                        response.extend_from_slice(&ttl.to_be_bytes()); // TTL from resolver
-                        response.extend_from_slice(&16u16.to_be_bytes()); // RDLENGTH = 16
-                        response.extend_from_slice(&ipv6.octets()); // IPv6 address
-                    }
-                }
-            }
-
-            Ok(response)
-        }
-
-        /// Spawn the DNS server task.
-        async fn spawn_dns_server(
-            addr: String,
-            port: u16,
+        async fn spawn_udp(
+            bind_addr: String,
             tag: String,
-            resolver: Arc<dyn DnsResolver>,
+            dns_router: Arc<dyn DnsRouter>,
+            resolve1_state: Arc<crate::service::resolve1::Resolve1ManagerState>,
         ) -> Result<JoinHandle<()>, Box<dyn std::error::Error + Send + Sync>> {
-            let bind_addr = format!("{}:{}", addr, port);
             let socket = UdpSocket::bind(&bind_addr)
                 .await
-                .map_err(|e| format!("Failed to bind DNS server to {}: {}", bind_addr, e))?;
+                .map_err(|e| format!("Failed to bind UDP DNS stub to {bind_addr}: {e}"))?;
+            let socket = Arc::new(socket);
 
             tracing::info!(
                 target: "sb_adapters::service",
                 service = "resolved",
                 tag = %tag,
                 bind_addr = %bind_addr,
-                "DNS server listening"
+                "DNS stub UDP listening"
             );
 
             let handle = tokio::spawn(async move {
                 let mut buf = vec![0u8; 4096];
-
                 loop {
-                    match socket.recv_from(&mut buf).await {
-                        Ok((len, peer)) => {
-                            let query_packet = &buf[..len];
-
-                            // Handle query in a separate task to avoid blocking
-                            let query_data = query_packet.to_vec();
-                            let socket_clone = socket.try_clone();
-                            let resolver_clone = resolver.clone();
-
-                            if let Ok(socket) = socket_clone {
-                                tokio::spawn(async move {
-                                    match Self::handle_dns_query(&query_data, resolver_clone).await
-                                    {
-                                        Ok(response) => {
-                                            if let Err(e) = socket.send_to(&response, peer).await {
-                                                tracing::error!(
-                                                    target: "sb_adapters::service",
-                                                    service = "resolved",
-                                                    error = %e,
-                                                    "Failed to send DNS response"
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                target: "sb_adapters::service",
-                                                service = "resolved",
-                                                peer = %peer,
-                                                error = %e,
-                                                "Failed to handle DNS query"
-                                            );
-                                        }
-                                    }
-                                });
-                            }
-                        }
+                    let (len, peer) = match socket.recv_from(&mut buf).await {
+                        Ok(v) => v,
                         Err(e) => {
                             tracing::error!(
                                 target: "sb_adapters::service",
                                 service = "resolved",
+                                tag = %tag,
                                 error = %e,
-                                "DNS server recv error"
+                                "UDP recv error"
                             );
                             break;
                         }
-                    }
+                    };
+
+                    let req = buf[..len].to_vec();
+                    let socket = socket.clone();
+                    let dns_router = dns_router.clone();
+                    let inbound = resolve1_state.get_service_tag();
+
+                    tokio::spawn(async move {
+                        let ctx = DnsQueryContext::new()
+                            .with_inbound(inbound)
+                            .with_transport("udp")
+                            .with_client(peer);
+                        let resp = match dns_router.exchange(&ctx, &req).await {
+                            Ok(r) => r,
+                            Err(err) => {
+                                tracing::debug!(
+                                    target: "sb_adapters::service",
+                                    service = "resolved",
+                                    error = %err,
+                                    "dns_router.exchange failed; replying SERVFAIL"
+                                );
+                                build_dns_response(&req, &[], 0, 2).unwrap_or_default()
+                            }
+                        };
+                        if !resp.is_empty() {
+                            let _ = socket.send_to(&resp, peer).await;
+                        }
+                    });
+                }
+            });
+
+            Ok(handle)
+        }
+
+        async fn handle_tcp_conn(
+            mut stream: TcpStream,
+            peer: std::net::SocketAddr,
+            inbound: String,
+            dns_router: Arc<dyn DnsRouter>,
+        ) {
+            loop {
+                let mut len_buf = [0u8; 2];
+                if let Err(_e) = stream.read_exact(&mut len_buf).await {
+                    break;
+                }
+                let n = u16::from_be_bytes(len_buf) as usize;
+                if n == 0 || n > 65535 {
+                    break;
+                }
+                let mut req = vec![0u8; n];
+                if let Err(_e) = stream.read_exact(&mut req).await {
+                    break;
                 }
 
-                tracing::info!(
-                    target: "sb_adapters::service",
-                    service = "resolved",
-                    tag = %tag,
-                    "DNS server stopped"
-                );
+                let ctx = DnsQueryContext::new()
+                    .with_inbound(inbound.clone())
+                    .with_transport("tcp")
+                    .with_client(peer);
+
+                let resp = match dns_router.exchange(&ctx, &req).await {
+                    Ok(r) => r,
+                    Err(_err) => build_dns_response(&req, &[], 0, 2).unwrap_or_default(),
+                };
+                if resp.is_empty() {
+                    break;
+                }
+
+                let len = (resp.len() as u16).to_be_bytes();
+                if stream.write_all(&len).await.is_err() {
+                    break;
+                }
+                if stream.write_all(&resp).await.is_err() {
+                    break;
+                }
+            }
+        }
+
+        async fn spawn_tcp(
+            bind_addr: String,
+            tag: String,
+            dns_router: Arc<dyn DnsRouter>,
+            resolve1_state: Arc<crate::service::resolve1::Resolve1ManagerState>,
+        ) -> Result<JoinHandle<()>, Box<dyn std::error::Error + Send + Sync>> {
+            let listener = TcpListener::bind(&bind_addr)
+                .await
+                .map_err(|e| format!("Failed to bind TCP DNS stub to {bind_addr}: {e}"))?;
+
+            tracing::info!(
+                target: "sb_adapters::service",
+                service = "resolved",
+                tag = %tag,
+                bind_addr = %bind_addr,
+                "DNS stub TCP listening"
+            );
+
+            let handle = tokio::spawn(async move {
+                loop {
+                    let (stream, peer) = match listener.accept().await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(
+                                target: "sb_adapters::service",
+                                service = "resolved",
+                                tag = %tag,
+                                error = %e,
+                                "TCP accept error"
+                            );
+                            break;
+                        }
+                    };
+                    let inbound = resolve1_state.get_service_tag();
+                    let dns_router = dns_router.clone();
+                    tokio::spawn(Self::handle_tcp_conn(stream, peer, inbound, dns_router));
+                }
             });
 
             Ok(handle)
@@ -378,9 +254,6 @@ mod dbus_impl {
                         "Initializing Resolved service"
                     );
 
-                    // Start D-Bus server to export org.freedesktop.resolve1.Manager
-                    // This allows external programs (like systemd-networkd, NetworkManager)
-                    // to configure per-link DNS settings via D-Bus.
                     let state = self.resolve1_state.clone();
                     let handle = tokio::runtime::Handle::try_current()
                         .map_err(|_| "No tokio runtime available for D-Bus server")?;
@@ -487,27 +360,29 @@ mod dbus_impl {
                         tag = %self.tag,
                         listen_addr = %self.listen_addr,
                         listen_port = %self.listen_port,
-                        "Starting Resolved DNS server"
+                        "Starting Resolved DNS stub"
                     );
 
-                    // Verify connection is still valid
-                    let conn_guard = self.connection.lock();
-                    if conn_guard.is_none() {
-                        return Err("D-Bus connection not initialized".into());
-                    }
-                    drop(conn_guard);
+                    let bind_addr = format!("{}:{}", self.listen_addr, self.listen_port);
 
-                    // Spawn DNS server task
-                    let addr = self.listen_addr.clone();
-                    let port = self.listen_port;
                     let tag = self.tag.clone();
-                    let resolver = self.resolver.clone();
+                    let dns_router = self.dns_router.clone();
+                    let state = self.resolve1_state.clone();
 
-                    let handle = tokio::runtime::Handle::try_current()
+                    let udp = tokio::runtime::Handle::try_current()
                         .map_err(|_| "No tokio runtime available")?
-                        .block_on(Self::spawn_dns_server(addr, port, tag, resolver))?;
+                        .block_on(Self::spawn_udp(
+                            bind_addr.clone(),
+                            tag.clone(),
+                            dns_router.clone(),
+                            state.clone(),
+                        ))?;
+                    let tcp = tokio::runtime::Handle::try_current()
+                        .map_err(|_| "No tokio runtime available")?
+                        .block_on(Self::spawn_tcp(bind_addr, tag, dns_router, state))?;
 
-                    *self.server_task.lock() = Some(handle);
+                    *self.udp_task.lock() = Some(udp);
+                    *self.tcp_task.lock() = Some(tcp);
                     self.started.store(true, Ordering::SeqCst);
                     Ok(())
                 }
@@ -542,8 +417,10 @@ mod dbus_impl {
 
             self.started.store(false, Ordering::SeqCst);
 
-            // Abort the DNS server task
-            if let Some(handle) = self.server_task.lock().take() {
+            if let Some(handle) = self.udp_task.lock().take() {
+                handle.abort();
+            }
+            if let Some(handle) = self.tcp_task.lock().take() {
                 handle.abort();
             }
 
@@ -574,7 +451,6 @@ mod dbus_impl {
                 }
             }
 
-            *self.connection.lock() = None;
             Ok(())
         }
     }

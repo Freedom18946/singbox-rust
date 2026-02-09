@@ -2776,6 +2776,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .trim()
                         .to_string();
 
+                    let ty = map
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_ascii_lowercase());
+
                     // Accept both legacy `address: "<proto>://..."` and
                     // go1.12.4-style `{ "type": "...", "server": "..." }` shapes.
                     let address = if let Some(addr) = map
@@ -2784,11 +2789,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .map(|s| s.trim().to_string())
                     {
                         addr
-                    } else if let Some(ty) = map
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.trim().to_ascii_lowercase())
-                    {
+                    } else if let Some(ref ty) = ty {
                         let server = map
                             .get("server")
                             .and_then(|v| v.as_str())
@@ -2810,6 +2811,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         }
                     } else {
                         String::new()
+                    };
+
+                    let address = if address.is_empty() && ty.as_deref() == Some("resolved") {
+                        // Go parity: allow `{ "type": "resolved" }` without explicit address.
+                        "resolved".to_string()
+                    } else {
+                        address
                     };
 
                     if !tag.is_empty() && !address.is_empty() {
@@ -2887,6 +2895,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                 .get("type")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
+                            service: map
+                                .get("service")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            accept_default_resolvers: map
+                                .get("accept_default_resolvers")
+                                .and_then(|v| v.as_bool()),
                             inet4_range: map
                                 .get("inet4_range")
                                 .and_then(|v| v.as_str())
@@ -4009,5 +4024,27 @@ mod tests {
         assert_eq!(dot.ca_paths, vec!["/etc/ssl/certs/custom.pem".to_string()]);
         let doq = dns.servers.iter().find(|s| s.tag == "doq1").unwrap();
         assert_eq!(doq.ca_pem.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_dns_server_resolved_type_without_address() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "resolved", "type": "resolved", "service": "resolved", "accept_default_resolvers": false}
+                ],
+                "default": "resolved"
+            }
+        });
+        let ir = to_ir_v1(&json);
+        let dns = ir.dns.expect("dns");
+        assert_eq!(dns.servers.len(), 1);
+        let s = &dns.servers[0];
+        assert_eq!(s.tag, "resolved");
+        assert_eq!(s.address, "resolved");
+        assert_eq!(s.server_type.as_deref(), Some("resolved"));
+        assert_eq!(s.service.as_deref(), Some("resolved"));
+        assert_eq!(s.accept_default_resolvers, Some(false));
     }
 }

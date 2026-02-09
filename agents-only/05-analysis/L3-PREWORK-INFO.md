@@ -74,40 +74,30 @@ Go 参考：
 
 ## 2. L3.2 DERP 配置对齐（PX-014）
 
-### 2.1 Rust 现状（已读代码定位）
+> **状态**: ✅ 已完成（2026-02-09）  
+> **关键落点**: `crates/sb-core/src/services/derp/server.rs`（runtime） / `crates/sb-config/src/ir/mod.rs`（IR） / `crates/sb-core/src/service.rs`（注入）  
+> **验证**:
+> - `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
+> - `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
+
+### 2.1 Rust 现状（已实现）
 
 - 实现位置：
-  - `crates/sb-core/src/services/derp/server.rs`（HTTP handler 包含 `/derp`、`/bootstrap-dns`、mesh、probe 等）
+  - `crates/sb-core/src/services/derp/server.rs`
 - 配置字段（IR）：
-  - `crates/sb-config/src/ir/mod.rs`：`ServiceIR`（`config_path/verify_client_* / mesh_* / stun / tls / listen*`）
-- 当前行为要点（从代码直接可见）：
-  - `/bootstrap-dns` 使用 `crate::dns::global::get()`（全局 resolver），没有按 DERP 的 dialer/TLS/路由选项定制
-  - `verify_client_url` 是 `Vec<String>`（只有 URL，没有 dialer options）
-  - `mesh_with` 是 `Vec<String>`（只有 peer 列表，没有 dialer/TLS 选项）
-  - STUN 默认：未配置 `stun` 时走 `(true, listen_addr)`（即“默认启用且端口=DERP listen_port”）
-  - ListenOptions（bind_interface / routing_mark / netns / reuse_addr 等）目前未用于 socket bind 路径
+  - `crates/sb-config/src/ir/mod.rs`：`ServiceIR.verify_client_url/mesh_with/verify_client_endpoint/stun`（均已按 Go 语义对齐可解析形式）
+- 当前行为要点：
+  - `/bootstrap-dns` 使用注入的 `ServiceContext.dns_router`（无注入返回空 `{}` 并 warn）
+  - `verify_client_url`：支持 string/object + Listable；每条 URL 独立 dialer，并通过 hyper 在 dialer stream 上执行 HTTP POST 验证
+  - `mesh_with`：支持 string/object + Listable；per-peer dialer/TLS；PostStart 阶段启动 mesh；mesh_with 非空但缺 PSK 会报错
+  - `verify_client_endpoint`：按 endpoint tag 语义，在 PostStart 解析 tailscale endpoint 并拿到 tailscaled LocalAPI unix socket path
+  - STUN：仅当 `stun` 配置存在且 `enabled=true` 才启动；启用时默认 listen=`::`、listen_port=`3478`；bind fields 用 socket2 生效（netns 为 Linux-only）
+  - ListenOptions：DERP TCP listener 与 STUN UDP socket 走 socket2 预绑定并 honor 关键字段（平台 gating）
 
-### 2.2 关键差距（对照 Go 行为）
+### 2.2 已知差异/后续增强
 
-Go 参考：
-- `go_fork_source/sing-box-1.12.14/service/derp/service.go`
-
-差距要点（直接对应 GO_PARITY_MATRIX 的 PX-014 结论）：
-- `verify_client_url` 在 Go 是结构体数组，包含 dialer options，且为每条 URL 构造独立 `http.Client` + `DialContext`
-- `mesh_with` 在 Go 是结构体数组，包含 dialer options（以及与 TLS/RootCA/TimeFunc 相关的连接语义）
-- STUN 默认值/ListenOptions honored 的语义需要与 Go 对齐（尤其是默认 listen addr/port 及是否开启）
-- `/bootstrap-dns` 需要与 Go 的 handler 行为一致（Go 走 `handleBootstrapDNS(ctx)`，依赖更完整的上下文能力）
-- HTTP/2/h2c 处理方式需确认与 Go（`derphttp` + `h2c`）一致（Rust 目前是自实现 hyper 路由）
-
-### 2.3 落点建议（先“schema”后“runtime”）
-
-1. **先对齐配置 schema（IR）**：
-   - 将 `ServiceIR.verify_client_url` 从 `Vec<String>` 升级为 `Vec<DerpVerifyClientUrlIR>`（包含 URL + DialerOptions + “server_is_domain”等必要字段）
-   - 将 `ServiceIR.mesh_with` 从 `Vec<String>` 升级为 `Vec<DerpMeshPeerIR>`（peer + DialerOptions + TLS 相关）
-2. **再对齐 runtime 行为**：
-   - `/bootstrap-dns` 走 DNSRouter/可注入 resolver（而不是全局 resolver）
-   - ListenOptions 用于 TCP/UDP bind（至少 bind_interface/routing_mark/netns/reuse_addr）
-   - STUN 默认策略与 Go 一致（并补齐测试）
+- `domain_resolver`：当前落地为“按 server tag lookup 并选择首个 IP” 的最小语义（未实现更复杂策略）
+- HTTP/2/h2c：runtime 以 hyper 路由为主；如未来需要与 Go `derphttp` 进一步 1:1 对齐，可单独再验证与收敛
 
 ---
 

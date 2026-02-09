@@ -288,7 +288,7 @@
 | 包 | 名称 | 来源 PX | 工作量 | 优先级 | 说明 |
 |----|------|---------|--------|--------|------|
 | L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | ✅ 已完成（2026-02-09）：per-endpoint 绑定闭环 + API 行为对齐 + cache 兼容 + Shadowsocks tracker 接线 |
-| L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | mesh 网络 config/behavior 偏差。非核心代理场景 |
+| L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | ✅ 已完成（2026-02-09）：schema + runtime 语义对齐（verify_client_url/mesh_with/verify_client_endpoint tag/STUN/bootstrap-dns/ListenOptions） |
 | L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | Linux-only systemd-resolved D-Bus: resolve1 methods。macOS 不需要 |
 | L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | bbolt bucket 级别持久化: cache_id, FakeIP metadata 10s 去抖, rule_set caching。当前内存/简化持久化可工作 |
 | L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
@@ -309,6 +309,22 @@
 - `cargo test -p sb-core --features service_ssmapi`
 - `cargo test -p sb-adapters --features "adapter-shadowsocks,router,service_ssmapi"`
 - `cargo check -p sb-core --all-features`
+
+### ✅ 已完成：L3.2 DERP 配置对齐（PX-014）
+
+**日期**: 2026-02-09
+**范围**: DERP 配置 schema + 关键运行时语义对齐（verify_client_url per-URL dialer；mesh_with per-peer dial/TLS + PostStart；verify_client_endpoint tag 语义；STUN enable/defaults；ListenOptions bind；bootstrap-dns 注入 DNSRouter）。
+
+**关键落点**:
+- `crates/sb-config/src/ir/mod.rs`：新增 `Listable`/`StringOrObj` + DERP IR（Dial/VerifyURL/MeshPeer/TLS；stun 支持 `bool|number|object`）
+- `crates/sb-core/src/service.rs` + `crates/sb-core/src/adapter/{bridge.rs,mod.rs}`：ServiceContext 注入 `dns_router/outbounds/endpoints`
+- `crates/sb-core/src/services/derp/server.rs`：dialer factory + verify/mesh/endpoint/bootstrap-dns/listen/stun 行为对齐
+- `crates/sb-core/src/endpoint/tailscale.rs`：LocalAPI unix socket path 支持（daemon-only）
+- `crates/sb-transport/src/{dialer.rs,builder.rs}`：connect_timeout 生效 + Linux netns 支持
+
+**验证**:
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
+- `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
 
 ### 已关闭 / Won't Fix
 

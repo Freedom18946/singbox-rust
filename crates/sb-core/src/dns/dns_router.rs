@@ -19,6 +19,18 @@ pub struct DnsQueryContext {
     /// Source inbound tag (if available).
     /// 源入站标签（如果可用）。
     pub inbound: Option<String>,
+    /// Source process name (Linux/macOS, if available).
+    /// 源进程名（Linux/macOS，若可获取）。
+    pub process_name: Option<String>,
+    /// Source process path (Linux, if available).
+    /// 源进程路径（Linux，若可获取）。
+    pub process_path: Option<String>,
+    /// Source user name (Linux, if available).
+    /// 源用户名（Linux，若可获取）。
+    pub user: Option<String>,
+    /// Source user id (Linux, if available).
+    /// 源用户 ID（Linux，若可获取）。
+    pub user_id: Option<u32>,
     /// Client address.
     /// 客户端地址。
     pub client: Option<std::net::SocketAddr>,
@@ -43,6 +55,38 @@ impl DnsQueryContext {
     #[must_use]
     pub fn with_inbound(mut self, inbound: impl Into<String>) -> Self {
         self.inbound = Some(inbound.into());
+        self
+    }
+
+    /// Set the process name.
+    /// 设置进程名。
+    #[must_use]
+    pub fn with_process_name(mut self, process_name: impl Into<String>) -> Self {
+        self.process_name = Some(process_name.into());
+        self
+    }
+
+    /// Set the process path.
+    /// 设置进程路径。
+    #[must_use]
+    pub fn with_process_path(mut self, process_path: impl Into<String>) -> Self {
+        self.process_path = Some(process_path.into());
+        self
+    }
+
+    /// Set the user name.
+    /// 设置用户名。
+    #[must_use]
+    pub fn with_user(mut self, user: impl Into<String>) -> Self {
+        self.user = Some(user.into());
+        self
+    }
+
+    /// Set the user id.
+    /// 设置用户 ID。
+    #[must_use]
+    pub fn with_user_id(mut self, user_id: u32) -> Self {
+        self.user_id = Some(user_id);
         self
     }
 
@@ -172,10 +216,18 @@ mod tests {
     fn test_query_context_builder() {
         let ctx = DnsQueryContext::new()
             .with_inbound("http-in")
+            .with_process_name("curl")
+            .with_process_path("/usr/bin/curl")
+            .with_user("bob")
+            .with_user_id(501)
             .with_transport("tcp")
             .with_fakeip(true);
 
         assert_eq!(ctx.inbound.as_deref(), Some("http-in"));
+        assert_eq!(ctx.process_name.as_deref(), Some("curl"));
+        assert_eq!(ctx.process_path.as_deref(), Some("/usr/bin/curl"));
+        assert_eq!(ctx.user.as_deref(), Some("bob"));
+        assert_eq!(ctx.user_id, Some(501));
         assert_eq!(ctx.transport.as_deref(), Some("tcp"));
         assert!(ctx.fakeip);
         assert!(ctx.client.is_none());

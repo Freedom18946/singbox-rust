@@ -3100,6 +3100,12 @@ pub struct DnsServerIR {
     /// When present, takes priority over address-prefix guessing.
     #[serde(default, rename = "type")]
     pub server_type: Option<String>,
+    /// Resolved transport: service tag (Go: required; Rust: defaults to "resolved" when missing).
+    #[serde(default)]
+    pub service: Option<String>,
+    /// Resolved transport: accept default resolvers (Go zero-value default: false).
+    #[serde(default)]
+    pub accept_default_resolvers: Option<bool>,
     /// FakeIP: IPv4 range (default "198.18.0.0/15")
     #[serde(default)]
     pub inet4_range: Option<String>,
