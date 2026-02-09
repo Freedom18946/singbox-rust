@@ -536,9 +536,9 @@ impl tokio::io::AsyncWrite for StreamWrapper {
 
 pub struct MultiplexListener {
     config: MultiplexServerConfig,
-    stream_rx: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<IoStream>>>,
+    stream_rx: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<(IoStream, std::net::SocketAddr)>>>,
     #[allow(dead_code)]
-    stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
+    stream_tx: tokio::sync::mpsc::UnboundedSender<(IoStream, std::net::SocketAddr)>,
     local_addr: std::net::SocketAddr,
 }
 
@@ -584,7 +584,7 @@ impl MultiplexListener {
     fn start_accept_task(
         tcp_listener: tokio::net::TcpListener,
         config: MultiplexServerConfig,
-        stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
+        stream_tx: tokio::sync::mpsc::UnboundedSender<(IoStream, std::net::SocketAddr)>,
     ) {
         tokio::spawn(async move {
             loop {
@@ -617,7 +617,7 @@ impl MultiplexListener {
         tcp_stream: tokio::net::TcpStream,
         peer_addr: std::net::SocketAddr,
         config: MultiplexServerConfig,
-        stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
+        stream_tx: tokio::sync::mpsc::UnboundedSender<(IoStream, std::net::SocketAddr)>,
     ) -> Result<(), DialError> {
         let stream: IoStream = if config.enable_padding {
             debug!(
@@ -641,7 +641,7 @@ impl MultiplexListener {
                     debug!("Accepted yamux stream from {}", peer_addr);
                     let tokio_stream = stream.compat();
                     let boxed_stream: IoStream = Box::new(tokio_stream);
-                    if stream_tx.send(boxed_stream).is_err() {
+                    if stream_tx.send((boxed_stream, peer_addr)).is_err() {
                         warn!("Failed to send stream to channel, listener may be closed");
                         return Poll::Ready(());
                     }
@@ -662,7 +662,7 @@ impl MultiplexListener {
         Ok(())
     }
 
-    pub async fn accept(&self) -> Result<IoStream, DialError> {
+    pub async fn accept(&self) -> Result<(IoStream, std::net::SocketAddr), DialError> {
         let mut stream_rx = self.stream_rx.lock().await;
 
         stream_rx

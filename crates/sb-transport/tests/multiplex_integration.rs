@@ -47,7 +47,7 @@ async fn test_multiplex_server_client_echo() {
 
     // Spawn server task
     let server_handle = tokio::spawn(async move {
-        let mut stream = mux_listener.accept().await.unwrap();
+        let (mut stream, _peer) = mux_listener.accept().await.unwrap();
 
         // Echo server: read and write back
         let mut buf = [0u8; 1024];
@@ -136,7 +136,7 @@ async fn start_echo_server(
         loop {
             tokio::select! {
                 result = mux_listener.accept() => {
-                    if let Ok(mut stream) = result {
+                    if let Ok((mut stream, _peer)) = result {
                         tokio::spawn(async move {
                             let mut buf = [0u8; 1024];
                             if let Ok(n) = stream.read(&mut buf).await {

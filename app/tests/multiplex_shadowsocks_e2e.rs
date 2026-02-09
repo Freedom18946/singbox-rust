@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 // Import Shadowsocks adapters
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
@@ -68,13 +69,8 @@ async fn start_echo_server() -> SocketAddr {
 
 /// Helper: Start Shadowsocks server with Multiplex support
 async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc::Sender<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind Shadowsocks server");
-    let addr = listener.local_addr().unwrap();
-    drop(listener); // Release port for server to bind
-
     let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
 
     let multiplex_config = if multiplex_enabled {
         Some(MultiplexServerConfig::default())
@@ -82,9 +78,11 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
         None
     };
 
+    let listen: SocketAddr = "127.0.0.1:0".parse().unwrap();
+
     #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
-        listen: addr,
+        listen,
         method: "aes-256-gcm".to_string(),
         password: None,
         users: vec![ShadowsocksUser::new(
@@ -99,12 +97,18 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
     };
 
     tokio::spawn(async move {
-        if let Err(e) = sb_adapters::inbound::shadowsocks::serve(config, stop_rx).await {
+        if let Err(e) =
+            sb_adapters::inbound::shadowsocks::serve_with_ready(config, stop_rx, ready_tx).await
+        {
             eprintln!("Shadowsocks server error: {}", e);
         }
     });
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let addr = tokio::time::timeout(Duration::from_secs(5), ready_rx)
+        .await
+        .expect("Timed out waiting for Shadowsocks server to bind")
+        .expect("Shadowsocks server dropped before binding");
+
     (addr, stop_tx)
 }
 

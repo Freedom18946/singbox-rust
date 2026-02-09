@@ -865,7 +865,7 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 | L3.1 | SSMAPI (PX-011) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.2 | DERP (PX-014) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.3 | Resolved (PX-015) ✅ 2026-02-09 | L2 Tier 3 |
-| L3.4 | Cache File 深度对齐 (PX-009/013) | PX-009 残余 |
+| L3.4 | Cache File 深度对齐 (PX-009/013) ✅ 2026-02-09 | PX-009 残余 |
 | L3.5 | ConnMetadata chain/rule | L2.8 延后决策 |
 
 ### Won't Fix
@@ -1009,3 +1009,35 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 ---
 
 *最后更新：2026-02-09（L3.3 PX-015 Resolved 完整化完成；Linux runtime 验证待补）*
+
+---
+
+## ✅ L3.4 Cache File 深度对齐（PX-013 / PX-009）
+
+**日期**: 2026-02-09  
+**实现提交**: `fc541ef`  
+**实现报告**: `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`
+
+### 核心交付（锁定决策落地）
+
+- `cache_id`：仅隔离 Clash 相关持久化（`clash_mode` + `selected` + `expand`），default namespace 兼容旧 `cache.db`
+- FakeIP：接线 mapping + metadata，metadata 写盘 10s strict debounce（sync-safe，无 tokio 依赖）
+- ruleset cache：维持 `crates/sb-core/src/router/ruleset/remote.rs` 的 file cache 为权威；`CacheFileService` ruleset API 不接线下载链路（仅保留接口/注释）
+
+### 关键文件
+
+- `crates/sb-config/src/ir/experimental.rs`
+- `crates/sb-core/src/services/cache_file.rs`
+- `crates/sb-core/src/dns/fakeip.rs`
+- `crates/sb-core/src/dns/config_builder.rs`
+- `crates/sb-core/src/router/ruleset/remote.rs`
+
+### 验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo test --workspace --all-features` | ✅（实现报告内记录：2026-02-09） |
+
+---
+
+*最后更新：2026-02-09（L3.4 PX-013 / PX-009 Cache File 深度对齐完成）*

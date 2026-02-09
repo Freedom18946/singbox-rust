@@ -35,13 +35,14 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::select;
-use tokio::sync::mpsc;
-use tokio::time::{interval, Duration};
-use tracing::debug;
-use tracing::{info, warn};
+	use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+	use tokio::io::{AsyncReadExt, AsyncWriteExt};
+	use tokio::select;
+	use tokio::sync::mpsc;
+	use tokio::sync::oneshot;
+	use tokio::time::{interval, Duration};
+	use tracing::debug;
+	use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub enum AeadCipherKind {
@@ -657,59 +658,93 @@ fn aead_encrypt_udp(
     aead_encrypt(cipher, key, nonce_val, data)
 }
 
-pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
-    let method =
-        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+	pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
+	    let method =
+	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
 
-    let user_map = cfg.build_user_map(&method);
-    let shared = RuntimeShared {
-        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
-        #[cfg(feature = "service_ssmapi")]
-        tracker: Arc::new(parking_lot::RwLock::new(None)),
-        #[cfg(feature = "service_ssmapi")]
-        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
-    };
+	    let user_map = cfg.build_user_map(&method);
+	    let shared = RuntimeShared {
+	        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+	        #[cfg(feature = "service_ssmapi")]
+	        tracker: Arc::new(parking_lot::RwLock::new(None)),
+	        #[cfg(feature = "service_ssmapi")]
+	        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
+	    };
 
-    serve_run(cfg, stop_rx, method, shared).await
-}
+	    serve_run(cfg, stop_rx, method, shared, None).await
+	}
 
-#[cfg(feature = "service_ssmapi")]
-async fn serve_with_shared(
-    cfg: ShadowsocksInboundConfig,
-    stop_rx: mpsc::Receiver<()>,
-    shared: RuntimeShared,
-) -> Result<()> {
-    let method =
-        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
-    serve_run(cfg, stop_rx, method, shared).await
-}
+	/// Like [`serve`], but also sends the actual bound TCP address back to the caller.
+	///
+	/// This is primarily useful for tests that want to bind to port 0 without racing on a
+	/// pre-selected port.
+	pub async fn serve_with_ready(
+	    cfg: ShadowsocksInboundConfig,
+	    stop_rx: mpsc::Receiver<()>,
+	    ready_tx: oneshot::Sender<SocketAddr>,
+	) -> Result<()> {
+	    let method =
+	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
 
-async fn serve_run(
-    cfg: ShadowsocksInboundConfig,
-    mut stop_rx: mpsc::Receiver<()>,
-    method: AeadCipherKind,
-    shared: RuntimeShared,
-) -> Result<()> {
-    if shared.user_keys.read().is_empty() {
-        return Err(anyhow!("shadowsocks: no users configured"));
-    }
+	    let user_map = cfg.build_user_map(&method);
+	    let shared = RuntimeShared {
+	        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+	        #[cfg(feature = "service_ssmapi")]
+	        tracker: Arc::new(parking_lot::RwLock::new(None)),
+	        #[cfg(feature = "service_ssmapi")]
+	        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
+	    };
+
+	    serve_run(cfg, stop_rx, method, shared, Some(ready_tx)).await
+	}
+
+	#[cfg(feature = "service_ssmapi")]
+	async fn serve_with_shared(
+	    cfg: ShadowsocksInboundConfig,
+	    stop_rx: mpsc::Receiver<()>,
+	    shared: RuntimeShared,
+	) -> Result<()> {
+	    let method =
+	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+	    serve_run(cfg, stop_rx, method, shared, None).await
+	}
+
+	async fn serve_run(
+	    cfg: ShadowsocksInboundConfig,
+	    mut stop_rx: mpsc::Receiver<()>,
+	    method: AeadCipherKind,
+	    shared: RuntimeShared,
+	    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+	) -> Result<()> {
+	    if shared.user_keys.read().is_empty() {
+	        return Err(anyhow!("shadowsocks: no users configured"));
+	    }
 
     // Create TCP listener based on transport configuration
-    let transport = cfg.transport_layer.clone().unwrap_or_default();
-    let listener = transport.create_inbound_listener(cfg.listen).await?;
-    let actual = listener.local_addr().unwrap_or(cfg.listen);
+	    let transport = cfg.transport_layer.clone().unwrap_or_default();
+	    let listener = transport.create_inbound_listener(cfg.listen).await?;
+	    let actual = listener.local_addr().unwrap_or(cfg.listen);
 
-    // Create UDP socket for UDP relay
-    let udp_socket = Arc::new(tokio::net::UdpSocket::bind(cfg.listen).await?);
-    let udp_addr = udp_socket.local_addr()?;
+	    // Create UDP socket for UDP relay
+	    let udp_bind_addr = if cfg.listen.port() == 0 {
+	        SocketAddr::new(cfg.listen.ip(), actual.port())
+	    } else {
+	        cfg.listen
+	    };
+	    let udp_socket = Arc::new(tokio::net::UdpSocket::bind(udp_bind_addr).await?);
+	    let udp_addr = udp_socket.local_addr()?;
 
-    // Initialize rate limiter
-    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+	    // Initialize rate limiter
+	    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
 
-    info!(
-        addr=?cfg.listen,
-        tcp_actual=?actual,
-        udp_actual=?udp_addr,
+	    if let Some(tx) = ready_tx {
+	        let _ = tx.send(actual);
+	    }
+
+	    info!(
+	        addr=?cfg.listen,
+	        tcp_actual=?actual,
+	        udp_actual=?udp_addr,
         transport=?transport.transport_type(),
         multiplex=?cfg.multiplex.is_some(),
         "shadowsocks: TCP+UDP inbound bound"
@@ -737,140 +772,62 @@ async fn serve_run(
         }
     });
 
-    // Handle TCP connections (existing multiplex logic follows...)
-    // Handle TCP connections (existing multiplex logic follows...)
+    // Handle TCP connections (multiplex is handled *inside* the Shadowsocks session after
+    // successful authentication and establishing the encrypted tunnel).
+    let mut hb = interval(Duration::from_secs(5));
+    loop {
+        select! {
+            _ = stop_rx.recv() => break,
+            _ = hb.tick() => {}
+            r = listener.accept() => {
+                let (stream, peer) = match r {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(error=%e, "ss: accept error");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
+                        continue;
+                    }
+                };
 
-    // If multiplex is enabled, wrap the listener
-    // 如果启用了多路复用，包装监听器
-    if let Some(_mux_config) = cfg.multiplex.clone() {
-        info!("shadowsocks: multiplex enabled");
-
-        // Note: Multiplex wrapping over non-TCP transports needs special handling
-        // 注意：非 TCP 传输上的多路复用包装需要特殊处理
-        // For now, we accept connections from the InboundListener directly
-        // 目前，我们直接接受来自 InboundListener 的连接
-        let mut hb = interval(Duration::from_secs(5));
-        loop {
-            select! {
-                _ = stop_rx.recv() => break,
-                _ = hb.tick() => {
-                    // tracing::debug!("shadowsocks: accept-loop heartbeat");
+                // Check rate limit
+                if !rate_limiter.allow_connection(peer.ip()) {
+                    warn!(%peer, "ss: connection rate limited");
+                    rate_limit_metrics::record_rate_limited("shadowsocks", "connection_limit");
+                    continue;
                 }
-                r = listener.accept() => {
-                    let (stream, peer) = match r {
-                        Ok(v) => v,
-                        Err(e) => {
-                            warn!(error=%e, "ss: multiplex accept error");
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
-                            continue;
-                        }
-                    };
+                if rate_limiter.is_banned(peer.ip()) {
+                    warn!(%peer, "ss: IP banned due to excessive auth failures");
+                    rate_limit_metrics::record_rate_limited("shadowsocks", "auth_failure_ban");
+                    continue;
+                }
 
-                    // Check rate limit
-                    // 检查速率限制
-                    if !rate_limiter.allow_connection(peer.ip()) {
-                        warn!(%peer, "ss: connection rate limited");
-                        continue;
-                    }
-                    if rate_limiter.is_banned(peer.ip()) {
-                        warn!(%peer, "ss: IP banned due to excessive auth failures");
-                        continue;
-                    }
+                let cfg_clone = cfg.clone();
+                let method_clone = method.clone();
+                let shared_clone = shared.clone();
+                let rate_limiter_clone = rate_limiter.clone();
 
-                    let cfg_clone = cfg.clone();
-                    let method_clone = method.clone();
-                    let shared_clone = shared.clone();
-                    let rate_limiter_clone = rate_limiter.clone();
+                rate_limit_metrics::inc_active_connections("shadowsocks");
 
-                    rate_limit_metrics::inc_active_connections("shadowsocks");
-
-                    tokio::spawn(async move {
-                        let _guard = scopeguard::guard((), |_| {
-                            rate_limit_metrics::dec_active_connections("shadowsocks");
-                        });
-                        // For multiplexed streams or non-TCP transports, we don't have a peer address
-                        // 对于多路复用流或非 TCP 传输，我们没有对端地址
-                        // But we have it from accept() now if it's TCP
-                        // 但如果是 TCP，我们现在从 accept() 中获取了它
-                        if let Err(e) = handle_conn_stream(
-                            &cfg_clone,
-                            method_clone,
-                            stream,
-                            peer,
-                            &rate_limiter_clone,
-                            shared_clone,
-                        )
-                        .await
-                        {
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
-                            warn!(%peer, error=%e, "ss: multiplex session error");
-                        }
+                tokio::spawn(async move {
+                    let _guard = scopeguard::guard((), |_| {
+                        rate_limit_metrics::dec_active_connections("shadowsocks");
                     });
-                }
-            }
-        }
-    } else {
-        // Standard listener without multiplex
-        // 无多路复用的标准监听器
-        let mut hb = interval(Duration::from_secs(5));
-        loop {
-            select! {
-                _ = stop_rx.recv() => break,
-                _ = hb.tick() => {
-                    // tracing::debug!("shadowsocks: accept-loop heartbeat");
-                }
-                r = listener.accept() => {
-                    let (stream, peer) = match r {
-                        Ok(v) => v,
-                        Err(e) => {
-                            warn!(error=%e, "ss: accept error");
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
-                            continue;
-                        }
-                    };
-
-                    // Check rate limit
-                    if !rate_limiter.allow_connection(peer.ip()) {
-                        warn!(%peer, "ss: connection rate limited");
-                        rate_limit_metrics::record_rate_limited("shadowsocks", "connection_limit");
-                        continue;
+                    if let Err(e) = handle_conn_stream(
+                        &cfg_clone,
+                        method_clone,
+                        stream,
+                        peer,
+                        &rate_limiter_clone,
+                        shared_clone,
+                    )
+                    .await
+                    {
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
+                        warn!(%peer, error=%e, "ss: session error");
                     }
-                    if rate_limiter.is_banned(peer.ip()) {
-                        warn!(%peer, "ss: IP banned due to excessive auth failures");
-                        rate_limit_metrics::record_rate_limited("shadowsocks", "auth_failure_ban");
-                        continue;
-                    }
-
-                    let cfg_clone = cfg.clone();
-                    let method_clone = method.clone();
-                    let shared_clone = shared.clone();
-                    let rate_limiter_clone = rate_limiter.clone();
-
-                    rate_limit_metrics::inc_active_connections("shadowsocks");
-
-                    tokio::spawn(async move {
-                        let _guard = scopeguard::guard((), |_| {
-                            rate_limit_metrics::dec_active_connections("shadowsocks");
-                        });
-                        if let Err(e) = handle_conn_stream(
-                            &cfg_clone,
-                            method_clone,
-                            stream,
-                            peer,
-                            &rate_limiter_clone,
-                            shared_clone,
-                        )
-                        .await
-                        {
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
-                            warn!(%peer, error=%e, "ss: session error");
-                        }
-                    });
-                }
+                });
             }
         }
     }

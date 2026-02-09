@@ -290,7 +290,7 @@
 | L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | ✅ 已完成（2026-02-09）：per-endpoint 绑定闭环 + API 行为对齐 + cache 兼容 + Shadowsocks tracker 接线 |
 | L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | ✅ 已完成（2026-02-09）：schema + runtime 语义对齐（verify_client_url/mesh_with/verify_client_endpoint tag/STUN/bootstrap-dns/ListenOptions） |
 | L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | ✅ 已完成（2026-02-09）：resolved 替代模型 + resolve1 Resolve* + UDP/TCP stub + `type:\"resolved\"` 接线 + transport 对齐；Linux runtime/system bus 验证待做 |
-| L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | bbolt bucket 级别持久化: cache_id, FakeIP metadata 10s 去抖, rule_set caching。当前内存/简化持久化可工作 |
+| L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | ✅ 已完成（2026-02-09）：cache_id（仅 Clash 三项隔离）+ FakeIP metadata debounce（10s）+ ruleset cache 策略固定为 file cache 权威 |
 | L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
 
 ### ✅ 已完成：L3.1 SSMAPI 对齐（PX-011）
@@ -347,6 +347,27 @@
 **待补 Linux runtime 验证**:
 - systemd-resolved 运行时：`org.freedesktop.resolve1` name Exists → 启动失败且错误明确
 - systemd-resolved 未运行时：可成功请求 name 并处理 UDP/TCP stub DNS query（至少 A/AAAA）
+
+### ✅ 已完成：L3.4 Cache File 深度对齐（PX-013 / PX-009）
+
+**日期**: 2026-02-09  
+**实现提交**: `fc541ef`  
+**实现报告**: `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`
+
+**锁定决策（已落地）**:
+- `cache_id`：仅隔离 Clash 相关持久化（`clash_mode` + `selected` + `expand`）
+- FakeIP：接线 mapping + metadata，并实现 metadata 写盘 10s strict debounce（对齐 Go）
+- ruleset cache：维持 `router/ruleset/remote.rs` 的 file cache 为权威缓存；`CacheFileService` ruleset API 不接线下载链路（仅保留接口/注释）
+
+**关键落点**:
+- `crates/sb-config/src/ir/experimental.rs`：`CacheFileIR.cache_id`
+- `crates/sb-core/src/services/cache_file.rs`：Clash 三项按 namespace tree 隔离；FakeIP metadata 存取 + debounce thread + flush/join
+- `crates/sb-core/src/dns/fakeip.rs`：`FakeIpStorage` 扩展（metadata load/save）；`set_storage()` 恢复指针并校验范围；allocate 更新 metadata（debounced）
+- `crates/sb-core/src/dns/config_builder.rs`：在 FakeIP env 注入后接线 `fakeip::set_storage(cache_file.clone())`
+- `crates/sb-core/src/router/ruleset/remote.rs`：补充注释，明确 ruleset 缓存权威来源
+
+**验证**:
+- `cargo test --workspace --all-features`（实现报告内记录：✅ 2026-02-09）
 
 ### 已关闭 / Won't Fix
 
@@ -430,4 +451,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-09（L3.1 PX-011 SSMAPI 对齐完成）*
+*最后更新：2026-02-09（L3.4 PX-013 / PX-009 Cache File 深度对齐完成）*

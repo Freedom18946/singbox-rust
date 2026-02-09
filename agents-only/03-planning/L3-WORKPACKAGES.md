@@ -211,6 +211,9 @@
 
 ## L3.4 Cache File 深度对齐（PX-013 / PX-009/013）
 
+**状态**: ✅ 已完成（2026-02-09，commit：`fc541ef`）  
+**实现报告**: `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`
+
 ### 目标
 
 在保持 sled 后端的前提下，补齐 Go cachefile 的关键语义：
@@ -256,11 +259,13 @@
 - 配置含 `cache_id` 时，同一 DB 内不同 cache_id 的 mode/selected/expand 不互相覆盖
 - FakeIP counters 的写盘频率显著降低（至少通过测试断言“触发多次 set 但持久化写次数受控”）
 
-### 主要文件落点（预估）
+### 主要文件落点（已落地）
 
 - `crates/sb-config/src/ir/experimental.rs`
 - `crates/sb-core/src/services/cache_file.rs`
-- （可选）`crates/sb-core/src/router/ruleset/remote.rs`（若选择接线）
+- `crates/sb-core/src/dns/fakeip.rs`
+- `crates/sb-core/src/dns/config_builder.rs`
+- `crates/sb-core/src/router/ruleset/remote.rs`（策略注释：file cache 权威；不接线 CacheFileService）
 
 ---
 

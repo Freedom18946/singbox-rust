@@ -680,4 +680,23 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-02-09 16:50] Agent: Codex (GPT-5)
+
+**任务**: 实现 L3.4 Cache File 深度对齐（cache_id + FakeIP metadata debounce + ruleset cache 策略落定），并将最新结论回填到 `agents-only/` 文档
+
+**实现提交**: `fc541ef`（Implement L3.4 cache file plan）  
+**实现报告**: `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`
+
+**交付点（锁定决策落地）**:
+- `cache_id`：仅隔离 Clash 持久化（`clash_mode` + `selected` + `expand`），default namespace 兼容旧 `cache.db`
+- FakeIP：接线 mapping + metadata；metadata 写盘 10s strict debounce（sync-safe，无 tokio 依赖；测试下 interval 缩短）
+- ruleset cache：维持 `crates/sb-core/src/router/ruleset/remote.rs` file cache 为权威；`CacheFileService` ruleset API 不接线下载链路（仅保留接口/注释）
+
+**文档更新（状态同步）**:
+- `agents-only/active_context.md`：L3.4 标记完成 + 交付摘要
+- `agents-only/05-analysis/L3-PREWORK-INFO.md`：L3.4 状态从“差距分析”更新为“已落地索引”
+- `agents-only/03-planning/L3-WORKPACKAGES.md`：L3.4 标记完成并链接实现报告
+- `agents-only/07-memory/implementation-history.md`：补充 L3.4 实施记录与索引
+- `agents-only/dump/2026-02-09_analysis_L3.4-cachefile-prework.md`：追加“实施更新”指向实现报告
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

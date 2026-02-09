@@ -141,37 +141,31 @@ Go 参考：
 
 ## 4. L3.4 Cache File 深度对齐（PX-013 / PX-009）
 
-### 4.1 Rust 现状（已读代码定位）
+### 4.1 状态更新（2026-02-09）
 
-- 配置 IR：`crates/sb-config/src/ir/experimental.rs` 的 `CacheFileIR`
-  - 目前字段：`enabled/path/store_fakeip/store_rdrc/rdrc_timeout`
-  - **缺失**：`cache_id`
-- 实现：`crates/sb-core/src/services/cache_file.rs`
-  - backend：sled（与 Go bbolt 不二进制兼容）
-  - 已覆盖：FakeIP mapping + counters、RDRC entries、clash_mode/selected/expand、rule_sets（有存储接口但目前未见调用方）
+L3.4 已实现并通过验收；实现细节与验证记录见：
+- `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`（实现落地报告，commit：`fc541ef`）
 
-### 4.2 关键差距（对照 Go 行为）
+锁定决策（实现期不再变更，已落地）：
+- `cache_id`：仅隔离 Clash 相关持久化（`clash_mode` + `selected` + `expand`）
+- FakeIP：接线 mapping + metadata，并实现 metadata 写盘 10s strict debounce（对齐 Go）
+- ruleset cache：维持 `crates/sb-core/src/router/ruleset/remote.rs` file cache 为权威；`CacheFileService` ruleset API 不接线下载链路（仅保留接口/注释）
 
-Go 参考：
-- `go_fork_source/sing-box-1.12.14/experimental/cachefile/cache.go`
-- `go_fork_source/sing-box-1.12.14/docs/configuration/experimental/cache-file.md`
+### 4.2 关键交付（索引）
 
-差距要点：
-- **cache_id 作用域**：Go 支持 `cache_id` 将同一 cache.db 下的数据按 ID 分桶；Rust IR 与实现均未体现该隔离能力。
-- **FakeIP metadata 写盘节流**：Go 有 `saveMetadataTimer` 做 debounce（降低写盘抖动）；Rust 当前写入是“调用即写”（尤其是 FakeIP 分配与 counters）。
-- **rule_set cache 的接线**：Rust `store_rule_set/get_rule_set` 目前无调用方；Go 的 bucketRuleSet 与 ruleset 下载/更新链路有明确关系。
+- 配置 IR：`crates/sb-config/src/ir/experimental.rs` 新增 `CacheFileIR.cache_id`
+- CacheFileService：
+  - `crates/sb-core/src/services/cache_file.rs`：Clash 三项按 namespace tree 隔离（default namespace 兼容旧 `cache.db`）
+  - `crates/sb-core/src/services/cache_file.rs`：FakeIP metadata 存取 + debounce thread + `flush()` 强制落盘 + Drop join
+- FakeIP 接线：
+  - `crates/sb-core/src/dns/fakeip.rs`：metadata load/save（debounced），`set_storage()` 恢复指针并校验范围
+  - `crates/sb-core/src/dns/config_builder.rs`：FakeIP env 注入后接线 `fakeip::set_storage(cache_file.clone())`
+- ruleset 策略固定：
+  - `crates/sb-core/src/router/ruleset/remote.rs`：注释声明 ruleset 缓存权威来源为 file cache
 
-### 4.3 落点建议（兼容 sled 的“等价语义”）
+### 4.3 历史预研材料（已过时，但保留备查）
 
-- IR 补齐 `cache_id: Option<String>`（语义同 Go）
-- sled 侧的隔离策略（二选一）：
-  - key 前缀：`{cache_id}\0{bucket}\0{key}`
-  - 或者按 cache_id 开 tree：`db.open_tree(format!("cache/{cache_id}/selected"))`
-- FakeIP metadata debounce：
-  - 引入轻量定时器/批量写（例如 10s 合并写入 fakeip_meta 与 counters）
-- rule_set caching：
-  - 明确“以 CacheFileService 为准”还是“以 router/ruleset/remote.rs 的文件缓存为准”
-  - 若对齐 Go，则在 ruleset 下载链路中接入 CacheFileService（tag -> bytes）
+- `agents-only/dump/2026-02-09_analysis_L3.4-cachefile-prework.md`
 
 ---
 
