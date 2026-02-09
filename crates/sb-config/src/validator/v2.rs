@@ -2938,7 +2938,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                         .collect()
                                 })
                                 .unwrap_or_default(),
-                            predefined: map.get("predefined").cloned(),
+                            predefined: map
+                                .get("predefined")
+                                .and_then(|v| if v.is_null() { None } else { Some(v.clone()) }),
                         });
                     }
                 }
