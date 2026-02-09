@@ -19,6 +19,12 @@ pub struct CacheFileIR {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Identifier in the cache file.
+    ///
+    /// If not empty, configuration specified data will use a separate store keyed by it.
+    /// Go parity: `experimental.cache_file.cache_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_id: Option<String>,
     #[serde(default)]
     pub store_fakeip: bool,
     #[serde(default)]

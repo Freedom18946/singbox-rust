@@ -12,6 +12,7 @@
 mod common;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -111,6 +112,8 @@ async fn start_ss_server(
             password.to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -142,6 +145,8 @@ async fn start_vmess_server(
         uuid: test_uuid,
         security: "aes-128-gcm".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
         fallback: None,

@@ -66,7 +66,7 @@
 | PX-012 | V2Ray API | router-wide ConnectionTracker + HTTP JSON | 中 |
 | PX-013 | Cache File | BoltDB buckets/cache_id/FakeIP metadata/RDRC | 大 |
 | PX-014 | DERP | ✅ 已对齐（2026-02-09）：schema + runtime 语义闭环（verify_client_url/mesh_with/endpoint tag/STUN/bootstrap-dns/ListenOptions） | 中 |
-| PX-015 | Resolved | UDP-only, 缺 resolve1 D-Bus methods | 中 |
+| PX-015 | Resolved | ✅ 已对齐（2026-02-09）：resolved 替代模型 + Resolve* + UDP/TCP stub + `type:\"resolved\"` 接线 + transport 对齐（Linux runtime 验证待补） | 中 |
 
 ---
 

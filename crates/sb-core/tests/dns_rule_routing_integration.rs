@@ -6,6 +6,7 @@
 #[tokio::test]
 async fn test_dns_rule_routing_integration() {
     use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleEngine};
+    use sb_core::dns::rule_engine::DnsRuleAction;
     use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType};
     use sb_core::router::ruleset::{
         DefaultRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource,
@@ -110,7 +111,8 @@ async fn test_dns_rule_routing_integration() {
     let routing_rules = vec![
         DnsRoutingRule {
             rule_set: google_rules,
-            upstream_tag: "google_dns".to_string(),
+            upstream_tag: Some("google_dns".to_string()),
+            action: DnsRuleAction::Route,
             priority: 10, // High priority
             address_limit: None,
             rewrite_ip: None,
@@ -124,7 +126,8 @@ async fn test_dns_rule_routing_integration() {
         },
         DnsRoutingRule {
             rule_set: cn_rules,
-            upstream_tag: "cn_dns".to_string(),
+            upstream_tag: Some("cn_dns".to_string()),
+            action: DnsRuleAction::Route,
             priority: 20, // Lower priority
             address_limit: None,
             rewrite_ip: None,
@@ -145,6 +148,8 @@ async fn test_dns_rule_routing_integration() {
         "default_dns".to_string(),
         sb_core::dns::DnsStrategy::default(),
         Arc::new(sb_core::dns::transport::TransportRegistry::new()),
+        None,
+        None,
     );
 
     // Test Case 1: Google domain should route to Google DNS (8.8.8.8)

@@ -132,6 +132,8 @@ async fn start_trojan_server_with_users(
         cert_path: cert_file.path().to_str().unwrap().to_string(),
         key_path: key_file.path().to_str().unwrap().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         #[cfg(feature = "tls_reality")]
@@ -385,6 +387,8 @@ async fn test_binary_protocol_backward_compat() {
         cert_path: cert_file.path().to_str().unwrap().to_string(),
         key_path: key_file.path().to_str().unwrap().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         #[cfg(feature = "tls_reality")]

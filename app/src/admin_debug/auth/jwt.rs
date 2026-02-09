@@ -17,6 +17,9 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 #[cfg(feature = "jwt")]
+use once_cell::sync::OnceCell;
+
+#[cfg(feature = "jwt")]
 use jsonwebtoken::{
     decode, decode_header, errors::ErrorKind as JwtErrorKind, Algorithm, DecodingKey, TokenData,
     Validation,
@@ -172,7 +175,7 @@ pub struct JwtProvider {
     jwks_cache: Arc<RwLock<Option<CachedJwks>>>,
     /// HTTP client for fetching JWKS
     #[cfg(feature = "jwt")]
-    http_client: reqwest::Client,
+    http_client: Arc<OnceCell<reqwest::Client>>,
 }
 
 impl Clone for JwtProvider {
@@ -181,7 +184,7 @@ impl Clone for JwtProvider {
             config: self.config.clone(),
             jwks_cache: self.jwks_cache.clone(),
             #[cfg(feature = "jwt")]
-            http_client: reqwest::Client::new(),
+            http_client: self.http_client.clone(),
         }
     }
 }
@@ -208,18 +211,32 @@ impl JwtProvider {
             ));
         }
 
-        #[cfg(feature = "jwt")]
-        let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| AuthError::internal(format!("Failed to create HTTP client: {e}")))?;
-
         Ok(Self {
             config,
             jwks_cache: Arc::new(RwLock::new(None)),
             #[cfg(feature = "jwt")]
-            http_client,
+            http_client: Arc::new(OnceCell::new()),
         })
+    }
+
+    #[cfg(feature = "jwt")]
+    fn http_client(&self) -> Result<&reqwest::Client, AuthError> {
+        self.http_client
+            .get_or_try_init(|| {
+                // Best-effort: avoid letting OS-specific TLS stack panics take the whole process
+                // down. If platform verifier is broken/unavailable, surface it as an AuthError.
+                let built = std::panic::catch_unwind(|| {
+                    reqwest::Client::builder()
+                        .timeout(Duration::from_secs(10))
+                        .build()
+                })
+                .map_err(|_| AuthError::internal("JWT auth: failed to initialize HTTP client"))?;
+
+                built.map_err(|e| {
+                    AuthError::internal(format!("JWT auth: failed to initialize HTTP client: {e}"))
+                })
+            })
+            .map(|c| c as &reqwest::Client)
     }
 
     /// Extract JWT token from Authorization header
@@ -251,8 +268,9 @@ impl JwtProvider {
     /// Fetch JWKS from URL
     #[cfg(feature = "jwt")]
     async fn fetch_jwks_from_url(&self, url: &str) -> Result<JwksResponse, AuthError> {
+        let http_client = self.http_client()?;
         let response =
-            self.http_client.get(url).send().await.map_err(|e| {
+            http_client.get(url).send().await.map_err(|e| {
                 AuthError::internal(format!("Failed to fetch JWKS from {url}: {e}"))
             })?;
 

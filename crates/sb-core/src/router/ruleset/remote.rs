@@ -5,6 +5,9 @@
 //! - ETag/If-Modified-Since caching
 //! - Fallback to cached version on failure
 //! - Automatic retry with exponential backoff
+//!
+//! Note (L3.4): Rule-set caching is file-based and remains the source of truth.
+//! `CacheFileService::{store_rule_set,get_rule_set}` is not wired into this path.
 
 use super::*;
 use crate::error::{SbError, SbResult};

@@ -1,7 +1,7 @@
 # L3 一级工作包规划（Polish / Edge Services）
 
 > **日期**：2026-02-08  
-> **更新**：2026-02-09（L3.1 PX-011 + L3.2 PX-014 已实现；本文件第 1/2 节已同步为“已完成”记录）  
+> **更新**：2026-02-09（L3.1 PX-011 + L3.2 PX-014 + L3.3 PX-015 已实现；本文件相关章节已同步为“已完成”记录）  
 > **目标**：基于已收集到的差距信息，将 L3.1~L3.5 拆成可交付的一级工作包，明确范围、关键设计选择、验收与依赖。  
 > **输入**：`agents-only/active_context.md`（L3 Scope 表）、`agents-only/05-analysis/L3-PREWORK-INFO.md`（差距与落点）、`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-011/013/014/015）。
 
@@ -13,7 +13,7 @@
 
 1. **L3.5 ConnMetadata chain/rule 填充**（收益高，主要是接线与元信息传播，不涉及协议栈）
 2. **L3.4 Cache File 深度对齐（cache_id + debounce + ruleset cache 接线）**（影响面可控，但需注意兼容旧 cache.db）
-3. **L3.3 Resolved 完整化（resolve1 Resolve*）**（Linux-only，需 D-Bus + DNSRouter 接线，环境敏感）
+3. **L3.3 Resolved 完整化（resolve1 Resolve*）**（✅ 已完成 2026-02-09；Linux runtime/system bus 验证待补）
 4. **L3.2 DERP 配置对齐**（✅ 已完成 2026-02-09）
 
 已完成：
@@ -23,7 +23,7 @@
 并行原则：
 - **L3.5 与 L3.4 可并行设计/实现**（互不依赖）
 - **L3.1 与 L3.4 可能存在轻微耦合**（CacheFile 能否复用/扩展给 SSMAPI？暂不强耦合，先各自完成）
-- **L3.3/L3.2 强平台/环境依赖**，建议在本机/CI 环境策略明确后推进
+- **L3.3（Linux runtime）强平台/环境依赖**，建议在 Linux/system bus 环境补齐 smoke 验证
 
 ---
 
@@ -136,6 +136,30 @@
 ---
 
 ## L3.3 Resolved 完整化（PX-015）
+
+> **状态**：✅ 已完成（2026-02-09，代码 + 单测/编译验收；Linux runtime/system bus 验证待做）  
+> **当前权威摘要**：`agents-only/workpackage_latest.md` + `agents-only/active_context.md` + `agents-only/05-analysis/L3.3-RESOLVED-PREWORK.md#0-当前实现状态快照2026-02-09`
+
+### 实施结果（2026-02-09）
+
+- Resolved service 运行模型对齐 Go：system bus 导出 `org.freedesktop.resolve1.Manager`，并以 `DoNotQueue` 请求 name `org.freedesktop.resolve1`（Exists 时启动失败且错误明确）
+- DNS stub listener：补齐 UDP + TCP（同连接多 query），请求统一走 `ServiceContext.dns_router.exchange()`（wire-format）
+- resolve1 Manager：补齐 `ResolveHostname/ResolveAddress/ResolveRecord/ResolveService`，并 best-effort 采集 sender 进程元信息写入 `DnsQueryContext`
+- DNS 栈补齐 raw exchange：非 A/AAAA qtype（PTR/SRV/TXT 等）走规则路由决策后 raw passthrough 到 upstream.exchange；对非 A/AAAA 的 reject/hijack/predefined 固定返回 REFUSED
+- 配置层补齐 dns server `type:"resolved"`（service + accept_default_resolvers），并接线到 ResolvedTransport（`RESOLVED_STATE`）
+- ResolvedTransport 对齐：accept_default_resolvers 默认 false + bind_interface best-effort（Linux）+ 并行 fqdn racer
+
+### 已执行验证
+
+- `cargo test -p sb-core`
+- `cargo test -p sb-config`
+- `cargo test -p sb-adapters`
+- `cargo check -p sb-core --features service_resolved`
+
+### 待做验证（Linux runtime/system bus）
+
+- systemd-resolved 运行中：请求 name 应失败且错误明确（提示停止/禁用真实 systemd-resolved）
+- systemd-resolved 未运行：应成功请求 name 并处理 UDP/TCP stub DNS query（至少 A/AAAA）
 
 ### 目标
 

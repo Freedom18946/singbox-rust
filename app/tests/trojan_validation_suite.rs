@@ -182,8 +182,11 @@ async fn start_trojan_server_with_certs(
         cert_path,
         key_path,
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
+        #[cfg(feature = "tls_reality")]
         reality: None,
         fallback: None,
         fallback_for_alpn: HashMap::new(),

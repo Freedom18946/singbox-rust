@@ -74,6 +74,8 @@ async fn start_ss_server_with_rate_limit(
             "test-password".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

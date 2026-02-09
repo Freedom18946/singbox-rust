@@ -289,7 +289,7 @@
 |----|------|---------|--------|--------|------|
 | L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | ✅ 已完成（2026-02-09）：per-endpoint 绑定闭环 + API 行为对齐 + cache 兼容 + Shadowsocks tracker 接线 |
 | L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | ✅ 已完成（2026-02-09）：schema + runtime 语义对齐（verify_client_url/mesh_with/verify_client_endpoint tag/STUN/bootstrap-dns/ListenOptions） |
-| L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | Linux-only systemd-resolved D-Bus: resolve1 methods。macOS 不需要 |
+| L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | ✅ 已完成（2026-02-09）：resolved 替代模型 + resolve1 Resolve* + UDP/TCP stub + `type:\"resolved\"` 接线 + transport 对齐；Linux runtime/system bus 验证待做 |
 | L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | bbolt bucket 级别持久化: cache_id, FakeIP metadata 10s 去抖, rule_set caching。当前内存/简化持久化可工作 |
 | L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
 
@@ -325,6 +325,28 @@
 **验证**:
 - `CARGO_TARGET_DIR=target-alt cargo test -p sb-config`
 - `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp`
+
+### ✅ 已完成：L3.3 Resolved 完整化（PX-015）
+
+**日期**: 2026-02-09
+**范围**: Linux-only resolved 集成对齐 Go（替代 systemd-resolved 行为）：system bus 导出 `org.freedesktop.resolve1.Manager` + `DoNotQueue` 请求 name；DNS stub 支持 UDP+TCP 且统一走 DNSRouter.exchange；补齐 Resolve* 方法族并 best-effort 采集 sender 进程元信息；配置层补齐 dns server `type:\"resolved\"` 并接线到 ResolvedTransport；transport 支持 bind_interface best-effort + 并行 fqdn racer + 默认值对齐。
+
+**关键落点**:
+- `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}`
+- `crates/sb-core/src/dns/{rule_engine.rs,message.rs,upstream.rs,dns_router.rs}`
+- `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}`
+- `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}`
+- `crates/sb-core/src/dns/config_builder.rs`
+
+**验证**:
+- `cargo test -p sb-core`
+- `cargo test -p sb-config`
+- `cargo test -p sb-adapters`
+- `cargo check -p sb-core --features service_resolved`
+
+**待补 Linux runtime 验证**:
+- systemd-resolved 运行时：`org.freedesktop.resolve1` name Exists → 启动失败且错误明确
+- systemd-resolved 未运行时：可成功请求 name 并处理 UDP/TCP stub DNS query（至少 A/AAAA）
 
 ### 已关闭 / Won't Fix
 

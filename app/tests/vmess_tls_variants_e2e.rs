@@ -94,6 +94,8 @@ async fn start_vmess_tls_server(
         uuid: test_uuid,
         security: "aes-128-gcm".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::Tcp),
         fallback: None,

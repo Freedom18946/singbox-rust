@@ -30,6 +30,15 @@ pub fn build_dns_components(
     // Apply IR-level global knobs to env for compatibility with existing components
     apply_env_from_ir(&dns);
 
+    // Wire FakeIP persistence (mapping + metadata) if cache file is enabled.
+    // Must happen after FakeIP env knobs are applied so restored pointers can be range-validated.
+    if let Some(ref cf) = cache_file {
+        if cf.store_fakeip() {
+            crate::dns::fakeip::set_storage(cf.clone());
+            tracing::debug!(target: "sb_core::dns", "CacheFileService wired for FakeIP persistence");
+        }
+    }
+
     if let Some(ref _cf) = cache_file {
         tracing::debug!(target: "sb_core::dns", "CacheFileService available for DNS RDRC");
     }

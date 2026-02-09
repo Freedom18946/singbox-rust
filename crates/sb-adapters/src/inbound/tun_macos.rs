@@ -300,7 +300,7 @@ async fn handle_connect(
         ctx = ctx.with_process_info(core_proc);
     }
 
-    let outbound = bridge
+    let mut outbound = bridge
         .outbound
         .connect_tcp(&ctx)
         .await

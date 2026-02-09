@@ -103,38 +103,39 @@ Go 参考：
 
 ## 3. L3.3 Resolved 完整化（PX-015）
 
-### 3.1 Rust 现状（已读代码定位）
+### 3.1 状态（2026-02-09）
 
-- D-Bus server（Manager 接口）：`crates/sb-adapters/src/service/resolve1.rs`
-  - 已实现：`SetLinkDNS/SetLinkDNSEx/SetLinkDomains/SetLinkDefaultRoute/SetLinkDNSOverTLS`
-  - 大量方法仍是 stub
-- Resolved service：`crates/sb-adapters/src/service/resolved_impl.rs`
-  - 当前实现包含 D-Bus client 调用 `ResolveHostname`（连接到系统 `org.freedesktop.resolve1`），并以 UDP stub 监听提供 DNS 服务
-- DNS transport（消费 per-link 配置的共享状态）：`crates/sb-core/src/dns/transport/resolved.rs`（`RESOLVED_STATE`）
+**结论**: ✅ 已完成（代码 + 单测/编译验收；Linux runtime/system bus 验证待做）。
 
-### 3.2 关键差距（对照 Go 行为）
+已落地能力要点：
+- Resolved service 作为 systemd-resolved 替代实现（严格 Go 对齐）：system bus 导出 `org.freedesktop.resolve1.Manager`，并以 `DoNotQueue` 请求 `org.freedesktop.resolve1` name（Exists 时启动失败）
+- DNS stub listener：补齐 UDP + TCP，并统一走 `ServiceContext.dns_router.exchange()`（wire-format）
+- resolve1 Manager：补齐 `ResolveHostname/ResolveAddress/ResolveRecord/ResolveService`，best-effort 采集 sender 进程元信息并写入 `DnsQueryContext`
+- DNS 栈补齐 raw exchange：非 A/AAAA qtype（PTR/SRV/TXT 等）走规则路由决策后 raw passthrough 到 upstream.exchange；对非 A/AAAA 的 reject/hijack/predefined 固定返回 REFUSED
+- 配置层补齐 dns server `type:"resolved"`（service + accept_default_resolvers），并接线到 `sb-core::dns::transport::resolved`（`RESOLVED_STATE`）
+- ResolvedTransport 对齐：accept_default_resolvers 默认 false + bind_interface best-effort（Linux）+ Go 风格并行 fqdn racer
 
-Go 参考：
-- `go_fork_source/sing-box-1.12.14/service/resolved/resolve1.go`
+关键落点：
+- service：`crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}`
+- dns core：`crates/sb-core/src/dns/{dns_router.rs,rule_engine.rs,upstream.rs,message.rs}`
+- transport：`crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}`
+- config：`crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` + `crates/sb-core/src/dns/config_builder.rs`
 
-Go 的 `org.freedesktop.resolve1.Manager` 还实现了：
-- `ResolveHostname`
-- `ResolveAddress`
-- `ResolveRecord`
-- `ResolveService`
+### 3.2 验证与已知问题
 
-且这些 Resolve* 调用走 **dnsRouter**（并携带 inbound metadata 做日志与策略一致性）。Rust 的 `resolve1.rs` 目前未实现上述 Resolve* 方法，导致“完整 resolve1 API”缺失（与 `agents-only/active_context.md` 的 L3.3 描述一致）。
+已执行（本机）：
+- `cargo test -p sb-core`
+- `cargo test -p sb-config`
+- `cargo test -p sb-adapters`
+- `cargo check -p sb-core --features service_resolved`
 
-### 3.3 落点建议（最小闭环）
+已知环境问题（非逻辑回归）：
+- `cargo test -p sb-core --features service_resolved` 在 macOS 上可能因 `DnsForwarderService` 相关测试触发 EPERM 失败。
 
-- 在 `crates/sb-adapters/src/service/resolve1.rs` 补齐 Resolve* 方法：
-  - 走 `sb_core::dns::DnsRouter`（或 `DnsRouter.exchange/lookup` 等统一入口）
-  - 填充 inbound metadata（如 inbound_type/tag）用于日志/策略
-- 明确 Linux-only 语义：
-  - 非 Linux 平台应给出清晰的 stub 提示（配置层/运行时层一致）
-- 在 `ResolvedTransport` 与 service 的职责边界上做一次复核：
-  - 目标是 “D-Bus Manager 更新 -> RESOLVED_STATE 变更 -> ResolvedTransport 生效”
-  - Resolve* 则是 “D-Bus Query -> DNSRouter 处理 -> 返回结果”
+### 3.3 待做（Linux runtime/system bus）
+
+- systemd-resolved 运行中：请求 name 应失败且错误明确（提示停止/禁用真实 systemd-resolved）
+- systemd-resolved 未运行：应成功请求 name 并处理 UDP/TCP stub DNS query（至少 A/AAAA）
 
 ---
 

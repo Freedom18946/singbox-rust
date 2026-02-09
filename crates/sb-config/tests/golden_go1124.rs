@@ -20,7 +20,7 @@ fn golden_basic_config_ir_equivalence() {
 
     // Ensure that all servers referenced by rules exist in both IRs.
     let used_tags: std::collections::HashSet<String> =
-        rules_in.iter().map(|r| r.server.clone()).collect();
+        rules_in.iter().filter_map(|r| r.server.clone()).collect();
     let servers_in = &ir_in.dns.as_ref().expect("dns in input").servers;
     let servers_out = &ir_out.dns.as_ref().expect("dns in output").servers;
     for tag in &used_tags {
@@ -44,7 +44,7 @@ fn golden_gui_sample_ir_equivalence() {
     assert_eq!(rules_in, rules_out, "DNS rules should match");
 
     let used_tags: std::collections::HashSet<String> =
-        rules_in.iter().map(|r| r.server.clone()).collect();
+        rules_in.iter().filter_map(|r| r.server.clone()).collect();
     let servers_in = &ir_in.dns.as_ref().expect("dns in input").servers;
     let servers_out = &ir_out.dns.as_ref().expect("dns in output").servers;
     for tag in &used_tags {
@@ -74,7 +74,7 @@ fn golden_dns_address_https_rcode_ir_equivalence() {
     assert_eq!(rules_in, rules_out, "DNS rules should match");
 
     let used_tags: std::collections::HashSet<String> =
-        rules_in.iter().map(|r| r.server.clone()).collect();
+        rules_in.iter().filter_map(|r| r.server.clone()).collect();
     let servers_in = &ir_in.dns.as_ref().expect("dns in input").servers;
     let servers_out = &ir_out.dns.as_ref().expect("dns in output").servers;
     for tag in &used_tags {

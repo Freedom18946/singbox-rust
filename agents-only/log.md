@@ -23,6 +23,33 @@
 
 ## 日志记录
 
+### [2026-02-09 13:28] Agent: Codex (GPT-5)
+
+**任务**: 实现 L3.3 Resolved 完整化（PX-015）并将 agents-only 文档同步为“实时最新”
+**变更**:
+- 修改 `crates/sb-core/src/dns/dns_router.rs`（DnsQueryContext 扩展：process/user 元信息 + builder）
+- 修改 `crates/sb-core/src/dns/mod.rs`（DnsUpstream 新增 raw `exchange()` 默认实现）
+- 修改 `crates/sb-core/src/dns/rule_engine.rs`（非 A/AAAA qtype 走 raw passthrough：route 后调用 upstream.exchange；reject/hijack/predefined 对非 A/AAAA 返回 REFUSED；ECS 注入）
+- 修改 `crates/sb-core/src/dns/message.rs`（Answer RR 解析 + “无压缩 PackRR” helper；新增 PTR/SRV 等测试）
+- 修改 `crates/sb-core/src/dns/upstream.rs`（主要 upstream 实现 exchange()；新增 ResolvedTransportUpstream；修复 UDP upstream ECS 实际生效）
+- 修改 `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}`（resolved: service_tag + accept_default_resolvers 默认值对齐 + bind_interface best-effort + 并行 fqdn racer；dot: 支持 bind_interface）
+- 修改 `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}`（resolved 作为 systemd-resolved 替代实现：system bus + DoNotQueue name；stub listener UDP+TCP 统一走 DNSRouter.exchange；补齐 ResolveHostname/Address/Record/Service + sender 进程元信息 best-effort）
+- 修改 `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}`（DNS server `type:\"resolved\"`：service + accept_default_resolvers；允许无 address 并归一化为 address=\"resolved\"）
+- 修改 `crates/sb-core/src/dns/config_builder.rs`（dns server `type:\"resolved\"` 接线到 ResolvedTransportUpstream；Linux + feature gate）
+- 更新 agents-only 文档：`active_context.md` / `workpackage_latest.md` / `05-analysis/L3.3-RESOLVED-PREWORK.md` / `05-analysis/L3-PREWORK-INFO.md` / `03-planning/L3-WORKPACKAGES.md` / `07-memory/implementation-history.md` / `02-reference/GO_PARITY_MATRIX.md` / `05-analysis/L2-PARITY-GAP-ANALYSIS.md` / `03-planning/06-STRATEGIC-ROADMAP.md`
+
+**结果**: 成功
+**验证**:
+- `cargo test -p sb-core`
+- `cargo test -p sb-config`
+- `cargo test -p sb-adapters`
+- `cargo check -p sb-core --features service_resolved`
+**备注**:
+- Linux runtime/system bus 验证仍待做：`org.freedesktop.resolve1` name Exists 时应明确失败；未存在时应成功导出 Manager + 处理 UDP/TCP stub。
+- `cargo test -p sb-core --features service_resolved` 在 macOS 上因 `DnsForwarderService` 相关测试触发 EPERM 失败（环境/权限问题，非 Resolved 逻辑回归）。
+
+---
+
 ### [2026-02-09 03:37] Agent: Codex (GPT-5)
 
 **任务**: 开始 L3.3 Resolved 完整化（PX-015）前置信息收集与差距分析

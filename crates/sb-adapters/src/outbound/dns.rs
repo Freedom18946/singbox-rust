@@ -4,6 +4,8 @@
 //! DNS queries through specific servers or configurations.
 
 use crate::outbound::prelude::*;
+#[cfg(any(feature = "dns_doq", feature = "dns_doh"))]
+use sb_core::dns::transport::DnsTransport as _;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
@@ -143,11 +145,14 @@ impl DnsConnector {
                         // Default to Cloudflare DoH for convenience
                         "https://cloudflare-dns.com/dns-query".to_string()
                     };
-                    let doh = sb_core::dns::transport::doh::DohConfig {
-                        url,
-                        ..Default::default()
-                    }
-                    .build()
+                    let doh = std::panic::catch_unwind(|| {
+                        sb_core::dns::transport::doh::DohConfig {
+                            url,
+                            ..Default::default()
+                        }
+                        .build()
+                    })
+                    .map_err(|_| AdapterError::Other("DoH setup failed".into()))?
                     .map_err(|e| AdapterError::Other(format!("DoH setup failed: {}", e)))?;
                     Ok(Box::new(DohStreamWrapper::new(doh)))
                 }

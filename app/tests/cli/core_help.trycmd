@@ -71,7 +71,7 @@ Options:
 $ app gen-completions --help
 生成 shell 补全脚本
 
-Usage: app gen-completions [OPTIONS]
+Usage: app completion [OPTIONS]
 
 Options:
   -c, --config <CONFIG>

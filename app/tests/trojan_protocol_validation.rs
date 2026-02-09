@@ -111,6 +111,8 @@ async fn start_trojan_server(
         cert_path: cert_file.path().to_str().unwrap().to_string(),
         key_path: key_file.path().to_str().unwrap().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         reality: None,

@@ -21,6 +21,24 @@ pub trait FakeIpStorage: Send + Sync + std::fmt::Debug {
 
     /// Store a new mapping
     fn store(&self, domain: &str, ip: IpAddr);
+
+    /// Load persisted FakeIP metadata (e.g. current pointer) if available.
+    fn load_metadata(&self) -> Option<FakeIpMetadata> {
+        None
+    }
+
+    /// Save FakeIP metadata with debounce.
+    fn save_metadata_debounced(&self, _metadata: FakeIpMetadata) {}
+}
+
+/// Persisted FakeIP metadata — simplified Go parity.
+///
+/// Go stores prefixes and current pointers; Rust already sources base/mask from env/IR,
+/// so we persist only the current pointers to reduce address churn across restarts.
+#[derive(Debug, Clone)]
+pub struct FakeIpMetadata {
+    pub inet4_current_u32: u32,
+    pub inet6_current_u128: u128,
 }
 
 // ============================================================================
@@ -175,7 +193,27 @@ pub fn enabled() -> bool {
 
 pub fn set_storage(storage: Arc<dyn FakeIpStorage>) {
     let mut st = state().lock();
+    refresh_from_env(&mut st);
     st.storage = Some(storage);
+
+    // Best-effort restore persisted current pointers. Must happen after FakeIP env is applied.
+    let Some(storage) = st.storage.clone() else {
+        return;
+    };
+    let Some(meta) = storage.load_metadata() else {
+        return;
+    };
+
+    let v4 = Ipv4Addr::from(meta.inet4_current_u32);
+    let v6 = Ipv6Addr::from(meta.inet6_current_u128);
+
+    // Ensure restored pointers still belong to current FakeIP ranges.
+    if is_fake_v4(v4, st.v4_base, st.v4_mask) {
+        st.v4_current = v4;
+    }
+    if is_fake_v6(v6, st.v6_base, st.v6_mask) {
+        st.v6_current = v6;
+    }
 }
 
 pub fn allocate_v4(domain: &str) -> IpAddr {
@@ -206,8 +244,16 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
     let ipaddr = IpAddr::V4(ip);
     st.by_ip.put(ipaddr, domain.to_string());
 
+    if !is_fake_v6(st.v6_current, st.v6_base, st.v6_mask) {
+        st.v6_current = start_v6(st.v6_base);
+    }
+
     if let Some(storage) = st.storage.clone() {
         storage.store(domain, ipaddr);
+        storage.save_metadata_debounced(FakeIpMetadata {
+            inet4_current_u32: u32::from(ip),
+            inet6_current_u128: u128::from(st.v6_current),
+        });
     }
 
     ipaddr
@@ -240,8 +286,16 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     let ipaddr = IpAddr::V6(ip);
     st.by_ip.put(ipaddr, domain.to_string());
 
+    if !is_fake_v4(st.v4_current, st.v4_base, st.v4_mask) {
+        st.v4_current = start_v4(st.v4_base);
+    }
+
     if let Some(storage) = st.storage.clone() {
         storage.store(domain, ipaddr);
+        storage.save_metadata_debounced(FakeIpMetadata {
+            inet4_current_u32: u32::from(st.v4_current),
+            inet6_current_u128: u128::from(ip),
+        });
     }
 
     ipaddr

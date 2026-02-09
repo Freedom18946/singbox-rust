@@ -72,6 +72,8 @@ async fn start_ss_server() -> (SocketAddr, mpsc::Sender<()>) {
             "stability-pass".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

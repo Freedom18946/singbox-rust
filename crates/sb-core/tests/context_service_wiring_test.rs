@@ -11,6 +11,7 @@ async fn test_context_service_wiring() {
             cache_file: Some(CacheFileIR {
                 enabled: true,
                 path: Some("/tmp/test_cache.db".into()),
+                cache_id: None,
                 store_fakeip: true,
                 store_rdrc: false,
                 rdrc_timeout: None,

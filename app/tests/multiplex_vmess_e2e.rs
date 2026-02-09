@@ -92,6 +92,8 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
         uuid: test_uuid,
         security: "aes-128-gcm".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: multiplex_config,
         transport_layer: None,
         fallback: None,

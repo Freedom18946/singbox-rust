@@ -1,7 +1,36 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-09
-> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅；L3.2 ✅）
+> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅；L3.2 ✅；L3.3 ✅）
+
+---
+
+## ✅ 最新完成：L3.3 Resolved 完整化（PX-015）
+
+**状态**：✅ 完成（代码 + 单测；Linux runtime 验证待做）
+**交付**：
+- Resolved service 运行模型对齐 Go：在 system bus 导出 `org.freedesktop.resolve1.Manager` 并以 `DoNotQueue` 请求 name `org.freedesktop.resolve1`（name Exists 时启动失败且错误明确）
+- DNS stub listener 支持 UDP + TCP（TCP 支持同连接多 query 循环），统一走 `ServiceContext.dns_router.exchange()`（wire-format）
+- resolve1 D-Bus Manager 补齐 Resolve* 方法族：`ResolveHostname/ResolveAddress/ResolveRecord/ResolveService`，并 best-effort 采集 sender 进程元信息写入 `DnsQueryContext`
+- DNS 规则/路由扩展：非 A/AAAA qtype（PTR/SRV/TXT 等）走 raw passthrough（route 后调用 upstream.exchange），并支持 per-rule ECS 注入；对非 A/AAAA 的 reject/hijack/predefined 固定返回 REFUSED
+- 配置层补齐 dns server `type:"resolved"`（`service` + `accept_default_resolvers`），并接线到 `sb-core::dns::transport::resolved` + `RESOLVED_STATE`
+- ResolvedTransport 行为对齐：best-effort bind_interface（Linux）+ Go 风格并行 fqdn racer + 默认值对齐（`accept_default_resolvers=false`）
+
+**关键落点**：
+- `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}`
+- `crates/sb-core/src/dns/{rule_engine.rs,message.rs,upstream.rs,dns_router.rs}`
+- `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}`
+- `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}`
+- `crates/sb-core/src/dns/config_builder.rs`
+
+**验证**：
+- `cargo test -p sb-core`
+- `cargo test -p sb-config`
+- `cargo test -p sb-adapters`
+- `cargo check -p sb-core --features service_resolved`
+**备注**：
+- Linux-only runtime/system bus 验证待做（systemd-resolved 运行/未运行两种场景）。
+- `cargo test -p sb-core --features service_resolved` 在 macOS 上存在 EPERM 环境失败（与 Resolved 逻辑无直接关系）。
 
 ---
 

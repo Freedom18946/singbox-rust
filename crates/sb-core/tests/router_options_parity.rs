@@ -108,6 +108,7 @@ fn test_experimental_options_plumbing() {
             cache_file: Some(sb_config::ir::CacheFileIR {
                 enabled: true,
                 path: Some("cache.db".to_string()),
+                cache_id: None,
                 store_fakeip: true,
                 store_rdrc: false,
                 rdrc_timeout: None,

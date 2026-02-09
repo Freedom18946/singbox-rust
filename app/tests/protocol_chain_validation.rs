@@ -106,6 +106,8 @@ async fn start_trojan_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
         cert_path: cert_file.path().to_string_lossy().to_string(),
         key_path: key_file.path().to_string_lossy().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         fallback: None,
@@ -156,6 +158,8 @@ async fn start_ss_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
             "ss-pass".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

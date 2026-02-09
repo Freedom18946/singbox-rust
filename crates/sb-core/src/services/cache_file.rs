@@ -16,8 +16,13 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info};
+
+#[cfg(not(test))]
+const FAKEIP_METADATA_SAVE_INTERVAL: Duration = Duration::from_secs(10);
+#[cfg(test)]
+const FAKEIP_METADATA_SAVE_INTERVAL: Duration = Duration::from_millis(50);
 
 /// RDRC cache entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,16 +37,153 @@ enum CacheBackend {
     Persistence(sled::Db),
 }
 
+#[derive(Debug)]
+struct FakeIpMetaDebouncer {
+    inner: Arc<FakeIpMetaDebouncerInner>,
+    worker: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+#[derive(Debug)]
+struct FakeIpMetaDebouncerInner {
+    db: Option<sled::Db>,
+    mu: std::sync::Mutex<FakeIpMetaDebouncerState>,
+    cv: std::sync::Condvar,
+}
+
+#[derive(Debug)]
+struct FakeIpMetaDebouncerState {
+    stop: bool,
+    pending: Option<crate::dns::fakeip::FakeIpMetadata>,
+    deadline: Option<Instant>,
+}
+
+impl FakeIpMetaDebouncer {
+    fn new(db: Option<sled::Db>) -> Arc<Self> {
+        let inner = Arc::new(FakeIpMetaDebouncerInner {
+            db,
+            mu: std::sync::Mutex::new(FakeIpMetaDebouncerState {
+                stop: false,
+                pending: None,
+                deadline: None,
+            }),
+            cv: std::sync::Condvar::new(),
+        });
+
+        let me = Arc::new(Self {
+            inner: inner.clone(),
+            worker: std::sync::Mutex::new(None),
+        });
+
+        let handle = std::thread::spawn(move || worker_loop(inner));
+        *me.worker.lock().expect("worker mutex poisoned") = Some(handle);
+        me
+    }
+
+    fn schedule(&self, metadata: crate::dns::fakeip::FakeIpMetadata) {
+        let mut st = self.inner.mu.lock().expect("debouncer mutex poisoned");
+        if st.stop {
+            return;
+        }
+        st.pending = Some(metadata);
+        // Strict debounce: always push deadline forward.
+        st.deadline = Some(Instant::now() + FAKEIP_METADATA_SAVE_INTERVAL);
+        self.inner.cv.notify_one();
+    }
+
+    fn flush_now(&self) {
+        let pending = {
+            let mut st = self.inner.mu.lock().expect("debouncer mutex poisoned");
+            st.deadline = None;
+            st.pending.take()
+        };
+        if let Some(meta) = pending {
+            persist(&self.inner, meta);
+        }
+    }
+
+    fn stop_and_join(&self) {
+        {
+            let mut st = self.inner.mu.lock().expect("debouncer mutex poisoned");
+            st.stop = true;
+            self.inner.cv.notify_one();
+        }
+        if let Some(handle) = self.worker.lock().expect("worker mutex poisoned").take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for FakeIpMetaDebouncer {
+    fn drop(&mut self) {
+        self.stop_and_join();
+    }
+}
+
+fn worker_loop(inner: Arc<FakeIpMetaDebouncerInner>) {
+    loop {
+        let to_write = {
+            let mut st = inner.mu.lock().expect("debouncer mutex poisoned");
+            while !st.stop && st.pending.is_none() {
+                st = inner.cv.wait(st).expect("debouncer condvar poisoned");
+            }
+
+            if st.stop && st.pending.is_none() {
+                return;
+            }
+
+            while !st.stop {
+                let Some(deadline) = st.deadline else {
+                    break;
+                };
+                let now = Instant::now();
+                if now >= deadline {
+                    break;
+                }
+                let timeout = deadline.saturating_duration_since(now);
+                let (guard, _res) = inner
+                    .cv
+                    .wait_timeout(st, timeout)
+                    .expect("debouncer condvar poisoned");
+                st = guard;
+            }
+
+            st.deadline = None;
+            st.pending.take()
+        };
+
+        if let Some(meta) = to_write {
+            persist(&inner, meta);
+        }
+
+        let st = inner.mu.lock().expect("debouncer mutex poisoned");
+        if st.stop && st.pending.is_none() {
+            return;
+        }
+        drop(st);
+    }
+}
+
+fn persist(inner: &FakeIpMetaDebouncerInner, metadata: crate::dns::fakeip::FakeIpMetadata) {
+    let Some(db) = inner.db.as_ref() else {
+        return;
+    };
+    let Ok(tree) = db.open_tree("fakeip_meta") else {
+        return;
+    };
+    let _ = tree.insert("next_v4", &metadata.inet4_current_u32.to_be_bytes());
+    let _ = tree.insert("next_v6", &metadata.inet6_current_u128.to_be_bytes());
+}
+
 #[derive(Debug, Default)]
 struct MemoryBackend {
     fakeip_by_domain: RwLock<HashMap<String, IpAddr>>,
     fakeip_by_ip: RwLock<HashMap<String, String>>,
-    fakeip_next_v4: RwLock<u32>,
-    fakeip_next_v6: RwLock<u128>,
+    fakeip_meta: RwLock<Option<crate::dns::fakeip::FakeIpMetadata>>,
     rdrc: RwLock<HashMap<String, RdrcEntry>>,
-    clash_mode: RwLock<Option<String>>,
-    selected: RwLock<HashMap<String, String>>,
-    expand: RwLock<HashMap<String, bool>>,
+    // Namespaced by cache_id ("" means default).
+    clash_mode: RwLock<HashMap<String, String>>,
+    selected: RwLock<HashMap<String, HashMap<String, String>>>,
+    expand: RwLock<HashMap<String, HashMap<String, bool>>>,
     rule_sets: RwLock<HashMap<String, Vec<u8>>>,
 }
 
@@ -49,15 +191,18 @@ struct MemoryBackend {
 #[derive(Debug, Clone)]
 pub struct CacheFileService {
     enabled: bool,
+    cache_id: Option<String>,
     backend: Arc<CacheBackend>,
     store_fakeip: bool,
     store_rdrc: bool,
     rdrc_timeout: Duration,
+    fakeip_meta_debouncer: Option<Arc<FakeIpMetaDebouncer>>,
 }
 
 impl CacheFileService {
     /// Create a new cache file service from configuration.
     pub fn new(config: &CacheFileIR) -> Self {
+        let cache_id = normalize_cache_id(config.cache_id.as_deref());
         let rdrc_timeout = config
             .rdrc_timeout
             .as_ref()
@@ -95,12 +240,21 @@ impl CacheFileService {
             Arc::new(CacheBackend::Memory(Box::default()))
         };
 
+        let fakeip_meta_debouncer = match &*backend {
+            CacheBackend::Persistence(db) if config.store_fakeip => {
+                Some(FakeIpMetaDebouncer::new(Some(db.clone())))
+            }
+            _ => None,
+        };
+
         Self {
             enabled: config.enabled,
+            cache_id,
             backend,
             store_fakeip: config.store_fakeip,
             store_rdrc: config.store_rdrc,
             rdrc_timeout,
+            fakeip_meta_debouncer,
         }
     }
 
@@ -114,6 +268,31 @@ impl CacheFileService {
 
     pub fn store_rdrc(&self) -> bool {
         self.store_rdrc
+    }
+
+    fn ns_key(&self) -> &str {
+        self.cache_id.as_deref().unwrap_or("")
+    }
+
+    fn open_meta_tree<'a>(&'a self, db: &'a sled::Db) -> Result<sled::Tree, sled::Error> {
+        match self.cache_id.as_deref() {
+            None => db.open_tree("meta"),
+            Some(id) => db.open_tree(format!("cache/{}/meta", escape_cache_id(id))),
+        }
+    }
+
+    fn open_selected_tree<'a>(&'a self, db: &'a sled::Db) -> Result<sled::Tree, sled::Error> {
+        match self.cache_id.as_deref() {
+            None => db.open_tree("selected"),
+            Some(id) => db.open_tree(format!("cache/{}/selected", escape_cache_id(id))),
+        }
+    }
+
+    fn open_expand_tree<'a>(&'a self, db: &'a sled::Db) -> Result<sled::Tree, sled::Error> {
+        match self.cache_id.as_deref() {
+            None => db.open_tree("expand"),
+            Some(id) => db.open_tree(format!("cache/{}/expand", escape_cache_id(id))),
+        }
     }
 
     /// Store FakeIP mapping
@@ -184,13 +363,19 @@ impl CacheFileService {
             return;
         }
 
+        let meta = crate::dns::fakeip::FakeIpMetadata {
+            inet4_current_u32: next_v4,
+            inet6_current_u128: next_v6,
+        };
+
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                *mem.fakeip_next_v4.write() = next_v4;
-                *mem.fakeip_next_v6.write() = next_v6;
+                *mem.fakeip_meta.write() = Some(meta);
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("fakeip_meta") {
+                if let Some(d) = &self.fakeip_meta_debouncer {
+                    d.schedule(meta);
+                } else if let Ok(tree) = db.open_tree("fakeip_meta") {
                     let _ = tree.insert("next_v4", &next_v4.to_be_bytes());
                     let _ = tree.insert("next_v6", &next_v6.to_be_bytes());
                 }
@@ -201,7 +386,12 @@ impl CacheFileService {
     /// Get FakeIP allocation counters
     pub fn get_fakeip_counters(&self) -> (u32, u128) {
         match &*self.backend {
-            CacheBackend::Memory(mem) => (*mem.fakeip_next_v4.read(), *mem.fakeip_next_v6.read()),
+            CacheBackend::Memory(mem) => mem
+                .fakeip_meta
+                .read()
+                .as_ref()
+                .map(|m| (m.inet4_current_u32, m.inet6_current_u128))
+                .unwrap_or((0, 0)),
             CacheBackend::Persistence(db) => {
                 let tree = match db.open_tree("fakeip_meta") {
                     Ok(t) => t,
@@ -366,9 +556,13 @@ impl CacheFileService {
             return;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => *mem.clash_mode.write() = Some(mode),
+            CacheBackend::Memory(mem) => {
+                mem.clash_mode
+                    .write()
+                    .insert(self.ns_key().to_string(), mode);
+            }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("meta") {
+                if let Ok(tree) = self.open_meta_tree(db) {
                     let _ = tree.insert("clash_mode", mode.as_bytes());
                 }
             }
@@ -380,9 +574,16 @@ impl CacheFileService {
             return None;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.clash_mode.read().clone(),
+            CacheBackend::Memory(mem) => mem
+                .clash_mode
+                .read()
+                .get(self.ns_key())
+                .cloned(),
             CacheBackend::Persistence(db) => db
-                .open_tree("meta")
+                .open_tree(match self.cache_id.as_deref() {
+                    None => "meta".to_string(),
+                    Some(id) => format!("cache/{}/meta", escape_cache_id(id)),
+                })
                 .ok()?
                 .get("clash_mode")
                 .ok()?
@@ -398,10 +599,12 @@ impl CacheFileService {
             CacheBackend::Memory(mem) => {
                 mem.selected
                     .write()
+                    .entry(self.ns_key().to_string())
+                    .or_default()
                     .insert(group.to_string(), selected.to_string());
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("selected") {
+                if let Ok(tree) = self.open_selected_tree(db) {
                     let _ = tree.insert(group, selected.as_bytes());
                 }
             }
@@ -413,9 +616,17 @@ impl CacheFileService {
             return None;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.selected.read().get(group).cloned(),
+            CacheBackend::Memory(mem) => mem
+                .selected
+                .read()
+                .get(self.ns_key())
+                .and_then(|m| m.get(group))
+                .cloned(),
             CacheBackend::Persistence(db) => db
-                .open_tree("selected")
+                .open_tree(match self.cache_id.as_deref() {
+                    None => "selected".to_string(),
+                    Some(id) => format!("cache/{}/selected", escape_cache_id(id)),
+                })
                 .ok()?
                 .get(group)
                 .ok()?
@@ -429,10 +640,14 @@ impl CacheFileService {
         }
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.expand.write().insert(group.to_string(), expand);
+                mem.expand
+                    .write()
+                    .entry(self.ns_key().to_string())
+                    .or_default()
+                    .insert(group.to_string(), expand);
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("expand") {
+                if let Ok(tree) = self.open_expand_tree(db) {
                     let _ = tree.insert(group, &[if expand { 1 } else { 0 }]);
                 }
             }
@@ -444,9 +659,17 @@ impl CacheFileService {
             return None;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.expand.read().get(group).copied(),
+            CacheBackend::Memory(mem) => mem
+                .expand
+                .read()
+                .get(self.ns_key())
+                .and_then(|m| m.get(group))
+                .copied(),
             CacheBackend::Persistence(db) => db
-                .open_tree("expand")
+                .open_tree(match self.cache_id.as_deref() {
+                    None => "expand".to_string(),
+                    Some(id) => format!("cache/{}/expand", escape_cache_id(id)),
+                })
                 .ok()?
                 .get(group)
                 .ok()?
@@ -487,6 +710,9 @@ impl CacheFileService {
 
     /// Flush cache to disk
     pub fn flush(&self) {
+        if let Some(d) = &self.fakeip_meta_debouncer {
+            d.flush_now();
+        }
         if let CacheBackend::Persistence(db) = &*self.backend {
             let _ = db.flush();
         }
@@ -527,6 +753,52 @@ impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
     fn store(&self, domain: &str, ip: IpAddr) {
         self.store_fakeip_mapping(domain, ip)
     }
+
+    fn load_metadata(&self) -> Option<crate::dns::fakeip::FakeIpMetadata> {
+        if !self.store_fakeip {
+            return None;
+        }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.fakeip_meta.read().clone(),
+            CacheBackend::Persistence(db) => {
+                let tree = db.open_tree("fakeip_meta").ok()?;
+                let v4 = tree.get("next_v4").ok().flatten()?;
+                let v6 = tree.get("next_v6").ok().flatten()?;
+                if v4.len() != 4 || v6.len() != 16 {
+                    return None;
+                }
+                let mut b4 = [0u8; 4];
+                b4.copy_from_slice(&v4);
+                let mut b6 = [0u8; 16];
+                b6.copy_from_slice(&v6);
+                Some(crate::dns::fakeip::FakeIpMetadata {
+                    inet4_current_u32: u32::from_be_bytes(b4),
+                    inet6_current_u128: u128::from_be_bytes(b6),
+                })
+            }
+        }
+    }
+
+    fn save_metadata_debounced(&self, metadata: crate::dns::fakeip::FakeIpMetadata) {
+        if !self.store_fakeip {
+            return;
+        }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                *mem.fakeip_meta.write() = Some(metadata);
+            }
+            CacheBackend::Persistence(db) => {
+                if let Some(d) = &self.fakeip_meta_debouncer {
+                    d.schedule(metadata);
+                } else if let Ok(tree) = db.open_tree("fakeip_meta") {
+                    let _ = tree.insert("next_v4", &metadata.inet4_current_u32.to_be_bytes());
+                    let _ = tree.insert("next_v6", &metadata.inet6_current_u128.to_be_bytes());
+                }
+            }
+        }
+    }
 }
 
 /// Parse duration string like "7d", "24h", "30m", "60s"
@@ -560,6 +832,29 @@ fn parse_duration(s: &str) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
+fn normalize_cache_id(cache_id: Option<&str>) -> Option<String> {
+    let id = cache_id?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(id.to_string())
+}
+
+fn escape_cache_id(cache_id: &str) -> String {
+    // Percent-encode unsafe bytes to keep sled tree names stable and hierarchical.
+    let mut out = String::with_capacity(cache_id.len());
+    for &b in cache_id.as_bytes() {
+        let safe = b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-';
+        if safe {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push_str(&format!("{:02X}", b));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,6 +866,7 @@ mod tests {
         let config = CacheFileIR {
             enabled: true,
             path: None, // No path = memory
+            cache_id: None,
             store_fakeip: true,
             store_rdrc: false,
             rdrc_timeout: None,
@@ -593,6 +889,7 @@ mod tests {
         let config = CacheFileIR {
             enabled: true,
             path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
             store_fakeip: true,
             store_rdrc: false,
             rdrc_timeout: None,
@@ -630,6 +927,7 @@ mod tests {
         let config = CacheFileIR {
             enabled: true,
             path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
             store_fakeip: false,
             store_rdrc: true,
             rdrc_timeout: Some("1h".to_string()),
@@ -658,6 +956,7 @@ mod tests {
         let config = CacheFileIR {
             enabled: true,
             path: None,
+            cache_id: None,
             store_fakeip: false,
             store_rdrc: true,
             rdrc_timeout: Some("1h".to_string()),
@@ -692,6 +991,7 @@ mod tests {
         let config = CacheFileIR {
             enabled: true,
             path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
             store_fakeip: false,
             store_rdrc: false,
             rdrc_timeout: None,
@@ -715,5 +1015,107 @@ mod tests {
             assert_eq!(svc.get_expand("group1"), Some(true));
             assert_eq!(svc.get_rule_set("geoip"), Some(vec![1, 2, 3]));
         }
+    }
+
+    #[test]
+    fn test_cache_id_isolates_clash_persistence_sled() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_clash_cache_id_db");
+
+        let config_a = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("A".to_string()),
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+        let config_b = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("B".to_string()),
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+        let config_default = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        // Write A
+        {
+            let svc = CacheFileService::new(&config_a);
+            svc.set_clash_mode("Rule".to_string());
+            svc.set_selected("g", "x");
+            svc.set_expand("g", true);
+            svc.flush();
+        }
+
+        // Read B/default should be empty
+        {
+            let svc = CacheFileService::new(&config_b);
+            assert_eq!(svc.get_clash_mode(), None);
+            assert_eq!(svc.get_selected("g"), None);
+            assert_eq!(svc.get_expand("g"), None);
+        }
+        {
+            let svc = CacheFileService::new(&config_default);
+            assert_eq!(svc.get_clash_mode(), None);
+            assert_eq!(svc.get_selected("g"), None);
+            assert_eq!(svc.get_expand("g"), None);
+        }
+
+        // Read A should restore
+        {
+            let svc = CacheFileService::new(&config_a);
+            assert_eq!(svc.get_clash_mode(), Some("Rule".to_string()));
+            assert_eq!(svc.get_selected("g"), Some("x".to_string()));
+            assert_eq!(svc.get_expand("g"), Some(true));
+        }
+    }
+
+    #[test]
+    fn test_fakeip_metadata_debounced_persistence() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_fakeip_meta_db");
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
+            store_fakeip: true,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        {
+            let svc = CacheFileService::new(&config);
+            <CacheFileService as crate::dns::fakeip::FakeIpStorage>::save_metadata_debounced(
+                &svc,
+                crate::dns::fakeip::FakeIpMetadata {
+                    inet4_current_u32: 1,
+                    inet6_current_u128: 2,
+                },
+            );
+            <CacheFileService as crate::dns::fakeip::FakeIpStorage>::save_metadata_debounced(
+                &svc,
+                crate::dns::fakeip::FakeIpMetadata {
+                    inet4_current_u32: 3,
+                    inet6_current_u128: 4,
+                },
+            );
+            std::thread::sleep(FAKEIP_METADATA_SAVE_INTERVAL * 4);
+            svc.flush();
+        }
+
+        let svc = CacheFileService::new(&config);
+        let meta = <CacheFileService as crate::dns::fakeip::FakeIpStorage>::load_metadata(&svc)
+            .expect("metadata");
+        assert_eq!(meta.inet4_current_u32, 3);
+        assert_eq!(meta.inet6_current_u128, 4);
     }
 }

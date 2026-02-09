@@ -417,18 +417,29 @@ async fn geodata_update(
         .await
         .with_context(|| format!("create dir {}", dest.display()))?;
 
-    let client = reqwest::Client::builder()
-        .user_agent(format!("singbox-rust-tools/{}", env!("CARGO_PKG_VERSION")))
-        .build()?;
+    let need_http = file_url_to_path(geoip_url).is_none() || file_url_to_path(geosite_url).is_none();
+    let client = if need_http {
+        // Avoid crashing the whole process if platform TLS stack initialization panics.
+        let built = std::panic::catch_unwind(|| {
+            reqwest::Client::builder()
+                .user_agent(format!("singbox-rust-tools/{}", env!("CARGO_PKG_VERSION")))
+                .build()
+        })
+        .map_err(|_| anyhow::anyhow!("failed to initialize http client"))??;
+        Some(built)
+    } else {
+        None
+    };
 
     // Download helper
-    async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
+    async fn download(client: Option<&reqwest::Client>, url: &str) -> Result<Vec<u8>> {
         if let Some(path) = file_url_to_path(url) {
             return fs::read(&path)
                 .await
                 .with_context(|| format!("read {}", path.display()));
         }
 
+        let client = client.ok_or_else(|| anyhow::anyhow!("http client not available"))?;
         let rsp = client
             .get(url)
             .send()
@@ -465,8 +476,8 @@ async fn geodata_update(
         Ok(())
     }
 
-    let geoip = download(&client, geoip_url).await?;
-    let geosite = download(&client, geosite_url).await?;
+    let geoip = download(client.as_ref(), geoip_url).await?;
+    let geosite = download(client.as_ref(), geosite_url).await?;
 
     let geoip_path = dest.join("geoip.db");
     let geosite_path = dest.join("geosite.db");

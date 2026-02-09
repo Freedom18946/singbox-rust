@@ -726,9 +726,19 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         // Start a simple upstream echo server.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind upstream");
+        let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AddrNotAvailable
+                ) =>
+            {
+                eprintln!("skipping tuic connect_via_router: cannot bind upstream ({e})");
+                return;
+            }
+            Err(e) => panic!("bind upstream: {e}"),
+        };
         let upstream_addr = listener.local_addr().unwrap();
         let (echo_tx, echo_rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {

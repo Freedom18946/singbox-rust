@@ -864,7 +864,7 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 |----|------|------|
 | L3.1 | SSMAPI (PX-011) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.2 | DERP (PX-014) ✅ 2026-02-09 | L2 Tier 3 |
-| L3.3 | Resolved (PX-015) | L2 Tier 3 |
+| L3.3 | Resolved (PX-015) ✅ 2026-02-09 | L2 Tier 3 |
 | L3.4 | Cache File 深度对齐 (PX-009/013) | PX-009 残余 |
 | L3.5 | ConnMetadata chain/rule | L2.8 延后决策 |
 
@@ -948,3 +948,64 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 ---
 
 *最后更新：2026-02-09（L3.2 PX-014 DERP 配置对齐完成）*
+
+---
+
+## ✅ L3.3 Resolved 完整化（PX-015）
+
+**日期**: 2026-02-09
+**目标**: 在 Linux 上按 Go 行为实现 Resolved 集成（替代 systemd-resolved），补齐 resolve1 Resolve* 方法族，并将所有 DNS 路径统一接入 DNSRouter（可被规则/日志/策略一致性消费）。
+
+### 核心交付
+
+- resolved 替代模型（Go 对齐）：
+  - system bus 导出 `/org/freedesktop/resolve1` + `org.freedesktop.resolve1.Manager`
+  - `request_name_with_flags("org.freedesktop.resolve1", DoNotQueue)`：name Exists 时启动失败且错误明确
+- DNS stub listener（UDP + TCP）：
+  - UDP/TCP 请求统一走 `ServiceContext.dns_router.exchange()`（wire-format）
+  - TCP 支持同一连接循环处理多条 query（2-byte length prefix）
+- resolve1 Manager Resolve* 方法族补齐（走 DNSRouter）：
+  - `ResolveHostname/ResolveAddress/ResolveRecord/ResolveService`
+  - sender 进程元信息 best-effort：header sender → pid → `/proc/<pid>/{exe,comm,status}` → 写入 `DnsQueryContext`
+- DNS 栈 raw exchange 能力补齐：
+  - `DnsUpstream` 新增 raw `exchange(packet)`；非 A/AAAA qtype（PTR/SRV/TXT 等）在规则路由决策后 raw passthrough 到 upstream.exchange
+  - 对非 A/AAAA 的 reject/hijack/predefined 固定返回 REFUSED
+  - 新增 RR 解析与“无压缩 PackRR” helper 以支撑 ResolveRecord/ResolveService
+- 配置层补齐 dns server `type:"resolved"`：
+  - IR 增加 `service` + `accept_default_resolvers`
+  - validator 兼容 `{ "type":"resolved" }` 无 address（归一化 `address="resolved"`）
+  - builder 接线到 `ResolvedTransportUpstream`（Linux + `service_resolved` feature gate）
+- ResolvedTransport 对齐：
+  - accept_default_resolvers 默认 false
+  - best-effort bind_interface（Linux socket2）
+  - Go 风格并行 fqdn racer
+
+### 关键文件
+
+- `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}`
+- `crates/sb-core/src/dns/{dns_router.rs,rule_engine.rs,upstream.rs,message.rs}`
+- `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}`
+- `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}`
+- `crates/sb-core/src/dns/config_builder.rs`
+
+### 验证
+
+| 构建 | 状态 |
+|------|------|
+| `cargo test -p sb-core` | ✅ |
+| `cargo test -p sb-config` | ✅ |
+| `cargo test -p sb-adapters` | ✅ |
+| `cargo check -p sb-core --features service_resolved` | ✅ |
+
+### 待补验证（Linux runtime/system bus）
+
+- systemd-resolved 运行中：请求 name 应失败且错误明确（提示停止/禁用真实 systemd-resolved）
+- systemd-resolved 未运行：应成功请求 name 并处理 UDP/TCP stub DNS query（至少 A/AAAA）
+
+### 已知环境问题（非逻辑回归）
+
+- `cargo test -p sb-core --features service_resolved` 在 macOS 上可能因 `DnsForwarderService` 相关测试触发 EPERM 失败（环境/权限限制）。
+
+---
+
+*最后更新：2026-02-09（L3.3 PX-015 Resolved 完整化完成；Linux runtime 验证待补）*

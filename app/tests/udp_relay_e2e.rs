@@ -84,6 +84,8 @@ async fn start_shadowsocks_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
             "test-password-udp".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };
@@ -123,6 +125,9 @@ async fn start_vless_server() -> Option<(SocketAddr, Uuid, mpsc::Sender<()>)> {
         listen: addr,
         uuid: test_uuid,
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
+        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
         transport_layer: None,

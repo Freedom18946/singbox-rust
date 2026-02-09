@@ -92,6 +92,8 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
             "test-password-123".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: multiplex_config,
         transport_layer: None,
     };

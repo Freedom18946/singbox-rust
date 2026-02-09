@@ -134,6 +134,8 @@ async fn start_trojan_server_with_rate_limit(
         cert_path,
         key_path,
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         transport_layer: None,
         multiplex: None,
         reality: None,
@@ -188,6 +190,8 @@ async fn start_ss_server_with_rate_limit(
             "test-pass".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

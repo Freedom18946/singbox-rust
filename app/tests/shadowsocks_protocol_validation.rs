@@ -90,6 +90,8 @@ async fn start_ss_server(method: &str, password: &str) -> Option<(SocketAddr, mp
             password.to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
         multiplex: None,
         transport_layer: None,
     };

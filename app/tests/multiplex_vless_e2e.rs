@@ -90,6 +90,9 @@ async fn start_vless_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
         listen: addr,
         uuid: test_uuid,
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
+        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: multiplex_config,
         transport_layer: None,
