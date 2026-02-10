@@ -63,8 +63,15 @@
   - 启动 Rust 内核（独立端口）+ SOCKS 入站
   - 通过本地仿公网 `http_echo` 验证经内核转发返回 200
   - 连续 5 轮稳定通过（errors=[]，无失败项）
+- 新增 `interop-lab` 核心链路 case：`p1_rust_core_tcp_via_socks`。
+  - 通过本地仿公网 `tcp_echo` + SOCKS5 CONNECT 验证原始 TCP 往返链路
+  - 连续 3 轮稳定通过（errors=[]，无失败项）
+- 新增 `interop-lab` 核心链路 case：`p1_rust_core_udp_via_socks`。
+  - 通过本地仿公网 `udp_echo` + SOCKS5 UDP ASSOCIATE 验证 UDP 往返链路
+  - 连续 3 轮稳定通过（errors=[]，无失败项）
 - 新增订阅文件 case：`p1_subscription_file_urls`，直接消费 `labs/interop-lab/subscriptions/subscription_urls.txt`。
 - 修复订阅 link-lines 解析：忽略注释/空行，避免把 `# https://...` 识别为协议。
+- 修复 SOCKS 入站 UDP 联测阻塞：`SocksInboundAdapter::serve()` 改为走 `run()` 路径，使 `SB_SOCKS_UDP_ENABLE=1` 在 runtime 生效。
 
 **运行约束执行**:
 - 全过程未改动 Go+GUI+TUN 基线；

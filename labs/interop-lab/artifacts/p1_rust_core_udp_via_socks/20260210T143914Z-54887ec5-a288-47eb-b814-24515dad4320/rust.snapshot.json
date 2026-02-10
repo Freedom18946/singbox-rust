@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T143914Z-54887ec5-a288-47eb-b814-24515dad4320",
+  "case_id": "p1_rust_core_udp_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:39:14.399573Z",
+  "finished_at": "2026-02-10T14:39:14.659985Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 35288
+      },
+      "body_hash": "ae8cff54fa281fc608afb7ec4e5cec334898a7d441b70d8f2c4c173b6eec46d9"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "via_socks_udp_echo",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:65322",
+        "echo": "hello-udp-via-socks",
+        "proxy": "socks5://127.0.0.1:11801"
+      }
+    }
+  ],
+  "errors": []
+}

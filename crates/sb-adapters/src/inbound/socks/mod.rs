@@ -1272,7 +1272,7 @@ impl InboundService for SocksInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async { serve_socks(cfg, rx, None).await.map_err(io::Error::other) });
+        let res = rt.block_on(async { run(cfg, rx).await.map_err(io::Error::other) });
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

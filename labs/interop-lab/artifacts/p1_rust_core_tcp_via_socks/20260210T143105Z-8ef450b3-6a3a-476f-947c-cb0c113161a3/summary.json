@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_rust_core_tcp_via_socks",
+  "generated_at": "2026-02-10T14:31:06.115149Z",
+  "run_id": "20260210T143105Z-8ef450b3-6a3a-476f-947c-cb0c113161a3",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_rust_core_tcp_via_socks/20260210T143105Z-8ef450b3-6a3a-476f-947c-cb0c113161a3/rust.snapshot.json"
+  ]
+}

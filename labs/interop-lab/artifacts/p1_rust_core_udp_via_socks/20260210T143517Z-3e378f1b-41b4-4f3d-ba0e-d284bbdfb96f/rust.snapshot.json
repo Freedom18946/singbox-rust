@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T143517Z-3e378f1b-41b4-4f3d-ba0e-d284bbdfb96f",
+  "case_id": "p1_rust_core_udp_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:35:17.427897Z",
+  "finished_at": "2026-02-10T14:35:19.693482Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 33055
+      },
+      "body_hash": "647afd91ad1ab0645ba493ad4975b74861fcb3313cf4ca63e3ae830db2a40d6d"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "via_socks_udp_echo",
+      "success": false,
+      "detail": {
+        "addr": "127.0.0.1:58618",
+        "error": "udp recv timeout from socks relay 127.0.0.1:0",
+        "proxy": "socks5://127.0.0.1:11801"
+      }
+    }
+  ],
+  "errors": []
+}

@@ -156,11 +156,15 @@ pub enum TrafficAction {
         name: String,
         addr: String,
         payload: String,
+        #[serde(default)]
+        proxy: Option<String>,
     },
     UdpRoundTrip {
         name: String,
         addr: String,
         payload: String,
+        #[serde(default)]
+        proxy: Option<String>,
     },
     DnsQuery {
         name: String,

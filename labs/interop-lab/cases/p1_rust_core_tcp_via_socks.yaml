@@ -1,0 +1,35 @@
+id: p1_rust_core_tcp_via_socks
+title: rust core tcp roundtrip via socks inbound
+priority: p1
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: tcp_round_trip
+    name: via_socks_tcp_echo
+    addr: "{{upstream.local_tcp}}"
+    payload: hello-tcp-via-socks
+    proxy: socks5://127.0.0.1:11801
+oracle:
+  tolerate_counter_jitter: true
