@@ -26,6 +26,15 @@
 - 基于导入资料新增下一阶段工作包规划：`agents-only/03-planning/08-L12-L14-GO-SPECS-WORKPACKAGES.md`。
 - 规划主轴：迁移兼容治理（L12）→ Services 安全与生命周期（L13）→ TLS/Endpoint 高级能力与趋势门禁 CI 化（L14）。
 
+### L5/L6 二级/三级实现增量（2026-02-11 新增）
+
+- `interop-lab` 已完成 `CaseSpec` 扩展：`tags/env_class/owner`（兼容老 case）。
+- `TrafficAction` 新增：`kernel_control(restart/reload)`、`fault_jitter`。
+- `AssertionSpec` 新增算子：`gt/gte/lt/lte/contains/regex`，并支持 `ws.*.frame_count`、`errors.count`、`subscription.node_count`、`traffic.*.detail.*`。
+- `diff_report` 已接线 `oracle.ignore_http_paths` / `oracle.ignore_ws_paths` / `counter_jitter_abs`，并输出 ignored 统计与 `gate_score`。
+- 新增 P1 case：`p1_auth_negative_*`、`p1_optional_endpoints_contract`、`p1_lifecycle_restart_reload_replay`、`p1_fault_jitter_http_via_socks`、`p1_recovery_jitter_http_via_socks`。
+- CI 状态更新：`interop-lab-smoke` 已切到 `strict`；`interop-lab-nightly` 已覆盖 `strict + env_limited`。
+
 ### 已关闭里程碑
 
 | 里程碑 | 关闭日期 | 内容 |
@@ -57,7 +66,8 @@
 - 已落地 GUI 回放（HTTP/WS）与订阅解析（JSON/YAML/Base64）基础路径
 
 **待补项**:
-- L11 CI 门禁接入（PR smoke + nightly full）
+- 扩展 jitter/recovery 到 TCP/UDP/WS/TLS 组合矩阵
+- 增强 env-limited 失败归因与趋势报告聚合
 
 ## ✅ 最新完成：Rust 核心链路实战联测（仿公网 upstream）
 
@@ -100,7 +110,7 @@
 - `interop-lab` 流量模型增强：`http_get`/`tcp_round_trip`/`udp_round_trip`/`dns_query` 均支持 `proxy` 字段（支持 `socks5://`）。
 - `interop-lab` 故障模型接线：`FaultSpec` 已接入执行链（支持 `disconnect` 与 `delay`）。
 - `delay` 故障语义已增强：对目标 `http_echo` 服务注入真实请求处理延迟，不再是单纯等待。
-- `interop-lab` 断言模型接线：`AssertionSpec` 已接入执行链，支持 `eq/ne/exists/not_exists`（当前覆盖 `http.<name>.status`、`traffic.<name>.success`）。
+- `interop-lab` 断言模型增强：支持 `eq/ne/exists/not_exists/gt/gte/lt/lte/contains/regex`，覆盖 `http.*`、`ws.*.frame_count`、`errors.count`、`subscription.node_count`、`traffic.*.detail.*`。
 - 计划顺序已冻结：先完成核心恢复类，再进入 Trojan + Shadowsocks 协议层联测。
 
 ## ✅ 最新完成：Trojan + Shadowsocks 协议层联测（P2 首轮）

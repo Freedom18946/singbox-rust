@@ -1,6 +1,15 @@
 # One subscription URL per line.
 # Lines starting with '#' are comments.
-# Example:
-# https://example.com/sub?token=...
+#
+# Governance (L5.3.2):
+# - status=ok: reachable sample, parse semantics only.
+# - status=blocked_403/429/challenge: env-limited, do not count as parser-core failure.
+#
+# status=ok
+https://example.com/subscription-ok?token=demo
 
-https://linka.lmscunb.cc:2087/api/v1/client/subscribe?token=63b201b23f4b8148febb2d6d5797303f
+# status=blocked_403
+https://example.com/subscription-blocked-403?token=demo
+
+# status=blocked_429
+https://example.com/subscription-blocked-429?token=demo

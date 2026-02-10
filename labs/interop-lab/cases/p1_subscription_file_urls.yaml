@@ -2,6 +2,9 @@ id: p1_subscription_file_urls
 title: subscription parser from maintained file urls
 priority: p1
 kernel_mode: rust
+env_class: env_limited
+tags:
+  - subscription
 bootstrap:
   rust:
     ready_path: /ping

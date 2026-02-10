@@ -1,0 +1,8 @@
+{
+  "case_id": "l6_local_harness_smoke",
+  "generated_at": "2026-02-10T17:27:44.524971Z",
+  "run_id": "20260210T172744Z-a09caf36-8da0-45ab-bfdf-0fca78c1abb1",
+  "snapshots": [
+    "labs/interop-lab/artifacts/l6_local_harness_smoke/20260210T172744Z-a09caf36-8da0-45ab-bfdf-0fca78c1abb1/rust.snapshot.json"
+  ]
+}

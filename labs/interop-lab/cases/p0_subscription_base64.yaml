@@ -2,6 +2,9 @@ id: p0_subscription_base64
 title: subscription parser base64 mixed links
 priority: p0
 kernel_mode: rust
+env_class: strict
+tags:
+  - subscription
 bootstrap:
   rust:
     ready_path: /

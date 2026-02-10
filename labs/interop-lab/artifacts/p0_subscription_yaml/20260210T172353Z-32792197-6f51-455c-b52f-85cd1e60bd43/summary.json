@@ -1,0 +1,8 @@
+{
+  "case_id": "p0_subscription_yaml",
+  "generated_at": "2026-02-10T17:24:23.292884Z",
+  "run_id": "20260210T172353Z-32792197-6f51-455c-b52f-85cd1e60bd43",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p0_subscription_yaml/20260210T172353Z-32792197-6f51-455c-b52f-85cd1e60bd43/rust.snapshot.json"
+  ]
+}

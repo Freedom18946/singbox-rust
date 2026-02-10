@@ -2,6 +2,9 @@ id: p1_rust_core_tcp_via_socks
 title: rust core tcp roundtrip via socks inbound
 priority: p1
 kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
 bootstrap:
   rust:
     command: ./target/debug/app

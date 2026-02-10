@@ -1,0 +1,37 @@
+id: p1_auth_negative_wrong_token
+title: auth negative contract with wrong bearer token
+priority: p1
+kernel_mode: both
+env_class: env_limited
+tags:
+  - control-plane
+bootstrap:
+  rust:
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_RUST_API_BASE}
+      secret: ${INTEROP_RUST_API_SECRET_WRONG}
+  go:
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_GO_API_BASE}
+      secret: ${INTEROP_GO_API_SECRET_WRONG}
+gui_sequence:
+  - kind: http
+    name: get_configs_wrong_token
+    method: GET
+    path: /configs
+  - kind: ws_collect
+    name: connections_wrong_token
+    path: /connections
+    max_frames: 1
+    duration_ms: 1500
+assertions:
+  - key: http.get_configs_wrong_token.status
+    op: gte
+    expected: 400
+  - key: http.get_configs_wrong_token.status
+    op: lt
+    expected: 500

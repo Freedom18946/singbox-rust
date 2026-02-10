@@ -1,13 +1,17 @@
-use crate::case_spec::{load_case_by_id, load_cases, CaseSpec, KernelLaunchSpec, KernelMode};
+use crate::case_spec::{
+    load_case_by_id, load_cases, CaseSpec, EnvClass, KernelControlAction, KernelLaunchSpec,
+    KernelMode, KernelTarget, Priority, TrafficAction,
+};
 use crate::gui_replay::run_gui_sequence;
-use crate::kernel::launch_kernel;
-use crate::snapshot::{KernelKind, NormalizedError, NormalizedSnapshot};
+use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
+use crate::snapshot::{KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
 use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
 use crate::util::{ensure_dir, resolve_with_env};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
-use serde_json::Value;
-use serde_json::json;
+use regex::Regex;
+use reqwest::StatusCode;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -19,12 +23,99 @@ pub struct RunOutput {
     pub snapshot_files: Vec<PathBuf>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CaseFilter {
+    pub priority: Option<Priority>,
+    pub include_tags: Vec<String>,
+    pub exclude_tags: Vec<String>,
+    pub env_class: Option<EnvClass>,
+}
+
+impl CaseFilter {
+    pub fn matches(&self, case: &CaseSpec) -> bool {
+        if let Some(priority) = &self.priority {
+            if &case.priority != priority {
+                return false;
+            }
+        }
+        if let Some(env_class) = &self.env_class {
+            if &case.env_class != env_class {
+                return false;
+            }
+        }
+        if self
+            .include_tags
+            .iter()
+            .any(|tag| !case.tags.iter().any(|x| x == tag))
+        {
+            return false;
+        }
+        if self
+            .exclude_tags
+            .iter()
+            .any(|tag| case.tags.iter().any(|x| x == tag))
+        {
+            return false;
+        }
+        true
+    }
+}
+
 pub fn list_cases(cases_dir: &Path) -> Result<Vec<CaseSpec>> {
     load_cases(cases_dir)
 }
 
 pub fn load_single_case(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
     load_case_by_id(cases_dir, id)
+}
+
+pub fn apply_case_filter(cases: Vec<CaseSpec>, filter: &CaseFilter) -> Vec<CaseSpec> {
+    cases.into_iter().filter(|case| filter.matches(case)).collect()
+}
+
+pub fn render_run_plan_summary(
+    cases: &[CaseSpec],
+    kernel_override: Option<KernelMode>,
+    filter: &CaseFilter,
+) -> String {
+    let kernel = kernel_override
+        .map(|mode| format!("{mode:?}"))
+        .unwrap_or_else(|| "case-default".to_string());
+    let priority = filter
+        .priority
+        .as_ref()
+        .map(|p| format!("{p:?}"))
+        .unwrap_or_else(|| "-".to_string());
+    let env_class = filter
+        .env_class
+        .as_ref()
+        .map(|v| format!("{v:?}"))
+        .unwrap_or_else(|| "-".to_string());
+    let include_tags = if filter.include_tags.is_empty() {
+        "-".to_string()
+    } else {
+        filter.include_tags.join(",")
+    };
+    let exclude_tags = if filter.exclude_tags.is_empty() {
+        "-".to_string()
+    } else {
+        filter.exclude_tags.join(",")
+    };
+    let selected_ids = cases
+        .iter()
+        .map(|c| c.id.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "plan_cases={} kernel_override={} priority={} env_class={} include_tags={} exclude_tags={} selected={}",
+        cases.len(),
+        kernel,
+        priority,
+        env_class,
+        include_tags,
+        exclude_tags,
+        selected_ids
+    )
 }
 
 pub async fn run_case(
@@ -102,7 +193,16 @@ pub async fn run_case(
                     });
                 }
 
-                match run_traffic_plan(&mut harness, &case.traffic_plan).await {
+                match run_traffic_plan_with_kernel_control(
+                    case,
+                    &mut harness,
+                    &mode,
+                    &launch_spec,
+                    &kernel_log_dir,
+                    &mut session,
+                )
+                .await
+                {
                     Ok(results) => {
                         snapshot.traffic_results = results;
                     }
@@ -161,20 +261,168 @@ pub async fn run_case(
     })
 }
 
+async fn run_traffic_plan_with_kernel_control(
+    case: &CaseSpec,
+    harness: &mut crate::upstream::UpstreamHarness,
+    mode: &KernelKind,
+    launch_spec: &KernelLaunchSpec,
+    kernel_log_dir: &Path,
+    session: &mut KernelSession,
+) -> Result<Vec<TrafficResult>> {
+    let mut outputs = Vec::with_capacity(case.traffic_plan.len());
+    for action in &case.traffic_plan {
+        match action {
+            TrafficAction::KernelControl {
+                name,
+                action,
+                target,
+                wait_ready_ms,
+            } => {
+                let result = execute_kernel_control_action(
+                    name,
+                    action,
+                    target,
+                    *wait_ready_ms,
+                    mode,
+                    launch_spec,
+                    kernel_log_dir,
+                    session,
+                )
+                .await;
+                outputs.push(result);
+            }
+            _ => {
+                let mut one = run_traffic_plan(harness, std::slice::from_ref(action)).await?;
+                if let Some(result) = one.pop() {
+                    outputs.push(result);
+                }
+            }
+        }
+    }
+    Ok(outputs)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_kernel_control_action(
+    name: &str,
+    action: &KernelControlAction,
+    target: &KernelTarget,
+    wait_ready_ms: u64,
+    mode: &KernelKind,
+    launch_spec: &KernelLaunchSpec,
+    kernel_log_dir: &Path,
+    session: &mut KernelSession,
+) -> TrafficResult {
+    if !target_matches_mode(target, mode) {
+        return TrafficResult {
+            name: name.to_string(),
+            success: true,
+            detail: json!({
+                "action": "kernel_control",
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "mode": format!("{:?}", mode),
+                "skipped": true,
+            }),
+        };
+    }
+
+    let outcome = match action {
+        KernelControlAction::Restart => {
+            let _ = session.shutdown().await;
+            match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
+                Ok(new_session) => {
+                    *session = new_session;
+                    wait_until_ready(&session.api, &launch_spec.ready_path, wait_ready_ms.max(100))
+                        .await
+                }
+                Err(err) => Err(err),
+            }
+        }
+        KernelControlAction::Reload => {
+            let reload_detail = trigger_reload(session).await;
+            match wait_until_ready(&session.api, &launch_spec.ready_path, wait_ready_ms.max(100))
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(err) => {
+                    let info = reload_detail.unwrap_or_else(|| "reload attempt unavailable".to_string());
+                    Err(anyhow!("{err}; {info}"))
+                }
+            }
+        }
+    };
+
+    match outcome {
+        Ok(()) => TrafficResult {
+            name: name.to_string(),
+            success: true,
+            detail: json!({
+                "action": "kernel_control",
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "wait_ready_ms": wait_ready_ms,
+            }),
+        },
+        Err(err) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "kernel_control",
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "wait_ready_ms": wait_ready_ms,
+                "error": err.to_string(),
+            }),
+        },
+    }
+}
+
+fn target_matches_mode(target: &KernelTarget, mode: &KernelKind) -> bool {
+    matches!(
+        (target, mode),
+        (KernelTarget::Rust, KernelKind::Rust) | (KernelTarget::Go, KernelKind::Go)
+    )
+}
+
+async fn trigger_reload(session: &KernelSession) -> Option<String> {
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().ok()?;
+    let mut attempts = Vec::new();
+    let candidates = [
+        (reqwest::Method::POST, "/-/reload"),
+        (reqwest::Method::POST, "/reload"),
+        (reqwest::Method::PUT, "/reload"),
+    ];
+    for (method, path) in candidates {
+        let url = format!("{}{}", session.api.base_url.trim_end_matches('/'), path);
+        let mut req = client.request(method.clone(), &url);
+        if let Some(secret) = &session.api.secret {
+            req = req.bearer_auth(secret);
+        }
+        match req.send().await {
+            Ok(resp) => {
+                attempts.push(format!("{path}:{}", resp.status()));
+                if resp.status().is_success()
+                    || resp.status() == StatusCode::NOT_FOUND
+                    || resp.status() == StatusCode::METHOD_NOT_ALLOWED
+                {
+                    break;
+                }
+            }
+            Err(err) => attempts.push(format!("{path}:err={err}")),
+        }
+    }
+    if attempts.is_empty() {
+        None
+    } else {
+        Some(format!("reload_attempts={}", attempts.join(",")))
+    }
+}
+
 fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     for assertion in &case.assertions {
         let actual = resolve_assertion_value(snapshot, &assertion.key);
-        let passed = match (assertion.op.as_str(), actual.as_ref()) {
-            ("eq", Some(value)) => *value == assertion.expected,
-            ("ne", Some(value)) => *value != assertion.expected,
-            ("exists", Some(_)) => true,
-            ("exists", None) => false,
-            ("not_exists", Some(_)) => false,
-            ("not_exists", None) => true,
-            (_unknown, None) => false,
-            (_unknown, Some(_)) => false,
-        };
-
+        let passed = evaluate_assertion_op(assertion.op.as_str(), actual.as_ref(), &assertion.expected);
         if !passed {
             snapshot.errors.push(NormalizedError {
                 stage: format!("assertion:{}", assertion.key),
@@ -193,38 +441,115 @@ fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     }
 }
 
+fn evaluate_assertion_op(op: &str, actual: Option<&Value>, expected: &Value) -> bool {
+    match (op, actual) {
+        ("eq", Some(value)) => value == expected,
+        ("ne", Some(value)) => value != expected,
+        ("exists", Some(_)) => true,
+        ("exists", None) => false,
+        ("not_exists", Some(_)) => false,
+        ("not_exists", None) => true,
+        ("gt", Some(value)) => compare_numeric(value, expected, |a, b| a > b),
+        ("gte", Some(value)) => compare_numeric(value, expected, |a, b| a >= b),
+        ("lt", Some(value)) => compare_numeric(value, expected, |a, b| a < b),
+        ("lte", Some(value)) => compare_numeric(value, expected, |a, b| a <= b),
+        ("contains", Some(value)) => contains_value(value, expected),
+        ("regex", Some(value)) => matches_regex(value, expected),
+        (_unknown, None) => false,
+        (_unknown, Some(_)) => false,
+    }
+}
+
+fn compare_numeric(actual: &Value, expected: &Value, cmp: fn(f64, f64) -> bool) -> bool {
+    match (actual.as_f64(), expected.as_f64()) {
+        (Some(a), Some(b)) => cmp(a, b),
+        _ => false,
+    }
+}
+
+fn contains_value(actual: &Value, expected: &Value) -> bool {
+    match (actual, expected) {
+        (Value::String(a), Value::String(b)) => a.contains(b),
+        (Value::Array(items), needle) => items.iter().any(|item| item == needle),
+        (Value::Object(map), Value::String(key)) => map.contains_key(key),
+        _ => false,
+    }
+}
+
+fn matches_regex(actual: &Value, expected: &Value) -> bool {
+    let text = match actual.as_str() {
+        Some(v) => v,
+        None => return false,
+    };
+    let pattern = match expected.as_str() {
+        Some(v) => v,
+        None => return false,
+    };
+    Regex::new(pattern).map(|re| re.is_match(text)).unwrap_or(false)
+}
+
 fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<Value> {
-    let mut parts = key.split('.');
-    let scope = parts.next()?;
-    let name = parts.next()?;
-    let field = parts.next()?;
-    if parts.next().is_some() {
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.is_empty() {
         return None;
     }
-
-    match scope {
-        "http" => snapshot
+    match parts[0] {
+        "errors" if parts.as_slice() == ["errors", "count"] => Some(json!(snapshot.errors.len())),
+        "subscription" if parts.len() == 2 => snapshot.subscription_result.as_ref().and_then(|res| match parts[1] {
+            "node_count" => Some(json!(res.node_count)),
+            "filtered_node_count" => Some(json!(res.filtered_node_count)),
+            "format" => Some(json!(res.format)),
+            "success" => Some(json!(res.success)),
+            _ => None,
+        }),
+        "ws" if parts.len() == 3 => snapshot
+            .ws_frames
+            .iter()
+            .find(|r| r.name == parts[1])
+            .and_then(|r| match parts[2] {
+                "frame_count" => Some(json!(r.frames.len())),
+                _ => None,
+            }),
+        "http" if parts.len() == 3 => snapshot
             .http_results
             .iter()
-            .find(|r| r.name == name)
-            .and_then(|r| match field {
+            .find(|r| r.name == parts[1])
+            .and_then(|r| match parts[2] {
                 "status" => Some(json!(r.status)),
                 "path" => Some(json!(r.path)),
                 "method" => Some(json!(r.method)),
                 "body_hash" => Some(json!(r.body_hash)),
                 _ => None,
             }),
-        "traffic" => snapshot
+        "traffic" if parts.len() >= 3 => snapshot
             .traffic_results
             .iter()
-            .find(|r| r.name == name)
-            .and_then(|r| match field {
-                "success" => Some(json!(r.success)),
-                "detail" => Some(r.detail.clone()),
+            .find(|r| r.name == parts[1])
+            .and_then(|r| match parts[2] {
+                "success" if parts.len() == 3 => Some(json!(r.success)),
+                "detail" if parts.len() == 3 => Some(r.detail.clone()),
+                "detail" => resolve_json_path(&r.detail, &parts[3..]),
                 _ => None,
             }),
         _ => None,
     }
+}
+
+fn resolve_json_path(root: &Value, path: &[&str]) -> Option<Value> {
+    let mut current = root;
+    for segment in path {
+        match current {
+            Value::Object(map) => {
+                current = map.get(*segment)?;
+            }
+            Value::Array(items) => {
+                let idx = segment.parse::<usize>().ok()?;
+                current = items.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current.clone())
 }
 
 pub fn latest_run_dir(artifacts_root: &Path, case_id: &str) -> Result<PathBuf> {
@@ -278,4 +603,76 @@ pub async fn run_cases(
         outputs.push(output);
     }
     Ok(outputs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snapshot::{KernelKind, NormalizedSnapshot, SubscriptionResult, TrafficResult, WsFrameCapture};
+
+    #[test]
+    fn resolve_assertion_extended_paths() {
+        let now = Utc::now();
+        let mut snapshot = NormalizedSnapshot::new(
+            "run".to_string(),
+            "case".to_string(),
+            KernelKind::Rust,
+            now,
+        );
+        snapshot.ws_frames.push(WsFrameCapture {
+            name: "connections_stream".to_string(),
+            path: "/connections".to_string(),
+            frames: vec![json!({"a": 1}), json!({"a": 2})],
+        });
+        snapshot.subscription_result = Some(SubscriptionResult {
+            source_type: "inline".to_string(),
+            success: true,
+            format: "json_outbounds".to_string(),
+            node_count: 3,
+            filtered_node_count: 3,
+            protocols: vec!["trojan".to_string()],
+            detail: json!({}),
+        });
+        snapshot.traffic_results.push(TrafficResult {
+            name: "probe".to_string(),
+            success: true,
+            detail: json!({
+                "status": 200,
+                "nested": { "latency_ms": 123 },
+                "labels": ["ok", "fast"],
+                "msg": "hello-world"
+            }),
+        });
+
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "ws.connections_stream.frame_count"),
+            Some(json!(2))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "subscription.node_count"),
+            Some(json!(3))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "traffic.probe.detail.nested.latency_ms"),
+            Some(json!(123))
+        );
+    }
+
+    #[test]
+    fn evaluate_assertion_new_operators() {
+        assert!(evaluate_assertion_op("gt", Some(&json!(10)), &json!(9)));
+        assert!(evaluate_assertion_op("gte", Some(&json!(10)), &json!(10)));
+        assert!(evaluate_assertion_op("lt", Some(&json!(9)), &json!(10)));
+        assert!(evaluate_assertion_op("lte", Some(&json!(10)), &json!(10)));
+        assert!(evaluate_assertion_op(
+            "contains",
+            Some(&json!("abc-hello-xyz")),
+            &json!("hello")
+        ));
+        assert!(evaluate_assertion_op(
+            "regex",
+            Some(&json!("abc-123")),
+            &json!("^abc-\\d+$")
+        ));
+    }
 }

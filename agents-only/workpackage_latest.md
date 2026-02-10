@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-10
+> **最后更新**：2026-02-11
 > **当前阶段**：L4 治理闭环执行中 + L5/L6 联测仿真已开工
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
@@ -25,25 +25,34 @@
 
 ---
 
-## ✅ 最新进展：L5/L6 联测仿真底座首版落地
+## ✅ 最新进展：L5/L6 二级/三级工作包首轮实现落地
 
-**日期**：2026-02-10  
-**状态**：进行中（已入库首版，待 CI 接入）
+**日期**：2026-02-11  
+**状态**：进行中（代码/用例/CI 同步推进）
 
 **已完成**：
 - 新增 `labs/interop-lab` 子项目（已接入 workspace）
 - 新增 CLI：`case list` / `case run` / `case diff` / `report open`
 - 新增文档：`compat_matrix` / `case_backlog` / `oracle_rules`
-- 新增 P0 用例：
-  - `l6_local_harness_smoke`
-  - `p0_clash_api_contract`
-  - `p0_subscription_json`
-  - `p0_subscription_yaml`
-  - `p0_subscription_base64`
+- `CaseSpec` 新增 `tags/env_class/owner`，并完成老 case 兼容加载
+- `TrafficAction` 新增 `kernel_control` / `fault_jitter`
+- `AssertionSpec` 新增 `gt/gte/lt/lte/contains/regex` 与扩展键空间
+- `diff_report` 已接线 `oracle.ignore_*` 与 `counter_jitter_abs`，新增 ignored 统计与 `gate_score`
+- 新增 P1 case：
+  - `p1_auth_negative_wrong_token`
+  - `p1_auth_negative_missing_token`
+  - `p1_optional_endpoints_contract`
+  - `p1_lifecycle_restart_reload_replay`
+  - `p1_fault_jitter_http_via_socks`
+  - `p1_recovery_jitter_http_via_socks`
+- 全量 case 已标注 `env_class`（`strict/env_limited`）与 `tags`
+- CI 已参数化：
+  - `interop-lab-smoke.yml`：仅跑 `strict`
+  - `interop-lab-nightly.yml`：`strict + env_limited`（env-limited 默认不阻断）
 
 **下一步**：
-- 接入 L11：PR smoke + nightly full workflow
-- 补齐故障注入矩阵与重启/重连专项 case
+- 扩展 TCP/UDP/WS/TLS 的 jitter/recovery 组合 case
+- 将 `env_limited` 失败归因自动汇总进趋势报告
 
 ---
 

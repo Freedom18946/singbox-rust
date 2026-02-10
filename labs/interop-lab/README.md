@@ -44,6 +44,9 @@ Top-level fields:
 
 - `id`
 - `kernel_mode` (`rust|go|both`)
+- `env_class` (`strict|env_limited`, default `strict`)
+- `tags` (optional string array)
+- `owner` (optional)
 - `bootstrap` (`rust` / `go` launch config)
 - `gui_sequence`
 - `upstream_topology`
@@ -52,6 +55,15 @@ Top-level fields:
 - `faults`
 - `assertions`
 - `oracle`
+
+`traffic_plan` additional actions:
+
+- `kernel_control` (`action=restart|reload`, `target=rust|go`, `wait_ready_ms`)
+- `fault_jitter` (`target`, `base_ms`, `jitter_ms`, `ratio`)
+
+`assertions` operators:
+
+- `eq`, `ne`, `exists`, `not_exists`, `gt`, `gte`, `lt`, `lte`, `contains`, `regex`
 
 A run writes `NormalizedSnapshot` JSON with:
 
@@ -67,3 +79,4 @@ A run writes `NormalizedSnapshot` JSON with:
 
 - If `bootstrap.<kernel>.command` is omitted, `interop-lab` treats the kernel as externally running and probes `api.base_url` readiness.
 - String placeholders support `${ENV_VAR}` and `{{upstream.<name>}}`.
+- `case run` supports filters: `--priority`, `--tag`, `--exclude-tag`, `--env-class`.

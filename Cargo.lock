@@ -3706,6 +3706,7 @@ dependencies = [
  "futures-util",
  "hickory-proto",
  "rcgen 0.12.1",
+ "regex",
  "reqwest 0.12.28",
  "rustls",
  "serde",

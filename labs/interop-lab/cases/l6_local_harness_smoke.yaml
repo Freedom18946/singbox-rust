@@ -2,6 +2,9 @@ id: l6_local_harness_smoke
 title: local harness self-check
 priority: p0
 kernel_mode: both
+env_class: strict
+tags:
+  - dataplane
 bootstrap:
   rust:
     ready_path: /

@@ -39,6 +39,18 @@ pub enum CaseCommand {
         /// Override target kernel mode.
         #[arg(long)]
         kernel: Option<KernelModeArg>,
+        /// Filter by case priority.
+        #[arg(long)]
+        priority: Option<PriorityArg>,
+        /// Include only cases containing all provided tags.
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Exclude cases containing any provided tags.
+        #[arg(long = "exclude-tag")]
+        exclude_tag: Vec<String>,
+        /// Filter by environment class.
+        #[arg(long = "env-class")]
+        env_class: Option<EnvClassArg>,
     },
     /// Compare latest Go/Rust snapshots for one case.
     Diff {
@@ -64,4 +76,17 @@ pub enum KernelModeArg {
     Rust,
     Go,
     Both,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PriorityArg {
+    P0,
+    P1,
+    P2,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EnvClassArg {
+    Strict,
+    EnvLimited,
 }

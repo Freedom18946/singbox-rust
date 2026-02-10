@@ -35,4 +35,4 @@ jobs:
         run: cargo test -p interop-lab
 
       - name: Run local smoke case
-        run: cargo run -p interop-lab -- case run l6_local_harness_smoke
+        run: cargo run -p interop-lab -- case run --priority p0 --env-class strict

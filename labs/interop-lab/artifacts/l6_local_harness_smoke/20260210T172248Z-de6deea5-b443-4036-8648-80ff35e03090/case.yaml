@@ -1,0 +1,82 @@
+id: l6_local_harness_smoke
+title: local harness self-check
+owner: null
+priority: p0
+kernel_mode: both
+tags:
+- dataplane
+env_class: strict
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 5000
+    ready_path: /
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+  go:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 5000
+    ready_path: /
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+gui_sequence:
+- kind: http
+  name: ping_root
+  method: GET
+  path: /
+  body: null
+  expect_status: 200
+- kind: subscription_parse
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+- name: local_tcp
+  kind: tcp_echo
+  bind: 127.0.0.1:0
+- name: local_udp
+  kind: udp_echo
+  bind: 127.0.0.1:0
+- name: local_dns
+  kind: dns_stub
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: http_get
+  name: http_echo
+  url: '{{upstream.local_http}}/v1/echo'
+  proxy: null
+  expect_status: 200
+- kind: tcp_round_trip
+  name: tcp_echo
+  addr: '{{upstream.local_tcp}}'
+  payload: hello-interoperability
+  proxy: null
+- kind: udp_round_trip
+  name: udp_echo
+  addr: '{{upstream.local_udp}}'
+  payload: hello-udp
+  proxy: null
+- kind: dns_query
+  name: dns_stub
+  addr: '{{upstream.local_dns}}'
+  qname: example.com.
+  proxy: null
+subscription_input:
+  type: inline
+  content: |
+    {"outbounds":[{"type":"vmess","tag":"vmess-node"},{"type":"trojan","tag":"trojan-node"}]}
+faults: []
+assertions: []
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0

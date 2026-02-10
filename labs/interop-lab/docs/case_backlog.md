@@ -2,57 +2,91 @@
 
 联测执行基线与实战流程见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
 
+## 统计快照（2026-02-11）
+
+- 总 case：31
+- `strict`：26
+- `env_limited`：5
+- 状态口径：`implemented` / `planned` / `blocked`
+
 ## P0 (gating)
 
-| Case ID | Goal | Status |
-| --- | --- | --- |
-| `l6_local_harness_smoke` | self-contained harness smoke (no external kernel) | implemented |
-| `p0_clash_api_contract` | replay GUI P0 HTTP/WS contract against Go+Rust APIs | implemented (needs env endpoints) |
-| `p0_subscription_json` | JSON `outbounds` parser | implemented |
-| `p0_subscription_yaml` | YAML `proxies` parser | implemented |
-| `p0_subscription_base64` | Base64 mixed-link parser | implemented |
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `l6_local_harness_smoke` | self-contained harness smoke (no external kernel) | `strict` | implemented |
+| `p0_subscription_json` | JSON `outbounds` parser | `strict` | implemented |
+| `p0_subscription_yaml` | YAML `proxies` parser | `strict` | implemented |
+| `p0_subscription_base64` | Base64 mixed-link parser | `strict` | implemented |
+| `p0_clash_api_contract` | replay GUI P0 HTTP/WS contract against Go+Rust APIs | `env_limited` | implemented |
 
-备注（2026-02-10）：实网订阅 URL 采样显示，标准 Clash 订阅可解析；部分 URL 因站点风控/人机检测返回挑战页，标记为环境限制，不作为当前阻塞项。
+## P1 (contract + dataplane)
 
-## P1 (next)
+### 控制面契约
 
-- `p1_rust_core_http_via_socks`: 本地仿公网 HTTP echo，经 Rust SOCKS 入站转发验证核心链路（implemented）。
-- `p1_rust_core_tcp_via_socks`: 本地仿公网 TCP echo，经 Rust SOCKS 入站转发验证核心链路（implemented）。
-- `p1_rust_core_udp_via_socks`: 本地仿公网 UDP echo，经 Rust SOCKS UDP ASSOCIATE 转发验证核心链路（implemented）。
-- `p1_rust_core_dns_via_socks`: 本地仿公网 DNS stub，经 Rust SOCKS UDP ASSOCIATE 查询验证核心链路（implemented）。
-- `p1_fault_disconnect_http_via_socks`: 断开 upstream 后验证 Rust 核心存活且数据面失败可观测（implemented）。
-- `p1_fault_delay_http_via_socks`: 上游延迟注入触发超时，验证 Rust 核心存活且失败可观测（implemented）。
-- `p1_recovery_disconnect_reconnect_http_via_socks`: 断开后重连 upstream，验证“先失败后恢复”（implemented）。
-- `p1_recovery_multi_flap_http_via_socks`: 连续两次 upstream 抖动（断开/重连）后均可恢复，验证恢复稳定性（implemented）。
-- `p1_recovery_dns_disconnect_reconnect_via_socks`: DNS UDP 链路在断开/重连后恢复，验证 UDP/DNS 恢复语义（implemented）。
-- `p1_subscription_file_urls`: 使用维护中的订阅文件批量解析（implemented）。
-- restart/reload lifecycle replay.
-- auth negative paths (wrong token / expired token).
-- provider/rules/script/profile optional endpoints.
-- fault injection matrix for upstream disconnect and jitter.
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_auth_negative_wrong_token` | wrong token HTTP/WS rejection | `env_limited` | implemented |
+| `p1_auth_negative_missing_token` | missing token HTTP/WS rejection | `env_limited` | implemented |
+| `p1_optional_endpoints_contract` | providers/rules/script/profile response semantics | `env_limited` | implemented |
+| `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented |
 
-执行顺序（固定）：
-1. 先完成 P1 核心与恢复类场景（当前阶段）。
-2. 再进入协议层：Trojan 与 Shadowsocks 的公网仿真联测（不提前）。
-3. 最后进入 GUI/Wails 长链路与长稳回归。
+### 数据面连通/故障/恢复
 
-协议层首轮进展（2026-02-10）：
-- Trojan：`app` 的 net_e2e 协议验证通过（TLS/二进制协议/多用户）。
-- Shadowsocks：首轮发现并修复握手兼容、cipher 支持与大包分片问题；修复后 `app` 的两套 net_e2e 协议验证均通过。
-- 下一步：将 Trojan/Shadowsocks 协议验证迁移为 `interop-lab` 的 `p2_trojan_*` / `p2_shadowsocks_*` 可编排 case（含 fault/recovery）。
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_rust_core_http_via_socks` | HTTP 核心链路连通 | `strict` | implemented |
+| `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented |
+| `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented |
+| `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented |
+| `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
+| `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |
+| `p1_fault_jitter_http_via_socks` | jitter 故障可观测 | `strict` | implemented |
+| `p1_recovery_disconnect_reconnect_http_via_socks` | 断开后重连恢复 | `strict` | implemented |
+| `p1_recovery_multi_flap_http_via_socks` | 多次抖动恢复 | `strict` | implemented |
+| `p1_recovery_dns_disconnect_reconnect_via_socks` | DNS 断开后恢复 | `strict` | implemented |
+| `p1_recovery_jitter_http_via_socks` | jitter 清除后恢复 | `strict` | implemented |
 
-## P2 (later)
+### 订阅样本治理
 
-- `p2_trojan_fault_recovery_suite`: Trojan 协议“错误凭据失败 -> 正确凭据恢复”语义回放（implemented）。
-- `p2_shadowsocks_fault_recovery_suite`: Shadowsocks 协议“错误密码失败 -> 正常密码恢复”语义回放（implemented）。
-- `p2_trojan_fault_recovery_concurrency_suite`: Trojan 协议“错凭据注入后并发恢复（>=90%）”语义验证（implemented）。
-- `p2_shadowsocks_fault_recovery_concurrency_suite`: Shadowsocks 协议“错密码注入后并发恢复（>=90%）”语义验证（implemented）。
-- `p2_trojan_protocol_suite`: 通过 `interop-lab` command action 执行 Trojan 协议 net_e2e 套件（implemented）。
-- `p2_shadowsocks_protocol_suite`: 通过 `interop-lab` command action 执行 Shadowsocks 协议 net_e2e 套件（implemented）。
-- `p2_connections_ws_concurrency_suite`: `/connections` WebSocket 高并发 + 多波次稳定性（短时 soak）验证（implemented）。
-- `p2_trojan_network_restart_suite`: Trojan 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
-- `p2_shadowsocks_network_restart_suite`: Shadowsocks 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
-- `p2_connections_ws_soak_suite`: `/connections` WebSocket 长时 soak 稳定性验证（implemented）。
-- `scripts/run_case_trend_gate.sh`: 循环运行 case 并执行趋势门禁（errors/traffic/diff mismatch，支持缺失 diff 容忍）（implemented）。
-- full GUI desktop smoke through Wails bridge.
-- extreme-scale stress for `/connections` websocket（>1k 并发，nightly）。
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_subscription_file_urls` | URL 样本集合解析与环境归因 | `env_limited` | implemented |
+
+## P2 (protocol + stress)
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_trojan_protocol_suite` | Trojan protocol suite | `strict` | implemented |
+| `p2_trojan_fault_recovery_suite` | Trojan fault/recovery semantics | `strict` | implemented |
+| `p2_trojan_fault_recovery_concurrency_suite` | Trojan 并发恢复门限 | `strict` | implemented |
+| `p2_trojan_network_restart_suite` | Trojan 重启/抖动恢复 | `strict` | implemented |
+| `p2_shadowsocks_protocol_suite` | Shadowsocks protocol suite | `strict` | implemented |
+| `p2_shadowsocks_fault_recovery_suite` | Shadowsocks fault/recovery semantics | `strict` | implemented |
+| `p2_shadowsocks_fault_recovery_concurrency_suite` | Shadowsocks 并发恢复门限 | `strict` | implemented |
+| `p2_shadowsocks_network_restart_suite` | Shadowsocks 重启/抖动恢复 | `strict` | implemented |
+| `p2_connections_ws_concurrency_suite` | `/connections` WS 并发稳定性 | `strict` | implemented |
+| `p2_connections_ws_soak_suite` | `/connections` WS 长时 soak | `strict` | implemented |
+
+## 协议 × 故障类型矩阵（L5.2.1）
+
+| 协议 | disconnect | delay | jitter | recovery |
+| --- | --- | --- | --- | --- |
+| HTTP | implemented | implemented | implemented | implemented |
+| TCP | planned | planned | planned | planned |
+| UDP | planned | planned | planned | planned |
+| DNS | implemented | planned | planned | implemented |
+| WS | planned | planned | planned | planned |
+| TLS | planned | planned | planned | planned |
+
+## 阻塞项（Blockers）
+
+| Blocker ID | 描述 | 影响 case | 状态 |
+| --- | --- | --- | --- |
+| `BLK-L5-URL-RISK` | 部分订阅 URL 返回 403/429/挑战页 | `p1_subscription_file_urls` | active (env-limited) |
+| `BLK-L5-EXT-ENDPOINTS` | `env_limited` case 依赖外部 Go/Rust API 参数 | `p0_clash_api_contract`、`p1_auth_negative_*`、`p1_optional_endpoints_contract` | active (expected) |
+
+## 执行顺序（固定）
+
+1. `strict` P0 + P1 控制面/数据面回归。
+2. P2 协议层与 WS 长稳回归。
+3. `env_limited` 样本补测并归因入档。

@@ -15,6 +15,8 @@ use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -29,7 +31,7 @@ use tokio_rustls::TlsAcceptor;
 pub struct UpstreamHarness {
     pub endpoints: BTreeMap<String, String>,
     specs: BTreeMap<String, UpstreamServiceSpec>,
-    http_delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
+    service_delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
     handles: BTreeMap<String, UpstreamHandle>,
 }
 
@@ -63,8 +65,8 @@ impl UpstreamHarness {
         out
     }
 
-    pub async fn set_http_delay(&self, target: &str, delay_ms: u64) {
-        let mut map = self.http_delays_ms.write().await;
+    pub async fn set_service_delay(&self, target: &str, delay_ms: u64) {
+        let mut map = self.service_delays_ms.write().await;
         if delay_ms == 0 {
             map.remove(target);
         } else {
@@ -110,6 +112,12 @@ struct HttpState {
     delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
 }
 
+#[derive(Clone)]
+struct WsState {
+    service_name: String,
+    delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
+}
+
 pub async fn start_upstreams(specs: &[UpstreamServiceSpec]) -> Result<UpstreamHarness> {
     let mut harness = UpstreamHarness::default();
 
@@ -130,9 +138,12 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
             let addr = listener.local_addr().with_context(|| "http local_addr")?;
             let state = HttpState {
                 service_name: spec.name.clone(),
-                delays_ms: harness.http_delays_ms.clone(),
+                delays_ms: harness.service_delays_ms.clone(),
             };
-            let app = Router::new().route("/*path", any(http_echo)).with_state(state);
+            let app = Router::new()
+                .route("/", any(http_echo))
+                .route("/*path", any(http_echo))
+                .with_state(state);
             let (tx, rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let shutdown = async move {
@@ -159,7 +170,11 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                 .await
                 .with_context(|| format!("binding ws echo {}", spec.bind))?;
             let addr = listener.local_addr().with_context(|| "ws local_addr")?;
-            let app = Router::new().route("/", get(ws_echo));
+            let state = WsState {
+                service_name: spec.name.clone(),
+                delays_ms: harness.service_delays_ms.clone(),
+            };
+            let app = Router::new().route("/", get(ws_echo)).with_state(state);
             let (tx, rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let shutdown = async move {
@@ -234,6 +249,8 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                 .await
                 .with_context(|| format!("binding udp echo {}", spec.bind))?;
             let addr = socket.local_addr().with_context(|| "udp local_addr")?;
+            let service_name = spec.name.clone();
+            let delays = harness.service_delays_ms.clone();
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let mut buf = [0_u8; 4096];
@@ -244,6 +261,10 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                         }
                         recv = socket.recv_from(&mut buf) => {
                             if let Ok((n, peer)) = recv {
+                                let delay_ms = service_delay(&delays, &service_name).await;
+                                if delay_ms > 0 {
+                                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                }
                                 let _ = socket.send_to(&buf[..n], peer).await;
                             } else {
                                 break;
@@ -269,6 +290,8 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                 .await
                 .with_context(|| format!("binding dns stub {}", spec.bind))?;
             let addr = socket.local_addr().with_context(|| "dns local_addr")?;
+            let service_name = spec.name.clone();
+            let delays = harness.service_delays_ms.clone();
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let mut buf = [0_u8; 4096];
@@ -282,6 +305,10 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                                 Ok((n, peer)) => {
                                     let data = &buf[..n];
                                     if let Ok(req) = Message::from_vec(data) {
+                                        let delay_ms = service_delay(&delays, &service_name).await;
+                                        if delay_ms > 0 {
+                                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                        }
                                         let mut resp = Message::new();
                                         resp.set_id(req.id());
                                         resp.set_message_type(MessageType::Response);
@@ -659,6 +686,45 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::FaultJitter {
+                name,
+                target,
+                base_ms,
+                jitter_ms,
+                ratio,
+            } => {
+                let clamped_ratio = ratio.clamp(0.0, 1.0);
+                let applied = compute_jitter_delay(target, *base_ms, *jitter_ms, clamped_ratio);
+                harness.set_service_delay(target, applied).await;
+                TrafficResult {
+                    name: name.clone(),
+                    success: true,
+                    detail: json!({
+                        "action": "fault_jitter",
+                        "target": target,
+                        "base_ms": base_ms,
+                        "jitter_ms": jitter_ms,
+                        "ratio": clamped_ratio,
+                        "applied_delay_ms": applied,
+                    }),
+                }
+            }
+            TrafficAction::KernelControl {
+                name,
+                action,
+                target,
+                wait_ready_ms,
+            } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "kernel_control",
+                    "op": format!("{:?}", action),
+                    "target": format!("{:?}", target),
+                    "wait_ready_ms": wait_ready_ms,
+                    "error": "kernel_control must be handled by orchestrator",
+                }),
+            },
         };
 
         out.push(result);
@@ -671,7 +737,7 @@ pub async fn apply_faults(harness: &mut UpstreamHarness, faults: &[FaultSpec]) -
     for fault in faults {
         match fault {
             FaultSpec::Delay { target, ms } => {
-                harness.set_http_delay(target, *ms).await;
+                harness.set_service_delay(target, *ms).await;
             }
             FaultSpec::Disconnect { target } => {
                 harness.disconnect_target(target).await?;
@@ -679,6 +745,18 @@ pub async fn apply_faults(harness: &mut UpstreamHarness, faults: &[FaultSpec]) -
         }
     }
     Ok(())
+}
+
+fn compute_jitter_delay(target: &str, base_ms: u64, jitter_ms: u64, ratio: f64) -> u64 {
+    if base_ms == 0 && jitter_ms == 0 {
+        return 0;
+    }
+    let mut hasher = DefaultHasher::new();
+    target.hash(&mut hasher);
+    let hash = hasher.finish();
+    let bucket = (hash % 1000) as f64 / 1000.0;
+    let scaled_jitter = (jitter_ms as f64 * ratio * bucket).round() as u64;
+    base_ms.saturating_add(scaled_jitter)
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
@@ -744,10 +822,7 @@ async fn http_echo(
     uri: Uri,
     body: Bytes,
 ) -> impl IntoResponse {
-    let delay_ms = {
-        let map = state.delays_ms.read().await;
-        map.get(&state.service_name).copied().unwrap_or(0)
-    };
+    let delay_ms = service_delay(&state.delays_ms, &state.service_name).await;
     if delay_ms > 0 {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
@@ -762,11 +837,15 @@ async fn http_echo(
     (StatusCode::OK, Json(payload))
 }
 
-async fn ws_echo(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_ws)
+async fn ws_echo(State(state): State<WsState>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
-async fn handle_ws(mut socket: WebSocket) {
+async fn handle_ws(mut socket: WebSocket, state: WsState) {
+    let delay_ms = service_delay(&state.delays_ms, &state.service_name).await;
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
     let _ = socket
         .send(AxumWsMessage::Text("{\"event\":\"ready\"}".to_string()))
         .await;
@@ -774,9 +853,17 @@ async fn handle_ws(mut socket: WebSocket) {
     while let Some(next) = socket.next().await {
         match next {
             Ok(AxumWsMessage::Text(text)) => {
+                let delay_ms = service_delay(&state.delays_ms, &state.service_name).await;
+                if delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
                 let _ = socket.send(AxumWsMessage::Text(text)).await;
             }
             Ok(AxumWsMessage::Binary(data)) => {
+                let delay_ms = service_delay(&state.delays_ms, &state.service_name).await;
+                if delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
                 let _ = socket.send(AxumWsMessage::Binary(data)).await;
             }
             Ok(AxumWsMessage::Close(_)) => break,
@@ -787,6 +874,11 @@ async fn handle_ws(mut socket: WebSocket) {
             Err(_) => break,
         }
     }
+}
+
+async fn service_delay(delays: &Arc<RwLock<BTreeMap<String, u64>>>, service_name: &str) -> u64 {
+    let map = delays.read().await;
+    map.get(service_name).copied().unwrap_or(0)
 }
 
 fn normalize_addr(input: &str) -> String {

@@ -2,6 +2,9 @@ id: p1_recovery_dns_disconnect_reconnect_via_socks
 title: recovery flow disconnect then reconnect upstream dns via rust socks udp
 priority: p1
 kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
 bootstrap:
   rust:
     command: ./target/debug/app

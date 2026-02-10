@@ -2,6 +2,9 @@ id: p2_shadowsocks_fault_recovery_suite
 title: shadowsocks fault then recovery semantics via targeted net_e2e tests
 priority: p2
 kernel_mode: rust
+env_class: strict
+tags:
+  - protocol
 bootstrap:
   rust:
     ready_path: /v1/echo

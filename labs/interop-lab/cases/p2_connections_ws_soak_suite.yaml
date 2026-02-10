@@ -2,6 +2,9 @@ id: p2_connections_ws_soak_suite
 title: clash connections websocket long-running soak stability
 priority: p2
 kernel_mode: rust
+env_class: strict
+tags:
+  - ws
 bootstrap:
   rust:
     ready_path: /v1/echo

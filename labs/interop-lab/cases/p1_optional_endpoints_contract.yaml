@@ -1,0 +1,54 @@
+id: p1_optional_endpoints_contract
+title: optional endpoints contract for providers rules script profile
+priority: p1
+kernel_mode: both
+env_class: env_limited
+tags:
+  - control-plane
+bootstrap:
+  rust:
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_RUST_API_BASE}
+      secret: ${INTEROP_RUST_API_SECRET}
+  go:
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_GO_API_BASE}
+      secret: ${INTEROP_GO_API_SECRET}
+gui_sequence:
+  - kind: http
+    name: get_providers
+    method: GET
+    path: /providers
+  - kind: http
+    name: get_rules
+    method: GET
+    path: /rules
+  - kind: http
+    name: get_script
+    method: GET
+    path: /script
+  - kind: http
+    name: get_profile
+    method: GET
+    path: /profile
+assertions:
+  - key: http.get_providers.status
+    op: lte
+    expected: 501
+  - key: http.get_rules.status
+    op: lte
+    expected: 501
+  - key: http.get_script.status
+    op: lte
+    expected: 501
+  - key: http.get_profile.status
+    op: lte
+    expected: 501
+oracle:
+  ignore_http_paths:
+    - /script
+    - /profile

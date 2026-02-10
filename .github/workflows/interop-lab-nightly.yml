@@ -24,13 +24,15 @@ jobs:
         run: cargo build -p interop-lab
 
       - name: Run local harness smoke
-        run: cargo run -p interop-lab -- case run l6_local_harness_smoke
+        run: cargo run -p interop-lab -- case run --priority p0 --env-class strict
 
-      - name: Run subscription parser matrix
+      - name: Run strict matrix
         run: |
-          cargo run -p interop-lab -- case run p0_subscription_json
-          cargo run -p interop-lab -- case run p0_subscription_yaml
-          cargo run -p interop-lab -- case run p0_subscription_base64
+          cargo run -p interop-lab -- case run --env-class strict
+
+      - name: Run env-limited matrix
+        run: |
+          cargo run -p interop-lab -- case run --env-class env-limited || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

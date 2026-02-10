@@ -11,11 +11,16 @@ mod upstream;
 mod util;
 
 use anyhow::{Context, Result};
-use case_spec::KernelMode;
+use case_spec::{EnvClass, KernelMode, Priority};
 use clap::Parser;
-use cli::{CaseCommand, Cli, KernelModeArg, ReportCommand, TopCommand};
+use cli::{
+    CaseCommand, Cli, EnvClassArg, KernelModeArg, PriorityArg, ReportCommand, TopCommand,
+};
 use diff_report::diff_latest_case;
-use orchestrator::{list_cases, load_single_case, run_case, run_cases};
+use orchestrator::{
+    apply_case_filter, list_cases, load_single_case, render_run_plan_summary, run_case, run_cases,
+    CaseFilter,
+};
 use report::{latest_report_path, read_report};
 use std::path::Path;
 use util::{canonicalize_or, ensure_dir};
@@ -44,15 +49,42 @@ async fn handle_case_command(
         CaseCommand::List => {
             let cases = list_cases(cases_dir)?;
             for case in cases {
-                println!("{}\t{:?}\t{:?}", case.id, case.priority, case.kernel_mode);
+                println!(
+                    "{}\t{:?}\t{:?}\t{:?}\t{}",
+                    case.id,
+                    case.priority,
+                    case.kernel_mode,
+                    case.env_class,
+                    case.tags.join(",")
+                );
             }
             Ok(())
         }
-        CaseCommand::Run { id, kernel } => {
+        CaseCommand::Run {
+            id,
+            kernel,
+            priority,
+            tag,
+            exclude_tag,
+            env_class,
+        } => {
             let kernel_override = kernel.map(map_kernel_mode_arg);
+            let filter = CaseFilter {
+                priority: priority.map(map_priority_arg),
+                include_tags: tag,
+                exclude_tags: exclude_tag,
+                env_class: env_class.map(map_env_class_arg),
+            };
 
             if let Some(id) = id {
                 let case = load_single_case(cases_dir, &id)?;
+                if !filter.matches(&case) {
+                    anyhow::bail!("case '{}' filtered out by the selected run filters", id);
+                }
+                println!(
+                    "{}",
+                    render_run_plan_summary(std::slice::from_ref(&case), kernel_override.clone(), &filter)
+                );
                 let output = run_case(&case, kernel_override, artifacts_dir)
                     .await
                     .with_context(|| format!("running case {id}"))?;
@@ -65,7 +97,12 @@ async fn handle_case_command(
             }
 
             let cases = list_cases(cases_dir)?;
-            let outputs = run_cases(&cases, kernel_override, artifacts_dir).await?;
+            let selected = apply_case_filter(cases, &filter);
+            println!(
+                "{}",
+                render_run_plan_summary(&selected, kernel_override.clone(), &filter)
+            );
+            let outputs = run_cases(&selected, kernel_override, artifacts_dir).await?;
             for output in outputs {
                 println!("case={} run_id={}", output.case_id, output.run_id);
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
@@ -85,6 +122,10 @@ async fn handle_case_command(
                 report.subscription_mismatches.len()
             );
             println!("traffic_mismatches={}", report.traffic_mismatches.len());
+            println!("ignored_http={}", report.ignored_http_count);
+            println!("ignored_ws={}", report.ignored_ws_count);
+            println!("ignored_counter_jitter={}", report.ignored_counter_jitter_count);
+            println!("gate_score={}", report.gate_score);
             println!("report={}", canonicalize_or(&markdown_path).display());
             Ok(())
         }
@@ -111,5 +152,20 @@ fn map_kernel_mode_arg(mode: KernelModeArg) -> KernelMode {
         KernelModeArg::Rust => KernelMode::Rust,
         KernelModeArg::Go => KernelMode::Go,
         KernelModeArg::Both => KernelMode::Both,
+    }
+}
+
+fn map_priority_arg(priority: PriorityArg) -> Priority {
+    match priority {
+        PriorityArg::P0 => Priority::P0,
+        PriorityArg::P1 => Priority::P1,
+        PriorityArg::P2 => Priority::P2,
+    }
+}
+
+fn map_env_class_arg(env_class: EnvClassArg) -> EnvClass {
+    match env_class {
+        EnvClassArg::Strict => EnvClass::Strict,
+        EnvClassArg::EnvLimited => EnvClass::EnvLimited,
     }
 }

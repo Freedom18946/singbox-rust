@@ -5,6 +5,10 @@ CASE_ID="${1:-p2_connections_ws_soak_suite}"
 ITERATIONS="${ITERATIONS:-3}"
 KERNEL="${KERNEL:-rust}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-labs/interop-lab/artifacts}"
+RUN_PRIORITY="${RUN_PRIORITY:-}"
+RUN_TAGS="${RUN_TAGS:-}"
+RUN_EXCLUDE_TAGS="${RUN_EXCLUDE_TAGS:-}"
+RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
 
 MAX_RUST_ERRORS="${MAX_RUST_ERRORS:-0}"
 MAX_FAILED_TRAFFIC="${MAX_FAILED_TRAFFIC:-0}"
@@ -21,14 +25,41 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL}"
+echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none}"
 
 prev_score=-1
 
 for ((i = 1; i <= ITERATIONS; i++)); do
   echo
   echo "=== iteration ${i}/${ITERATIONS}: case run ${CASE_ID} ==="
-  run_output="$(cargo run -p interop-lab -- case run "${CASE_ID}" --kernel "${KERNEL}")"
+  run_cmd=(cargo run -p interop-lab -- case run)
+  if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
+    run_cmd+=("${CASE_ID}")
+  fi
+  run_cmd+=(--kernel "${KERNEL}")
+  if [[ -n "${RUN_PRIORITY}" ]]; then
+    run_cmd+=(--priority "${RUN_PRIORITY}")
+  fi
+  if [[ -n "${RUN_ENV_CLASS}" ]]; then
+    run_cmd+=(--env-class "${RUN_ENV_CLASS}")
+  fi
+  if [[ -n "${RUN_TAGS}" ]]; then
+    IFS=',' read -r -a _tags <<<"${RUN_TAGS}"
+    for _tag in "${_tags[@]}"; do
+      if [[ -n "${_tag}" ]]; then
+        run_cmd+=(--tag "${_tag}")
+      fi
+    done
+  fi
+  if [[ -n "${RUN_EXCLUDE_TAGS}" ]]; then
+    IFS=',' read -r -a _ex_tags <<<"${RUN_EXCLUDE_TAGS}"
+    for _tag in "${_ex_tags[@]}"; do
+      if [[ -n "${_tag}" ]]; then
+        run_cmd+=(--exclude-tag "${_tag}")
+      fi
+    done
+  fi
+  run_output="$("${run_cmd[@]}")"
   echo "${run_output}"
 
   run_dir="$(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p' | tail -n 1)"

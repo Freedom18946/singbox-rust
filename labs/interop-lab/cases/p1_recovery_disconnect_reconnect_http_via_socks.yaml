@@ -2,6 +2,9 @@ id: p1_recovery_disconnect_reconnect_http_via_socks
 title: recovery flow disconnect then reconnect upstream http via rust socks
 priority: p1
 kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
 bootstrap:
   rust:
     command: ./target/debug/app

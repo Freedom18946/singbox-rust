@@ -20,9 +20,15 @@ pub struct CaseSpec {
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
     pub priority: Priority,
     #[serde(default)]
     pub kernel_mode: KernelMode,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub env_class: EnvClass,
     pub bootstrap: BootstrapSpec,
     #[serde(default)]
     pub gui_sequence: Vec<GuiStep>,
@@ -47,6 +53,14 @@ pub enum Priority {
     P0,
     P1,
     P2,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvClass {
+    #[default]
+    Strict,
+    EnvLimited,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,10 +213,49 @@ pub enum TrafficAction {
         #[serde(default)]
         expect_exit: Option<i32>,
     },
+    KernelControl {
+        name: String,
+        action: KernelControlAction,
+        target: KernelTarget,
+        #[serde(default = "default_kernel_control_wait_ready_ms")]
+        wait_ready_ms: u64,
+    },
+    FaultJitter {
+        name: String,
+        target: String,
+        #[serde(default)]
+        base_ms: u64,
+        #[serde(default)]
+        jitter_ms: u64,
+        #[serde(default = "default_jitter_ratio")]
+        ratio: f64,
+    },
 }
 
 fn default_command_timeout_ms() -> u64 {
     300_000
+}
+
+fn default_kernel_control_wait_ready_ms() -> u64 {
+    15_000
+}
+
+fn default_jitter_ratio() -> f64 {
+    1.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelControlAction {
+    Restart,
+    Reload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum KernelTarget {
+    Rust,
+    Go,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,6 +288,8 @@ pub struct OracleSpec {
     pub ignore_ws_paths: Vec<String>,
     #[serde(default)]
     pub tolerate_counter_jitter: bool,
+    #[serde(default)]
+    pub counter_jitter_abs: i64,
 }
 
 pub fn load_cases(cases_dir: &Path) -> Result<Vec<CaseSpec>> {
@@ -308,5 +363,8 @@ gui_sequence:
         assert_eq!(case.id, "p0_api_smoke");
         assert_eq!(case.kernel_mode, KernelMode::Both);
         assert_eq!(case.gui_sequence.len(), 1);
+        assert_eq!(case.env_class, EnvClass::Strict);
+        assert!(case.tags.is_empty());
+        assert!(case.owner.is_none());
     }
 }

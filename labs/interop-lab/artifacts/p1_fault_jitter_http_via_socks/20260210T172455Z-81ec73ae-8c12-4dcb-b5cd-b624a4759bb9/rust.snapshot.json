@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T172455Z-81ec73ae-8c12-4dcb-b5cd-b624a4759bb9",
+  "case_id": "p1_fault_jitter_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T17:24:55.311372Z",
+  "finished_at": "2026-02-10T17:24:55.311555Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "starting kernel process"
+    }
+  ]
+}

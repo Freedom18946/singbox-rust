@@ -1,0 +1,8 @@
+{
+  "case_id": "p0_subscription_json",
+  "generated_at": "2026-02-10T17:26:23.387235Z",
+  "run_id": "20260210T172553Z-f4903832-88c6-40a4-b046-25ffd1bf3ae7",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p0_subscription_json/20260210T172553Z-f4903832-88c6-40a4-b046-25ffd1bf3ae7/rust.snapshot.json"
+  ]
+}

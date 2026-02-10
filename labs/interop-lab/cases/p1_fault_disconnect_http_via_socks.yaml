@@ -2,6 +2,9 @@ id: p1_fault_disconnect_http_via_socks
 title: fault disconnect upstream http while rust core remains healthy
 priority: p1
 kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
 bootstrap:
   rust:
     command: ./target/debug/app

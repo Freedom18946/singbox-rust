@@ -2,6 +2,9 @@ id: p0_subscription_json
 title: subscription parser json outbounds
 priority: p0
 kernel_mode: rust
+env_class: strict
+tags:
+  - subscription
 bootstrap:
   rust:
     ready_path: /
