@@ -2,6 +2,8 @@
 
 > **最后更新**：2026-02-10
 > **当前阶段**：L3 质量里程碑后补（L2 ✅ Closed；功能对齐已完成）
+> **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
+> **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 
 ---
 
@@ -438,7 +440,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 ### Parity 增量预估（已达成）
 
-**实际**：~99% (208/209)，详见 `agents-only/active_context.md`。
+**实际**：99.52% (208/209)，详见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）。
 
 | 完成包 | 预估 Parity | 增量 |
 |--------|------------|------|

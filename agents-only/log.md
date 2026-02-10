@@ -23,6 +23,42 @@
 
 ## 日志记录
 
+### [2026-02-10 13:40] Agent: Codex (GPT-5)
+
+**任务**: 闭环验证（L2 相关验收链路 + resolved 特性回归）
+**变更**:
+- 执行 `cargo test -p xtests`（通过）
+- 执行 `cargo test -p sb-core --lib`（通过）
+- 执行 `cargo build -p app --features parity --release`（通过）
+- 执行 `./target/release/app check -c examples/quick-start/01-minimal.json`（通过，direct/block 正常注册）
+- 执行 `cargo test --workspace`（通过）
+- 执行 `cargo check -p sb-core --features service_resolved`（通过）
+- 执行 `cargo test -p sb-adapters`（通过）
+- 执行 `cargo test -p sb-config`（通过）
+- 执行 `cargo test -p sb-core --features service_resolved`（初次在沙箱内因 UDP bind 权限失败；越权重跑通过）
+
+**结果**: 成功（L2 闭环链路复验通过；`service_resolved` 用例在非沙箱环境验证通过）
+**备注**: 本次主要为验证，不涉及业务代码修改。
+
+---
+
+### [2026-02-10 12:30] Agent: Codex (GPT-5)
+
+**任务**: 闭环 L2-GAP-001（Parity 口径统一），并同步修正文档冲突
+**变更**:
+- 更新 `agents-only/02-reference/GO_PARITY_MATRIX.md`（新增 2026-02-10 Recalibration 权威口径：208/209，剩余 1 项）
+- 更新 `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`（标注为历史基线，引用最新权威口径）
+- 更新 `agents-only/active_context.md`（Parity 口径来源与 remaining 项明确）
+- 更新 `agents-only/workpackage_latest.md`（Parity 口径来源与 remaining 项明确）
+- 更新 `agents-only/03-planning/06-STRATEGIC-ROADMAP.md`（L2 指标表更新为 208/209 口径）
+- 更新 `agents-only/00-overview/00-PROJECT-OVERVIEW.md`（当前状态口径同步）
+- 更新 `agents-only/05-analysis/ACCEPTANCE-GAPS-TRACKER.md`（`L2-GAP-001` 标记为 ✅ 已闭环）
+
+**结果**: 成功
+**备注**: 本次为文档口径闭环，不涉及业务代码改动。
+
+---
+
 ### [2026-02-10 10:30] Agent: Codex (GPT-5)
 
 **任务**: 修正文档一致性（L2/M2.4 与历史 L3 编号归并、进度状态同步）

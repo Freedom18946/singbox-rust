@@ -87,6 +87,7 @@
 | 2026-02-10 | L1-GAP-001 | ✅ | V4a=26→25，`check-boundaries.sh` exit 0 |
 | 2026-02-10 | L1-GAP-002 | ✅ | 验收口径改为 `check-boundaries.sh`，文档同步 |
 | 2026-02-10 | L1-GAP-003 | ✅ | `cargo clippy --all-targets --all-features -- -D warnings` 通过 |
+| 2026-02-10 | L2-GAP-001 | ✅ | Parity 口径统一为 `GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）：208/209，剩余项仅 `PX-015` Linux runtime/system bus 验证 |
 | 2026-02-10 | L2-GAP-002 | ✅ | `rc_pack` 测试改为当前 `run-rc` 路径与产物契约，`xtests`/workspace 全绿 |
 | 2026-02-10 | L2-GAP-003 | ✅ | `SwitchboardBuilder` 增补 direct/block，release parity `check` 不再 501 降级 |
 
@@ -100,16 +101,17 @@
 ### L2-GAP-001: Parity 指标来源不一致（需要统一“权威计算方式”）
 
 - **观测**
-  - `agents-only/active_context.md`：Parity ~99% (208/209)
-  - `agents-only/02-reference/GO_PARITY_MATRIX.md`：TOTAL 209，Aligned 183 (88%)（该文件为 2026-01-31 校准版）
-  - `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`：同样引用 88%（分析日期 2026-02-08）
-- **影响**
-  - L2 “达成 96%/98% parity” 的验收口径无法直接从单一来源复现，需要明确：
-    - 是否已对 matrix 条目逐项回填为 208/209？
-    - 208/209 的计算依据是否存于别处（例如 `implementation-history.md` 或最新 diff）？
-- **修复策略**
-  - 定位 208/209 对应的“唯一未对齐项”及其证据（代码/测试/限制说明），并将其回填到 parity matrix（或新增“最新 recalibration”附录），确保 parity 数字可复算。
-- **状态**：⬜ 待检验/待闭环
+  - `active_context/workpackage` 使用 208/209，而 `GO_PARITY_MATRIX` 与 `L2-PARITY-GAP-ANALYSIS` 保留 183/209 基线，存在口径冲突。
+- **修复动作**
+  - 在 `agents-only/02-reference/GO_PARITY_MATRIX.md` 新增 **2026-02-10 Recalibration（权威口径）**。
+  - 在 `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md` 明确标注“183/209 为历史基线”。
+  - 在 `agents-only/active_context.md`、`agents-only/workpackage_latest.md`、`agents-only/03-planning/06-STRATEGIC-ROADMAP.md`、`agents-only/00-overview/00-PROJECT-OVERVIEW.md` 同步到同一口径并引用权威来源。
+- **统一结论（可复算）**
+  - 总目标：209
+  - 已闭环：208（99.52%）
+  - 剩余：1（`PX-015` Linux runtime/system bus 实机验证）
+  - 证据链：`GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）+ `implementation-history.md` + `active_context.md` + `workpackage_latest.md`
+- **状态**：✅ 已闭环（2026-02-10）
 
 ### L2-GAP-002: `xtests` RC 打包验收脚本路径/产物契约漂移
 

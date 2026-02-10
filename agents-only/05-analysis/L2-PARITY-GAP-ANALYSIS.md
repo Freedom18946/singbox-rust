@@ -3,6 +3,9 @@
 > **分析日期**：2026-02-08
 > **数据来源**：`GO_PARITY_MATRIX.md`（2026-01-31 校准）+ L1 后回归验证
 > **分析 Agent**：Claude Code (Opus 4.6)
+>
+> **状态更新（2026-02-10）**：本文档保留为 L2 实施前缺口基线（183/209）。  
+> 当前验收口径请以 `agents-only/02-reference/GO_PARITY_MATRIX.md` 的 `2026-02-10 Recalibration` 为准：**208/209**，剩余 1 项为 `PX-015` 的 Linux runtime/system bus 实机验证。
 
 ---
 

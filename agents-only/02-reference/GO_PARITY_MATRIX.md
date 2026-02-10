@@ -1,4 +1,4 @@
-# Go-Rust Parity Matrix (2026-01-31 Recalibration)
+# Go-Rust Parity Matrix (2026-01-31 Baseline + 2026-02-10 Recalibration)
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.14` for functional, type, API, comment, and directory parity.
 
@@ -9,6 +9,38 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - ❌ **Not aligned**: stubbed, materially divergent, or Go feature is absent/disabled but Rust exposes it.
 - ⊘ **De-scoped**: intentionally excluded; will not be ported.
 - ➕ **Rust-only**: exists in Rust but not in Go reference (extension).
+
+---
+
+## Executive Summary (2026-02-10 Recalibration, Authoritative)
+
+| Metric | Value |
+|------|------|
+| **Total Target** | **209** |
+| **Closed（含 Accepted Limitation / Won't Fix 决策项）** | **208** |
+| **Remaining** | **1** |
+| **Current Parity** | **99.52% (208/209)** |
+
+### Recalibration Scope
+
+- 本口径用于 L2 验收闭环，覆盖 `L2.2~L2.10` + `M2.4(SSMAPI/DERP/Resolved/CacheFile)` 的已实现与已验证项。
+- `PX-007`（IR-based 架构差异）与 TLS/WireGuard 平台限制按项目既定决策记为 **Accepted**，不计入开放缺陷。
+- 下方 `2026-01-31` 摘要保留为历史基线，不再作为当前验收口径。
+
+### Remaining 1（唯一未闭环项）
+
+- `PX-015` 的 Linux runtime/system bus 实机验证（`systemd-resolved` 运行/未运行两场景）尚待补齐。
+- 跟踪位置：`agents-only/workpackage_latest.md`、`agents-only/active_context.md`（均标注为质量后补项）。
+
+### Evidence Chain（可复算）
+
+- 阶段收口记录：`agents-only/07-memory/implementation-history.md`（L2 关闭与 M2.4 完成段落）
+- 当前执行上下文：`agents-only/active_context.md`
+- 工作包状态：`agents-only/workpackage_latest.md`
+- 关键验证命令（已执行并通过）：
+  - `cargo test --workspace`
+  - `cargo build -p app --features parity --release`
+  - `./target/release/app check -c examples/quick-start/01-minimal.json`
 
 ---
 

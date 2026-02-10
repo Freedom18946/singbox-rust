@@ -209,15 +209,13 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 
 ### 缺口分析
 > **详细文档**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
+> **当前口径**: `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 
 | 指标 | 值 |
 |------|------|
 | 总对标项 | 209 |
-| 完全对齐 ✅ | ~186 (~89%) |
-| 部分对齐 ◐ | 12 (6%) |
-| 未对齐 ❌ | 3 (1%) |
-| 已排除 ⊘ | 4 (2%) |
-| Rust 独有 ➕ | 4 (2%) |
+| 已闭环（含 Accepted / Won't Fix）✅ | 208 (99.52%) |
+| 剩余待闭环 ⬜ | 1 (`PX-015` Linux runtime/system bus 实机验证) |
 
 ### 关键阻塞
 - ~~`app --features router` maxminddb API 变更~~ ✅ 已修复 (L2.2)

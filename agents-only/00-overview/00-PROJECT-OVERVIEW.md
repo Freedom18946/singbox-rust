@@ -12,7 +12,8 @@ singbox-rust 是 sing-box (Go) 的 Rust 重写版本，设计理念：
 - **Boring Clarity**：代码易读易维护
 
 ### 当前状态
-- **Parity**: 88% (183/209 items aligned)
+- **Parity**: 99.52% (208/209, authoritative as of 2026-02-10)
+- **Remaining**: 1 item (`PX-015` Linux runtime/system bus runtime validation)
 - **Baseline**: sing-box Go 1.12.14
 - **Rust Toolchain**: 1.92+
 
