@@ -10,6 +10,8 @@
 | `p0_subscription_yaml` | YAML `proxies` parser | implemented |
 | `p0_subscription_base64` | Base64 mixed-link parser | implemented |
 
+备注（2026-02-10）：实网订阅 URL 采样显示，标准 Clash 订阅可解析；部分 URL 因站点风控/人机检测返回挑战页，标记为环境限制，不作为当前阻塞项。
+
 ## P1 (next)
 
 - restart/reload lifecycle replay.
