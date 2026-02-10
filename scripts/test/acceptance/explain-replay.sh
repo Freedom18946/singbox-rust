@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+    _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if _bash4="$("$_script_dir/../../lib/bash4_detect.sh" 2>/dev/null)"; then
+        exec "$_bash4" "$0" "$@"
+    fi
+    echo "ERROR: bash >= 4 is required" >&2
+    exit 2
+fi
 # A1: Go vs Rust `route --explain` compatibility replay testing
 #
 # Exit codes:
@@ -10,10 +18,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Source common utilities
-source "$SCRIPT_DIR/lib/prom_http.sh"
+source "$SCRIPT_DIR/../lib/prom_http.sh"
 
 # Configuration
 E2E_DIR="$PROJECT_ROOT/.e2e"
@@ -25,6 +33,8 @@ RESULTS_FILE="$E2E_DIR/explain_replay_results.json"
 COMPAT_FILE="$E2E_DIR/compat_subset.json"
 
 echo "=== A1: Go vs Rust route --explain Replay Test ==="
+
+mkdir -p "$E2E_DIR"
 
 # Check if rust binary exists
 if [[ ! -x "$RUST_BIN" ]]; then

@@ -69,28 +69,41 @@ done
 echo -e "${BLUE}=== P0 Protocol Performance Benchmarks ===${NC}"
 echo ""
 
-cd "$PROJECT_ROOT/app"
+cd "$PROJECT_ROOT"
 
 # Build benchmark arguments
-BENCH_ARGS=()
+BENCH_TEST_ARGS=()
 if [[ -n "$TEST_MODE" ]]; then
-    BENCH_ARGS+=("--" "$TEST_MODE")
+    BENCH_TEST_ARGS+=("$TEST_MODE")
 fi
 
 if [[ -n "$SAVE_BASELINE" ]]; then
-    BENCH_ARGS+=("--" "--save-baseline" "$SAVE_BASELINE")
+    BENCH_TEST_ARGS+=("--save-baseline" "$SAVE_BASELINE")
 fi
 
 if [[ -n "$COMPARE_BASELINE" ]]; then
-    BENCH_ARGS+=("--" "--baseline" "$COMPARE_BASELINE")
+    BENCH_TEST_ARGS+=("--baseline" "$COMPARE_BASELINE")
 fi
+
+run_p0_bench() {
+    local extra_features="$1"
+    local -a cmd
+    cmd=(cargo bench -p app --bench bench_p0_protocols --features bench)
+    if [[ -n "$extra_features" ]]; then
+        cmd+=(--features "$extra_features")
+    fi
+    if [[ ${#BENCH_TEST_ARGS[@]} -gt 0 ]]; then
+        cmd+=(-- "${BENCH_TEST_ARGS[@]}")
+    fi
+    "${cmd[@]}"
+}
 
 case $MODE in
     baseline)
         echo -e "${GREEN}Running baseline benchmarks...${NC}"
         echo "This measures TCP performance without protocol overhead"
         echo ""
-        cargo bench --bench bench_p0_protocols --features bench "${BENCH_ARGS[@]}"
+        run_p0_bench ""
         ;;
     
     all)
@@ -103,10 +116,7 @@ case $MODE in
         echo ""
         
         # Run with all features (those that exist)
-        cargo bench --bench bench_p0_protocols \
-            --features bench \
-            --features "adapter-hysteria" \
-            "${BENCH_ARGS[@]}" || true
+        run_p0_bench "adapter-hysteria"
         
         echo ""
         echo -e "${YELLOW}Note: REALITY, ECH, Hysteria v2, SSH, and TUIC benchmarks${NC}"

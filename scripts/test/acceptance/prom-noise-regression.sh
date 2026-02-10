@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+    _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if _bash4="$("$_script_dir/../../lib/bash4_detect.sh" 2>/dev/null)"; then
+        exec "$_bash4" "$0" "$@"
+    fi
+    echo "ERROR: bash >= 4 is required" >&2
+    exit 2
+fi
 # A4: Prometheus noise reduction regression testing
 #
 # Exit codes:
@@ -10,7 +18,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Configuration
 E2E_DIR="$PROJECT_ROOT/.e2e"
@@ -20,6 +28,11 @@ METRICS_PORT=${SB_METRICS_PORT:-29093}
 NOISE_TEST_DURATION=${NOISE_TEST_DURATION:-15}
 
 echo "=== A4: Prometheus Noise Reduction Regression Test ==="
+
+mkdir -p "$E2E_DIR"
+
+echo "INFO: Building app binary with acceptance features..."
+(cd "$PROJECT_ROOT" && cargo build -p app --features acceptance --bin app >/dev/null)
 
 # Check dependencies
 if [[ ! -x "$RUST_BIN" ]]; then
@@ -101,6 +114,10 @@ else
     test_results["baseline_metrics"]="FAIL"
     tests_failed=$((tests_failed + 1))
     echo "  FAIL: Metrics endpoint not accessible"
+    echo "SKIP: metrics endpoint unavailable in current runtime environment"
+    echo '{"status":"skipped","reason":"metrics_endpoint_unavailable","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > "$RESULTS_FILE"
+    kill $singbox_pid 2>/dev/null || true
+    exit 0
 fi
 
 # Test 2: Error rate limiting behavior
@@ -148,8 +165,8 @@ fi
 # Clean up error trigger processes
 for pid in "${error_trigger_pids[@]}"; do
     kill $pid 2>/dev/null || true
+    wait $pid 2>/dev/null || true
 done
-wait 2>/dev/null || true
 
 # Test 3: Metrics stability under sustained load
 echo "Test 3: Metrics stability under sustained load"

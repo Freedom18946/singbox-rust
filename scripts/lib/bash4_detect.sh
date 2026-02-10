@@ -20,10 +20,15 @@ check_bash() {
 }
 
 # Build a candidate list. We explicitly keep command -v first, then well-known paths.
-candidate_list=$(command -v bash 2>/dev/null || true)
-candidate_list="$candidate_list\n/bin/bash\n/usr/bin/bash\n/usr/local/bin/bash\n/opt/homebrew/bin/bash\n/usr/local/opt/bash/bin/bash"
-
-printf '%s\n' "$candidate_list" | while IFS= read -r path; do
+primary=$(command -v bash 2>/dev/null || true)
+for path in \
+  "$primary" \
+  /bin/bash \
+  /usr/bin/bash \
+  /usr/local/bin/bash \
+  /opt/homebrew/bin/bash \
+  /usr/local/opt/bash/bin/bash
+do
   if check_bash "$path"; then
     exit 0
   fi

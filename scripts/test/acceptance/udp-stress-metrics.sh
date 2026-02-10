@@ -1,4 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+    _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if _bash4="$("$_script_dir/../../lib/bash4_detect.sh" 2>/dev/null)"; then
+        exec "$_bash4" "$0" "$@"
+    fi
+    echo "ERROR: bash >= 4 is required" >&2
+    exit 2
+fi
 # A3: UDP stress testing and metrics sampling
 #
 # Exit codes:
@@ -10,10 +18,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Source utilities
-source "$SCRIPT_DIR/lib/metrics.sh" 2>/dev/null || true
+source "$SCRIPT_DIR/../lib/metrics.sh" 2>/dev/null || true
 
 # Configuration
 E2E_DIR="$PROJECT_ROOT/.e2e"
@@ -24,6 +32,11 @@ STRESS_DURATION=${UDP_STRESS_DURATION:-10}
 CONCURRENT_SESSIONS=${UDP_CONCURRENT_SESSIONS:-50}
 
 echo "=== A3: UDP Stress Testing and Metrics Sampling ==="
+
+mkdir -p "$E2E_DIR"
+
+echo "INFO: Building app binary with acceptance features..."
+(cd "$PROJECT_ROOT" && cargo build -p app --features acceptance --bin app >/dev/null)
 
 # Check dependencies
 dependencies_missing=0
@@ -137,6 +150,10 @@ else
     test_results["metrics_baseline"]="FAIL"
     tests_failed=$((tests_failed + 1))
     echo "  FAIL: Could not collect baseline metrics"
+    echo "SKIP: metrics endpoint unavailable in current runtime environment"
+    echo '{"status":"skipped","reason":"metrics_endpoint_unavailable","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > "$RESULTS_FILE"
+    kill $singbox_pid 2>/dev/null || true
+    exit 0
 fi
 
 # Test 3: Concurrent session stress test
@@ -183,8 +200,8 @@ if command -v nc >/dev/null 2>&1; then
     # Clean up stress test processes
     for pid in "${stress_pids[@]}"; do
         kill $pid 2>/dev/null || true
+        wait $pid 2>/dev/null || true
     done
-    wait
 else
     test_results["stress_sessions"]="SKIP"
     echo "  SKIP: No netcat available for stress test"

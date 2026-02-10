@@ -1,0 +1,42 @@
+{
+  "machine": {
+    "cpu_model": "unknown",
+    "cores": "unknown",
+    "mem_gb": "0"
+  },
+  "date": "2026-02-10T10:14:48Z",
+  "git_short_sha": "75f1085",
+  "rustc_ver": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cases": [
+    {
+      "name": "dns_query_parse.mean_ns",
+      "value": 65,
+      "unit": "ns"
+    },
+    {
+      "name": "dns_query_parse.median_ns",
+      "value": 64,
+      "unit": "ns"
+    },
+    {
+      "name": "dns_response_build.mean_ns",
+      "value": 64,
+      "unit": "ns"
+    },
+    {
+      "name": "dns_response_build.median_ns",
+      "value": 64,
+      "unit": "ns"
+    },
+    {
+      "name": "socks5_handshake.mean_ns",
+      "value": 2027,
+      "unit": "ns"
+    },
+    {
+      "name": "socks5_handshake.median_ns",
+      "value": 786,
+      "unit": "ns"
+    }
+  ]
+}
