@@ -1,5 +1,7 @@
 # L5 Case Backlog
 
+联测执行基线与实战流程见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
+
 ## P0 (gating)
 
 | Case ID | Goal | Status |
@@ -14,6 +16,8 @@
 
 ## P1 (next)
 
+- `p1_rust_core_http_via_socks`: 本地仿公网 HTTP echo，经 Rust SOCKS 入站转发验证核心链路（implemented）。
+- `p1_subscription_file_urls`: 使用维护中的订阅文件批量解析（implemented）。
 - restart/reload lifecycle replay.
 - auth negative paths (wrong token / expired token).
 - provider/rules/script/profile optional endpoints.

@@ -148,6 +148,8 @@ pub enum TrafficAction {
         name: String,
         url: String,
         #[serde(default)]
+        proxy: Option<String>,
+        #[serde(default)]
         expect_status: Option<u16>,
     },
     TcpRoundTrip {

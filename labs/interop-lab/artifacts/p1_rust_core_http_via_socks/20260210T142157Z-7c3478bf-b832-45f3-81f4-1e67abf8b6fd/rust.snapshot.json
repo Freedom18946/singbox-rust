@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T142157Z-7c3478bf-b832-45f3-81f4-1e67abf8b6fd",
+  "case_id": "p1_rust_core_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:21:57.429332Z",
+  "finished_at": "2026-02-10T14:21:57.703723Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 23915
+      },
+      "body_hash": "a6772d588f4e6a6b82c1dcb6bd9ff6b21d9b9ebe2811e025d8989d16dff58342"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "via_socks_http_echo",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=rust-core\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:63455/v1/echo?scene=rust-core"
+      }
+    }
+  ],
+  "errors": []
+}

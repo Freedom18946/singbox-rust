@@ -13,6 +13,13 @@
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
 **Tests**: 1492+ passed；boundary gate snapshot (2026-02-10): `check-boundaries.sh` pass（V4a=24 <= 25）
 
+### 联测运行约束（2026-02-10 新增）
+
+- Go 版本 sing-box + GUI + TUN 为网络基础，联测期间不得中断或替换。
+- Rust 内核仅作并行对照，默认使用独立 API 端口，不接管现网路由。
+- 每轮 Rust 联测后必须回收进程并确认端口释放，避免干扰用户侧网络。
+- 实战场景清单见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
+
 ### 已关闭里程碑
 
 | 里程碑 | 关闭日期 | 内容 |
@@ -45,6 +52,24 @@
 
 **待补项**:
 - L11 CI 门禁接入（PR smoke + nightly full）
+
+## ✅ 最新完成：Rust 核心链路实战联测（仿公网 upstream）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- 修复 CLI 运行路径适配器未注册问题：`app/src/run_engine.rs` 在 `Supervisor::start` 前补 `sb_adapters::register_all()`。
+- 新增 `interop-lab` 核心链路 case：`p1_rust_core_http_via_socks`。
+  - 启动 Rust 内核（独立端口）+ SOCKS 入站
+  - 通过本地仿公网 `http_echo` 验证经内核转发返回 200
+  - 连续 5 轮稳定通过（errors=[]，无失败项）
+- 新增订阅文件 case：`p1_subscription_file_urls`，直接消费 `labs/interop-lab/subscriptions/subscription_urls.txt`。
+- 修复订阅 link-lines 解析：忽略注释/空行，避免把 `# https://...` 识别为协议。
+
+**运行约束执行**:
+- 全过程未改动 Go+GUI+TUN 基线；
+- Rust 联测均使用独立端口；
+- 每轮结束后执行进程/端口回收检查（11801/19190 均已释放）。
 
 ---
 

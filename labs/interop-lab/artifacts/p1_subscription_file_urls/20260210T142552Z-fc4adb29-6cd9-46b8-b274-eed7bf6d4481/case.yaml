@@ -1,0 +1,32 @@
+id: p1_subscription_file_urls
+title: subscription parser from maintained file urls
+priority: p1
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /ping
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+  go: null
+gui_sequence:
+- kind: subscription_parse
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan: []
+subscription_input:
+  type: file
+  path: labs/interop-lab/subscriptions/subscription_urls.txt
+faults: []
+assertions: []
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: false

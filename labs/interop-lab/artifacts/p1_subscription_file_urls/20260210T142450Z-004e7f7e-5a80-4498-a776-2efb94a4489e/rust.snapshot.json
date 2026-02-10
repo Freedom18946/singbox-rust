@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T142450Z-004e7f7e-5a80-4498-a776-2efb94a4489e",
+  "case_id": "p1_subscription_file_urls",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:24:50.372287Z",
+  "finished_at": "2026-02-10T14:25:20.412205Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at http://127.0.0.1:63567/"
+    }
+  ]
+}

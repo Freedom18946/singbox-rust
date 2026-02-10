@@ -135,12 +135,11 @@ fn parse_subscription_content(source_type: &str, raw: &str) -> Result<Subscripti
         }
     }
 
-    let protocols = parse_link_protocols(raw);
+    let (protocols, node_count) = parse_link_protocols(raw);
     if protocols.is_empty() {
         return Err(anyhow!("unsupported subscription format"));
     }
 
-    let node_count = raw.lines().filter(|line| line.contains("://")).count();
     Ok(SubscriptionResult {
         source_type: source_type.to_string(),
         success: true,
@@ -162,16 +161,24 @@ fn extract_json_protocols(outbounds: &[Value]) -> Vec<String> {
     protocols.into_iter().collect()
 }
 
-fn parse_link_protocols(raw: &str) -> Vec<String> {
+fn parse_link_protocols(raw: &str) -> (Vec<String>, usize) {
     let mut out = BTreeSet::new();
+    let mut count = 0usize;
+
     for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some((scheme, _rest)) = line.split_once("://") {
-            if !scheme.trim().is_empty() {
-                out.insert(scheme.trim().to_string());
+            let scheme = scheme.trim();
+            if !scheme.is_empty() {
+                count += 1;
+                out.insert(scheme.to_string());
             }
         }
     }
-    out.into_iter().collect()
+    (out.into_iter().collect(), count)
 }
 
 #[cfg(test)]

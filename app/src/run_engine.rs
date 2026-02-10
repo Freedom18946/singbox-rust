@@ -685,6 +685,11 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 4.5) Install global HTTP client for sb-core (geo downloads, remote rulesets)
     app::reqwest_http::install_global_http_client();
 
+    // 4.6) Register protocol adapters for supervisor runtime path.
+    // Without this, CLI `run` may start with an empty inbound/outbound builder registry.
+    #[cfg(feature = "adapters")]
+    sb_adapters::register_all();
+
     // 5) Start Supervisor
     info!("Calling Supervisor::start");
     let supervisor = Arc::new(

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T142552Z-fc4adb29-6cd9-46b8-b274-eed7bf6d4481",
+  "case_id": "p1_subscription_file_urls",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:25:52.621341Z",
+  "finished_at": "2026-02-10T14:25:52.624789Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": {
+    "source_type": "file",
+    "success": true,
+    "format": "link_lines",
+    "node_count": 2,
+    "filtered_node_count": 2,
+    "protocols": [
+      "# https",
+      "https"
+    ],
+    "detail": {
+      "lines": 2
+    }
+  },
+  "traffic_results": [],
+  "errors": []
+}

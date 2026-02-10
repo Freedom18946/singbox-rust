@@ -2,3 +2,5 @@
 # Lines starting with '#' are comments.
 # Example:
 # https://example.com/sub?token=...
+
+https://linka.lmscunb.cc:2087/api/v1/client/subscribe?token=63b201b23f4b8148febb2d6d5797303f

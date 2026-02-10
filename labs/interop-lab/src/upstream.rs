@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::process::Command;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
@@ -330,25 +331,38 @@ pub async fn run_traffic_plan(
             TrafficAction::HttpGet {
                 name,
                 url,
+                proxy,
                 expect_status,
             } => {
                 let url = harness.resolve_templates(url);
-                let response = reqwest::Client::new().get(&url).send().await;
+                let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let response = if let Some(proxy) = resolved_proxy.as_deref() {
+                    http_get_via_curl(&url, Some(proxy)).await
+                } else {
+                    http_get_via_reqwest(&url).await
+                };
                 match response {
-                    Ok(resp) => {
-                        let status = resp.status().as_u16();
-                        let body = resp.text().await.unwrap_or_default();
+                    Ok((status, body)) => {
                         let success = expect_status.map(|s| s == status).unwrap_or(status < 400);
                         TrafficResult {
                             name: name.clone(),
                             success,
-                            detail: json!({ "status": status, "url": url, "body": body }),
+                            detail: json!({
+                                "status": status,
+                                "url": url,
+                                "proxy": resolved_proxy,
+                                "body": body
+                            }),
                         }
                     }
                     Err(err) => TrafficResult {
                         name: name.clone(),
                         success: false,
-                        detail: json!({ "url": url, "error": err.to_string() }),
+                        detail: json!({
+                            "url": url,
+                            "proxy": resolved_proxy,
+                            "error": err.to_string()
+                        }),
                     },
                 }
             }
@@ -414,6 +428,63 @@ pub async fn run_traffic_plan(
     }
 
     Ok(out)
+}
+
+async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
+    let response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("http get {url}"))?;
+    let status = response.status().as_u16();
+    let body = response.text().await.unwrap_or_default();
+    Ok((status, body))
+}
+
+async fn http_get_via_curl(url: &str, proxy: Option<&str>) -> Result<(u16, String)> {
+    let marker = "__INTEROP_STATUS__:";
+    let mut cmd = Command::new("curl");
+    cmd.arg("-sS").arg("-L").arg("--max-time").arg("12");
+
+    if let Some(proxy) = proxy {
+        if proxy.starts_with("socks5://") {
+            let addr = proxy.trim_start_matches("socks5://");
+            cmd.arg("--socks5-hostname").arg(addr);
+        } else if proxy.starts_with("socks5h://") {
+            let addr = proxy.trim_start_matches("socks5h://");
+            cmd.arg("--socks5-hostname").arg(addr);
+        } else {
+            cmd.arg("-x").arg(proxy);
+        }
+    }
+
+    cmd.arg("-w").arg(format!("\n{marker}%{{http_code}}"));
+    cmd.arg(url);
+
+    let output = cmd
+        .output()
+        .await
+        .with_context(|| format!("running curl for {url}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(anyhow!(
+            "curl failed status={} stderr={}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    let stdout = String::from_utf8(output.stdout).with_context(|| "curl stdout non-utf8")?;
+    let idx = stdout
+        .rfind(marker)
+        .ok_or_else(|| anyhow!("curl output missing status marker"))?;
+    let body = stdout[..idx].trim_end_matches('\n').to_string();
+    let status_raw = stdout[idx + marker.len()..].trim();
+    let status = status_raw
+        .parse::<u16>()
+        .with_context(|| format!("invalid curl http status: {status_raw}"))?;
+    Ok((status, body))
 }
 
 async fn http_echo(

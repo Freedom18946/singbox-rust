@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_rust_core_http_via_socks",
+  "generated_at": "2026-02-10T14:20:55.096326Z",
+  "run_id": "20260210T142054Z-bac451d8-ed5f-4781-95ec-61e518c0b8c4",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_rust_core_http_via_socks/20260210T142054Z-bac451d8-ed5f-4781-95ec-61e518c0b8c4/rust.snapshot.json"
+  ]
+}
