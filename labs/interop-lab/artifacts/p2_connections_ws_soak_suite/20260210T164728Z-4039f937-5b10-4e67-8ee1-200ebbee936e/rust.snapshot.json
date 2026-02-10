@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T164728Z-4039f937-5b10-4e67-8ee1-200ebbee936e",
+  "case_id": "p2_connections_ws_soak_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T16:47:28.336971Z",
+  "finished_at": "2026-02-10T16:50:23.588250Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "connections_ws_long_running_soak",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "sb-api",
+          "--test",
+          "clash_websocket_e2e",
+          "test_connections_ws_long_running_soak",
+          "--",
+          "--ignored",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 175243,
+        "env": {
+          "SB_WS_SOAK_CLIENTS_PER_WAVE": "24",
+          "SB_WS_SOAK_OVERALL_SUCCESS_PERCENT": "97",
+          "SB_WS_SOAK_WAVES": "20",
+          "SB_WS_SOAK_WAVE_DELAY_MS": "120",
+          "SB_WS_SOAK_WAVE_SUCCESS_PERCENT": "95"
+        },
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Blocking waiting for file lock on build directory\n   Compiling ring v0.17.14\n   Compiling rustls v0.23.35\n   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)\n   Compiling rustls-webpki v0.103.8\n   Compiling rcgen v0.13.2\n   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.6.2\n   Compiling quinn-proto v0.11.13\n   Compiling hyper-rustls v0.27.7\n   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)\n   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)\n   Compiling reqwest v0.12.28\n   Compiling quinn v0.11.9\n   Compiling sb-api v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-api)\n    Finished `test` profile [optimized + debuginfo] target(s) in 2m 51s\n     Running tests/clash_websocket_e2e.rs (target/debug/deps/clash_websocket_e2e-1f03549ed4a1c3fe)\n",
+        "stdout": "\nrunning 1 test\ntest test_connections_ws_long_running_soak ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 2.65s\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,54 @@
+id: p2_connections_ws_soak_suite
+title: clash connections websocket long-running soak stability
+priority: p2
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /v1/echo
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+  go: null
+gui_sequence: []
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: command
+  name: connections_ws_long_running_soak
+  command: cargo
+  args:
+  - test
+  - -p
+  - sb-api
+  - --test
+  - clash_websocket_e2e
+  - test_connections_ws_long_running_soak
+  - --
+  - --ignored
+  - --nocapture
+  env:
+    SB_WS_SOAK_CLIENTS_PER_WAVE: '24'
+    SB_WS_SOAK_OVERALL_SUCCESS_PERCENT: '97'
+    SB_WS_SOAK_WAVES: '20'
+    SB_WS_SOAK_WAVE_DELAY_MS: '120'
+    SB_WS_SOAK_WAVE_SUCCESS_PERCENT: '95'
+  workdir: null
+  timeout_ms: 900000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.connections_ws_long_running_soak.success
+  op: eq
+  expected: true
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true

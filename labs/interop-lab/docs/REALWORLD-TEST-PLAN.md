@@ -80,6 +80,10 @@ lsof -nP -iTCP:19090 -sTCP:LISTEN
 - 目标：提前发现累积泄漏、计数漂移、偶发崩溃。
 - 你配合：给一个不影响白天工作的时间窗。
 - 我执行：P0 case 循环运行 + 周期 diff 报告。
+- 自动化入口：
+  - `cargo run -p interop-lab -- case run p2_connections_ws_soak_suite`
+  - `ITERATIONS=3 KERNEL=rust labs/interop-lab/scripts/run_case_trend_gate.sh p2_connections_ws_soak_suite`
+  - 若具备 Go+Rust 双快照环境，可将 `ALLOW_MISSING_DIFF=0` 强制开启 diff 门禁。
 - 通过标准：无持续增长异常、无新 mismatch 趋势。
 
 ## 场景 8：协议层公网仿真（Trojan + Shadowsocks）

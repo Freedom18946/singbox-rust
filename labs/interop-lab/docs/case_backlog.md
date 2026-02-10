@@ -52,6 +52,7 @@
 - `p2_connections_ws_concurrency_suite`: `/connections` WebSocket 高并发 + 多波次稳定性（短时 soak）验证（implemented）。
 - `p2_trojan_network_restart_suite`: Trojan 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
 - `p2_shadowsocks_network_restart_suite`: Shadowsocks 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
+- `p2_connections_ws_soak_suite`: `/connections` WebSocket 长时 soak 稳定性验证（implemented）。
+- `scripts/run_case_trend_gate.sh`: 循环运行 case 并执行趋势门禁（errors/traffic/diff mismatch，支持缺失 diff 容忍）（implemented）。
 - full GUI desktop smoke through Wails bridge.
-- high concurrency stress for `/connections` websocket.
-- long-running soak with diff trend gates.
+- extreme-scale stress for `/connections` websocket（>1k 并发，nightly）。

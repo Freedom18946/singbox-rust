@@ -235,6 +235,35 @@
 - 仅做 Rust 并行测试，不接管现网；
 - 结束后确认无 Rust 常驻监听/进程残留。
 
+## ✅ 最新完成：`/connections` WebSocket 长时 soak + 趋势门禁（P2）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- `clash_websocket_e2e` 增强为可参数化，并新增 ignored 长时 soak 用例：
+  - `test_connections_ws_long_running_soak`
+  - 文件：`crates/sb-api/tests/clash_websocket_e2e.rs`
+- 新增 `interop-lab` soak case：
+  - `labs/interop-lab/cases/p2_connections_ws_soak_suite.yaml`
+- 新增趋势门禁脚本：
+  - `labs/interop-lab/scripts/run_case_trend_gate.sh`
+  - 支持循环运行 case，并对 `errors` / `failed traffic` / `diff mismatches` 做阈值与非增长门禁（可配置）。
+- 实跑通过：
+  - `cargo test -p sb-api --test clash_websocket_e2e -- --nocapture`（3 passed, 1 ignored）
+  - `cargo test -p sb-api --test clash_websocket_e2e test_connections_ws_long_running_soak -- --ignored --nocapture`（1/1）
+  - `cargo run -p interop-lab -- case run p2_connections_ws_soak_suite`（`errors=[]`, `exit_code=0`）
+  - `ITERATIONS=2 KERNEL=rust ALLOW_MISSING_DIFF=1 labs/interop-lab/scripts/run_case_trend_gate.sh p2_connections_ws_soak_suite`（pass）
+
+**验证语义**:
+- 长时 soak：多波次持续 WS 连接下，单波与总体成功率均需达门限。
+- 趋势门禁：迭代回归中，错误/失败项不得超过阈值，且综合分数不允许上升。
+- 在双核快照可用时，脚本可启用严格 diff 门禁（`ALLOW_MISSING_DIFF=0`）。
+
+**运行约束执行**:
+- 全过程未改动 Go+GUI+TUN 基线；
+- Rust 仅并行测试，不接管现网；
+- 结束后确认无 Rust 常驻监听/进程残留（11801/19190 未占用）。
+
 ---
 
 ## ✅ 最新完成：L9 订阅联测（基础闭环）

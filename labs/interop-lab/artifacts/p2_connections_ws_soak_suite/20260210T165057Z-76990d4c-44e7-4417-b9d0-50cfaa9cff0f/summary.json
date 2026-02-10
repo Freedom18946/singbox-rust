@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_connections_ws_soak_suite",
+  "generated_at": "2026-02-10T16:51:20.817626Z",
+  "run_id": "20260210T165057Z-76990d4c-44e7-4417-b9d0-50cfaa9cff0f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_connections_ws_soak_suite/20260210T165057Z-76990d4c-44e7-4417-b9d0-50cfaa9cff0f/rust.snapshot.json"
+  ]
+}

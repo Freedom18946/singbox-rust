@@ -15,6 +15,26 @@ use tokio::time::timeout;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
+fn env_usize(key: &str, default: usize) -> usize {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn required_success(total: usize, success_percent: usize) -> usize {
+    (total * success_percent) / 100
+}
+
 struct TestServer {
     http_base: String,
     ws_base: String,
@@ -121,7 +141,8 @@ async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
     };
 
     let ws_url = format!("{}/connections", server.ws_base);
-    let clients = 64usize;
+    let clients = env_usize("SB_WS_CONCURRENCY_CLIENTS", 64);
+    let success_percent = env_usize("SB_WS_CONCURRENCY_SUCCESS_PERCENT", 95);
 
     let mut set = JoinSet::new();
     for _ in 0..clients {
@@ -137,7 +158,7 @@ async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
     }
 
     assert!(
-        success >= (clients * 95) / 100,
+        success >= required_success(clients, success_percent),
         "/connections websocket concurrency too low: {success}/{clients}"
     );
     Ok(())
@@ -150,8 +171,11 @@ async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
     };
 
     let ws_url = format!("{}/connections", server.ws_base);
-    let clients_per_wave = 32usize;
-    let waves = 8usize;
+    let clients_per_wave = env_usize("SB_WS_MULTI_WAVE_CLIENTS", 32);
+    let waves = env_usize("SB_WS_MULTI_WAVE_WAVES", 8);
+    let wave_delay_ms = env_u64("SB_WS_MULTI_WAVE_DELAY_MS", 100);
+    let wave_success_percent = env_usize("SB_WS_MULTI_WAVE_SUCCESS_PERCENT", 95);
+    let overall_success_percent = env_usize("SB_WS_MULTI_WAVE_OVERALL_SUCCESS_PERCENT", 97);
     let mut total_success = 0usize;
 
     for wave in 0..waves {
@@ -169,19 +193,65 @@ async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
         }
 
         assert!(
-            wave_success >= (clients_per_wave * 95) / 100,
+            wave_success >= required_success(clients_per_wave, wave_success_percent),
             "wave {} websocket success too low: {wave_success}/{clients_per_wave}",
             wave + 1
         );
         total_success += wave_success;
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(wave_delay_ms)).await;
     }
 
     let total_clients = waves * clients_per_wave;
     assert!(
-        total_success >= (total_clients * 97) / 100,
+        total_success >= required_success(total_clients, overall_success_percent),
         "overall websocket stability too low: {total_success}/{total_clients}"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "long-running soak; run explicitly in interop/nightly"]
+async fn test_connections_ws_long_running_soak() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let ws_url = format!("{}/connections", server.ws_base);
+    let clients_per_wave = env_usize("SB_WS_SOAK_CLIENTS_PER_WAVE", 32);
+    let waves = env_usize("SB_WS_SOAK_WAVES", 40);
+    let wave_delay_ms = env_u64("SB_WS_SOAK_WAVE_DELAY_MS", 150);
+    let wave_success_percent = env_usize("SB_WS_SOAK_WAVE_SUCCESS_PERCENT", 95);
+    let overall_success_percent = env_usize("SB_WS_SOAK_OVERALL_SUCCESS_PERCENT", 97);
+    let mut total_success = 0usize;
+
+    for wave in 0..waves {
+        let mut set = JoinSet::new();
+        for _ in 0..clients_per_wave {
+            let ws_url = ws_url.clone();
+            set.spawn(async move { receive_connections_frame(&ws_url).await });
+        }
+
+        let mut wave_success = 0usize;
+        while let Some(result) = set.join_next().await {
+            if matches!(result, Ok(true)) {
+                wave_success += 1;
+            }
+        }
+
+        assert!(
+            wave_success >= required_success(clients_per_wave, wave_success_percent),
+            "soak wave {} websocket success too low: {wave_success}/{clients_per_wave}",
+            wave + 1
+        );
+        total_success += wave_success;
+        tokio::time::sleep(Duration::from_millis(wave_delay_ms)).await;
+    }
+
+    let total_clients = waves * clients_per_wave;
+    assert!(
+        total_success >= required_success(total_clients, overall_success_percent),
+        "soak overall websocket stability too low: {total_success}/{total_clients}"
     );
     Ok(())
 }
