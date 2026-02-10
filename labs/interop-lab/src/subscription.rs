@@ -5,6 +5,10 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
+use tokio::process::Command;
+
+const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+                          (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 pub async fn parse_subscription(input: &SubscriptionInputSpec) -> Result<SubscriptionResult> {
     let (source_type, raw) = match input {
@@ -16,19 +20,63 @@ pub async fn parse_subscription(input: &SubscriptionInputSpec) -> Result<Subscri
             ("file".to_string(), content)
         }
         SubscriptionInputSpec::Http { url } => {
-            let body = reqwest::Client::new()
-                .get(url)
-                .send()
-                .await
-                .with_context(|| format!("requesting subscription URL {url}"))?
-                .text()
-                .await
-                .with_context(|| format!("reading subscription body from {url}"))?;
+            let body = fetch_subscription_http(url).await?;
             ("http".to_string(), body)
         }
     };
 
     parse_subscription_content(&source_type, &raw)
+}
+
+async fn fetch_subscription_http(url: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
+        .user_agent(BROWSER_UA)
+        .build()
+        .with_context(|| "building subscription http client")?;
+
+    let response = client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "*/*")
+        .send()
+        .await
+        .with_context(|| format!("requesting subscription URL {url}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("reading subscription body from {url}"))?;
+
+    if status.is_success() && !looks_like_html(&body) {
+        return Ok(body);
+    }
+
+    let output = Command::new("curl")
+        .arg("-sSL")
+        .arg("-A")
+        .arg(BROWSER_UA)
+        .arg(url)
+        .output()
+        .await
+        .with_context(|| "executing curl fallback for subscription fetch")?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "subscription fetch failed: reqwest_status={} curl_status={}",
+            status,
+            output.status
+        ));
+    }
+
+    let body = String::from_utf8(output.stdout)
+        .with_context(|| "curl fallback returned non-utf8 subscription payload")?;
+    if body.trim().is_empty() {
+        return Err(anyhow!("subscription body empty after curl fallback"));
+    }
+    Ok(body)
+}
+
+fn looks_like_html(body: &str) -> bool {
+    let trimmed = body.trim_start();
+    trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") || trimmed.starts_with("<HTML")
 }
 
 fn parse_subscription_content(source_type: &str, raw: &str) -> Result<SubscriptionResult> {

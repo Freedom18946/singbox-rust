@@ -1,0 +1,8 @@
+{
+  "case_id": "p0_clash_api_contract",
+  "generated_at": "2026-02-10T13:06:11.307382Z",
+  "run_id": "20260210T130541Z-839d5cc5-9f9d-4ab7-a447-3802db50c98a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p0_clash_api_contract/20260210T130541Z-839d5cc5-9f9d-4ab7-a447-3802db50c98a/go.snapshot.json"
+  ]
+}

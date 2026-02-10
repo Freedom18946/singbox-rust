@@ -1,0 +1,9 @@
+{
+  "case_id": "l6_local_harness_smoke",
+  "run_dir": "labs/interop-lab/artifacts/l6_local_harness_smoke/20260210T131830Z-209f10cc-b641-44f0-8e81-5f92719d22c9",
+  "compared_at": "2026-02-10T13:18:51.219682+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": []
+}
