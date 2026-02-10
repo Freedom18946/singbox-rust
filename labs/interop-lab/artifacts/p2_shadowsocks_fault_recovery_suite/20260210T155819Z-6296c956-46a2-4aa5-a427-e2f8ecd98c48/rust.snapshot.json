@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T155819Z-6296c956-46a2-4aa5-a427-e2f8ecd98c48",
+  "case_id": "p2_shadowsocks_fault_recovery_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:58:19.075949Z",
+  "finished_at": "2026-02-10T15:58:20.301542Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "shadowsocks_fault_wrong_password",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "app",
+          "--test",
+          "shadowsocks_protocol_validation",
+          "--features",
+          "net_e2e",
+          "test_ss_wrong_password",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 615,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Finished `test` profile [optimized + debuginfo] target(s) in 0.27s\n     Running tests/shadowsocks_protocol_validation.rs (target/debug/deps/shadowsocks_protocol_validation-5f842f0c7f324a30)\n",
+        "stdout": "\nrunning 1 test\ntest test_ss_wrong_password ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.26s\n\n",
+        "workdir": null
+      }
+    },
+    {
+      "name": "shadowsocks_recovery_aes256",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "app",
+          "--test",
+          "shadowsocks_protocol_validation",
+          "--features",
+          "net_e2e",
+          "test_ss_aes256gcm_encryption",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 606,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Finished `test` profile [optimized + debuginfo] target(s) in 0.26s\n     Running tests/shadowsocks_protocol_validation.rs (target/debug/deps/shadowsocks_protocol_validation-5f842f0c7f324a30)\n",
+        "stdout": "\nrunning 1 test\n✅ AES-256-GCM cipher test passed\ntest test_ss_aes256gcm_encryption ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.26s\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": []
+}

@@ -326,6 +326,26 @@ async fn test_ss_multi_user_concurrent() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_ss_high_concurrency() {
+    struct EnvRestore {
+        key: &'static str,
+        old: Option<String>,
+    }
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            if let Some(v) = &self.old {
+                std::env::set_var(self.key, v);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+    let _restore_rate_limit = EnvRestore {
+        key: "SB_INBOUND_RATE_LIMIT_PER_IP",
+        old: std::env::var("SB_INBOUND_RATE_LIMIT_PER_IP").ok(),
+    };
+    // Default limiter is 100/10s per IP; disable for stress scenario.
+    std::env::set_var("SB_INBOUND_RATE_LIMIT_PER_IP", "0");
+
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };

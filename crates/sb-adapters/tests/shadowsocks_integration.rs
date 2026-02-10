@@ -12,7 +12,7 @@ use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use std::io::ErrorKind;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 // ============================================================================
@@ -205,19 +205,32 @@ async fn test_shadowsocks_connector_dial_mock() {
     };
     let server_addr = listener.local_addr().unwrap();
 
-    // Spawn mock server that just accepts connection
+    // Spawn mock server that performs a minimal SS handshake:
+    // 1) read client salt + first encrypted chunk
+    // 2) send server salt back (aes-256-gcm => 32 bytes)
+    // 3) read one more encrypted chunk (target address payload)
     let server_handle = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
 
-        // Read some data - SS client should send salt (12-32 bytes) + encrypted payload
         let mut buf = [0u8; 256];
-        let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+        let n1 = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
             .await
             .unwrap_or(Ok(0))
             .unwrap_or(0);
+        if n1 == 0 {
+            return false;
+        }
 
-        // Should receive at least some data (salt + nonce + encrypted address)
-        n > 0
+        let server_salt = [7u8; 32];
+        if stream.write_all(&server_salt).await.is_err() {
+            return false;
+        }
+
+        let n2 = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .unwrap_or(Ok(0))
+            .unwrap_or(0);
+        n2 > 0
     });
 
     // Wait for server to start

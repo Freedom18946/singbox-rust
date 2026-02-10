@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_trojan_fault_recovery_suite",
+  "generated_at": "2026-02-10T15:58:18.350069Z",
+  "run_id": "20260210T155816Z-b315704d-337a-44c8-8c6c-9a599ad4f113",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_trojan_fault_recovery_suite/20260210T155816Z-b315704d-337a-44c8-8c6c-9a599ad4f113/rust.snapshot.json"
+  ]
+}

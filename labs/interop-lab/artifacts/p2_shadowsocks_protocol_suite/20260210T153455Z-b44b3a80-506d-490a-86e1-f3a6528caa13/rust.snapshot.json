@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T153455Z-b44b3a80-506d-490a-86e1-f3a6528caa13",
+  "case_id": "p2_shadowsocks_protocol_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:34:55.108273Z",
+  "finished_at": "2026-02-10T15:35:25.156114Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at http://127.0.0.1:53446/"
+    }
+  ]
+}

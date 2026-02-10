@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T153630Z-dcfe8a21-7b54-4658-9f3a-6a30755e474b",
+  "case_id": "p2_shadowsocks_protocol_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:36:30.663906Z",
+  "finished_at": "2026-02-10T15:36:36.175486Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "shadowsocks_protocol_validation",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "app",
+          "--test",
+          "shadowsocks_protocol_validation",
+          "--features",
+          "net_e2e",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 3718,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)\n    Finished `test` profile [optimized + debuginfo] target(s) in 2.37s\n     Running tests/shadowsocks_protocol_validation.rs (target/debug/deps/shadowsocks_protocol_validation-5f842f0c7f324a30)\n",
+        "stdout": "\nrunning 7 tests\n✅ AES-256-GCM cipher test passed\n✅ AES-128-GCM cipher test passed\ntest test_ss_wrong_password ... ok\ntest test_ss_aes128gcm_encryption ... ok\ntest test_ss_aes256gcm_encryption ... ok\n✅ ChaCha20-Poly1305 cipher test passed\ntest test_ss_chacha20poly1305_encryption ... ok\n✅ Large payload test passed: 1024KB transferred\ntest test_ss_large_payload ... ok\n✅ High concurrency test: 500/500 successful\ntest test_ss_high_concurrency ... ok\n✅ Multi-user concurrent connections: 3/3 successful\ntest test_ss_multi_user_concurrent ... ok\n\ntest result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s\n\n",
+        "workdir": null
+      }
+    },
+    {
+      "name": "shadowsocks_validation_suite",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "app",
+          "--test",
+          "shadowsocks_validation_suite",
+          "--features",
+          "net_e2e",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 1791,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)\n    Finished `test` profile [optimized + debuginfo] target(s) in 0.71s\n     Running tests/shadowsocks_validation_suite.rs (target/debug/deps/shadowsocks_validation_suite-30780b7dae313a7e)\n",
+        "stdout": "\nrunning 5 tests\nUDP relay test: Basic connectivity verified (full UDP relay requires SOCKS5 UDP associate)\ntest test_ss_udp_relay ... ok\ntest test_ss_aes_256_gcm ... ok\ntest test_ss_aes_128_gcm ... ok\ntest test_ss_chacha20_poly1305 ... ok\nMulti-user test: Both users authenticated and communicated successfully\ntest test_ss_multi_user_auth ... ok\n\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": []
+}

@@ -266,9 +266,9 @@ fn select_user_by_len_chunk(
         let mut lbytes = [0u8; 2];
         lbytes.copy_from_slice(&plain);
         let plen = u16::from_be_bytes(lbytes) as usize;
-        if plen == 0 {
-            continue;
-        }
+        // Outbound may send an empty first AEAD chunk during tunnel warm-up.
+        // Zero-length plaintext is still a valid authentication signal for key selection.
+        let _ = plen;
         return Some((username.clone(), master_key.clone()));
     }
     None
@@ -407,13 +407,30 @@ async fn write_aead_chunk(
     w: &mut (impl tokio::io::AsyncWrite + Unpin),
     data: &[u8],
 ) -> Result<()> {
-    let len_be = (data.len() as u16).to_be_bytes();
-    let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
-    *nonce_ctr += 1;
-    let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, data)?;
-    *nonce_ctr += 1;
-    w.write_all(&enc_len).await?;
-    w.write_all(&enc_payload).await?;
+    if data.is_empty() {
+        let len_be = 0u16.to_be_bytes();
+        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        *nonce_ctr += 1;
+        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, &[])?;
+        *nonce_ctr += 1;
+        w.write_all(&enc_len).await?;
+        w.write_all(&enc_payload).await?;
+        return Ok(());
+    }
+
+    let mut offset = 0usize;
+    while offset < data.len() {
+        let end = (offset + u16::MAX as usize).min(data.len());
+        let chunk = &data[offset..end];
+        let len_be = (chunk.len() as u16).to_be_bytes();
+        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        *nonce_ctr += 1;
+        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, chunk)?;
+        *nonce_ctr += 1;
+        w.write_all(&enc_len).await?;
+        w.write_all(&enc_payload).await?;
+        offset = end;
+    }
     Ok(())
 }
 

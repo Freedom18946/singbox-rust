@@ -578,6 +578,87 @@ pub async fn run_traffic_plan(
                     detail: json!({ "action": "sleep", "ms": ms }),
                 }
             }
+            TrafficAction::Command {
+                name,
+                command,
+                args,
+                env,
+                workdir,
+                timeout_ms,
+                expect_exit,
+            } => {
+                let resolved_command = harness.resolve_templates(command);
+                let resolved_args: Vec<String> =
+                    args.iter().map(|arg| harness.resolve_templates(arg)).collect();
+                let resolved_env: BTreeMap<String, String> = env
+                    .iter()
+                    .map(|(k, v)| (k.clone(), harness.resolve_templates(v)))
+                    .collect();
+                let resolved_workdir = workdir.as_ref().map(|dir| {
+                    let raw = dir.to_string_lossy();
+                    std::path::PathBuf::from(harness.resolve_templates(&raw))
+                });
+
+                let mut cmd = Command::new(&resolved_command);
+                cmd.args(&resolved_args);
+                for (k, v) in &resolved_env {
+                    cmd.env(k, v);
+                }
+                if let Some(dir) = &resolved_workdir {
+                    cmd.current_dir(dir);
+                }
+
+                let started_at = tokio::time::Instant::now();
+                let output =
+                    tokio::time::timeout(Duration::from_millis((*timeout_ms).max(1)), cmd.output())
+                        .await;
+                match output {
+                    Ok(Ok(output)) => {
+                        let code = output.status.code();
+                        let success = if let Some(expected) = expect_exit {
+                            code == Some(*expected)
+                        } else {
+                            output.status.success()
+                        };
+                        TrafficResult {
+                            name: name.clone(),
+                            success,
+                            detail: json!({
+                                "action": "command",
+                                "command": resolved_command,
+                                "args": resolved_args,
+                                "env": resolved_env,
+                                "workdir": resolved_workdir.as_ref().map(|p| p.to_string_lossy().to_string()),
+                                "elapsed_ms": started_at.elapsed().as_millis() as u64,
+                                "exit_code": code,
+                                "expect_exit": expect_exit,
+                                "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
+                                "stderr": String::from_utf8_lossy(&output.stderr).to_string()
+                            }),
+                        }
+                    }
+                    Ok(Err(err)) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "command",
+                            "command": resolved_command,
+                            "args": resolved_args,
+                            "error": err.to_string()
+                        }),
+                    },
+                    Err(_) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "command",
+                            "command": resolved_command,
+                            "args": resolved_args,
+                            "timeout_ms": timeout_ms
+                        }),
+                    },
+                }
+            }
         };
 
         out.push(result);

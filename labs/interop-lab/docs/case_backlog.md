@@ -36,8 +36,17 @@
 2. 再进入协议层：Trojan 与 Shadowsocks 的公网仿真联测（不提前）。
 3. 最后进入 GUI/Wails 长链路与长稳回归。
 
+协议层首轮进展（2026-02-10）：
+- Trojan：`app` 的 net_e2e 协议验证通过（TLS/二进制协议/多用户）。
+- Shadowsocks：首轮发现并修复握手兼容、cipher 支持与大包分片问题；修复后 `app` 的两套 net_e2e 协议验证均通过。
+- 下一步：将 Trojan/Shadowsocks 协议验证迁移为 `interop-lab` 的 `p2_trojan_*` / `p2_shadowsocks_*` 可编排 case（含 fault/recovery）。
+
 ## P2 (later)
 
+- `p2_trojan_fault_recovery_suite`: Trojan 协议“错误凭据失败 -> 正确凭据恢复”语义回放（implemented）。
+- `p2_shadowsocks_fault_recovery_suite`: Shadowsocks 协议“错误密码失败 -> 正常密码恢复”语义回放（implemented）。
+- `p2_trojan_protocol_suite`: 通过 `interop-lab` command action 执行 Trojan 协议 net_e2e 套件（implemented）。
+- `p2_shadowsocks_protocol_suite`: 通过 `interop-lab` command action 执行 Shadowsocks 协议 net_e2e 套件（implemented）。
 - full GUI desktop smoke through Wails bridge.
 - high concurrency stress for `/connections` websocket.
 - long-running soak with diff trend gates.

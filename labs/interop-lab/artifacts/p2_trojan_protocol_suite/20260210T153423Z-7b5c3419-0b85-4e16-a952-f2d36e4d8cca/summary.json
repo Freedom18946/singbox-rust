@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_trojan_protocol_suite",
+  "generated_at": "2026-02-10T15:34:53.598982Z",
+  "run_id": "20260210T153423Z-7b5c3419-0b85-4e16-a952-f2d36e4d8cca",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_trojan_protocol_suite/20260210T153423Z-7b5c3419-0b85-4e16-a952-f2d36e4d8cca/rust.snapshot.json"
+  ]
+}

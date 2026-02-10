@@ -20,7 +20,7 @@ use tokio::net::{TcpStream, UdpSocket};
 
 // Crypto imports
 use aes_gcm::aead::{generic_array::GenericArray, Aead};
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit, Nonce};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce as ChaNonce};
 use rand::RngCore;
 use sha1::Sha1;
@@ -56,6 +56,7 @@ pub struct ShadowsocksConfig {
 /// 支持的 Shadowsocks 加密方法
 #[derive(Debug, Clone, PartialEq)]
 pub enum CipherMethod {
+    Aes128Gcm,
     Aes256Gcm,
     ChaCha20Poly1305,
 }
@@ -63,6 +64,7 @@ pub enum CipherMethod {
 impl CipherMethod {
     fn from_str(method: &str) -> Result<Self> {
         match method.to_lowercase().as_str() {
+            "aes-128-gcm" => Ok(Self::Aes128Gcm),
             "aes-256-gcm" => Ok(Self::Aes256Gcm),
             "chacha20-poly1305" | "chacha20-ietf-poly1305" => Ok(Self::ChaCha20Poly1305),
             _ => Err(AdapterError::Protocol(format!(
@@ -74,6 +76,7 @@ impl CipherMethod {
 
     fn key_size(&self) -> usize {
         match self {
+            Self::Aes128Gcm => 16,        // AES-128
             Self::Aes256Gcm => 32,        // AES-256
             Self::ChaCha20Poly1305 => 32, // ChaCha20
         }
@@ -469,6 +472,11 @@ fn hkdf_subkey(master_key: &[u8], salt: &[u8], out_len: usize) -> Result<Vec<u8>
 fn aead_encrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
     let nonce = ss_nonce(nonce_ctr);
     match cipher {
+        CipherMethod::Aes128Gcm => {
+            let aead = Aes128Gcm::new(GenericArray::from_slice(key));
+            aead.encrypt(Nonce::from_slice(&nonce), data)
+                .map_err(|_| AdapterError::Protocol("AES-GCM encrypt failed".to_string()))
+        }
         CipherMethod::Aes256Gcm => {
             let aead = Aes256Gcm::new(GenericArray::from_slice(key));
             aead.encrypt(Nonce::from_slice(&nonce), data)
@@ -486,6 +494,11 @@ fn aead_encrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) 
 fn aead_decrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
     let nonce = ss_nonce(nonce_ctr);
     match cipher {
+        CipherMethod::Aes128Gcm => {
+            let aead = Aes128Gcm::new(GenericArray::from_slice(key));
+            aead.decrypt(Nonce::from_slice(&nonce), data)
+                .map_err(|_| AdapterError::Protocol("AES-GCM decrypt failed".to_string()))
+        }
         CipherMethod::Aes256Gcm => {
             let aead = Aes256Gcm::new(GenericArray::from_slice(key));
             aead.decrypt(Nonce::from_slice(&nonce), data)
@@ -535,13 +548,30 @@ async fn write_aead_chunk(
     w: &mut (impl tokio::io::AsyncWrite + Unpin),
     data: &[u8],
 ) -> Result<()> {
-    let len_be = (data.len() as u16).to_be_bytes();
-    let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
-    *nonce_ctr += 1;
-    let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, data)?;
-    *nonce_ctr += 1;
-    w.write_all(&enc_len).await.map_err(AdapterError::Io)?;
-    w.write_all(&enc_payload).await.map_err(AdapterError::Io)?;
+    if data.is_empty() {
+        let len_be = 0u16.to_be_bytes();
+        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        *nonce_ctr += 1;
+        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, &[])?;
+        *nonce_ctr += 1;
+        w.write_all(&enc_len).await.map_err(AdapterError::Io)?;
+        w.write_all(&enc_payload).await.map_err(AdapterError::Io)?;
+        return Ok(());
+    }
+
+    let mut offset = 0usize;
+    while offset < data.len() {
+        let end = (offset + u16::MAX as usize).min(data.len());
+        let chunk = &data[offset..end];
+        let len_be = (chunk.len() as u16).to_be_bytes();
+        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        *nonce_ctr += 1;
+        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, chunk)?;
+        *nonce_ctr += 1;
+        w.write_all(&enc_len).await.map_err(AdapterError::Io)?;
+        w.write_all(&enc_payload).await.map_err(AdapterError::Io)?;
+        offset = end;
+    }
     Ok(())
 }
 

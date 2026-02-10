@@ -185,6 +185,24 @@ pub enum TrafficAction {
         name: String,
         ms: u64,
     },
+    Command {
+        name: String,
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+        #[serde(default)]
+        workdir: Option<PathBuf>,
+        #[serde(default = "default_command_timeout_ms")]
+        timeout_ms: u64,
+        #[serde(default)]
+        expect_exit: Option<i32>,
+    },
+}
+
+fn default_command_timeout_ms() -> u64 {
+    300_000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

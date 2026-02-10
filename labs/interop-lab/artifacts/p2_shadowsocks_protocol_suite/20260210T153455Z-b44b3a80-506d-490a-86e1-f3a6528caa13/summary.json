@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_shadowsocks_protocol_suite",
+  "generated_at": "2026-02-10T15:35:25.157579Z",
+  "run_id": "20260210T153455Z-b44b3a80-506d-490a-86e1-f3a6528caa13",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_shadowsocks_protocol_suite/20260210T153455Z-b44b3a80-506d-490a-86e1-f3a6528caa13/rust.snapshot.json"
+  ]
+}

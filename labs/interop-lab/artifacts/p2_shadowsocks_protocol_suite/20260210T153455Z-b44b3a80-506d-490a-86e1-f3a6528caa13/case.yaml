@@ -1,0 +1,69 @@
+id: p2_shadowsocks_protocol_suite
+title: shadowsocks protocol suite via app net_e2e tests
+priority: p2
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+  go: null
+gui_sequence: []
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: command
+  name: shadowsocks_protocol_validation
+  command: cargo
+  args:
+  - test
+  - -p
+  - app
+  - --test
+  - shadowsocks_protocol_validation
+  - --features
+  - net_e2e
+  - --
+  - --nocapture
+  env: {}
+  workdir: null
+  timeout_ms: 600000
+  expect_exit: 0
+- kind: command
+  name: shadowsocks_validation_suite
+  command: cargo
+  args:
+  - test
+  - -p
+  - app
+  - --test
+  - shadowsocks_validation_suite
+  - --features
+  - net_e2e
+  - --
+  - --nocapture
+  env: {}
+  workdir: null
+  timeout_ms: 600000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.shadowsocks_protocol_validation.success
+  op: eq
+  expected: true
+- key: traffic.shadowsocks_validation_suite.success
+  op: eq
+  expected: true
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true

@@ -97,6 +97,56 @@
 - `interop-lab` 断言模型接线：`AssertionSpec` 已接入执行链，支持 `eq/ne/exists/not_exists`（当前覆盖 `http.<name>.status`、`traffic.<name>.success`）。
 - 计划顺序已冻结：先完成核心恢复类，再进入 Trojan + Shadowsocks 协议层联测。
 
+## ✅ 最新完成：Trojan + Shadowsocks 协议层联测（P2 首轮）
+
+**日期**: 2026-02-10
+
+**Trojan 结果**:
+- `cargo test -p app --test trojan_protocol_validation --features net_e2e,tls_reality -- --nocapture`：2/2 通过。
+- `cargo test -p app --test trojan_binary_protocol_test --features net_e2e,tls_reality -- --nocapture`：5/5 通过。
+- 覆盖：TLS 握手、连接池、binary 协议认证（正/负）、多用户与兼容路径。
+
+**Shadowsocks 首轮问题与修复**:
+- 初始失败现象：`Connection reset by peer`、`Unsupported cipher method: aes-128-gcm`、大包用例卡住、高并发仅 100/500。
+- 根因与修复：
+  - 修复 SS 握手兼容：inbound 鉴权允许 outbound 首个空 AEAD chunk（不再把 `len=0` 直接判无效）。
+  - 补齐 outbound cipher：新增 `aes-128-gcm` 支持（此前仅 `aes-256-gcm` + `chacha20-poly1305`）。
+  - 修复大包分片：inbound/outbound `write_aead_chunk` 支持按 `u16::MAX` 分片，避免 1MB 传输长度溢出卡住。
+  - 解除高并发测试默认限流干扰：`app/tests/shadowsocks_protocol_validation.rs` 在并发用例内临时关闭 `SB_INBOUND_RATE_LIMIT_PER_IP`。
+
+**Shadowsocks 复验结果（修复后）**:
+- `cargo test -p app --test shadowsocks_protocol_validation --features net_e2e -- --nocapture`：7/7 通过。
+- `cargo test -p app --test shadowsocks_validation_suite --features net_e2e -- --nocapture`：5/5 通过。
+- `cargo test -p sb-adapters --test shadowsocks_integration --features adapter-shadowsocks,shadowsocks -- --nocapture`：13/13 通过（1 ignored）。
+
+**运行约束执行**:
+- 未改动 Go+GUI+TUN 基线；
+- 本轮未启用 Rust 内核接管现网；
+- 结束后已确认无测试残留监听/进程。
+
+## ✅ 最新完成：Interop-lab P2 协议套件可编排化
+
+**日期**: 2026-02-10
+
+**完成项**:
+- `interop-lab` 流量模型新增 `TrafficAction::Command`，支持在 case 中执行命令并记录 `exit_code/stdout/stderr/elapsed_ms`。
+- 新增 P2 case：
+  - `labs/interop-lab/cases/p2_trojan_protocol_suite.yaml`
+  - `labs/interop-lab/cases/p2_shadowsocks_protocol_suite.yaml`
+  - `labs/interop-lab/cases/p2_trojan_fault_recovery_suite.yaml`
+  - `labs/interop-lab/cases/p2_shadowsocks_fault_recovery_suite.yaml`
+- 两个 case 已在 `interop-lab` 内实跑通过（assertions 通过、errors=[]）：
+  - Trojan：`trojan_protocol_validation` + `trojan_binary_protocol_test`
+  - Shadowsocks：`shadowsocks_protocol_validation` + `shadowsocks_validation_suite`
+- 两个故障恢复 case 已在 `interop-lab` 内实跑通过（assertions 通过、errors=[]）：
+  - Trojan：`wrong_password`（故障）后 `correct_password`（恢复）
+  - Shadowsocks：`wrong_password`（故障）后 `aes256` 连通（恢复）
+
+**运行约束执行**:
+- 未改动 Go+GUI+TUN 基线；
+- 本轮无 Rust 内核常驻进程残留；
+- 11801/19190 端口均未被占用。
+
 **运行约束执行**:
 - 全过程未改动 Go+GUI+TUN 基线；
 - Rust 联测均使用独立端口；
