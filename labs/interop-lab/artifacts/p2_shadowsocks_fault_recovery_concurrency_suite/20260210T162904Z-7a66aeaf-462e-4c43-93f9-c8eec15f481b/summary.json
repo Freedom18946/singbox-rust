@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_shadowsocks_fault_recovery_concurrency_suite",
+  "generated_at": "2026-02-10T16:29:29.781095Z",
+  "run_id": "20260210T162904Z-7a66aeaf-462e-4c43-93f9-c8eec15f481b",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_shadowsocks_fault_recovery_concurrency_suite/20260210T162904Z-7a66aeaf-462e-4c43-93f9-c8eec15f481b/rust.snapshot.json"
+  ]
+}

@@ -152,6 +152,62 @@
 - Rust 联测均使用独立端口；
 - 每轮结束后执行进程/端口回收检查（11801/19190 均已释放）。
 
+## ✅ 最新完成：P2 实网重启恢复场景（Trojan + Shadowsocks）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- 新增真实网络恢复测试：
+  - `app/tests/trojan_network_fault_recovery.rs`
+  - `app/tests/shadowsocks_network_fault_recovery.rs`
+- 两项测试均扩展为“单次重启 + 连续两次抖动（multi-flap）”，并通过：
+  - `cargo test -p app --test trojan_network_fault_recovery --features net_e2e,tls_reality -- --nocapture`
+  - `cargo test -p app --test shadowsocks_network_fault_recovery --features net_e2e -- --nocapture`
+- 新增 `interop-lab` 可编排 case：
+  - `labs/interop-lab/cases/p2_trojan_network_restart_suite.yaml`
+  - `labs/interop-lab/cases/p2_shadowsocks_network_restart_suite.yaml`
+- 两个 case 已实跑通过（`errors=[]`，command action `exit_code=0`）：
+  - `cargo run -p interop-lab -- case run p2_trojan_network_restart_suite`
+  - `cargo run -p interop-lab -- case run p2_shadowsocks_network_restart_suite`
+
+**验证语义**:
+- 同一监听端口下，验证“baseline 可用 -> server 下线失败 -> server 重启恢复”。
+- 连续两次抖动（下线->重启）后，链路均可恢复。
+- 重启恢复后执行并发突发拨测（Trojan/SS 各 30 并发），恢复后成功率达门限（>=90%）。
+- 为后续 GUI 长链路阶段提供可重复的恢复回归入口。
+
+**运行约束执行**:
+- 全过程未改动 Go+GUI+TUN 基线；
+- Rust 仅作为并行对照测试，不接管现网；
+- 结束后已确认无 Rust 测试残留监听/进程（11801/19190 未占用）。
+
+## ✅ 最新完成：P2 协议故障注入后并发恢复（Trojan + Shadowsocks）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- 两个恢复测试文件新增“错凭据注入 -> 并发恢复”用例：
+  - `test_trojan_auth_fault_then_concurrent_recovery`
+  - `test_shadowsocks_auth_fault_then_concurrent_recovery`
+- 整文件回归通过：
+  - `cargo test -p app --test trojan_network_fault_recovery --features net_e2e,tls_reality -- --nocapture`（4/4）
+  - `cargo test -p app --test shadowsocks_network_fault_recovery --features net_e2e -- --nocapture`（4/4）
+- 新增 `interop-lab` 可编排 case：
+  - `labs/interop-lab/cases/p2_trojan_fault_recovery_concurrency_suite.yaml`
+  - `labs/interop-lab/cases/p2_shadowsocks_fault_recovery_concurrency_suite.yaml`
+- 两个 case 已实跑通过（`errors=[]`，`exit_code=0`）：
+  - `cargo run -p interop-lab -- case run p2_trojan_fault_recovery_concurrency_suite`
+  - `cargo run -p interop-lab -- case run p2_shadowsocks_fault_recovery_concurrency_suite`
+
+**验证语义**:
+- 故障注入：单次错误凭据连接必须失败（0 成功）。
+- 恢复验证：随后正确凭据并发突发（30 并发）成功率需达到门限（>=90%）。
+
+**运行约束执行**:
+- 全过程未改动 Go+GUI+TUN 基线；
+- Rust 仅并行测试，不接管现网；
+- 结束后确认无 Rust 测试残留监听/进程（11801/19190 未占用）。
+
 ---
 
 ## ✅ 最新完成：L9 订阅联测（基础闭环）

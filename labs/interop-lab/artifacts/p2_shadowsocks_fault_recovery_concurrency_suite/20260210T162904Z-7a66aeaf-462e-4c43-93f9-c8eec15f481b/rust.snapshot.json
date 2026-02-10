@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T162904Z-7a66aeaf-462e-4c43-93f9-c8eec15f481b",
+  "case_id": "p2_shadowsocks_fault_recovery_concurrency_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T16:29:04.336940Z",
+  "finished_at": "2026-02-10T16:29:29.777680Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "shadowsocks_auth_fault_then_concurrent_recovery",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "app",
+          "--test",
+          "shadowsocks_network_fault_recovery",
+          "--features",
+          "net_e2e",
+          "test_shadowsocks_auth_fault_then_concurrent_recovery",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 25438,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n   Compiling ring v0.17.14\n   Compiling rustls v0.23.35\n   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)\n   Compiling rustls-webpki v0.103.8\n   Compiling rcgen v0.12.1\n   Compiling rcgen v0.13.2\n   Compiling rcgen v0.14.6\n   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.6.2\n   Compiling quinn-proto v0.11.13\n   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)\n   Compiling hyper-rustls v0.27.7\n   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)\n   Compiling reqwest v0.12.28\n   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)\n   Compiling anytls-rs v0.5.4 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/vendor/anytls-rs)\n   Compiling quinn v0.11.9\n   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)\n    Finished `test` profile [optimized + debuginfo] target(s) in 24.19s\n     Running tests/shadowsocks_network_fault_recovery.rs (target/debug/deps/shadowsocks_network_fault_recovery-096d2a2f9f5e11e0)\n",
+        "stdout": "\nrunning 1 test\ntest test_shadowsocks_auth_fault_then_concurrent_recovery ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.63s\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": []
+}

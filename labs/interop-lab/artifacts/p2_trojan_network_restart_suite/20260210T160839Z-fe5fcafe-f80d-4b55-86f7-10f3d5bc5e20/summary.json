@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_trojan_network_restart_suite",
+  "generated_at": "2026-02-10T16:09:07.219032Z",
+  "run_id": "20260210T160839Z-fe5fcafe-f80d-4b55-86f7-10f3d5bc5e20",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_trojan_network_restart_suite/20260210T160839Z-fe5fcafe-f80d-4b55-86f7-10f3d5bc5e20/rust.snapshot.json"
+  ]
+}

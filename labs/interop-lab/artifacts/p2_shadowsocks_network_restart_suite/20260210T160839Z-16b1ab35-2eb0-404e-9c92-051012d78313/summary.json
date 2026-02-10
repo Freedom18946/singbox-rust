@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_shadowsocks_network_restart_suite",
+  "generated_at": "2026-02-10T16:09:04.459049Z",
+  "run_id": "20260210T160839Z-16b1ab35-2eb0-404e-9c92-051012d78313",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_shadowsocks_network_restart_suite/20260210T160839Z-16b1ab35-2eb0-404e-9c92-051012d78313/rust.snapshot.json"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_trojan_fault_recovery_concurrency_suite",
+  "generated_at": "2026-02-10T16:29:31.698229Z",
+  "run_id": "20260210T162904Z-84e6e55b-084f-40cd-acfe-a002057d06ee",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_trojan_fault_recovery_concurrency_suite/20260210T162904Z-84e6e55b-084f-40cd-acfe-a002057d06ee/rust.snapshot.json"
+  ]
+}

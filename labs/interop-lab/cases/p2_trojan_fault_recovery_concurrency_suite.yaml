@@ -1,0 +1,36 @@
+id: p2_trojan_fault_recovery_concurrency_suite
+title: trojan auth fault injection then concurrent recovery validation
+priority: p2
+kernel_mode: rust
+bootstrap:
+  rust:
+    ready_path: /v1/echo
+    api:
+      base_url: "{{upstream.local_http}}"
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: command
+    name: trojan_auth_fault_then_concurrent_recovery
+    command: cargo
+    args:
+      - test
+      - -p
+      - app
+      - --test
+      - trojan_network_fault_recovery
+      - --features
+      - net_e2e,tls_reality
+      - test_trojan_auth_fault_then_concurrent_recovery
+      - --
+      - --nocapture
+    timeout_ms: 600000
+    expect_exit: 0
+assertions:
+  - key: traffic.trojan_auth_fault_then_concurrent_recovery.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true
