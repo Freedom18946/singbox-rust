@@ -23,6 +23,72 @@
 
 ## 日志记录
 
+### [2026-02-10 19:41] Agent: Codex (GPT-5)
+
+**任务**: 执行 L4.x 工作包（L4.1~L4.6）首轮落地：治理闭环优先
+**变更**:
+- 代码门禁修复（L4.2）：
+  - 修改 `crates/sb-adapters/src/outbound/tailscale.rs`（合并 `use sb_core` 导入，语义不变）
+  - 验证 `./agents-only/06-scripts/check-boundaries.sh`：`V4a 26 -> 24`，`exit 0`
+- 规范落地（L4.3）：
+  - 更新 `agents-only/01-spec/02-ACCEPTANCE-CRITERIA.md`，新增 `PASS-STRICT / PASS-ENV-LIMITED / FAIL` 定义与模板要求
+  - 更新 `reports/README.md`，新增双轨状态标签说明
+- 质量证据固化（L4.5）：
+  - 新增 `reports/L4_QUALITY_RECHECK_2026-02-10.md`
+  - 执行并归档命令链：
+    - `./scripts/test_feature_gates.sh`
+    - `./scripts/test/acceptance/schema-v2.sh`
+    - `./scripts/test/bench/run.sh`
+    - `./scripts/test/stress/run.sh short`
+  - 日志目录：`/tmp/l4_quality_logs_20260210/`
+- PX-015 补证落地（L4.4）：
+  - 新增 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`（Linux A/B 双场景执行清单 + 证据规范）
+  - 本机环境判定为 Darwin，缺少 `systemctl/busctl`，无法本机完成 Linux 实机闭环
+- 状态总线回填（L4.1/L4.6）：
+  - 更新 `agents-only/03-planning/06-STRATEGIC-ROADMAP.md`（L4 当前任务池改为治理闭环队列）
+  - 更新 `agents-only/workpackage_latest.md`（L4 最新进展 + boundary gate 通过）
+  - 更新 `agents-only/active_context.md`（当前阶段切换为 L4 执行中 + 新增 L4 报告索引）
+  - 更新 `agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-015 证据链指向 L4 报告，Remaining 维持 1）
+  - 更新 `agents-only/05-analysis/ACCEPTANCE-GAPS-TRACKER.md`（新增 L4 gap 条目）
+  - 更新 `reports/L3_AUDIT_2026-02-10_REMEDIATION.md`（标注“放弃 Linux 验收”为历史口径，避免与当前策略冲突）
+
+**结果**: 部分完成（除 PX-015 Linux 实机补证外均已落地）
+**备注**:
+- 已完成：L4.1、L4.2、L4.3、L4.5、L4.6（文档与证据层）
+- 待完成：L4.4（需 Linux/systemd 主机执行双场景并回填证据）
+
+---
+
+### [2026-02-10 19:25] Agent: Codex (GPT-5)
+
+**任务**: 开始 L4 开工前置信息收集与分析（文档化基线、阻塞与开工清单）
+**变更**:
+- 新增 `agents-only/05-analysis/L4-PREWORK-INFO.md`（L4 开工基线、冲突点、前置决策 D1~D3、建议任务拆分 L4.1~L4.4、最小命令集）
+- 更新 `agents-only/active_context.md`（新增 L4 前置分析索引；将 boundary 状态改为 2026-02-10 实测快照，避免“boundaries clean”误导）
+- 执行一致性与基线采样：
+  - `./agents-only/06-scripts/verify-consistency.sh`（PASS）
+  - `./agents-only/06-scripts/check-boundaries.sh`（FAIL：V4a=26 > 25）
+  - 检查 `scripts/test_feature_gates.sh`、`scripts/test/acceptance/*.sh`、`scripts/test/bench/*.sh`、`scripts/test/stress/run.sh` 可执行状态
+- 对齐审计证据来源：`reports/L3_AUDIT_2026-02-10.md` 与 `reports/L3_AUDIT_2026-02-10_REMEDIATION.md`
+
+**结果**: 成功（前置分析完成，形成可执行开工清单）
+**备注**: 当前主要开工阻塞为口径冲突（PX-015 是否继续闭环）与边界门禁回归（V4a 超阈值）。
+
+---
+
+### [2026-02-10 18:40] Agent: Codex (GPT-5)
+
+**任务**: 大致阅读 `agents-only/` 全目录并待命
+**变更**:
+- 读取目录结构与核心文档（`README.md`、`init.md`、`AI-RULES.md`、`active_context.md`、`workpackage_latest.md`）
+- 读取子目录导航与脚本说明（`04-workflows/README.md`、`05-analysis/README.md`、`06-scripts/README.md`、`06-scripts/TOOLS_DEF.md`、`07-memory/README.md`、`templates/README.md`）
+- 扫描全部 `.md` 文件标题行以完成粗读覆盖
+
+**结果**: 成功（仅阅读，无代码变更）
+**备注**: 等待用户下一步命令。
+
+---
+
 ### [2026-02-10 13:40] Agent: Codex (GPT-5)
 
 **任务**: 闭环验证（L2 相关验收链路 + resolved 特性回归）

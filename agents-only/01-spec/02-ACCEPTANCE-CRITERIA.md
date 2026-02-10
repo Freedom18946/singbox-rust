@@ -4,6 +4,20 @@
 
 ---
 
+## 0. 验收状态分级（L4 新增）
+
+为避免“PASS 含义不清”，本项目统一采用双轨验收状态：
+
+| 状态 | 定义 | 适用场景 | 证据要求 |
+|------|------|---------|---------|
+| `PASS-STRICT` | 全部步骤通过，且无 SKIP/环境豁免 | CI 或完整可控环境 | 命令、日志、结果均完整 |
+| `PASS-ENV-LIMITED` | 主链路通过，但存在明确环境限制导致的 SKIP/降级 | 沙箱、权限受限、非目标平台 | 必须记录受限原因 + 原始命令输出 + 日志路径 |
+| `FAIL` | 关键步骤失败且不可被环境限制解释 | 任意环境 | 记录失败点和修复建议 |
+
+> `PASS-ENV-LIMITED` 仅用于“环境不可得”场景，不可替代功能缺陷。
+
+---
+
 ## 1. 功能对齐验收（Parity Acceptance）
 
 ### 1.1 总体指标
@@ -196,21 +210,22 @@ echo "=== ✅ ALL PASSED ==="
 **版本**: [Git SHA]
 
 ### 自动化检查
-- [ ] 依赖边界: PASS/FAIL
-- [ ] 代码质量: PASS/FAIL
-- [ ] 测试覆盖: PASS/FAIL (覆盖率 %)
-- [ ] 安全检查: PASS/FAIL
-- [ ] Parity 构建: PASS/FAIL
+- [ ] 依赖边界: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] 代码质量: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] 测试覆盖: PASS-STRICT / PASS-ENV-LIMITED / FAIL (覆盖率 %)
+- [ ] 安全检查: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] Parity 构建: PASS-STRICT / PASS-ENV-LIMITED / FAIL
 
 ### 手动检查
-- [ ] 配置兼容: PASS/FAIL
-- [ ] 热重载: PASS/FAIL
-- [ ] API: PASS/FAIL
-- [ ] 日志: PASS/FAIL
-- [ ] Metrics: PASS/FAIL
+- [ ] 配置兼容: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] 热重载: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] API: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] 日志: PASS-STRICT / PASS-ENV-LIMITED / FAIL
+- [ ] Metrics: PASS-STRICT / PASS-ENV-LIMITED / FAIL
 
 ### 备注
 [任何特殊情况或已知问题]
+[若为 PASS-ENV-LIMITED，必须写明环境限制与原始日志路径]
 
 ### 结论
 □ 通过验收

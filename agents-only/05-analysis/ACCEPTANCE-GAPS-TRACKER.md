@@ -41,7 +41,7 @@
   - 将 `crates/sb-adapters/src/outbound/* + register.rs + *_stubs.rs` 内 `use sb_core` 的“行数”压回 ≤ 25。
   - 优先策略：合并 import 行（不改变语义），避免通过“放宽阈值”掩盖回归。
 - **状态**：✅ 已修复（2026-02-10）
-  - 修复点：合并 `crates/sb-adapters/src/register.rs` 的 `use sb_core::adapter::registry;` 到同组 import，V4a 计数 26→25
+  - 修复点：通过 `sb-adapters` 出站模块 import 收敛（含 `register.rs` 与 `outbound/tailscale.rs`），V4a 计数 26→24
   - 验证：`./agents-only/06-scripts/check-boundaries.sh` exit 0
 
 ### L1-GAP-002: 验收条款的依赖树检查与当前工程现实不一致（需定口径并闭环）
@@ -84,7 +84,7 @@
 
 | 日期 | Gap ID | 结论 | 备注 |
 |------|--------|------|------|
-| 2026-02-10 | L1-GAP-001 | ✅ | V4a=26→25，`check-boundaries.sh` exit 0 |
+| 2026-02-10 | L1-GAP-001 | ✅ | V4a=26→24，`check-boundaries.sh` exit 0 |
 | 2026-02-10 | L1-GAP-002 | ✅ | 验收口径改为 `check-boundaries.sh`，文档同步 |
 | 2026-02-10 | L1-GAP-003 | ✅ | `cargo clippy --all-targets --all-features -- -D warnings` 通过 |
 | 2026-02-10 | L2-GAP-001 | ✅ | Parity 口径统一为 `GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）：208/209，剩余项仅 `PX-015` Linux runtime/system bus 验证 |
@@ -148,3 +148,32 @@
     - `cargo test -p sb-core --lib` 通过
     - `cargo build -p app --features parity --release` 通过
     - `./target/release/app check -c examples/quick-start/01-minimal.json` 中 direct/block 正常注册（无 501 降级）
+
+---
+
+## 4. L4（治理闭环）差异与修复
+
+### L4-GAP-001: 质量 PASS 语义不清（缺少严格/环境受限区分）
+
+- **观测**
+  - 报告中统一写 `PASS`，但部分命令实际上包含 SKIP 或环境豁免，读者无法判断证据强度。
+- **修复动作**
+  - 在 `agents-only/01-spec/02-ACCEPTANCE-CRITERIA.md` 增加 `PASS-STRICT / PASS-ENV-LIMITED / FAIL` 三态定义。
+  - 在 `reports/README.md` 增加报告级状态标签说明。
+- **状态**：✅ 已闭环（2026-02-10）
+
+### L4-GAP-002: 质量复验命令链缺少统一归档
+
+- **观测**
+  - M3 相关命令历史分散，复跑证据路径不统一。
+- **修复动作**
+  - 新增 `reports/L4_QUALITY_RECHECK_2026-02-10.md`，统一记录固定命令链结果与日志路径。
+- **状态**：✅ 已闭环（2026-02-10）
+
+### L4-GAP-003: PX-015 Linux 双场景实机补证未完成
+
+- **观测**
+  - `PX-015` 仍为 Remaining 1；当前主机为 Darwin，缺少 `systemctl/busctl`，不能本机完成 Linux 验证。
+- **修复动作**
+  - 新增 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`，固化 Linux 主机 A/B 双场景执行清单与证据要求。
+- **状态**：⏸️ 待闭环（Linux 主机执行后回填）

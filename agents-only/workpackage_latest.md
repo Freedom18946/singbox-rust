@@ -1,9 +1,27 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-10
-> **当前阶段**：L3 质量里程碑后补（L2 ✅ Closed；功能对齐已完成）
+> **当前阶段**：L4 治理闭环执行中（先治理闭环，再实现）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
+> **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
+
+---
+
+## ✅ 最新进展：L4.2 + L4.5 已落地
+
+**日期**：2026-02-10  
+**状态**：部分完成（L4.2 ✅、L4.5 ✅、L4.4 待 Linux 实机）
+
+**已完成**：
+- L4.2 门禁回归清零：`V4a` 从 `26` 收敛到 `24`，`check-boundaries.sh` 恢复 `exit 0`
+- L4.5 质量复验证据固化：新增 `reports/L4_QUALITY_RECHECK_2026-02-10.md`，按 `PASS-STRICT / PASS-ENV-LIMITED` 标注四条复验命令
+
+**进行中**：
+- L4.1/L4.3/L4.6 文档口径统一与状态总线回填
+
+**待执行**：
+- L4.4 `PX-015` Linux 双场景最小闭环（见 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`）
 
 ---
 

@@ -7,11 +7,11 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L3 质量里程碑后补**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
+**当前阶段**: **L4 治理闭环执行中**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: 1492+ passed, boundaries clean
+**Tests**: 1492+ passed；boundary gate snapshot (2026-02-10): `check-boundaries.sh` pass（V4a=24 <= 25）
 
 ### 已关闭里程碑
 
@@ -25,7 +25,23 @@
 - **Clash API 审计报告**: `agents-only/05-analysis/CLASH-API-AUDIT.md`
 - **L2 缺口分析**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
 - **DNS 栈分析**: `agents-only/05-analysis/L2.10-DNS-STACK-ANALYSIS.md`
+- **L4 开工前置分析**: `agents-only/05-analysis/L4-PREWORK-INFO.md`
+- **L4 质量复验报告**: `reports/L4_QUALITY_RECHECK_2026-02-10.md`
+- **PX-015 Linux 验证记录**: `reports/PX015_LINUX_VALIDATION_2026-02-10.md`
 - **历史 L3 Scope（服务补全）**: 见下方（已并入 M2.4）
+
+---
+
+## ✅ 最新完成：L4.2 门禁回归清零 + L4.5 质量复验证据固化
+
+**日期**: 2026-02-10
+
+**完成项**:
+- L4.2：`check-boundaries.sh` 恢复 `exit 0`（V4a: `26 -> 24`）
+- L4.5：新增 `reports/L4_QUALITY_RECHECK_2026-02-10.md`，将复验命令统一按 `PASS-STRICT / PASS-ENV-LIMITED` 记录
+
+**待补项**:
+- L4.4：`PX-015` Linux 双场景实机验证（本机 Darwin 无 `systemctl/busctl`，待 Linux 主机执行）
 
 ---
 

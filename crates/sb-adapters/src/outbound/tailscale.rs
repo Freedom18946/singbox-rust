@@ -21,9 +21,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::outbound::prelude::*;
-use sb_core::adapter::OutboundConnector as CoreOutboundConnector;
-use sb_core::outbound::direct_connector::DirectConnector;
-use sb_core::services::tailscale::coordinator::Coordinator;
+use sb_core::{
+    adapter::OutboundConnector as CoreOutboundConnector,
+    outbound::direct_connector::DirectConnector,
+    services::tailscale::coordinator::Coordinator,
+};
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
