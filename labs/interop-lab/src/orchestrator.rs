@@ -2,10 +2,11 @@ use crate::case_spec::{load_case_by_id, load_cases, CaseSpec, KernelLaunchSpec, 
 use crate::gui_replay::run_gui_sequence;
 use crate::kernel::launch_kernel;
 use crate::snapshot::{KernelKind, NormalizedError, NormalizedSnapshot};
-use crate::upstream::{run_traffic_plan, start_upstreams};
+use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
 use crate::util::{ensure_dir, resolve_with_env};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use serde_json::Value;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -43,7 +44,10 @@ pub async fn run_case(
         .await
         .with_context(|| format!("writing {}", case_file.display()))?;
 
-    let harness = start_upstreams(&case.upstream_topology).await?;
+    let mut harness = start_upstreams(&case.upstream_topology).await?;
+    apply_faults(&mut harness, &case.faults)
+        .await
+        .with_context(|| format!("applying faults for case {}", case.id))?;
 
     let modes = match kernel_override.unwrap_or_else(|| case.kernel_mode.clone()) {
         KernelMode::Rust => vec![KernelKind::Rust],
@@ -98,7 +102,7 @@ pub async fn run_case(
                     });
                 }
 
-                match run_traffic_plan(&harness, &case.traffic_plan).await {
+                match run_traffic_plan(&mut harness, &case.traffic_plan).await {
                     Ok(results) => {
                         snapshot.traffic_results = results;
                     }
@@ -109,6 +113,8 @@ pub async fn run_case(
                         });
                     }
                 }
+
+                evaluate_assertions(case, &mut snapshot);
 
                 let _ = session.shutdown().await;
             }
@@ -153,6 +159,72 @@ pub async fn run_case(
         run_dir,
         snapshot_files,
     })
+}
+
+fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
+    for assertion in &case.assertions {
+        let actual = resolve_assertion_value(snapshot, &assertion.key);
+        let passed = match (assertion.op.as_str(), actual.as_ref()) {
+            ("eq", Some(value)) => *value == assertion.expected,
+            ("ne", Some(value)) => *value != assertion.expected,
+            ("exists", Some(_)) => true,
+            ("exists", None) => false,
+            ("not_exists", Some(_)) => false,
+            ("not_exists", None) => true,
+            (_unknown, None) => false,
+            (_unknown, Some(_)) => false,
+        };
+
+        if !passed {
+            snapshot.errors.push(NormalizedError {
+                stage: format!("assertion:{}", assertion.key),
+                message: format!(
+                    "assertion failed: key={} op={} expected={} actual={}",
+                    assertion.key,
+                    assertion.op,
+                    assertion.expected,
+                    actual
+                        .as_ref()
+                        .map(Value::to_string)
+                        .unwrap_or_else(|| "null".to_string())
+                ),
+            });
+        }
+    }
+}
+
+fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<Value> {
+    let mut parts = key.split('.');
+    let scope = parts.next()?;
+    let name = parts.next()?;
+    let field = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    match scope {
+        "http" => snapshot
+            .http_results
+            .iter()
+            .find(|r| r.name == name)
+            .and_then(|r| match field {
+                "status" => Some(json!(r.status)),
+                "path" => Some(json!(r.path)),
+                "method" => Some(json!(r.method)),
+                "body_hash" => Some(json!(r.body_hash)),
+                _ => None,
+            }),
+        "traffic" => snapshot
+            .traffic_results
+            .iter()
+            .find(|r| r.name == name)
+            .and_then(|r| match field {
+                "success" => Some(json!(r.success)),
+                "detail" => Some(r.detail.clone()),
+                _ => None,
+            }),
+        _ => None,
+    }
 }
 
 pub fn latest_run_dir(artifacts_root: &Path, case_id: &str) -> Result<PathBuf> {

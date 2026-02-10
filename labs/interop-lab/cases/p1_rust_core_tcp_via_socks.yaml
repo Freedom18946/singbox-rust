@@ -31,5 +31,12 @@ traffic_plan:
     addr: "{{upstream.local_tcp}}"
     payload: hello-tcp-via-socks
     proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.via_socks_tcp_echo.success
+    op: eq
+    expected: true
 oracle:
   tolerate_counter_jitter: true

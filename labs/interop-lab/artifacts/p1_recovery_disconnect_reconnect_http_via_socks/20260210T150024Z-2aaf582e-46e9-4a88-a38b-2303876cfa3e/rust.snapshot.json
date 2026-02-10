@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T150024Z-2aaf582e-46e9-4a88-a38b-2303876cfa3e",
+  "case_id": "p1_recovery_disconnect_reconnect_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:00:24.787772Z",
+  "finished_at": "2026-02-10T15:00:25.286915Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 47619
+      },
+      "body_hash": "52cca9be01bddfb0bd68a513c48f7c0c904d11e9af28c69791b9aba225f007d7"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "before_disconnect_should_succeed",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=recovery-before\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:64689/v1/echo?scene=recovery-before"
+      }
+    },
+    {
+      "name": "disconnect_local_http",
+      "success": true,
+      "detail": {
+        "action": "fault_disconnect",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "during_disconnect_should_fail",
+      "success": false,
+      "detail": {
+        "error": "curl failed status=exit status: 97 stderr=curl: (97) connection to proxy closed",
+        "proxy": "socks5://127.0.0.1:11801",
+        "url": "http://127.0.0.1:64689/v1/echo?scene=recovery-during"
+      }
+    },
+    {
+      "name": "reconnect_local_http",
+      "success": true,
+      "detail": {
+        "action": "fault_reconnect",
+        "endpoint": "http://127.0.0.1:64699",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "wait_after_reconnect",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 200
+      }
+    },
+    {
+      "name": "after_reconnect_should_recover",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=recovery-after\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:64699/v1/echo?scene=recovery-after"
+      }
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T144232Z-7a644918-6447-4f53-a8c5-d0d4968aefde",
+  "case_id": "p1_rust_core_dns_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:42:32.091916Z",
+  "finished_at": "2026-02-10T14:42:32.354871Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 37304
+      },
+      "body_hash": "399fff5300e21784bc7760b7acf9f5bed32432e4ade549748e293fb69df4af4c"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "via_socks_dns_stub",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:52648",
+        "answers": 0,
+        "id": 4660,
+        "message_type": "Response",
+        "proxy": "socks5://127.0.0.1:11801",
+        "rcode": "NoError"
+      }
+    }
+  ],
+  "errors": []
+}

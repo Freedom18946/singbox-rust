@@ -1,5 +1,5 @@
-id: p1_rust_core_udp_via_socks
-title: rust core udp roundtrip via socks inbound
+id: p1_rust_core_dns_via_socks
+title: rust core dns query via socks udp associate
 priority: p1
 kernel_mode: rust
 bootstrap:
@@ -24,20 +24,20 @@ gui_sequence:
     path: /healthz
     expect_status: 200
 upstream_topology:
-  - name: local_udp
-    kind: udp_echo
+  - name: local_dns
+    kind: dns_stub
     bind: 127.0.0.1:0
 traffic_plan:
-  - kind: udp_round_trip
-    name: via_socks_udp_echo
-    addr: "{{upstream.local_udp}}"
-    payload: hello-udp-via-socks
+  - kind: dns_query
+    name: via_socks_dns_stub
+    addr: "{{upstream.local_dns}}"
+    qname: example.com.
     proxy: socks5://127.0.0.1:11801
 assertions:
   - key: http.healthz.status
     op: eq
     expected: 200
-  - key: traffic.via_socks_udp_echo.success
+  - key: traffic.via_socks_dns_stub.success
     op: eq
     expected: true
 oracle:

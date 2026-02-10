@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T150328Z-611d6d60-4ac8-411b-a6c0-4c4ea28b568e",
+  "case_id": "p1_recovery_dns_disconnect_reconnect_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:03:28.274626Z",
+  "finished_at": "2026-02-10T15:03:30.743077Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 49212
+      },
+      "body_hash": "686905103c676be08d7881b7edccc41d76c3e0d8e62696a11c9f7eee96c1c6d1"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "before_disconnect_dns_should_succeed",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:57880",
+        "answers": 0,
+        "id": 4660,
+        "message_type": "Response",
+        "proxy": "socks5://127.0.0.1:11801",
+        "rcode": "NoError"
+      }
+    },
+    {
+      "name": "disconnect_local_dns",
+      "success": true,
+      "detail": {
+        "action": "fault_disconnect",
+        "target": "local_dns"
+      }
+    },
+    {
+      "name": "during_disconnect_dns_should_fail",
+      "success": false,
+      "detail": {
+        "addr": "127.0.0.1:57880",
+        "error": "dns query via proxy socks5://127.0.0.1:11801 to 127.0.0.1:57880",
+        "proxy": "socks5://127.0.0.1:11801"
+      }
+    },
+    {
+      "name": "reconnect_local_dns",
+      "success": true,
+      "detail": {
+        "action": "fault_reconnect",
+        "endpoint": "udp://127.0.0.1:54577",
+        "target": "local_dns"
+      }
+    },
+    {
+      "name": "wait_after_dns_reconnect",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 200
+      }
+    },
+    {
+      "name": "after_reconnect_dns_should_recover",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:54577",
+        "answers": 0,
+        "id": 4660,
+        "message_type": "Response",
+        "proxy": "socks5://127.0.0.1:11801",
+        "rcode": "NoError"
+      }
+    }
+  ],
+  "errors": []
+}

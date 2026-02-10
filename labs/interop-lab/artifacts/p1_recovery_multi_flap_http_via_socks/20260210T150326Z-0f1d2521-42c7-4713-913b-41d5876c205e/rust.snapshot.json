@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T150326Z-0f1d2521-42c7-4713-913b-41d5876c205e",
+  "case_id": "p1_recovery_multi_flap_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T15:03:26.852786Z",
+  "finished_at": "2026-02-10T15:03:27.576148Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 49170
+      },
+      "body_hash": "54b8eee213b9252ab0ac576cb550c18897fda06610aeaac5ce88ce18f4af0791"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "before_flap_should_succeed",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=multi-flap-before\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:64798/v1/echo?scene=multi-flap-before"
+      }
+    },
+    {
+      "name": "disconnect_1",
+      "success": true,
+      "detail": {
+        "action": "fault_disconnect",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "during_disconnect_1_should_fail",
+      "success": false,
+      "detail": {
+        "error": "curl failed status=exit status: 97 stderr=curl: (97) connection to proxy closed",
+        "proxy": "socks5://127.0.0.1:11801",
+        "url": "http://127.0.0.1:64798/v1/echo?scene=multi-flap-during-1"
+      }
+    },
+    {
+      "name": "reconnect_1",
+      "success": true,
+      "detail": {
+        "action": "fault_reconnect",
+        "endpoint": "http://127.0.0.1:64808",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "wait_after_reconnect_1",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 200
+      }
+    },
+    {
+      "name": "after_reconnect_1_should_recover",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=multi-flap-after-1\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:64808/v1/echo?scene=multi-flap-after-1"
+      }
+    },
+    {
+      "name": "disconnect_2",
+      "success": true,
+      "detail": {
+        "action": "fault_disconnect",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "during_disconnect_2_should_fail",
+      "success": false,
+      "detail": {
+        "error": "curl failed status=exit status: 97 stderr=curl: (97) connection to proxy closed",
+        "proxy": "socks5://127.0.0.1:11801",
+        "url": "http://127.0.0.1:64808/v1/echo?scene=multi-flap-during-2"
+      }
+    },
+    {
+      "name": "reconnect_2",
+      "success": true,
+      "detail": {
+        "action": "fault_reconnect",
+        "endpoint": "http://127.0.0.1:64813",
+        "target": "local_http"
+      }
+    },
+    {
+      "name": "wait_after_reconnect_2",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 200
+      }
+    },
+    {
+      "name": "after_reconnect_2_should_recover",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":\"scene=multi-flap-after-2\",\"service\":\"local_http\"}",
+        "proxy": "socks5://127.0.0.1:11801",
+        "status": 200,
+        "url": "http://127.0.0.1:64813/v1/echo?scene=multi-flap-after-2"
+      }
+    }
+  ],
+  "errors": []
+}

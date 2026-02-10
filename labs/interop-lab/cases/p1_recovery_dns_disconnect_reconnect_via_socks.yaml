@@ -1,0 +1,69 @@
+id: p1_recovery_dns_disconnect_reconnect_via_socks
+title: recovery flow disconnect then reconnect upstream dns via rust socks udp
+priority: p1
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    env:
+      SB_SOCKS_UDP_ENABLE: "1"
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_dns
+    kind: dns_stub
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: dns_query
+    name: before_disconnect_dns_should_succeed
+    addr: "{{upstream.local_dns}}"
+    qname: example.com.
+    proxy: socks5://127.0.0.1:11801
+  - kind: fault_disconnect
+    name: disconnect_local_dns
+    target: local_dns
+  - kind: dns_query
+    name: during_disconnect_dns_should_fail
+    addr: "{{upstream.local_dns}}"
+    qname: example.net.
+    proxy: socks5://127.0.0.1:11801
+  - kind: fault_reconnect
+    name: reconnect_local_dns
+    target: local_dns
+  - kind: sleep
+    name: wait_after_dns_reconnect
+    ms: 200
+  - kind: dns_query
+    name: after_reconnect_dns_should_recover
+    addr: "{{upstream.local_dns}}"
+    qname: example.org.
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.before_disconnect_dns_should_succeed.success
+    op: eq
+    expected: true
+  - key: traffic.during_disconnect_dns_should_fail.success
+    op: eq
+    expected: false
+  - key: traffic.after_reconnect_dns_should_recover.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true

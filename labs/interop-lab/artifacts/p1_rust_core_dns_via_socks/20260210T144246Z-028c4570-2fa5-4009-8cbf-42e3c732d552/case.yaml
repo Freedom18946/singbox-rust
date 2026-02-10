@@ -1,0 +1,46 @@
+id: p1_rust_core_dns_via_socks
+title: rust core dns query via socks udp associate
+priority: p1
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_socks_http.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env:
+      SB_SOCKS_UDP_ENABLE: '1'
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+      secret: null
+  go: null
+gui_sequence:
+- kind: http
+  name: healthz
+  method: GET
+  path: /healthz
+  body: null
+  expect_status: 200
+upstream_topology:
+- name: local_dns
+  kind: dns_stub
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: dns_query
+  name: via_socks_dns_stub
+  addr: '{{upstream.local_dns}}'
+  qname: example.com.
+  proxy: socks5://127.0.0.1:11801
+subscription_input: null
+faults: []
+assertions: []
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true

@@ -19,11 +19,22 @@
 - `p1_rust_core_http_via_socks`: 本地仿公网 HTTP echo，经 Rust SOCKS 入站转发验证核心链路（implemented）。
 - `p1_rust_core_tcp_via_socks`: 本地仿公网 TCP echo，经 Rust SOCKS 入站转发验证核心链路（implemented）。
 - `p1_rust_core_udp_via_socks`: 本地仿公网 UDP echo，经 Rust SOCKS UDP ASSOCIATE 转发验证核心链路（implemented）。
+- `p1_rust_core_dns_via_socks`: 本地仿公网 DNS stub，经 Rust SOCKS UDP ASSOCIATE 查询验证核心链路（implemented）。
+- `p1_fault_disconnect_http_via_socks`: 断开 upstream 后验证 Rust 核心存活且数据面失败可观测（implemented）。
+- `p1_fault_delay_http_via_socks`: 上游延迟注入触发超时，验证 Rust 核心存活且失败可观测（implemented）。
+- `p1_recovery_disconnect_reconnect_http_via_socks`: 断开后重连 upstream，验证“先失败后恢复”（implemented）。
+- `p1_recovery_multi_flap_http_via_socks`: 连续两次 upstream 抖动（断开/重连）后均可恢复，验证恢复稳定性（implemented）。
+- `p1_recovery_dns_disconnect_reconnect_via_socks`: DNS UDP 链路在断开/重连后恢复，验证 UDP/DNS 恢复语义（implemented）。
 - `p1_subscription_file_urls`: 使用维护中的订阅文件批量解析（implemented）。
 - restart/reload lifecycle replay.
 - auth negative paths (wrong token / expired token).
 - provider/rules/script/profile optional endpoints.
 - fault injection matrix for upstream disconnect and jitter.
+
+执行顺序（固定）：
+1. 先完成 P1 核心与恢复类场景（当前阶段）。
+2. 再进入协议层：Trojan 与 Shadowsocks 的公网仿真联测（不提前）。
+3. 最后进入 GUI/Wails 长链路与长稳回归。
 
 ## P2 (later)
 

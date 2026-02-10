@@ -1,4 +1,4 @@
-use crate::case_spec::{TrafficAction, UpstreamKind, UpstreamServiceSpec};
+use crate::case_spec::{FaultSpec, TrafficAction, UpstreamKind, UpstreamServiceSpec};
 use crate::snapshot::TrafficResult;
 use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
@@ -20,14 +20,17 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::process::Command;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
+use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
 
 #[derive(Default)]
 pub struct UpstreamHarness {
     pub endpoints: BTreeMap<String, String>,
-    handles: Vec<UpstreamHandle>,
+    specs: BTreeMap<String, UpstreamServiceSpec>,
+    http_delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
+    handles: BTreeMap<String, UpstreamHandle>,
 }
 
 struct UpstreamHandle {
@@ -37,12 +40,12 @@ struct UpstreamHandle {
 
 impl UpstreamHarness {
     pub async fn shutdown(mut self) {
-        for handle in &mut self.handles {
+        for handle in self.handles.values_mut() {
             if let Some(tx) = handle.shutdown.take() {
                 let _ = tx.send(());
             }
         }
-        for handle in self.handles {
+        for (_name, handle) in self.handles {
             let _ = handle.join.await;
         }
     }
@@ -59,270 +62,334 @@ impl UpstreamHarness {
         }
         out
     }
+
+    pub async fn set_http_delay(&self, target: &str, delay_ms: u64) {
+        let mut map = self.http_delays_ms.write().await;
+        if delay_ms == 0 {
+            map.remove(target);
+        } else {
+            map.insert(target.to_string(), delay_ms);
+        }
+    }
+
+    fn insert_handle(&mut self, name: String, handle: UpstreamHandle) {
+        self.handles.insert(name, handle);
+    }
+
+    pub async fn disconnect_target(&mut self, target: &str) -> Result<()> {
+        let mut handle = self
+            .handles
+            .remove(target)
+            .ok_or_else(|| anyhow!("fault disconnect target not found: {target}"))?;
+        if let Some(tx) = handle.shutdown.take() {
+            let _ = tx.send(());
+        }
+        let _ = handle.join.await;
+        Ok(())
+    }
+
+    pub async fn reconnect_target(&mut self, target: &str) -> Result<()> {
+        if let Some(mut existing) = self.handles.remove(target) {
+            if let Some(tx) = existing.shutdown.take() {
+                let _ = tx.send(());
+            }
+            let _ = existing.join.await;
+        }
+        let spec = self
+            .specs
+            .get(target)
+            .cloned()
+            .ok_or_else(|| anyhow!("fault reconnect target not found: {target}"))?;
+        start_single_upstream(self, &spec).await
+    }
 }
 
 #[derive(Clone)]
 struct HttpState {
     service_name: String,
+    delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
 }
 
 pub async fn start_upstreams(specs: &[UpstreamServiceSpec]) -> Result<UpstreamHarness> {
     let mut harness = UpstreamHarness::default();
 
     for spec in specs {
-        match spec.kind {
-            UpstreamKind::HttpEcho => {
-                let listener = TcpListener::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding http echo {}", spec.bind))?;
-                let addr = listener.local_addr().with_context(|| "http local_addr")?;
-                let state = HttpState {
-                    service_name: spec.name.clone(),
+        harness.specs.insert(spec.name.clone(), spec.clone());
+        start_single_upstream(&mut harness, spec).await?;
+    }
+
+    Ok(harness)
+}
+
+async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamServiceSpec) -> Result<()> {
+    match spec.kind {
+        UpstreamKind::HttpEcho => {
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding http echo {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "http local_addr")?;
+            let state = HttpState {
+                service_name: spec.name.clone(),
+                delays_ms: harness.http_delays_ms.clone(),
+            };
+            let app = Router::new().route("/*path", any(http_echo)).with_state(state);
+            let (tx, rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                let shutdown = async move {
+                    let _ = rx.await;
                 };
-                let app = Router::new()
-                    .route("/*path", any(http_echo))
-                    .with_state(state);
-                let (tx, rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    let shutdown = async move {
-                        let _ = rx.await;
-                    };
-                    let _ = axum::serve(listener, app)
-                        .with_graceful_shutdown(shutdown)
-                        .await;
-                });
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("http://{}:{}", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
+                let _ = axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown)
+                    .await;
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("http://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
                     shutdown: Some(tx),
                     join,
-                });
-            }
-            UpstreamKind::WsEcho => {
-                let listener = TcpListener::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding ws echo {}", spec.bind))?;
-                let addr = listener.local_addr().with_context(|| "ws local_addr")?;
-                let app = Router::new().route("/", get(ws_echo));
-                let (tx, rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    let shutdown = async move {
-                        let _ = rx.await;
-                    };
-                    let _ = axum::serve(listener, app)
-                        .with_graceful_shutdown(shutdown)
-                        .await;
-                });
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("ws://{}:{}/", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
+                },
+            );
+        }
+        UpstreamKind::WsEcho => {
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding ws echo {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "ws local_addr")?;
+            let app = Router::new().route("/", get(ws_echo));
+            let (tx, rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                let shutdown = async move {
+                    let _ = rx.await;
+                };
+                let _ = axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown)
+                    .await;
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("ws://{}:{}/", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
                     shutdown: Some(tx),
                     join,
-                });
-            }
-            UpstreamKind::TcpEcho => {
-                let listener = TcpListener::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding tcp echo {}", spec.bind))?;
-                let addr = listener.local_addr().with_context(|| "tcp local_addr")?;
-                let (tx, mut rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    loop {
-                        tokio::select! {
-                            _ = &mut rx => {
+                },
+            );
+        }
+        UpstreamKind::TcpEcho => {
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding tcp echo {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "tcp local_addr")?;
+            let (tx, mut rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = &mut rx => {
+                            break;
+                        }
+                        accepted = listener.accept() => {
+                            match accepted {
+                                Ok((mut stream, _)) => {
+                                    tokio::spawn(async move {
+                                        let mut buf = [0_u8; 2048];
+                                        loop {
+                                            match stream.read(&mut buf).await {
+                                                Ok(0) => break,
+                                                Ok(n) => {
+                                                    if stream.write_all(&buf[..n]).await.is_err() {
+                                                        break;
+                                                    }
+                                                }
+                                                Err(_) => break,
+                                            }
+                                        }
+                                    });
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("tcp://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::UdpEcho => {
+            let socket = UdpSocket::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding udp echo {}", spec.bind))?;
+            let addr = socket.local_addr().with_context(|| "udp local_addr")?;
+            let (tx, mut rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                let mut buf = [0_u8; 4096];
+                loop {
+                    tokio::select! {
+                        _ = &mut rx => {
+                            break;
+                        }
+                        recv = socket.recv_from(&mut buf) => {
+                            if let Ok((n, peer)) = recv {
+                                let _ = socket.send_to(&buf[..n], peer).await;
+                            } else {
                                 break;
                             }
-                            accepted = listener.accept() => {
-                                match accepted {
-                                    Ok((mut stream, _)) => {
-                                        tokio::spawn(async move {
+                        }
+                    }
+                }
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("udp://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::DnsStub => {
+            let socket = UdpSocket::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding dns stub {}", spec.bind))?;
+            let addr = socket.local_addr().with_context(|| "dns local_addr")?;
+            let (tx, mut rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                let mut buf = [0_u8; 4096];
+                loop {
+                    tokio::select! {
+                        _ = &mut rx => {
+                            break;
+                        }
+                        recv = socket.recv_from(&mut buf) => {
+                            match recv {
+                                Ok((n, peer)) => {
+                                    let data = &buf[..n];
+                                    if let Ok(req) = Message::from_vec(data) {
+                                        let mut resp = Message::new();
+                                        resp.set_id(req.id());
+                                        resp.set_message_type(MessageType::Response);
+                                        resp.set_op_code(req.op_code());
+                                        resp.set_recursion_desired(req.recursion_desired());
+                                        resp.set_recursion_available(true);
+                                        resp.set_authoritative(false);
+                                        resp.set_response_code(ResponseCode::NoError);
+                                        for q in req.queries() {
+                                            resp.add_query(q.clone());
+                                        }
+                                        let mut encoded = Vec::with_capacity(256);
+                                        let mut encoder = BinEncoder::new(&mut encoded);
+                                        if resp.emit(&mut encoder).is_ok() {
+                                            let _ = socket.send_to(&encoded, peer).await;
+                                        }
+                                    }
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("udp://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::TlsEcho => {
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding tls echo {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "tls local_addr")?;
+
+            let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
+                .with_context(|| "generating self-signed cert")?;
+            let cert_der = cert.serialize_der().with_context(|| "serializing cert")?;
+            let key_der = cert.serialize_private_key_der();
+
+            let cert_chain = vec![CertificateDer::from(cert_der)];
+            let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(key_der));
+            let config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(cert_chain, key)
+                .with_context(|| "building tls server config")?;
+            let acceptor = TlsAcceptor::from(Arc::new(config));
+
+            let (tx, mut rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = &mut rx => {
+                            break;
+                        }
+                        accepted = listener.accept() => {
+                            match accepted {
+                                Ok((stream, _)) => {
+                                    let acceptor = acceptor.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(mut tls) = acceptor.accept(stream).await {
                                             let mut buf = [0_u8; 2048];
                                             loop {
-                                                match stream.read(&mut buf).await {
+                                                match tls.read(&mut buf).await {
                                                     Ok(0) => break,
                                                     Ok(n) => {
-                                                        if stream.write_all(&buf[..n]).await.is_err() {
+                                                        if tls.write_all(&buf[..n]).await.is_err() {
                                                             break;
                                                         }
                                                     }
                                                     Err(_) => break,
                                                 }
                                             }
-                                        });
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                        }
-                    }
-                });
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("tcp://{}:{}", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
-                    shutdown: Some(tx),
-                    join,
-                });
-            }
-            UpstreamKind::UdpEcho => {
-                let socket = UdpSocket::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding udp echo {}", spec.bind))?;
-                let addr = socket.local_addr().with_context(|| "udp local_addr")?;
-                let (tx, mut rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    let mut buf = [0_u8; 4096];
-                    loop {
-                        tokio::select! {
-                            _ = &mut rx => {
-                                break;
-                            }
-                            recv = socket.recv_from(&mut buf) => {
-                                if let Ok((n, peer)) = recv {
-                                    let _ = socket.send_to(&buf[..n], peer).await;
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                });
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("udp://{}:{}", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
-                    shutdown: Some(tx),
-                    join,
-                });
-            }
-            UpstreamKind::DnsStub => {
-                let socket = UdpSocket::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding dns stub {}", spec.bind))?;
-                let addr = socket.local_addr().with_context(|| "dns local_addr")?;
-                let (tx, mut rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    let mut buf = [0_u8; 4096];
-                    loop {
-                        tokio::select! {
-                            _ = &mut rx => {
-                                break;
-                            }
-                            recv = socket.recv_from(&mut buf) => {
-                                match recv {
-                                    Ok((n, peer)) => {
-                                        let data = &buf[..n];
-                                        if let Ok(req) = Message::from_vec(data) {
-                                            let mut resp = Message::new();
-                                            resp.set_id(req.id());
-                                            resp.set_message_type(MessageType::Response);
-                                            resp.set_op_code(req.op_code());
-                                            resp.set_recursion_desired(req.recursion_desired());
-                                            resp.set_recursion_available(true);
-                                            resp.set_authoritative(false);
-                                            resp.set_response_code(ResponseCode::NoError);
-                                            for q in req.queries() {
-                                                resp.add_query(q.clone());
-                                            }
-                                            let mut encoded = Vec::with_capacity(256);
-                                            let mut encoder = BinEncoder::new(&mut encoded);
-                                            if resp.emit(&mut encoder).is_ok() {
-                                                let _ = socket.send_to(&encoded, peer).await;
-                                            }
                                         }
-                                    }
-                                    Err(_) => break,
+                                    });
                                 }
+                                Err(_) => break,
                             }
                         }
                     }
-                });
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("udp://{}:{}", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
+                }
+            });
+
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("tls://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
                     shutdown: Some(tx),
                     join,
-                });
-            }
-            UpstreamKind::TlsEcho => {
-                let listener = TcpListener::bind(&spec.bind)
-                    .await
-                    .with_context(|| format!("binding tls echo {}", spec.bind))?;
-                let addr = listener.local_addr().with_context(|| "tls local_addr")?;
-
-                let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
-                    .with_context(|| "generating self-signed cert")?;
-                let cert_der = cert.serialize_der().with_context(|| "serializing cert")?;
-                let key_der = cert.serialize_private_key_der();
-
-                let cert_chain = vec![CertificateDer::from(cert_der)];
-                let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(key_der));
-                let config = rustls::ServerConfig::builder()
-                    .with_no_client_auth()
-                    .with_single_cert(cert_chain, key)
-                    .with_context(|| "building tls server config")?;
-                let acceptor = TlsAcceptor::from(Arc::new(config));
-
-                let (tx, mut rx) = oneshot::channel::<()>();
-                let join = tokio::spawn(async move {
-                    loop {
-                        tokio::select! {
-                            _ = &mut rx => {
-                                break;
-                            }
-                            accepted = listener.accept() => {
-                                match accepted {
-                                    Ok((stream, _)) => {
-                                        let acceptor = acceptor.clone();
-                                        tokio::spawn(async move {
-                                            if let Ok(mut tls) = acceptor.accept(stream).await {
-                                                let mut buf = [0_u8; 2048];
-                                                loop {
-                                                    match tls.read(&mut buf).await {
-                                                        Ok(0) => break,
-                                                        Ok(n) => {
-                                                            if tls.write_all(&buf[..n]).await.is_err() {
-                                                                break;
-                                                            }
-                                                        }
-                                                        Err(_) => break,
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    }
-                                    Err(_) => break,
-                                }
-                            }
-                        }
-                    }
-                });
-
-                harness.endpoints.insert(
-                    spec.name.clone(),
-                    format!("tls://{}:{}", addr.ip(), addr.port()),
-                );
-                harness.handles.push(UpstreamHandle {
-                    shutdown: Some(tx),
-                    join,
-                });
-            }
+                },
+            );
         }
     }
-
-    Ok(harness)
+    Ok(())
 }
 
 pub async fn run_traffic_plan(
-    harness: &UpstreamHarness,
+    harness: &mut UpstreamHarness,
     actions: &[TrafficAction],
 ) -> Result<Vec<TrafficResult>> {
     let mut out = Vec::with_capacity(actions.len());
@@ -435,20 +502,80 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
-            TrafficAction::DnsQuery { name, addr, qname } => {
+            TrafficAction::DnsQuery {
+                name,
+                addr,
+                qname,
+                proxy,
+            } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
-                let result = dns_query(&addr, qname).await;
+                let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let result = dns_query(&addr, qname, resolved_proxy.as_deref()).await;
                 match result {
-                    Ok(detail) => TrafficResult {
-                        name: name.clone(),
-                        success: true,
-                        detail,
-                    },
+                    Ok(mut detail) => {
+                        if let Some(obj) = detail.as_object_mut() {
+                            obj.insert("proxy".to_string(), json!(resolved_proxy));
+                            obj.insert("addr".to_string(), json!(addr));
+                        }
+                        TrafficResult {
+                            name: name.clone(),
+                            success: true,
+                            detail,
+                        }
+                    }
                     Err(err) => TrafficResult {
                         name: name.clone(),
                         success: false,
-                        detail: json!({ "addr": addr, "error": err.to_string() }),
+                        detail: json!({
+                            "addr": addr,
+                            "proxy": resolved_proxy,
+                            "error": err.to_string()
+                        }),
                     },
+                }
+            }
+            TrafficAction::FaultDisconnect { name, target } => match harness.disconnect_target(target).await {
+                Ok(()) => TrafficResult {
+                    name: name.clone(),
+                    success: true,
+                    detail: json!({ "action": "fault_disconnect", "target": target }),
+                },
+                Err(err) => TrafficResult {
+                    name: name.clone(),
+                    success: false,
+                    detail: json!({
+                        "action": "fault_disconnect",
+                        "target": target,
+                        "error": err.to_string()
+                    }),
+                },
+            },
+            TrafficAction::FaultReconnect { name, target } => match harness.reconnect_target(target).await {
+                Ok(()) => TrafficResult {
+                    name: name.clone(),
+                    success: true,
+                    detail: json!({
+                        "action": "fault_reconnect",
+                        "target": target,
+                        "endpoint": harness.endpoints.get(target)
+                    }),
+                },
+                Err(err) => TrafficResult {
+                    name: name.clone(),
+                    success: false,
+                    detail: json!({
+                        "action": "fault_reconnect",
+                        "target": target,
+                        "error": err.to_string()
+                    }),
+                },
+            },
+            TrafficAction::Sleep { name, ms } => {
+                tokio::time::sleep(Duration::from_millis(*ms)).await;
+                TrafficResult {
+                    name: name.clone(),
+                    success: true,
+                    detail: json!({ "action": "sleep", "ms": ms }),
                 }
             }
         };
@@ -457,6 +584,20 @@ pub async fn run_traffic_plan(
     }
 
     Ok(out)
+}
+
+pub async fn apply_faults(harness: &mut UpstreamHarness, faults: &[FaultSpec]) -> Result<()> {
+    for fault in faults {
+        match fault {
+            FaultSpec::Delay { target, ms } => {
+                harness.set_http_delay(target, *ms).await;
+            }
+            FaultSpec::Disconnect { target } => {
+                harness.disconnect_target(target).await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
@@ -522,6 +663,14 @@ async fn http_echo(
     uri: Uri,
     body: Bytes,
 ) -> impl IntoResponse {
+    let delay_ms = {
+        let map = state.delays_ms.read().await;
+        map.get(&state.service_name).copied().unwrap_or(0)
+    };
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+
     let payload = json!({
         "service": state.service_name,
         "method": method.to_string(),
@@ -948,11 +1097,7 @@ fn format_host_port(host: &str, port: u16) -> String {
     }
 }
 
-async fn dns_query(addr: &str, qname: &str) -> Result<serde_json::Value> {
-    let socket = UdpSocket::bind("127.0.0.1:0")
-        .await
-        .with_context(|| "binding dns client")?;
-
+async fn dns_query(addr: &str, qname: &str, proxy: Option<&str>) -> Result<serde_json::Value> {
     let mut message = Message::new();
     message.set_id(0x1234);
     message.set_op_code(OpCode::Query);
@@ -967,21 +1112,32 @@ async fn dns_query(addr: &str, qname: &str) -> Result<serde_json::Value> {
         .emit(&mut BinEncoder::new(&mut encoded))
         .with_context(|| "encoding dns query")?;
 
-    socket
-        .send_to(&encoded, addr)
+    let response = if let Some(proxy) = proxy {
+        udp_roundtrip_via_proxy(proxy, addr, &encoded).await.with_context(|| {
+            format!("dns query via proxy {proxy} to {addr}")
+        })?
+    } else {
+        let socket = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .with_context(|| "binding dns client")?;
+
+        socket
+            .send_to(&encoded, addr)
+            .await
+            .with_context(|| format!("sending dns query to {addr}"))?;
+
+        let mut buf = [0_u8; 2048];
+        let (n, _peer) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            socket.recv_from(&mut buf),
+        )
         .await
-        .with_context(|| format!("sending dns query to {addr}"))?;
+        .map_err(|_| anyhow!("dns recv timeout from {addr}"))?
+        .with_context(|| format!("receiving dns response from {addr}"))?;
+        buf[..n].to_vec()
+    };
 
-    let mut buf = [0_u8; 2048];
-    let (n, _peer) = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        socket.recv_from(&mut buf),
-    )
-    .await
-    .map_err(|_| anyhow!("dns recv timeout from {addr}"))?
-    .with_context(|| format!("receiving dns response from {addr}"))?;
-
-    let decoded = Message::from_vec(&buf[..n]).with_context(|| "decoding dns response")?;
+    let decoded = Message::from_vec(&response).with_context(|| "decoding dns response")?;
     Ok(json!({
         "id": decoded.id(),
         "message_type": format!("{:?}", decoded.message_type()),

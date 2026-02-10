@@ -31,5 +31,12 @@ traffic_plan:
     url: "{{upstream.local_http}}/v1/echo?scene=rust-core"
     proxy: socks5://127.0.0.1:11801
     expect_status: 200
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.via_socks_http_echo.success
+    op: eq
+    expected: true
 oracle:
   tolerate_counter_jitter: true

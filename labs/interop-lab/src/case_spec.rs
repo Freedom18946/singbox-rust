@@ -170,6 +170,20 @@ pub enum TrafficAction {
         name: String,
         addr: String,
         qname: String,
+        #[serde(default)]
+        proxy: Option<String>,
+    },
+    FaultDisconnect {
+        name: String,
+        target: String,
+    },
+    FaultReconnect {
+        name: String,
+        target: String,
+    },
+    Sleep {
+        name: String,
+        ms: u64,
     },
 }
 

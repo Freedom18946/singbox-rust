@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T145219Z-a4e018b4-7aad-4f52-ad99-a955814efd3e",
+  "case_id": "p1_fault_delay_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:52:19.084320Z",
+  "finished_at": "2026-02-10T14:52:31.362661Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 43617
+      },
+      "body_hash": "eac8ec209398ba66d46497599701cd901406b55f882a9e5bc1921a53fa2919e4"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "delayed_http_should_timeout",
+      "success": false,
+      "detail": {
+        "error": "curl failed status=exit status: 28 stderr=curl: (28) Operation timed out after 12001 milliseconds with 0 bytes received",
+        "proxy": "socks5://127.0.0.1:11801",
+        "url": "http://127.0.0.1:64453/v1/echo?scene=fault-delay"
+      }
+    }
+  ],
+  "errors": []
+}

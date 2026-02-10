@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T144554Z-9080212d-4b7a-43e4-8955-f626c9298ab7",
+  "case_id": "p1_fault_disconnect_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-10T14:45:54.159218Z",
+  "finished_at": "2026-02-10T14:45:54.431400Z",
+  "http_results": [
+    {
+      "name": "healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "status": 200,
+      "body": {
+        "fingerprint": "0.1.0",
+        "ok": true,
+        "pid": 39233
+      },
+      "body_hash": "5a71dfb919f0c19e8ebcdaee7dd382a9e7502957a6a7e4bc2ce2286c7fdd3ba5"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "disconnected_http_should_fail",
+      "success": false,
+      "detail": {
+        "error": "curl failed status=exit status: 97 stderr=curl: (97) connection to proxy closed",
+        "proxy": "socks5://127.0.0.1:11801",
+        "url": "http://127.0.0.1:64242/v1/echo?scene=fault-disconnect"
+      }
+    }
+  ],
+  "errors": []
+}

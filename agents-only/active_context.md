@@ -69,9 +69,33 @@
 - 新增 `interop-lab` 核心链路 case：`p1_rust_core_udp_via_socks`。
   - 通过本地仿公网 `udp_echo` + SOCKS5 UDP ASSOCIATE 验证 UDP 往返链路
   - 连续 3 轮稳定通过（errors=[]，无失败项）
+- 新增 `interop-lab` 核心链路 case：`p1_rust_core_dns_via_socks`。
+  - 通过本地仿公网 `dns_stub` + SOCKS5 UDP ASSOCIATE 验证 DNS 查询链路（`rcode=NoError`）
+  - 连续 3 轮稳定通过（errors=[]，无失败项）
+- 新增故障注入 case：`p1_fault_disconnect_http_via_socks`。
+  - 在流量阶段前断开 `local_http` upstream，验证“控制面健康 + 数据面失败可观测”
+  - 连续 2 轮复验：`/healthz` 保持 200，traffic 明确记录失败（proxy 连接关闭）
+- 新增故障注入 case：`p1_fault_delay_http_via_socks`。
+  - 对 `local_http` 注入 13s 延迟，验证“控制面健康 + 数据面超时失败可观测”
+  - 复验通过：`/healthz` 200，traffic 记录 curl timeout（exit 28）
+- 新增恢复 case：`p1_recovery_disconnect_reconnect_http_via_socks`。
+  - 断开后重连 upstream，验证“先失败后恢复”
+  - 连续 5 轮稳定通过（errors=[]，before=true / during=false / after=true）
+- 新增恢复 case：`p1_recovery_multi_flap_http_via_socks`。
+  - 连续两次 upstream 抖动（断开/重连）后均恢复
+  - 连续 2 轮稳定通过（errors=[]，两次 during=false，reconnect 后恢复为 true）
+- 新增恢复 case：`p1_recovery_dns_disconnect_reconnect_via_socks`。
+  - DNS UDP 链路断开后失败、重连后恢复（`rcode=NoError`）
+  - 连续 2 轮稳定通过（errors=[]，before=true / during=false / after=true）
+- 进程级恢复复验：`p1_rust_core_http_via_socks` 连续两轮独立启停通过，`/healthz` PID 变化且端口回收正常，确认“停-启-恢复”链路可复现。
 - 新增订阅文件 case：`p1_subscription_file_urls`，直接消费 `labs/interop-lab/subscriptions/subscription_urls.txt`。
 - 修复订阅 link-lines 解析：忽略注释/空行，避免把 `# https://...` 识别为协议。
 - 修复 SOCKS 入站 UDP 联测阻塞：`SocksInboundAdapter::serve()` 改为走 `run()` 路径，使 `SB_SOCKS_UDP_ENABLE=1` 在 runtime 生效。
+- `interop-lab` 流量模型增强：`http_get`/`tcp_round_trip`/`udp_round_trip`/`dns_query` 均支持 `proxy` 字段（支持 `socks5://`）。
+- `interop-lab` 故障模型接线：`FaultSpec` 已接入执行链（支持 `disconnect` 与 `delay`）。
+- `delay` 故障语义已增强：对目标 `http_echo` 服务注入真实请求处理延迟，不再是单纯等待。
+- `interop-lab` 断言模型接线：`AssertionSpec` 已接入执行链，支持 `eq/ne/exists/not_exists`（当前覆盖 `http.<name>.status`、`traffic.<name>.success`）。
+- 计划顺序已冻结：先完成核心恢复类，再进入 Trojan + Shadowsocks 协议层联测。
 
 **运行约束执行**:
 - 全过程未改动 Go+GUI+TUN 基线；
