@@ -507,14 +507,17 @@ impl CacheFileService {
 
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.rdrc.read().get(&key).map_or(false, |entry| entry.expires_at > now)
+                mem.rdrc
+                    .read()
+                    .get(&key)
+                    .is_some_and(|entry| entry.expires_at > now)
             }
             CacheBackend::Persistence(db) => {
                 db.open_tree("rdrc")
                     .ok()
                     .and_then(|tree| tree.get(&key).ok().flatten())
                     .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
-                    .map_or(false, |entry| entry.expires_at > now)
+                    .is_some_and(|entry| entry.expires_at > now)
             }
         }
     }

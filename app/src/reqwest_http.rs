@@ -14,6 +14,10 @@ pub struct ReqwestHttpClient {
 
 impl ReqwestHttpClient {
     /// Create a new `ReqwestHttpClient` with default settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns `reqwest::Error` if the underlying client cannot be built.
     pub fn new() -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder()
             .build()?;
@@ -52,7 +56,7 @@ impl HttpClient for ReqwestHttpClient {
 
             let response = builder.send().await.map_err(|e| CoreError::Io {
                 class: sb_types::errors::ErrorClass::Io,
-                message: format!("HTTP request failed: {}", e),
+                message: format!("HTTP request failed: {e}"),
             })?;
 
             let status = response.status().as_u16();
@@ -66,7 +70,7 @@ impl HttpClient for ReqwestHttpClient {
 
             let body = response.bytes().await.map_err(|e| CoreError::Io {
                 class: sb_types::errors::ErrorClass::Io,
-                message: format!("failed to read response body: {}", e),
+                message: format!("failed to read response body: {e}"),
             })?;
 
             Ok(HttpResponse {

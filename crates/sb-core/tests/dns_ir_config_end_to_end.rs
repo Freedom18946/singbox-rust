@@ -102,9 +102,23 @@ async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
     });
 
     let ir = sb_config::validator::v2::to_ir_v1(&json);
-    let resolver = sb_core::dns::config_builder::resolver_from_ir(&ir)
-        .expect("build resolver with dhcp/resolved/tailscale upstreams");
+    let res = sb_core::dns::config_builder::resolver_from_ir(&ir);
 
-    // With no rules, resolver should be the base dns_ir resolver.
-    assert_eq!(resolver.name(), "dns_ir");
+    // `resolved://` upstream requires Linux + sb-core feature `service_resolved`.
+    // On other platforms/builds we still expect a clear, stable error message.
+    if cfg!(all(target_os = "linux", feature = "service_resolved")) {
+        let resolver = res.expect("build resolver with dhcp/resolved/tailscale upstreams");
+        // With no rules, resolver should be the base dns_ir resolver.
+        assert_eq!(resolver.name(), "dns_ir");
+    } else {
+        let err = match res {
+            Ok(_) => panic!("non-Linux or without service_resolved should fail for resolved"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("requires Linux") && msg.contains("service_resolved"),
+            "expected resolved gating error, got: {msg}"
+        );
+    }
 }

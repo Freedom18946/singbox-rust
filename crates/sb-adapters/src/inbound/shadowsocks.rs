@@ -573,6 +573,7 @@ async fn handle_udp_relay(
 }
 
 /// Handle individual UDP packet
+#[allow(clippy::too_many_arguments)]
 async fn handle_udp_packet(
     listen_socket: Arc<tokio::net::UdpSocket>,
     cipher: AeadCipherKind,
@@ -1310,7 +1311,8 @@ where
 
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let (mut upstream, outbound_tag) = match decision {
+    // Match by reference so we can still use `decision` later (conntrack/chain computation).
+    let (mut upstream, outbound_tag) = match &decision {
         RDecision::Direct => {
             let s = direct_connect_hostport(&host, port, &opts).await?;
             (s, Some("direct".to_string()))
@@ -1318,8 +1320,10 @@ where
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("ss".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if reg.pools.contains_key(&name) {
-                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
+                if reg.pools.contains_key(name) {
+                    if let Some(ep) =
+                        sel.select(name.as_str(), peer, &format!("{}:{}", host, port), &())
+                    {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 let s = http_proxy_connect_through_proxy(

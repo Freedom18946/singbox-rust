@@ -4,7 +4,7 @@
 mod tests {
     use crate::adapter::OutboundConnector;
     use crate::outbound::selector_group::{
-        parse_test_url, ProxyHealth, ProxyMember, SelectMode, SelectorGroup,
+        parse_test_url, ProxyHealth, ProxyMember, SelectMode, SelectorGroup, UrlTestOptions,
     };
     use std::io;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -138,12 +138,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "test-urltest".to_string(),
             members,
-            "http://www.gstatic.com/generate_204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50,
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://www.gstatic.com/generate_204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50,
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         // Should select the fastest
@@ -171,12 +173,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "test-urltest".to_string(),
             members,
-            "http://www.gstatic.com/generate_204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50,
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://www.gstatic.com/generate_204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50,
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         let selected = selector.select_best().await;
@@ -326,12 +330,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "test-degradation".to_string(),
             members,
-            "http://www.gstatic.com/generate_204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50,
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://www.gstatic.com/generate_204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50,
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         // Should still return something (fallback to first)
@@ -518,12 +524,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "tolerance-test".to_string(),
             members,
-            "http://test/204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50, // tolerance = 50ms
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://test/204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50, // tolerance = 50ms
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         // Pre-select proxy-a
@@ -552,12 +560,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "tolerance-test".to_string(),
             members,
-            "http://test/204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50, // tolerance = 50ms
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://test/204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50, // tolerance = 50ms
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         // Pre-select proxy-a
@@ -585,12 +595,14 @@ mod tests {
         let selector = SelectorGroup::new_urltest(
             "tolerance-test".to_string(),
             members,
-            "http://test/204".to_string(),
-            Duration::from_secs(60),
-            Duration::from_secs(5),
-            50,
-            None,
-            None,
+            UrlTestOptions {
+                test_url: "http://test/204".to_string(),
+                interval: Duration::from_secs(60),
+                timeout: Duration::from_secs(5),
+                tolerance_ms: 50,
+                cache_file: None,
+                urltest_history: None,
+            },
         );
 
         // Pre-select proxy-a (which has rtt=0)

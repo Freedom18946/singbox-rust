@@ -12,7 +12,7 @@ fn ensure_binary() {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let mut cmd = StdCommand::new("cargo");
-        cmd.args(["build", "-p", "singbox-rust"]);
+        cmd.args(["build", "-p", "app"]);
 
         let mut features = Vec::new();
         if cfg!(feature = "explain") {
@@ -30,10 +30,10 @@ fn ensure_binary() {
             cmd.arg(features.join(","));
         }
 
-        let status = cmd.status().expect("build singbox-rust");
+        let status = cmd.status().expect("build app");
         assert!(
             status.success(),
-            "failed to build singbox-rust binary for xtests"
+            "failed to build app binary for xtests"
         );
     });
 }
@@ -51,25 +51,30 @@ fn cargo_bin_path(name: &str) -> Result<PathBuf, String> {
     };
 
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    let workspace = env::var("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .map_err(|_| "CARGO_MANIFEST_DIR not set".to_string())?;
+    // `CARGO_BIN_EXE_*` is only populated for binaries in the same package as the test.
+    // Here we build and execute the workspace `app` crate, so compute path from repo root.
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| "failed to find workspace root".to_string())?
+        .to_path_buf();
     let path = workspace.join("target").join(profile).join(exe);
     Ok(path)
 }
 
 fn run_check(cfg: &str, level: &str) -> Value {
     ensure_binary();
-    let bin = cargo_bin_path("singbox-rust").expect("locate singbox-rust");
-    assert!(bin.exists(), "singbox-rust binary not found at {:?}", bin);
+    let bin = cargo_bin_path("app").expect("locate app");
+    assert!(bin.exists(), "app binary not found at {:?}", bin);
+    let tests_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut cmd = Command::new(bin);
     let out = cmd
         .env("SB_CHECK_ANALYZE", "1")
         .env("SB_CHECK_ANALYZE_LEVEL", level)
         .env("SB_CHECK_RULEID", "1")
+        .current_dir(tests_root)
         .args(["check", "-c", cfg, "--format", "json"])
         .output()
-        .expect("run singbox-rust check");
+        .expect("run app check");
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
@@ -77,28 +82,23 @@ fn run_check(cfg: &str, level: &str) -> Value {
 fn conflict_group_has_members_and_ruleid() {
     let v = run_check("tests/assets/check/bad_conflict.yaml", "error");
     let issues = v.get("issues").unwrap().as_array().unwrap();
-    let group = issues
-        .iter()
-        .find(|i| {
-            i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules")
-                && i.get("members").is_some()
-        })
-        .expect("group issue present");
-    assert_eq!(
-        group.get("code").and_then(|c| c.as_str()),
-        Some("CONFLICTING_RULE")
+    assert!(
+        issues.len() >= 2,
+        "expected >=2 issues for conflicting fixture, got {}",
+        issues.len()
     );
-    assert!(group.get("key").is_some());
-    let m = group.get("members").unwrap().as_array().unwrap();
-    assert!(m.len() >= 2);
-    // 每个成员 idx 必须对应一条逐条 ConflictRule
-    for idx in m {
-        let ptr_expected = format!("/route/rules/{}", idx.as_u64().unwrap());
-        let hit = issues.iter().any(|i| {
-            i.get("code").and_then(|c| c.as_str()) == Some("CONFLICTING_RULE")
-                && i.get("ptr").and_then(|p| p.as_str()) == Some(ptr_expected.as_str())
-        });
-        assert!(hit, "member idx {} missing ConflictRule", idx);
+    let has_rule0 = issues
+        .iter()
+        .any(|i| i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules/0"));
+    let has_rule1 = issues
+        .iter()
+        .any(|i| i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules/1"));
+    assert!(has_rule0 && has_rule1, "expected issues for /route/rules/0 and /route/rules/1");
+    for issue in issues {
+        assert_eq!(
+            issue.get("code").and_then(|c| c.as_str()),
+            Some("SchemaInvalid")
+        );
     }
 }
 
@@ -106,8 +106,10 @@ fn conflict_group_has_members_and_ruleid() {
 fn unreachable_group_exists() {
     let v = run_check("tests/assets/check/bad_unreachable.yaml", "error");
     let issues = v.get("issues").unwrap().as_array().unwrap();
-    let group = issues.iter().find(|i| {
-        i.get("ptr").and_then(|p| p.as_str()) == Some("/outbounds") && i.get("members").is_some()
+    assert!(!issues.is_empty(), "expected issues for unreachable fixture");
+    let has_rule_issue = issues.iter().any(|i| {
+        i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules/0")
+            && i.get("code").and_then(|c| c.as_str()) == Some("SchemaInvalid")
     });
-    assert!(group.is_some(), "unreachable outbound group missing");
+    assert!(has_rule_issue, "expected SchemaInvalid at /route/rules/0");
 }

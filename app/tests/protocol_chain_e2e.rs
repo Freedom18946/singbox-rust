@@ -25,14 +25,13 @@ fn is_constrained_dial_error_str(s: &str) -> bool {
         return true;
     }
 
-    if cfg!(target_os = "macos") {
-        if s.contains("connection reset by peer")
+    if cfg!(target_os = "macos")
+        && (s.contains("connection reset by peer")
             || s.contains("unexpectedeof")
             || s.contains("unexpected eof")
-            || s.contains("early eof")
-        {
-            return true;
-        }
+            || s.contains("early eof"))
+    {
+        return true;
     }
 
     false

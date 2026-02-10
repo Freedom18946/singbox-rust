@@ -13,8 +13,8 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn spawn_tcp_echo(addr: &str) {
-    let listener = TcpListener::bind(addr).expect("bind tcp");
+fn spawn_tcp_echo(addr: &str) -> std::io::Result<()> {
+    let listener = TcpListener::bind(addr)?;
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let mut stream = stream;
@@ -23,10 +23,11 @@ fn spawn_tcp_echo(addr: &str) {
             let _ = stream.write_all(&buf);
         }
     });
+    Ok(())
 }
 
-fn spawn_udp_echo(addr: &str) {
-    let socket = UdpSocket::bind(addr).expect("bind udp");
+fn spawn_udp_echo(addr: &str) -> std::io::Result<()> {
+    let socket = UdpSocket::bind(addr)?;
     thread::spawn(move || {
         let mut buf = [0u8; 512];
         loop {
@@ -35,6 +36,7 @@ fn spawn_udp_echo(addr: &str) {
             }
         }
     });
+    Ok(())
 }
 
 #[test]
@@ -43,8 +45,20 @@ fn bench_outputs_json() {
     let tcp_addr = "127.0.0.1:17007";
     let udp_addr = "127.0.0.1:17099";
 
-    spawn_tcp_echo(tcp_addr);
-    spawn_udp_echo(udp_addr);
+    if let Err(e) = spawn_tcp_echo(tcp_addr) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            eprintln!("skip bench_outputs_json: tcp bind permission denied");
+            return;
+        }
+        panic!("bind tcp: {e}");
+    }
+    if let Err(e) = spawn_udp_echo(udp_addr) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            eprintln!("skip bench_outputs_json: udp bind permission denied");
+            return;
+        }
+        panic!("bind udp: {e}");
+    }
     thread::sleep(Duration::from_millis(100));
 
     let mut cmd = Command::new("cargo");

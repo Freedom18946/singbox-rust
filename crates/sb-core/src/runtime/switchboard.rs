@@ -350,6 +350,65 @@ impl SwitchboardBuilder {
         let name = ir.name.as_deref().unwrap_or("unnamed");
 
         match ir.ty {
+            OutboundType::Direct => {
+                #[derive(Debug, Clone, Default)]
+                struct DirectPassthroughConnector;
+
+                #[async_trait::async_trait]
+                impl OutboundConnector for DirectPassthroughConnector {
+                    async fn dial(&self, target: Target, opts: DialOpts) -> AdapterResult<BoxedStream> {
+                        if target.kind != TransportKind::Tcp {
+                            return Err(AdapterError::UnsupportedProtocol(
+                                "Direct outbound UDP is not implemented in switchboard".into(),
+                            ));
+                        }
+                        let stream = tokio::time::timeout(
+                            opts.connect_timeout,
+                            crate::outbound::connect(&target.host, target.port),
+                        )
+                        .await
+                        .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
+                        .map_err(AdapterError::Io)?;
+                        Ok(Box::new(stream))
+                    }
+
+                    fn name(&self) -> &'static str {
+                        "direct"
+                    }
+                }
+
+                self.switchboard
+                    .register(name.to_string(), DirectPassthroughConnector)
+                    .map_err(|e| AdapterError::Other(e.into()))?;
+            }
+
+            OutboundType::Block => {
+                #[derive(Debug, Clone, Default)]
+                struct BlockRejectConnector;
+
+                #[async_trait::async_trait]
+                impl OutboundConnector for BlockRejectConnector {
+                    async fn dial(
+                        &self,
+                        _target: Target,
+                        _opts: DialOpts,
+                    ) -> AdapterResult<BoxedStream> {
+                        Err(AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            "blocked by block outbound",
+                        )))
+                    }
+
+                    fn name(&self) -> &'static str {
+                        "block"
+                    }
+                }
+
+                self.switchboard
+                    .register(name.to_string(), BlockRejectConnector)
+                    .map_err(|e| AdapterError::Other(e.into()))?;
+            }
+
             OutboundType::Http => {
                 #[cfg(feature = "scaffold")]
                 {

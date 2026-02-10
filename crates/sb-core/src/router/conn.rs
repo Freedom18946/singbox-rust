@@ -600,12 +600,14 @@ impl ConnectionManager {
                         copy_with_tls_fragment(
                             &mut local_reader,
                             &mut remote_writer,
-                            tls_fragment,
-                            tls_record_fragment,
-                            fallback_delay,
-                            tcp_fd,
-                            traffic_upload.clone(),
-                            Some(upload_ctr),
+                            TlsFragmentCopyOpts {
+                                split_packet: tls_fragment,
+                                split_record: tls_record_fragment,
+                                fallback_delay,
+                                tcp_fd,
+                                traffic: traffic_upload.clone(),
+                                conn_counter: Some(upload_ctr),
+                            },
                         )
                         .await
                     } else {
@@ -1119,12 +1121,7 @@ async fn write_tls_fragments<W: AsyncWrite + Unpin>(
 async fn copy_with_tls_fragment<R, W>(
     reader: &mut R,
     writer: &mut W,
-    split_packet: bool,
-    split_record: bool,
-    fallback_delay: Duration,
-    tcp_fd: Option<TcpFd>,
-    traffic: Option<Arc<dyn TrafficRecorder>>,
-    conn_counter: Option<Arc<AtomicU64>>,
+    opts: TlsFragmentCopyOpts,
 ) -> io::Result<u64>
 where
     R: AsyncRead + Unpin,
@@ -1149,16 +1146,16 @@ where
                         writer,
                         &buf[..n],
                         &indexes,
-                        split_packet,
-                        split_record,
-                        fallback_delay,
-                        tcp_fd,
+                        opts.split_packet,
+                        opts.split_record,
+                        opts.fallback_delay,
+                        opts.tcp_fd,
                     )
                     .await?;
-                    if let Some(ref recorder) = traffic {
+                    if let Some(ref recorder) = opts.traffic {
                         recorder.record_up(n as u64);
                     }
-                    if let Some(ref counter) = conn_counter {
+                    if let Some(ref counter) = opts.conn_counter {
                         counter.fetch_add(n as u64, Ordering::Relaxed);
                     }
                     total += n as u64;
@@ -1168,14 +1165,23 @@ where
         }
 
         writer.write_all(&buf[..n]).await?;
-        if let Some(ref recorder) = traffic {
+        if let Some(ref recorder) = opts.traffic {
             recorder.record_up(n as u64);
         }
-        if let Some(ref counter) = conn_counter {
+        if let Some(ref counter) = opts.conn_counter {
             counter.fetch_add(n as u64, Ordering::Relaxed);
         }
         total += n as u64;
     }
+}
+
+struct TlsFragmentCopyOpts {
+    split_packet: bool,
+    split_record: bool,
+    fallback_delay: Duration,
+    tcp_fd: Option<TcpFd>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
+    conn_counter: Option<Arc<AtomicU64>>,
 }
 
 async fn copy_with_recording<R, W>(

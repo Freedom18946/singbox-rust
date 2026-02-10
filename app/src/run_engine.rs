@@ -125,6 +125,10 @@ pub fn load_config_with_import_raw(
 /// - Loads config with optional subscription import
 /// - Applies debug options from the new config
 /// - Reloads the Supervisor with the new IR
+///
+/// # Errors
+///
+/// Returns an error if config loading/validation fails, or if `Supervisor::reload` fails.
 #[cfg(feature = "router")]
 pub async fn reload_with_supervisor(
     entries: &[ConfigEntry],
@@ -152,7 +156,7 @@ use tokio::task::JoinHandle;
 use tracing::error;
 
 /// Compute a stable fingerprint of the merged config for change detection.
-/// Uses sb_config::json_norm::fingerprint_hex8 for canonical SHA256-8 fingerprint.
+/// Uses `sb_config::json_norm::fingerprint_hex8` for canonical SHA256-8 fingerprint.
 /// Returns (numeric for fast comparison, hex-8 for display).
 #[cfg(feature = "router")]
 fn config_fingerprint(raw: &serde_json::Value) -> (u64, String) {
@@ -191,7 +195,7 @@ struct ReloadState {
     fingerprint_hex: String,
 }
 
-/// Alias for tokio's async Mutex (distinguished from std::sync::Mutex).
+/// Alias for tokio's async Mutex (distinguished from `std::sync::Mutex`).
 #[cfg(feature = "router")]
 type TokioMutex<T> = tokio::sync::Mutex<T>;
 
@@ -209,6 +213,7 @@ pub struct ConfigInputs {
 /// Options for the unified supervisor run loop.
 #[cfg(feature = "router")]
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct RunOptions {
     /// Config input sources for dynamic entry resolution.
     /// Entries are collected dynamically at startup, watch, and reload.
@@ -217,7 +222,7 @@ pub struct RunOptions {
     pub import_path: Option<PathBuf>,
     /// Enable watch mode (poll for config changes every 2s)
     pub watch: bool,
-    /// Optional reload path override for SIGHUP (uses this instead of config_inputs)
+    /// Optional reload path override for SIGHUP (uses this instead of `config_inputs`)
     pub reload_path: Option<PathBuf>,
     /// Optional admin HTTP listen address
     pub admin_listen: Option<String>,
@@ -225,7 +230,7 @@ pub struct RunOptions {
     pub admin_token: Option<String>,
     /// Admin server implementation (core or debug)
     pub admin_impl: AdminImpl,
-    /// Print startup message (controlled by startup_output)
+    /// Print startup message (controlled by `startup_output`)
     pub print_startup: bool,
     /// Startup output mode
     pub startup_output: StartupOutputMode,
@@ -245,7 +250,7 @@ pub struct RunOptions {
     /// CLI run: false by default.
     pub health_enable: bool,
     /// Enable DNS environment bridge from config.
-    /// When true, calls apply_dns_env_from_config() to derive DNS env vars.
+    /// When true, calls `apply_dns_env_from_config()` to derive DNS env vars.
     /// bin/run: true (full featured); CLI run: false (avoid side effects).
     pub dns_env_bridge: bool,
 }
@@ -254,7 +259,7 @@ pub struct RunOptions {
 #[cfg(feature = "router")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum StartupOutputMode {
-    /// Log via tracing::info (CLI run default)
+    /// Log via `tracing::info` (CLI run default)
     #[default]
     LogOnly,
     /// Print to stdout in text format: "started pid=... fingerprint=..."
@@ -267,10 +272,10 @@ pub enum StartupOutputMode {
 #[cfg(feature = "router")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AdminImpl {
-    /// Core admin server (sb_core::admin::http)
+    /// Core admin server (`sb_core::admin::http`)
     #[default]
     Core,
-    /// Debug admin server (app::admin_debug)
+    /// Debug admin server (`app::admin_debug`)
     Debug,
 }
 
@@ -426,8 +431,12 @@ async fn wait_for_signal() -> RunSignal {
 
 #[cfg(all(feature = "router", unix))]
 async fn term_signal() {
-    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .expect("failed to register SIGTERM");
+    let Ok(mut term) =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+    else {
+        tracing::warn!("failed to register SIGTERM handler");
+        return;
+    };
     term.recv().await;
 }
 
@@ -438,8 +447,11 @@ async fn term_signal() {
 
 #[cfg(all(feature = "router", unix))]
 async fn hup_signal() {
-    let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-        .expect("failed to register SIGHUP");
+    let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+    else {
+        tracing::warn!("failed to register SIGHUP handler");
+        return;
+    };
     hup.recv().await;
 }
 
@@ -532,7 +544,8 @@ async fn reload_with_state(
     match supervisor.reload(ir).await {
         Ok(_) => {
             guard.fingerprint = new_fp_numeric;
-            guard.fingerprint_hex = new_fp_hex.clone();
+            guard.fingerprint_hex.clone_from(&new_fp_hex);
+            drop(guard);
             ReloadOutcome::Applied(new_fp_hex)
         }
         Err(e) => ReloadOutcome::Failed(e),
@@ -554,7 +567,13 @@ async fn reload_with_state(
 /// - Optional watch mode (polls for config changes every 2s)
 /// - Signal handling (SIGHUP for reload, SIGTERM/CTRL+C for shutdown)
 /// - Graceful shutdown
+///
+/// # Errors
+///
+/// Returns an error if config collection/loading fails, supervisor startup fails, or any critical
+/// runtime components fail to initialize.
 #[cfg(feature = "router")]
+#[allow(clippy::too_many_lines)]
 pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 0) Health enable env var (Supervisor uses SB_HEALTH_ENABLE to spawn health task)
     if opts.health_enable {
@@ -805,7 +824,11 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     };
 
     // 9) Signal handling loop
-    while let RunSignal::Reload = wait_for_signal().await {
+    loop {
+        match wait_for_signal().await {
+            RunSignal::Reload => {}
+            RunSignal::Terminate => break,
+        }
         info!("SIGHUP received; reloading configuration…");
 
         // Determine entries for reload

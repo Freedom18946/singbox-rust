@@ -17,7 +17,7 @@
 use sb_adapters::register_all;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::{registry, OutboundConnector};
-use sb_core::outbound::selector_group::{ProxyMember, SelectMode, SelectorGroup};
+use sb_core::outbound::selector_group::{ProxyMember, SelectMode, SelectorGroup, UrlTestOptions};
 use sb_core::routing::engine::Engine;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -468,12 +468,14 @@ async fn test_selectorgroup_urltest_mode() {
     let urltest = SelectorGroup::new_urltest(
         "test-urltest".to_string(),
         members,
-        "http://www.gstatic.com/generate_204".to_string(),
-        std::time::Duration::from_secs(60),
-        std::time::Duration::from_secs(5),
-        50,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://www.gstatic.com/generate_204".to_string(),
+            interval: std::time::Duration::from_secs(60),
+            timeout: std::time::Duration::from_secs(5),
+            tolerance_ms: 50,
+            cache_file: None,
+            urltest_history: None,
+        },
     );
 
     // Verify members

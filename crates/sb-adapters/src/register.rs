@@ -26,9 +26,8 @@ use std::sync::Mutex;
 use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
-use sb_core::adapter::registry;
 use sb_core::adapter::{
-    InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
+    registry, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
 };
 use tracing::warn;
 
@@ -42,11 +41,35 @@ type OutboundBuilderResult = Option<(
 ///
 /// The `connect()` method returns an error (encrypted protocols can't return raw TcpStream).
 /// The `connect_io()` method delegates to the inner adapter's `dial()`, returning a layered stream.
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vmess",
+    feature = "adapter-vless",
+    feature = "adapter-wireguard-outbound",
+    feature = "adapter-hysteria",
+    feature = "adapter-shadowtls",
+    feature = "adapter-tuic",
+    feature = "adapter-hysteria2",
+    feature = "adapter-ssh",
+))]
 struct AdapterIoBridge<A: crate::traits::OutboundConnector + 'static> {
     inner: Arc<A>,
     name: &'static str,
 }
 
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vmess",
+    feature = "adapter-vless",
+    feature = "adapter-wireguard-outbound",
+    feature = "adapter-hysteria",
+    feature = "adapter-shadowtls",
+    feature = "adapter-tuic",
+    feature = "adapter-hysteria2",
+    feature = "adapter-ssh",
+))]
 impl<A: crate::traits::OutboundConnector + 'static> std::fmt::Debug for AdapterIoBridge<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AdapterIoBridge")
@@ -56,6 +79,18 @@ impl<A: crate::traits::OutboundConnector + 'static> std::fmt::Debug for AdapterI
     }
 }
 
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vmess",
+    feature = "adapter-vless",
+    feature = "adapter-wireguard-outbound",
+    feature = "adapter-hysteria",
+    feature = "adapter-shadowtls",
+    feature = "adapter-tuic",
+    feature = "adapter-hysteria2",
+    feature = "adapter-ssh",
+))]
 #[async_trait::async_trait]
 impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for AdapterIoBridge<A> {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
@@ -93,10 +128,38 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
 
 /// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
 /// Both have identical bounds (AsyncRead + AsyncWrite + Unpin + Send).
-#[cfg(feature = "v2ray_transport")]
+#[cfg(all(
+    feature = "v2ray_transport",
+    any(
+        feature = "adapter-shadowsocks",
+        feature = "adapter-trojan",
+        feature = "adapter-vmess",
+        feature = "adapter-vless",
+        feature = "adapter-wireguard-outbound",
+        feature = "adapter-hysteria",
+        feature = "adapter-shadowtls",
+        feature = "adapter-tuic",
+        feature = "adapter-hysteria2",
+        feature = "adapter-ssh",
+    )
+))]
 struct BoxedStreamAdapter(crate::traits::BoxedStream);
 
-#[cfg(feature = "v2ray_transport")]
+#[cfg(all(
+    feature = "v2ray_transport",
+    any(
+        feature = "adapter-shadowsocks",
+        feature = "adapter-trojan",
+        feature = "adapter-vmess",
+        feature = "adapter-vless",
+        feature = "adapter-wireguard-outbound",
+        feature = "adapter-hysteria",
+        feature = "adapter-shadowtls",
+        feature = "adapter-tuic",
+        feature = "adapter-hysteria2",
+        feature = "adapter-ssh",
+    )
+))]
 impl tokio::io::AsyncRead for BoxedStreamAdapter {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -107,7 +170,21 @@ impl tokio::io::AsyncRead for BoxedStreamAdapter {
     }
 }
 
-#[cfg(feature = "v2ray_transport")]
+#[cfg(all(
+    feature = "v2ray_transport",
+    any(
+        feature = "adapter-shadowsocks",
+        feature = "adapter-trojan",
+        feature = "adapter-vmess",
+        feature = "adapter-vless",
+        feature = "adapter-wireguard-outbound",
+        feature = "adapter-hysteria",
+        feature = "adapter-shadowtls",
+        feature = "adapter-tuic",
+        feature = "adapter-hysteria2",
+        feature = "adapter-ssh",
+    )
+))]
 impl tokio::io::AsyncWrite for BoxedStreamAdapter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,

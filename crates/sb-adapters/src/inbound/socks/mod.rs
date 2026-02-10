@@ -515,8 +515,6 @@ where
         }
     }
 
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
     let proxy = default_proxy();
 
     // Routing via cfg.router (from config IR) with minimal matched rule metadata.
@@ -534,8 +532,8 @@ where
         ..Default::default()
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
-    rule = meta.rule;
-    decision = meta.decision;
+    let rule: Option<String> = meta.rule;
+    let mut decision: RDecision = meta.decision;
 
     #[cfg(feature = "metrics")]
     {

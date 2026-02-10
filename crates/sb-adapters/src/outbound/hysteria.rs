@@ -97,7 +97,7 @@ impl OutboundConnector for HysteriaConnector {
         tracing::debug!("hysteria v1: performing handshake");
         hysteria_handshake(&connection, &self.cfg)
             .await
-            .map_err(|e| AdapterError::Io(e))?;
+            .map_err(AdapterError::Io)?;
 
         // Create TCP tunnel to the target
         tracing::debug!(
@@ -107,7 +107,7 @@ impl OutboundConnector for HysteriaConnector {
         );
         let (send, recv) = create_tcp_tunnel(&connection, &target.host, target.port)
             .await
-            .map_err(|e| AdapterError::Io(e))?;
+            .map_err(AdapterError::Io)?;
 
         Ok(Box::new(super::quic_util::QuicBidiStream::new(send, recv)) as BoxedStream)
     }

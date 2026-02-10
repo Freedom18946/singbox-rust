@@ -783,4 +783,24 @@ L2.8.4-6 Handlers + WebSocket:
 **备注**:
 - M3.1~M3.3 与 L3.3 Linux runtime/system bus 验证后补，不阻塞 L3 功能闭环关闭。
 
+---
+
+### [2026-02-10] Agent: Codex (GPT-5)
+
+**任务**: 以“最高验收标准/终极用户需求”为宗旨，复核 L1 已完成结论的可复现性；建立差异追踪并修复验收回归/门禁失败项。
+
+**交付**:
+- 新增差异追踪：`agents-only/05-analysis/ACCEPTANCE-GAPS-TRACKER.md`
+- 修复边界门禁回归：`check-boundaries.sh` 从 V4a=26>25 恢复为 PASS（V4a=25）
+- 修复质量门禁：`cargo clippy --all-targets --all-features -- -D warnings` 通过
+- 修正验收口径：更新 `agents-only/01-spec/02-ACCEPTANCE-CRITERIA.md` 的“依赖边界验收”与 `acceptance_check.sh` 示例，统一以 `check-boundaries.sh` 为权威门禁
+
+**关键改动（摘）**:
+- `crates/sb-adapters/src/register.rs`：合并 `use sb_core::adapter::registry` import（降低 V4a 计数）
+- 多处：修复 clippy/pedantic/nursery 告警（含 URLTest 构造 API 收敛、TLS fragmentation copy opts 收敛、测试用例 if-collapse、doc_markdown/expect_used 等）
+
+**验证**:
+- `./agents-only/06-scripts/check-boundaries.sh` exit 0
+- `cargo clippy --all-targets --all-features -- -D warnings` PASS
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

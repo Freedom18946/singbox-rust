@@ -435,20 +435,12 @@ impl DnsRuleEngine {
         // ctx is passed in
 
         // Track accumulated route-options (L2.10.14)
-        let mut accumulated_disable_cache: Option<bool> = None;
-        let mut accumulated_rewrite_ttl: Option<u32> = None;
         let mut accumulated_client_subnet: Option<String> = None;
 
         for compiled in &self.rules {
             if compiled.matcher.matches(ctx) {
                 // L2.10.14: RouteOptions modifies query options and continues matching
                 if compiled.rule.action == DnsRuleAction::RouteOptions {
-                    if let Some(dc) = compiled.rule.disable_cache {
-                        accumulated_disable_cache = Some(dc);
-                    }
-                    if let Some(ttl) = compiled.rule.rewrite_ttl {
-                        accumulated_rewrite_ttl = Some(ttl);
-                    }
                     if let Some(ref cs) = compiled.rule.client_subnet {
                         accumulated_client_subnet = Some(cs.clone());
                     }

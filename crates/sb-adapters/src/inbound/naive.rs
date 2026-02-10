@@ -259,6 +259,7 @@ async fn handle_stream(
         ip: None,
         port: Some(port),
         transport: Transport::Tcp,
+        ..Default::default()
     };
     let (target, rule) = cfg.router.select_ctx_and_record_with_meta(ctx);
     let decision = match &target {
@@ -270,7 +271,6 @@ async fn handle_stream(
     let outbound_tag = match &target {
         OutRouteTarget::Named(name) => Some(name.clone()),
         OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
-        _ => None,
     };
     let endpoint = match host.parse::<std::net::IpAddr>() {
         Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
@@ -401,7 +401,7 @@ async fn relay_h2_tcp(
         Ok::<_, anyhow::Error>(())
     };
 
-    let cancel = cancel.unwrap_or_else(CancellationToken::new);
+    let cancel = cancel.unwrap_or_default();
     tokio::select! {
         _ = cancel.cancelled() => Ok(()),
         r1 = h2_to_tcp => r1,

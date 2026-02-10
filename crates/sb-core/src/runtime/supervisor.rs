@@ -154,10 +154,8 @@ impl Supervisor {
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
 
         // Start context managers (after bridge is built but before inbounds start)
-        run_context_stage(&context, ServiceStage::Start).map_err(|e| {
-            shutdown_context(&context);
-            e
-        })?;
+        run_context_stage(&context, ServiceStage::Start)
+            .inspect_err(|_| shutdown_context(&context))?;
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
         // Configure DNS resolver from IR (if provided)

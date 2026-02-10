@@ -15,8 +15,6 @@ use async_trait::async_trait;
 #[cfg(feature = "out_hysteria2")]
 use quinn::Connection;
 #[cfg(feature = "out_hysteria2")]
-use rand::Rng;
-#[cfg(feature = "out_hysteria2")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "out_hysteria2")]
 use std::io;

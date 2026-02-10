@@ -39,21 +39,24 @@ const REJECT_PROXY_NAME: &str = "REJECT";
 /// Infer proxy type from OutboundImpl
 fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
     if let Some(outbound) = impl_ {
-        return match outbound {
-            OutboundImpl::Direct => PROXY_TYPE_DIRECT.to_string(),
-            OutboundImpl::Block => PROXY_TYPE_REJECT.to_string(),
-            OutboundImpl::Socks5(_) => PROXY_TYPE_SOCKS5.to_string(),
-            OutboundImpl::HttpProxy(_) => PROXY_TYPE_HTTP.to_string(),
-            OutboundImpl::Connector(c) => {
-                if let Some(group) = c.as_group() {
-                    group.group_type().to_string()
-                } else {
-                    "Unknown".to_string()
-                }
+        if matches!(outbound, OutboundImpl::Direct) {
+            return PROXY_TYPE_DIRECT.to_string();
+        }
+        if matches!(outbound, OutboundImpl::Block) {
+            return PROXY_TYPE_REJECT.to_string();
+        }
+        if matches!(outbound, OutboundImpl::Socks5(_)) {
+            return PROXY_TYPE_SOCKS5.to_string();
+        }
+        if matches!(outbound, OutboundImpl::HttpProxy(_)) {
+            return PROXY_TYPE_HTTP.to_string();
+        }
+        if let OutboundImpl::Connector(c) = outbound {
+            if let Some(group) = c.as_group() {
+                return group.group_type().to_string();
             }
-            // Feature-gated protocol variants handled by wildcard
-            _ => PROXY_TYPE_UNKNOWN.to_string(),
-        };
+        }
+        return PROXY_TYPE_UNKNOWN.to_string();
     }
 
     // Fallback to name inference
@@ -107,7 +110,6 @@ fn parse_url_components(url: &str) -> (&str, u16, &str) {
 
     let (host_port, path) = scheme_stripped
         .split_once('/')
-        .map(|(hp, p)| (hp, p))
         .unwrap_or((scheme_stripped, ""));
 
     let (host, port) = host_port
@@ -268,7 +270,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
         }
 
         if default_tag.is_empty() {
-            default_tag.clone_from(&key);
+            default_tag.clone_from(key);
         }
         proxies.insert(key.clone(), proxy);
     }

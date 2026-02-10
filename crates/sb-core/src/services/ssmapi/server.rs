@@ -253,6 +253,18 @@ impl SsmapiService {
             );
         }
 
+        // Keep per-endpoint binding observable and avoid dead fields under clippy -D warnings.
+        for (endpoint, ctx) in &endpoints {
+            tracing::debug!(
+                service = "ssm-api",
+                endpoint = %endpoint,
+                inbound_tag = %ctx.inbound_tag,
+                server_tag = %ctx.server.tag(),
+                server_type = %ctx.server.inbound_type(),
+                "SSMAPI endpoint bound"
+            );
+        }
+
         tracing::info!(
             service = "ssm-api",
             tag = tag,

@@ -11,7 +11,7 @@ use tokio::time::Duration;
 // This is a minimal stub to allow compilation for subs security tests
 use sb_core::adapter::OutboundConnector as AdapterConnector;
 #[cfg(feature = "router")]
-use sb_core::outbound::selector_group::{ProxyMember as GroupMember, SelectorGroup};
+use sb_core::outbound::selector_group::{ProxyMember as GroupMember, SelectorGroup, UrlTestOptions};
 use sb_core::outbound::{endpoint::ProxyEndpoint, health as ob_health, registry as ob_registry};
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
@@ -566,14 +566,17 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                     let selector = SelectorGroup::new_urltest(
                         name.clone(),
                         group_members,
-                        ob.test_url
-                            .clone()
-                            .unwrap_or_else(|| DEFAULT_URLTEST_URL.to_string()),
-                        Duration::from_millis(interval_ms),
-                        Duration::from_millis(timeout_ms),
-                        tolerance_ms,
-                        cache_service.clone(),
-                        Some(urltest_history.clone()),
+                        UrlTestOptions {
+                            test_url: ob
+                                .test_url
+                                .clone()
+                                .unwrap_or_else(|| DEFAULT_URLTEST_URL.to_string()),
+                            interval: Duration::from_millis(interval_ms),
+                            timeout: Duration::from_millis(timeout_ms),
+                            tolerance_ms,
+                            cache_file: cache_service.clone(),
+                            urltest_history: Some(urltest_history.clone()),
+                        },
                     );
                     let selector = Arc::new(selector);
                     // Start health checker only if a Tokio runtime is available

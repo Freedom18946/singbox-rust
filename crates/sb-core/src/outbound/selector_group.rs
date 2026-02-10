@@ -62,6 +62,16 @@ impl ProxyMember {
     }
 }
 
+/// URLTest configuration bundle (avoids wide constructors).
+pub struct UrlTestOptions {
+    pub test_url: String,
+    pub interval: Duration,
+    pub timeout: Duration,
+    pub tolerance_ms: u64,
+    pub cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+    pub urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
+}
+
 /// Health status for a proxy
 #[derive(Debug)]
 pub struct ProxyHealth {
@@ -205,16 +215,7 @@ impl SelectorGroup {
     }
 
     /// Create a new `URLTest` selector
-    pub fn new_urltest(
-        name: String,
-        members: Vec<ProxyMember>,
-        test_url: String,
-        interval: Duration,
-        timeout: Duration,
-        tolerance_ms: u64,
-        cache_file: Option<Arc<dyn crate::context::CacheFile>>,
-        urltest_history: Option<Arc<dyn crate::context::URLTestHistoryStorage>>,
-    ) -> Self {
+    pub fn new_urltest(name: String, members: Vec<ProxyMember>, opts: UrlTestOptions) -> Self {
         Self {
             name,
             mode: SelectMode::UrlTest,
@@ -222,12 +223,12 @@ impl SelectorGroup {
             selected: Arc::new(RwLock::new(None)),
             default_member: None,
             round_robin_index: AtomicUsize::new(0),
-            test_url,
-            test_interval: interval,
-            test_timeout: timeout,
-            tolerance_ms,
-            cache_file,
-            urltest_history,
+            test_url: opts.test_url,
+            test_interval: opts.interval,
+            test_timeout: opts.timeout,
+            tolerance_ms: opts.tolerance_ms,
+            cache_file: opts.cache_file,
+            urltest_history: opts.urltest_history,
         }
     }
 

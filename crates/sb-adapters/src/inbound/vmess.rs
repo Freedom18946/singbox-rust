@@ -287,7 +287,8 @@ async fn handle_conn(
     // 步骤 6: 连接上游
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
-    let (mut upstream, outbound_tag) = match decision {
+    // Match by reference so we can still use `decision` later (conntrack/chain computation).
+    let (mut upstream, outbound_tag) = match &decision {
         RDecision::Direct => {
             let s = direct_connect_hostport(&target_host, target_port, &opts).await?;
             (s, Some("direct".to_string()))
@@ -295,12 +296,12 @@ async fn handle_conn(
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("vmess".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(_pool) = reg.pools.get(&name) {
+                if let Some(_pool) = reg.pools.get(name) {
                     // Use a dummy peer address for pool selection (transport layer abstraction means we don't have the real peer)
                     // 使用虚拟对等地址进行池选择 (传输层抽象意味着我们没有真正的对等端)
                     let dummy_peer = SocketAddr::from(([0, 0, 0, 0], 0));
                     if let Some(ep) = sel.select(
-                        &name,
+                        name.as_str(),
                         dummy_peer,
                         &format!("{}:{}", target_host, target_port),
                         &(),

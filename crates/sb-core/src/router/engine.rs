@@ -1557,14 +1557,11 @@ pub enum Transport {
     Udp,
 }
 
-/// 旧接口上下文（按 sb-adapters 预期提供字段）
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RouteCtx<'a> {
-    pub host: Option<&'a str>,
-    pub ip: Option<IpAddr>,
-    pub port: Option<u16>,
-    pub transport: Transport,
-}
+/// Routing context type (canonical).
+///
+/// Kept under this path for compatibility with older call sites that import
+/// `sb_core::router::engine::RouteCtx`.
+pub type RouteCtx<'a> = super::RouteCtx<'a>;
 
 // ===== 兼容层：Rule / CompositeRule / Router（旧 API 期望） =====
 

@@ -389,14 +389,10 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
 
         // 获取或创建 NAT 映射
         // Get or create NAT mapping
-        let mut conntrack_meta: Option<(
-            Arc<dyn TrafficRecorder>,
-            tokio_util::sync::CancellationToken,
-        )> = None;
-        let val = {
+        let (val, conntrack_meta) = {
             if let Some(existing_socket) = nat.get(&key).await {
-                conntrack_meta = nat.get_conntrack_meta(&key).await;
-                existing_socket
+                let meta = nat.get_conntrack_meta(&key).await;
+                (existing_socket, meta)
             } else {
                 let new_socket = UdpSocket::bind(("0.0.0.0", 0)).await?;
                 new_socket.connect(dst_sa).await?;
@@ -423,8 +419,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                     };
                     nat.upsert_with_meta(key.clone(), socket_arc.clone(), Some(meta))
                         .await;
-                    conntrack_meta = Some((wiring.traffic, wiring.cancel));
-                    socket_arc
+                    (socket_arc, Some((wiring.traffic, wiring.cancel)))
                 } else {
                     // 容量满 => 拒绝
                     // Capacity full => Reject

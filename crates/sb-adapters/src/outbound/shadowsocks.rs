@@ -84,13 +84,6 @@ impl CipherMethod {
         self.key_size()
     }
 
-    fn nonce_size(&self) -> usize {
-        match self {
-            Self::Aes256Gcm => 12,        // GCM nonce
-            Self::ChaCha20Poly1305 => 12, // ChaCha20 nonce
-        }
-    }
-
     #[allow(dead_code)]
     fn tag_size(&self) -> usize {
         16 // Both AES-GCM and ChaCha20-Poly1305 use 16-byte tags
@@ -708,7 +701,7 @@ impl sb_transport::dialer::Dialer for ShadowsocksTunnelDialer {
         let tcp_stream = tokio::time::timeout(self.timeout, TcpStream::connect(addr))
             .await
             .map_err(|_| sb_transport::dialer::DialError::Other("timeout".to_string()))?
-            .map_err(|e| sb_transport::dialer::DialError::Io(e))?;
+            .map_err(sb_transport::dialer::DialError::Io)?;
 
         let tunnel = ShadowsocksTunnelStream::connect(
             tcp_stream,

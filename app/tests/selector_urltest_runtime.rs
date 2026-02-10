@@ -10,7 +10,7 @@
 //! Priority: WS-E Task "Validate selector/urltest runtime behavior"
 
 use sb_core::adapter::OutboundConnector;
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
+use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -155,12 +155,14 @@ async fn test_urltest_health_checking() {
     let selector = Arc::new(SelectorGroup::new_urltest(
         "test-urltest".to_string(),
         members,
-        "http://www.gstatic.com/generate_204".to_string(),
-        Duration::from_millis(100), // Fast interval for testing
-        Duration::from_secs(1),
-        10,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://www.gstatic.com/generate_204".to_string(),
+            interval: Duration::from_millis(100), // Fast interval for testing
+            timeout: Duration::from_secs(1),
+            tolerance_ms: 10,
+            cache_file: None,
+            urltest_history: None,
+        },
     ));
 
     // Start health check in background
@@ -206,12 +208,14 @@ async fn test_urltest_failover() {
     let selector = Arc::new(SelectorGroup::new_urltest(
         "test-failover".to_string(),
         members,
-        "http://www.gstatic.com/generate_204".to_string(),
-        Duration::from_millis(100),
-        Duration::from_secs(1),
-        10,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://www.gstatic.com/generate_204".to_string(),
+            interval: Duration::from_millis(100),
+            timeout: Duration::from_secs(1),
+            tolerance_ms: 10,
+            cache_file: None,
+            urltest_history: None,
+        },
     ));
 
     let s = selector.clone();
@@ -286,12 +290,14 @@ async fn test_selector_permanent_failure_handling() {
     let selector = Arc::new(SelectorGroup::new_urltest(
         "test-perm-fail".to_string(),
         members,
-        "http://www.gstatic.com/generate_204".to_string(),
-        Duration::from_millis(100),
-        Duration::from_secs(1),
-        10,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://www.gstatic.com/generate_204".to_string(),
+            interval: Duration::from_millis(100),
+            timeout: Duration::from_secs(1),
+            tolerance_ms: 10,
+            cache_file: None,
+            urltest_history: None,
+        },
     ));
 
     let s = selector.clone();
@@ -333,12 +339,14 @@ async fn test_urltest_tolerance() {
     let selector = Arc::new(SelectorGroup::new_urltest(
         "test-tolerance".to_string(),
         members,
-        "http://www.gstatic.com/generate_204".to_string(),
-        Duration::from_millis(100),
-        Duration::from_secs(1),
-        50,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://www.gstatic.com/generate_204".to_string(),
+            interval: Duration::from_millis(100),
+            timeout: Duration::from_secs(1),
+            tolerance_ms: 50,
+            cache_file: None,
+            urltest_history: None,
+        },
     ));
 
     let s = selector.clone();

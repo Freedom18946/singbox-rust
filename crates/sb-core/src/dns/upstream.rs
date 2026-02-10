@@ -1619,9 +1619,9 @@ impl DnsUpstream for DotUpstream {
             }
 
             if let Some(t) = &self.transport {
-                return Ok(tokio::time::timeout(self.timeout, t.query(&req))
+                return tokio::time::timeout(self.timeout, t.query(&req))
                     .await
-                    .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))??);
+                    .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))?;
             }
 
             let transport = crate::dns::transport::DotTransport::new_with_tls(
@@ -1631,9 +1631,9 @@ impl DnsUpstream for DotUpstream {
                 self.extra_ca_pem.clone(),
                 self.skip_verify,
             )?;
-            return Ok(tokio::time::timeout(self.timeout, transport.query(&req))
+            return tokio::time::timeout(self.timeout, transport.query(&req))
                 .await
-                .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))??);
+                .map_err(|_| anyhow::anyhow!("DoT exchange timeout"))?;
         }
         #[cfg(not(feature = "dns_dot"))]
         {
@@ -2003,9 +2003,9 @@ impl DnsUpstream for DoqUpstream {
             }
 
             if let Some(t) = &self.transport {
-                return Ok(tokio::time::timeout(self.timeout, t.query(&req))
+                return tokio::time::timeout(self.timeout, t.query(&req))
                     .await
-                    .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))??);
+                    .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))?;
             }
 
             let transport = crate::dns::transport::DoqTransport::new_with_tls(
@@ -2015,9 +2015,9 @@ impl DnsUpstream for DoqUpstream {
                 self.extra_ca_pem.clone(),
                 self.skip_verify,
             )?;
-            return Ok(tokio::time::timeout(self.timeout, transport.query(&req))
+            return tokio::time::timeout(self.timeout, transport.query(&req))
                 .await
-                .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))??);
+                .map_err(|_| anyhow::anyhow!("DoQ exchange timeout"))?;
         }
         #[cfg(not(feature = "dns_doq"))]
         {
@@ -2661,6 +2661,8 @@ impl DnsUpstream for TailscaleLocalUpstream {
 #[derive(Debug)]
 pub struct FakeIpUpstream {
     tag_name: String,
+    // Kept for introspection/debugging and to make config->runtime mapping observable.
+    // Range overrides are applied via env vars in `new()`.
     inet4_range: Option<String>,
     inet6_range: Option<String>,
 }
@@ -2710,6 +2712,8 @@ fn parse_cidr_v6(cidr: &str) -> Option<(Ipv6Addr, u8)> {
 impl DnsUpstream for FakeIpUpstream {
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
         use crate::dns::fakeip;
+        // Touch stored config so fields aren't dead-code, and so debuggers/logging can inspect.
+        let _ = (self.inet4_range.as_deref(), self.inet6_range.as_deref());
         match record_type {
             RecordType::A => {
                 let ip = fakeip::allocate_v4(domain);

@@ -5,6 +5,7 @@ use std::time::Duration;
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{registry, OutboundConnector, OutboundParam, UdpOutboundFactory};
 use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
+use sb_core::outbound::selector_group::UrlTestOptions;
 use tokio::net::TcpStream;
 
 #[derive(Clone)]
@@ -132,7 +133,18 @@ pub fn build_urltest_outbound(
 
     let cache_file = ctx.context.cache_file.clone();
     let urltest_history = ctx.context.urltest_history.clone();
-    let group = SelectorGroup::new_urltest(name, members, test_url, interval, timeout, tolerance, cache_file, urltest_history);
+    let group = SelectorGroup::new_urltest(
+        name,
+        members,
+        UrlTestOptions {
+            test_url,
+            interval,
+            timeout,
+            tolerance_ms: tolerance,
+            cache_file,
+            urltest_history,
+        },
+    );
     let outbound = Arc::new(UrlTestOutbound::new(Arc::new(group)));
 
     Some((outbound.clone(), Some(outbound)))

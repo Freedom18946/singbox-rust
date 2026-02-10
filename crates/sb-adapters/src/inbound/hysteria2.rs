@@ -265,12 +265,12 @@ impl Hysteria2Inbound {
             ip: None,
             port: Some(port),
             transport: Transport::Tcp,
+            ..Default::default()
         };
         let (target, rule) = router.select_ctx_and_record_with_meta(ctx);
         let outbound_tag = match &target {
             OutRouteTarget::Named(name) => Some(name.clone()),
             OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
-            _ => None,
         };
         let decision = match &target {
             OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),

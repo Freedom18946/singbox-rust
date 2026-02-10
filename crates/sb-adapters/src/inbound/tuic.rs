@@ -389,6 +389,7 @@ async fn handle_udp_relay(
         ip: None,
         port: Some(port),
         transport: Transport::Udp,
+        ..Default::default()
     });
     if let Err(e) = allow_udp_route(&route) {
         let _ = send.write_all(&[0x01]).await;
@@ -553,6 +554,7 @@ async fn connect_via_router(
         ip: None,
         port: Some(port),
         transport: Transport::Tcp,
+        ..Default::default()
     };
     let (target, rule) = cfg.router.select_ctx_and_record_with_meta(ctx);
     let outbound_tag = match &target {
@@ -670,7 +672,7 @@ async fn relay_quic_tcp(
         Ok::<_, anyhow::Error>(())
     };
 
-    let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
+    let cancel = cancel.unwrap_or_default();
     tokio::select! {
         _ = cancel.cancelled() => Ok(()),
         r1 = quic_to_tcp => r1,
@@ -751,7 +753,7 @@ async fn relay_quic_udp(
         Ok::<_, anyhow::Error>(())
     };
 
-    let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
+    let cancel = cancel.unwrap_or_default();
     tokio::select! {
         _ = cancel.cancelled() => Ok(()),
         r1 = quic_to_udp => r1,

@@ -1187,6 +1187,10 @@ impl DerpService {
 
     /// Create a customized TCP listener with options (socket2).
     fn create_listener(&self) -> io::Result<TcpListener> {
+        // These listen options are Linux/Android-only today. Touch them unconditionally so
+        // macOS builds (and clippy -D warnings) don't treat them as dead fields.
+        let _ = (&self.bind_interface, self.routing_mark, self.tcp_fast_open);
+
         let domain = if self.listen_addr.is_ipv4() {
             Domain::IPV4
         } else {
@@ -1754,7 +1758,7 @@ impl DerpService {
                 }
             };
             let port = match url.port_or_known_default() {
-                Some(p) => p as u16,
+                Some(p) => p,
                 None => {
                     tracing::warn!(service = "derp", url = %url, "verify_client_url missing port");
                     continue;
@@ -2057,7 +2061,7 @@ impl DerpService {
                     }
                     let ctx = DnsQueryContext::new().with_transport(transport);
                     let ips = router.lookup(&ctx, &host_s).await.map_err(|e| {
-                        DialError::Other(format!("domain_resolver lookup failed: {e}").into())
+                        DialError::Other(format!("domain_resolver lookup failed: {e}"))
                     })?;
                     let Some(ip) = ips.into_iter().next() else {
                         return Err(DialError::Other("domain_resolver returned no IPs".into()));

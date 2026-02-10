@@ -1,30 +1,49 @@
 use serde_json::Value;
+use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
 fn explain_json_shape() {
-    // 启动/探测外部服务由 run-rc 负责；这里直接调用 sb-explaind 也可
-    let out = Command::new("bash").args(["-lc",
-        "curl -fsS 'http://127.0.0.1:18089/debug/explain?sni=www.example.com&port=443&proto=tcp&format=json'"]).output().expect("curl");
-    assert!(out.status.success(), "explain http failed");
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .to_path_buf();
+    let bin = workspace_root
+        .join("target")
+        .join("debug")
+        .join("route-explain");
+    if !bin.exists() {
+        let status = Command::new("cargo")
+            .args(["build", "-p", "app", "--bin", "route-explain", "--features", "explain"])
+            .status()
+            .expect("build route-explain");
+        assert!(status.success(), "failed to build route-explain binary");
+    }
+
+    let out = Command::new(&bin)
+        .current_dir(&workspace_root)
+        .args([
+            "-c",
+            "examples/quick-start/01-minimal.json",
+            "--destination",
+            "www.example.com:443",
+            "--format",
+            "json",
+            "--with-trace",
+        ])
+        .output()
+        .expect("run route-explain");
+    assert!(
+        out.status.success(),
+        "route-explain failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: Value = serde_json::from_slice(&out.stdout).expect("json");
-    let decision = v
-        .get("decision")
-        .and_then(|d| d.as_object())
-        .expect("missing decision object");
-    assert!(decision.get("phase").is_some(), "missing decision.phase");
+    assert!(v.get("dest").is_some(), "missing dest");
+    assert!(v.get("outbound").is_some(), "missing outbound");
+    assert!(v.get("matched_rule").is_some(), "missing matched_rule");
     assert!(
-        decision.get("rule_id").is_some(),
-        "missing decision.rule_id"
+        v.get("chain").and_then(|x| x.as_array()).is_some(),
+        "missing chain array"
     );
-    assert!(decision.get("reason").is_some(), "missing decision.reason");
-    assert!(
-        decision.get("steps").and_then(|x| x.as_array()).is_some(),
-        "missing decision.steps array"
-    );
-    let trace = v
-        .get("trace")
-        .and_then(|t| t.as_object())
-        .expect("missing trace object");
-    assert!(trace.is_empty() || trace.get("trace_id").is_some());
 }

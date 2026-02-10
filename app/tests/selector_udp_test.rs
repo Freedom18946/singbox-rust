@@ -199,13 +199,13 @@ async fn test_selector_udp_support() {
 }
 
 #[tokio::test]
-async fn test_urltest_udp_support() {
+    async fn test_urltest_udp_support() {
     // Similar setup for URLTest
     let member1_tag = "fast".to_string();
     let member2_tag = "slow".to_string();
 
     use sb_adapters::outbound::urltest::UrlTestOutbound;
-    use sb_core::outbound::selector_group::SelectorGroup;
+    use sb_core::outbound::selector_group::{SelectorGroup, UrlTestOptions};
 
     let members = vec![
         ProxyMember::new(
@@ -231,12 +231,14 @@ async fn test_urltest_udp_support() {
     let group = SelectorGroup::new_urltest(
         "test-urltest".to_string(),
         members,
-        "http://test.com".to_string(),
-        Duration::from_secs(60),
-        Duration::from_secs(5),
-        50,
-        None,
-        None,
+        UrlTestOptions {
+            test_url: "http://test.com".to_string(),
+            interval: Duration::from_secs(60),
+            timeout: Duration::from_secs(5),
+            tolerance_ms: 50,
+            cache_file: None,
+            urltest_history: None,
+        },
     );
     let group = Arc::new(group);
     let outbound = UrlTestOutbound::new(group.clone());

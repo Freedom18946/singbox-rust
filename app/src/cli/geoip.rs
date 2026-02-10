@@ -177,7 +177,7 @@ async fn geoip_export(path: &PathBuf, country: &str, output: &str) -> Result<()>
         for net_str in ["0.0.0.0/0", "::/0"] {
             let net: ipnetwork::IpNetwork = net_str.parse().unwrap();
             let iter = reader
-                .within(net, Default::default())
+                .within(net, maxminddb::WithinOptions::default())
                 .map_err(|e| anyhow::anyhow!("mmdb within failed: {}", e))?;
             for next in iter {
                 let item = next.map_err(|e| anyhow::anyhow!("mmdb iter error: {}", e))?;

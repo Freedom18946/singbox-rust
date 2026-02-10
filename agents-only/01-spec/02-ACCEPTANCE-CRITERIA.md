@@ -36,13 +36,9 @@
 **✅ PASS 条件**：
 
 ```bash
-# sb-core 禁止依赖检查
-cargo tree -p sb-core | grep -E "axum|tonic|tower|hyper|reqwest|rustls|quinn|tokio-tungstenite"
-# 预期输出：无匹配
-
-# sb-types 禁止依赖检查
-cargo tree -p sb-types | grep -E "tokio|hyper|axum|rustls|quinn"
-# 预期输出：无匹配
+# 架构依赖边界门禁（含：sb-core 源码引用 + Cargo.toml 直接依赖 optional + 反向依赖计数等）
+./agents-only/06-scripts/check-boundaries.sh
+# 预期：exit 0
 
 # sb-api 不依赖 sb-adapters
 cargo tree -p sb-api | grep "sb-adapters"
@@ -162,8 +158,7 @@ cargo build -p app --features "parity" --release
 set -e
 
 echo "=== 1. 依赖边界检查 ==="
-! cargo tree -p sb-core | grep -qE "axum|tonic|tower|hyper|rustls|quinn"
-! cargo tree -p sb-types | grep -qE "tokio|hyper|axum"
+./agents-only/06-scripts/check-boundaries.sh
 
 echo "=== 2. 代码质量 ==="
 cargo fmt --check
