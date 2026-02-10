@@ -634,11 +634,7 @@ async fn handle_udp_associate(
     let (mut rh, mut wh) = tokio::io::split(stream);
 
     let traffic = cfg.stats.as_ref().and_then(|stats| {
-        stats.traffic_recorder(
-            cfg.tag.as_deref(),
-            Some("direct"),
-            Some(auth_user),
-        )
+        stats.traffic_recorder(cfg.tag.as_deref(), Some("direct"), Some(auth_user))
     });
     let wiring = sb_core::conntrack::register_inbound_udp(
         peer,

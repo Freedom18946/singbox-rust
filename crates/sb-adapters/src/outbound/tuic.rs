@@ -276,11 +276,7 @@ impl TuicConnector {
     /// Wire format:
     /// `[Length(2)] [FragID(1)] [FragTotal(1)] [AddrType(1)] [Addr(N)] [Port(2)] [Data(N)]`
     #[allow(dead_code)]
-    pub fn encode_udp_packet(
-        target_host: &str,
-        target_port: u16,
-        data: &[u8],
-    ) -> Vec<u8> {
+    pub fn encode_udp_packet(target_host: &str, target_port: u16, data: &[u8]) -> Vec<u8> {
         let mut pkt = Vec::with_capacity(2 + 2 + 1 + target_host.len() + 2 + 2 + data.len());
 
         // length placeholder
@@ -359,12 +355,8 @@ impl TuicConnector {
                         "Invalid IPv4 address in UDP packet",
                     ));
                 }
-                let v4 = std::net::Ipv4Addr::new(
-                    data[off],
-                    data[off + 1],
-                    data[off + 2],
-                    data[off + 3],
-                );
+                let v4 =
+                    std::net::Ipv4Addr::new(data[off], data[off + 1], data[off + 2], data[off + 3]);
                 off += 4;
                 v4.to_string()
             }
@@ -378,10 +370,7 @@ impl TuicConnector {
                     ));
                 }
                 let domain = String::from_utf8(data[off..off + len].to_vec()).map_err(|_| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Invalid UTF-8 in domain",
-                    )
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid UTF-8 in domain")
                 })?;
                 off += len;
                 domain
@@ -492,8 +481,7 @@ impl OutboundConnector for TuicConnector {
                 )))
             })?;
 
-            let mut quic_stream =
-                super::quic_util::QuicBidiStream::new(send_stream, recv_stream);
+            let mut quic_stream = super::quic_util::QuicBidiStream::new(send_stream, recv_stream);
 
             // 3. Perform TUIC v5 handshake (auth + connect)
             self.tuic_handshake(&mut quic_stream, &target.host, target.port)
@@ -706,7 +694,7 @@ mod tests {
 
         assert_eq!(pkt[0], 0x02); // connect command
         assert_eq!(pkt[1], 0x03); // domain
-        assert_eq!(pkt[2], 11);   // domain length
+        assert_eq!(pkt[2], 11); // domain length
         assert_eq!(&pkt[3..14], b"example.com");
         let port = u16::from_be_bytes([pkt[14], pkt[15]]);
         assert_eq!(port, 443);

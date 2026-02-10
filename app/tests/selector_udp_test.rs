@@ -171,7 +171,13 @@ async fn test_selector_udp_support() {
         ),
     ];
 
-    let group = SelectorGroup::new_manual(selector_tag.clone(), members, Some(member1_tag.clone()), None, None);
+    let group = SelectorGroup::new_manual(
+        selector_tag.clone(),
+        members,
+        Some(member1_tag.clone()),
+        None,
+        None,
+    );
     let group = Arc::new(group);
     let outbound = SelectorOutbound::new(group.clone());
 
@@ -199,7 +205,7 @@ async fn test_selector_udp_support() {
 }
 
 #[tokio::test]
-    async fn test_urltest_udp_support() {
+async fn test_urltest_udp_support() {
     // Similar setup for URLTest
     let member1_tag = "fast".to_string();
     let member2_tag = "slow".to_string();

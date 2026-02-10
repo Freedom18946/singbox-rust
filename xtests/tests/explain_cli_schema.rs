@@ -15,7 +15,15 @@ fn explain_cli_envelope() {
         .join("route-explain");
     if !bin.exists() {
         let status = Command::new("cargo")
-            .args(["build", "-p", "app", "--bin", "route-explain", "--features", "explain"])
+            .args([
+                "build",
+                "-p",
+                "app",
+                "--bin",
+                "route-explain",
+                "--features",
+                "explain",
+            ])
             .status()
             .expect("build route-explain");
         assert!(status.success(), "failed to build route-explain binary");

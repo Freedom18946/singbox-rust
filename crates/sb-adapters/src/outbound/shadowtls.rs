@@ -95,9 +95,7 @@ impl ShadowTlsConnector {
         if insecure {
             tracing::warn!("ShadowTLS: insecure mode enabled, certificate verification disabled");
             let v = sb_tls::danger::NoVerify::new();
-            tls_config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(v));
+            tls_config.dangerous().set_certificate_verifier(Arc::new(v));
         }
 
         if let Some(alpn) = &alpn_list {
@@ -147,22 +145,23 @@ impl OutboundConnector for ShadowTlsConnector {
             let start_time = sb_metrics::start_adapter_timer();
 
             // Connect to the ShadowTLS server (decoy)
-            let tcp_stream =
-                TcpStream::connect((self.cfg.server.as_str(), self.cfg.port))
-                    .await
-                    .map_err(|e| AdapterError::Network(format!("ShadowTLS TCP connect failed: {}", e)))?;
+            let tcp_stream = TcpStream::connect((self.cfg.server.as_str(), self.cfg.port))
+                .await
+                .map_err(|e| {
+                    AdapterError::Network(format!("ShadowTLS TCP connect failed: {}", e))
+                })?;
 
             // Establish TLS connection with specified SNI
-            let server_name =
-                rustls::pki_types::ServerName::try_from(self.cfg.sni.clone()).map_err(|e| {
-                    AdapterError::Protocol(format!("Invalid SNI: {}", e))
-                })?;
+            let server_name = rustls::pki_types::ServerName::try_from(self.cfg.sni.clone())
+                .map_err(|e| AdapterError::Protocol(format!("Invalid SNI: {}", e)))?;
 
             let connector = tokio_rustls::TlsConnector::from(self.tls_config.clone());
             let mut tls_stream = connector
                 .connect(server_name, tcp_stream)
                 .await
-                .map_err(|e| AdapterError::Network(format!("ShadowTLS TLS handshake failed: {}", e)))?;
+                .map_err(|e| {
+                    AdapterError::Network(format!("ShadowTLS TLS handshake failed: {}", e))
+                })?;
 
             // Tunneling header: CONNECT to target through the TLS channel
             let connect_line = format!(
@@ -180,7 +179,11 @@ impl OutboundConnector for ShadowTlsConnector {
 
             #[cfg(feature = "metrics")]
             {
-                sb_metrics::record_adapter_dial("shadowtls", start_time, Ok::<(), &dyn core::fmt::Display>(()));
+                sb_metrics::record_adapter_dial(
+                    "shadowtls",
+                    start_time,
+                    Ok::<(), &dyn core::fmt::Display>(()),
+                );
             }
 
             tracing::debug!(

@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{registry, OutboundConnector, OutboundParam, UdpOutboundFactory};
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
 use sb_core::outbound::selector_group::UrlTestOptions;
+use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
 use tokio::net::TcpStream;
 
 #[derive(Clone)]

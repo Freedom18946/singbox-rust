@@ -324,7 +324,8 @@ async fn handle_tcp_relay(
 
     debug!("TUIC: TCP CONNECT {}:{} from {}", host, port, peer);
 
-    let (upstream, outbound_tag, decision, rule) = match connect_via_router(&cfg, &host, port).await {
+    let (upstream, outbound_tag, decision, rule) = match connect_via_router(&cfg, &host, port).await
+    {
         Ok(s) => s,
         Err(e) => {
             let _ = send.write_all(&[0x01; 16]).await;
@@ -364,7 +365,14 @@ async fn handle_tcp_relay(
     let _guard = wiring.guard;
 
     // Bidirectional relay
-    relay_quic_tcp(send, recv, upstream, Some(wiring.cancel), Some(wiring.traffic)).await?;
+    relay_quic_tcp(
+        send,
+        recv,
+        upstream,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
+    )
+    .await?;
 
     Ok(())
 }
@@ -449,14 +457,7 @@ async fn handle_udp_relay(
         traffic,
     );
     let _guard = wiring.guard;
-    relay_quic_udp(
-        send,
-        recv,
-        udp,
-        Some(wiring.cancel),
-        Some(wiring.traffic),
-    )
-    .await?;
+    relay_quic_udp(send, recv, udp, Some(wiring.cancel), Some(wiring.traffic)).await?;
 
     Ok(())
 }
@@ -548,7 +549,12 @@ async fn connect_via_router(
     cfg: &TuicInboundConfig,
     host: &str,
     port: u16,
-) -> Result<(IoStream, Option<String>, sb_core::router::rules::Decision, Option<String>)> {
+) -> Result<(
+    IoStream,
+    Option<String>,
+    sb_core::router::rules::Decision,
+    Option<String>,
+)> {
     let ctx = RouteCtx {
         host: Some(host),
         ip: None,

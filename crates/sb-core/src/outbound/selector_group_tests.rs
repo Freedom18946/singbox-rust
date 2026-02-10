@@ -377,8 +377,13 @@ mod tests {
         members[1].health.record_failure();
         members[1].health.record_failure();
 
-        let selector =
-            SelectorGroup::new_manual("test".to_string(), members, Some("proxy1".to_string()), None, None);
+        let selector = SelectorGroup::new_manual(
+            "test".to_string(),
+            members,
+            Some("proxy1".to_string()),
+            None,
+            None,
+        );
 
         let status = selector.get_members();
         assert_eq!(status.len(), 2);
@@ -436,15 +441,22 @@ mod tests {
     }
 
     impl crate::context::CacheFile for MockCacheFile {
-        fn get_clash_mode(&self) -> Option<String> { None }
+        fn get_clash_mode(&self) -> Option<String> {
+            None
+        }
         fn set_clash_mode(&self, _mode: String) {}
         fn set_selected(&self, group: &str, selected: &str) {
-            self.selected.lock().unwrap().insert(group.to_string(), selected.to_string());
+            self.selected
+                .lock()
+                .unwrap()
+                .insert(group.to_string(), selected.to_string());
         }
         fn get_selected(&self, group: &str) -> Option<String> {
             self.selected.lock().unwrap().get(group).cloned()
         }
-        fn get_expand(&self, _group: &str) -> Option<bool> { None }
+        fn get_expand(&self, _group: &str) -> Option<bool> {
+            None
+        }
         fn set_expand(&self, _group: &str, _expand: bool) {}
     }
 
@@ -507,7 +519,10 @@ mod tests {
         selector.select_by_name("proxy2").await.unwrap();
 
         // Verify cache was written
-        assert_eq!(mock.get_set_selected_value("grp"), Some("proxy2".to_string()));
+        assert_eq!(
+            mock.get_set_selected_value("grp"),
+            Some("proxy2".to_string())
+        );
     }
 
     #[tokio::test]

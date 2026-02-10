@@ -315,7 +315,8 @@ pub fn build_upstream_from_server(
                         );
                     }
 
-                    let mut cfg = crate::dns::transport::resolved::ResolvedTransportConfig::default();
+                    let mut cfg =
+                        crate::dns::transport::resolved::ResolvedTransportConfig::default();
                     cfg.accept_default_resolvers = srv.accept_default_resolvers.unwrap_or(false);
 
                     let up = super::upstream::ResolvedTransportUpstream::new(srv.tag.clone(), cfg);

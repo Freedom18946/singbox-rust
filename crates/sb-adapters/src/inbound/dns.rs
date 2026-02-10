@@ -45,7 +45,10 @@ impl std::fmt::Debug for DnsInboundAdapter {
         f.debug_struct("DnsInboundAdapter")
             .field("listen", &self.listen)
             .field("tcp_enabled", &self.tcp_enabled)
-            .field("dns_router", &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"))
+            .field(
+                "dns_router",
+                &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"),
+            )
             .field("tag", &self.tag)
             .finish()
     }
@@ -76,7 +79,10 @@ impl std::fmt::Debug for DnsInboundConfig {
             .field("listen", &self.listen)
             .field("port", &self.port)
             .field("tcp_enabled", &self.tcp_enabled)
-            .field("dns_router", &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"))
+            .field(
+                "dns_router",
+                &self.dns_router.as_ref().map(|_| "Some(DnsRouter)"),
+            )
             .field("tag", &self.tag)
             .finish()
     }

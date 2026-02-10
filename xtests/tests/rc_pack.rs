@@ -50,18 +50,17 @@ fn rc_pack_generates_snapshots() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let rc_dir = normalize_rc_dir(&root, &stdout).expect("run-rc did not print output path");
-    assert!(rc_dir.exists(), "rc directory missing: {}", rc_dir.display());
+    assert!(
+        rc_dir.exists(),
+        "rc directory missing: {}",
+        rc_dir.display()
+    );
 
     let has_version = fs::read_dir(&rc_dir)
         .ok()
         .into_iter()
         .flat_map(|iter| iter.filter_map(Result::ok))
-        .any(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("version-")
-        });
+        .any(|entry| entry.file_name().to_string_lossy().starts_with("version-"));
     let has_ci_metadata = fs::read_dir(&rc_dir)
         .ok()
         .into_iter()
@@ -76,12 +75,7 @@ fn rc_pack_generates_snapshots() {
         .ok()
         .into_iter()
         .flat_map(|iter| iter.filter_map(Result::ok))
-        .any(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("manifest-")
-        });
+        .any(|entry| entry.file_name().to_string_lossy().starts_with("manifest-"));
 
     assert!(
         has_version && has_ci_metadata && has_manifest,

@@ -431,8 +431,7 @@ async fn wait_for_signal() -> RunSignal {
 
 #[cfg(all(feature = "router", unix))]
 async fn term_signal() {
-    let Ok(mut term) =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+    let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
     else {
         tracing::warn!("failed to register SIGTERM handler");
         return;
@@ -447,8 +446,7 @@ async fn term_signal() {
 
 #[cfg(all(feature = "router", unix))]
 async fn hup_signal() {
-    let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-    else {
+    let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) else {
         tracing::warn!("failed to register SIGHUP handler");
         return;
     };

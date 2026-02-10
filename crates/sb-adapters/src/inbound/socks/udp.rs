@@ -1164,7 +1164,10 @@ pub async fn serve_udp_datagrams(
                     _decision_label = "direct".to_string();
                 }
                 // Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
-                RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
+                RDecision::Hijack { .. }
+                | RDecision::Sniff
+                | RDecision::Resolve
+                | RDecision::HijackDns => {
                     _decision_label = "direct".to_string();
                 }
             }
@@ -1318,7 +1321,9 @@ pub async fn serve_udp_datagrams(
                                 _ = cancel.cancelled() => return,
                                 r = s_cloned.recv_from(&mut rbuf) => r,
                             };
-                            let Ok((rn, from)) = res else { break; };
+                            let Ok((rn, from)) = res else {
+                                break;
+                            };
                             #[cfg(feature = "metrics")]
                             {
                                 metrics::counter!("udp_pkts_in_total").increment(1);

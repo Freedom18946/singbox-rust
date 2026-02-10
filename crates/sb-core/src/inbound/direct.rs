@@ -18,8 +18,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::adapter::InboundService;
-use crate::net::metered;
 use crate::net::datagram::UdpConntrackMeta;
+use crate::net::metered;
 use crate::services::v2ray_api::StatsManager;
 
 #[derive(Debug, Clone)]
@@ -251,7 +251,13 @@ impl DirectForward {
         &self,
         client_addr: SocketAddr,
         listen_socket: Arc<UdpSocket>,
-    ) -> io::Result<(Arc<UdpSocket>, Option<(Arc<dyn crate::net::metered::TrafficRecorder>, CancellationToken)>)> {
+    ) -> io::Result<(
+        Arc<UdpSocket>,
+        Option<(
+            Arc<dyn crate::net::metered::TrafficRecorder>,
+            CancellationToken,
+        )>,
+    )> {
         let mut sessions = self.udp_sessions.lock().await;
 
         // Check if session exists
@@ -260,8 +266,8 @@ impl DirectForward {
                 if meta.cancel.is_cancelled() {
                     sessions.remove(&client_addr);
                     self.udp_count.fetch_sub(1, Ordering::Relaxed);
-                    let sum =
-                        self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
+                    let sum = self.active.load(Ordering::Relaxed)
+                        + self.udp_count.load(Ordering::Relaxed);
                     crate::metrics::inbound::set_active_connections("direct", sum);
                 } else {
                     session.last_activity = Instant::now();

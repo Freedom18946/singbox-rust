@@ -16,6 +16,7 @@ use anytls_rs::util::auth::hash_password;
 use anytls_rs::util::AnyTlsError;
 use bytes::Bytes;
 use sb_core::adapter::{InboundParam, InboundService};
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, registry,
@@ -25,7 +26,6 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
-use sb_core::net::metered::TrafficRecorder;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -258,11 +258,12 @@ async fn handle_stream(
     let (upstream, outbound_tag, decision, rule) =
         match connect_via_router(&destination, conn_ctx.as_ref()).await {
             Ok(conn) => conn,
-        Err(err) => {
-            send_synack_error(&session, &stream, stream_id, peer_version, &err.to_string()).await;
-            return Err(err);
-        }
-    };
+            Err(err) => {
+                send_synack_error(&session, &stream, stream_id, peer_version, &err.to_string())
+                    .await;
+                return Err(err);
+            }
+        };
 
     let chains = sb_core::outbound::chain::compute_chain_for_decision(
         None,

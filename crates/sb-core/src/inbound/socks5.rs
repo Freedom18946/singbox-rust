@@ -364,7 +364,8 @@ pub(crate) async fn handle_conn(
                                             .as_ref()
                                             .map(|m| m.traffic.clone())
                                             .or_else(|| traffic.clone());
-                                        let cancel_c = conntrack_meta.as_ref().map(|m| m.cancel.clone());
+                                        let cancel_c =
+                                            conntrack_meta.as_ref().map(|m| m.cancel.clone());
                                         tokio::spawn(async move {
                                             loop {
                                                 let recv_res = if let Some(cancel) = &cancel_c {
@@ -487,7 +488,9 @@ pub(crate) async fn handle_conn(
                                     } else {
                                         upstream_c.recv(&mut rbuf).await
                                     };
-                                    let Ok(m) = recv_res else { break; };
+                                    let Ok(m) = recv_res else {
+                                        break;
+                                    };
                                     // Use connected peer as source
                                     if let Ok(peer) = upstream_c.peer_addr() {
                                         let mut pkt = Vec::with_capacity(m + 10);

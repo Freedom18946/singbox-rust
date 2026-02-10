@@ -207,7 +207,9 @@ mod tests {
 
         #[cfg(feature = "service_ssmapi")]
         let _keepalive = {
-            use sb_core::services::ssmapi::{registry as ssm_registry, ManagedSSMServer, TrafficTracker};
+            use sb_core::services::ssmapi::{
+                registry as ssm_registry, ManagedSSMServer, TrafficTracker,
+            };
             use std::sync::Arc;
 
             struct DummyManagedServer {

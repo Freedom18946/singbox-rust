@@ -2825,7 +2825,10 @@ mod tests {
         let ir: ServiceIR = serde_json::from_value(data).unwrap();
         let list = ir.verify_client_url.expect("verify_client_url");
         assert_eq!(list.items.len(), 1);
-        assert_eq!(list.items[0].clone().into_inner().url, "https://example.com/verify");
+        assert_eq!(
+            list.items[0].clone().into_inner().url,
+            "https://example.com/verify"
+        );
 
         // Object with Dial Fields flattened.
         let data = json!({
@@ -2925,7 +2928,10 @@ mod tests {
         });
         let ir: ServiceIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.stun.as_ref().map(|s| s.enabled), Some(false));
-        assert_eq!(ir.stun.as_ref().and_then(|s| s.listen.as_deref()), Some("::"));
+        assert_eq!(
+            ir.stun.as_ref().and_then(|s| s.listen.as_deref()),
+            Some("::")
+        );
         assert_eq!(ir.stun.as_ref().and_then(|s| s.listen_port), Some(3478));
     }
 

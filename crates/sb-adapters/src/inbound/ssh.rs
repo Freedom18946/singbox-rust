@@ -234,7 +234,10 @@ mod ssh_server {
                     let (mut read_half, write_half) = stream.into_split();
 
                     let peer = self.peer_addr.unwrap_or_else(|| {
-                        std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
+                        std::net::SocketAddr::new(
+                            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                            0,
+                        )
                     });
                     let wiring = sb_core::conntrack::register_inbound_tcp(
                         peer,

@@ -514,7 +514,10 @@ impl TcpDialer {
             if let Some(to) = self.connect_timeout {
                 match tokio::time::timeout(to, fut).await {
                     Ok(r) => r,
-                    Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "connect timeout")),
+                    Err(_) => Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "connect timeout",
+                    )),
                 }
             } else {
                 fut.await
@@ -537,7 +540,11 @@ impl TcpDialer {
 
 #[cfg(target_os = "linux")]
 impl TcpDialer {
-    async fn connect_tcp_stream_netns(&self, addr: SocketAddr, netns: String) -> std::io::Result<TcpStream> {
+    async fn connect_tcp_stream_netns(
+        &self,
+        addr: SocketAddr,
+        netns: String,
+    ) -> std::io::Result<TcpStream> {
         use std::fs::File;
         use std::os::unix::io::AsRawFd;
 
@@ -551,74 +558,81 @@ impl TcpDialer {
         let bind_v6 = self.bind_v6;
         let connect_timeout = self.connect_timeout;
 
-        let std_stream = tokio::task::spawn_blocking(move || -> std::io::Result<std::net::TcpStream> {
-            extern "C" {
-                fn setns(fd: i32, nstype: i32) -> i32;
-            }
-
-            let orig = File::open("/proc/self/ns/net")?;
-            let target = File::open(&netns)?;
-
-            unsafe {
-                if setns(target.as_raw_fd(), 0) != 0 {
-                    return Err(std::io::Error::last_os_error());
+        let std_stream =
+            tokio::task::spawn_blocking(move || -> std::io::Result<std::net::TcpStream> {
+                extern "C" {
+                    fn setns(fd: i32, nstype: i32) -> i32;
                 }
-            }
 
-            struct Restore(std::fs::File);
-            impl Drop for Restore {
-                fn drop(&mut self) {
-                    extern "C" {
-                        fn setns(fd: i32, nstype: i32) -> i32;
-                    }
-                    unsafe {
-                        let _ = setns(self.0.as_raw_fd(), 0);
+                let orig = File::open("/proc/self/ns/net")?;
+                let target = File::open(&netns)?;
+
+                unsafe {
+                    if setns(target.as_raw_fd(), 0) != 0 {
+                        return Err(std::io::Error::last_os_error());
                     }
                 }
-            }
-            let _restore = Restore(orig);
 
-            let domain = if addr.is_ipv4() {
-                socket2::Domain::IPV4
-            } else {
-                socket2::Domain::IPV6
-            };
-            let socket = socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
+                struct Restore(std::fs::File);
+                impl Drop for Restore {
+                    fn drop(&mut self) {
+                        extern "C" {
+                            fn setns(fd: i32, nstype: i32) -> i32;
+                        }
+                        unsafe {
+                            let _ = setns(self.0.as_raw_fd(), 0);
+                        }
+                    }
+                }
+                let _restore = Restore(orig);
 
-            if reuse_addr {
-                let _ = socket.set_reuse_address(true);
-                #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
-                let _ = socket.set_reuse_port(true);
-            }
+                let domain = if addr.is_ipv4() {
+                    socket2::Domain::IPV4
+                } else {
+                    socket2::Domain::IPV6
+                };
+                let socket = socket2::Socket::new(
+                    domain,
+                    socket2::Type::STREAM,
+                    Some(socket2::Protocol::TCP),
+                )?;
 
-            if addr.is_ipv4() {
-                if let Some(bind_v4) = bind_v4 {
-                    let sa = std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0);
+                if reuse_addr {
+                    let _ = socket.set_reuse_address(true);
+                    #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
+                    let _ = socket.set_reuse_port(true);
+                }
+
+                if addr.is_ipv4() {
+                    if let Some(bind_v4) = bind_v4 {
+                        let sa = std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0);
+                        let _ = socket.bind(&sa.into());
+                    }
+                } else if let Some(bind_v6) = bind_v6 {
+                    let sa = std::net::SocketAddr::new(std::net::IpAddr::V6(bind_v6), 0);
                     let _ = socket.bind(&sa.into());
                 }
-            } else if let Some(bind_v6) = bind_v6 {
-                let sa = std::net::SocketAddr::new(std::net::IpAddr::V6(bind_v6), 0);
-                let _ = socket.bind(&sa.into());
-            }
 
-            if let Some(iface) = bind_interface.as_deref() {
-                let _ = socket.bind_device(Some(iface.as_bytes()));
-            }
-            if let Some(mark) = routing_mark {
-                let _ = socket.set_mark(mark);
-            }
+                if let Some(iface) = bind_interface.as_deref() {
+                    let _ = socket.bind_device(Some(iface.as_bytes()));
+                }
+                if let Some(mark) = routing_mark {
+                    let _ = socket.set_mark(mark);
+                }
 
-            // Use blocking connect; when a timeout is configured, fall back to
-            // `std::net::TcpStream::connect_timeout` (does not preserve socket options).
-            if let Some(to) = connect_timeout {
-                std::net::TcpStream::connect_timeout(&addr, to)
-            } else {
-                socket.connect(&addr.into())?;
-                Ok(socket.into())
-            }
-        })
-        .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("spawn_blocking: {e}")))??;
+                // Use blocking connect; when a timeout is configured, fall back to
+                // `std::net::TcpStream::connect_timeout` (does not preserve socket options).
+                if let Some(to) = connect_timeout {
+                    std::net::TcpStream::connect_timeout(&addr, to)
+                } else {
+                    socket.connect(&addr.into())?;
+                    Ok(socket.into())
+                }
+            })
+            .await
+            .map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("spawn_blocking: {e}"))
+            })??;
 
         std_stream.set_nonblocking(true)?;
         TcpStream::from_std(std_stream)

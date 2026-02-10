@@ -228,10 +228,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for PrefixStream<T> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
@@ -683,93 +680,93 @@ fn aead_encrypt_udp(
     aead_encrypt(cipher, key, nonce_val, data)
 }
 
-	pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
-	    let method =
-	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
+    let method =
+        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
 
-	    let user_map = cfg.build_user_map(&method);
-	    let shared = RuntimeShared {
-	        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
-	        #[cfg(feature = "service_ssmapi")]
-	        tracker: Arc::new(parking_lot::RwLock::new(None)),
-	        #[cfg(feature = "service_ssmapi")]
-	        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
-	    };
+    let user_map = cfg.build_user_map(&method);
+    let shared = RuntimeShared {
+        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+        #[cfg(feature = "service_ssmapi")]
+        tracker: Arc::new(parking_lot::RwLock::new(None)),
+        #[cfg(feature = "service_ssmapi")]
+        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
+    };
 
-	    serve_run(cfg, stop_rx, method, shared, None).await
-	}
+    serve_run(cfg, stop_rx, method, shared, None).await
+}
 
-	/// Like [`serve`], but also sends the actual bound TCP address back to the caller.
-	///
-	/// This is primarily useful for tests that want to bind to port 0 without racing on a
-	/// pre-selected port.
-	pub async fn serve_with_ready(
-	    cfg: ShadowsocksInboundConfig,
-	    stop_rx: mpsc::Receiver<()>,
-	    ready_tx: oneshot::Sender<SocketAddr>,
-	) -> Result<()> {
-	    let method =
-	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+/// Like [`serve`], but also sends the actual bound TCP address back to the caller.
+///
+/// This is primarily useful for tests that want to bind to port 0 without racing on a
+/// pre-selected port.
+pub async fn serve_with_ready(
+    cfg: ShadowsocksInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    ready_tx: oneshot::Sender<SocketAddr>,
+) -> Result<()> {
+    let method =
+        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
 
-	    let user_map = cfg.build_user_map(&method);
-	    let shared = RuntimeShared {
-	        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
-	        #[cfg(feature = "service_ssmapi")]
-	        tracker: Arc::new(parking_lot::RwLock::new(None)),
-	        #[cfg(feature = "service_ssmapi")]
-	        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
-	    };
+    let user_map = cfg.build_user_map(&method);
+    let shared = RuntimeShared {
+        user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+        #[cfg(feature = "service_ssmapi")]
+        tracker: Arc::new(parking_lot::RwLock::new(None)),
+        #[cfg(feature = "service_ssmapi")]
+        udp_sessions_seen: Arc::new(dashmap::DashMap::new()),
+    };
 
-	    serve_run(cfg, stop_rx, method, shared, Some(ready_tx)).await
-	}
+    serve_run(cfg, stop_rx, method, shared, Some(ready_tx)).await
+}
 
-	#[cfg(feature = "service_ssmapi")]
-	async fn serve_with_shared(
-	    cfg: ShadowsocksInboundConfig,
-	    stop_rx: mpsc::Receiver<()>,
-	    shared: RuntimeShared,
-	) -> Result<()> {
-	    let method =
-	        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
-	    serve_run(cfg, stop_rx, method, shared, None).await
-	}
+#[cfg(feature = "service_ssmapi")]
+async fn serve_with_shared(
+    cfg: ShadowsocksInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    shared: RuntimeShared,
+) -> Result<()> {
+    let method =
+        AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
+    serve_run(cfg, stop_rx, method, shared, None).await
+}
 
-	async fn serve_run(
-	    cfg: ShadowsocksInboundConfig,
-	    mut stop_rx: mpsc::Receiver<()>,
-	    method: AeadCipherKind,
-	    shared: RuntimeShared,
-	    ready_tx: Option<oneshot::Sender<SocketAddr>>,
-	) -> Result<()> {
-	    if shared.user_keys.read().is_empty() {
-	        return Err(anyhow!("shadowsocks: no users configured"));
-	    }
+async fn serve_run(
+    cfg: ShadowsocksInboundConfig,
+    mut stop_rx: mpsc::Receiver<()>,
+    method: AeadCipherKind,
+    shared: RuntimeShared,
+    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+) -> Result<()> {
+    if shared.user_keys.read().is_empty() {
+        return Err(anyhow!("shadowsocks: no users configured"));
+    }
 
     // Create TCP listener based on transport configuration
-	    let transport = cfg.transport_layer.clone().unwrap_or_default();
-	    let listener = transport.create_inbound_listener(cfg.listen).await?;
-	    let actual = listener.local_addr().unwrap_or(cfg.listen);
+    let transport = cfg.transport_layer.clone().unwrap_or_default();
+    let listener = transport.create_inbound_listener(cfg.listen).await?;
+    let actual = listener.local_addr().unwrap_or(cfg.listen);
 
-	    // Create UDP socket for UDP relay
-	    let udp_bind_addr = if cfg.listen.port() == 0 {
-	        SocketAddr::new(cfg.listen.ip(), actual.port())
-	    } else {
-	        cfg.listen
-	    };
-	    let udp_socket = Arc::new(tokio::net::UdpSocket::bind(udp_bind_addr).await?);
-	    let udp_addr = udp_socket.local_addr()?;
+    // Create UDP socket for UDP relay
+    let udp_bind_addr = if cfg.listen.port() == 0 {
+        SocketAddr::new(cfg.listen.ip(), actual.port())
+    } else {
+        cfg.listen
+    };
+    let udp_socket = Arc::new(tokio::net::UdpSocket::bind(udp_bind_addr).await?);
+    let udp_addr = udp_socket.local_addr()?;
 
-	    // Initialize rate limiter
-	    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+    // Initialize rate limiter
+    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
 
-	    if let Some(tx) = ready_tx {
-	        let _ = tx.send(actual);
-	    }
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(actual);
+    }
 
-	    info!(
-	        addr=?cfg.listen,
-	        tcp_actual=?actual,
-	        udp_actual=?udp_addr,
+    info!(
+            addr=?cfg.listen,
+            tcp_actual=?actual,
+            udp_actual=?udp_addr,
         transport=?transport.transport_type(),
         multiplex=?cfg.multiplex.is_some(),
         "shadowsocks: TCP+UDP inbound bound"
@@ -1499,7 +1496,10 @@ mod tests {
             method: "aes-256-gcm".to_string(),
             #[allow(deprecated)]
             password: None,
-            users: vec![ShadowsocksUser::new("old".to_string(), "oldpwd".to_string())],
+            users: vec![ShadowsocksUser::new(
+                "old".to_string(),
+                "oldpwd".to_string(),
+            )],
             router,
             tag: Some("ss-in".to_string()),
             stats: None,
@@ -1508,7 +1508,9 @@ mod tests {
         };
 
         let adapter = ShadowsocksInboundAdapter::with_tag(cfg, "ss-in".to_string());
-        let key_len = AeadCipherKind::from_method("aes-256-gcm").unwrap().key_len();
+        let key_len = AeadCipherKind::from_method("aes-256-gcm")
+            .unwrap()
+            .key_len();
         let old_key = evp_bytes_to_key("oldpwd", key_len);
         assert!(adapter.user_keys.read().contains_key(&old_key));
 

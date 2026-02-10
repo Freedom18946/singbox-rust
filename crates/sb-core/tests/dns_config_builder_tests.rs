@@ -135,9 +135,7 @@ fn test_doh3_url_parsing() -> Result<()> {
     let Some(upstream) = upstream else {
         return Ok(());
     };
-    assert!(
-        upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1")
-    );
+    assert!(upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1"));
 
     // Test DoH3 URL parsing with h3:// scheme
     let upstream = build_doh3_upstream("h3://1.1.1.1/dns-query", &registry)?;
@@ -158,9 +156,7 @@ fn test_doh3_url_parsing_with_default_port() -> Result<()> {
     let Some(upstream) = upstream else {
         return Ok(());
     };
-    assert!(
-        upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1")
-    );
+    assert!(upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1"));
 
     Ok(())
 }
@@ -174,9 +170,7 @@ fn test_doh3_url_parsing_with_default_path() -> Result<()> {
     let Some(upstream) = upstream else {
         return Ok(());
     };
-    assert!(
-        upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1")
-    );
+    assert!(upstream.name().contains("doh3") || upstream.name().contains("1.1.1.1"));
 
     // Test with just hostname
     let upstream = build_doh3_upstream("h3://1.1.1.1", &registry)?;
@@ -335,7 +329,8 @@ fn test_doh3_config_roundtrip() -> Result<()> {
 fn test_doh3_vs_doh_url_schemes() {
     let registry = sb_core::dns::transport::TransportRegistry::new();
     // DoH uses https://
-    let doh_result = sb_core::dns::config_builder::build_upstream("https://1.1.1.1/dns-query", &registry);
+    let doh_result =
+        sb_core::dns::config_builder::build_upstream("https://1.1.1.1/dns-query", &registry);
     #[cfg(feature = "dns_doh")]
     assert!(
         doh_result.is_ok() && doh_result.unwrap().is_some(),
@@ -350,10 +345,7 @@ fn test_doh3_vs_doh_url_schemes() {
         eprintln!("skipping DoH3 scheme test: DoH3 transport unavailable");
         return;
     }
-    assert!(
-        doh3_result1.is_some(),
-        "DoH3 should use doh3://"
-    );
+    assert!(doh3_result1.is_some(), "DoH3 should use doh3://");
 
     let doh3_result2 = build_doh3_upstream("h3://1.1.1.1/dns-query", &registry)
         .ok()
@@ -362,8 +354,5 @@ fn test_doh3_vs_doh_url_schemes() {
         eprintln!("skipping DoH3 scheme test: DoH3 transport unavailable");
         return;
     }
-    assert!(
-        doh3_result2.is_some(),
-        "DoH3 should use h3://"
-    );
+    assert!(doh3_result2.is_some(), "DoH3 should use h3://");
 }

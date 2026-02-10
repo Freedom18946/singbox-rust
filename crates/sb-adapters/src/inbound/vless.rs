@@ -465,12 +465,9 @@ async fn handle_conn_impl(
             let sel = PoolSelector::new("vless".into(), "default".into());
             if let Some(reg) = registry::global() {
                 if let Some(_pool) = reg.pools.get(name) {
-                    if let Some(ep) = sel.select(
-                        name,
-                        peer,
-                        &format!("{}:{}", target_host, target_port),
-                        &(),
-                    ) {
+                    if let Some(ep) =
+                        sel.select(name, peer, &format!("{}:{}", target_host, target_port), &())
+                    {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 let s = http_proxy_connect_through_proxy(

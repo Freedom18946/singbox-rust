@@ -1156,16 +1156,17 @@ impl RouterHandle {
     ///
     /// This mirrors `select_ctx_and_record` behavior, adding a stable rule label
     /// for `/connections` display.
-    pub fn select_ctx_and_record_with_meta(
-        &self,
-        ctx: RouteCtx,
-    ) -> (RouteTarget, Option<String>) {
+    pub fn select_ctx_and_record_with_meta(&self, ctx: RouteCtx) -> (RouteTarget, Option<String>) {
         // 拿快照
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         // host 优先
         if let Some(h) = ctx.host {
             if let Some(d) = router_index_decide_exact_suffix(&idx, h) {
-                let kind = if idx.exact.contains_key(h) { "exact" } else { "suffix" };
+                let kind = if idx.exact.contains_key(h) {
+                    "exact"
+                } else {
+                    "suffix"
+                };
                 return (RouteTarget::Named(d.to_string()), Some(kind.to_string()));
             }
             // host 可能是字面量 IP:PORT
@@ -1202,9 +1203,15 @@ impl RouterHandle {
             }
         }
         if let Some(d) = super::router_index_decide_transport_port(&idx, ctx.port, Some("tcp")) {
-            return (RouteTarget::Named(d.to_string()), Some("transport".to_string()));
+            return (
+                RouteTarget::Named(d.to_string()),
+                Some("transport".to_string()),
+            );
         }
-        (RouteTarget::Named(idx.default.to_string()), Some("final".to_string()))
+        (
+            RouteTarget::Named(idx.default.to_string()),
+            Some("final".to_string()),
+        )
     }
 
     /// Decide with minimal matched rule metadata (best-effort).

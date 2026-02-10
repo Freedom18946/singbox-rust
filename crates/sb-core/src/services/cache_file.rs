@@ -506,19 +506,17 @@ impl CacheFileService {
             .as_secs();
 
         match &*self.backend {
-            CacheBackend::Memory(mem) => {
-                mem.rdrc
-                    .read()
-                    .get(&key)
-                    .is_some_and(|entry| entry.expires_at > now)
-            }
-            CacheBackend::Persistence(db) => {
-                db.open_tree("rdrc")
-                    .ok()
-                    .and_then(|tree| tree.get(&key).ok().flatten())
-                    .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
-                    .is_some_and(|entry| entry.expires_at > now)
-            }
+            CacheBackend::Memory(mem) => mem
+                .rdrc
+                .read()
+                .get(&key)
+                .is_some_and(|entry| entry.expires_at > now),
+            CacheBackend::Persistence(db) => db
+                .open_tree("rdrc")
+                .ok()
+                .and_then(|tree| tree.get(&key).ok().flatten())
+                .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
+                .is_some_and(|entry| entry.expires_at > now),
         }
     }
 
@@ -577,11 +575,7 @@ impl CacheFileService {
             return None;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem
-                .clash_mode
-                .read()
-                .get(self.ns_key())
-                .cloned(),
+            CacheBackend::Memory(mem) => mem.clash_mode.read().get(self.ns_key()).cloned(),
             CacheBackend::Persistence(db) => db
                 .open_tree(match self.cache_id.as_deref() {
                     None => "meta".to_string(),

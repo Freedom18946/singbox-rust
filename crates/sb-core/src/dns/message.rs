@@ -350,7 +350,7 @@ pub fn build_dns_response(query: &[u8], ips: &[IpAddr], ttl: u32, rcode: u8) -> 
 
     // Header: copy ID, set flags
     resp.extend_from_slice(&query[0..2]); // Transaction ID
-    // Flags: QR=1, Opcode=0, AA=0, TC=0, RD=1, RA=1, Z=0, RCODE
+                                          // Flags: QR=1, Opcode=0, AA=0, TC=0, RD=1, RA=1, Z=0, RCODE
     resp.push(0x81); // QR=1, RD=1
     resp.push(0x80 | (rcode & 0x0F)); // RA=1, RCODE
 
@@ -710,8 +710,7 @@ pub fn parse_edns0_client_subnet(message: &[u8]) -> Option<String> {
             // This is the OPT record. Parse its RDATA as a series of EDNS0 options.
             let mut opt_off = rdata_start;
             while opt_off + 4 <= rdata_start + rdlen {
-                let opt_code =
-                    u16::from_be_bytes([message[opt_off], message[opt_off + 1]]);
+                let opt_code = u16::from_be_bytes([message[opt_off], message[opt_off + 1]]);
                 let opt_len =
                     u16::from_be_bytes([message[opt_off + 2], message[opt_off + 3]]) as usize;
                 opt_off += 4;
@@ -721,8 +720,7 @@ pub fn parse_edns0_client_subnet(message: &[u8]) -> Option<String> {
 
                 if opt_code == 8 && opt_len >= 4 {
                     // ECS option: FAMILY(2) + SOURCE-PREFIX(1) + SCOPE-PREFIX(1) + ADDRESS(var)
-                    let family =
-                        u16::from_be_bytes([message[opt_off], message[opt_off + 1]]);
+                    let family = u16::from_be_bytes([message[opt_off], message[opt_off + 1]]);
                     let source_prefix = message[opt_off + 2];
                     let scope_prefix = message[opt_off + 3];
                     let addr_data = &message[opt_off + 4..opt_off + opt_len];

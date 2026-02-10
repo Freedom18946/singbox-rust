@@ -127,7 +127,9 @@ async fn socks5_mock_udp_echo_roundtrip() -> anyhow::Result<()> {
     let udp = mock.udp_addr();
     let cli = match UdpSocket::bind(("127.0.0.1", 0)).await {
         Ok(v) => v,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) => {
+        Err(e)
+            if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) =>
+        {
             eprintln!("skipping socks udp proxy e2e: PermissionDenied binding client socket");
             return Ok(());
         }

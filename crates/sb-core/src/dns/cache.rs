@@ -768,7 +768,10 @@ mod tests {
 
         // Entry should still be returned because disable_expire is true.
         let cached = cache.get(&key);
-        assert!(cached.is_some(), "entry should not expire when disable_expire is true");
+        assert!(
+            cached.is_some(),
+            "entry should not expire when disable_expire is true"
+        );
         let cached = cached.unwrap();
         assert_eq!(cached.ips, answer.ips);
         // TTL should be the original value, not a decremented one.
@@ -812,8 +815,14 @@ mod tests {
         cache.cleanup_expired();
 
         let stats = cache.stats();
-        assert_eq!(stats.total_entries, 1, "cleanup_expired should not remove entries when disable_expire is true");
-        assert_eq!(stats.expired_entries, 0, "no entries should be counted as expired when disable_expire is true");
+        assert_eq!(
+            stats.total_entries, 1,
+            "cleanup_expired should not remove entries when disable_expire is true"
+        );
+        assert_eq!(
+            stats.expired_entries, 0,
+            "no entries should be counted as expired when disable_expire is true"
+        );
 
         // Entry should still be accessible.
         assert!(cache.get(&key).is_some());
@@ -841,9 +850,18 @@ mod tests {
         // Inserting key3 should evict the LRU entry (key1).
         cache.put(key3.clone(), make_answer(3, Duration::from_millis(10)));
 
-        assert!(cache.get(&key1).is_none(), "LRU entry should be evicted even with disable_expire");
-        assert!(cache.get(&key2).is_some(), "recently accessed entry should survive");
-        assert!(cache.get(&key3).is_some(), "newly inserted entry should exist");
+        assert!(
+            cache.get(&key1).is_none(),
+            "LRU entry should be evicted even with disable_expire"
+        );
+        assert!(
+            cache.get(&key2).is_some(),
+            "recently accessed entry should survive"
+        );
+        assert!(
+            cache.get(&key3).is_some(),
+            "newly inserted entry should exist"
+        );
 
         std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
@@ -862,7 +880,10 @@ mod tests {
 
         // peek_remaining should return the original TTL when disable_expire is true.
         let remaining = cache.peek_remaining(&key);
-        assert!(remaining.is_some(), "peek_remaining should return Some when disable_expire is true");
+        assert!(
+            remaining.is_some(),
+            "peek_remaining should return Some when disable_expire is true"
+        );
         assert_eq!(remaining.unwrap(), ttl);
 
         std::env::remove_var("SB_DNS_MIN_TTL_S");

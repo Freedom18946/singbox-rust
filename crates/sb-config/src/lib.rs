@@ -962,11 +962,17 @@ endpoints:
         assert!(migrated.get("$schema").is_some());
 
         // schema_version should be injected
-        assert_eq!(migrated.get("schema_version").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(
+            migrated.get("schema_version").and_then(|v| v.as_u64()),
+            Some(2)
+        );
 
         // tag should be renamed to name
         let first_outbound = &migrated["outbounds"][0];
-        assert_eq!(first_outbound.get("name").and_then(|v| v.as_str()), Some("direct"));
+        assert_eq!(
+            first_outbound.get("name").and_then(|v| v.as_str()),
+            Some("direct")
+        );
         assert!(first_outbound.get("tag").is_none());
 
         // Validation should pass (no errors)
@@ -975,10 +981,18 @@ endpoints:
             .iter()
             .filter(|i| i.get("kind").and_then(|k| k.as_str()) == Some("error"))
             .collect();
-        assert!(errors.is_empty(), "Go-format config should validate: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "Go-format config should validate: {:?}",
+            errors
+        );
 
         // Full pipeline should succeed
         let result = config_from_raw_value(raw);
-        assert!(result.is_ok(), "Go-format config should parse: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Go-format config should parse: {:?}",
+            result.err()
+        );
     }
 }

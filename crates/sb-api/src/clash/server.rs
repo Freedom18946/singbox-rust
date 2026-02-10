@@ -172,7 +172,10 @@ impl ClashApiServer {
     }
 
     /// Set URL test history storage
-    pub fn with_urltest_history(mut self, h: Arc<dyn sb_core::context::URLTestHistoryStorage>) -> Self {
+    pub fn with_urltest_history(
+        mut self,
+        h: Arc<dyn sb_core::context::URLTestHistoryStorage>,
+    ) -> Self {
         self.state.urltest_history = Some(h);
         self
     }
@@ -223,7 +226,10 @@ impl ClashApiServer {
         let mut app = Router::new()
             // Proxy management
             .route("/proxies", get(handlers::get_proxies))
-            .route("/proxies/:name", get(handlers::get_proxy).put(handlers::select_proxy))
+            .route(
+                "/proxies/:name",
+                get(handlers::get_proxy).put(handlers::select_proxy),
+            )
             .route("/proxies/:name/delay", get(handlers::get_proxy_delay))
             // Connection management
             .route("/connections", get(handlers::get_connections_or_ws))

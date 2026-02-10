@@ -28,8 +28,8 @@ pub fn global_http_client() -> Option<&'static dyn HttpClient> {
 ///
 /// Returns an error if no HTTP client has been installed.
 pub async fn http_execute(req: HttpRequest) -> Result<HttpResponse, sb_types::CoreError> {
-    let client = global_http_client().ok_or_else(|| {
-        sb_types::CoreError::Internal { message: "no HTTP client installed; call install_http_client() at startup".into() }
+    let client = global_http_client().ok_or_else(|| sb_types::CoreError::Internal {
+        message: "no HTTP client installed; call install_http_client() at startup".into(),
     })?;
     client.execute(req).await
 }

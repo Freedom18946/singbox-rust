@@ -1808,7 +1808,10 @@ impl Engine {
 
         for r in &self.clash_mode {
             if Self::hit(r, ctx) {
-                return (record("clash_mode", &r.decision), Some("clash_mode".to_string()));
+                return (
+                    record("clash_mode", &r.decision),
+                    Some("clash_mode".to_string()),
+                );
             }
         }
         for r in &self.exact {
@@ -1841,7 +1844,10 @@ impl Engine {
         }
         for r in &self.outbound {
             if Self::hit(r, ctx) {
-                return (record("outbound", &r.decision), Some("outbound".to_string()));
+                return (
+                    record("outbound", &r.decision),
+                    Some("outbound".to_string()),
+                );
             }
         }
         for r in &self.ipcidr {
@@ -1851,7 +1857,10 @@ impl Engine {
         }
         for r in &self.transport {
             if Self::hit(r, ctx) {
-                return (record("transport", &r.decision), Some("transport".to_string()));
+                return (
+                    record("transport", &r.decision),
+                    Some("transport".to_string()),
+                );
             }
         }
         for r in &self.port_like {
@@ -1866,7 +1875,10 @@ impl Engine {
         }
         for r in &self.auth_user {
             if Self::hit(r, ctx) {
-                return (record("auth_user", &r.decision), Some("auth_user".to_string()));
+                return (
+                    record("auth_user", &r.decision),
+                    Some("auth_user".to_string()),
+                );
             }
         }
         for r in &self.query_type {
@@ -1879,7 +1891,10 @@ impl Engine {
         }
         for r in &self.ipversion {
             if Self::hit(r, ctx) {
-                return (record("ipversion", &r.decision), Some("ipversion".to_string()));
+                return (
+                    record("ipversion", &r.decision),
+                    Some("ipversion".to_string()),
+                );
             }
         }
         for r in &self.ipisprivate {

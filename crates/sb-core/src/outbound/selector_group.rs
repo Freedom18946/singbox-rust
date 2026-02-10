@@ -427,10 +427,13 @@ impl SelectorGroup {
                     Ok(rtt_ms) => {
                         health.record_success(rtt_ms);
                         if let Some(h) = &urltest_history {
-                            h.store(&tag, crate::context::URLTestHistory {
-                                time: std::time::SystemTime::now(),
-                                delay: rtt_ms as u16,
-                            });
+                            h.store(
+                                &tag,
+                                crate::context::URLTestHistory {
+                                    time: std::time::SystemTime::now(),
+                                    delay: rtt_ms as u16,
+                                },
+                            );
                         }
                         tracing::trace!(
                             proxy = %tag,
@@ -586,7 +589,9 @@ impl crate::adapter::OutboundGroup for SelectorGroup {
         match self.mode {
             SelectMode::Manual => "Selector",
             SelectMode::UrlTest => "URLTest",
-            SelectMode::RoundRobin | SelectMode::LeastConnections | SelectMode::Random => "LoadBalance",
+            SelectMode::RoundRobin | SelectMode::LeastConnections | SelectMode::Random => {
+                "LoadBalance"
+            }
         }
     }
 
@@ -594,7 +599,10 @@ impl crate::adapter::OutboundGroup for SelectorGroup {
         self.get_members()
     }
 
-    fn select_outbound<'a>(&'a self, tag: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>> {
+    fn select_outbound<'a>(
+        &'a self,
+        tag: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>> {
         Box::pin(self.select_by_name(tag))
     }
 }

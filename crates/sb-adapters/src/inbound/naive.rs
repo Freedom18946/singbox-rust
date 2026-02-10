@@ -13,13 +13,12 @@ use base64::Engine;
 use bytes::Bytes;
 use h2::server::{Builder, SendResponse};
 use http::StatusCode;
+use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
-use sb_core::router::rules::Decision;
-use sb_core::net::metered::TrafficRecorder;
-use tokio_util::sync::CancellationToken;
 use sb_core::router::engine::RouteCtx;
+use sb_core::router::rules::Decision;
 use sb_core::router::{self, Transport};
 use sb_transport::dialer::AsyncReadWrite;
 use std::net::SocketAddr;
@@ -28,6 +27,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 /// Naive server configuration

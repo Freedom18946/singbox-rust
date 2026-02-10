@@ -31,10 +31,7 @@ fn ensure_binary() {
         }
 
         let status = cmd.status().expect("build app");
-        assert!(
-            status.success(),
-            "failed to build app binary for xtests"
-        );
+        assert!(status.success(), "failed to build app binary for xtests");
     });
 }
 
@@ -93,7 +90,10 @@ fn conflict_group_has_members_and_ruleid() {
     let has_rule1 = issues
         .iter()
         .any(|i| i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules/1"));
-    assert!(has_rule0 && has_rule1, "expected issues for /route/rules/0 and /route/rules/1");
+    assert!(
+        has_rule0 && has_rule1,
+        "expected issues for /route/rules/0 and /route/rules/1"
+    );
     for issue in issues {
         assert_eq!(
             issue.get("code").and_then(|c| c.as_str()),
@@ -106,7 +106,10 @@ fn conflict_group_has_members_and_ruleid() {
 fn unreachable_group_exists() {
     let v = run_check("tests/assets/check/bad_unreachable.yaml", "error");
     let issues = v.get("issues").unwrap().as_array().unwrap();
-    assert!(!issues.is_empty(), "expected issues for unreachable fixture");
+    assert!(
+        !issues.is_empty(),
+        "expected issues for unreachable fixture"
+    );
     let has_rule_issue = issues.iter().any(|i| {
         i.get("ptr").and_then(|p| p.as_str()) == Some("/route/rules/0")
             && i.get("code").and_then(|c| c.as_str()) == Some("SchemaInvalid")

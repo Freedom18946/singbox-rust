@@ -101,11 +101,7 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
     }
 
     #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> std::io::Result<sb_transport::IoStream> {
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
         use crate::traits::{DialOpts, Target, TransportKind};
 
         let target = Target {
@@ -863,7 +859,9 @@ fn build_vmess_outbound(
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use crate::outbound::vmess::{Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport};
+    use crate::outbound::vmess::{
+        Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
+    };
     use std::collections::HashMap;
 
     // Extract required fields
@@ -873,9 +871,7 @@ fn build_vmess_outbound(
     let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
 
     // Parse server to SocketAddr (try IP:port first, then resolve)
-    let server_addr = format!("{}:{}", server, port)
-        .parse::<SocketAddr>()
-        .ok()?;
+    let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
 
     // Map security string
     let security = match ir.security.as_deref() {
@@ -945,9 +941,7 @@ fn build_vless_outbound(
     let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
 
     // Parse server to SocketAddr
-    let server_addr = format!("{}:{}", server, port)
-        .parse::<SocketAddr>()
-        .ok()?;
+    let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
 
     // Map flow control
     let flow = match ir.flow.as_deref() {

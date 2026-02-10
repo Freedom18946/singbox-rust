@@ -581,10 +581,7 @@ mod tests {
             deps.get("manual").unwrap(),
             &vec!["direct-a".to_string(), "direct-b".to_string()]
         );
-        assert_eq!(
-            deps.get("auto").unwrap(),
-            &vec!["direct-a".to_string()]
-        );
+        assert_eq!(deps.get("auto").unwrap(), &vec!["direct-a".to_string()]);
         // Direct outbounds should not appear as keys
         assert!(!deps.contains_key("direct-a"));
     }

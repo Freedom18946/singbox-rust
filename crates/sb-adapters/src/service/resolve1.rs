@@ -17,7 +17,7 @@ use sb_core::dns::transport::resolved::Resolve1ManagerState;
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
 pub mod dbus_server {
     use super::*;
-    use sb_core::dns::message::{parse_answer_records, pack_rr_uncompressed};
+    use sb_core::dns::message::{pack_rr_uncompressed, parse_answer_records};
     use sb_core::dns::transport::resolved::{LinkDNS, LinkDNSEx, LinkDomainConfig};
     use sb_core::dns::udp;
     use sb_core::dns::{DnsQueryContext, DnsRouter};
@@ -49,7 +49,10 @@ pub mod dbus_server {
                 .build()
                 .await
                 .ok()?;
-            proxy.call("GetConnectionUnixProcessID", &(sender)).await.ok()
+            proxy
+                .call("GetConnectionUnixProcessID", &(sender))
+                .await
+                .ok()
         }
 
         fn lookup_username(uid: u32) -> Option<String> {
@@ -529,17 +532,23 @@ pub mod dbus_server {
                         let b: [u8; 16] = address[..16].try_into().unwrap();
                         IpAddr::V6(b.into())
                     } else {
-                        return Err(zbus::Error::Failure(format!("invalid address bytes: {err}").into()));
+                        return Err(zbus::Error::Failure(
+                            format!("invalid address bytes: {err}").into(),
+                        ));
                     };
                     if let Some(name) = router.lookup_reverse_mapping(&ip) {
                         return Ok((vec![(if_index, Self::ensure_fqdn(&name))], 0));
                     }
-                    return Err(zbus::Error::Failure(format!("ResolveAddress exchange failed: {err}").into()));
+                    return Err(zbus::Error::Failure(
+                        format!("ResolveAddress exchange failed: {err}").into(),
+                    ));
                 }
             };
 
             if Self::rcode(&resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure("ResolveAddress: upstream returned error rcode".into()));
+                return Err(zbus::Error::Failure(
+                    "ResolveAddress: upstream returned error rcode".into(),
+                ));
             }
 
             let mut names = Vec::new();
@@ -584,7 +593,9 @@ pub mod dbus_server {
                 .map_err(|e| zbus::Error::Failure(format!("ResolveRecord exchange failed: {e}")))?;
 
             if Self::rcode(&resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure("ResolveRecord: upstream returned error rcode".into()));
+                return Err(zbus::Error::Failure(
+                    "ResolveRecord: upstream returned error rcode".into(),
+                ));
             }
 
             let mut records = Vec::new();
@@ -592,7 +603,9 @@ pub mod dbus_server {
                 for rr in ans {
                     let data = pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data)
                         .ok_or_else(|| {
-                            zbus::Error::Failure("ResolveRecord: rtype not supported for packing".into())
+                            zbus::Error::Failure(
+                                "ResolveRecord: rtype not supported for packing".into(),
+                            )
                         })?;
                     records.push((if_index, rr.rtype as u16, rr.class as u16, data));
                 }
@@ -649,7 +662,9 @@ pub mod dbus_server {
                 .await
                 .map_err(|e| zbus::Error::Failure(format!("SRV exchange failed: {e}")))?;
             if Self::rcode(&srv_resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure("ResolveService: SRV rcode != 0".into()));
+                return Err(zbus::Error::Failure(
+                    "ResolveService: SRV rcode != 0".into(),
+                ));
             }
 
             let txt_req = udp::build_query(service_name.trim_end_matches('.'), 16)
@@ -670,38 +685,31 @@ pub mod dbus_server {
                 let pri = u16::from_be_bytes([rr.data[0], rr.data[1]]);
                 let w = u16::from_be_bytes([rr.data[2], rr.data[3]]);
                 let port = u16::from_be_bytes([rr.data[4], rr.data[5]]);
-                let target = Self::parse_uncompressed_name(&rr.data[6..]).unwrap_or_else(|| ".".to_string());
+                let target =
+                    Self::parse_uncompressed_name(&rr.data[6..]).unwrap_or_else(|| ".".to_string());
 
                 let mut addrs: Vec<(i32, i32, Vec<u8>)> = Vec::new();
                 if target != "." {
                     let lookup_name = target.trim_end_matches('.');
                     if !lookup_name.is_empty() {
                         if let Ok(ips) = router.lookup(&ctx, lookup_name).await {
-                        for ip in ips {
-                            match (family, ip) {
-                                (libc::AF_INET, IpAddr::V4(v4)) => addrs.push((
-                                    if_index,
-                                    libc::AF_INET,
-                                    v4.octets().to_vec(),
-                                )),
-                                (libc::AF_INET6, IpAddr::V6(v6)) => addrs.push((
-                                    if_index,
-                                    libc::AF_INET6,
-                                    v6.octets().to_vec(),
-                                )),
-                                (libc::AF_UNSPEC, IpAddr::V4(v4)) => addrs.push((
-                                    if_index,
-                                    libc::AF_INET,
-                                    v4.octets().to_vec(),
-                                )),
-                                (libc::AF_UNSPEC, IpAddr::V6(v6)) => addrs.push((
-                                    if_index,
-                                    libc::AF_INET6,
-                                    v6.octets().to_vec(),
-                                )),
-                                _ => {}
+                            for ip in ips {
+                                match (family, ip) {
+                                    (libc::AF_INET, IpAddr::V4(v4)) => {
+                                        addrs.push((if_index, libc::AF_INET, v4.octets().to_vec()))
+                                    }
+                                    (libc::AF_INET6, IpAddr::V6(v6)) => {
+                                        addrs.push((if_index, libc::AF_INET6, v6.octets().to_vec()))
+                                    }
+                                    (libc::AF_UNSPEC, IpAddr::V4(v4)) => {
+                                        addrs.push((if_index, libc::AF_INET, v4.octets().to_vec()))
+                                    }
+                                    (libc::AF_UNSPEC, IpAddr::V6(v6)) => {
+                                        addrs.push((if_index, libc::AF_INET6, v6.octets().to_vec()))
+                                    }
+                                    _ => {}
+                                }
                             }
-                        }
                         }
                     }
                 }
@@ -726,7 +734,9 @@ pub mod dbus_server {
                 if rr.rtype != 16 {
                     continue;
                 }
-                if let Some(data) = pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data) {
+                if let Some(data) =
+                    pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data)
+                {
                     txt_out.push(data);
                 }
             }
@@ -781,8 +791,7 @@ pub mod dbus_server {
             RequestNameReply::PrimaryOwner => {}
             RequestNameReply::Exists => {
                 return Err(
-                    "D-Bus object already exists; stop/disable systemd-resolved and retry"
-                        .into(),
+                    "D-Bus object already exists; stop/disable systemd-resolved and retry".into(),
                 );
             }
             other => {

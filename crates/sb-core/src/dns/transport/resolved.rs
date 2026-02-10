@@ -8,6 +8,7 @@
 use super::{DnsStartStage, DnsTransport};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use futures::stream::{FuturesUnordered, StreamExt};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -17,7 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tracing::{debug, info};
-use futures::stream::{FuturesUnordered, StreamExt};
 
 /// Shared state for the resolved transport/service.
 pub static RESOLVED_STATE: Lazy<Arc<Resolve1ManagerState>> =
@@ -491,11 +491,8 @@ impl ResolvedTransport {
                 std::net::SocketAddr::V4(_) => socket2::Domain::IPV4,
                 std::net::SocketAddr::V6(_) => socket2::Domain::IPV6,
             };
-            let socket = socket2::Socket::new(
-                domain,
-                socket2::Type::DGRAM,
-                Some(socket2::Protocol::UDP),
-            )?;
+            let socket =
+                socket2::Socket::new(domain, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
 
             // Best-effort bind to interface; ignore failures to match Go behavior.
             if !servers.if_name.is_empty() {
@@ -563,7 +560,8 @@ impl ResolvedTransport {
 
             let sni = server_name.clone().unwrap_or_else(|| addr.ip().to_string());
 
-            let dot = DotTransport::new(addr, sni)?.with_bind_interface(Some(servers.if_name.clone()));
+            let dot =
+                DotTransport::new(addr, sni)?.with_bind_interface(Some(servers.if_name.clone()));
             dot.query(packet).await
         }
 

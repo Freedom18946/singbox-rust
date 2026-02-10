@@ -5,8 +5,8 @@
 #[cfg(all(feature = "router", feature = "suffix_trie"))]
 #[tokio::test]
 async fn test_dns_rule_routing_integration() {
-    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleEngine};
     use sb_core::dns::rule_engine::DnsRuleAction;
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleEngine};
     use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType};
     use sb_core::router::ruleset::{
         DefaultRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource,

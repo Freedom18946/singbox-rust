@@ -582,16 +582,12 @@ impl TailscaleEndpoint {
     /// Return the tailscaled LocalAPI socket path for daemon-only mode.
     ///
     /// Used by DERP `verify_client_endpoint` (Go parity: LocalClient/WhoIsNodeKey).
-    pub fn localapi_socket_path(
-        &self,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn localapi_socket_path(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(unix)]
         {
-            let cp = self
-                .control_plane
-                .read()
-                .clone()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "no control plane"))?;
+            let cp = self.control_plane.read().clone().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotConnected, "no control plane")
+            })?;
             let any = cp.as_ref() as &dyn Any;
             if let Some(daemon) = any.downcast_ref::<DaemonControlPlane>() {
                 return Ok(daemon.socket_path().to_string_lossy().to_string());

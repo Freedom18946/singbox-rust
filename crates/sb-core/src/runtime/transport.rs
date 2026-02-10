@@ -35,10 +35,10 @@ pub mod map {
         grpc_authority: Option<&str>,
         grpc_metadata: &[(String, String)],
         // Optional TLS config override (only available with tls_rustls feature)
-        #[cfg(feature = "tls_rustls")]
-        tls_cfg_override: Option<std::sync::Arc<rustls::ClientConfig>>,
-        #[cfg(not(feature = "tls_rustls"))]
-        _tls_cfg_override: Option<()>,
+        #[cfg(feature = "tls_rustls")] tls_cfg_override: Option<
+            std::sync::Arc<rustls::ClientConfig>,
+        >,
+        #[cfg(not(feature = "tls_rustls"))] _tls_cfg_override: Option<()>,
         // Multiplex config
         multiplex: Option<&sb_config::ir::MultiplexOptionsIR>,
     ) -> TransportBuilder {

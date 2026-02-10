@@ -11,11 +11,9 @@ use std::sync::{Arc, LazyLock};
 static TLS_OVERRIDE: LazyLock<RwLock<Option<Arc<ClientConfig>>>> =
     LazyLock::new(|| RwLock::new(None));
 
-static EXTRA_CA_PATHS: LazyLock<RwLock<Vec<String>>> =
-    LazyLock::new(|| RwLock::new(Vec::new()));
+static EXTRA_CA_PATHS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
 
-static EXTRA_CA_PEMS: LazyLock<RwLock<Vec<String>>> =
-    LazyLock::new(|| RwLock::new(Vec::new()));
+static EXTRA_CA_PEMS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
 
 /// Return a base `RootCertStore` from webpki roots plus any configured extra CAs.
 pub fn base_root_store() -> RootCertStore {

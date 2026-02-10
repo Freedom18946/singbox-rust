@@ -394,7 +394,9 @@ async fn test_burst_traffic_handling() {
     );
 
     if count == 0 {
-        eprintln!("skipping burst traffic test: 0 connections succeeded (likely restricted environment)");
+        eprintln!(
+            "skipping burst traffic test: 0 connections succeeded (likely restricted environment)"
+        );
         return;
     }
 
@@ -465,7 +467,9 @@ async fn test_recovery_after_flood() {
 
     let result = connector.dial(target, DialOpts::default()).await;
     if result.is_err() {
-        eprintln!("skipping recovery test: dial failed after flood (likely restricted environment)");
+        eprintln!(
+            "skipping recovery test: dial failed after flood (likely restricted environment)"
+        );
         return;
     }
 

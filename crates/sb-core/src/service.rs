@@ -29,7 +29,8 @@ pub struct ServiceContext {
     pub outbounds: Option<Arc<crate::outbound::OutboundRegistryHandle>>,
     /// Optional endpoints map (tag -> endpoint) for services that reference endpoint tags (e.g., DERP verify_client_endpoint).
     /// 可选 endpoints 映射（tag -> endpoint），用于服务引用 endpoint tag（例如 DERP verify_client_endpoint）。
-    pub endpoints: Option<Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>>>,
+    pub endpoints:
+        Option<Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>>>,
     /// Optional network monitor for tracking network changes.
     /// 可选的网络监视器，用于跟踪网络变化。
     #[cfg(feature = "network_monitor")]
@@ -75,7 +76,10 @@ impl ServiceContext {
     /// Attach an outbounds registry.
     /// 附加出站注册表。
     #[must_use]
-    pub fn with_outbounds(mut self, outbounds: Arc<crate::outbound::OutboundRegistryHandle>) -> Self {
+    pub fn with_outbounds(
+        mut self,
+        outbounds: Arc<crate::outbound::OutboundRegistryHandle>,
+    ) -> Self {
         self.outbounds = Some(outbounds);
         self
     }

@@ -70,7 +70,11 @@ pub mod tor;
 #[cfg(feature = "adapter-trojan")]
 pub mod trojan;
 // Shared QUIC utilities for TUIC and Hysteria protocols
-#[cfg(any(feature = "adapter-tuic", feature = "adapter-hysteria", feature = "adapter-hysteria2"))]
+#[cfg(any(
+    feature = "adapter-tuic",
+    feature = "adapter-hysteria",
+    feature = "adapter-hysteria2"
+))]
 pub(crate) mod quic_util;
 #[cfg(feature = "tuic")]
 pub mod tuic;

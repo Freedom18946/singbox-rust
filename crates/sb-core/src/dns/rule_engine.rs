@@ -470,7 +470,8 @@ impl DnsRuleEngine {
                     answer: compiled.rule.answer.clone(),
                     ns: compiled.rule.ns.clone(),
                     extra: compiled.rule.extra.clone(),
-                    client_subnet: accumulated_client_subnet.clone()
+                    client_subnet: accumulated_client_subnet
+                        .clone()
                         .or_else(|| compiled.rule.client_subnet.clone()),
                 };
 
@@ -669,7 +670,9 @@ impl DnsRuleEngine {
 impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
     async fn exchange(&self, ctx: &DnsQueryContext, message: &[u8]) -> Result<Vec<u8>> {
         use crate::dns::cache::Rcode;
-        use crate::dns::message::{build_dns_response, inject_edns0_client_subnet, parse_question_key};
+        use crate::dns::message::{
+            build_dns_response, inject_edns0_client_subnet, parse_question_key,
+        };
 
         // 1. Parse the question from the wire-format query
         let qk = parse_question_key(message)
@@ -774,10 +777,9 @@ impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
             .upstream_tag
             .as_deref()
             .unwrap_or(&self.default_upstream_tag);
-        let upstream = self
-            .upstreams
-            .get(tag)
-            .ok_or_else(|| anyhow::anyhow!("Upstream '{}' not found for domain '{}'", tag, qk.name))?;
+        let upstream = self.upstreams.get(tag).ok_or_else(|| {
+            anyhow::anyhow!("Upstream '{}' not found for domain '{}'", tag, qk.name)
+        })?;
 
         let mut packet = message.to_vec();
         if let Some(ref subnet) = decision.client_subnet {
@@ -856,9 +858,9 @@ impl crate::dns::dns_router::DnsRouter for DnsRuleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::router::ruleset::{DefaultRule, Rule, RuleSetFormat};
     use crate::dns::dns_router::DnsQueryContext;
     use crate::dns::dns_router::DnsRouter as _;
+    use crate::router::ruleset::{DefaultRule, Rule, RuleSetFormat};
     use std::net::IpAddr;
     use std::time::SystemTime;
 
@@ -937,7 +939,9 @@ mod tests {
         );
 
         let req = crate::dns::udp::build_query("example.com", 12).expect("ptr query");
-        let ctx = DnsQueryContext::new().with_inbound("resolved").with_transport("udp");
+        let ctx = DnsQueryContext::new()
+            .with_inbound("resolved")
+            .with_transport("udp");
         let got = engine.exchange(&ctx, &req).await.expect("exchange");
         assert_eq!(got, resp);
     }

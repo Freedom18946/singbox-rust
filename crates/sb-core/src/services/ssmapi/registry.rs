@@ -87,4 +87,3 @@ mod tests {
         assert!(get_managed_ssm_server("ss-in").is_none());
     }
 }
-

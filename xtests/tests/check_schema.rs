@@ -14,7 +14,10 @@ fn check_json_shape() {
             .args(["build", "-p", "app"])
             .status()
             .expect("build app");
-        assert!(status.success(), "failed to build app binary for check_schema");
+        assert!(
+            status.success(),
+            "failed to build app binary for check_schema"
+        );
     }
     let out = Command::new(&bin)
         .current_dir(env!("CARGO_MANIFEST_DIR"))

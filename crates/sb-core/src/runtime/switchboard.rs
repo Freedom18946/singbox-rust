@@ -356,7 +356,11 @@ impl SwitchboardBuilder {
 
                 #[async_trait::async_trait]
                 impl OutboundConnector for DirectPassthroughConnector {
-                    async fn dial(&self, target: Target, opts: DialOpts) -> AdapterResult<BoxedStream> {
+                    async fn dial(
+                        &self,
+                        target: Target,
+                        opts: DialOpts,
+                    ) -> AdapterResult<BoxedStream> {
                         if target.kind != TransportKind::Tcp {
                             return Err(AdapterError::UnsupportedProtocol(
                                 "Direct outbound UDP is not implemented in switchboard".into(),

@@ -537,8 +537,13 @@ async fn test_selectorgroup_loadbalancing_modes() {
     assert_eq!(lc_selector.mode, SelectMode::LeastConnections);
 
     // Test random mode
-    let random_selector =
-        SelectorGroup::new_load_balancer("random".to_string(), members, SelectMode::Random, None, None);
+    let random_selector = SelectorGroup::new_load_balancer(
+        "random".to_string(),
+        members,
+        SelectMode::Random,
+        None,
+        None,
+    );
     assert_eq!(random_selector.mode, SelectMode::Random);
 }
 

@@ -275,10 +275,9 @@ mod inner {
                     )
                     .map_err(|e| anyhow::anyhow!("Failed to load private key: {}", e))?
                 };
-                let key_with_hash = russh_keys::key::PrivateKeyWithHashAlg::new(
-                    Arc::new(private_key),
-                    None,
-                ).map_err(|e| anyhow::anyhow!("Failed to create key hash alg: {}", e))?;
+                let key_with_hash =
+                    russh_keys::key::PrivateKeyWithHashAlg::new(Arc::new(private_key), None)
+                        .map_err(|e| anyhow::anyhow!("Failed to create key hash alg: {}", e))?;
                 session
                     .authenticate_publickey(&config.username, key_with_hash)
                     .await
@@ -354,9 +353,7 @@ mod inner {
     }
 
     impl SshConnector {
-        pub(super) async fn get_or_create_connection(
-            &self,
-        ) -> anyhow::Result<Arc<SshConnection>> {
+        pub(super) async fn get_or_create_connection(&self) -> anyhow::Result<Arc<SshConnection>> {
             let pool_size = self.config.connection_pool_size.unwrap_or(4).max(1);
             let mut pool = self.pool.lock().await;
             if pool.connections.len() < pool_size {

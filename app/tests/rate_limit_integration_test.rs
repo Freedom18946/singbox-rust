@@ -59,7 +59,8 @@ async fn start_echo_server() -> Option<SocketAddr> {
             if matches!(
                 err.kind(),
                 io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) || err.to_string().contains("Operation not permitted") {
+            ) || err.to_string().contains("Operation not permitted")
+            {
                 eprintln!("Skipping rate limit tests: cannot bind echo server ({err})");
                 return None;
             }
@@ -119,7 +120,8 @@ async fn start_trojan_server_with_rate_limit(
             if matches!(
                 err.kind(),
                 io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) || err.to_string().contains("Operation not permitted") {
+            ) || err.to_string().contains("Operation not permitted")
+            {
                 eprintln!("Skipping rate limit tests: cannot bind Trojan server ({err})");
                 return None;
             }
@@ -186,7 +188,8 @@ async fn start_ss_server_with_rate_limit(
             if matches!(
                 err.kind(),
                 io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) || err.to_string().contains("Operation not permitted") {
+            ) || err.to_string().contains("Operation not permitted")
+            {
                 eprintln!("Skipping rate limit tests: cannot bind SS server ({err})");
                 return None;
             }
@@ -301,12 +304,13 @@ async fn test_trojan_high_load_rate_limiting() {
                             {
                                 Ok(Ok(_)) => (i, true, false),
                                 Ok(Err(e)) => {
-                                    let constrained = matches!(
-                                        e.kind(),
-                                        io::ErrorKind::ConnectionReset
-                                            | io::ErrorKind::BrokenPipe
-                                            | io::ErrorKind::PermissionDenied
-                                    ) || is_constrained_dial_error_str(&e.to_string());
+                                    let constrained =
+                                        matches!(
+                                            e.kind(),
+                                            io::ErrorKind::ConnectionReset
+                                                | io::ErrorKind::BrokenPipe
+                                                | io::ErrorKind::PermissionDenied
+                                        ) || is_constrained_dial_error_str(&e.to_string());
                                     (i, false, constrained)
                                 }
                                 Err(_) => (i, false, false),
@@ -431,12 +435,13 @@ async fn test_shadowsocks_high_load_rate_limiting() {
                         {
                             Ok(Ok(_)) => (i, true, false),
                             Ok(Err(e)) => {
-                                let constrained = matches!(
-                                    e.kind(),
-                                    io::ErrorKind::ConnectionReset
-                                        | io::ErrorKind::BrokenPipe
-                                        | io::ErrorKind::PermissionDenied
-                                ) || is_constrained_dial_error_str(&e.to_string());
+                                let constrained =
+                                    matches!(
+                                        e.kind(),
+                                        io::ErrorKind::ConnectionReset
+                                            | io::ErrorKind::BrokenPipe
+                                            | io::ErrorKind::PermissionDenied
+                                    ) || is_constrained_dial_error_str(&e.to_string());
                                 (i, false, constrained)
                             }
                             Err(_) => (i, false, false),

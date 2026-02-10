@@ -72,16 +72,17 @@ impl OutboundConnector for HysteriaConnector {
         let alpn_bytes: Vec<Vec<u8>> = if self.cfg.alpn.is_empty() {
             vec![b"hysteria".to_vec()]
         } else {
-            self.cfg.alpn.iter().map(|s| s.as_bytes().to_vec()).collect()
+            self.cfg
+                .alpn
+                .iter()
+                .map(|s| s.as_bytes().to_vec())
+                .collect()
         };
 
-        let quic_cfg = super::quic_util::QuicConfig::new(
-            self.cfg.server.clone(),
-            self.cfg.port,
-        )
-        .with_alpn(alpn_bytes)
-        .with_allow_insecure(self.cfg.skip_cert_verify)
-        .with_sni(self.cfg.sni.clone());
+        let quic_cfg = super::quic_util::QuicConfig::new(self.cfg.server.clone(), self.cfg.port)
+            .with_alpn(alpn_bytes)
+            .with_allow_insecure(self.cfg.skip_cert_verify)
+            .with_sni(self.cfg.sni.clone());
 
         // Establish QUIC connection
         tracing::debug!(
@@ -349,8 +350,8 @@ mod tests {
         handshake.put_u8(0x01); // version
         handshake.put_u32(100); // up_mbps
         handshake.put_u32(200); // down_mbps
-        handshake.put_u8(0);    // no auth
-        handshake.put_u8(0);    // no obfs
+        handshake.put_u8(0); // no auth
+        handshake.put_u8(0); // no obfs
 
         assert_eq!(handshake.len(), 1 + 8 + 1 + 1);
     }

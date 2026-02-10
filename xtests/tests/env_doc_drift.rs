@@ -13,7 +13,7 @@ fn env_vars_in_docs_match_code_refs() {
             .join("environment-variables.md"),
     )
     .or_else(|_| fs::read_to_string(workspace_root.join("docs").join("ENV_VARS.md"))) // fallback for backward compatibility
-        .expect("environment-variables.md");
+    .expect("environment-variables.md");
     let mut docs = BTreeSet::new();
 
     // Simple pattern matching without regex

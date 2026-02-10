@@ -1514,8 +1514,11 @@ impl DnsUpstream for ResolvedTransportUpstream {
 
     async fn health_check(&self) -> bool {
         matches!(
-            tokio::time::timeout(Duration::from_secs(5), self.query("dns.google", RecordType::A))
-                .await,
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                self.query("dns.google", RecordType::A)
+            )
+            .await,
             Ok(Ok(_))
         )
     }
@@ -2927,10 +2930,7 @@ mod hosts_upstream_tests {
         let mut entries = HashMap::new();
         entries.insert(
             "dual.com".to_string(),
-            vec![
-                "1.2.3.4".parse().unwrap(),
-                "2001:db8::1".parse().unwrap(),
-            ],
+            vec!["1.2.3.4".parse().unwrap(), "2001:db8::1".parse().unwrap()],
         );
         let upstream = HostsUpstream::new("hosts".to_string(), entries, &[]);
 
@@ -2978,10 +2978,7 @@ mod hosts_upstream_tests {
     #[tokio::test]
     async fn hosts_case_insensitive_lookup() {
         let mut entries = HashMap::new();
-        entries.insert(
-            "example.com".to_string(),
-            vec!["1.2.3.4".parse().unwrap()],
-        );
+        entries.insert("example.com".to_string(), vec!["1.2.3.4".parse().unwrap()]);
         let upstream = HostsUpstream::new("hosts".to_string(), entries, &[]);
         let answer = upstream.query("EXAMPLE.COM", RecordType::A).await.unwrap();
         assert_eq!(answer.ips.len(), 1);

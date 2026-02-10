@@ -160,10 +160,7 @@ pub async fn update_user(
 }
 
 /// DELETE /server/v1/users/{username} - Delete user.
-pub async fn delete_user(
-    State(state): State<ApiState>,
-    Path(username): Path<String>,
-) -> Response {
+pub async fn delete_user(State(state): State<ApiState>, Path(username): Path<String>) -> Response {
     if !state.user_manager.contains(&username) {
         return StatusCode::NOT_FOUND.into_response();
     }

@@ -417,7 +417,8 @@ async fn geodata_update(
         .await
         .with_context(|| format!("create dir {}", dest.display()))?;
 
-    let need_http = file_url_to_path(geoip_url).is_none() || file_url_to_path(geosite_url).is_none();
+    let need_http =
+        file_url_to_path(geoip_url).is_none() || file_url_to_path(geosite_url).is_none();
     let client = if need_http {
         // Avoid crashing the whole process if platform TLS stack initialization panics.
         let built = std::panic::catch_unwind(|| {

@@ -72,7 +72,11 @@ struct LegacyEndpointCache {
     global_uplink: i64,
     #[serde(skip_serializing_if = "is_zero", default, rename = "globalDownlink")]
     global_downlink: i64,
-    #[serde(skip_serializing_if = "is_zero", default, rename = "globalUplinkPackets")]
+    #[serde(
+        skip_serializing_if = "is_zero",
+        default,
+        rename = "globalUplinkPackets"
+    )]
     global_uplink_packets: i64,
     #[serde(
         skip_serializing_if = "is_zero",
@@ -85,9 +89,17 @@ struct LegacyEndpointCache {
     #[serde(skip_serializing_if = "is_zero", default, rename = "globalUDPSessions")]
     global_udp_sessions: i64,
 
-    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userUplink")]
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userUplink"
+    )]
     user_uplink: BTreeMap<String, i64>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userDownlink")]
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userDownlink"
+    )]
     user_downlink: BTreeMap<String, i64>,
     #[serde(
         skip_serializing_if = "BTreeMap::is_empty",
@@ -101,9 +113,17 @@ struct LegacyEndpointCache {
         rename = "userDownlinkPackets"
     )]
     user_downlink_packets: BTreeMap<String, i64>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userTCPSessions")]
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userTCPSessions"
+    )]
     user_tcp_sessions: BTreeMap<String, i64>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty", default, rename = "userUDPSessions")]
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userUDPSessions"
+    )]
     user_udp_sessions: BTreeMap<String, i64>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     users: BTreeMap<String, String>,
@@ -468,7 +488,11 @@ impl SsmapiService {
             all_users.extend(endpoint_cache.users.keys().cloned());
 
             for username in all_users {
-                let uplink = endpoint_cache.user_uplink.get(&username).copied().unwrap_or(0);
+                let uplink = endpoint_cache
+                    .user_uplink
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
                 let downlink = endpoint_cache
                     .user_downlink
                     .get(&username)
@@ -515,8 +539,7 @@ impl SsmapiService {
 
             // Restore users map (push to inbound; do not prune traffic, Go parity).
             if !endpoint_cache.users.is_empty() {
-                let users_map: HashMap<String, String> =
-                    endpoint_cache.users.into_iter().collect();
+                let users_map: HashMap<String, String> = endpoint_cache.users.into_iter().collect();
                 let _ = ctx.user_manager.set_users(users_map);
             }
         }
@@ -735,7 +758,8 @@ impl Service for SsmapiService {
                                     endpoint_cache.global_uplink = global.uplink_bytes;
                                     endpoint_cache.global_downlink = global.downlink_bytes;
                                     endpoint_cache.global_uplink_packets = global.uplink_packets;
-                                    endpoint_cache.global_downlink_packets = global.downlink_packets;
+                                    endpoint_cache.global_downlink_packets =
+                                        global.downlink_packets;
                                     endpoint_cache.global_tcp_sessions = global.tcp_sessions;
                                     endpoint_cache.global_udp_sessions = global.udp_sessions;
                                     for mut user in ctx.user_manager.list() {
@@ -954,9 +978,7 @@ impl Service for SsmapiService {
 
                 Ok(())
             }
-            StartStage::PostStart => {
-                Ok(())
-            }
+            StartStage::PostStart => Ok(()),
             StartStage::Started => {
                 tracing::debug!(
                     service = "ssm-api",
@@ -1054,12 +1076,12 @@ mod tests {
 
         (
             ServiceIR {
-            ty: ServiceType::Ssmapi,
-            tag: Some("test-ssmapi".to_string()),
-            listen: Some("127.0.0.1".to_string()),
-            listen_port: Some(port),
-            servers: Some(servers),
-            ..Default::default()
+                ty: ServiceType::Ssmapi,
+                tag: Some("test-ssmapi".to_string()),
+                listen: Some("127.0.0.1".to_string()),
+                listen_port: Some(port),
+                servers: Some(servers),
+                ..Default::default()
             },
             port,
         )

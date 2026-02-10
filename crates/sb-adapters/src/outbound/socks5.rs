@@ -428,9 +428,7 @@ impl Socks5Connector {
                 },
                 IpAddr::V6(_) => match UdpSocket::bind("[::1]:0").await {
                     Ok(s) => s,
-                    Err(_) => UdpSocket::bind("[::]:0")
-                        .await
-                        .map_err(AdapterError::Io)?,
+                    Err(_) => UdpSocket::bind("[::]:0").await.map_err(AdapterError::Io)?,
                 },
             }
         } else {

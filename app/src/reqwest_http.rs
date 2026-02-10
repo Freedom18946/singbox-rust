@@ -19,8 +19,7 @@ impl ReqwestHttpClient {
     ///
     /// Returns `reqwest::Error` if the underlying client cannot be built.
     pub fn new() -> Result<Self, reqwest::Error> {
-        let client = reqwest::Client::builder()
-            .build()?;
+        let client = reqwest::Client::builder().build()?;
         Ok(Self { client })
     }
 }

@@ -302,15 +302,21 @@ impl OutboundConnector for ShadowsocksConnector {
                     let io_stream: sb_transport::dialer::IoStream = mux_dialer
                         .connect(&server_addr.ip().to_string(), server_addr.port())
                         .await
-                        .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
+                        .map_err(|e| {
+                            AdapterError::Other(format!("Multiplex dial failed: {}", e))
+                        })?;
                     let mut stream: BoxedStream = Box::new(io_stream) as BoxedStream;
-                    stream.write_all(&addr_payload).await.map_err(AdapterError::Io)?;
+                    stream
+                        .write_all(&addr_payload)
+                        .await
+                        .map_err(AdapterError::Io)?;
                     Ok(stream)
                 } else {
                     // Standard TCP connection (no multiplex): create a single encrypted tunnel
                     // and send one address header for this connection.
-                    let timeout =
-                        std::time::Duration::from_secs(self.config.connect_timeout_sec.unwrap_or(30));
+                    let timeout = std::time::Duration::from_secs(
+                        self.config.connect_timeout_sec.unwrap_or(30),
+                    );
                     let tcp_stream = tokio::time::timeout(timeout, TcpStream::connect(server_addr))
                         .await
                         .with_context(|| {
@@ -334,7 +340,10 @@ impl OutboundConnector for ShadowsocksConnector {
                         .await?,
                     );
 
-                    tunnel.write_all(&addr_payload).await.map_err(AdapterError::Io)?;
+                    tunnel
+                        .write_all(&addr_payload)
+                        .await
+                        .map_err(AdapterError::Io)?;
                     Ok(tunnel)
                 }
             }
@@ -457,12 +466,7 @@ fn hkdf_subkey(master_key: &[u8], salt: &[u8], out_len: usize) -> Result<Vec<u8>
 }
 
 #[cfg(feature = "adapter-shadowsocks")]
-fn aead_encrypt(
-    cipher: &CipherMethod,
-    key: &[u8],
-    nonce_ctr: u64,
-    data: &[u8],
-) -> Result<Vec<u8>> {
+fn aead_encrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
     let nonce = ss_nonce(nonce_ctr);
     match cipher {
         CipherMethod::Aes256Gcm => {
@@ -479,12 +483,7 @@ fn aead_encrypt(
 }
 
 #[cfg(feature = "adapter-shadowsocks")]
-fn aead_decrypt(
-    cipher: &CipherMethod,
-    key: &[u8],
-    nonce_ctr: u64,
-    data: &[u8],
-) -> Result<Vec<u8>> {
+fn aead_decrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
     let nonce = ss_nonce(nonce_ctr);
     match cipher {
         CipherMethod::Aes256Gcm => {
@@ -501,10 +500,7 @@ fn aead_decrypt(
 }
 
 #[cfg(feature = "adapter-shadowsocks")]
-async fn read_exact_n(
-    r: &mut (impl tokio::io::AsyncRead + Unpin),
-    n: usize,
-) -> Result<Vec<u8>> {
+async fn read_exact_n(r: &mut (impl tokio::io::AsyncRead + Unpin), n: usize) -> Result<Vec<u8>> {
     let mut buf = vec![0u8; n];
     r.read_exact(&mut buf).await.map_err(AdapterError::Io)?;
     Ok(buf)
@@ -570,7 +566,10 @@ impl ShadowsocksTunnelStream {
         // Client salt + subkey (client -> server)
         let mut csalt = vec![0u8; salt_len];
         rand::thread_rng().fill_bytes(&mut csalt);
-        tcp_stream.write_all(&csalt).await.map_err(AdapterError::Io)?;
+        tcp_stream
+            .write_all(&csalt)
+            .await
+            .map_err(AdapterError::Io)?;
         let c_subkey = hkdf_subkey(&master_key, &csalt, cipher.key_size())?;
 
         // Write one empty chunk to ensure the server proceeds and sends back server salt.
@@ -594,7 +593,9 @@ impl ShadowsocksTunnelStream {
         let key_read = s_subkey.clone();
         let task_decrypt = tokio::spawn(async move {
             let mut rnonce = 0u64;
-            while let Ok(payload) = read_aead_chunk(&cipher_read, &key_read, &mut rnonce, &mut tcp_r).await {
+            while let Ok(payload) =
+                read_aead_chunk(&cipher_read, &key_read, &mut rnonce, &mut tcp_r).await
+            {
                 if clear_w.write_all(&payload).await.is_err() {
                     break;
                 }
@@ -610,7 +611,16 @@ impl ShadowsocksTunnelStream {
                 match clear_r.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if write_aead_chunk(&cipher_write, &key_write, &mut wnonce, &mut tcp_w, &buf[..n]).await.is_err() {
+                        if write_aead_chunk(
+                            &cipher_write,
+                            &key_write,
+                            &mut wnonce,
+                            &mut tcp_w,
+                            &buf[..n],
+                        )
+                        .await
+                        .is_err()
+                        {
                             break;
                         }
                     }
@@ -693,7 +703,11 @@ impl ShadowsocksTunnelDialer {
 #[cfg(feature = "adapter-shadowsocks")]
 #[async_trait::async_trait]
 impl sb_transport::dialer::Dialer for ShadowsocksTunnelDialer {
-    async fn connect(&self, host: &str, port: u16) -> std::result::Result<sb_transport::dialer::IoStream, sb_transport::dialer::DialError> {
+    async fn connect(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> std::result::Result<sb_transport::dialer::IoStream, sb_transport::dialer::DialError> {
         let ip: std::net::IpAddr = host
             .parse()
             .map_err(|_| sb_transport::dialer::DialError::Other(format!("invalid host: {host}")))?;

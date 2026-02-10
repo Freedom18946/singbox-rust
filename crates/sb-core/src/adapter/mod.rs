@@ -93,11 +93,7 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
     /// Default implementation delegates to `connect()` and boxes the TcpStream.
     /// Encrypted protocol adapters should override this to return their layered stream.
     #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> std::io::Result<sb_transport::IoStream> {
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
         let stream = self.connect(host, port).await?;
         Ok(Box::new(stream))
     }
@@ -125,7 +121,10 @@ pub trait OutboundGroup: Send + Sync {
     /// All members' health status: (tag, is_alive, rtt_ms)
     fn members_health(&self) -> Vec<(String, bool, u64)>;
     /// Select a specific outbound (only effective in Manual mode)
-    fn select_outbound<'a>(&'a self, tag: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>>;
+    fn select_outbound<'a>(
+        &'a self,
+        tag: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>>;
 }
 
 /// UDP session for datagram-based outbound protocols (e.g. QUIC-based).
@@ -724,14 +723,15 @@ impl Bridge {
             Arc::new(OutboundRegistryHandle::new(reg))
         };
 
-        let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
-            Arc::new(
-                bridge
-                    .endpoints
-                    .iter()
-                    .map(|ep| (ep.tag().to_string(), ep.clone()))
-                    .collect(),
-            );
+        let endpoints_map: Arc<
+            std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>,
+        > = Arc::new(
+            bridge
+                .endpoints
+                .iter()
+                .map(|ep| (ep.tag().to_string(), ep.clone()))
+                .collect(),
+        );
 
         // Best-effort DNSRouter for services (e.g., DERP /bootstrap-dns).
         let dns_router = crate::dns::config_builder::build_dns_components(ir, None)
@@ -851,7 +851,10 @@ impl std::fmt::Debug for Bridge {
                 "udp_factories",
                 &format!("{} factories", self.udp_factories.len()),
             )
-            .field("outbound_deps", &format!("{} deps", self.outbound_deps.len()))
+            .field(
+                "outbound_deps",
+                &format!("{} deps", self.outbound_deps.len()),
+            )
             .field("endpoints", &format!("{} endpoints", self.endpoints.len()))
             .field("services", &format!("{} services", self.services.len()))
             .finish()

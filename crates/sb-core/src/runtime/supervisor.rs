@@ -203,7 +203,9 @@ impl Supervisor {
             let state_guard = state.read().await;
             if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed, rolling back");
-                for ib in &inbounds { ib.request_shutdown(); }
+                for ib in &inbounds {
+                    ib.request_shutdown();
+                }
                 stop_endpoints(&endpoints);
                 stop_services(&services);
                 shutdown_context(&state_guard.context);
@@ -211,7 +213,9 @@ impl Supervisor {
             }
             if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed, rolling back");
-                for ib in &inbounds { ib.request_shutdown(); }
+                for ib in &inbounds {
+                    ib.request_shutdown();
+                }
                 stop_endpoints(&endpoints);
                 stop_services(&services);
                 shutdown_context(&state_guard.context);
@@ -341,7 +345,9 @@ impl Supervisor {
             let state_guard = state.read().await;
             if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed (no-router), rolling back");
-                for ib in &inbounds { ib.request_shutdown(); }
+                for ib in &inbounds {
+                    ib.request_shutdown();
+                }
                 stop_endpoints(&endpoints);
                 stop_services(&services);
                 shutdown_context(&state_guard.context);
@@ -349,7 +355,9 @@ impl Supervisor {
             }
             if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed (no-router), rolling back");
-                for ib in &inbounds { ib.request_shutdown(); }
+                for ib in &inbounds {
+                    ib.request_shutdown();
+                }
                 stop_endpoints(&endpoints);
                 stop_services(&services);
                 shutdown_context(&state_guard.context);
@@ -1139,9 +1147,10 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> 
         // Use ensure_fallback_direct pattern: register a DirectConnector placeholder
         // so OutboundManager knows this tag exists for dependency/default resolution.
         ctx.outbound_manager
-            .add_connector(name.clone(), std::sync::Arc::new(
-                crate::outbound::direct_connector::DirectConnector::new()
-            ))
+            .add_connector(
+                name.clone(),
+                std::sync::Arc::new(crate::outbound::direct_connector::DirectConnector::new()),
+            )
             .await;
     }
 
@@ -1154,15 +1163,21 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> 
 
     // Validate dependency topology (cycle detection)
     let all_tags: Vec<String> = bridge.outbounds.iter().map(|(n, _, _)| n.clone()).collect();
-    if let Err(cycle_err) = crate::outbound::manager::validate_and_sort(&all_tags, &bridge.outbound_deps) {
+    if let Err(cycle_err) =
+        crate::outbound::manager::validate_and_sort(&all_tags, &bridge.outbound_deps)
+    {
         return Err(anyhow::anyhow!("outbound {}", cycle_err));
     }
 
     // Resolve default outbound (Go parity: route.final → first → "direct")
     let route_opts = ctx.network.route_options();
-    let default_tag = route_opts.final_outbound.as_deref()
+    let default_tag = route_opts
+        .final_outbound
+        .as_deref()
         .or(route_opts.default_outbound.as_deref());
-    ctx.outbound_manager.resolve_default(default_tag).await
+    ctx.outbound_manager
+        .resolve_default(default_tag)
+        .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
     tracing::info!(

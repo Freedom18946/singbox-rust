@@ -27,6 +27,9 @@ fn cli_help_has_core_flags() {
         String::from_utf8_lossy(&out.stderr)
     );
     let help = String::from_utf8_lossy(&out.stdout);
-    assert!(help.contains("--schema-v2-validate"), "missing --schema-v2-validate");
+    assert!(
+        help.contains("--schema-v2-validate"),
+        "missing --schema-v2-validate"
+    );
     assert!(help.contains("--deny-unknown"), "missing --deny-unknown");
 }

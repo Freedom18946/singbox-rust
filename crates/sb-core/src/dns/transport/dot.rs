@@ -121,12 +121,9 @@ impl DotTransport {
                 SocketAddr::V4(_) => socket2::Domain::IPV4,
                 SocketAddr::V6(_) => socket2::Domain::IPV6,
             };
-            let socket = socket2::Socket::new(
-                domain,
-                socket2::Type::STREAM,
-                Some(socket2::Protocol::TCP),
-            )
-            .context("DoT: create TCP socket")?;
+            let socket =
+                socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))
+                    .context("DoT: create TCP socket")?;
 
             // Best-effort bind to device; ignore errors to match Go behavior.
             let _ = socket.bind_device(Some(iface.as_bytes()));

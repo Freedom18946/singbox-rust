@@ -259,7 +259,12 @@ impl Hysteria2Inbound {
         outbounds: &OutboundRegistryHandle,
         host: &str,
         port: u16,
-    ) -> io::Result<(IoStream, Option<String>, sb_core::router::rules::Decision, Option<String>)> {
+    ) -> io::Result<(
+        IoStream,
+        Option<String>,
+        sb_core::router::rules::Decision,
+        Option<String>,
+    )> {
         let ctx = RouteCtx {
             host: Some(host),
             ip: None,
@@ -273,7 +278,9 @@ impl Hysteria2Inbound {
             OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
         };
         let decision = match &target {
-            OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+            OutRouteTarget::Named(name) => {
+                sb_core::router::rules::Decision::Proxy(Some(name.clone()))
+            }
             OutRouteTarget::Kind(sb_core::outbound::OutboundKind::Direct) => {
                 sb_core::router::rules::Decision::Direct
             }

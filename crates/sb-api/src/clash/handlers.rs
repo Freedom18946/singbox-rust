@@ -117,7 +117,9 @@ fn parse_url_components(url: &str) -> (&str, u16, &str) {
         .map(|(h, p)| (h, p.parse::<u16>().unwrap_or(default_port)))
         .unwrap_or((host_port, default_port));
 
-    let path = if path.is_empty() { "/" } else {
+    let path = if path.is_empty() {
+        "/"
+    } else {
         // path doesn't include the leading '/', reconstruct from original
         let idx = url.find(host_port).unwrap_or(0) + host_port.len();
         &url[idx..]
@@ -197,15 +199,19 @@ fn lookup_proxy_history(
     };
     // For groups, look up by currently selected member (Go parity)
     let lookup_tag = match outbound {
-        Some(OutboundImpl::Connector(c)) => {
-            c.as_group().map(|g| g.now()).unwrap_or_else(|| tag.to_string())
-        }
+        Some(OutboundImpl::Connector(c)) => c
+            .as_group()
+            .map(|g| g.now())
+            .unwrap_or_else(|| tag.to_string()),
         _ => tag.to_string(),
     };
     match storage.load(&lookup_tag) {
         Some(entry) => {
             let time_str = humantime::format_rfc3339(entry.time).to_string();
-            vec![crate::types::DelayHistory { time: time_str, delay: entry.delay }]
+            vec![crate::types::DelayHistory {
+                time: time_str,
+                delay: entry.delay,
+            }]
         }
         None => vec![],
     }
@@ -341,13 +347,10 @@ pub async fn get_proxy(
     Path(proxy_name): Path<String>,
 ) -> impl IntoResponse {
     // Check outbound registry
-    let outbound_opt = state
-        .outbound_registry
-        .as_ref()
-        .and_then(|registry| {
-            let reg = registry.read();
-            reg.get(&proxy_name).cloned()
-        });
+    let outbound_opt = state.outbound_registry.as_ref().and_then(|registry| {
+        let reg = registry.read();
+        reg.get(&proxy_name).cloned()
+    });
 
     if let Some(outbound) = outbound_opt {
         let proxy_type = infer_proxy_type(&proxy_name, Some(&outbound));
@@ -374,7 +377,11 @@ pub async fn get_proxy(
             }
         }
 
-        return (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response();
+        return (
+            StatusCode::OK,
+            Json(serde_json::to_value(proxy).unwrap_or_default()),
+        )
+            .into_response();
     }
 
     // Check built-in proxies
@@ -391,7 +398,11 @@ pub async fn get_proxy(
                 delay: Some(0),
                 extra: HashMap::new(),
             };
-            (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(proxy).unwrap_or_default()),
+            )
+                .into_response()
         }
         REJECT_PROXY_NAME => {
             let proxy = Proxy {
@@ -405,7 +416,11 @@ pub async fn get_proxy(
                 delay: None,
                 extra: HashMap::new(),
             };
-            (StatusCode::OK, Json(serde_json::to_value(proxy).unwrap_or_default())).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(proxy).unwrap_or_default()),
+            )
+                .into_response()
         }
         _ => (
             StatusCode::NOT_FOUND,
@@ -489,10 +504,13 @@ pub async fn get_proxy_delay(
     match http_url_test(outbound_opt.as_ref(), url, timeout).await {
         Ok(delay) => {
             if let Some(h) = &state.urltest_history {
-                h.store(&proxy_name, sb_core::context::URLTestHistory {
-                    time: std::time::SystemTime::now(),
-                    delay,
-                });
+                h.store(
+                    &proxy_name,
+                    sb_core::context::URLTestHistory {
+                        time: std::time::SystemTime::now(),
+                        delay,
+                    },
+                );
             }
             Json(json!({"delay": delay})).into_response()
         }
@@ -628,18 +646,20 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
 
     // Determine allow-lan from inbound listen addresses
     let allow_lan = if let Some(config) = &state.global_config {
-        config.inbounds.iter().any(|ib| {
-            ib.listen == "0.0.0.0" || ib.listen == "::"
-        })
+        config
+            .inbounds
+            .iter()
+            .any(|ib| ib.listen == "0.0.0.0" || ib.listen == "::")
     } else {
         false
     };
 
     // Build tun info from config IR
     let tun = if let Some(config) = &state.global_config {
-        let tun_ib = config.inbounds.iter().find(|ib| {
-            matches!(ib.ty, sb_config::ir::InboundType::Tun)
-        });
+        let tun_ib = config
+            .inbounds
+            .iter()
+            .find(|ib| matches!(ib.ty, sb_config::ir::InboundType::Tun));
         if let Some(tun_ib) = tun_ib {
             json!({
                 "enable": true,
@@ -1329,42 +1349,43 @@ pub async fn get_meta_group_delay(
     let timeout_dur = std::time::Duration::from_millis(timeout_ms);
 
     // Collect group members
-    let members: Vec<(String, Option<OutboundImpl>)> = if let Some(registry) = &state.outbound_registry {
-        let reg = registry.read();
-        if let Some(outbound) = reg.get(&group_name) {
-            if let OutboundImpl::Connector(c) = outbound {
-                if let Some(group) = c.as_group() {
-                    group
-                        .all()
-                        .into_iter()
-                        .map(|tag| {
-                            let ob = reg.get(&tag).cloned();
-                            (tag, ob)
-                        })
-                        .collect()
+    let members: Vec<(String, Option<OutboundImpl>)> =
+        if let Some(registry) = &state.outbound_registry {
+            let reg = registry.read();
+            if let Some(outbound) = reg.get(&group_name) {
+                if let OutboundImpl::Connector(c) = outbound {
+                    if let Some(group) = c.as_group() {
+                        group
+                            .all()
+                            .into_iter()
+                            .map(|tag| {
+                                let ob = reg.get(&tag).cloned();
+                                (tag, ob)
+                            })
+                            .collect()
+                    } else {
+                        // Not a group — test the single outbound
+                        vec![(group_name.clone(), Some(outbound.clone()))]
+                    }
                 } else {
-                    // Not a group — test the single outbound
                     vec![(group_name.clone(), Some(outbound.clone()))]
                 }
+            } else if group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME {
+                vec![]
             } else {
-                vec![(group_name.clone(), Some(outbound.clone()))]
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({"message": format!("Group '{}' not found", group_name)})),
+                )
+                    .into_response();
             }
-        } else if group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME {
-            vec![]
         } else {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({"message": format!("Group '{}' not found", group_name)})),
             )
                 .into_response();
-        }
-    } else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({"message": format!("Group '{}' not found", group_name)})),
-        )
-            .into_response();
-    };
+        };
 
     // Concurrently test all members
     let mut handles = Vec::with_capacity(members.len());
@@ -1375,10 +1396,13 @@ pub async fn get_meta_group_delay(
             match http_url_test(outbound.as_ref(), &url, timeout_dur).await {
                 Ok(d) => {
                     if let Some(h) = &history_store {
-                        h.store(&tag, sb_core::context::URLTestHistory {
-                            time: std::time::SystemTime::now(),
-                            delay: d,
-                        });
+                        h.store(
+                            &tag,
+                            sb_core::context::URLTestHistory {
+                                time: std::time::SystemTime::now(),
+                                delay: d,
+                            },
+                        );
                     }
                     (tag, d as i32)
                 }
@@ -1412,7 +1436,9 @@ pub async fn get_meta_memory(
 ) -> impl IntoResponse {
     if let Some(ws) = ws {
         return ws
-            .on_upgrade(move |socket| crate::clash::websocket::handle_memory_websocket_inner(socket, state))
+            .on_upgrade(move |socket| {
+                crate::clash::websocket::handle_memory_websocket_inner(socket, state)
+            })
             .into_response();
     }
 

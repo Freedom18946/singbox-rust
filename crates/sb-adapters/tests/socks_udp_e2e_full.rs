@@ -166,7 +166,9 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
     // Client socket binds locally and sends a SOCKS5-UDP datagram to inbound
     let cli = match UdpSocket::bind(("127.0.0.1", 0)).await {
         Ok(v) => v,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) => {
+        Err(e)
+            if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) =>
+        {
             eprintln!("skipping socks udp full e2e test: PermissionDenied binding client socket");
             return Ok(());
         }

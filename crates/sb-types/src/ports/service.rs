@@ -133,10 +133,21 @@ mod tests {
         // Verify Service can be used as trait object
         struct DummyService;
         impl Service for DummyService {
-            fn service_type(&self) -> &str { "dummy" }
-            fn tag(&self) -> &str { "svc" }
-            fn start(&self, _stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> { Ok(()) }
-            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> { Ok(()) }
+            fn service_type(&self) -> &str {
+                "dummy"
+            }
+            fn tag(&self) -> &str {
+                "svc"
+            }
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
         }
 
         let svc: Box<dyn Service> = Box::new(DummyService);
@@ -150,8 +161,15 @@ mod tests {
     fn lifecycle_trait_object_safety() {
         struct DummyLifecycle;
         impl Lifecycle for DummyLifecycle {
-            fn start(&self, _stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> { Ok(()) }
-            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> { Ok(()) }
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
         }
 
         let lc: Box<dyn Lifecycle> = Box::new(DummyLifecycle);

@@ -41,10 +41,8 @@ fn should_skip_network_tests() -> bool {
         }
     };
 
-    let connect_result = std::net::TcpStream::connect_timeout(
-        &addr,
-        std::time::Duration::from_millis(200),
-    );
+    let connect_result =
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200));
     drop(listener);
 
     match connect_result {
@@ -674,11 +672,7 @@ async fn wait_for_admin_ready(token: &str, admin_port: u16) -> bool {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
 
     while tokio::time::Instant::now() < deadline {
-        let resp = client
-            .get(&url)
-            .header("X-Admin-Token", token)
-            .send()
-            .await;
+        let resp = client.get(&url).header("X-Admin-Token", token).send().await;
 
         match resp {
             Ok(r) if r.status().is_success() => {

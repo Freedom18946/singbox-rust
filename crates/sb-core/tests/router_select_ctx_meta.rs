@@ -1,7 +1,7 @@
 #![cfg(feature = "router")]
 
-use sb_core::router::{router_build_index_from_str, RouteCtx, RouterHandle};
 use sb_core::outbound::RouteTarget;
+use sb_core::router::{router_build_index_from_str, RouteCtx, RouterHandle};
 
 #[test]
 fn select_ctx_and_record_with_meta_labels() {

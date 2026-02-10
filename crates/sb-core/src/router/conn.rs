@@ -529,10 +529,7 @@ impl ConnectionManager {
             tracker_id,
             sb_common::conntrack::Network::Tcp,
             metadata.source.parse().unwrap_or_else(|_| {
-                std::net::SocketAddr::new(
-                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                    0,
-                )
+                std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
             }),
             metadata.destination_host.clone(),
             metadata.destination_port,
@@ -775,10 +772,7 @@ impl ConnectionManager {
             tracker_id,
             sb_common::conntrack::Network::Udp,
             metadata.source.parse().unwrap_or_else(|_| {
-                std::net::SocketAddr::new(
-                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                    0,
-                )
+                std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
             }),
             metadata.destination_host.clone(),
             metadata.destination_port,

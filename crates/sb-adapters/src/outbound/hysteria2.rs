@@ -86,8 +86,8 @@ impl OutboundConnector for Hysteria2Connector {
 
             let _span = crate::outbound::span_dial("hysteria2", &target);
 
-            let inner = Hysteria2Inner::new(&self.cfg)
-                .map_err(|e| AdapterError::Other(e.to_string()))?;
+            let inner =
+                Hysteria2Inner::new(&self.cfg).map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let stream = inner
                 .connect(&target.host, target.port)
@@ -105,7 +105,7 @@ impl OutboundConnector for Hysteria2Connector {
 #[cfg(feature = "adapter-hysteria2")]
 mod proto {
     use super::Hysteria2AdapterConfig;
-    use crate::outbound::quic_util::{QuicBidiStream, QuicConfig, quic_connect};
+    use crate::outbound::quic_util::{quic_connect, QuicBidiStream, QuicConfig};
     use quinn::Connection;
     use rand::Rng;
     use sha2::{Digest, Sha256};
@@ -330,10 +330,7 @@ mod proto {
                     Ok(connection) => {
                         let mut pool = self.connection_pool.lock().await;
                         *pool = Some(connection.clone());
-                        tracing::debug!(
-                            attempt,
-                            "hysteria2: QUIC connection established"
-                        );
+                        tracing::debug!(attempt, "hysteria2: QUIC connection established");
                         return Ok(connection);
                     }
                     Err(e) => {
@@ -505,9 +502,7 @@ mod proto {
             let (mut send_stream, mut recv_stream) = connection
                 .open_bi()
                 .await
-                .map_err(|e| {
-                    io::Error::other(format!("Failed to open tunnel stream: {}", e))
-                })?;
+                .map_err(|e| io::Error::other(format!("Failed to open tunnel stream: {}", e)))?;
 
             // Build TCP CONNECT request according to Hysteria2 protocol
             let mut connect_packet = Vec::new();
@@ -553,17 +548,11 @@ mod proto {
             recv_stream
                 .read_exact(&mut response)
                 .await
-                .map_err(|e| {
-                    io::Error::other(format!("Connect response read failed: {}", e))
-                })?;
+                .map_err(|e| io::Error::other(format!("Connect response read failed: {}", e)))?;
 
             match response[0] {
                 0x00 => {
-                    tracing::debug!(
-                        host,
-                        port,
-                        "hysteria2: TCP tunnel established"
-                    );
+                    tracing::debug!(host, port, "hysteria2: TCP tunnel established");
                     Ok((send_stream, recv_stream))
                 }
                 0x01 => Err(io::Error::new(
@@ -587,11 +576,7 @@ mod proto {
 
         // ---- Public connect entry point ----
 
-        pub(super) async fn connect(
-            &self,
-            host: &str,
-            port: u16,
-        ) -> io::Result<QuicBidiStream> {
+        pub(super) async fn connect(&self, host: &str, port: u16) -> io::Result<QuicBidiStream> {
             // Get or create QUIC connection with pooling
             let connection = self.get_connection().await?;
 
