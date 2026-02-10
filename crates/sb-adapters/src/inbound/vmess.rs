@@ -131,7 +131,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 // debug!("vmess: accept-loop heartbeat");
             }
             r = listener.accept() => {
-                let (mut stream, _peer) = match r {
+                let (mut stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
@@ -146,7 +146,9 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 tokio::spawn(async move {
                     // Use &mut *stream to dereference Box<dyn InboundStream>
                     // 使用 &mut *stream 解引用 Box<dyn InboundStream>
-                    if let Err(e) = handle_conn_stream(&cfg_clone, security_clone, &mut *stream).await {
+                    if let Err(e) =
+                        handle_conn_stream(&cfg_clone, security_clone, peer, &mut *stream).await
+                    {
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("vmess", &e);
                         warn!(error=%e, "vmess: session error");
@@ -181,14 +183,16 @@ async fn handle_fallback(
 async fn handle_conn_stream(
     cfg: &VmessInboundConfig,
     security: SecurityMethod,
+    peer: SocketAddr,
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
 ) -> Result<()> {
-    handle_conn(cfg, security, stream).await
+    handle_conn(cfg, security, peer, stream).await
 }
 
 async fn handle_conn(
     cfg: &VmessInboundConfig,
     security: SecurityMethod,
+    peer: SocketAddr,
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
 ) -> Result<()> {
     // Step 1: Read and validate authentication header

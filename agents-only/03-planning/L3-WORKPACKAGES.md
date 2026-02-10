@@ -1,22 +1,23 @@
-# L3 一级工作包规划（Polish / Edge Services）
+# M2.4 服务补全与连接增强（历史 L3 工作包归档）
 
 > **日期**：2026-02-08  
-> **更新**：2026-02-10（L3.1~L3.5 已完成；L3 功能闭环关闭，M3.* 与 L3.3 Linux runtime 验证后补）  
-> **目标**：基于已收集到的差距信息，将 L3.1~L3.5 拆成可交付的一级工作包，明确范围、关键设计选择、验收与依赖。  
-> **输入**：`agents-only/active_context.md`（L3 Scope 表）、`agents-only/05-analysis/L3-PREWORK-INFO.md`（差距与落点）、`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-011/013/014/015）。
+> **更新**：2026-02-10（服务补全已完成并归入 M2.4；L3 仅指质量里程碑）  
+> **目标**：历史规划归档，记录原 L3.1~L3.5 的范围、关键设计选择与验收。当前状态以 `agents-only/workpackage_latest.md` 与 `agents-only/active_context.md` 为准。  
+> **输入**：`agents-only/active_context.md`、`agents-only/05-analysis/L3-PREWORK-INFO.md`、`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-011/013/014/015）。
 
 ---
 
 ## 总体状态与结论（2026-02-10）
 
-- L3.1~L3.5 已全部完成，L3 功能闭环关闭
-- 后补项（不阻塞 L3 关闭）：
-  - L3.3 Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
+- M2.4 服务补全已完成（原 L3.1~L3.4）
+- L2.8 连接增强已完成（原 L3.5）
+- 后补项（不阻塞功能闭环）：
+  - Resolved Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
   - M3.1~M3.3 质量里程碑（测试覆盖/性能基准/稳定验证）
 
 ---
 
-## L3.1 SSMAPI 对齐（PX-011）✅ 已完成
+## M2.4 SSMAPI 对齐（原 L3.1，PX-011）✅ 已完成
 
 **日期**: 2026-02-09
 
@@ -63,7 +64,7 @@
 
 ---
 
-## L3.2 DERP 配置对齐（PX-014）✅ 已完成
+## M2.4 DERP 配置对齐（原 L3.2，PX-014）✅ 已完成
 
 **日期**: 2026-02-09
 
@@ -124,7 +125,7 @@
 
 ---
 
-## L3.3 Resolved 完整化（PX-015）
+## M2.4 Resolved 完整化（原 L3.3，PX-015）
 
 > **状态**：✅ 已完成（2026-02-09，代码 + 单测/编译验收；Linux runtime/system bus 验证待做）  
 > **当前权威摘要**：`agents-only/workpackage_latest.md` + `agents-only/active_context.md` + `agents-only/05-analysis/L3.3-RESOLVED-PREWORK.md#0-当前实现状态快照2026-02-09`
@@ -177,7 +178,7 @@
    - 选项 A（推荐）：Resolve* 完全走 DNSRouter；RESOLVED_STATE 仅用于 Transport（per-link 配置影响 upstream 选择）
    - 选项 B：Resolve* 直接读取 RESOLVED_STATE 并做简化解析（容易偏离 Go）
 
-### 子任务（建议）
+### 历史规划记录（已完成，仅供回溯）
 
 - L3.3.1 ResolveHostname：family -> lookup strategy，返回地址列表
 - L3.3.2 ResolveAddress：PTR 查询（可复用 L2.10 的反向映射/或 DNSRouter exchange）
@@ -185,12 +186,12 @@
 - L3.3.4 Linux-only 行为与错误：平台 gate 与错误信息统一
 - L3.3.5 测试：不依赖真实 D-Bus（以 mock state/router 的单元测试为主）
 
-### 验收标准（最小可验证）
+### 历史验收标准（已完成，仅供回溯）
 
 - Resolve* 方法在 Linux + `service_resolved` feature 下可编译并通过单测
 - ResolveHostname/Address 能返回非空结果（mock DNSRouter/固定响应）
 
-### 主要文件落点（预估）
+### 主要文件落点（已落地）
 
 - `crates/sb-adapters/src/service/resolve1.rs`
 - `crates/sb-adapters/src/service/resolved_impl.rs`（注入与 glue）
@@ -198,7 +199,7 @@
 
 ---
 
-## L3.4 Cache File 深度对齐（PX-013 / PX-009/013）
+## M2.4 Cache File 深度对齐（原 L3.4，PX-013 / PX-009/013）
 
 **状态**: ✅ 已完成（2026-02-09，commit：`fc541ef`）  
 **实现报告**: `agents-only/dump/2026-02-09_report_L3.4-cachefile-impl.md`
@@ -235,7 +236,7 @@
    - 选项 A：保持 file cache（`router/ruleset/remote.rs`）为权威，CacheFileService 不接线（文档说明）
    - 选项 B：ruleset 下载后写入 CacheFileService（需要定义 tag<->url/format 的映射策略）
 
-### 子任务（建议）
+### 历史规划记录（已完成，仅供回溯）
 
 - L3.4.1 IR 扩展：`CacheFileIR.cache_id`
 - L3.4.2 CacheFileService namespace：按 cache_id 分桶（Memory + Persistence）
@@ -243,7 +244,7 @@
 - L3.4.4 ruleset 缓存策略定案并落地（A 或 B）
 - L3.4.5 测试：cache_id 隔离 + debounce（时间可控的 tokio test）
 
-### 验收标准（最小可验证）
+### 历史验收标准（已完成，仅供回溯）
 
 - 配置含 `cache_id` 时，同一 DB 内不同 cache_id 的 mode/selected/expand 不互相覆盖
 - FakeIP counters 的写盘频率显著降低（至少通过测试断言“触发多次 set 但持久化写次数受控”）
@@ -258,7 +259,7 @@
 
 ---
 
-## L3.5 ConnMetadata chain/rule 填充（L2.8 延后项）✅ 已完成
+## L2.8 ConnMetadata chain/rule 填充（原 L3.5 延后项）✅ 已完成
 
 **日期**：2026-02-10
 
@@ -292,7 +293,7 @@
 
 ## 与 M3.*（质量保障）的关系（后补）
 
-L3.1~L3.5 已完成并功能闭环。M3.* 属于质量里程碑，当前 repo 已有资产可复用：
+M2.4 与 L2.8 已完成并功能闭环。M3.* 属于质量里程碑，当前 repo 已有资产可复用：
 - 覆盖盘点：`reports/TEST_COVERAGE.md`
 - bench guard：`scripts/test/bench/guard.sh`（见 `docs/STATUS.md`）
 - 压测/soak：`tests/stress/p0_protocols_stress.rs`

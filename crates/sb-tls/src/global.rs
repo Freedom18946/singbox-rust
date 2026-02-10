@@ -6,16 +6,16 @@
 
 use parking_lot::RwLock;
 use rustls::{ClientConfig, RootCertStore};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-static TLS_OVERRIDE: once_cell::sync::Lazy<RwLock<Option<Arc<ClientConfig>>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(None));
+static TLS_OVERRIDE: LazyLock<RwLock<Option<Arc<ClientConfig>>>> =
+    LazyLock::new(|| RwLock::new(None));
 
-static EXTRA_CA_PATHS: once_cell::sync::Lazy<RwLock<Vec<String>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(Vec::new()));
+static EXTRA_CA_PATHS: LazyLock<RwLock<Vec<String>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
 
-static EXTRA_CA_PEMS: once_cell::sync::Lazy<RwLock<Vec<String>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(Vec::new()));
+static EXTRA_CA_PEMS: LazyLock<RwLock<Vec<String>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
 
 /// Return a base `RootCertStore` from webpki roots plus any configured extra CAs.
 pub fn base_root_store() -> RootCertStore {

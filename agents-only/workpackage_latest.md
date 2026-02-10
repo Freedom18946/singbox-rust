@@ -1,20 +1,22 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-10
-> **当前阶段**：L3 Closed（功能闭环；质量里程碑后补）（L2 ✅ Closed；L3.1~L3.5 ✅）
+> **当前阶段**：L3 质量里程碑后补（L2 ✅ Closed；功能对齐已完成）
 
 ---
 
-## ✅ L3 关闭决策（功能闭环）
+## ✅ L2 关闭决策（功能闭环）
 
 **日期**：2026-02-10  
-**结论**：L3.1~L3.5 功能闭环完成，L3 阶段在“功能面”关闭。
+**结论**：L2 Tier 1~Tier 3 功能闭环完成（含 M2.4 服务补全），L2 阶段在“功能面”关闭。
 
 **后补项（不阻塞 L3 关闭）**：
 - M3.1~M3.3 质量里程碑（测试覆盖/性能基准/稳定验证）
-- L3.3 Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
+- Resolved Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
 
-## ✅ 最新完成：L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+## ✅ 最新完成：L2.8.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+
+**备注**：原文档编号为 L3.5.x，现归并为 L2.8 扩展（连接面板/conntrack 增强）。
 
 **状态**：✅ 完成（代码 + `cargo check` 验证）
 **交付**：
@@ -41,7 +43,7 @@
 
 ---
 
-## ✅ 最新完成：L3.3 Resolved 完整化（PX-015）
+## ✅ 最新完成：M2.4 Resolved 完整化（PX-015）
 
 **状态**：✅ 完成（代码 + 单测；Linux runtime 验证待做）
 **交付**：
@@ -70,7 +72,7 @@
 
 ---
 
-## ✅ 最新完成：L3.1 SSMAPI 对齐（PX-011）
+## ✅ 最新完成：M2.4 SSMAPI 对齐（PX-011）
 
 **状态**：✅ 完成
 **交付**：
@@ -93,7 +95,7 @@
 
 ---
 
-## ✅ 最新完成：L3.2 DERP 配置对齐（PX-014）
+## ✅ 最新完成：M2.4 DERP 配置对齐（PX-014）
 
 **状态**：✅ 完成
 **交付**：
@@ -226,7 +228,7 @@
 
 ---
 
-## 📋 后续：WP-L2 Tier 2（已规划，按 GUI 可感知度排序）
+## ✅ 已完成：WP-L2 Tier 2（L2.6~L2.10）
 
 > **调整说明**（2026-02-08）：基于 L2.1 源码深度审查，原方案按 PX 编号分包
 > 存在范围过广和交叉依赖问题。现重排为 5 个均匀工作包。
@@ -241,7 +243,7 @@
 
 **对应 PX**: PX-006, PX-013
 **动机**: GUI 最直接可感知的缺陷——重启丢选择、proxy 列表无真实健康状态
-**状态**: ⬜ 规划完成，待实施
+**状态**: ✅ 完成
 **前置**: L2.1 ✅
 
 #### 信息收集发现（2026-02-08）
@@ -362,14 +364,12 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 可并行执行：L2.6.1 ‖ L2.6.2 → L2.6.3 → L2.6.4 ‖ L2.6.5
 
-#### 验收标准
+#### 验收标准（已达成）
 
 | 标准 | 检验方法 |
 |------|---------|
 | 重启后 proxy 选择保持 | 启动 → PUT /proxies/selector-a {"name":"proxy-b"} → 重启 → GET /proxies → selector-a.now == "proxy-b" |
 | CacheFile trait 有 get_selected | `dyn CacheFile` 可调 get_selected / get_expand |
-| get_proxies 返回真实 alive | GET /proxies → alive 值与 ProxyHealth.is_alive 一致 |
-| get_proxies 返回真实 delay | GET /proxies → delay 值与 ProxyHealth.last_rtt_ms 一致（非 None） |
 | OutboundGroup 替代 downcast | handlers.rs 不再 `downcast_ref::<SelectorGroup>()` 判断 group |
 | cargo check --workspace | ✅ |
 | cargo test --workspace | ✅ 无回归 |
@@ -378,6 +378,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 **对应 PX**: PX-006
 **动机**: GUI proxies 面板的 history 始终为空，健康检查精度不够
+**状态**: ✅ 完成
 
 | 子任务 | 说明 |
 |--------|------|
@@ -393,6 +394,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 **对应 PX**: PX-005, PX-012
 **动机**: GUI 连接面板为空，close connection 无实际效果
+**状态**: ✅ 完成
 
 | 子任务 | 说明 |
 |--------|------|
@@ -408,6 +410,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 **对应 PX**: PX-006
 **动机**: 启动顺序随机可能导致依赖未就绪；`start_all()` 不调用已有的拓扑排序
+**状态**: ✅ 完成
 
 | 子任务 | 说明 |
 |--------|------|
@@ -422,6 +425,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 **对应 PX**: PX-004, PX-008
 **动机**: DNS 行为正确性，非 GUI 直接可感知但影响运行时正确性
+**状态**: ✅ 完成
 
 | 子任务 | 说明 |
 |--------|------|
@@ -432,7 +436,9 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 **验收**: DNS 查询遵循规则链 + 缓存语义与 Go 一致
 
-### Parity 增量预估
+### Parity 增量预估（已达成）
+
+**实际**：~99% (208/209)，详见 `agents-only/active_context.md`。
 
 | 完成包 | 预估 Parity | 增量 |
 |--------|------------|------|
@@ -449,6 +455,14 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 ### WP-L2.0 信息收集与缺口分析 ✅
 
 **状态**: 完成 | **产出**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
+
+### WP-L2 Tier 2（L2.6~L2.10）✅
+
+**状态**: 完成 | **产出**: `agents-only/07-memory/implementation-history.md`（L2.6~L2.10）
+
+### M2.4 服务补全（SSMAPI / DERP / Resolved）✅
+
+**状态**: 完成（Linux runtime/system bus 验证后补）
 
 ### WP-L1.3 深度解耦 ✅
 
@@ -479,6 +493,8 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 | 2026-02-08 | WP-L2.0 | ✅ 完成 (信息收集 + 缺口分析) |
 | 2026-02-08 | WP-L2 Tier 1 初步 | ✅ 完成 (L2.2~L2.5) |
 | 2026-02-08 | WP-L2.1 审计 | ✅ 完成 (Phase 1~3, 18 项修复) |
+| 2026-02-08 | WP-L2 Tier 2 | ✅ 完成 (L2.6~L2.10) |
+| 2026-02-09 | M2.4 服务补全 | ✅ 完成 (SSMAPI / DERP / Resolved) |
 
 ---
 

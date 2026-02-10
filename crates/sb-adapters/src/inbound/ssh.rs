@@ -430,6 +430,7 @@ mod ssh_server {
                                     passwords: self.passwords.clone(),
                                     channels: HashMap::new(),
                                     active_connections: self.active_connections.clone(),
+                                    peer_addr: Some(peer_addr),
                                 };
                                 let active_connections = self.active_connections.clone();
 

@@ -488,11 +488,11 @@ async fn connect_via_router(
             direct_connect_hostport(&dest.host, dest.port, &opts).await?,
             Some("direct".to_string()),
         ),
-        RDecision::Proxy(Some(name)) => {
+        RDecision::Proxy(Some(ref name)) => {
             if let Some(reg) = registry::global() {
-                if reg.pools.contains_key(&name) {
+                if reg.pools.contains_key(name) {
                     let selector = PoolSelector::new(ANYTLS_INBOUND_TAG.into(), "default".into());
-                    if let Some(entry) = selector.select(&name, ctx.peer_addr, &target, &()) {
+                    if let Some(entry) = selector.select(name, ctx.peer_addr, &target, &()) {
                         match entry.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 let s = http_proxy_connect_through_proxy(

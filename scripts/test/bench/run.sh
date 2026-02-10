@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "$0")/.." && pwd)
+root_dir=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root_dir"
 
 mkdir -p target/bench
@@ -9,7 +9,7 @@ summary=target/bench/summary.csv
 echo "bench,metric,value" > "$summary"
 
 echo "[bench] running criterion benches (dev-only)"
-cargo bench --bench selector_score --bench dns_cache --quiet || true
+cargo bench --bench selector_score --bench dns_cache --features bench --quiet || true
 
 parse_estimates() {
   local file="$1"; local name="$2"; local key="$3"
@@ -36,4 +36,3 @@ for dir in target/criterion/*; do
 done
 
 echo "[bench] summary written: $summary"
-

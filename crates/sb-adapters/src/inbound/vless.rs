@@ -461,12 +461,12 @@ async fn handle_conn_impl(
             let s = direct_connect_hostport(&target_host, target_port, &opts).await?;
             (s, Some("direct".to_string()))
         }
-        RDecision::Proxy(Some(name)) => {
+        RDecision::Proxy(Some(ref name)) => {
             let sel = PoolSelector::new("vless".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(_pool) = reg.pools.get(&name) {
+                if let Some(_pool) = reg.pools.get(name) {
                     if let Some(ep) = sel.select(
-                        &name,
+                        name,
                         peer,
                         &format!("{}:{}", target_host, target_port),
                         &(),

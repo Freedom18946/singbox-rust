@@ -31,18 +31,19 @@ use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 
 use std::collections::HashMap;
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-	use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-	use tokio::io::{AsyncReadExt, AsyncWriteExt};
-	use tokio::select;
-	use tokio::sync::mpsc;
-	use tokio::sync::oneshot;
-	use tokio::time::{interval, Duration};
-	use tracing::debug;
-	use tracing::{info, warn};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+use tokio::time::{interval, Duration};
+use tracing::debug;
+use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub enum AeadCipherKind {
@@ -583,6 +584,9 @@ async fn handle_udp_packet(
     inbound_tag: Option<String>,
     shared: RuntimeShared,
 ) -> Result<()> {
+    #[cfg(not(feature = "service_ssmapi"))]
+    let _ = (&auth_user, &shared);
+
     // Parse target address
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
@@ -918,6 +922,8 @@ where
     // Spawn Decrypt Pump: CLI(Encrypted) -> Remote(Clear)
     // 启动解密泵：CLI(加密) -> Remote(明文)
     let auth_user_uplink = auth_user.clone();
+    #[cfg(not(feature = "service_ssmapi"))]
+    let _ = &auth_user_uplink;
     #[cfg(feature = "service_ssmapi")]
     let tracker_uplink = tracker.clone();
     tokio::spawn(async move {
@@ -969,6 +975,8 @@ where
     // Spawn Encrypt Pump: Remote(Clear) -> CLI(Encrypted)
     // 启动加密泵：Remote(明文) -> CLI(加密)
     let auth_user_downlink = auth_user.clone();
+    #[cfg(not(feature = "service_ssmapi"))]
+    let _ = &auth_user_downlink;
     #[cfg(feature = "service_ssmapi")]
     let tracker_downlink = tracker.clone();
     tokio::spawn(async move {

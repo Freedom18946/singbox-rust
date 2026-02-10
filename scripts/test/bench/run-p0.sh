@@ -16,7 +16,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # Colors for output
 RED='\033[0;31m'
@@ -90,7 +90,7 @@ case $MODE in
         echo -e "${GREEN}Running baseline benchmarks...${NC}"
         echo "This measures TCP performance without protocol overhead"
         echo ""
-        cargo bench --bench bench_p0_protocols "${BENCH_ARGS[@]}"
+        cargo bench --bench bench_p0_protocols --features bench "${BENCH_ARGS[@]}"
         ;;
     
     all)
@@ -104,6 +104,7 @@ case $MODE in
         
         # Run with all features (those that exist)
         cargo bench --bench bench_p0_protocols \
+            --features bench \
             --features "adapter-hysteria" \
             "${BENCH_ARGS[@]}" || true
         

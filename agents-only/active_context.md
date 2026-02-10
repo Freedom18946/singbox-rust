@@ -7,7 +7,8 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L3 Closed（功能闭环；质量里程碑后补）**（L1 ✅ Closed, L2 ✅ Closed, L3.1~L3.5 ✅）
+**当前阶段**: **L3 质量里程碑后补**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
+**注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity**: ~99% (208/209)
 **Tests**: 1492+ passed, boundaries clean
 
@@ -23,11 +24,13 @@
 - **Clash API 审计报告**: `agents-only/05-analysis/CLASH-API-AUDIT.md`
 - **L2 缺口分析**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
 - **DNS 栈分析**: `agents-only/05-analysis/L2.10-DNS-STACK-ANALYSIS.md`
-- **L3 Scope**: 见下方
+- **历史 L3 Scope（服务补全）**: 见下方（已并入 M2.4）
 
 ---
 
-## ✅ 最新完成：L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+## ✅ 最新完成：L2.8.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+
+**备注**：原文档编号为 L3.5.x，现归并为 L2.8 扩展（连接面板/conntrack 增强）。
 
 **日期**: 2026-02-10
 **目标**: 打通 TCP + UDP/QUIC conntrack wiring，补齐 `/connections` 的 rule/chains，并支持 `DELETE /connections` 跨协议中断 I/O。
@@ -49,14 +52,14 @@
 
 ---
 
-## ✅ L3 关闭决策（功能闭环）
+## ✅ L2 关闭决策（功能闭环）
 
 **日期**: 2026-02-10  
-**结论**: L3.1~L3.5 功能闭环已完成，L3 阶段在“功能面”关闭。
+**结论**: L2 Tier 1~Tier 3 功能闭环已完成（含 M2.4 服务补全），L2 阶段在“功能面”关闭。
 
-**后补项（不阻塞 L3 关闭）**:
+**后补项（不阻塞 L2 关闭）**:
 - **M3.1~M3.3 质量里程碑**（测试覆盖/性能基准/稳定验证）全部后补
-- **L3.3 Linux runtime/system bus 验证**（systemd-resolved 真实环境验证）后补
+- Resolved Linux runtime/system bus 验证（systemd-resolved 真实环境验证）后补
 
 **说明**:
 - 以上后补项进入后续质量阶段统一安排，不影响当前 L3 功能闭环结论。
@@ -313,7 +316,9 @@
 
 ---
 
-## 📋 L3 Scope: Polish / Edge Services
+## 📋 M2.4 服务补全（历史 L3 Scope）
+
+**注**：以下 L3.1~L3.5 为历史编号，对应 M2.4 服务补全与 L2.8 连接增强，保留以便对齐旧文档与日志。
 
 **目标**: 边缘服务补全 + 残余 polish，从 99% → 99.5%+ parity
 
@@ -487,4 +492,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-10（L3.5 ConnMetadata + L3 功能闭环关闭）*
+*最后更新：2026-02-10（L2.8 ConnMetadata 扩展 + L2 功能闭环关闭）*

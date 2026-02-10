@@ -23,6 +23,50 @@
 
 ## 日志记录
 
+### [2026-02-10 10:30] Agent: Codex (GPT-5)
+
+**任务**: 修正文档一致性（L2/M2.4 与历史 L3 编号归并、进度状态同步）
+**变更**:
+- 更新 `agents-only/workpackage_latest.md`（L2 关闭决策、M2.4 服务补全归类、L2.6~L2.10 标记完成、进度历史补齐）
+- 更新 `agents-only/active_context.md`（L3 仅质量里程碑、历史 L3 编号说明、L2 关闭决策措辞）
+- 更新 `agents-only/03-planning/L3-WORKPACKAGES.md`（改为历史归档口径，L3.* → M2.4/L2.8 对齐）
+- 更新 `agents-only/04-workflows/REFACTOR-PROGRESS.md`（L1 完成状态同步并归档）
+
+**结果**: 成功
+**备注**: 本次仅修正文档与状态说明，不涉及代码变更与测试执行。
+
+---
+
+### [2026-02-10 10:55] Agent: Codex (GPT-5)
+
+**任务**: L3 质量里程碑核验（文档与报告检查）
+**变更**:
+- 更新 `agents-only/log.md`（记录本次核验）
+
+**结果**: 成功
+**备注**: 本次仅检查 `06-STRATEGIC-ROADMAP.md` 与 `reports/*` 现状；未运行测试/基准/压力。
+
+---
+
+### [2026-02-10 11:15] Agent: Codex (GPT-5)
+
+**任务**: 执行 L3 质量里程碑验收（测试/基准/压力）
+**变更**:
+- 运行 `cargo fmt --check`（失败：格式差异，多文件）
+- 运行 `cargo clippy --workspace --all-features`（失败：sb-tls `clippy::non_std_lazy_statics`）
+- 运行 `cargo test --workspace`（失败：sb-adapters 编译错误）
+- 运行 `cargo deny check`（失败：advisory db lock 只读）
+- 运行 `cargo build -p app --features parity --release`（失败：同 sb-adapters 编译错误）
+- 运行 `./scripts/test/bench/run.sh`（需要 `--features bench`）
+- 运行 `./scripts/test/bench/run-p0.sh --baseline`（脚本路径错误）
+- 运行 `cargo bench --bench bench_p0_protocols --features bench`（失败：`app/src/bin/sb-bench.rs` 缺 `hickory_proto`）
+- 运行 `./scripts/test/stress/run.sh short`（失败：sb-adapters 编译错误）
+
+**结果**: 失败（需修复编译与脚本问题后重跑）
+**备注**: 短压测已触发构建；中/长/耐久未执行。未做自动修复。
+
+---
+
 ### [2026-02-10 09:05] Agent: Codex (GPT-5)
 
 **任务**: 实现 L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack，并更新 agents-only 文档到最新

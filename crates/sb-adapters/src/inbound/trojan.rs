@@ -12,7 +12,6 @@ use crate::transport_config::InboundStream;
 use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundService;
 use sb_core::net::metered;
-use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::{
@@ -802,11 +801,11 @@ async fn handle_tcp_connect(
             let s = direct_connect_hostport(host, port, &opts).await?;
             (s, Some("direct".to_string()))
         }
-        RDecision::Proxy(Some(name)) => {
+        RDecision::Proxy(Some(ref name)) => {
             let sel = PoolSelector::new("trojan".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if reg.pools.contains_key(&name) {
-                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
+                if reg.pools.contains_key(name) {
+                    if let Some(ep) = sel.select(name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 let s = http_proxy_connect_through_proxy(

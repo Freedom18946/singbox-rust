@@ -179,11 +179,11 @@ where
             direct_connect_hostport(&host, port, &opts).await?,
             Some("direct".to_string()),
         ),
-        RDecision::Proxy(Some(name)) => {
+        RDecision::Proxy(Some(ref name)) => {
             let sel = PoolSelector::new("shadowtls".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(_pool) = reg.pools.get(&name) {
-                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
+                if let Some(_pool) = reg.pools.get(name) {
+                    if let Some(ep) = sel.select(name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 let stream = http_proxy_connect_through_proxy(
