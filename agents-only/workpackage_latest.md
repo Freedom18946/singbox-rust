@@ -1,7 +1,34 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-09
+> **最后更新**：2026-02-10
 > **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅；L3.2 ✅；L3.3 ✅）
+
+---
+
+## ✅ 最新完成：L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+
+**状态**：✅ 完成（代码 + `cargo check` 验证）
+**交付**：
+- 规则元信息不改路由行为：新增 `decide_with_meta`/`select_ctx_and_record_with_meta`，rule label 统一入 `ConnMetadata.rule`。
+- TCP/UDP 全链路 conntrack wiring：新增 `register_inbound_udp`，UDP NAT 连接元数据与取消传播。
+- `/connections` 可用性提升：chains/rule 非空，`DELETE /connections` 可中断 TCP/UDP 会话。
+- UDP/QUIC 覆盖：SOCKS UDP（含增强版）、Trojan UDP、Shadowsocks UDP、TUIC UDP、DNS UDP（每查询短生命周期）。
+
+**关键落点**：
+- `crates/sb-core/src/router/{rules.rs,process_router.rs,engine.rs}`
+- `crates/sb-core/src/conntrack/{inbound_tcp.rs,inbound_udp.rs,mod.rs}`
+- `crates/sb-core/src/net/{datagram.rs,udp_nat.rs}`
+- `crates/sb-core/src/inbound/{http_connect.rs,socks5.rs,direct.rs}`
+- `crates/sb-adapters/src/inbound/{dns.rs,socks/udp.rs,socks/udp_enhanced.rs,tuic.rs,trojan.rs,shadowsocks.rs,...}`
+- `crates/sb-api/tests/connections_snapshot_test.rs`
+
+**新增测试**：
+- `crates/sb-core/tests/conntrack_wiring_udp.rs`
+- `crates/sb-core/tests/router_rules_decide_with_meta.rs`
+- `crates/sb-core/tests/router_select_ctx_meta.rs`
+
+**验证**：
+- `cargo check -p sb-core -p sb-adapters -p sb-api`
 
 ---
 

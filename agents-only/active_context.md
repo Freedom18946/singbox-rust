@@ -7,7 +7,7 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L3 Polish / Edge Services** （L1 ✅ Closed, L2 ✅ Closed）
+**当前阶段**: **L3 Polish / Edge Services** （L1 ✅ Closed, L2 ✅ Closed, L3.5.x ✅）
 **Parity**: ~99% (208/209)
 **Tests**: 1492+ passed, boundaries clean
 
@@ -24,6 +24,28 @@
 - **L2 缺口分析**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
 - **DNS 栈分析**: `agents-only/05-analysis/L2.10-DNS-STACK-ANALYSIS.md`
 - **L3 Scope**: 见下方
+
+---
+
+## ✅ 最新完成：L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
+
+**日期**: 2026-02-10
+**目标**: 打通 TCP + UDP/QUIC conntrack wiring，补齐 `/connections` 的 rule/chains，并支持 `DELETE /connections` 跨协议中断 I/O。
+
+**关键改动**:
+- 规则元信息：`Engine::decide_with_meta`、`ProcessRouter::*_meta`、`RouterHandle::select_ctx_and_record_with_meta` 增补稳定 rule label。
+- Conntrack 扩展：新增 `register_inbound_udp` 与通用 wiring；新增 `compute_chain_for_decision`。
+- UDP 生命周期：`UdpNatEntry`/`UdpNatMap` 增加 conntrack 元数据与取消传播，NAT 淘汰触发 cancel。
+- Inbound 接线：覆盖 HTTP/SOCKS/VLESS/VMESS/TROJAN/SS/ShadowTLS/Naive/AnyTLS/SSH/Hy2/TUIC/Redirect/TProxy/TUN-macos 等 TCP；SOCKS UDP、Trojan UDP、Shadowsocks UDP、TUIC UDP、DNS UDP 等路径接入 UDP conntrack。
+
+**新增测试**:
+- `crates/sb-core/tests/conntrack_wiring_udp.rs`
+- `crates/sb-core/tests/router_rules_decide_with_meta.rs`
+- `crates/sb-core/tests/router_select_ctx_meta.rs`
+- `crates/sb-api/tests/connections_snapshot_test.rs`（新增 UDP 断言）
+
+**验证**:
+- `cargo check -p sb-core -p sb-adapters -p sb-api`
 
 ---
 

@@ -23,6 +23,29 @@
 
 ## 日志记录
 
+### [2026-02-10 09:05] Agent: Codex (GPT-5)
+
+**任务**: 实现 L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack，并更新 agents-only 文档到最新
+**变更**:
+- 修改 `crates/sb-core/src/router/{rules.rs,process_router.rs,engine.rs}`（decide_with_meta + select_ctx_and_record_with_meta）
+- 修改 `crates/sb-core/src/conntrack/{inbound_tcp.rs,mod.rs}` + 新增 `crates/sb-core/src/conntrack/inbound_udp.rs`
+- 修改 `crates/sb-core/src/net/{datagram.rs,udp_nat.rs}`
+- 修改 `crates/sb-core/src/inbound/{direct.rs,http_connect.rs,socks5.rs}`
+- 修改 `crates/sb-adapters/src/inbound/{dns.rs,socks/udp.rs,socks/udp_enhanced.rs}` 及多协议 TCP/UDP 入口的 conntrack/cancel wiring
+- 新增测试 `crates/sb-core/tests/conntrack_wiring_udp.rs`
+- 新增测试 `crates/sb-core/tests/router_rules_decide_with_meta.rs`
+- 新增测试 `crates/sb-core/tests/router_select_ctx_meta.rs`
+- 修改 `crates/sb-api/tests/connections_snapshot_test.rs`（UDP 断言）
+- 更新 `agents-only/active_context.md`、`agents-only/workpackage_latest.md`
+
+**结果**: 成功
+**验证**:
+- `cargo check -p sb-core -p sb-adapters -p sb-api`
+**备注**:
+- 有既存 warnings（dns/rule_engine.rs、dns/upstream.rs、sb-adapters/register.rs、sb-api/clash/handlers.rs），本次未处理。
+
+---
+
 ### [2026-02-09 13:28] Agent: Codex (GPT-5)
 
 **任务**: 实现 L3.3 Resolved 完整化（PX-015）并将 agents-only 文档同步为“实时最新”
