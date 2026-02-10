@@ -1,29 +1,18 @@
 # L3 一级工作包规划（Polish / Edge Services）
 
 > **日期**：2026-02-08  
-> **更新**：2026-02-09（L3.1 PX-011 + L3.2 PX-014 + L3.3 PX-015 已实现；本文件相关章节已同步为“已完成”记录）  
+> **更新**：2026-02-10（L3.1~L3.5 已完成；L3 功能闭环关闭，M3.* 与 L3.3 Linux runtime 验证后补）  
 > **目标**：基于已收集到的差距信息，将 L3.1~L3.5 拆成可交付的一级工作包，明确范围、关键设计选择、验收与依赖。  
 > **输入**：`agents-only/active_context.md`（L3 Scope 表）、`agents-only/05-analysis/L3-PREWORK-INFO.md`（差距与落点）、`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-011/013/014/015）。
 
 ---
 
-## 总体策略与排序（建议）
+## 总体状态与结论（2026-02-10）
 
-按“风险最小 + GUI/可观测收益最大 + 依赖最少”排序建议：
-
-1. **L3.5 ConnMetadata chain/rule 填充**（收益高，主要是接线与元信息传播，不涉及协议栈）
-2. **L3.4 Cache File 深度对齐（cache_id + debounce + ruleset cache 接线）**（影响面可控，但需注意兼容旧 cache.db）
-3. **L3.3 Resolved 完整化（resolve1 Resolve*）**（✅ 已完成 2026-02-09；Linux runtime/system bus 验证待补）
-4. **L3.2 DERP 配置对齐**（✅ 已完成 2026-02-09）
-
-已完成：
-- **L3.1 SSMAPI 对齐（PX-011）**（✅ 2026-02-09）
-- **L3.2 DERP 配置对齐（PX-014）**（✅ 2026-02-09）
-
-并行原则：
-- **L3.5 与 L3.4 可并行设计/实现**（互不依赖）
-- **L3.1 与 L3.4 可能存在轻微耦合**（CacheFile 能否复用/扩展给 SSMAPI？暂不强耦合，先各自完成）
-- **L3.3（Linux runtime）强平台/环境依赖**，建议在 Linux/system bus 环境补齐 smoke 验证
+- L3.1~L3.5 已全部完成，L3 功能闭环关闭
+- 后补项（不阻塞 L3 关闭）：
+  - L3.3 Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
+  - M3.1~M3.3 质量里程碑（测试覆盖/性能基准/稳定验证）
 
 ---
 
@@ -269,62 +258,43 @@
 
 ---
 
-## L3.5 ConnMetadata chain/rule 填充（L2.8 延后项）
+## L3.5 ConnMetadata chain/rule 填充（L2.8 延后项）✅ 已完成
 
-### 目标
+**日期**：2026-02-10
 
-让 `/connections` 面板能显示“命中规则 + 代理链路（至少 group -> leaf）”，将已存在的 `ConnMetadata.rule/chains` 从“字段存在但永远为空”补齐为可用。
+**交付**：
+- 规则元信息不改路由行为：新增 `Engine::decide_with_meta`、`ProcessRouter` meta helper、`RouterHandle::select_ctx_and_record_with_meta`，rule label 写入 `ConnMetadata.rule`
+- TCP/UDP conntrack wiring：新增 `register_inbound_udp`，UDP NAT 生命周期接入 conntrack + cancel 传播
+- `/connections` 可用性提升：chains/rule 非空，`DELETE /connections` 可中断 TCP/UDP 会话
 
-### 范围
+**主要落点**：
+- `crates/sb-core/src/router/{rules.rs,process_router.rs,engine.rs}`
+- `crates/sb-core/src/conntrack/{inbound_tcp.rs,inbound_udp.rs,mod.rs}`
+- `crates/sb-core/src/net/{datagram.rs,udp_nat.rs}`
+- `crates/sb-core/src/inbound/{http_connect.rs,socks5.rs,direct.rs}`
+- `crates/sb-adapters/src/inbound/{dns.rs,socks/udp.rs,socks/udp_enhanced.rs,tuic.rs,trojan.rs,shadowsocks.rs,...}`
 
-- 路由阶段：产出可用于连接展示的元信息（rule + chains）
-- 连接注册阶段：将元信息写入 `sb-common::ConnMetadata`
-- 最小链路：至少能显示 “最终 outbound tag” + “若经过 selector/urltest/loadbalance，显示 group -> member”
+**新增测试**：
+- `crates/sb-core/tests/conntrack_wiring_udp.rs`
+- `crates/sb-core/tests/router_rules_decide_with_meta.rs`
+- `crates/sb-core/tests/router_select_ctx_meta.rs`
+- `crates/sb-api/tests/connections_snapshot_test.rs`（UDP 断言）
 
-非目标：
-- 完整 explain trace/每一步 matcher 的细粒度展示（那属于 `explain` feature 的范畴）
-- 追求与 Go 内部 rule id 完全一致（以可读描述为优先）
+**验证**：
+- `cargo check -p sb-core -p sb-adapters -p sb-api`
 
-### 关键设计选择
-
-1. **元信息传播载体**
-   - 选项 A（推荐）：扩展路由 API 返回结构（例如 `RouteResult` 增加 `matched_rule_id: Option<String>` 与 `chains: Vec<String>`），由 RouterHandle 填充
-   - 选项 B：在 ConnectionManager 侧二次查询路由/索引（风险高，容易不一致）
-
-2. **rule 表示形式**
-   - 选项 A（推荐）：稳定的 `rule_id`/phase 字符串（例如 `rule#12` 或 explain phase），先保证“可定位”
-   - 选项 B：完整序列化规则内容（太重且可能泄漏配置细节）
-
-3. **chain 生成来源**
-   - 选项 A（推荐）：在 outbound 选择点（group->member）记录链路，并附加到连接元信息
-   - 选项 B：事后推断（不可行/不可靠）
-
-### 子任务（建议）
-
-- L3.5.1 路由结果扩展：RouterHandle 在 route_connection/packet 时填充 matched_rule（现状为 None）
-- L3.5.2 连接注册接线：`router/conn.rs` 在注册 tracker 前把 rule/chains 写入 metadata（需要在 InboundContext 或 route_result 中携带）
-- L3.5.3 selector/urltest 选择链路记录：在 group 决策点记录 parent->leaf（最小实现）
-- L3.5.4 API 展示验证：/connections 返回的 rule/chains 非空（集成测试）
-
-### 验收标准（最小可验证）
-
-- 任意通过 RouterHandle 路由的连接，ConnMetadata.rule 或 chains 至少一个非空
-- selector/urltest 组场景下，chains 至少包含 `[group_tag, selected_member_tag]`（顺序可约定）
-
-### 主要文件落点（预估）
-
-- `crates/sb-core/src/router/engine.rs`（RouterHandle::route_connection/route_packet）
-- `crates/sb-core/src/router/route_connection.rs`（RouteResult 扩展）
-- `crates/sb-core/src/router/conn.rs`（注册 tracker 时填充）
-- `crates/sb-common/src/conntrack.rs`（仅在需要新增字段/约定时）
+**验收结果**：
+- `/connections` 的 rule/chains 非空
+- `DELETE /connections` 可中断 TCP/UDP
+- selector/urltest 场景 chains 含 group → leaf
 
 ---
 
-## 与 M3.*（质量保障）的关系（本次仅做定位，不拆新包）
+## 与 M3.*（质量保障）的关系（后补）
 
-L3.1~L3.5 更偏“边缘服务与 polish”。M3.* 属于质量里程碑，当前 repo 已有资产：
+L3.1~L3.5 已完成并功能闭环。M3.* 属于质量里程碑，当前 repo 已有资产可复用：
 - 覆盖盘点：`reports/TEST_COVERAGE.md`
 - bench guard：`scripts/test/bench/guard.sh`（见 `docs/STATUS.md`）
 - 压测/soak：`tests/stress/p0_protocols_stress.rs`
 
-建议等 L3.1~L3.5 中至少 2 个落地后，再把 M3.1/2/3 拆成可执行工作包，避免“测一堆但目标不断变”的浪费。
+M3.1/2/3 作为后补项，后续再拆成可执行工作包，避免“测一堆但目标不断变”的浪费。

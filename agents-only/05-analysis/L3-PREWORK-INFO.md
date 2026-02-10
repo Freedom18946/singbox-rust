@@ -1,7 +1,7 @@
 # L3 前置信息收集与差距分析（Polish / Edge Services + Quality）
 
 > **日期**：2026-02-08  
-> **更新**：2026-02-09（L3.1 SSMAPI PX-011 已实现，本文件第 1 节已同步为“现状/已修复/残留风险”）  
+> **更新**：2026-02-10（L3.5 已实现；L3 功能闭环关闭，M3.* 与 L3.3 Linux runtime 验证后补）  
 > **用途**：为 L3 阶段开工前提供“现状-差距-落点文件-最小验收”清单，避免边做边考古。  
 > **范围来源**：`agents-only/active_context.md` 的 L3 scope（L3.1~L3.5） + `agents-only/03-planning/06-STRATEGIC-ROADMAP.md` 的质量里程碑（M3.1~M3.3）。
 
@@ -9,13 +9,11 @@
 
 ## 0. 当前状态快照
 
-- 当前阶段：L3 Polish / Edge Services（L1 ✅ Closed, L2 ✅ Closed）见 `agents-only/active_context.md`
-- L3 工作包：
-  - L3.1 SSMAPI 对齐（PX-011）
-  - L3.2 DERP 配置对齐（PX-014）
-  - L3.3 Resolved 完整化（PX-015）
-  - L3.4 Cache File 深度对齐（PX-009/013）
-  - L3.5 ConnMetadata chain/rule 填充（L2.8 延后）
+- 当前阶段：L3 Closed（功能闭环；质量里程碑后补），详见 `agents-only/active_context.md`
+- L3 工作包：L3.1~L3.5 已全部完成（2026-02-10）
+- 后补项（不阻塞 L3 关闭）：
+  - M3.1~M3.3 质量里程碑（测试覆盖/性能基准/稳定验证）
+  - L3.3 Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
 
 ---
 
@@ -171,41 +169,33 @@ L3.4 已实现并通过验收；实现细节与验证记录见：
 
 ## 5. L3.5 ConnMetadata chain/rule 填充（L2.8 延后）
 
-### 5.1 Rust 现状（已读代码定位）
+### 5.1 状态（2026-02-10）
 
-- ConnMetadata 定义：`crates/sb-common/src/conntrack.rs`
-  - 字段已有：`rule: Option<String>`, `chains: Vec<String>`
-- 注册点：`crates/sb-core/src/router/conn.rs`
-  - TCP/UDP 连接建立后注册 tracker，但只填充 `host/inbound_tag/outbound_tag`（未填 rule/chains/inbound_type）
-- 路由结果结构：
-  - `crates/sb-core/src/router/route_connection.rs` 的 `RouteResult` 具备 `matched_rule: Option<usize>`
-  - 但 `crates/sb-core/src/router/engine.rs` 的 `RouterHandle` 实现 `ConnectionRouter` 时，仅将 `Decision -> RouteResult`，**未设置 matched_rule**
+**结论**：✅ 已完成（TCP + UDP/QUIC conntrack 全链路接线；/connections rule/chains 可用；DELETE 可中断 TCP/UDP）。
 
-### 5.2 差距与阻塞点
+**关键落点**：
+- 规则元信息：新增 `Engine::decide_with_meta`、`ProcessRouter` meta helper、`RouterHandle::select_ctx_and_record_with_meta`
+- Conntrack 扩展：新增 `register_inbound_udp` 与共享 wiring；新增 `compute_chain_for_decision`
+- UDP 生命周期：`UdpNatEntry`/`UdpNatMap` 接入 conntrack 元数据与 cancel 传播，NAT 淘汰自动触发取消
+- Inbound 接线：覆盖 HTTP/SOCKS/VLESS/VMESS/TROJAN/SS/ShadowTLS/Naive/AnyTLS/SSH/Hy2/TUIC/Redirect/TProxy/TUN-macos 等 TCP；SOCKS UDP、Trojan UDP、Shadowsocks UDP、TUIC UDP、DNS UDP 等路径接入 UDP conntrack
 
-- 需要“统一路由入口”把：
-  - 命中规则（rule id/描述）
-  - 出站链路（selector/urltest/loadbalance 的选择路径）
-  在“路由决策阶段”产出并传给 ConnectionManager/ConnTracker。
-- 当前 RouterHandle 的决策 API 返回 `Decision`，缺少可携带 rule/trace 的返回类型；因此 conn.rs 只能拿到 dialer tag。
+**新增测试**：
+- `crates/sb-core/tests/conntrack_wiring_udp.rs`
+- `crates/sb-core/tests/router_rules_decide_with_meta.rs`
+- `crates/sb-core/tests/router_select_ctx_meta.rs`
+- `crates/sb-api/tests/connections_snapshot_test.rs`（新增 UDP 断言）
 
-### 5.3 落点建议（不破坏现有结构的最小方案）
-
-- 路由 API 增量扩展：
-  - 引入 `DecisionMeta { decision, rule_id: Option<String>, chains: Vec<String> }`
-  - `ConnectionRouter::route_connection/route_packet` 返回该 meta（或在 `RouteResult` 中补齐并在 RouterHandle 路由时填写）
-- chain 计算：
-  - 首先落地 “最有用的链”：`[group_tag..., leaf_outbound_tag]`（至少能让 GUI 看见 selector/urltest 的当前成员）
-  - 更完整链需要 OutboundManager/Bridge 在 resolve 时保留 parent->child 关系（已有 `compute_outbound_deps()`，可复用）
+**验证**：
+- `cargo check -p sb-core -p sb-adapters -p sb-api`
 
 ---
 
 ## 6. L3 质量保障（M3.1~M3.3）现状补充
 
-来自 `agents-only/03-planning/06-STRATEGIC-ROADMAP.md`：
-- M3.1 测试覆盖（进行中）
-- M3.2 性能基准（未开始）
-- M3.3 稳定性验证（未开始）
+**状态**：后补（不阻塞 L3 功能闭环关闭）。
+- M3.1 测试覆盖（后补）
+- M3.2 性能基准（后补）
+- M3.3 稳定性验证（后补）
 
 已存在的资产（可直接复用）：
 - 覆盖盘点：`reports/TEST_COVERAGE.md`（2026-01-18）
@@ -219,8 +209,7 @@ L3.4 已实现并通过验收；实现细节与验证记录见：
 
 ---
 
-## 7. 下一步（待用户确认后细化为工作包）
+## 7. 下一步（后补项）
 
-- 以 L3.5（ConnMetadata）与 L3.4（CacheFile cache_id/debounce）作为“低风险、收益高”的先手
-- L3.1 SSMAPI 属于功能闭环缺口（需要做绑定与 cache 格式对齐），但更改面较集中，适合单独工作包推进
-- L3.3 Resolved 在 Linux-only 上要谨慎推进，优先补齐 Resolve* 方法与 DNSRouter 接线，再处理 TCP/并行化等行为细节
+- 在 Linux/systemd 环境补齐 L3.3 runtime/system bus 验证，并记录验证结果
+- 将 M3.1~M3.3 拆为可执行质量工作包（覆盖/性能/稳定），按需复用既有资产

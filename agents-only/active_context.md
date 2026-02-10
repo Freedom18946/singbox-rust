@@ -7,7 +7,7 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L3 Polish / Edge Services** （L1 ✅ Closed, L2 ✅ Closed, L3.5.x ✅）
+**当前阶段**: **L3 Closed（功能闭环；质量里程碑后补）**（L1 ✅ Closed, L2 ✅ Closed, L3.1~L3.5 ✅）
 **Parity**: ~99% (208/209)
 **Tests**: 1492+ passed, boundaries clean
 
@@ -46,6 +46,20 @@
 
 **验证**:
 - `cargo check -p sb-core -p sb-adapters -p sb-api`
+
+---
+
+## ✅ L3 关闭决策（功能闭环）
+
+**日期**: 2026-02-10  
+**结论**: L3.1~L3.5 功能闭环已完成，L3 阶段在“功能面”关闭。
+
+**后补项（不阻塞 L3 关闭）**:
+- **M3.1~M3.3 质量里程碑**（测试覆盖/性能基准/稳定验证）全部后补
+- **L3.3 Linux runtime/system bus 验证**（systemd-resolved 真实环境验证）后补
+
+**说明**:
+- 以上后补项进入后续质量阶段统一安排，不影响当前 L3 功能闭环结论。
 
 ---
 
@@ -473,4 +487,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-09（L3.4 PX-013 / PX-009 Cache File 深度对齐完成）*
+*最后更新：2026-02-10（L3.5 ConnMetadata + L3 功能闭环关闭）*

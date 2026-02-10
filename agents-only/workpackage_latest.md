@@ -1,9 +1,18 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-10
-> **当前阶段**：L3 Polish / Edge Services（L2 ✅ Closed；L3.1 ✅；L3.2 ✅；L3.3 ✅）
+> **当前阶段**：L3 Closed（功能闭环；质量里程碑后补）（L2 ✅ Closed；L3.1~L3.5 ✅）
 
 ---
+
+## ✅ L3 关闭决策（功能闭环）
+
+**日期**：2026-02-10  
+**结论**：L3.1~L3.5 功能闭环完成，L3 阶段在“功能面”关闭。
+
+**后补项（不阻塞 L3 关闭）**：
+- M3.1~M3.3 质量里程碑（测试覆盖/性能基准/稳定验证）
+- L3.3 Linux runtime/system bus 验证（systemd-resolved 运行/未运行两场景）
 
 ## ✅ 最新完成：L3.5.x ConnMetadata Rule/Chain + TCP/UDP/QUIC Conntrack
 

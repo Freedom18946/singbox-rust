@@ -722,4 +722,21 @@ L2.8.4-6 Handlers + WebSocket:
 - `agents-only/07-memory/implementation-history.md`：补充 L3.4 实施记录与索引
 - `agents-only/dump/2026-02-09_analysis_L3.4-cachefile-prework.md`：追加“实施更新”指向实现报告
 
+---
+
+### [2026-02-10] Agent: Codex (GPT-5)
+
+**任务**: 将 L3.5 实现与 L3 关闭决策回填 agents-only 文档，标记 M3.* 与 L3.3 Linux runtime 验证后补
+
+**变更**:
+- 更新 `agents-only/active_context.md`（L3 关闭与 L3.5 完成，最后更新日期）
+- 更新 `agents-only/workpackage_latest.md`（当前阶段 L3 closed + 关闭决策）
+- 更新 `agents-only/05-analysis/L3-PREWORK-INFO.md`（L3.5 状态与后补项）
+- 更新 `agents-only/03-planning/L3-WORKPACKAGES.md`（L3.5 完成、总体状态与 M3 后补）
+- 更新 `agents-only/03-planning/06-STRATEGIC-ROADMAP.md`（M3 后补、进度表同步）
+
+**结果**: 成功
+**备注**:
+- M3.1~M3.3 与 L3.3 Linux runtime/system bus 验证后补，不阻塞 L3 功能闭环关闭。
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
