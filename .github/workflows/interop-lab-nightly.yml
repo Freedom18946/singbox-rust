@@ -1,0 +1,40 @@
+name: interop-lab-nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  full-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build interop-lab
+        run: cargo build -p interop-lab
+
+      - name: Run local harness smoke
+        run: cargo run -p interop-lab -- case run l6_local_harness_smoke
+
+      - name: Run subscription parser matrix
+        run: |
+          cargo run -p interop-lab -- case run p0_subscription_json
+          cargo run -p interop-lab -- case run p0_subscription_yaml
+          cargo run -p interop-lab -- case run p0_subscription_base64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-lab-artifacts
+          path: labs/interop-lab/artifacts
+          if-no-files-found: warn

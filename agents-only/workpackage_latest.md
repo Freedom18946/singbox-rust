@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-10
-> **当前阶段**：L4 治理闭环执行中（先治理闭环，再实现）
+> **当前阶段**：L4 治理闭环执行中 + L5/L6 联测仿真已开工
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
@@ -22,6 +22,28 @@
 
 **待执行**：
 - L4.4 `PX-015` Linux 双场景最小闭环（见 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`）
+
+---
+
+## ✅ 最新进展：L5/L6 联测仿真底座首版落地
+
+**日期**：2026-02-10  
+**状态**：进行中（已入库首版，待 CI 接入）
+
+**已完成**：
+- 新增 `labs/interop-lab` 子项目（已接入 workspace）
+- 新增 CLI：`case list` / `case run` / `case diff` / `report open`
+- 新增文档：`compat_matrix` / `case_backlog` / `oracle_rules`
+- 新增 P0 用例：
+  - `l6_local_harness_smoke`
+  - `p0_clash_api_contract`
+  - `p0_subscription_json`
+  - `p0_subscription_yaml`
+  - `p0_subscription_base64`
+
+**下一步**：
+- 接入 L11：PR smoke + nightly full workflow
+- 补齐故障注入矩阵与重启/重连专项 case
 
 ---
 

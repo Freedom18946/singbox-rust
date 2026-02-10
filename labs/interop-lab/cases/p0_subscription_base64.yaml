@@ -1,0 +1,18 @@
+id: p0_subscription_base64
+title: subscription parser base64 mixed links
+priority: p0
+kernel_mode: rust
+bootstrap:
+  rust:
+    ready_path: /
+    api:
+      base_url: "{{upstream.local_http}}"
+gui_sequence:
+  - kind: subscription_parse
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+subscription_input:
+  type: inline
+  content: dm1lc3M6Ly9hYmMKdHJvamFuOi8vZGVmCnNzOi8vZ2hpCg==

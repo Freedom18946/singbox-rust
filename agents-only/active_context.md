@@ -7,7 +7,7 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L4 治理闭环执行中**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
+**当前阶段**: **L4 治理闭环执行中 + L5 联测仿真已开工**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
@@ -28,7 +28,23 @@
 - **L4 开工前置分析**: `agents-only/05-analysis/L4-PREWORK-INFO.md`
 - **L4 质量复验报告**: `reports/L4_QUALITY_RECHECK_2026-02-10.md`
 - **PX-015 Linux 验证记录**: `reports/PX015_LINUX_VALIDATION_2026-02-10.md`
+- **L5-L11 联测仿真计划（实施版）**: `agents-only/03-planning/07-L5-L11-INTEROP-LAB-PLAN.md`
 - **历史 L3 Scope（服务补全）**: 见下方（已并入 M2.4）
+
+---
+
+## ✅ 最新完成：L5/L6 联测底座首版入库（interop-lab）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- 新增 `labs/interop-lab` workspace 子项目，提供 `CaseSpec`/`NormalizedSnapshot`/CLI
+- 已实现 `case list/run/diff` 与 `report open` 命令面
+- 已落地 upstream 仿真器（HTTP/TCP/UDP/WS/DNS/TLS）与 traffic plan 执行器
+- 已落地 GUI 回放（HTTP/WS）与订阅解析（JSON/YAML/Base64）基础路径
+
+**待补项**:
+- L11 CI 门禁接入（PR smoke + nightly full）
 
 ---
 

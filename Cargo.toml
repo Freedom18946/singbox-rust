@@ -19,6 +19,7 @@ members = [
   "crates/sb-subscribe",
   "crates/sb-api",
   "crates/sb-tls",
+  "labs/interop-lab",
   "xtask",
   "xtests",
 ]

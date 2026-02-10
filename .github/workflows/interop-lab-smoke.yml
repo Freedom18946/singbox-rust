@@ -1,0 +1,38 @@
+name: interop-lab-smoke
+
+on:
+  pull_request:
+    paths:
+      - 'labs/interop-lab/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  push:
+    branches: [ main ]
+    paths:
+      - 'labs/interop-lab/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build interop-lab
+        run: cargo build -p interop-lab
+
+      - name: Test interop-lab
+        run: cargo test -p interop-lab
+
+      - name: Run local smoke case
+        run: cargo run -p interop-lab -- case run l6_local_harness_smoke

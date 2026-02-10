@@ -1,0 +1,25 @@
+id: p0_subscription_json
+title: subscription parser json outbounds
+priority: p0
+kernel_mode: rust
+bootstrap:
+  rust:
+    ready_path: /
+    api:
+      base_url: "{{upstream.local_http}}"
+gui_sequence:
+  - kind: subscription_parse
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+subscription_input:
+  type: inline
+  content: |
+    {
+      "outbounds": [
+        { "type": "vmess", "tag": "vmess-a" },
+        { "type": "trojan", "tag": "trojan-a" },
+        { "type": "shadowsocks", "tag": "ss-a" }
+      ]
+    }

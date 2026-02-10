@@ -1,0 +1,25 @@
+id: p0_subscription_yaml
+title: subscription parser yaml proxies
+priority: p0
+kernel_mode: rust
+bootstrap:
+  rust:
+    ready_path: /
+    api:
+      base_url: "{{upstream.local_http}}"
+gui_sequence:
+  - kind: subscription_parse
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+subscription_input:
+  type: inline
+  content: |
+    proxies:
+      - name: node-1
+        type: vmess
+      - name: node-2
+        type: hysteria2
+      - name: node-3
+        type: trojan
