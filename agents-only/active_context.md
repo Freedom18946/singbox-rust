@@ -20,6 +20,12 @@
 - 每轮 Rust 联测后必须回收进程并确认端口释放，避免干扰用户侧网络。
 - 实战场景清单见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
 
+### 规划增量（2026-02-11 新增）
+
+- 已导入并阅读 Go 版本功能分析资料：`agents-only/dump/go-version-analysis/2026-02-11-intake/sing-box-core-specs/`。
+- 基于导入资料新增下一阶段工作包规划：`agents-only/03-planning/08-L12-L14-GO-SPECS-WORKPACKAGES.md`。
+- 规划主轴：迁移兼容治理（L12）→ Services 安全与生命周期（L13）→ TLS/Endpoint 高级能力与趋势门禁 CI 化（L14）。
+
 ### 已关闭里程碑
 
 | 里程碑 | 关闭日期 | 内容 |

@@ -86,3 +86,13 @@
 
 ### 当前状态
 - 待接入 `.github/workflows`（下一迭代）
+
+## L11 -> L12 交接（新增）
+
+L5-L11 完成后，下一阶段进入“Go 规格驱动的能力收敛”：
+
+- 交接规划文档：`agents-only/03-planning/08-L12-L14-GO-SPECS-WORKPACKAGES.md`
+- 重点交接项：
+  - 弃用与迁移治理（deprecated 提示、迁移路径可操作化）
+  - Endpoint/Services/TLS 高级能力收敛
+  - 长时回归趋势门禁 CI 化

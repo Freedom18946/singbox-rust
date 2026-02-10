@@ -47,6 +47,26 @@
 
 ---
 
+## 🆕 新增规划：L12-L14（基于 Go 版本功能分析导入）
+
+**日期**：2026-02-11  
+**状态**：已规划，待执行  
+**输入来源**：`agents-only/dump/go-version-analysis/2026-02-11-intake/sing-box-core-specs/`
+
+**新增规划文档**：
+- `agents-only/03-planning/08-L12-L14-GO-SPECS-WORKPACKAGES.md`
+
+**规划重点**：
+- L12（P0）：弃用与迁移治理（deprecated 信号总线、WireGuard outbound→endpoint 迁移、DNS legacy/平台差异策略）。
+- L13（P1）：Services 安全默认值与生命周期收敛（ssm_api/ccm/ocm 最小暴露面、故障隔离、API bridge 回归）。
+- L14（P1/P2）：TLS 高级能力矩阵、Endpoint-Tailscale-DERP 联动、长时趋势门禁 CI 化。
+
+**与当前主线关系**：
+- 复用 L5-L11 已落地的 interop-lab 与趋势门禁能力，不重建测试基础设施。
+- 保持 Go+GUI+TUN 基线不变，Rust 继续并行对照推进。
+
+---
+
 ## ✅ 最新进展：L9 订阅联测基础闭环（非阻塞）
 
 **日期**：2026-02-10  
