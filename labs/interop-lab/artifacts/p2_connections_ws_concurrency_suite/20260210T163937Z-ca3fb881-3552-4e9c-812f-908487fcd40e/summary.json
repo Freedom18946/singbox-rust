@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_connections_ws_concurrency_suite",
+  "generated_at": "2026-02-10T16:39:59.322722Z",
+  "run_id": "20260210T163937Z-ca3fb881-3552-4e9c-812f-908487fcd40e",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_connections_ws_concurrency_suite/20260210T163937Z-ca3fb881-3552-4e9c-812f-908487fcd40e/rust.snapshot.json"
+  ]
+}

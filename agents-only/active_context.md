@@ -208,6 +208,33 @@
 - Rust 仅并行测试，不接管现网；
 - 结束后确认无 Rust 测试残留监听/进程（11801/19190 未占用）。
 
+## ✅ 最新完成：`/connections` WebSocket 高并发稳定性（P2）
+
+**日期**: 2026-02-10
+
+**完成项**:
+- 新增 `sb-api` WebSocket E2E 测试：
+  - `crates/sb-api/tests/clash_websocket_e2e.rs`
+  - 覆盖单连接快照与高并发连接（64 clients）稳定性。
+- 新增 `sb-api` 测试依赖：
+  - `crates/sb-api/Cargo.toml` 增加 `tokio-tungstenite`（dev-dependency）。
+- 测试通过：
+  - `cargo test -p sb-api --test clash_websocket_e2e -- --nocapture`（3/3）
+- 新增 `interop-lab` 可编排 case：
+  - `labs/interop-lab/cases/p2_connections_ws_concurrency_suite.yaml`
+- case 已实跑通过（`errors=[]`，`exit_code=0`）：
+  - `cargo run -p interop-lab -- case run p2_connections_ws_concurrency_suite`
+
+**验证语义**:
+- `/connections` WebSocket 单连接必须收到有效快照。
+- 并发 64 个 WebSocket 客户端时，成功率需满足门限（>=95%）。
+- 多波次稳定性（8 waves x 32 clients）总体成功率需满足门限（>=97%）。
+
+**运行约束执行**:
+- 全过程未改动 Go+GUI+TUN 基线；
+- 仅做 Rust 并行测试，不接管现网；
+- 结束后确认无 Rust 常驻监听/进程残留。
+
 ---
 
 ## ✅ 最新完成：L9 订阅联测（基础闭环）

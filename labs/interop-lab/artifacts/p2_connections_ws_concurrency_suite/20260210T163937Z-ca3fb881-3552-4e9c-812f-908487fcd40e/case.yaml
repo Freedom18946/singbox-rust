@@ -1,0 +1,47 @@
+id: p2_connections_ws_concurrency_suite
+title: clash connections websocket high concurrency stability
+priority: p2
+kernel_mode: rust
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /v1/echo
+    api:
+      base_url: '{{upstream.local_http}}'
+      secret: null
+  go: null
+gui_sequence: []
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: command
+  name: connections_ws_high_concurrency
+  command: cargo
+  args:
+  - test
+  - -p
+  - sb-api
+  - --test
+  - clash_websocket_e2e
+  - --
+  - --nocapture
+  env: {}
+  workdir: null
+  timeout_ms: 600000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.connections_ws_high_concurrency.success
+  op: eq
+  expected: true
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "run_id": "20260210T163937Z-ca3fb881-3552-4e9c-812f-908487fcd40e",
+  "case_id": "p2_connections_ws_concurrency_suite",
+  "kernel": "rust",
+  "started_at": "2026-02-10T16:39:37.968545Z",
+  "finished_at": "2026-02-10T16:39:59.322361Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "connections_ws_high_concurrency",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "test",
+          "-p",
+          "sb-api",
+          "--test",
+          "clash_websocket_e2e",
+          "--",
+          "--nocapture"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 21351,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "   Compiling ring v0.17.14\n   Compiling rustls v0.23.35\n   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)\n   Compiling rustls-webpki v0.103.8\n   Compiling rcgen v0.13.2\n   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.6.2\n   Compiling quinn-proto v0.11.13\n   Compiling hyper-rustls v0.27.7\n   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)\n   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)\n   Compiling reqwest v0.12.28\n   Compiling quinn v0.11.9\n   Compiling sb-api v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-api)\n    Finished `test` profile [optimized + debuginfo] target(s) in 20.42s\n     Running tests/clash_websocket_e2e.rs (target/debug/deps/clash_websocket_e2e-1f03549ed4a1c3fe)\n",
+        "stdout": "\nrunning 2 tests\ntest test_connections_ws_high_concurrency_clients ... ok\ntest test_connections_ws_single_client_snapshot ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": []
+}

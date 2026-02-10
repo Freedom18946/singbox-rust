@@ -49,6 +49,7 @@
 - `p2_shadowsocks_fault_recovery_concurrency_suite`: Shadowsocks 协议“错密码注入后并发恢复（>=90%）”语义验证（implemented）。
 - `p2_trojan_protocol_suite`: 通过 `interop-lab` command action 执行 Trojan 协议 net_e2e 套件（implemented）。
 - `p2_shadowsocks_protocol_suite`: 通过 `interop-lab` command action 执行 Shadowsocks 协议 net_e2e 套件（implemented）。
+- `p2_connections_ws_concurrency_suite`: `/connections` WebSocket 高并发 + 多波次稳定性（短时 soak）验证（implemented）。
 - `p2_trojan_network_restart_suite`: Trojan 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
 - `p2_shadowsocks_network_restart_suite`: Shadowsocks 实网“同端口下线->重启->恢复 + 连续抖动恢复 + 重启后并发突发恢复”语义验证（implemented）。
 - full GUI desktop smoke through Wails bridge.
