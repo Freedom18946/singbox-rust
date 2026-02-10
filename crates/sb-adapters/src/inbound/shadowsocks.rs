@@ -536,6 +536,7 @@ async fn handle_udp_relay(
                                 Some(auth_user.as_str()),
                             )
                         });
+                        let inbound_tag = cfg.tag.clone();
 
                         // Spawn task for this UDP packet
                         let socket_clone = socket.clone();
@@ -551,6 +552,7 @@ async fn handle_udp_relay(
                                 master_key,
                                 auth_user,
                                 traffic,
+                                inbound_tag,
                                 shared_clone,
                             ).await {
                                 debug!(error=%e, ?peer, "shadowsocks: UDP packet error");
@@ -578,11 +580,29 @@ async fn handle_udp_packet(
     master_key: Vec<u8>,
     auth_user: String,
     traffic: Option<Arc<dyn TrafficRecorder>>,
+    inbound_tag: Option<String>,
     shared: RuntimeShared,
 ) -> Result<()> {
     // Parse target address
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
+
+    let wiring = sb_core::conntrack::register_inbound_udp(
+        peer,
+        target_host.clone(),
+        target_port,
+        target_host.clone(),
+        "shadowsocks",
+        inbound_tag,
+        Some("direct".to_string()),
+        vec!["DIRECT".to_string()],
+        None,
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let traffic = Some(wiring.traffic.clone());
 
     if let Some(ref recorder) = traffic {
         recorder.record_up(payload.len() as u64);
@@ -1261,6 +1281,7 @@ where
     // Step 3: router decision
     // 步骤 3：路由决策
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
             domain: Some(&host),
@@ -1271,11 +1292,12 @@ where
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("ss: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     let proxy = default_proxy();
@@ -1390,17 +1412,42 @@ where
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "shadowsocks",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         stream,
         &mut upstream,
         "shadowsocks",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
 

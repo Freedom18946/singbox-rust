@@ -337,6 +337,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
         };
         // 规则引擎（Reject），Proxy 暂不支持，回落 Direct
         // Rule engine (Reject), Proxy not supported yet, fallback to Direct
+        let mut rule: Option<String> = None;
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
                 UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
@@ -354,7 +355,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 port,
                 ..Default::default()
             };
-            let d = eng.decide(&ctx);
+            let (d, r) = eng.decide_with_meta(&ctx);
+            rule = r;
             #[cfg(feature = "metrics")]
             {
                 counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
@@ -387,14 +389,41 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
 
         // 获取或创建 NAT 映射
         // Get or create NAT mapping
+        let mut conntrack_meta: Option<(
+            Arc<dyn TrafficRecorder>,
+            tokio_util::sync::CancellationToken,
+        )> = None;
         let val = {
             if let Some(existing_socket) = nat.get(&key).await {
+                conntrack_meta = nat.get_conntrack_meta(&key).await;
                 existing_socket
             } else {
                 let new_socket = UdpSocket::bind(("0.0.0.0", 0)).await?;
                 new_socket.connect(dst_sa).await?;
                 let socket_arc = std::sync::Arc::new(new_socket);
                 if nat.upsert_guarded(key.clone(), socket_arc.clone()).await {
+                    let wiring = sb_core::conntrack::register_inbound_udp(
+                        peer,
+                        dst_sa.ip().to_string(),
+                        dst_sa.port(),
+                        dst_sa.ip().to_string(),
+                        "socks_udp",
+                        None,
+                        Some("direct".to_string()),
+                        vec!["DIRECT".to_string()],
+                        rule.clone(),
+                        None,
+                        None,
+                        None,
+                    );
+                    let meta = sb_core::net::datagram::UdpConntrackMeta {
+                        guard: wiring.guard,
+                        cancel: wiring.cancel.clone(),
+                        traffic: wiring.traffic.clone(),
+                    };
+                    nat.upsert_with_meta(key.clone(), socket_arc.clone(), Some(meta))
+                        .await;
+                    conntrack_meta = Some((wiring.traffic, wiring.cancel));
                     socket_arc
                 } else {
                     // 容量满 => 拒绝
@@ -408,6 +437,15 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
         // 首包或后续：向目标发送 payload
         // First packet or subsequent: send payload to target
         let payload = &buf[hdr_len..n];
+        if let Some((_, cancel)) = &conntrack_meta {
+            if cancel.is_cancelled() {
+                continue;
+            }
+        }
+        if let Some((traffic, _)) = &conntrack_meta {
+            traffic.record_up(payload.len() as u64);
+            traffic.record_up_packet(1);
+        }
         if let Err(e) = val.send(payload).await {
             tracing::debug!(error=%e, "socks5-udp: send to dst failed");
             #[cfg(feature = "metrics")]
@@ -432,6 +470,10 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                     let mut out = Vec::with_capacity(hdr_len + m + 32);
                     build_socks5_udp_reply(&mut out, dst_sa);
                     out.extend_from_slice(&buf[..m]);
+                    if let Some((traffic, _)) = &conntrack_meta {
+                        traffic.record_down(m as u64);
+                        traffic.record_down_packet(1);
+                    }
                     if let Err(e) = sock.send_to(&out, peer).await {
                         tracing::debug!(error=%e, "socks5-udp: send back failed");
                         #[cfg(feature = "metrics")]
@@ -1085,6 +1127,7 @@ pub async fn serve_udp_datagrams(
         let mut use_proxy = false;
         let mut proxy_pool: Option<String> = None;
         let mut _decision_label = "direct".to_string();
+        let mut rule: Option<String> = None;
 
         // 规则引擎：UDP 硬裁决（Reject -> 丢弃）
         // Rule engine: UDP hard decision (Reject -> Drop)
@@ -1105,7 +1148,8 @@ pub async fn serve_udp_datagrams(
                 port,
                 ..Default::default()
             };
-            let d = eng.decide(&ctx);
+            let (d, r) = eng.decide_with_meta(&ctx);
+            rule = r;
             #[cfg(feature = "metrics")]
             {
                 counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
@@ -1239,19 +1283,47 @@ pub async fn serve_udp_datagrams(
                     }
                     continue;
                 }
+                let (dst_host, dst_port) = match &dst {
+                    UdpTargetAddr::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                    UdpTargetAddr::Domain { host, port } => (host.clone(), *port),
+                };
+                let wiring = sb_core::conntrack::register_inbound_udp(
+                    src,
+                    dst_host.clone(),
+                    dst_port,
+                    dst_host,
+                    "socks_udp",
+                    inbound_tag.clone(),
+                    Some("direct".to_string()),
+                    vec!["DIRECT".to_string()],
+                    rule.clone(),
+                    None,
+                    None,
+                    direct_traffic.clone(),
+                );
+                let meta = sb_core::net::datagram::UdpConntrackMeta {
+                    guard: wiring.guard,
+                    cancel: wiring.cancel.clone(),
+                    traffic: wiring.traffic.clone(),
+                };
+                map.upsert_with_meta(key.clone(), Arc::clone(&s), Some(meta))
+                    .await;
 
                 {
                     let listen = Arc::clone(&sock);
                     let key_clone = key.clone();
                     let map_clone = map.clone();
                     let s_cloned = Arc::clone(&s);
-                    let traffic = direct_traffic.clone();
+                    let traffic = Some(wiring.traffic.clone());
+                    let cancel = wiring.cancel.clone();
                     tokio::spawn(async move {
                         let mut rbuf = vec![0u8; 64 * 1024];
                         loop {
-                            let Ok((rn, from)) = s_cloned.recv_from(&mut rbuf).await else {
-                                break;
+                            let res = tokio::select! {
+                                _ = cancel.cancelled() => return,
+                                r = s_cloned.recv_from(&mut rbuf) => r,
                             };
+                            let Ok((rn, from)) = res else { break; };
                             #[cfg(feature = "metrics")]
                             {
                                 metrics::counter!("udp_pkts_in_total").increment(1);
@@ -1293,6 +1365,12 @@ pub async fn serve_udp_datagrams(
             }
         };
 
+        let conntrack_meta = map.get_conntrack_meta(&key).await;
+        if let Some((_, cancel)) = &conntrack_meta {
+            if cancel.is_cancelled() {
+                continue;
+            }
+        }
         let send_res: anyhow::Result<usize> = direct_sendto(upstream.as_ref(), &dst, body).await;
 
         match send_res {
@@ -1300,6 +1378,10 @@ pub async fn serve_udp_datagrams(
                 if let Some(ref recorder) = direct_traffic {
                     recorder.record_up(body.len() as u64);
                     recorder.record_up_packet(1);
+                }
+                if let Some((traffic, _)) = &conntrack_meta {
+                    traffic.record_up(body.len() as u64);
+                    traffic.record_up_packet(1);
                 }
                 if std::env::var("SB_TEST_ECHO_GLUE")
                     .ok()
@@ -1311,6 +1393,10 @@ pub async fn serve_udp_datagrams(
                         if let Some(ref recorder) = direct_traffic {
                             recorder.record_down(body.len() as u64);
                             recorder.record_down_packet(1);
+                        }
+                        if let Some((traffic, _)) = &conntrack_meta {
+                            traffic.record_down(body.len() as u64);
+                            traffic.record_down_packet(1);
                         }
                     }
                 }

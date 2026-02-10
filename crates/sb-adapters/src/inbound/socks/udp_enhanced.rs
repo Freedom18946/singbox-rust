@@ -11,12 +11,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 
-use sb_core::net::udp_nat::{NatKey, NatMap, TargetAddr, UpstreamError, record_upstream_failure, update_flow_metrics};
+use sb_core::net::udp_nat::{
+    record_upstream_failure, update_flow_metrics, NatKey, NatMap, TargetAddr, UpstreamError,
+};
 use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::outbound::udp_socks5;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::rules as rules_global;
 use sb_core::error::SbError;
+use sb_core::net::datagram::UdpConntrackMeta;
 
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge, histogram};
@@ -35,6 +38,15 @@ fn nat_ttl_from_env() -> Duration {
         .and_then(|v| v.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(30))
+}
+
+/// Get UDP NAT capacity from environment
+fn nat_cap_from_env() -> usize {
+    std::env::var("SB_UDP_NAT_CAP")
+        .ok()
+        .or_else(|| std::env::var("SB_UDP_NAT_MAX").ok())
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(65_536)
 }
 
 /// Parse SOCKS5 UDP datagram header
@@ -152,7 +164,7 @@ async fn create_upstream_socket(target: &TargetAddr) -> Result<Arc<UdpSocket>> {
 }
 
 /// Apply routing rules for UDP traffic
-fn apply_routing_rules(target: &TargetAddr) -> RDecision {
+fn apply_routing_rules(target: &TargetAddr) -> (RDecision, Option<String>) {
     if let Some(engine) = rules_global::global() {
         let (domain, port, ip) = match target {
             TargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port), None),
@@ -166,9 +178,9 @@ fn apply_routing_rules(target: &TargetAddr) -> RDecision {
             port,
         };
 
-        engine.decide(&ctx)
+        engine.decide_with_meta(&ctx)
     } else {
-        RDecision::Direct
+        (RDecision::Direct, None)
     }
 }
 
@@ -183,7 +195,8 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
 
     // Initialize NAT map with TTL from environment
     let ttl = nat_ttl_from_env();
-    let nat_map = Arc::new(NatMap::new(Some(ttl)));
+    let cap = nat_cap_from_env();
+    let nat_map = Arc::new(NatMap::new(ttl, cap));
 
     // Start background evictor
     {
@@ -234,7 +247,7 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         };
 
         // Apply routing rules
-        let decision = apply_routing_rules(&target);
+        let (decision, rule) = apply_routing_rules(&target);
         match decision {
             RDecision::Reject | RDecision::RejectDrop => {
                 #[cfg(feature = "metrics")]
@@ -285,19 +298,52 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         };
 
         // Get or create upstream socket
+        let mut conntrack_meta: Option<(Arc<dyn sb_core::net::metered::TrafficRecorder>, tokio_util::sync::CancellationToken)> = None;
         let upstream_socket = match nat_map.get(&nat_key).await {
-            Some(existing) => existing,
+            Some(existing) => {
+                conntrack_meta = nat_map.get_conntrack_meta(&nat_key).await;
+                existing
+            }
             None => {
                 match create_upstream_socket(&target).await {
                     Ok(new_socket) => {
-                        if nat_map.insert(nat_key.clone(), new_socket.clone()).await {
+                        // Register conntrack for this NAT entry (direct path)
+                        let (dst_host, dst_port) = match &target {
+                            TargetAddr::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                            TargetAddr::Domain { host, port } => (host.clone(), *port),
+                        };
+                        let wiring = sb_core::conntrack::register_inbound_udp(
+                            client_addr,
+                            dst_host.clone(),
+                            dst_port,
+                            dst_host,
+                            "socks_udp",
+                            None,
+                            Some("direct".to_string()),
+                            vec!["DIRECT".to_string()],
+                            rule.clone(),
+                            None,
+                            None,
+                            None,
+                        );
+                        let meta = UdpConntrackMeta {
+                            guard: wiring.guard,
+                            cancel: wiring.cancel.clone(),
+                            traffic: wiring.traffic.clone(),
+                        };
+                        if nat_map
+                            .insert_with_meta(nat_key.clone(), new_socket.clone(), Some(meta))
+                            .await
+                        {
                             // Start response handler for new connection
                             spawn_response_handler(
                                 Arc::clone(&socket),
                                 Arc::clone(&new_socket),
                                 client_addr,
                                 target.clone(),
+                                Some((wiring.traffic.clone(), wiring.cancel.clone())),
                             );
+                            conntrack_meta = Some((wiring.traffic, wiring.cancel));
                             new_socket
                         } else {
                             #[cfg(feature = "metrics")]
@@ -314,6 +360,15 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         };
 
         // Forward payload to upstream
+        if let Some((_, cancel)) = &conntrack_meta {
+            if cancel.is_cancelled() {
+                continue;
+            }
+        }
+        if let Some((traffic, _)) = &conntrack_meta {
+            traffic.record_up(payload.len() as u64);
+            traffic.record_up_packet(1);
+        }
         if let Err(e) = upstream_socket.send(payload).await {
             record_upstream_failure(&e.into());
             continue;
@@ -333,12 +388,22 @@ fn spawn_response_handler(
     upstream_socket: Arc<UdpSocket>,
     client_addr: SocketAddr,
     target: TargetAddr,
+    conntrack: Option<(Arc<dyn sb_core::net::metered::TrafficRecorder>, tokio_util::sync::CancellationToken)>,
 ) {
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 64 * 1024];
 
         loop {
-            match upstream_socket.recv(&mut buffer).await {
+            let recv_result = if let Some((_, cancel)) = &conntrack {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    res = upstream_socket.recv(&mut buffer) => res,
+                }
+            } else {
+                upstream_socket.recv(&mut buffer).await
+            };
+
+            match recv_result {
                 Ok(bytes_received) => {
                     if bytes_received == 0 {
                         break;
@@ -358,6 +423,10 @@ fn spawn_response_handler(
                     if let Err(e) = listen_socket.send_to(&reply, client_addr).await {
                         tracing::debug!("Failed to send UDP response to client: {}", e);
                         break;
+                    }
+                    if let Some((traffic, _)) = &conntrack {
+                        traffic.record_down(bytes_received as u64);
+                        traffic.record_down_packet(1);
                     }
 
                     #[cfg(feature = "metrics")]

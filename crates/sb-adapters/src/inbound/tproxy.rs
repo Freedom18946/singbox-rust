@@ -105,6 +105,7 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
 
     let (host, port) = (orig.ip().to_string(), orig.port());
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     let proxy = default_proxy();
 
     if let Some(eng) = rules_global::global() {
@@ -124,11 +125,12 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
             process_name: None,
             process_path: None,
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("tproxy: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     let opts = ConnectOpts::default();
@@ -237,16 +239,41 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "tproxy",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,
         "tproxy",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
     Ok(())
 }

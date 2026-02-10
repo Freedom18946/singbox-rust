@@ -14,8 +14,11 @@ use bytes::Bytes;
 use h2::server::{Builder, SendResponse};
 use http::StatusCode;
 use sb_core::outbound::{
-    Endpoint as OutEndpoint, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
+    Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
+use sb_core::router::rules::Decision;
+use sb_core::net::metered::TrafficRecorder;
+use tokio_util::sync::CancellationToken;
 use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
 use sb_transport::dialer::AsyncReadWrite;
@@ -257,7 +260,18 @@ async fn handle_stream(
         port: Some(port),
         transport: Transport::Tcp,
     };
-    let target: OutRouteTarget = cfg.router.select_ctx_and_record(ctx);
+    let (target, rule) = cfg.router.select_ctx_and_record_with_meta(ctx);
+    let decision = match &target {
+        OutRouteTarget::Named(name) => Decision::Proxy(Some(name.clone())),
+        OutRouteTarget::Kind(OutboundKind::Direct) => Decision::Direct,
+        OutRouteTarget::Kind(OutboundKind::Block) => Decision::Reject,
+        _ => Decision::Direct,
+    };
+    let outbound_tag = match &target {
+        OutRouteTarget::Named(name) => Some(name.clone()),
+        OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
+        _ => None,
+    };
     let endpoint = match host.parse::<std::net::IpAddr>() {
         Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
         Err(_) => OutEndpoint::Domain(host.clone(), port),
@@ -284,8 +298,36 @@ async fn handle_stream(
     // Get recv stream from request
     let recv_stream = request.into_body();
 
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        Some(cfg.outbounds.as_ref()),
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "naive",
+        None,
+        outbound_tag,
+        chains,
+        rule,
+        None,
+        None,
+        None,
+    );
+    let _guard = wiring.guard;
+
     // Bidirectional relay
-    relay_h2_tcp(send_stream, recv_stream, upstream).await?;
+    relay_h2_tcp(
+        send_stream,
+        recv_stream,
+        upstream,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
+    )
+    .await?;
 
     Ok(())
 }
@@ -306,6 +348,8 @@ async fn relay_h2_tcp(
     mut h2_send: h2::SendStream<Bytes>,
     mut h2_recv: h2::RecvStream,
     tcp: Box<dyn AsyncReadWrite>,
+    cancel: Option<CancellationToken>,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
 
@@ -322,6 +366,9 @@ async fn relay_h2_tcp(
                 .write_all(&data)
                 .await
                 .map_err(|e| anyhow!("TCP write error: {}", e))?;
+            if let Some(ref recorder) = traffic {
+                recorder.record_up(data.len() as u64);
+            }
 
             // Release flow control
             let _ = h2_recv.flow_control().release_capacity(data.len());
@@ -346,12 +393,17 @@ async fn relay_h2_tcp(
             h2_send
                 .send_data(Bytes::copy_from_slice(&buf[..n]), false)
                 .map_err(|e| anyhow!("H2 send error: {}", e))?;
+            if let Some(ref recorder) = traffic {
+                recorder.record_down(n as u64);
+            }
         }
         h2_send.send_data(Bytes::new(), true).ok();
         Ok::<_, anyhow::Error>(())
     };
 
+    let cancel = cancel.unwrap_or_else(CancellationToken::new);
     tokio::select! {
+        _ = cancel.cancelled() => Ok(()),
         r1 = h2_to_tcp => r1,
         r2 = tcp_to_h2 => r2,
     }

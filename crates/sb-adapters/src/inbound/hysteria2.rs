@@ -259,17 +259,28 @@ impl Hysteria2Inbound {
         outbounds: &OutboundRegistryHandle,
         host: &str,
         port: u16,
-    ) -> io::Result<(IoStream, Option<String>)> {
+    ) -> io::Result<(IoStream, Option<String>, sb_core::router::rules::Decision, Option<String>)> {
         let ctx = RouteCtx {
             host: Some(host),
             ip: None,
             port: Some(port),
             transport: Transport::Tcp,
         };
-        let target: OutRouteTarget = router.select_ctx_and_record(ctx);
+        let (target, rule) = router.select_ctx_and_record_with_meta(ctx);
         let outbound_tag = match &target {
             OutRouteTarget::Named(name) => Some(name.clone()),
             OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
+            _ => None,
+        };
+        let decision = match &target {
+            OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+            OutRouteTarget::Kind(sb_core::outbound::OutboundKind::Direct) => {
+                sb_core::router::rules::Decision::Direct
+            }
+            OutRouteTarget::Kind(sb_core::outbound::OutboundKind::Block) => {
+                sb_core::router::rules::Decision::Reject
+            }
+            _ => sb_core::router::rules::Decision::Direct,
         };
         let endpoint = match host.parse::<IpAddr>() {
             Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
@@ -281,12 +292,12 @@ impl Hysteria2Inbound {
             outbounds
                 .connect_preferred(&target, endpoint)
                 .await
-                .map(|stream| (stream, outbound_tag))
+                .map(|stream| (stream, outbound_tag, decision, rule))
         }
         #[cfg(not(feature = "v2ray_transport"))]
         {
             let stream = outbounds.connect_preferred(&target, endpoint).await?;
-            Ok((Box::new(stream), outbound_tag))
+            Ok((Box::new(stream), outbound_tag, decision, rule))
         }
     }
 
@@ -330,7 +341,7 @@ impl Hysteria2Inbound {
         };
         tracing::debug!(%peer, %host, port, "hysteria2: connect");
 
-        let (mut upstream, outbound_tag) =
+        let (mut upstream, outbound_tag, decision, rule) =
             match Self::connect_via_router(&cfg.router, &cfg.outbounds, &host, port).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -347,18 +358,42 @@ impl Hysteria2Inbound {
         let traffic = cfg.stats.as_ref().and_then(|stats| {
             stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
         });
-        metered::copy_bidirectional_streaming_ctl(
+        let chains = sb_core::outbound::chain::compute_chain_for_decision(
+            Some(cfg.outbounds.as_ref()),
+            &decision,
+            outbound_tag.as_deref(),
+        );
+        let wiring = sb_core::conntrack::register_inbound_tcp(
+            peer,
+            host.clone(),
+            port,
+            host.clone(),
+            "hysteria2",
+            cfg.tag.clone(),
+            outbound_tag.clone(),
+            chains,
+            rule.clone(),
+            None,
+            None,
+            traffic,
+        );
+        let _guard = wiring.guard;
+        let copy_res = metered::copy_bidirectional_streaming_ctl(
             &mut stream,
             &mut upstream,
             "hysteria2",
             Duration::from_secs(1),
             None,
             None,
-            None,
-            traffic,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
         )
-        .await
-        .map_err(AdapterError::Io)?;
+        .await;
+        if let Err(e) = copy_res {
+            if e.kind() != io::ErrorKind::Interrupted {
+                return Err(AdapterError::Io(e));
+            }
+        }
 
         Ok(())
     }

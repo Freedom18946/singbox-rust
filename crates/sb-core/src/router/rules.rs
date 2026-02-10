@@ -1787,6 +1787,114 @@ impl Engine {
         // 默认兜底：direct（不增加指标以免误导）
         Decision::Direct
     }
+
+    /// Decide with minimal matched rule metadata (bucket label).
+    ///
+    /// This mirrors `decide()` behavior and metrics, but also returns a
+    /// stable rule label for UI display (`/connections`).
+    pub fn decide_with_meta(&self, ctx: &RouteCtx) -> (Decision, Option<String>) {
+        #[cfg(feature = "metrics")]
+        use metrics::counter;
+        let record = |krule: &'static str, d: &Decision| -> Decision {
+            let _ = krule; // keep label for metrics-disabled builds
+            #[cfg(feature = "metrics")]
+            {
+                counter!("router_match_total", "rule"=>krule, "decision"=>decision_label(d))
+                    .increment(1);
+                counter!("router_decide_total", "decision"=>decision_label(d)).increment(1);
+            }
+            d.clone()
+        };
+
+        for r in &self.clash_mode {
+            if Self::hit(r, ctx) {
+                return (record("clash_mode", &r.decision), Some("clash_mode".to_string()));
+            }
+        }
+        for r in &self.exact {
+            if Self::hit(r, ctx) {
+                return (record("exact", &r.decision), Some("exact".to_string()));
+            }
+        }
+        for r in &self.suffix {
+            if Self::hit(r, ctx) {
+                return (record("suffix", &r.decision), Some("suffix".to_string()));
+            }
+        }
+        for r in &self.keyword {
+            if Self::hit(r, ctx) {
+                return (record("keyword", &r.decision), Some("keyword".to_string()));
+            }
+        }
+        for r in &self.domain_regex {
+            if Self::hit(r, ctx) {
+                return (
+                    record("domain_regex", &r.decision),
+                    Some("domain_regex".to_string()),
+                );
+            }
+        }
+        for r in &self.inbound {
+            if Self::hit(r, ctx) {
+                return (record("inbound", &r.decision), Some("inbound".to_string()));
+            }
+        }
+        for r in &self.outbound {
+            if Self::hit(r, ctx) {
+                return (record("outbound", &r.decision), Some("outbound".to_string()));
+            }
+        }
+        for r in &self.ipcidr {
+            if Self::hit(r, ctx) {
+                return (record("ip_cidr", &r.decision), Some("ip_cidr".to_string()));
+            }
+        }
+        for r in &self.transport {
+            if Self::hit(r, ctx) {
+                return (record("transport", &r.decision), Some("transport".to_string()));
+            }
+        }
+        for r in &self.port_like {
+            if Self::hit(r, ctx) {
+                return (record("port", &r.decision), Some("port".to_string()));
+            }
+        }
+        for r in &self.process {
+            if Self::hit(r, ctx) {
+                return (record("process", &r.decision), Some("process".to_string()));
+            }
+        }
+        for r in &self.auth_user {
+            if Self::hit(r, ctx) {
+                return (record("auth_user", &r.decision), Some("auth_user".to_string()));
+            }
+        }
+        for r in &self.query_type {
+            if Self::hit(r, ctx) {
+                return (
+                    record("query_type", &r.decision),
+                    Some("query_type".to_string()),
+                );
+            }
+        }
+        for r in &self.ipversion {
+            if Self::hit(r, ctx) {
+                return (record("ipversion", &r.decision), Some("ipversion".to_string()));
+            }
+        }
+        for r in &self.ipisprivate {
+            if Self::hit(r, ctx) {
+                return (
+                    record("ipisprivate", &r.decision),
+                    Some("ipisprivate".to_string()),
+                );
+            }
+        }
+        if let Some(r) = &self.default {
+            return (record("default", &r.decision), Some("final".to_string()));
+        }
+        (Decision::Direct, Some("final".to_string()))
+    }
 }
 
 #[allow(dead_code)] // Utility function for decision labeling, may be used in debugging/logging

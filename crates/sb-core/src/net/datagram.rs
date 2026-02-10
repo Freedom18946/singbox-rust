@@ -1,11 +1,16 @@
 // --- SOCKS5 UDP NAT: 基础类型与表封装（behind env；默认不启用） ---
 #![allow(dead_code)]
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+
+use crate::conntrack::ConntrackGuard;
+use crate::net::metered::TrafficRecorder;
 
 /// 目标地址（避免强耦合上层 TargetAddr，保持最小依赖）
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -28,6 +33,24 @@ pub struct UdpNatEntry {
     pub last_seen: Instant,
     pub bytes_in: u64,
     pub bytes_out: u64,
+    pub conntrack: Option<UdpConntrackMeta>,
+}
+
+/// Conntrack metadata associated with a UDP NAT entry.
+pub struct UdpConntrackMeta {
+    pub guard: ConntrackGuard,
+    pub cancel: CancellationToken,
+    pub traffic: Arc<dyn TrafficRecorder>,
+}
+
+impl std::fmt::Debug for UdpConntrackMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UdpConntrackMeta")
+            .field("guard", &self.guard)
+            .field("cancel", &self.cancel)
+            .field("traffic", &"<traffic>")
+            .finish()
+    }
 }
 
 /// 简单 NAT 表：单进程内共享；避免引入新的第三方依赖
@@ -59,6 +82,21 @@ impl UdpNatMap {
         }
     }
 
+    /// Fetch conntrack metadata (traffic + cancel) for an existing NAT entry.
+    pub async fn get_conntrack_meta(
+        &self,
+        k: &UdpNatKey,
+    ) -> Option<(Arc<dyn TrafficRecorder>, CancellationToken)> {
+        let mut g = self.inner.lock().await;
+        if let Some(e) = g.get_mut(k) {
+            e.last_seen = Instant::now();
+            if let Some(meta) = &e.conntrack {
+                return Some((meta.traffic.clone(), meta.cancel.clone()));
+            }
+        }
+        None
+    }
+
     pub async fn upsert(&self, k: UdpNatKey, upstream: Arc<UdpSocket>) {
         let mut g = self.inner.lock().await;
         g.entry(k)
@@ -71,7 +109,37 @@ impl UdpNatMap {
                 last_seen: Instant::now(),
                 bytes_in: 0,
                 bytes_out: 0,
+                conntrack: None,
             });
+    }
+
+    /// Upsert with optional conntrack metadata.
+    pub async fn upsert_with_meta(
+        &self,
+        k: UdpNatKey,
+        upstream: Arc<UdpSocket>,
+        conntrack: Option<UdpConntrackMeta>,
+    ) {
+        let mut g = self.inner.lock().await;
+        match g.entry(k) {
+            Entry::Occupied(mut e) => {
+                let entry = e.get_mut();
+                entry.upstream = Arc::clone(&upstream);
+                entry.last_seen = Instant::now();
+                if conntrack.is_some() {
+                    entry.conntrack = conntrack;
+                }
+            }
+            Entry::Vacant(v) => {
+                v.insert(UdpNatEntry {
+                    upstream,
+                    last_seen: Instant::now(),
+                    bytes_in: 0,
+                    bytes_out: 0,
+                    conntrack,
+                });
+            }
+        }
     }
 
     /// Guarded upsert with capacity check from env `SB_UDP_NAT_MAX` (default 65536).
@@ -97,6 +165,7 @@ impl UdpNatMap {
                 last_seen: Instant::now(),
                 bytes_in: 0,
                 bytes_out: 0,
+                conntrack: None,
             });
         true
     }
@@ -114,7 +183,15 @@ impl UdpNatMap {
         let now = Instant::now();
         let mut g = self.inner.lock().await;
         let before = g.len();
-        g.retain(|_, v| now.duration_since(v.last_seen) < ttl);
+        g.retain(|_, v| {
+            let keep = now.duration_since(v.last_seen) < ttl;
+            if !keep {
+                if let Some(meta) = &v.conntrack {
+                    meta.cancel.cancel();
+                }
+            }
+            keep
+        });
         before - g.len()
     }
 

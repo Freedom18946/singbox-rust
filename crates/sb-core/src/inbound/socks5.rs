@@ -163,8 +163,18 @@ pub(crate) async fn handle_conn(
             let mut udp_sess: Option<Arc<dyn crate::adapter::UdpOutboundSession>> = None;
             // Best-effort traffic recorder for relay-originated packets (no NAT/session)
             let mut last_traffic: Option<Arc<dyn TrafficRecorder>> = None;
+            // Conntrack wiring (per UDP associate session)
+            let mut conntrack_meta: Option<crate::net::datagram::UdpConntrackMeta> = None;
             loop {
-                let Ok((n, src)) = relay.recv_from(&mut buf).await else {
+                let recv_res = if let Some(meta) = &conntrack_meta {
+                    tokio::select! {
+                        _ = meta.cancel.cancelled() => break,
+                        r = relay.recv_from(&mut buf) => r,
+                    }
+                } else {
+                    relay.recv_from(&mut buf).await
+                };
+                let Ok((n, src)) = recv_res else {
                     break;
                 };
 
@@ -298,6 +308,10 @@ pub(crate) async fn handle_conn(
                         };
                         eng_owned.decide(&input, false)
                     };
+                    #[cfg(feature = "router")]
+                    let rule = Some(d.matched_rule.clone());
+                    #[cfg(not(feature = "router"))]
+                    let rule: Option<String> = None;
                     let out_name = d.outbound;
                     let traffic = br_owned
                         .context
@@ -308,6 +322,34 @@ pub(crate) async fn handle_conn(
                             stats.traffic_recorder(None, Some(out_name.as_str()), None)
                         });
                     last_traffic = traffic.clone();
+                    if conntrack_meta.is_none() {
+                        let chains = if out_name.eq_ignore_ascii_case("direct") {
+                            vec!["DIRECT".to_string()]
+                        } else {
+                            vec![out_name.clone()]
+                        };
+                        let client_addr = client_ep.unwrap_or(src);
+                        let wiring = crate::conntrack::register_inbound_udp(
+                            client_addr,
+                            dst_host.clone(),
+                            dst_port,
+                            dst_host.clone(),
+                            "socks_udp",
+                            None,
+                            Some(out_name.clone()),
+                            chains,
+                            rule.clone(),
+                            None,
+                            None,
+                            traffic.clone(),
+                        );
+                        conntrack_meta = Some(crate::net::datagram::UdpConntrackMeta {
+                            guard: wiring.guard,
+                            cancel: wiring.cancel.clone(),
+                            traffic: wiring.traffic.clone(),
+                        });
+                        last_traffic = Some(wiring.traffic.clone());
+                    }
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
@@ -318,11 +360,24 @@ pub(crate) async fn handle_conn(
                                     if let Some(ep) = client_ep {
                                         let relay_c = relay.clone();
                                         let sess_c = sess.clone();
-                                        let traffic_c = traffic.clone();
+                                        let traffic_c = conntrack_meta
+                                            .as_ref()
+                                            .map(|m| m.traffic.clone())
+                                            .or_else(|| traffic.clone());
+                                        let cancel_c = conntrack_meta.as_ref().map(|m| m.cancel.clone());
                                         tokio::spawn(async move {
-                                            while let Ok((data, src_addr)) =
-                                                sess_c.recv_from().await
-                                            {
+                                            loop {
+                                                let recv_res = if let Some(cancel) = &cancel_c {
+                                                    tokio::select! {
+                                                        _ = cancel.cancelled() => break,
+                                                        r = sess_c.recv_from() => r,
+                                                    }
+                                                } else {
+                                                    sess_c.recv_from().await
+                                                };
+                                                let Ok((data, src_addr)) = recv_res else {
+                                                    break;
+                                                };
                                                 // Wrap and forward to client
                                                 let mut pkt = Vec::with_capacity(data.len() + 10);
                                                 pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
@@ -362,9 +417,17 @@ pub(crate) async fn handle_conn(
                         }
                     }
 
+                    if let Some(meta) = &conntrack_meta {
+                        if meta.cancel.is_cancelled() {
+                            continue;
+                        }
+                    }
                     if let Some(ref sess) = udp_sess {
                         if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
-                            if let Some(ref recorder) = traffic {
+                            if let Some(meta) = &conntrack_meta {
+                                meta.traffic.record_up(payload.len() as u64);
+                                meta.traffic.record_up_packet(1);
+                            } else if let Some(ref recorder) = traffic {
                                 recorder.record_up(payload.len() as u64);
                                 recorder.record_up_packet(1);
                             }
@@ -408,10 +471,23 @@ pub(crate) async fn handle_conn(
                             let relay_c = relay.clone();
                             let client_c = c;
                             let upstream_c = upstream.clone();
-                            let traffic_c = traffic.clone();
+                            let traffic_c = conntrack_meta
+                                .as_ref()
+                                .map(|m| m.traffic.clone())
+                                .or_else(|| traffic.clone());
+                            let cancel_c = conntrack_meta.as_ref().map(|m| m.cancel.clone());
                             tokio::spawn(async move {
                                 let mut rbuf = vec![0u8; 64 * 1024];
-                                while let Ok(m) = upstream_c.recv(&mut rbuf).await {
+                                loop {
+                                    let recv_res = if let Some(cancel) = &cancel_c {
+                                        tokio::select! {
+                                            _ = cancel.cancelled() => break,
+                                            r = upstream_c.recv(&mut rbuf) => r,
+                                        }
+                                    } else {
+                                        upstream_c.recv(&mut rbuf).await
+                                    };
+                                    let Ok(m) = recv_res else { break; };
                                     // Use connected peer as source
                                     if let Ok(peer) = upstream_c.peer_addr() {
                                         let mut pkt = Vec::with_capacity(m + 10);
@@ -444,7 +520,10 @@ pub(crate) async fn handle_conn(
                         }
 
                         if upstream.send(payload).await.is_ok() {
-                            if let Some(ref recorder) = traffic {
+                            if let Some(meta) = &conntrack_meta {
+                                meta.traffic.record_up(payload.len() as u64);
+                                meta.traffic.record_up_packet(1);
+                            } else if let Some(ref recorder) = traffic {
                                 recorder.record_up(payload.len() as u64);
                                 recorder.record_up_packet(1);
                             }
@@ -555,6 +634,9 @@ pub(crate) async fn handle_conn(
     }
 
     // 3) 路由决策（允许使用嗅探字段）
+    let mut process_name: Option<String> = None;
+    let mut process_path: Option<String> = None;
+
     #[cfg(feature = "router")]
     let d = {
         let sniff_host_ref = sniff_host_opt.as_deref();
@@ -562,9 +644,6 @@ pub(crate) async fn handle_conn(
         let sniff_proto_ref = sniff_protocol_opt;
 
         // Process matching
-        let mut process_name: Option<String> = None;
-        let mut process_path: Option<String> = None;
-
         if let Some(matcher) = &bridge.context.process_matcher {
             let find_process = {
                 let opts = bridge.context.network.route_options();
@@ -636,20 +715,24 @@ pub(crate) async fn handle_conn(
         };
         eng.decide(&input, false)
     };
+    #[cfg(feature = "router")]
+    let rule = Some(d.matched_rule.clone());
+    #[cfg(not(feature = "router"))]
+    let rule: Option<String> = None;
     let out_name = d.outbound;
-    let ob = bridge
-        .find_outbound(&out_name)
-        .or_else(|| bridge.find_direct_fallback());
+    let mut outbound_tag = out_name.clone();
+    let ob = match bridge.find_outbound(&out_name) {
+        Some(connector) => Some(connector),
+        None => {
+            outbound_tag = "direct".to_string();
+            bridge.find_direct_fallback()
+        }
+    };
 
     // 4) 连接上游并回放首包
     let mut upstream = match ob {
         Some(connector) => match connector.connect(&host, port).await {
-            Ok(mut stream) => {
-                if !first_payload.is_empty() {
-                    let _ = stream.write_all(&first_payload).await;
-                }
-                stream
-            }
+            Ok(stream) => stream,
             Err(e) => {
                 return Err(std::io::Error::other(e));
             }
@@ -665,18 +748,49 @@ pub(crate) async fn handle_conn(
         .v2ray_server
         .as_ref()
         .and_then(|s| s.stats())
-        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
-    let _ = metered::copy_bidirectional_streaming_ctl(
+        .and_then(|stats| stats.traffic_recorder(None, Some(outbound_tag.as_str()), None));
+    let chains = if outbound_tag.eq_ignore_ascii_case("direct") {
+        vec!["DIRECT".to_string()]
+    } else {
+        vec![outbound_tag.clone()]
+    };
+    let wiring = crate::conntrack::register_inbound_tcp(
+        cli.peer_addr()
+            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0))),
+        host.clone(),
+        port,
+        host.clone(),
+        "socks",
+        None,
+        Some(outbound_tag.clone()),
+        chains,
+        rule.clone(),
+        process_name.clone(),
+        process_path.clone(),
+        traffic,
+    );
+    if !first_payload.is_empty() {
+        let _ = upstream.write_all(&first_payload).await;
+        wiring.traffic.record_up(first_payload.len() as u64);
+        wiring.traffic.record_up_packet(1);
+    }
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,
         "socks",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
 
     Ok(())
 }

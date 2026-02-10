@@ -25,6 +25,7 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use sb_core::net::metered::TrafficRecorder;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -254,15 +255,46 @@ async fn handle_stream(
     let peer_version = session.peer_version();
     let stream_id = stream.id();
 
-    let upstream = match connect_via_router(&destination, conn_ctx.as_ref()).await {
-        Ok(conn) => conn,
+    let (upstream, outbound_tag, decision, rule) =
+        match connect_via_router(&destination, conn_ctx.as_ref()).await {
+            Ok(conn) => conn,
         Err(err) => {
             send_synack_error(&session, &stream, stream_id, peer_version, &err.to_string()).await;
             return Err(err);
         }
     };
 
-    relay_stream(stream, session, upstream, &destination, peer_version).await
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        conn_ctx.peer_addr,
+        destination.host.clone(),
+        destination.port,
+        destination.host.clone(),
+        "anytls",
+        Some(ANYTLS_INBOUND_TAG.to_string()),
+        outbound_tag,
+        chains,
+        rule,
+        None,
+        None,
+        None,
+    );
+    let _guard = wiring.guard;
+
+    relay_stream(
+        stream,
+        session,
+        upstream,
+        &destination,
+        peer_version,
+        wiring.cancel,
+        wiring.traffic,
+    )
+    .await
 }
 
 async fn relay_stream(
@@ -271,6 +303,8 @@ async fn relay_stream(
     upstream: TcpStream,
     destination: &SocksDestination,
     peer_version: u8,
+    cancel: tokio_util::sync::CancellationToken,
+    traffic: Arc<dyn TrafficRecorder>,
 ) -> Result<()> {
     let stream_id = stream.id();
     if peer_version >= 2 {
@@ -292,6 +326,7 @@ async fn relay_stream(
     let stream_reader = Arc::clone(stream.reader());
     let stream_for_write = stream.clone();
 
+    let traffic_up = traffic.clone();
     let to_upstream = tokio::spawn(async move {
         let mut buf = vec![0u8; 16 * 1024];
         loop {
@@ -304,10 +339,12 @@ async fn relay_stream(
                 break;
             }
             upstream_write.write_all(&buf[..n]).await?;
+            traffic_up.record_up(n as u64);
         }
         Ok::<(), std::io::Error>(())
     });
 
+    let traffic_down = traffic.clone();
     let to_client = tokio::spawn(async move {
         let mut buf = vec![0u8; 16 * 1024];
         loop {
@@ -320,14 +357,21 @@ async fn relay_stream(
                 .map_err(|_| {
                     std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stream send_data failed")
                 })?;
+            traffic_down.record_down(n as u64);
         }
         Ok::<(), std::io::Error>(())
     });
 
-    let (res1, res2) = tokio::join!(to_upstream, to_client);
-    res1??;
-    res2??;
-    Ok(())
+    let joined = async { tokio::join!(to_upstream, to_client) };
+    let res = tokio::select! {
+        _ = cancel.cancelled() => Ok(()),
+        r = joined => {
+            r.0??;
+            r.1??;
+            Ok(())
+        }
+    };
+    res
 }
 
 async fn send_synack_error(
@@ -410,8 +454,12 @@ async fn read_socks_destination(stream: Arc<Stream>) -> Result<SocksDestination>
     Ok(SocksDestination { host, port })
 }
 
-async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Result<TcpStream> {
+async fn connect_via_router(
+    dest: &SocksDestination,
+    ctx: &ConnectionCtx,
+) -> Result<(TcpStream, Option<String>, RDecision, Option<String>)> {
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(engine) = rules_global::global() {
         let route_ctx = RouteCtx {
             domain: Some(dest.host.as_str()),
@@ -423,19 +471,23 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = engine.decide(&route_ctx);
+        let (d, r) = engine.decide_with_meta(&route_ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("destination rejected by router"));
         }
         decision = d;
+        rule = r;
     }
 
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
     let target = format!("{}:{}", dest.host, dest.port);
 
-    let stream = match decision {
-        RDecision::Direct => direct_connect_hostport(&dest.host, dest.port, &opts).await?,
+    let (stream, outbound_tag) = match decision {
+        RDecision::Direct => (
+            direct_connect_hostport(&dest.host, dest.port, &opts).await?,
+            Some("direct".to_string()),
+        ),
         RDecision::Proxy(Some(name)) => {
             if let Some(reg) = registry::global() {
                 if reg.pools.contains_key(&name) {
@@ -443,45 +495,76 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
                     if let Some(entry) = selector.select(&name, ctx.peer_addr, &target, &()) {
                         match entry.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
+                                let s = http_proxy_connect_through_proxy(
                                     &entry.addr.to_string(),
                                     &dest.host,
                                     dest.port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("http".to_string()))
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(
+                                let s = socks5_connect_through_socks5(
                                     &entry.addr.to_string(),
                                     &dest.host,
                                     dest.port,
                                     &opts,
                                 )
-                                .await?
+                                .await?;
+                                (s, Some("socks5".to_string()))
                             }
                         }
                     } else {
-                        fallback_connect(proxy, &dest.host, dest.port, &opts).await?
+                        let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
+                        let tag = match proxy {
+                            ProxyChoice::Direct => "direct",
+                            ProxyChoice::Http(_) => "http",
+                            ProxyChoice::Socks5(_) => "socks5",
+                        };
+                        (s, Some(tag.to_string()))
                     }
                 } else {
-                    fallback_connect(proxy, &dest.host, dest.port, &opts).await?
+                    let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
+                    let tag = match proxy {
+                        ProxyChoice::Direct => "direct",
+                        ProxyChoice::Http(_) => "http",
+                        ProxyChoice::Socks5(_) => "socks5",
+                    };
+                    (s, Some(tag.to_string()))
                 }
             } else {
-                fallback_connect(proxy, &dest.host, dest.port, &opts).await?
+                let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
+                let tag = match proxy {
+                    ProxyChoice::Direct => "direct",
+                    ProxyChoice::Http(_) => "http",
+                    ProxyChoice::Socks5(_) => "socks5",
+                };
+                (s, Some(tag.to_string()))
             }
         }
-        RDecision::Proxy(None) => fallback_connect(proxy, &dest.host, dest.port, &opts).await?,
+        RDecision::Proxy(None) => {
+            let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
+            let tag = match proxy {
+                ProxyChoice::Direct => "direct",
+                ProxyChoice::Http(_) => "http",
+                ProxyChoice::Socks5(_) => "socks5",
+            };
+            (s, Some(tag.to_string()))
+        }
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("destination rejected by router"))
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
             // Not directly handled by AnyTLS inbound; fall back to direct
-            direct_connect_hostport(&dest.host, dest.port, &opts).await?
+            (
+                direct_connect_hostport(&dest.host, dest.port, &opts).await?,
+                Some("direct".to_string()),
+            )
         }
     };
 
-    Ok(stream)
+    Ok((stream, outbound_tag, decision, rule))
 }
 
 async fn fallback_connect(

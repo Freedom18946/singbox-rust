@@ -636,13 +636,11 @@ where
         )
     });
 
-    let chains = match (&decision, outbound_tag.as_deref()) {
-        (RDecision::Direct, _) => vec!["DIRECT".to_string()],
-        (RDecision::Proxy(Some(tag)), Some(ob_tag)) if ob_tag == tag => {
-            sb_core::outbound::chain::compute_chain_leaf_to_matched(cfg.outbounds.as_ref(), tag)
-        }
-        _ => vec!["PROXY".to_string()],
-    };
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        Some(cfg.outbounds.as_ref()),
+        &decision,
+        outbound_tag.as_deref(),
+    );
     let wiring = sb_core::conntrack::register_inbound_tcp(
         peer,
         host.to_string(),

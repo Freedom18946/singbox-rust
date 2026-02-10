@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::outbound::{OutboundImpl, OutboundRegistryHandle};
+use crate::router::rules::Decision;
 
 /// Compute proxy chain in Go-compatible order: leaf -> ... -> matched.
 ///
@@ -53,4 +54,37 @@ pub fn compute_chain_leaf_to_matched(
 
     chain_matched_to_leaf.reverse();
     chain_matched_to_leaf
+}
+
+/// Compute proxy chain for a routing decision.
+///
+/// - Direct -> ["DIRECT"]
+/// - Proxy(Some(tag)) -> compute leaf->matched (if registry available) or [tag]
+/// - Otherwise -> [outbound_tag] or ["PROXY"]
+pub fn compute_chain_for_decision(
+    outbounds: Option<&OutboundRegistryHandle>,
+    decision: &Decision,
+    outbound_tag: Option<&str>,
+) -> Vec<String> {
+    if let Some(tag) = outbound_tag {
+        if tag.eq_ignore_ascii_case("direct") {
+            return vec!["DIRECT".to_string()];
+        }
+    }
+    match decision {
+        Decision::Direct => vec!["DIRECT".to_string()],
+        Decision::Proxy(Some(tag)) => {
+            if let Some(reg) = outbounds {
+                compute_chain_leaf_to_matched(reg, tag)
+            } else {
+                vec![tag.to_string()]
+            }
+        }
+        Decision::Proxy(None) => outbound_tag
+            .map(|t| vec![t.to_string()])
+            .unwrap_or_else(|| vec!["PROXY".to_string()]),
+        _ => outbound_tag
+            .map(|t| vec![t.to_string()])
+            .unwrap_or_else(|| vec!["PROXY".to_string()]),
+    }
 }

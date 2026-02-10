@@ -132,6 +132,8 @@ mod ssh_server {
         pub channels: HashMap<ChannelId, ChannelState>,
         /// Connection counter reference
         pub active_connections: Arc<AtomicU64>,
+        /// Peer address (if known)
+        pub peer_addr: Option<std::net::SocketAddr>,
     }
 
     /// State for an active SSH channel
@@ -139,18 +141,22 @@ mod ssh_server {
         pub target_host: String,
         pub target_port: u32,
         pub writer: tokio::net::tcp::OwnedWriteHalf,
+        pub cancel: tokio_util::sync::CancellationToken,
+        pub traffic: Arc<dyn sb_core::net::metered::TrafficRecorder>,
+        pub _guard: sb_core::conntrack::ConntrackGuard,
     }
 
     impl server::Server for SshServerHandler {
         type Handler = Self;
 
-        fn new_client(&mut self, _peer_addr: Option<std::net::SocketAddr>) -> Self::Handler {
+        fn new_client(&mut self, peer_addr: Option<std::net::SocketAddr>) -> Self::Handler {
             SshServerHandler {
                 username: None,
                 authorized_keys: self.authorized_keys.clone(),
                 passwords: self.passwords.clone(),
                 channels: HashMap::new(),
                 active_connections: self.active_connections.clone(),
+                peer_addr,
             }
         }
     }
@@ -227,6 +233,27 @@ mod ssh_server {
                     debug!(target = %target, "Connected to target for SSH tunnel");
                     let (mut read_half, write_half) = stream.into_split();
 
+                    let peer = self.peer_addr.unwrap_or_else(|| {
+                        std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0)
+                    });
+                    let wiring = sb_core::conntrack::register_inbound_tcp(
+                        peer,
+                        host_to_connect.to_string(),
+                        port_to_connect as u16,
+                        host_to_connect.to_string(),
+                        "ssh",
+                        None,
+                        Some("direct".to_string()),
+                        vec!["DIRECT".to_string()],
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                    let cancel = wiring.cancel.clone();
+                    let traffic = wiring.traffic.clone();
+                    let guard = wiring.guard;
+
                     // Store channel state with writer
                     self.channels.insert(
                         channel_id,
@@ -234,21 +261,31 @@ mod ssh_server {
                             target_host: host_to_connect.to_string(),
                             target_port: port_to_connect,
                             writer: write_half,
+                            cancel: cancel.clone(),
+                            traffic: traffic.clone(),
+                            _guard: guard,
                         },
                     );
 
                     // Spawn connection handler for reading from target
                     let session_handle = session.handle();
+                    let cancel_read = cancel.clone();
+                    let traffic_read = traffic.clone();
                     tokio::spawn(async move {
                         let mut buf = vec![0u8; 32768];
                         loop {
-                            match read_half.read(&mut buf).await {
+                            let res = tokio::select! {
+                                _ = cancel_read.cancelled() => return,
+                                r = read_half.read(&mut buf) => r,
+                            };
+                            match res {
                                 Ok(0) => {
                                     debug!(target = %target, "Target connection closed");
                                     let _ = session_handle.close(channel_id).await;
                                     break;
                                 }
                                 Ok(n) => {
+                                    traffic_read.record_down(n as u64);
                                     let data = CryptoVec::from_slice(&buf[..n]);
                                     if session_handle.data(channel_id, data).await.is_err() {
                                         break;
@@ -261,6 +298,14 @@ mod ssh_server {
                                 }
                             }
                         }
+                    });
+
+                    // Cancel hook: close channel when conntrack is cancelled
+                    let session_handle_cancel = session.handle();
+                    let cancel_close = cancel.clone();
+                    tokio::spawn(async move {
+                        cancel_close.cancelled().await;
+                        let _ = session_handle_cancel.close(channel_id).await;
                     });
 
                     Ok(true)
@@ -276,15 +321,20 @@ mod ssh_server {
             &mut self,
             channel: ChannelId,
             data: &[u8],
-            _session: &mut Session,
+            session: &mut Session,
         ) -> Result<(), Self::Error> {
             if let Some(state) = self.channels.get_mut(&channel) {
+                if state.cancel.is_cancelled() {
+                    let _ = session.close(channel);
+                    return Ok(());
+                }
                 trace!(
                     channel = ?channel,
                     len = data.len(),
                     target = %format!("{}:{}", state.target_host, state.target_port),
                     "SSH channel data forwarding"
                 );
+                state.traffic.record_up(data.len() as u64);
                 if let Err(e) = state.writer.write_all(data).await {
                     warn!(error = %e, "Failed to write to target");
                     return Ok(()); // Connection closed effectively

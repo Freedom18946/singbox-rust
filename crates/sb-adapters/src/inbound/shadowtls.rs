@@ -154,6 +154,7 @@ where
 
     // Router decision with updated RouteCtx (Sprint 19 Phase 1.1)
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
             domain: Some(host.as_str()),
@@ -163,11 +164,12 @@ where
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("shadowtls: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     let proxy = default_proxy();
@@ -251,17 +253,42 @@ where
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "shadowtls",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         &mut tls,
         &mut upstream,
         "shadowtls",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
 

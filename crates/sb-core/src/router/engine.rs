@@ -1152,6 +1152,61 @@ impl RouterHandle {
         RouteTarget::Named(idx.default.to_string())
     }
 
+    /// 旧接口适配（带最小 rule 标签）：根据上下文进行路由并返回 RouteTarget + rule label。
+    ///
+    /// This mirrors `select_ctx_and_record` behavior, adding a stable rule label
+    /// for `/connections` display.
+    pub fn select_ctx_and_record_with_meta(
+        &self,
+        ctx: RouteCtx,
+    ) -> (RouteTarget, Option<String>) {
+        // 拿快照
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        // host 优先
+        if let Some(h) = ctx.host {
+            if let Some(d) = router_index_decide_exact_suffix(&idx, h) {
+                let kind = if idx.exact.contains_key(h) { "exact" } else { "suffix" };
+                return (RouteTarget::Named(d.to_string()), Some(kind.to_string()));
+            }
+            // host 可能是字面量 IP:PORT
+            if let Some((raw, _)) = h.rsplit_once(':') {
+                if let Ok(ip) = raw.parse::<IpAddr>() {
+                    if let Some(d) = router_index_decide_ip(&idx, ip) {
+                        return (RouteTarget::Named(d.to_string()), Some("ip".to_string()));
+                    }
+                }
+            } else if let Ok(ip) = h.parse::<IpAddr>() {
+                if let Some(d) = router_index_decide_ip(&idx, ip) {
+                    return (RouteTarget::Named(d.to_string()), Some("ip".to_string()));
+                }
+            }
+        }
+        // 明确 IP 兜底
+        if let Some(ip) = ctx.ip {
+            if let Some(d) = router_index_decide_ip(&idx, ip) {
+                return (RouteTarget::Named(d.to_string()), Some("ip".to_string()));
+            }
+            // Check RuleSet rules (IP)
+            if let Some(rule_set_db) = &self.rule_set_db {
+                let mut matched_tags = Vec::new();
+                rule_set_db.match_ip(ip, &mut matched_tags);
+                if !matched_tags.is_empty() {
+                    let input = crate::router::Input {
+                        rule_set: Some(&matched_tags),
+                        ..Default::default()
+                    };
+                    if let Some(d) = crate::router::router_index_decide_rule_set(&idx, &input) {
+                        return (RouteTarget::Named(d.to_string()), Some("ip".to_string()));
+                    }
+                }
+            }
+        }
+        if let Some(d) = super::router_index_decide_transport_port(&idx, ctx.port, Some("tcp")) {
+            return (RouteTarget::Named(d.to_string()), Some("transport".to_string()));
+        }
+        (RouteTarget::Named(idx.default.to_string()), Some("final".to_string()))
+    }
+
     /// Decide with minimal matched rule metadata (best-effort).
     ///
     /// This does NOT change routing behavior: it mirrors `decide()` and only adds

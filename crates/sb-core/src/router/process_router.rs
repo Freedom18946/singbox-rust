@@ -61,6 +61,39 @@ impl ProcessRouter {
         engine.decide(&ctx)
     }
 
+    /// Make a routing decision with process information and return rule label.
+    pub async fn decide_with_process_meta(
+        &self,
+        domain: Option<&str>,
+        ip: Option<std::net::IpAddr>,
+        transport_udp: bool,
+        port: Option<u16>,
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+    ) -> (Decision, Option<String>) {
+        // Try to get process information
+        let (process_name, process_path) = match self
+            .get_process_info(local_addr, remote_addr, transport_udp)
+            .await
+        {
+            Ok(info) => (Some(info.name), Some(info.path)),
+            Err(_) => (None, None),
+        };
+
+        let ctx = RouteCtx {
+            domain,
+            ip,
+            transport_udp,
+            port,
+            process_name: process_name.as_deref(),
+            process_path: process_path.as_deref(),
+            ..Default::default()
+        };
+
+        let engine = self.engine.read().await;
+        engine.decide_with_meta(&ctx)
+    }
+
     /// Make a routing decision without process information (fallback)
     pub async fn decide_without_process(
         &self,
@@ -81,6 +114,28 @@ impl ProcessRouter {
 
         let engine = self.engine.read().await;
         engine.decide(&ctx)
+    }
+
+    /// Make a routing decision without process information and return rule label.
+    pub async fn decide_without_process_meta(
+        &self,
+        domain: Option<&str>,
+        ip: Option<std::net::IpAddr>,
+        transport_udp: bool,
+        port: Option<u16>,
+    ) -> (Decision, Option<String>) {
+        let ctx = RouteCtx {
+            domain,
+            ip,
+            transport_udp,
+            port,
+            process_name: None,
+            process_path: None,
+            ..Default::default()
+        };
+
+        let engine = self.engine.read().await;
+        engine.decide_with_meta(&ctx)
     }
 
     /// Update the routing engine

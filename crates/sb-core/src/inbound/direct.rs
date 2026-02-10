@@ -15,9 +15,11 @@ use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 use crate::adapter::InboundService;
 use crate::net::metered;
+use crate::net::datagram::UdpConntrackMeta;
 use crate::services::v2ray_api::StatsManager;
 
 #[derive(Debug, Clone)]
@@ -42,6 +44,7 @@ impl Default for DirectConfig {
 struct UdpSession {
     socket: Arc<UdpSocket>,
     last_activity: Instant,
+    conntrack: Option<UdpConntrackMeta>,
 }
 
 #[derive(Debug)]
@@ -96,7 +99,7 @@ impl DirectForward {
         self
     }
 
-    async fn handle_tcp(&self, mut cli: TcpStream) -> io::Result<()> {
+    async fn handle_tcp(&self, mut cli: TcpStream, peer: SocketAddr) -> io::Result<()> {
         // Establish upstream connection to fixed target
         let addr = format!("{}:{}", self.dst_host, self.dst_port);
         let mut upstream = timeout(
@@ -110,17 +113,37 @@ impl DirectForward {
             .stats
             .as_ref()
             .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
-        let _ = metered::copy_bidirectional_streaming_ctl(
+        let wiring = crate::conntrack::register_inbound_tcp(
+            peer,
+            self.dst_host.clone(),
+            self.dst_port,
+            self.dst_host.clone(),
+            "direct",
+            self.tag.clone(),
+            Some("direct".to_string()),
+            vec!["DIRECT".to_string()],
+            None,
+            None,
+            None,
+            traffic,
+        );
+        let _guard = wiring.guard;
+        let copy_res = metered::copy_bidirectional_streaming_ctl(
             &mut cli,
             &mut upstream,
             "direct",
             Duration::from_secs(1),
             None,
             None,
-            None,
-            traffic,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
         )
         .await;
+        if let Err(e) = copy_res {
+            if e.kind() != std::io::ErrorKind::Interrupted {
+                return Err(e);
+            }
+        }
         Ok(())
     }
 
@@ -145,7 +168,7 @@ impl DirectForward {
                     let sum = active.load(Ordering::Relaxed) + udp_count.load(Ordering::Relaxed);
                     crate::metrics::inbound::set_active_connections("direct", sum);
                     tokio::spawn(async move {
-                        if let Err(e) = me.handle_tcp(socket).await {
+                        if let Err(e) = me.handle_tcp(socket, peer).await {
                             tracing::debug!(error=%e, "direct inbound TCP: session error");
                         }
                         active.fetch_sub(1, Ordering::Relaxed);
@@ -171,11 +194,6 @@ impl DirectForward {
             dst=%format!("{}:{}", self.dst_host, self.dst_port),
             "direct inbound UDP listening"
         );
-
-        let traffic = self
-            .stats
-            .as_ref()
-            .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
 
         let mut buf = vec![0u8; 65536];
         let cleanup_interval = Duration::from_secs(30);
@@ -203,21 +221,25 @@ impl DirectForward {
                     Err(_) => continue, // timeout, check shutdown flag
                 };
 
-            if let Some(ref recorder) = traffic {
-                recorder.record_up(n as u64);
-                recorder.record_up_packet(1);
-            }
-
             let packet = &buf[..n];
             tracing::trace!(src=%src_addr, len=n, "direct inbound UDP: received packet");
 
             // Get or create session for this client
-            let upstream_socket = self
+            let (upstream_socket, conntrack_meta) = self
                 .get_or_create_udp_session(src_addr, socket.clone())
                 .await?;
 
             // Forward packet to destination
             let dst_addr = format!("{}:{}", self.dst_host, self.dst_port);
+            if let Some((_, cancel)) = &conntrack_meta {
+                if cancel.is_cancelled() {
+                    continue;
+                }
+            }
+            if let Some((traffic, _)) = &conntrack_meta {
+                traffic.record_up(n as u64);
+                traffic.record_up_packet(1);
+            }
             if let Err(e) = upstream_socket.send_to(packet, &dst_addr).await {
                 tracing::debug!(error=%e, "direct inbound UDP: send to dst failed");
             }
@@ -229,13 +251,29 @@ impl DirectForward {
         &self,
         client_addr: SocketAddr,
         listen_socket: Arc<UdpSocket>,
-    ) -> io::Result<Arc<UdpSocket>> {
+    ) -> io::Result<(Arc<UdpSocket>, Option<(Arc<dyn crate::net::metered::TrafficRecorder>, CancellationToken)>)> {
         let mut sessions = self.udp_sessions.lock().await;
 
         // Check if session exists
         if let Some(session) = sessions.get_mut(&client_addr) {
-            session.last_activity = Instant::now();
-            return Ok(session.socket.clone());
+            if let Some(meta) = &session.conntrack {
+                if meta.cancel.is_cancelled() {
+                    sessions.remove(&client_addr);
+                    self.udp_count.fetch_sub(1, Ordering::Relaxed);
+                    let sum =
+                        self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
+                    crate::metrics::inbound::set_active_connections("direct", sum);
+                } else {
+                    session.last_activity = Instant::now();
+                    return Ok((
+                        session.socket.clone(),
+                        Some((meta.traffic.clone(), meta.cancel.clone())),
+                    ));
+                }
+            } else {
+                session.last_activity = Instant::now();
+                return Ok((session.socket.clone(), None));
+            }
         }
 
         // Create new session
@@ -249,9 +287,36 @@ impl DirectForward {
             .stats
             .as_ref()
             .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
+        let wiring = crate::conntrack::register_inbound_udp(
+            client_addr,
+            self.dst_host.clone(),
+            self.dst_port,
+            self.dst_host.clone(),
+            "direct",
+            self.tag.clone(),
+            Some("direct".to_string()),
+            vec!["DIRECT".to_string()],
+            None,
+            None,
+            None,
+            traffic,
+        );
+        let meta = UdpConntrackMeta {
+            guard: wiring.guard,
+            cancel: wiring.cancel.clone(),
+            traffic: wiring.traffic.clone(),
+        };
+        let traffic_for_relay = meta.traffic.clone();
+        let cancel_for_relay = meta.cancel.clone();
         tokio::spawn(async move {
-            me.relay_udp_upstream_to_client(upstream_clone, client_addr, listen_socket, traffic)
-                .await;
+            me.relay_udp_upstream_to_client(
+                upstream_clone,
+                client_addr,
+                listen_socket,
+                Some(traffic_for_relay),
+                Some(cancel_for_relay),
+            )
+            .await;
         });
 
         sessions.insert(
@@ -259,6 +324,7 @@ impl DirectForward {
             UdpSession {
                 socket: upstream.clone(),
                 last_activity: Instant::now(),
+                conntrack: Some(meta),
             },
         );
         self.udp_count.fetch_add(1, Ordering::Relaxed);
@@ -266,7 +332,7 @@ impl DirectForward {
         crate::metrics::inbound::set_active_connections("direct", sum);
 
         tracing::debug!(client=%client_addr, "direct inbound UDP: created new session");
-        Ok(upstream)
+        Ok((upstream, Some((wiring.traffic, wiring.cancel))))
     }
 
     async fn relay_udp_upstream_to_client(
@@ -275,6 +341,7 @@ impl DirectForward {
         client_addr: SocketAddr,
         listen_socket: Arc<UdpSocket>,
         traffic: Option<Arc<dyn crate::net::metered::TrafficRecorder>>,
+        cancel: Option<CancellationToken>,
     ) {
         let mut buf = vec![0u8; 65536];
         loop {
@@ -282,7 +349,16 @@ impl DirectForward {
                 break;
             }
 
-            match timeout(Duration::from_secs(1), upstream.recv_from(&mut buf)).await {
+            let recv_res = if let Some(cancel) = &cancel {
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    res = timeout(Duration::from_secs(1), upstream.recv_from(&mut buf)) => res,
+                }
+            } else {
+                timeout(Duration::from_secs(1), upstream.recv_from(&mut buf)).await
+            };
+
+            match recv_res {
                 Ok(Ok((n, _src))) => {
                     // Update session activity
                     {
@@ -328,7 +404,10 @@ impl DirectForward {
 
         // Remove session
         let mut sessions = self.udp_sessions.lock().await;
-        if sessions.remove(&client_addr).is_some() {
+        if let Some(session) = sessions.remove(&client_addr) {
+            if let Some(meta) = session.conntrack {
+                meta.cancel.cancel();
+            }
             self.udp_count.fetch_sub(1, Ordering::Relaxed);
             let sum = self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
             crate::metrics::inbound::set_active_connections("direct", sum);
@@ -347,7 +426,10 @@ impl DirectForward {
 
         let mut removed = 0u64;
         for addr in expired {
-            if sessions.remove(&addr).is_some() {
+            if let Some(session) = sessions.remove(&addr) {
+                if let Some(meta) = session.conntrack {
+                    meta.cancel.cancel();
+                }
                 removed += 1;
             }
             tracing::debug!(client=%addr, "direct inbound UDP: cleaned up expired session");

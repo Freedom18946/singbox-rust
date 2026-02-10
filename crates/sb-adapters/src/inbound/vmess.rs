@@ -261,6 +261,7 @@ async fn handle_conn(
     // Step 5: Router decision
     // 步骤 5: 路由决策
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
             domain: Some(target_host.as_str()),
@@ -270,11 +271,12 @@ async fn handle_conn(
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("vmess: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     // Step 6: Connect to upstream
@@ -375,17 +377,42 @@ async fn handle_conn(
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        target_host.clone(),
+        target_port,
+        target_host.clone(),
+        "vmess",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         cli,
         &mut upstream,
         "vmess",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
 
     Ok(())
 }

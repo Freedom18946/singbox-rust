@@ -181,16 +181,13 @@ impl DnsInboundAdapter {
                     match result {
                         Ok((len, src)) => {
                             self.active_queries.fetch_add(1, Ordering::Relaxed);
-                            if let Some(ref recorder) = traffic {
-                                recorder.record_up(len as u64);
-                                recorder.record_up_packet(1);
-                            }
                             let query = buf[..len].to_vec();
                             let socket_ref = socket.clone();
                             let active_queries = self.active_queries.clone();
                             let resolver = self.resolver.clone();
                             let traffic = traffic.clone();
                             let dns_router = self.dns_router.clone();
+                            let inbound_tag = self.tag.clone();
 
                             // Spawn task with resolver
                             tokio::spawn(async move {
@@ -200,6 +197,7 @@ impl DnsInboundAdapter {
                                     &query,
                                     resolver,
                                     dns_router,
+                                    inbound_tag,
                                     traffic,
                                 )
                                 .await
@@ -233,20 +231,48 @@ impl DnsInboundAdapter {
         query: &[u8],
         resolver: Arc<ResolverHandle>,
         dns_router: Option<Arc<dyn DnsRouter>>,
-        traffic: Option<Arc<dyn TrafficRecorder>>,
+        inbound_tag: Option<String>,
+        inner_traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> std::io::Result<()> {
+        let (host, _qtype) = Self::parse_query(query).unwrap_or_else(|_| ("dns".to_string(), 1));
+        let wiring = sb_core::conntrack::register_inbound_udp(
+            src,
+            host.clone(),
+            53,
+            host,
+            "dns",
+            inbound_tag,
+            Some("direct".to_string()),
+            vec!["DIRECT".to_string()],
+            None,
+            None,
+            None,
+            inner_traffic,
+        );
+        let _guard = wiring.guard;
+        let traffic = wiring.traffic.clone();
+        let cancel = wiring.cancel.clone();
+
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        traffic.record_up(query.len() as u64);
+        traffic.record_up_packet(1);
+
         // Try DnsRouter first if available (wire-format exchange, Go parity)
         if let Some(router) = &dns_router {
             let ctx = DnsQueryContext::new()
                 .with_transport("udp")
                 .with_client(src);
-            match router.exchange(&ctx, query).await {
+            let res = tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                r = router.exchange(&ctx, query) => r,
+            };
+            match res {
                 Ok(response) => {
                     if socket.send_to(&response, src).await.is_ok() {
-                        if let Some(ref recorder) = traffic {
-                            recorder.record_down(response.len() as u64);
-                            recorder.record_down_packet(1);
-                        }
+                        traffic.record_down(response.len() as u64);
+                        traffic.record_down_packet(1);
                     }
                     debug!(src = %src, query_len = query.len(), response_len = response.len(), "DNS query handled via DnsRouter");
                     return Ok(());
@@ -258,13 +284,15 @@ impl DnsInboundAdapter {
         }
 
         // Fallback: forward to DNS resolver and get response
-        match Self::resolve_query(query, &resolver).await {
+        let res = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            r = Self::resolve_query(query, &resolver) => r,
+        };
+        match res {
             Ok(response) => {
                 if socket.send_to(&response, src).await.is_ok() {
-                    if let Some(ref recorder) = traffic {
-                        recorder.record_down(response.len() as u64);
-                        recorder.record_down_packet(1);
-                    }
+                    traffic.record_down(response.len() as u64);
+                    traffic.record_down_packet(1);
                 }
                 debug!(src = %src, query_len = query.len(), response_len = response.len(), "DNS query handled");
             }
@@ -272,10 +300,8 @@ impl DnsInboundAdapter {
                 // Send SERVFAIL response
                 if let Some(response) = Self::create_servfail_response(query) {
                     if socket.send_to(&response, src).await.is_ok() {
-                        if let Some(ref recorder) = traffic {
-                            recorder.record_down(response.len() as u64);
-                            recorder.record_down_packet(1);
-                        }
+                        traffic.record_down(response.len() as u64);
+                        traffic.record_down_packet(1);
                     }
                 }
                 debug!(src = %src, error = %e, "DNS query resolution failed");

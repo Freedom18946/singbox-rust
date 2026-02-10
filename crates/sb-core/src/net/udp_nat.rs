@@ -8,6 +8,10 @@ use std::{
 };
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+
+use crate::net::datagram::UdpConntrackMeta;
+use crate::net::metered::TrafficRecorder;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TargetAddr {
@@ -29,6 +33,7 @@ pub struct NatEntry {
     pub gen: u64,
     pub bytes_in: u64,
     pub bytes_out: u64,
+    pub conntrack: Option<UdpConntrackMeta>,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +94,123 @@ impl NatMap {
         self.map.is_empty()
     }
 
+    /// Get a NAT entry if present and refresh its expiry.
+    pub async fn get(&self, key: &NatKey) -> Option<Arc<UdpSocket>> {
+        if let Some(mut e) = self.map.get_mut(key) {
+            e.gen = e.gen.wrapping_add(1);
+            e.last_seen = self.now();
+            e.expiry = e.last_seen + self.ttl;
+            let item = HeapItem {
+                expiry: e.expiry,
+                gen: e.gen,
+                key: key.clone(),
+            };
+            {
+                let mut h = self.heap.lock().await;
+                h.push(item);
+                #[cfg(feature = "metrics")]
+                self.metrics.heap_len.set(h.len() as i64);
+            }
+            return Some(e.upstream.clone());
+        }
+        None
+    }
+
+    /// Fetch conntrack metadata (traffic + cancel) for an existing NAT entry.
+    pub async fn get_conntrack_meta(
+        &self,
+        key: &NatKey,
+    ) -> Option<(Arc<dyn TrafficRecorder>, CancellationToken)> {
+        if let Some(mut e) = self.map.get_mut(key) {
+            e.gen = e.gen.wrapping_add(1);
+            e.last_seen = self.now();
+            e.expiry = e.last_seen + self.ttl;
+            let item = HeapItem {
+                expiry: e.expiry,
+                gen: e.gen,
+                key: key.clone(),
+            };
+            {
+                let mut h = self.heap.lock().await;
+                h.push(item);
+                #[cfg(feature = "metrics")]
+                self.metrics.heap_len.set(h.len() as i64);
+            }
+            if let Some(meta) = &e.conntrack {
+                return Some((meta.traffic.clone(), meta.cancel.clone()));
+            }
+        }
+        None
+    }
+
+    /// Insert or update a NAT entry with optional conntrack metadata.
+    pub async fn insert_with_meta(
+        &self,
+        key: NatKey,
+        upstream: Arc<UdpSocket>,
+        conntrack: Option<UdpConntrackMeta>,
+    ) -> bool {
+        self.pre_evict().await;
+
+        let now = self.now();
+        if let Some(mut e) = self.map.get_mut(&key) {
+            e.gen = e.gen.wrapping_add(1);
+            e.last_seen = now;
+            e.expiry = now + self.ttl;
+            e.upstream = upstream;
+            if conntrack.is_some() {
+                e.conntrack = conntrack;
+            }
+            let item = HeapItem {
+                expiry: e.expiry,
+                gen: e.gen,
+                key: key.clone(),
+            };
+            {
+                let mut h = self.heap.lock().await;
+                h.push(item);
+                #[cfg(feature = "metrics")]
+                self.metrics.heap_len.set(h.len() as i64);
+            }
+            return true;
+        }
+
+        if self.map.len() >= self.cap {
+            return false;
+        }
+
+        let entry = NatEntry {
+            upstream,
+            last_seen: now,
+            expiry: now + self.ttl,
+            gen: 1,
+            bytes_in: 0,
+            bytes_out: 0,
+            conntrack,
+        };
+        self.map.insert(key.clone(), entry);
+        {
+            let mut h = self.heap.lock().await;
+            h.push(HeapItem {
+                expiry: now + self.ttl,
+                gen: 1,
+                key,
+            });
+            #[cfg(feature = "metrics")]
+            self.metrics.heap_len.set(h.len() as i64);
+        }
+        #[cfg(feature = "metrics")]
+        self.metrics.size_gauge.set(self.map.len() as i64);
+        true
+    }
+
+    /// Update conntrack metadata for an existing NAT entry.
+    pub async fn set_conntrack_meta(&self, key: &NatKey, conntrack: Option<UdpConntrackMeta>) {
+        if let Some(mut e) = self.map.get_mut(key) {
+            e.conntrack = conntrack;
+        }
+    }
+
     #[inline]
     fn now(&self) -> Instant {
         Instant::now()
@@ -127,6 +249,7 @@ impl NatMap {
             gen: 1,
             bytes_in: 0,
             bytes_out: 0,
+            conntrack: None,
         };
         let upstream = entry.upstream.clone();
         self.map.insert(key.clone(), entry);
@@ -184,6 +307,7 @@ impl NatMap {
             gen: 1,
             bytes_in: 0,
             bytes_out: 0,
+            conntrack: None,
         };
         self.map.insert(key.clone(), entry);
         {
@@ -305,7 +429,11 @@ impl NatMap {
             return Removed("closed");
         }
         // 到这里说明：gen 匹配，且已到期或容量驱逐
-        self.map.remove(&item.key);
+        if let Some((_k, entry)) = self.map.remove(&item.key) {
+            if let Some(meta) = entry.conntrack {
+                meta.cancel.cancel();
+            }
+        }
         let reason = reason_override.unwrap_or("expiry");
         Removed(reason)
     }

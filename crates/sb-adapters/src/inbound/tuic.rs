@@ -324,7 +324,7 @@ async fn handle_tcp_relay(
 
     debug!("TUIC: TCP CONNECT {}:{} from {}", host, port, peer);
 
-    let (upstream, outbound_tag) = match connect_via_router(&cfg, &host, port).await {
+    let (upstream, outbound_tag, decision, rule) = match connect_via_router(&cfg, &host, port).await {
         Ok(s) => s,
         Err(e) => {
             let _ = send.write_all(&[0x01; 16]).await;
@@ -342,8 +342,29 @@ async fn handle_tcp_relay(
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
 
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        Some(cfg.outbounds.as_ref()),
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "tuic",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule,
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+
     // Bidirectional relay
-    relay_quic_tcp(send, recv, upstream, traffic).await?;
+    relay_quic_tcp(send, recv, upstream, Some(wiring.cancel), Some(wiring.traffic)).await?;
 
     Ok(())
 }
@@ -363,7 +384,7 @@ async fn handle_udp_relay(
     debug!("TUIC: UDP PACKET {}:{} from {}", host, port, peer);
 
     // Router decision (UDP path)
-    let route = cfg.router.select_ctx_and_record(RouteCtx {
+    let (route, rule) = cfg.router.select_ctx_and_record_with_meta(RouteCtx {
         host: Some(&host),
         ip: None,
         port: Some(port),
@@ -379,6 +400,12 @@ async fn handle_udp_relay(
         OutRouteTarget::Kind(OutboundKind::Direct) => Some("direct"),
         OutRouteTarget::Kind(OutboundKind::Block) => Some("block"),
         _ => None,
+    };
+    let decision = match &route {
+        OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+        OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
+        OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
+        _ => sb_core::router::rules::Decision::Direct,
     };
     let traffic = cfg
         .stats
@@ -401,7 +428,34 @@ async fn handle_udp_relay(
     send.write_all(&[0x00]).await?;
 
     // Bidirectional relay for UDP packets
-    relay_quic_udp(send, recv, udp, traffic).await?;
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        Some(cfg.outbounds.as_ref()),
+        &decision,
+        outbound_tag,
+    );
+    let wiring = sb_core::conntrack::register_inbound_udp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "tuic",
+        cfg.tag.clone(),
+        outbound_tag.map(|s| s.to_string()),
+        chains,
+        rule,
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    relay_quic_udp(
+        send,
+        recv,
+        udp,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
+    )
+    .await?;
 
     Ok(())
 }
@@ -493,19 +547,25 @@ async fn connect_via_router(
     cfg: &TuicInboundConfig,
     host: &str,
     port: u16,
-) -> Result<(IoStream, Option<String>)> {
+) -> Result<(IoStream, Option<String>, sb_core::router::rules::Decision, Option<String>)> {
     let ctx = RouteCtx {
         host: Some(host),
         ip: None,
         port: Some(port),
         transport: Transport::Tcp,
     };
-    let target: OutRouteTarget = cfg.router.select_ctx_and_record(ctx);
+    let (target, rule) = cfg.router.select_ctx_and_record_with_meta(ctx);
     let outbound_tag = match &target {
         OutRouteTarget::Named(name) => Some(name.clone()),
         OutRouteTarget::Kind(OutboundKind::Direct) => Some("direct".to_string()),
         OutRouteTarget::Kind(OutboundKind::Block) => Some("block".to_string()),
         _ => None,
+    };
+    let decision = match &target {
+        OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+        OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
+        OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
+        _ => sb_core::router::rules::Decision::Direct,
     };
     let endpoint = match host.parse::<IpAddr>() {
         Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
@@ -518,7 +578,7 @@ async fn connect_via_router(
             .connect_preferred(&target, endpoint)
             .await
             .map_err(|e| anyhow!("failed to connect via router: {}", e))
-            .map(|s| (s, outbound_tag))
+            .map(|s| (s, outbound_tag, decision, rule))
     }
     #[cfg(not(feature = "v2ray_transport"))]
     {
@@ -527,7 +587,7 @@ async fn connect_via_router(
             .connect_preferred(&target, endpoint)
             .await
             .map_err(|e| anyhow!("failed to connect via router: {}", e))?;
-        Ok((Box::new(stream), outbound_tag))
+        Ok((Box::new(stream), outbound_tag, decision, rule))
     }
 }
 
@@ -553,6 +613,7 @@ async fn relay_quic_tcp(
     mut quic_send: quinn::SendStream,
     mut quic_recv: quinn::RecvStream,
     tcp: IoStream,
+    cancel: Option<tokio_util::sync::CancellationToken>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
@@ -609,7 +670,9 @@ async fn relay_quic_tcp(
         Ok::<_, anyhow::Error>(())
     };
 
+    let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
     tokio::select! {
+        _ = cancel.cancelled() => Ok(()),
         r1 = quic_to_tcp => r1,
         r2 = tcp_to_quic => r2,
     }
@@ -620,6 +683,7 @@ async fn relay_quic_udp(
     mut quic_send: quinn::SendStream,
     mut quic_recv: quinn::RecvStream,
     udp: tokio::net::UdpSocket,
+    cancel: Option<tokio_util::sync::CancellationToken>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) -> Result<()> {
     let udp = Arc::new(udp);
@@ -687,7 +751,9 @@ async fn relay_quic_udp(
         Ok::<_, anyhow::Error>(())
     };
 
+    let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
     tokio::select! {
+        _ = cancel.cancelled() => Ok(()),
         r1 = quic_to_udp => r1,
         r2 = udp_to_quic => r2,
     }

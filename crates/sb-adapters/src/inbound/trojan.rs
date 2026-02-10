@@ -459,14 +459,7 @@ async fn handle_conn_impl(
                         handle_tcp_connect(cfg, tls, peer, &host, port, auth_user).await
                     }
                     TrojanCommand::UdpAssociate => {
-                        let traffic = cfg.stats.as_ref().and_then(|stats| {
-                            stats.traffic_recorder(
-                                cfg.tag.as_deref(),
-                                Some("direct"),
-                                Some(auth_user.as_str()),
-                            )
-                        });
-                        handle_udp_associate(tls, peer, traffic).await
+                        handle_udp_associate(cfg, tls, peer, &host, port, auth_user).await
                     }
                 }
             } else {
@@ -631,17 +624,43 @@ pub fn parse_trojan_request(buf: &[u8]) -> Result<()> {
 
 /// Handle UDP ASSOCIATE request
 async fn handle_udp_associate(
+    cfg: &TrojanInboundConfig,
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
     peer: SocketAddr,
-    traffic: Option<Arc<dyn TrafficRecorder>>,
+    host: &str,
+    port: u16,
+    auth_user: &str,
 ) -> Result<()> {
     let udp_socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
     let (mut rh, mut wh) = tokio::io::split(stream);
 
+    let traffic = cfg.stats.as_ref().and_then(|stats| {
+        stats.traffic_recorder(
+            cfg.tag.as_deref(),
+            Some("direct"),
+            Some(auth_user),
+        )
+    });
+    let wiring = sb_core::conntrack::register_inbound_udp(
+        peer,
+        host.to_string(),
+        port,
+        host.to_string(),
+        "trojan",
+        cfg.tag.clone(),
+        Some("direct".to_string()),
+        vec!["DIRECT".to_string()],
+        None,
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+
     let udp_socket_recv = udp_socket.clone();
     let udp_socket_send = udp_socket.clone();
-    let traffic_up = traffic.clone();
-    let traffic_down = traffic.clone();
+    let traffic_up = Some(wiring.traffic.clone());
+    let traffic_down = Some(wiring.traffic.clone());
 
     // Client -> Target
     let c2t = async move {
@@ -735,8 +754,15 @@ async fn handle_udp_associate(
     };
 
     debug!(%peer, "trojan: starting UDP associate loop");
-    let _ = tokio::join!(c2t, t2c);
-    Ok(())
+    let joined = async { tokio::join!(c2t, t2c) };
+    tokio::select! {
+        _ = wiring.cancel.cancelled() => Ok(()),
+        r = joined => {
+            r.0?;
+            r.1?;
+            Ok(())
+        }
+    }
 }
 
 /// Handle TCP CONNECT request
@@ -750,6 +776,7 @@ async fn handle_tcp_connect(
 ) -> Result<()> {
     // Router decision
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
             domain: Some(host),
@@ -760,11 +787,12 @@ async fn handle_tcp_connect(
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("trojan: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     let proxy = default_proxy();
@@ -878,17 +906,42 @@ async fn handle_tcp_connect(
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), Some(auth_user))
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        host.to_string(),
+        port,
+        host.to_string(),
+        "trojan",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         tls,
         &mut upstream,
         "trojan",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
 

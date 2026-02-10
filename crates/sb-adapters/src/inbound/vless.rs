@@ -434,6 +434,7 @@ async fn handle_conn_impl(
     // Step 7: Router decision
     // 步骤 7: 路由决策
     let mut decision = RDecision::Direct;
+    let mut rule: Option<String> = None;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
             domain: Some(target_host.as_str()),
@@ -443,11 +444,12 @@ async fn handle_conn_impl(
             network: Some("tcp"),
             ..Default::default()
         };
-        let d = eng.decide(&ctx);
+        let (d, r) = eng.decide_with_meta(&ctx);
         if matches!(d, RDecision::Reject) {
             return Err(anyhow!("vless: rejected by rules"));
         }
         decision = d;
+        rule = r;
     }
 
     // Step 8: Connect to upstream
@@ -540,17 +542,42 @@ async fn handle_conn_impl(
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
-    let _ = metered::copy_bidirectional_streaming_ctl(
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        target_host.clone(),
+        target_port,
+        target_host.clone(),
+        "vless",
+        cfg.tag.clone(),
+        outbound_tag.clone(),
+        chains,
+        rule.clone(),
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         cli,
         &mut upstream,
         "vless",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e.into());
+        }
+    }
 
     Ok(())
 }

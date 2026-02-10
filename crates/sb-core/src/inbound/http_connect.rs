@@ -1,6 +1,7 @@
 //! Async HTTP/1.1 CONNECT inbound (scaffold).
 //! - Optional Basic auth via (username,password)
 //! - Route decision via Engine; outbound resolved by Bridge (adapter优先)
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,6 +117,9 @@ pub(crate) async fn handle(
     auth: Option<(String, String)>,
     sniff_enabled: bool,
 ) -> std::io::Result<()> {
+    let peer = cli
+        .peer_addr()
+        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
     let mut reader = BufReader::new(&mut cli);
 
     // 1) 解析 Request-Line
@@ -181,11 +185,12 @@ pub(crate) async fn handle(
     }
 
     // Build route input and decide
+    let mut process_name: Option<String> = None;
+    let mut process_path: Option<String> = None;
+
     #[cfg(feature = "router")]
     let d = {
         // Process matching
-        let mut process_name: Option<String> = None;
-        let mut process_path: Option<String> = None;
 
         if let Some(matcher) = &br.context.process_matcher {
             let find_process = {
@@ -295,10 +300,19 @@ pub(crate) async fn handle(
         };
         eng.decide(&input, false)
     };
+    #[cfg(feature = "router")]
+    let rule = Some(d.matched_rule.clone());
+    #[cfg(not(feature = "router"))]
+    let rule: Option<String> = None;
     let out_name = d.outbound;
-    let ob = br
-        .find_outbound(&out_name)
-        .or_else(|| br.find_direct_fallback());
+    let mut outbound_tag = out_name.clone();
+    let ob = match br.find_outbound(&out_name) {
+        Some(connector) => Some(connector),
+        None => {
+            outbound_tag = "direct".to_string();
+            br.find_direct_fallback()
+        }
+    };
 
     // 5) 建立上游连接（异步）
     let mut upstream = match ob {
@@ -329,18 +343,43 @@ pub(crate) async fn handle(
         .v2ray_server
         .as_ref()
         .and_then(|s| s.stats())
-        .and_then(|stats| stats.traffic_recorder(None, Some(out_name.as_str()), None));
-    let _ = metered::copy_bidirectional_streaming_ctl(
+        .and_then(|stats| stats.traffic_recorder(None, Some(outbound_tag.as_str()), None));
+    let chains = if outbound_tag.eq_ignore_ascii_case("direct") {
+        vec!["DIRECT".to_string()]
+    } else {
+        vec![outbound_tag.clone()]
+    };
+    let wiring = crate::conntrack::register_inbound_tcp(
+        peer,
+        host.clone(),
+        port,
+        host.clone(),
+        "http-connect",
+        None,
+        Some(outbound_tag.clone()),
+        chains,
+        rule.clone(),
+        process_name.clone(),
+        process_path.clone(),
+        traffic,
+    );
+    let _guard = wiring.guard;
+    let copy_res = metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,
         "http-connect",
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await;
+    if let Err(e) = copy_res {
+        if e.kind() != std::io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
 
     Ok(())
 }

@@ -253,7 +253,7 @@ async fn handle_connect(
 
     let ctx = ConnCtx::new(id, Network::Tcp, local_addr, target.clone());
 
-    let (chosen_ctx, decision_msg) = match bridge.process_router.as_ref() {
+    let (chosen_ctx, decision_msg, decision, rule) = match bridge.process_router.as_ref() {
         Some(router) => {
             let host = target.host.clone();
             let (domain, ip) = match &host {
@@ -263,12 +263,17 @@ async fn handle_connect(
             let remote = target
                 .to_socket_addr()
                 .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), target.port));
-            let decision = router
-                .decide_with_process(domain, ip, false, Some(target.port), peer, remote)
+            let (decision, rule) = router
+                .decide_with_process_meta(domain, ip, false, Some(target.port), peer, remote)
                 .await;
-            (ctx, format!("{decision:?}"))
+            (ctx, format!("{decision:?}"), decision, rule)
         }
-        None => (ctx, "Direct".to_string()),
+        None => (
+            ctx,
+            "Direct".to_string(),
+            sb_core::router::rules::Decision::Direct,
+            None,
+        ),
     };
 
     let maybe_process = if let Some(matcher) = bridge.process_matcher.as_ref() {
@@ -313,6 +318,35 @@ async fn handle_connect(
     let traffic = bridge.v2ray_stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(bridge.inbound_tag.as_deref(), None, ctx.user.as_deref())
     });
+    let dest_host = match &target.host {
+        Host::Name(name) => name.clone(),
+        Host::Ip(addr) => addr.to_string(),
+    };
+    let outbound_tag = match &decision {
+        sb_core::router::rules::Decision::Direct => Some("direct".to_string()),
+        sb_core::router::rules::Decision::Proxy(Some(tag)) => Some(tag.clone()),
+        _ => None,
+    };
+    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+        None,
+        &decision,
+        outbound_tag.as_deref(),
+    );
+    let wiring = sb_core::conntrack::register_inbound_tcp(
+        peer,
+        dest_host.clone(),
+        target.port,
+        dest_host,
+        "tun_macos",
+        bridge.inbound_tag.clone(),
+        outbound_tag,
+        chains,
+        rule,
+        None,
+        None,
+        traffic,
+    );
+    let _guard = wiring.guard;
     let res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         stream,
         &mut outbound,
@@ -320,15 +354,18 @@ async fn handle_connect(
         Duration::from_secs(1),
         None,
         None,
-        None,
-        traffic,
+        Some(wiring.cancel),
+        Some(wiring.traffic),
     )
     .await
     .map(|_| ());
     bridge.stats.on_tcp_close();
 
-    res.map(|_| ())
-        .map_err(|e| io::Error::other(format!("forward failed: {e}")))
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(()),
+        Err(e) => Err(io::Error::other(format!("forward failed: {e}"))),
+    }
 }
 
 async fn read_u8(stream: &mut TcpStream) -> io::Result<u8> {
