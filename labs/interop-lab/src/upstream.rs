@@ -201,6 +201,8 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                 .await
                 .with_context(|| format!("binding tcp echo {}", spec.bind))?;
             let addr = listener.local_addr().with_context(|| "tcp local_addr")?;
+            let service_name = spec.name.clone();
+            let delays = harness.service_delays_ms.clone();
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 loop {
@@ -211,12 +213,18 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                         accepted = listener.accept() => {
                             match accepted {
                                 Ok((mut stream, _)) => {
+                                    let delays = delays.clone();
+                                    let svc = service_name.clone();
                                     tokio::spawn(async move {
                                         let mut buf = [0_u8; 2048];
                                         loop {
                                             match stream.read(&mut buf).await {
                                                 Ok(0) => break,
                                                 Ok(n) => {
+                                                    let delay_ms = service_delay(&delays, &svc).await;
+                                                    if delay_ms > 0 {
+                                                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                                    }
                                                     if stream.write_all(&buf[..n]).await.is_err() {
                                                         break;
                                                     }
@@ -364,6 +372,8 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                 .with_context(|| "building tls server config")?;
             let acceptor = TlsAcceptor::from(Arc::new(config));
 
+            let service_name = spec.name.clone();
+            let delays = harness.service_delays_ms.clone();
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 loop {
@@ -375,6 +385,8 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                             match accepted {
                                 Ok((stream, _)) => {
                                     let acceptor = acceptor.clone();
+                                    let delays = delays.clone();
+                                    let svc = service_name.clone();
                                     tokio::spawn(async move {
                                         if let Ok(mut tls) = acceptor.accept(stream).await {
                                             let mut buf = [0_u8; 2048];
@@ -382,6 +394,10 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                                                 match tls.read(&mut buf).await {
                                                     Ok(0) => break,
                                                     Ok(n) => {
+                                                        let delay_ms = service_delay(&delays, &svc).await;
+                                                        if delay_ms > 0 {
+                                                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                                        }
                                                         if tls.write_all(&buf[..n]).await.is_err() {
                                                             break;
                                                         }
@@ -707,6 +723,69 @@ pub async fn run_traffic_plan(
                         "ratio": clamped_ratio,
                         "applied_delay_ms": applied,
                     }),
+                }
+            }
+            TrafficAction::WsRoundTrip {
+                name,
+                url,
+                payload,
+                proxy,
+                timeout_ms,
+            } => {
+                let url = harness.resolve_templates(url);
+                let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let result = ws_roundtrip(&url, payload, resolved_proxy.as_deref(), *timeout_ms).await;
+                match result {
+                    Ok(echo) => TrafficResult {
+                        name: name.clone(),
+                        success: echo == *payload,
+                        detail: json!({
+                            "url": url,
+                            "proxy": resolved_proxy,
+                            "echo": echo,
+                        }),
+                    },
+                    Err(err) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "url": url,
+                            "proxy": resolved_proxy,
+                            "error": err.to_string(),
+                        }),
+                    },
+                }
+            }
+            TrafficAction::TlsRoundTrip {
+                name,
+                addr,
+                payload,
+                proxy,
+                skip_verify,
+                timeout_ms,
+            } => {
+                let addr = normalize_addr(&harness.resolve_templates(addr));
+                let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let result = tls_roundtrip(&addr, payload.as_bytes(), resolved_proxy.as_deref(), *skip_verify, *timeout_ms).await;
+                match result {
+                    Ok(back) => TrafficResult {
+                        name: name.clone(),
+                        success: back == payload.as_bytes(),
+                        detail: json!({
+                            "addr": addr,
+                            "proxy": resolved_proxy,
+                            "echo": String::from_utf8_lossy(&back),
+                        }),
+                    },
+                    Err(err) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "addr": addr,
+                            "proxy": resolved_proxy,
+                            "error": err.to_string(),
+                        }),
+                    },
                 }
             }
             TrafficAction::KernelControl {
@@ -1317,4 +1396,238 @@ async fn dns_query(addr: &str, qname: &str, proxy: Option<&str>) -> Result<serde
         "rcode": format!("{:?}", decoded.response_code()),
         "answers": decoded.answers().len(),
     }))
+}
+
+async fn ws_roundtrip(
+    url: &str,
+    payload: &str,
+    proxy: Option<&str>,
+    timeout_ms: u64,
+) -> Result<String> {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
+
+    let parsed = url::Url::parse(url).with_context(|| format!("parsing ws url {url}"))?;
+    let host = parsed.host_str().unwrap_or("127.0.0.1");
+    let port = parsed.port().unwrap_or(80);
+    let target_addr = format!("{host}:{port}");
+
+    let tcp = if let Some(proxy) = proxy {
+        let proxy_addr = normalize_addr(
+            proxy
+                .trim_start_matches("socks5://")
+                .trim_start_matches("socks5h://"),
+        );
+        socks5_connect(&proxy_addr, &target_addr).await?
+    } else {
+        TcpStream::connect(&target_addr)
+            .await
+            .with_context(|| format!("connecting to ws host {target_addr}"))?
+    };
+
+    let (mut stream, _) = tokio_tungstenite::client_async(url, tcp)
+        .await
+        .with_context(|| format!("ws handshake to {url}"))?;
+
+    stream
+        .send(WsMessage::Text(payload.to_string()))
+        .await
+        .with_context(|| "ws send payload")?;
+
+    let deadline = Duration::from_millis(timeout_ms);
+    loop {
+        let next = tokio::time::timeout(deadline, stream.next()).await;
+        match next {
+            Ok(Some(Ok(WsMessage::Text(text)))) => {
+                let _ = stream.close(None).await;
+                return Ok(text);
+            }
+            Ok(Some(Ok(_))) => continue,
+            Ok(Some(Err(err))) => return Err(anyhow!("ws recv error: {err}")),
+            Ok(None) => return Err(anyhow!("ws stream closed before echo")),
+            Err(_) => return Err(anyhow!("ws roundtrip timeout after {timeout_ms}ms")),
+        }
+    }
+}
+
+async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
+    let mut stream = TcpStream::connect(proxy_addr)
+        .await
+        .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
+
+    stream
+        .write_all(&[0x05_u8, 0x01, 0x00])
+        .await
+        .with_context(|| "writing socks5 greeting")?;
+    let mut greeting_resp = [0_u8; 2];
+    stream
+        .read_exact(&mut greeting_resp)
+        .await
+        .with_context(|| "reading socks5 greeting response")?;
+    if greeting_resp != [0x05, 0x00] {
+        return Err(anyhow!("socks5 greeting rejected"));
+    }
+
+    let (host, port) = parse_host_port(target_addr)?;
+    let mut req = vec![0x05_u8, 0x01, 0x00];
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            req.push(0x01);
+            req.extend_from_slice(&ip.octets());
+        }
+        Ok(IpAddr::V6(ip)) => {
+            req.push(0x04);
+            req.extend_from_slice(&ip.octets());
+        }
+        Err(_) => {
+            let host_bytes = host.as_bytes();
+            req.push(0x03);
+            req.push(host_bytes.len() as u8);
+            req.extend_from_slice(host_bytes);
+        }
+    }
+    req.extend_from_slice(&port.to_be_bytes());
+
+    stream
+        .write_all(&req)
+        .await
+        .with_context(|| "writing socks5 connect request")?;
+
+    let mut resp_head = [0_u8; 4];
+    stream
+        .read_exact(&mut resp_head)
+        .await
+        .with_context(|| "reading socks5 connect response")?;
+    if resp_head[1] != 0x00 {
+        return Err(anyhow!("socks5 connect rejected: {}", resp_head[1]));
+    }
+
+    match resp_head[3] {
+        0x01 => {
+            let mut buf = [0_u8; 6];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x03 => {
+            let mut len = [0_u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut buf = vec![0_u8; len[0] as usize + 2];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x04 => {
+            let mut buf = [0_u8; 18];
+            stream.read_exact(&mut buf).await?;
+        }
+        _ => {}
+    }
+
+    Ok(stream)
+}
+
+async fn tls_roundtrip(
+    addr: &str,
+    payload: &[u8],
+    proxy: Option<&str>,
+    skip_verify: bool,
+    timeout_ms: u64,
+) -> Result<Vec<u8>> {
+    let tcp = if let Some(proxy) = proxy {
+        let proxy_addr = normalize_addr(
+            proxy
+                .trim_start_matches("socks5://")
+                .trim_start_matches("socks5h://"),
+        );
+        socks5_connect(&proxy_addr, addr).await?
+    } else {
+        TcpStream::connect(addr)
+            .await
+            .with_context(|| format!("connecting tls {addr}"))?
+    };
+
+    let (host, _) = parse_host_port(addr)?;
+
+    let config = if skip_verify {
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(DangerousVerifier))
+            .with_no_client_auth()
+    } else {
+        rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth()
+    };
+
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+    let server_name = rustls::pki_types::ServerName::try_from(host.as_str())
+        .map_err(|e| anyhow!("invalid server name: {e}"))?
+        .to_owned();
+
+    let mut tls = tokio::time::timeout(
+        Duration::from_millis(timeout_ms),
+        connector.connect(server_name, tcp),
+    )
+    .await
+    .map_err(|_| anyhow!("tls handshake timeout after {timeout_ms}ms"))?
+    .with_context(|| format!("tls handshake with {addr}"))?;
+
+    tls.write_all(payload)
+        .await
+        .with_context(|| "tls write payload")?;
+    let mut buf = vec![0_u8; payload.len()];
+    tokio::time::timeout(
+        Duration::from_millis(timeout_ms),
+        tls.read_exact(&mut buf),
+    )
+    .await
+    .map_err(|_| anyhow!("tls read timeout after {timeout_ms}ms"))?
+    .with_context(|| "tls read echo")?;
+    Ok(buf)
+}
+
+#[derive(Debug)]
+struct DangerousVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for DangerousVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+            rustls::SignatureScheme::ED25519,
+        ]
+    }
 }

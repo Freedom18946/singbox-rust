@@ -4,16 +4,20 @@
 
 | Surface | 语义目标 | Case ID | Env Class | 状态 |
 | --- | --- | --- | --- | --- |
-| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` | `env_limited` | implemented |
+| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented |
+| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented |
+| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` | `env_limited`/`strict` | implemented |
+| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` | `strict` | implemented |
+| `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented |
+| `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
+| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p1_gui_connections_tracking` | `env_limited`/`strict` | implemented |
 | `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `WS /memory` | 内存流图表 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` | `env_limited` | implemented |
+| `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
+| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
-| `WS /logs` | 日志流推送 | `p0_clash_api_contract` | `env_limited` | implemented |
+| `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
+| WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented |
+| WS reconnect | kernel restart 后 WS 重连 | `p1_gui_ws_reconnect_behavior` | `strict` | implemented |
 | wrong token | 鉴权失败语义 | `p1_auth_negative_wrong_token` | `env_limited` | implemented |
 | missing token | 鉴权失败语义 | `p1_auth_negative_missing_token` | `env_limited` | implemented |
 | optional endpoints | `/providers` `/rules` `/script` `/profile` 行为可解释 | `p1_optional_endpoints_contract` | `env_limited` | implemented |
@@ -32,13 +36,15 @@
 
 | 协议/路径 | 连通 | 故障 | 恢复 | Jitter | Case ID |
 | --- | --- | --- | --- | --- | --- |
-| HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` `p1_fault_*` `p1_recovery_*` `p1_fault_jitter_http_via_socks` `p1_recovery_jitter_http_via_socks` |
-| TCP via SOCKS | yes | planned | planned | planned | `p1_rust_core_tcp_via_socks` |
-| UDP via SOCKS | yes | planned | planned | planned | `p1_rust_core_udp_via_socks` |
-| DNS via SOCKS UDP | yes | disconnect | reconnect | planned | `p1_rust_core_dns_via_socks` `p1_recovery_dns_disconnect_reconnect_via_socks` |
-| WS 稳定性 | concurrency | soak | trend gate | planned | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` |
-| Trojan 协议 | suite | auth fault | recovery/restart | planned | `p2_trojan_*` |
-| Shadowsocks 协议 | suite | auth fault | recovery/restart | planned | `p2_shadowsocks_*` |
+| HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` `p1_fault_*_http_*` `p1_recovery_*_http_*` |
+| TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
+| UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
+| DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
+| TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
+| WS 稳定性 | concurrency | soak | trend gate | — | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` |
+| Trojan 协议 | suite | auth fault | recovery/restart | — | `p2_trojan_*` |
+| Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` |
 
 ## 参考实现映射
 

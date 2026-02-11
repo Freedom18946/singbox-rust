@@ -1,0 +1,139 @@
+id: p1_gui_full_session_replay
+title: full user session end-to-end replay capstone
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - control-plane
+  - dataplane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_full.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+gui_sequence:
+  # Phase 1: GUI boot — 4 WS streams in parallel (memory, traffic, connections, logs)
+  - kind: ws_parallel
+    name: boot_ws
+    streams:
+      - path: /memory
+        max_frames: 2
+      - path: /traffic
+        max_frames: 2
+      - path: /connections
+        max_frames: 2
+      - path: /logs
+        max_frames: 2
+    duration_ms: 3000
+  # Phase 2: Read configs and proxies (GUI startup sequence)
+  - kind: http
+    name: get_configs
+    method: GET
+    path: /configs
+    expect_status: 200
+  - kind: http
+    name: get_proxies_initial
+    method: GET
+    path: /proxies
+    expect_status: 200
+traffic_plan:
+  # Phase 3: Browse — generate HTTP traffic through socks proxy
+  - kind: http_get
+    name: browse_before_switch
+    url: "{{upstream.local_http}}/v1/echo?scene=full-session-before"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+  # Phase 4: Verify connections are tracked
+  - kind: sleep
+    name: wait_for_connections
+    ms: 500
+  # Phase 5: Switch proxy group
+  - kind: command
+    name: switch_proxy
+    command: curl
+    args:
+      - -sS
+      - -X
+      - PUT
+      - -H
+      - "Authorization: Bearer test-secret"
+      - -H
+      - "Content-Type: application/json"
+      - -d
+      - '{"name":"alt-direct"}'
+      - "http://127.0.0.1:19290/proxies/my-group"
+    timeout_ms: 5000
+    expect_exit: 0
+  - kind: sleep
+    name: wait_after_switch
+    ms: 200
+  # Phase 6: Browse again after switch
+  - kind: http_get
+    name: browse_after_switch
+    url: "{{upstream.local_http}}/v1/echo?scene=full-session-after"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+post_traffic_gui_sequence:
+  # Phase 7: Verify connections tracking and final state
+  - kind: http
+    name: get_connections_final
+    method: GET
+    path: /connections
+    expect_status: 200
+  - kind: http
+    name: get_proxies_final
+    method: GET
+    path: /proxies
+    expect_status: 200
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0
+  # Boot phase
+  - key: http.get_configs.status
+    op: eq
+    expected: 200
+  - key: http.get_proxies_initial.status
+    op: eq
+    expected: 200
+  # Traffic phase
+  - key: traffic.browse_before_switch.success
+    op: eq
+    expected: true
+  - key: traffic.switch_proxy.success
+    op: eq
+    expected: true
+  - key: traffic.browse_after_switch.success
+    op: eq
+    expected: true
+  # Post-traffic phase
+  - key: http.get_connections_final.status
+    op: eq
+    expected: 200
+  - key: http.get_proxies_final.status
+    op: eq
+    expected: 200
+  # Connections are populated after traffic
+  - key: connections.count
+    op: gt
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_ws_paths:
+    - /memory
+    - /traffic
+    - /connections
+    - /logs

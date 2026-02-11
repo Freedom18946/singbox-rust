@@ -44,6 +44,8 @@ pub struct CaseSpec {
     pub assertions: Vec<AssertionSpec>,
     #[serde(default)]
     pub oracle: OracleSpec,
+    #[serde(default)]
+    pub post_traffic_gui_sequence: Option<Vec<GuiStep>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -127,6 +129,25 @@ pub enum GuiStep {
         ms: u64,
     },
     SubscriptionParse,
+    WsParallel {
+        name: String,
+        streams: Vec<WsStreamSpec>,
+        #[serde(default = "default_ws_parallel_duration_ms")]
+        duration_ms: u64,
+    },
+}
+
+fn default_ws_parallel_duration_ms() -> u64 {
+    3_000
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsStreamSpec {
+    pub path: String,
+    #[serde(default = "default_ws_max_frames")]
+    pub max_frames: usize,
+    #[serde(default)]
+    pub params: Option<String>,
 }
 
 fn default_ws_max_frames() -> usize {
@@ -230,6 +251,34 @@ pub enum TrafficAction {
         #[serde(default = "default_jitter_ratio")]
         ratio: f64,
     },
+    WsRoundTrip {
+        name: String,
+        url: String,
+        payload: String,
+        #[serde(default)]
+        proxy: Option<String>,
+        #[serde(default = "default_ws_roundtrip_timeout_ms")]
+        timeout_ms: u64,
+    },
+    TlsRoundTrip {
+        name: String,
+        addr: String,
+        payload: String,
+        #[serde(default)]
+        proxy: Option<String>,
+        #[serde(default)]
+        skip_verify: bool,
+        #[serde(default = "default_tls_roundtrip_timeout_ms")]
+        timeout_ms: u64,
+    },
+}
+
+fn default_ws_roundtrip_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_tls_roundtrip_timeout_ms() -> u64 {
+    5_000
 }
 
 fn default_command_timeout_ms() -> u64 {

@@ -1,0 +1,61 @@
+id: p1_gui_full_boot_replay
+title: gui.for full boot sequence replay with 4 parallel ws streams
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - control-plane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+gui_sequence:
+  - kind: ws_parallel
+    name: boot_ws
+    streams:
+      - path: /memory
+        max_frames: 2
+      - path: /traffic
+        max_frames: 2
+      - path: /connections
+        max_frames: 2
+      - path: /logs
+        max_frames: 2
+    duration_ms: 3000
+  - kind: http
+    name: get_configs
+    method: GET
+    path: /configs
+    expect_status: 200
+  - kind: http
+    name: get_proxies
+    method: GET
+    path: /proxies
+    expect_status: 200
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0
+  - key: http.get_configs.status
+    op: eq
+    expected: 200
+  - key: http.get_proxies.status
+    op: eq
+    expected: 200
+oracle:
+  tolerate_counter_jitter: true
+  ignore_ws_paths:
+    - /memory
+    - /traffic
+    - /connections
+    - /logs

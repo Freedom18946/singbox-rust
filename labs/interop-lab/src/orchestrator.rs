@@ -214,6 +214,21 @@ pub async fn run_case(
                     }
                 }
 
+                if let Some(post_steps) = &case.post_traffic_gui_sequence {
+                    let post_case = CaseSpec {
+                        gui_sequence: post_steps.clone(),
+                        ..case.clone()
+                    };
+                    if let Err(err) =
+                        run_gui_sequence(&post_case, &session.api, &mut snapshot).await
+                    {
+                        snapshot.errors.push(NormalizedError {
+                            stage: "post_traffic_gui_sequence".to_string(),
+                            message: err.to_string(),
+                        });
+                    }
+                }
+
                 evaluate_assertions(case, &mut snapshot);
 
                 let _ = session.shutdown().await;
@@ -531,7 +546,32 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
                 "detail" => resolve_json_path(&r.detail, &parts[3..]),
                 _ => None,
             }),
+        "connections" => resolve_connections_assertion(snapshot, &parts[1..]),
         _ => None,
+    }
+}
+
+/// Resolve `connections.count`, `connections.<idx>.<field>`, `connections.<idx>.<field>.<subpath>`
+/// conn_summary holds the raw JSON from `GET /connections` which has shape:
+/// `{ "connections": [...], "downloadTotal": N, "uploadTotal": N }`
+fn resolve_connections_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Option<Value> {
+    let conn_summary = snapshot.conn_summary.as_ref()?;
+    let conns_array = conn_summary.get("connections")?.as_array()?;
+
+    if path.is_empty() {
+        return None;
+    }
+
+    match path[0] {
+        "count" => Some(json!(conns_array.len())),
+        idx_str => {
+            let idx = idx_str.parse::<usize>().ok()?;
+            let conn = conns_array.get(idx)?;
+            if path.len() == 1 {
+                return Some(conn.clone());
+            }
+            resolve_json_path(conn, &path[1..])
+        }
     }
 }
 

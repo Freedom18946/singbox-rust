@@ -1,3 +1,4 @@
+mod attribution;
 mod case_spec;
 mod cli;
 mod diff_report;

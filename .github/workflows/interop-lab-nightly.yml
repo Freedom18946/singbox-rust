@@ -1,42 +1,71 @@
-name: interop-lab-nightly
+name: Interop Lab Nightly
 
 on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
-  full-matrix:
+  nightly:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 60
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-interop-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-interop-
+
+      - name: Build app
+        run: cargo build -p app --features router
 
       - name: Build interop-lab
         run: cargo build -p interop-lab
 
-      - name: Run local harness smoke
-        run: cargo run -p interop-lab -- case run --priority p0 --env-class strict
+      - name: Run interop-lab unit tests
+        run: cargo test -p interop-lab
 
-      - name: Run strict matrix
+      - name: Run all strict cases
         run: |
-          cargo run -p interop-lab -- case run --env-class strict
+          cargo run -p interop-lab -- case run \
+            --kernel rust \
+            --env-class strict
 
-      - name: Run env-limited matrix
+      - name: Run env_limited cases
+        continue-on-error: true
         run: |
-          cargo run -p interop-lab -- case run --env-class env-limited || true
+          cargo run -p interop-lab -- case run \
+            --kernel rust \
+            --env-class env_limited
+
+      - name: Trend gate - P0 strict
+        run: |
+          ITERATIONS=2 KERNEL=rust RUN_PRIORITY=p0 RUN_ENV_CLASS=strict \
+            bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
+
+      - name: Trend gate - P1 strict
+        run: |
+          ITERATIONS=2 KERNEL=rust RUN_PRIORITY=p1 RUN_ENV_CLASS=strict \
+            bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: interop-lab-artifacts
-          path: labs/interop-lab/artifacts
-          if-no-files-found: warn
+          name: interop-lab-nightly-${{ github.run_id }}
+          path: labs/interop-lab/artifacts/
+          retention-days: 30

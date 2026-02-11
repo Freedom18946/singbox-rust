@@ -1,10 +1,11 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-11
-> **当前阶段**：L4 治理闭环执行中 + L5/L6 联测仿真已开工
+> **当前阶段**：L5-L7 ✅ Closed + L12-L14 规划中
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
+> **Interop Lab**：57 YAML case，11 unit tests，22/22 work packages complete
 
 ---
 
@@ -22,6 +23,50 @@
 
 **待执行**：
 - L4.4 `PX-015` Linux 双场景最小闭环（见 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`）
+
+---
+
+## ✅ 最新进展：L5~L7 联测仿真全量完成（22/22 工作包）
+
+**日期**：2026-02-11
+**状态**：✅ 全部完成
+
+**Batch 1（7 项，全并行）**：
+- ✅ L5.1.2 UDP 故障矩阵（4 YAML）
+- ✅ L5.1.3 DNS 故障补全（2 YAML）
+- ✅ L5.2.1 env_limited 归因（attribution.rs + 5 tests）
+- ✅ L6.1.1 WsRoundTrip action（case_spec + upstream）
+- ✅ L6.1.2 TCP/TLS delay 注入（upstream）
+- ✅ L6.2.2 CI Workflow（smoke + nightly）
+- ✅ L7.1.1 WsParallel step（case_spec + gui_replay）
+
+**Batch 2（8 项，大部分并行）**：
+- ✅ L5.1.1 TCP 故障矩阵（4 YAML）
+- ✅ L5.1.4 WS 故障矩阵（4 YAML）
+- ✅ L5.1.5 TLS 故障矩阵（4 YAML）
+- ✅ L6.1.3 TlsRoundTrip action（case_spec + upstream）
+- ✅ L6.2.1 聚合趋势报告（aggregate_trend_report.sh）
+- ✅ L7.1.2 GUI 启动回放（YAML + config）
+- ✅ L7.2.1 Proxy 切换回放（YAML + config）
+- ✅ L7.4.2 Strict P0 契约（YAML）
+
+**Batch 3（5 项，大部分并行）**：
+- ✅ L5.1.6 文档更新（case_backlog + compat_matrix）
+- ✅ L7.2.2 Proxy Delay 回放（YAML）
+- ✅ L7.2.3 Group Delay 回放（YAML）
+- ✅ L7.3.1 WS 重连测试（YAML + post_traffic_gui_sequence）
+- ✅ L7.3.2 Connection Tracking 断言（orchestrator + YAML）
+
+**Batch 4（capstone）**：
+- ✅ L7.4.1 完整用户会话 E2E 回放（YAML + config）
+
+**交付统计**：
+- 57 YAML case（31 → 57，+26）
+- 4 kernel config（1 → 4，+3）
+- 13 Rust 源文件（12 → 13，+1 attribution.rs）
+- 2 脚本（1 → 2，+1 aggregate_trend_report.sh）
+- 2 CI workflow（新增 smoke + nightly）
+- 11 单元测试全部通过
 
 ---
 
@@ -51,8 +96,49 @@
   - `interop-lab-nightly.yml`：`strict + env_limited`（env-limited 默认不阻断）
 
 **下一步**：
-- 扩展 TCP/UDP/WS/TLS 的 jitter/recovery 组合 case
-- 将 `env_limited` 失败归因自动汇总进趋势报告
+- 见 L5~L7 详细工作包规划（下方）
+
+---
+
+## 🆕 新增规划：L5~L7 详细工作包（22 项，4 批次）— ✅ 已全部完成
+
+**日期**：2026-02-11
+**状态**：✅ 全部完成（22/22）
+**规划文档**：`agents-only/03-planning/09-L5-L7-DETAILED-WORKPACKAGES.md`
+
+**范围**：填补 L5-L7 剩余缺口 — 协议故障矩阵补全（L5）、仿真底座能力扩展（L6）、GUI 通信回放深化（L7）
+
+**工作包总览（22 项 — 全部完成）**：
+
+| 层级 | ID | 标题 | 批次 | 状态 |
+|------|-----|------|------|------|
+| L5 | L5.1.1 | TCP 故障矩阵 (4 case) | B2 | ✅ |
+| L5 | L5.1.2 | UDP 故障矩阵 (4 case) | B1 | ✅ |
+| L5 | L5.1.3 | DNS 故障补全 (2 case) | B1 | ✅ |
+| L5 | L5.1.4 | WS 故障矩阵 (4 case) | B2 | ✅ |
+| L5 | L5.1.5 | TLS 故障矩阵 (4 case) | B2 | ✅ |
+| L5 | L5.1.6 | 文档更新 | B3 | ✅ |
+| L5 | L5.2.1 | env_limited 失败归因 | B1 | ✅ |
+| L6 | L6.1.1 | WsRoundTrip action | B1 | ✅ |
+| L6 | L6.1.2 | TCP/TLS delay 注入 | B1 | ✅ |
+| L6 | L6.1.3 | TlsRoundTrip (可选) | B2 | ✅ |
+| L6 | L6.2.1 | 聚合趋势报告 | B2 | ✅ |
+| L6 | L6.2.2 | CI Workflow 集成 | B1 | ✅ |
+| L7 | L7.1.1 | WsParallel GuiStep | B1 | ✅ |
+| L7 | L7.1.2 | GUI 完整启动回放 | B2 | ✅ |
+| L7 | L7.2.1 | Proxy 切换回放 | B2 | ✅ |
+| L7 | L7.2.2 | Proxy Delay 回放 | B3 | ✅ |
+| L7 | L7.2.3 | Group Delay 回放 | B3 | ✅ |
+| L7 | L7.3.1 | WS 重连 + schema 扩展 | B3 | ✅ |
+| L7 | L7.3.2 | Connection Tracking 断言 | B3 | ✅ |
+| L7 | L7.4.1 | 完整用户会话 (capstone) | B4 | ✅ |
+| L7 | L7.4.2 | Strict P0 契约 Case | B2 | ✅ |
+
+**批次执行策略**：
+- **Batch 1**（7 项全并行）：L5.1.2, L5.1.3, L5.2.1, L6.1.1, L6.1.2, L6.2.2, L7.1.1
+- **Batch 2**（8 项大部分并行）：L5.1.1, L5.1.4, L5.1.5, L6.1.3, L6.2.1, L7.1.2, L7.2.1, L7.4.2
+- **Batch 3**（5 项）：L5.1.6, L7.2.2, L7.2.3, L7.3.1, L7.3.2
+- **Batch 4**（capstone）：L7.4.1
 
 ---
 
@@ -582,6 +668,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 | 2026-02-08 | WP-L2.1 审计 | ✅ 完成 (Phase 1~3, 18 项修复) |
 | 2026-02-08 | WP-L2 Tier 2 | ✅ 完成 (L2.6~L2.10) |
 | 2026-02-09 | M2.4 服务补全 | ✅ 完成 (SSMAPI / DERP / Resolved) |
+| 2026-02-11 | L5~L7 联测仿真 | ✅ 完成 (22/22 工作包，57 case) |
 
 ---
 

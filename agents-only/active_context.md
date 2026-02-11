@@ -7,7 +7,7 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L4 治理闭环执行中 + L5 联测仿真已开工**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成）
+**当前阶段**: **L5-L7 ✅ Closed + L12-L14 规划中**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成；联测仿真已完成）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
@@ -26,6 +26,15 @@
 - 基于导入资料新增下一阶段工作包规划：`agents-only/03-planning/08-L12-L14-GO-SPECS-WORKPACKAGES.md`。
 - 规划主轴：迁移兼容治理（L12）→ Services 安全与生命周期（L13）→ TLS/Endpoint 高级能力与趋势门禁 CI 化（L14）。
 
+### L5~L7 详细工作包（2026-02-11 已完成）
+
+- **规划文档**: `agents-only/03-planning/09-L5-L7-DETAILED-WORKPACKAGES.md`
+- **总量**: 22 个工作包，4 批次 — **全部完成 ✅**
+- **L5 补全**: 协议×故障矩阵（TCP/UDP/DNS/WS/TLS 的 disconnect/delay/jitter/recovery）+ env_limited 失败归因 — **✅ 全部 implemented**
+- **L6 扩展**: WsRoundTrip/TlsRoundTrip traffic action、TCP/TLS delay 注入、聚合趋势报告、CI workflow — **✅ 全部 implemented**
+- **L7 深化**: WsParallel step、GUI 启动/proxy 切换/delay/group delay 回放、WS 重连测试、connection tracking 断言、完整用户会话端到端回放、strict P0 契约 case — **✅ 全部 implemented**
+- **最终状态**: 57 YAML case（31 → 57）、4 config 文件（1 → 4）、13 Rust 源文件（12 → 13）、2 脚本（1 → 2）、2 CI workflow、11 单元测试全部通过
+
 ### L5/L6 二级/三级实现增量（2026-02-11 新增）
 
 - `interop-lab` 已完成 `CaseSpec` 扩展：`tags/env_class/owner`（兼容老 case）。
@@ -41,6 +50,7 @@
 |--------|---------|------|
 | **L1 架构整固** | 2026-02-07 | M1.1 + M1.2 + M1.3，check-boundaries.sh exit 0 |
 | **L2 功能对齐** | 2026-02-08 | Tier 1 (L2.1-L2.5) + Tier 2 (L2.6-L2.10)，88% → 99% parity |
+| **L5-L7 联测仿真** | 2026-02-11 | 22 工作包全部完成，57 case，6×4 故障矩阵全覆盖，GUI 回放 7 case |
 
 ### 关键参考
 
@@ -51,9 +61,43 @@
 - **L4 质量复验报告**: `reports/L4_QUALITY_RECHECK_2026-02-10.md`
 - **PX-015 Linux 验证记录**: `reports/PX015_LINUX_VALIDATION_2026-02-10.md`
 - **L5-L11 联测仿真计划（实施版）**: `agents-only/03-planning/07-L5-L11-INTEROP-LAB-PLAN.md`
+- **L5~L7 详细工作包规划**: `agents-only/03-planning/09-L5-L7-DETAILED-WORKPACKAGES.md`
 - **历史 L3 Scope（服务补全）**: 见下方（已并入 M2.4）
 
 ---
+
+## ✅ 最新完成：L5-L7 联测仿真全量实施（22 工作包）
+
+**日期**: 2026-02-11
+
+**完成项**:
+- **L5 协议×故障矩阵**：6 协议（HTTP/TCP/UDP/DNS/WS/TLS）× 4 故障类型（disconnect/delay/jitter/recovery）= 24 cell 全部 implemented，新增 18 个 YAML case
+- **L5 env_limited 归因**：新增 `attribution.rs` 模块（classify_env_limited_failures + 5 单元测试），DiffReport 增加 env_limited_attributions 字段
+- **L6 仿真底座扩展**：
+  - `TrafficAction::WsRoundTrip` — 原生 WS 往返（含 SOCKS5 代理支持）
+  - `TrafficAction::TlsRoundTrip` — 原生 TLS 往返（含 DangerousVerifier 自签名支持）
+  - TCP/TLS echo delay 注入（与 HTTP/UDP/WS/DNS echo 一致的 service_delays_ms 模式）
+  - `aggregate_trend_report.sh` — 趋势报告聚合（输出 trend_summary.json）
+  - CI workflows：`interop-lab-smoke.yml`（PR 触发）+ `interop-lab-nightly.yml`（定时 + 全量）
+- **L7 GUI 通信回放深化**：
+  - `GuiStep::WsParallel` — 并行 WS 流采集（JoinSet 实现）
+  - `post_traffic_gui_sequence` — CaseSpec 字段，traffic 后 GUI 序列
+  - `connections.count` / `connections.N.rule` / `connections.N.chains` — 连接断言键
+  - 7 个 GUI replay case（boot/switch/delay/group-delay/reconnect/connections/full-session）
+  - `p0_clash_api_contract_strict` — env_limited P0 的 strict 版本
+  - `p1_gui_full_session_replay` — E2E capstone（boot → browse → switch → browse → verify）
+- **基础设施交付**：57 YAML case、4 kernel config、13 Rust 源文件、2 脚本、2 CI workflow
+- **验证**：`cargo test -p interop-lab` 11/11 passed；`case list` 57 case；zero compilation errors
+
+**关键文件变更**:
+| 文件 | 改动 |
+|------|------|
+| `case_spec.rs` | +WsRoundTrip/TlsRoundTrip/WsParallel/WsStreamSpec/post_traffic_gui_sequence |
+| `upstream.rs` | +TCP/TLS delay/ws_roundtrip/tls_roundtrip/socks5_connect/DangerousVerifier |
+| `gui_replay.rs` | +WsParallel (run_ws_parallel with JoinSet) |
+| `orchestrator.rs` | +post_traffic_gui_sequence execution/connections assertion keys |
+| `attribution.rs` | 新建：失败归因分类 (5 tests) |
+| `diff_report.rs` | +env_limited_attributions field |
 
 ## ✅ 最新完成：L5/L6 联测底座首版入库（interop-lab）
 
@@ -774,4 +818,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-10（L2.8 ConnMetadata 扩展 + L2 功能闭环关闭）*
+*最后更新：2026-02-11（L5-L7 联测仿真 22 工作包全部完成）*

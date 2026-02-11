@@ -1,0 +1,58 @@
+id: p1_gui_connections_tracking
+title: gui connections tracking assertion with chains and rule metadata
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - control-plane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_selector.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /version
+    expect_status: 200
+traffic_plan:
+  - kind: http_get
+    name: generate_traffic
+    url: "{{upstream.local_http}}/v1/echo?scene=connection-tracking"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+  - kind: sleep
+    name: wait_for_connections
+    ms: 500
+post_traffic_gui_sequence:
+  - kind: http
+    name: get_connections
+    method: GET
+    path: /connections
+    expect_status: 200
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0
+  - key: traffic.generate_traffic.success
+    op: eq
+    expected: true
+  - key: connections.count
+    op: gt
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true

@@ -1,4 +1,4 @@
-use crate::case_spec::{ApiAccess, CaseSpec, GuiStep};
+use crate::case_spec::{ApiAccess, CaseSpec, GuiStep, WsStreamSpec};
 use crate::snapshot::{
     HttpResult, MemoryPoint, NormalizedError, NormalizedSnapshot, TrafficCounters, WsFrameCapture,
 };
@@ -151,6 +151,13 @@ pub async fn run_gui_sequence(
                     }
                 }
             }
+            GuiStep::WsParallel {
+                name,
+                streams,
+                duration_ms,
+            } => {
+                run_ws_parallel(name, streams, *duration_ms, api, snapshot).await;
+            }
         }
     }
 
@@ -172,6 +179,78 @@ pub async fn run_gui_sequence(
     }
 
     Ok(())
+}
+
+async fn run_ws_parallel(
+    name: &str,
+    streams: &[WsStreamSpec],
+    duration_ms: u64,
+    api: &ApiAccess,
+    snapshot: &mut NormalizedSnapshot,
+) {
+    use tokio::task::JoinSet;
+
+    let mut set = JoinSet::new();
+    for (idx, spec) in streams.iter().enumerate() {
+        let ws_url = build_ws_url(api, &spec.path);
+        let max_frames = spec.max_frames;
+        let dur = duration_ms;
+        let path = spec.path.clone();
+        let stream_name = format!("{name}_{idx}_{}", spec.path.trim_start_matches('/'));
+
+        set.spawn(async move {
+            let mut frames = Vec::new();
+            let result = tokio_tungstenite::connect_async(ws_url.clone()).await;
+            match result {
+                Ok((mut stream, _)) => {
+                    let deadline = Instant::now() + Duration::from_millis(dur);
+                    while frames.len() < max_frames && Instant::now() < deadline {
+                        let timeout = Duration::from_millis(200);
+                        let next = tokio::time::timeout(timeout, stream.next()).await;
+                        match next {
+                            Ok(Some(Ok(msg))) => {
+                                if let Some(value) = normalize_ws_message(msg) {
+                                    frames.push(value);
+                                }
+                            }
+                            Ok(Some(Err(_))) | Ok(None) => break,
+                            Err(_) => {}
+                        }
+                    }
+                    let _ = stream.close(None).await;
+                    (stream_name, path, frames, None)
+                }
+                Err(err) => (stream_name, path, frames, Some(err.to_string())),
+            }
+        });
+    }
+
+    while let Some(result) = set.join_next().await {
+        match result {
+            Ok((stream_name, path, frames, error)) => {
+                for frame in &frames {
+                    ingest_special_series(&path, frame, snapshot);
+                }
+                snapshot.ws_frames.push(WsFrameCapture {
+                    name: stream_name.clone(),
+                    path: path.clone(),
+                    frames,
+                });
+                if let Some(err_msg) = error {
+                    snapshot.errors.push(NormalizedError {
+                        stage: format!("ws_parallel:{stream_name}"),
+                        message: err_msg,
+                    });
+                }
+            }
+            Err(err) => {
+                snapshot.errors.push(NormalizedError {
+                    stage: format!("ws_parallel:{name}"),
+                    message: format!("join error: {err}"),
+                });
+            }
+        }
+    }
 }
 
 async fn request_json(api: &ApiAccess, path: &str) -> Option<Value> {

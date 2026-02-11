@@ -1,0 +1,51 @@
+id: p1_fault_delay_dns_via_socks
+title: fault delay upstream dns to trigger timeout while rust core remains healthy
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    env:
+      SB_SOCKS_UDP_ENABLE: "1"
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_dns
+    kind: dns_stub
+    bind: 127.0.0.1:0
+faults:
+  - kind: delay
+    target: local_dns
+    ms: 13000
+traffic_plan:
+  - kind: dns_query
+    name: delayed_dns_should_timeout
+    addr: "{{upstream.local_dns}}"
+    qname: example.com.
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.delayed_dns_should_timeout.success
+    op: eq
+    expected: false
+oracle:
+  tolerate_counter_jitter: true

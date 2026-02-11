@@ -1,38 +1,66 @@
-name: interop-lab-smoke
+name: Interop Lab Smoke
 
 on:
   pull_request:
     paths:
       - 'labs/interop-lab/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-  push:
-    branches: [ main ]
-    paths:
-      - 'labs/interop-lab/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - 'sb-core/**'
+      - 'sb-adapters/**'
+      - 'sb-types/**'
+      - 'app/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-interop-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-interop-
+
+      - name: Build app
+        run: cargo build -p app --features router
 
       - name: Build interop-lab
         run: cargo build -p interop-lab
 
-      - name: Test interop-lab
+      - name: Run interop-lab unit tests
         run: cargo test -p interop-lab
 
-      - name: Run local smoke case
-        run: cargo run -p interop-lab -- case run --priority p0 --env-class strict
+      - name: Run strict P0 cases
+        run: |
+          cargo run -p interop-lab -- case run \
+            --kernel rust \
+            --priority p0 \
+            --env-class strict
+
+      - name: Run strict P1 cases
+        run: |
+          cargo run -p interop-lab -- case run \
+            --kernel rust \
+            --priority p1 \
+            --env-class strict
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-lab-smoke-${{ github.run_id }}
+          path: labs/interop-lab/artifacts/
+          retention-days: 7

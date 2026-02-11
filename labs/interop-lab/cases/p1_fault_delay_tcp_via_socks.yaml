@@ -1,0 +1,49 @@
+id: p1_fault_delay_tcp_via_socks
+title: fault delay upstream tcp to trigger timeout while rust core remains healthy
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:0
+faults:
+  - kind: delay
+    target: local_tcp
+    ms: 13000
+traffic_plan:
+  - kind: tcp_round_trip
+    name: delayed_tcp_should_timeout
+    addr: "{{upstream.local_tcp}}"
+    payload: hello-tcp-fault-delay
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.delayed_tcp_should_timeout.success
+    op: eq
+    expected: false
+oracle:
+  tolerate_counter_jitter: true

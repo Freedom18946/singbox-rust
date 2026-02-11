@@ -22,6 +22,7 @@ pub struct DiffReport {
     pub ignored_ws_count: usize,
     pub ignored_counter_jitter_count: usize,
     pub gate_score: usize,
+    pub env_limited_attributions: Vec<crate::attribution::AttributionResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +191,7 @@ fn build_diff_report(
         ignored_ws_count,
         ignored_counter_jitter_count,
         gate_score,
+        env_limited_attributions: Vec::new(),
     }
 }
 

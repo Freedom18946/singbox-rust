@@ -1,0 +1,73 @@
+id: p1_recovery_disconnect_reconnect_ws_upstream
+title: recovery flow disconnect then reconnect upstream ws via rust socks
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_ws
+    kind: ws_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: ws_round_trip
+    name: before_disconnect_should_succeed
+    url: "{{upstream.local_ws}}"
+    payload: hello-ws-recovery-before
+    proxy: socks5://127.0.0.1:11801
+    timeout_ms: 5000
+  - kind: fault_disconnect
+    name: disconnect_local_ws
+    target: local_ws
+  - kind: ws_round_trip
+    name: during_disconnect_should_fail
+    url: "{{upstream.local_ws}}"
+    payload: hello-ws-recovery-during
+    proxy: socks5://127.0.0.1:11801
+    timeout_ms: 5000
+  - kind: fault_reconnect
+    name: reconnect_local_ws
+    target: local_ws
+  - kind: sleep
+    name: wait_after_reconnect
+    ms: 500
+  - kind: ws_round_trip
+    name: after_reconnect_should_recover
+    url: "{{upstream.local_ws}}"
+    payload: hello-ws-recovery-after
+    proxy: socks5://127.0.0.1:11801
+    timeout_ms: 5000
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.before_disconnect_should_succeed.success
+    op: eq
+    expected: true
+  - key: traffic.during_disconnect_should_fail.success
+    op: eq
+    expected: false
+  - key: traffic.after_reconnect_should_recover.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true
