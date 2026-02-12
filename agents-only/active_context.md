@@ -7,12 +7,33 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L12-L16 ✅ Closed**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
+**当前阶段**: **L17 收口执行中**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: 1617 passed；boundary gate snapshot (2026-02-12): `check-boundaries.sh` pass（V4a=24 <= 25）
+**Tests**: L17 复验快照（2026-02-13）：`check-boundaries.sh` ✅；`cargo check -p app --features parity` ✅；`cargo test --workspace` ❌（`udp_balancer::balancer_socks5_ok`）
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
+
+### L17 发布就绪收口（2026-02-13）
+
+- **L17.1.1 CI/CD Pipeline**: `.github/workflows/ci.yml` 已固定 5 门禁（fmt/clippy/test/parity/boundaries）。
+- **L17.1.2 多平台构建**: `.github/workflows/release.yml` 保留 6 target matrix，新增 os/arch/archive 元数据并统一命名。
+- **L17.1.3 Docker 正式化**: `deployments/docker/*` 已接线 non-root、`/services/health`、镜像 `<50MB` 校验链说明。
+- **L17.1.4 CHANGELOG**: `CHANGELOG.md` 已补齐 L17 收口记录与贡献入口链接。
+- **L17.2.1 Release 打包**: `scripts/package_release.sh` + `deployments/config-template.json` 已落地并完成本机打包验证。
+- **L17.2.2 文档入口**: `docs/configuration.md`、`docs/migration-from-go.md`、`docs/troubleshooting.md` 已落地并互链。
+- **L17.2.3 安全清单**: `deny.toml` 适配 cargo-deny 0.18；`reports/security_audit.md` 已转为实跑结论（HIGH/CRITICAL 阻断策略）。
+- **L17.3.1 GUI 冒烟**: `scripts/gui_smoke_test.sh` 与 `reports/gui_integration_test.md` 已落地（半自动模板 + 证据位）。
+- **L17.3.2 Canary 框架**: `scripts/canary_7day.sh` 与 `reports/stability/canary_summary.md` 已落地（JSONL + summary）。
+- **L17.3.3 Capstone 状态**: 状态总线已同步；`Release Ready` 判定仍受既有门禁失败/环境阻塞影响（见下）。
+
+### L17 当前阻塞（非本轮新增）
+
+- `cargo fmt --all -- --check`：仓库既有格式漂移。
+- `cargo clippy --workspace --all-features --all-targets -- -D warnings`：`sb-tls`/`sb-config` 既有 lint。
+- `cargo test --workspace`：`sb-core` 测试 `balancer_socks5_ok` 失败。
+- Docker daemon 未启动：无法本机完成 Docker build/run/health 终验。
+- Canary 24h 短跑需单独持续执行（脚本参数已固定）。
 
 ### L16 基准与稳定性（2026-02-12 已完成）
 

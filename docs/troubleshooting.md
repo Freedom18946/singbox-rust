@@ -1,3 +1,38 @@
+# Troubleshooting (L17 Entry)
+
+This page is the L17 release-readiness troubleshooting entry and also includes the full runbook below.
+
+## Fast Triage (L17)
+
+1. Validate config:
+
+```bash
+cargo run -p app -- check -c /path/to/config.json
+```
+
+2. Verify parity build and boundaries:
+
+```bash
+cargo check -p app --features parity
+bash agents-only/06-scripts/check-boundaries.sh
+```
+
+3. Verify security gates:
+
+```bash
+cargo audit
+cargo deny check licenses
+```
+
+4. Verify release runtime probes:
+
+```bash
+scripts/gui_smoke_test.sh --help
+scripts/canary_7day.sh --help
+```
+
+## Detailed Runbook
+
 # Troubleshooting Runbook - singbox-rust
 
 **Version**: 1.0.0  

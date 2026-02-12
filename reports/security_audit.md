@@ -1,91 +1,75 @@
 # Security Audit Report
 
-**Project**: singbox-rust
-**Date**: 2026-02-12
-**Auditor**: Automated + Manual Review
+**Project**: singbox-rust  
+**Audit Window**: 2026-02-12T17:29:38Z  
+**Policy Baseline**: L17 (block only `HIGH` / `CRITICAL`; track `MEDIUM` and `unmaintained`)
 
-## 1. Dependency Audit
+## 1) Dependency Security
 
-### cargo audit
-- **Status**: To be verified
+### 1.1 `cargo audit`
 - **Command**: `cargo audit`
-- **Criteria**: No HIGH or CRITICAL advisories
+- **Execution**: 2026-02-12T17:29:38Z (local run)
+- **Result**: `exit code 1` (tool reports findings), **policy result = PASS (non-blocking)**
 
-### cargo deny (licenses)
-- **Status**: To be verified
-- **Command**: `cargo deny check licenses`
-- **Criteria**: All dependencies use permissive licenses
+Findings:
+- Vulnerability: `RUSTSEC-2023-0071` (`rsa 0.9.9`, severity `5.9 medium`, via `arti-client` dependency tree)
+- Additional warnings: multiple `unmaintained` advisories (tracked)
+- **No HIGH/CRITICAL advisories were reported in this run**
 
-## 2. Secret Handling
+Policy interpretation:
+- L17 gate only blocks HIGH/CRITICAL.
+- Current vulnerability severity is medium, so release gate is **warning/track**, not blocker.
 
-### Password/Token Logging
-- **Check**: Passwords, tokens, and secrets must not appear in info/warn log output
-- **Method**: `grep -rn "password\|secret\|token\|api.key" --include="*.rs" | grep -i "info!\|warn!\|debug!\|trace!"`
-- **Exclusions**: Debug-level logging of sanitized values is acceptable
-- **Status**: To be verified
+### 1.2 `cargo deny check licenses`
+- **Command**: `cargo deny check licenses --hide-inclusion-graph`
+- **Execution**: 2026-02-12T17:29:38Z (local run)
+- **Result**: `licenses ok` (exit code 0)
 
-### Configuration Secrets
-- **Check**: Configuration parsing must not log raw secret values
-- **Locations to verify**:
-  - `sb-config/src/` — config parsing
-  - `sb-core/src/` — runtime config application
-  - `app/src/` — CLI output
+Notes from tool output:
+- `bounded-vec-deque` license expression uses deprecated SPDX alias (`GPL-3.0+ OR BSD-3-Clause`) -> parse warning only
+- `deny.toml` contains unmatched allowance `Unicode-DFS-2016` -> warning only
 
-## 3. TLS Security
+## 2) Secret Handling / Logging
 
-### Minimum TLS Version
-- **Check**: Default TLS version >= 1.2
-- **Implementation**: `rustls` defaults to TLS 1.2+ (TLS 1.0/1.1 not supported)
-- **Verification**: `rustls` crate features include `tls12` but not `tls10`/`tls11`
-- **Status**: PASS (by design — rustls does not support < TLS 1.2)
+### 2.1 Secret keyword log scan
+- **Command**: `rg -n --glob '*.rs' '(password|secret|token|api[_-]?key)' crates app | rg -i '(info!|warn!|debug!|trace!)'`
+- **Result**: matched logs mention auth events/requirements, e.g. "password authentication attempt/success/failed"
+- **Assessment**: no evidence in sampled output of raw credential value emission; logs appear to record metadata/events
 
-### Cipher Suites
-- **Check**: No insecure cipher suites (RC4, DES, export ciphers)
-- **Implementation**: `rustls` only supports modern AEAD ciphers (AES-GCM, ChaCha20-Poly1305)
-- **Status**: PASS (by design — rustls enforces secure ciphers)
+### 2.2 Config secret exposure
+- **Method**: spot-check by grep + code-path review of auth modules
+- **Assessment**: no direct raw secret print found in current sampled paths; continue periodic review during changes to auth/config parsing
 
-## 4. Authentication Security
+## 3) TLS and Auth Controls
 
-### Timing-Safe Comparison
-- **Check**: Auth middleware uses constant-time comparison for tokens/passwords
-- **Implementation**: `subtle::ConstantTimeEq` used in auth middleware
-- **Location**: `app/src/` auth-related modules
-- **Status**: To be verified
+### 3.1 TLS baseline
+- Rust TLS stack remains rustls-based (TLS 1.2+ baseline)
+- No evidence in this audit run of enabling legacy TLS 1.0/1.1
 
-### API Authentication
-- **Clash API**: Bearer token authentication via middleware
-- **SSMAPI**: Authentication middleware with token validation
-- **Non-localhost Warning**: Warning emitted when API binds to non-127.0.0.1
+### 3.2 Timing-safe comparison
+- **Command**: `rg -n 'ConstantTimeEq|ct_eq' crates app`
+- **Result**: constant-time comparisons found in multiple auth paths, including:
+  - `app/src/admin_debug/auth/apikey.rs`
+  - `app/src/admin_debug/http_server.rs`
+  - `crates/sb-security/src/credentials.rs`
+  - `crates/sb-adapters/src/inbound/naive.rs`
+- **Assessment**: PASS (timing-safe compare primitives are in use)
 
-## 5. Input Validation
+## 4) Command Injection Surface (Targeted Review)
 
-### Configuration Validation
-- **Check**: All user-supplied configuration is validated before use
-- **Implementation**: `sb-config` validator with JSON schema
-- **Status**: PASS (validator covers all top-level fields)
+- **Command**: `rg -n 'Command::new\(' crates app scripts`
+- **Result**: command execution points are present across platform/network helper code and tests
+- **Assessment**: no direct exploitable path confirmed in this L17 pass; retain as ongoing review item, especially callsites where command/args are indirectly composed
 
-### Command Injection
-- **Check**: No shell command construction from user input
-- **Method**: Review all `Command::new()` usages
-- **Status**: To be verified
+## 5) L17 Security Conclusion
 
-## 6. Summary
+| Check | Outcome | Blocking? |
+|---|---|---|
+| `cargo audit` | MEDIUM + unmaintained findings only | No (policy) |
+| `cargo deny check licenses` | Pass with warnings | No |
+| Secret/log leak scan | No raw secret leakage seen in sampled matches | No |
+| Constant-time auth compare | Present in key auth paths | No |
 
-| Category | Status | Notes |
-|----------|--------|-------|
-| Dependency audit | PENDING | Run `cargo audit` |
-| License compliance | PENDING | Run `cargo deny check` |
-| Secret logging | PENDING | Grep verification needed |
-| TLS >= 1.2 | PASS | rustls enforces this |
-| Secure ciphers | PASS | rustls enforces this |
-| Timing-safe auth | PENDING | Code review needed |
-| Input validation | PASS | Schema validator |
-| Command injection | PENDING | Code review needed |
-
-## Actions Required
-
-1. Run `cargo audit` and resolve any HIGH/CRITICAL advisories
-2. Run `cargo deny check` and resolve any license issues
-3. Verify no secret values in info/warn logs (manual grep)
-4. Verify timing-safe comparison in auth middleware (code review)
-5. Review all `Command::new()` for injection risks
+**Final status (L17 policy)**: **PASS with tracked warnings**  
+**Tracked exceptions**: medium/unmaintained advisories (documented above)  
+**Blocker threshold**: HIGH/CRITICAL only (none observed in this run)

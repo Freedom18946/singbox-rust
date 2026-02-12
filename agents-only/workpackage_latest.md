@@ -1,11 +1,40 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-12
-> **当前阶段**：L16 ✅ Closed（单分支并行收口）
+> **最后更新**：2026-02-13
+> **当前阶段**：L17 收口执行中（多流并行 + Integrator 合流）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🚧 最新进展：L17 全量收口实施（L17.1.1 ~ L17.3.3）
+
+**日期**：2026-02-13  
+**状态**：代码与文档交付已完成；最终 `Release Ready` 受既有门禁失败/环境阻塞影响，待清障
+
+**已落地工作包**：
+- ✅ L17.1.1 CI/CD Pipeline：`ci.yml` 已固定 fmt/clippy/test/parity/boundaries 门禁。
+- ✅ L17.1.2 多平台构建：`release.yml` 保留 6 target matrix，并引入 os/arch/archive 元数据。
+- ✅ L17.1.3 Docker 正式化：Dockerfile/compose 已统一 non-root、healthcheck、镜像体积校验链说明。
+- ✅ L17.1.4 CHANGELOG：按 Keep a Changelog 更新 L17 条目与贡献入口。
+- ✅ L17.2.1 Release 打包：新增 `scripts/package_release.sh` 与 `deployments/config-template.json`，并统一 checksum 产出。
+- ✅ L17.2.2 用户文档：新增 `docs/configuration.md`、`docs/migration-from-go.md`、`docs/troubleshooting.md`。
+- ✅ L17.2.3 安全清单：`deny.toml` 适配 cargo-deny 0.18，`reports/security_audit.md` 已转实跑结论。
+- ✅ L17.3.1 GUI 冒烟：新增 `scripts/gui_smoke_test.sh` + `reports/gui_integration_test.md`。
+- ✅ L17.3.2 Canary 框架：新增 `scripts/canary_7day.sh` + `reports/stability/canary_summary.md`。
+- ✅ L17.3.3 Capstone：`CLAUDE.md` / `active_context.md` / `workpackage_latest.md` / `log.md` 已同步。
+
+**本轮复验快照**：
+- ✅ `bash agents-only/06-scripts/check-boundaries.sh`
+- ✅ `cargo check -p app --features parity`
+- ⚠️ `cargo fmt --all -- --check`（既有格式漂移）
+- ⚠️ `cargo clippy --workspace --all-features --all-targets -- -D warnings`（既有 lint）
+- ❌ `cargo test --workspace`（`sb-core --test udp_balancer`: `balancer_socks5_ok`）
+- ⚠️ Docker 验证（daemon 未启动，环境阻塞）
+- ✅ `cargo deny check licenses --hide-inclusion-graph`（pass with warnings）
+- ⚠️ `cargo audit`（1 medium + unmaintained，按 L17 策略不阻断）
 
 ---
 

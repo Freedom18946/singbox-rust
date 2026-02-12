@@ -23,6 +23,44 @@
 
 ## 日志记录
 
+### [2026-02-13 01:35] Agent: Codex (GPT-5)
+
+**任务**: 按 L17 全量收口计划执行并合流（L17.1.1 ~ L17.3.3）
+**变更**:
+- Release 流（Agent-R 对应）：
+  - 更新 `.github/workflows/ci.yml`（fmt/clippy/test/parity/boundaries 门禁固定）
+  - 更新 `.github/workflows/release.yml`（6 target matrix + os/arch/archive 元数据 + 统一命名）
+  - 新增 `scripts/package_release.sh`（统一打包 + checksum）
+  - 新增 `deployments/config-template.json`
+- Ops 流（Agent-O 对应）：
+  - 更新 `deployments/docker/{Dockerfile,.dockerignore,docker-compose.yml}`（non-root + healthcheck + size-check 链）
+  - 新增 `scripts/gui_smoke_test.sh`
+  - 新增 `scripts/canary_7day.sh`
+  - 新增 `reports/gui_integration_test.md`
+  - 新增/更新 `reports/stability/canary_summary.md`、`reports/stability/canary_7day.jsonl`
+- Docs+Security 流（Agent-D 对应）：
+  - 更新 `CHANGELOG.md`
+  - 新增 `docs/configuration.md`、`docs/migration-from-go.md`
+  - 规范化 `docs/troubleshooting.md`（由 `docs/TROUBLESHOOTING.md` 重命名）
+  - 更新 `docs/README.md` 链接
+  - 更新 `deny.toml`（cargo-deny 0.18 兼容）
+  - 重写 `reports/security_audit.md`（实跑命令 + 结论）
+- Integrator（Agent-I 对应）：
+  - 更新 `CLAUDE.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/log.md`
+- 关键验收执行：
+  - 通过：`check-boundaries.sh`、`cargo check -p app --features parity`、`cargo deny check licenses`
+  - 失败/阻塞：`cargo fmt --check`、`cargo clippy ... -D warnings`、`cargo test --workspace`（`udp_balancer` 单测失败）、Docker daemon 不可用
+
+**结果**: 部分完成（L17 交付已落地，Release Ready 结论待门禁/环境阻塞清障）
+**备注**:
+- `cargo audit` 结果为 1 个 medium（`RUSTSEC-2023-0071`）+ 多个 unmaintained，按 L17 策略（仅 HIGH/CRITICAL 阻断）记为跟踪项。
+- Canary 24h 短跑框架就绪，需独立持续运行窗口执行。
+
+---
+
 ### [2026-02-10 19:41] Agent: Codex (GPT-5)
 
 **任务**: 执行 L4.x 工作包（L4.1~L4.6）首轮落地：治理闭环优先
