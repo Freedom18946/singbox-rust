@@ -4,8 +4,8 @@
 
 ## 统计快照（2026-02-11）
 
-- 总 case：57
-- `strict`：50
+- 总 case：68
+- `strict`：61
 - `env_limited`：6
 - `env_limited` → `strict` 升级：1（`p0_clash_api_contract` → `p0_clash_api_contract_strict`）
 - 状态口径：`implemented` / `planned` / `blocked`
@@ -84,6 +84,14 @@
 | --- | --- | --- | --- |
 | `p1_subscription_file_urls` | URL 样本集合解析与环境归因 | `env_limited` | implemented |
 
+### 大包传输（L8.1.1）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_dataplane_large_payload_tcp` | 128KB TCP echo via SOCKS5 + hash 校验 | `strict` | implemented |
+| `p1_dataplane_large_payload_udp` | 8KB UDP echo via SOCKS5 + hash 校验 | `strict` | implemented |
+| `p1_dataplane_large_payload_http` | 256KB HTTP body echo via SOCKS5 | `strict` | implemented |
+
 ## P2 (protocol + stress)
 
 | Case ID | Goal | Env Class | Status |
@@ -98,6 +106,34 @@
 | `p2_shadowsocks_network_restart_suite` | Shadowsocks 重启/抖动恢复 | `strict` | implemented |
 | `p2_connections_ws_concurrency_suite` | `/connections` WS 并发稳定性 | `strict` | implemented |
 | `p2_connections_ws_soak_suite` | `/connections` WS 长时 soak | `strict` | implemented |
+
+### 协议单测编入（L8.1.2）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_protocol_unit_shadowsocks` | SS 编解码 cargo test 编入 | `strict` | implemented |
+| `p2_protocol_unit_vmess` | VMess 编解码 cargo test 编入 | `strict` | implemented |
+
+### 多出站拓扑（L8.2.1）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_dataplane_chain_proxy` | SOCKS5→SOCKS5→direct 双跳连通 | `strict` | implemented |
+
+### 订阅容错（L9.1.1）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_subscription_malformed_json` | 恶意 JSON 输入优雅报错 | `strict` | implemented |
+| `p2_subscription_truncated_base64` | 截断 base64 输入处理 | `strict` | implemented |
+| `p2_subscription_empty_input` | 空输入优雅报错 | `strict` | implemented |
+| `p2_subscription_unknown_protocol` | 未知协议链接提取 | `strict` | implemented |
+
+### 双核对照（L10.3.1）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_connections_ws_soak_dual_core` | WS soak 双核对照 + 自动 diff | `strict` | implemented |
 
 ## 协议 × 故障类型矩阵（L5.2.1）
 
@@ -121,6 +157,12 @@
 | `post_traffic_gui_sequence` | CaseSpec 字段：traffic 后 GUI 序列 | implemented |
 | `connections.count` / `connections.N.rule` / `connections.N.chains` | 连接断言键 | implemented |
 | `attribution.rs` | env_limited 失败归因分类模块 | implemented |
+| `go_collector.rs` | Go Clash API 被动快照采集（L10.1.1） | implemented |
+| `leak_detector.rs` | 资源泄漏检测（内存 + FD 线性回归）（L10.2.2） | implemented |
+| `GoApiConfig` + dual-kernel diff | orchestrator 双核快照 + 自动 diff（L10.1.2） | implemented |
+| `connection_mismatches` / `memory_mismatches` | diff 维度扩展（L10.2.1） | implemented |
+| `payload_size` / `resolve_payload()` | 大包 payload 生成 + hash 校验（L8.1.1） | implemented |
+| `save_go_snapshot_to_dir()` | Go 快照直接目录保存 | implemented |
 | `aggregate_trend_report.sh` | 趋势报告聚合脚本 | implemented |
 | `interop-lab-smoke.yml` | CI smoke workflow | implemented |
 | `interop-lab-nightly.yml` | CI nightly workflow | implemented |

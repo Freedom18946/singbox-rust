@@ -26,6 +26,9 @@ pub struct NormalizedSnapshot {
     pub subscription_result: Option<SubscriptionResult>,
     pub traffic_results: Vec<TrafficResult>,
     pub errors: Vec<NormalizedError>,
+    /// File descriptor count samples for leak detection (L10.2.2).
+    #[serde(default)]
+    pub fd_samples: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +111,7 @@ impl NormalizedSnapshot {
             subscription_result: None,
             traffic_results: Vec::new(),
             errors: Vec::new(),
+            fd_samples: Vec::new(),
         }
     }
 }

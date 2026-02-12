@@ -1,0 +1,29 @@
+id: p2_subscription_unknown_protocol
+title: subscription parser handles unknown protocol links
+priority: p2
+kernel_mode: rust
+env_class: strict
+tags:
+  - subscription
+  - error_handling
+bootstrap:
+  rust:
+    ready_path: /
+    api:
+      base_url: "{{upstream.local_http}}"
+gui_sequence:
+  - kind: subscription_parse
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+subscription_input:
+  type: inline
+  content: |
+    foo://host:1234
+    bar://example.com:5678#tag1
+    ss://YWVzLTEyOC1nY206dGVzdA@192.168.1.1:8388#normal
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0

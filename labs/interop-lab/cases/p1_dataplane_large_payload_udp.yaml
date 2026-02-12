@@ -1,0 +1,47 @@
+id: p1_dataplane_large_payload_udp
+title: large UDP payload roundtrip (8KB) via SOCKS5
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
+  - large_payload
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_udp
+    kind: udp_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: udp_round_trip
+    name: large_udp_8kb
+    addr: "{{upstream.local_udp}}"
+    payload: ""
+    payload_size: 8192
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.large_udp_8kb.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true

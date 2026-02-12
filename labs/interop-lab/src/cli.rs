@@ -26,6 +26,21 @@ pub enum TopCommand {
         #[command(subcommand)]
         command: ReportCommand,
     },
+    /// Collect a read-only snapshot from the running Go Clash API.
+    GoSnapshot(GoSnapshotArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct GoSnapshotArgs {
+    /// Go Clash API base URL (e.g. http://127.0.0.1:9090).
+    #[arg(long)]
+    pub api: String,
+    /// Bearer token for the Go API.
+    #[arg(long)]
+    pub token: Option<String>,
+    /// Case id to tag the snapshot with.
+    #[arg(long, default_value = "go_snapshot")]
+    pub case_id: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -51,6 +66,12 @@ pub enum CaseCommand {
         /// Filter by environment class.
         #[arg(long = "env-class")]
         env_class: Option<EnvClassArg>,
+        /// Go Clash API base URL for dual-kernel diff (e.g. http://127.0.0.1:9090).
+        #[arg(long = "go-api")]
+        go_api: Option<String>,
+        /// Bearer token for the Go API.
+        #[arg(long = "go-token")]
+        go_token: Option<String>,
     },
     /// Compare latest Go/Rust snapshots for one case.
     Diff {

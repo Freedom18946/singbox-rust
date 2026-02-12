@@ -1,5 +1,6 @@
 use crate::case_spec::{FaultSpec, TrafficAction, UpstreamKind, UpstreamServiceSpec};
 use crate::snapshot::TrafficResult;
+use crate::util::sha256_hex;
 use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
 use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
@@ -216,7 +217,7 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
                                     let delays = delays.clone();
                                     let svc = service_name.clone();
                                     tokio::spawn(async move {
-                                        let mut buf = [0_u8; 2048];
+                                        let mut buf = vec![0_u8; 256 * 1024]; // 256KB for large payload support
                                         loop {
                                             match stream.read(&mut buf).await {
                                                 Ok(0) => break,
@@ -261,7 +262,7 @@ async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamSer
             let delays = harness.service_delays_ms.clone();
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
-                let mut buf = [0_u8; 4096];
+                let mut buf = [0_u8; 65536]; // 64KB for large UDP payload support
                 loop {
                     tokio::select! {
                         _ = &mut rx => {
@@ -482,24 +483,33 @@ pub async fn run_traffic_plan(
                 addr,
                 payload,
                 proxy,
+                payload_size,
             } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let actual_payload = resolve_payload(payload, *payload_size);
                 let result = if let Some(proxy) = resolved_proxy.as_deref() {
-                    tcp_roundtrip_via_proxy(proxy, &addr, payload.as_bytes()).await
+                    tcp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
                 } else {
-                    tcp_roundtrip(&addr, payload.as_bytes()).await
+                    tcp_roundtrip(&addr, &actual_payload).await
                 };
                 match result {
-                    Ok(back) => TrafficResult {
-                        name: name.clone(),
-                        success: back == payload.as_bytes(),
-                        detail: json!({
-                            "addr": addr,
-                            "proxy": resolved_proxy,
-                            "echo": String::from_utf8_lossy(&back)
-                        }),
-                    },
+                    Ok(back) => {
+                        let payload_hash = sha256_hex(&actual_payload);
+                        let echo_hash = sha256_hex(&back);
+                        TrafficResult {
+                            name: name.clone(),
+                            success: back == actual_payload,
+                            detail: json!({
+                                "addr": addr,
+                                "proxy": resolved_proxy,
+                                "payload_len": actual_payload.len(),
+                                "echo_len": back.len(),
+                                "payload_hash": payload_hash,
+                                "echo_hash": echo_hash,
+                            }),
+                        }
+                    }
                     Err(err) => TrafficResult {
                         name: name.clone(),
                         success: false,
@@ -516,24 +526,33 @@ pub async fn run_traffic_plan(
                 addr,
                 payload,
                 proxy,
+                payload_size,
             } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let actual_payload = resolve_payload(payload, *payload_size);
                 let result = if let Some(proxy) = resolved_proxy.as_deref() {
-                    udp_roundtrip_via_proxy(proxy, &addr, payload.as_bytes()).await
+                    udp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
                 } else {
-                    udp_roundtrip(&addr, payload.as_bytes()).await
+                    udp_roundtrip(&addr, &actual_payload).await
                 };
                 match result {
-                    Ok(back) => TrafficResult {
-                        name: name.clone(),
-                        success: back == payload.as_bytes(),
-                        detail: json!({
-                            "addr": addr,
-                            "proxy": resolved_proxy,
-                            "echo": String::from_utf8_lossy(&back)
-                        }),
-                    },
+                    Ok(back) => {
+                        let payload_hash = sha256_hex(&actual_payload);
+                        let echo_hash = sha256_hex(&back);
+                        TrafficResult {
+                            name: name.clone(),
+                            success: back == actual_payload,
+                            detail: json!({
+                                "addr": addr,
+                                "proxy": resolved_proxy,
+                                "payload_len": actual_payload.len(),
+                                "echo_len": back.len(),
+                                "payload_hash": payload_hash,
+                                "echo_hash": echo_hash,
+                            }),
+                        }
+                    }
                     Err(err) => TrafficResult {
                         name: name.clone(),
                         success: false,
@@ -836,6 +855,22 @@ fn compute_jitter_delay(target: &str, base_ms: u64, jitter_ms: u64, ratio: f64) 
     let bucket = (hash % 1000) as f64 / 1000.0;
     let scaled_jitter = (jitter_ms as f64 * ratio * bucket).round() as u64;
     base_ms.saturating_add(scaled_jitter)
+}
+
+/// Resolve the effective payload bytes: if `payload_size` is set, generate
+/// a deterministic pattern of that size; otherwise use the literal `payload` string.
+fn resolve_payload(payload: &str, payload_size: Option<usize>) -> Vec<u8> {
+    match payload_size {
+        Some(size) if size > 0 => {
+            // Deterministic fill: repeating ASCII bytes 0x41..0x5A ('A'..'Z')
+            let mut buf = vec![0u8; size];
+            for (i, b) in buf.iter_mut().enumerate() {
+                *b = 0x41 + (i % 26) as u8;
+            }
+            buf
+        }
+        _ => payload.as_bytes().to_vec(),
+    }
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {

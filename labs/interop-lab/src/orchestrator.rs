@@ -2,6 +2,8 @@ use crate::case_spec::{
     load_case_by_id, load_cases, CaseSpec, EnvClass, KernelControlAction, KernelLaunchSpec,
     KernelMode, KernelTarget, Priority, TrafficAction,
 };
+use crate::diff_report::{build_diff_report, to_markdown as diff_to_markdown};
+use crate::go_collector::{collect_go_snapshot, save_go_snapshot_to_dir};
 use crate::gui_replay::run_gui_sequence;
 use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
 use crate::snapshot::{KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
@@ -21,6 +23,15 @@ pub struct RunOutput {
     pub run_id: String,
     pub run_dir: PathBuf,
     pub snapshot_files: Vec<PathBuf>,
+    /// Path to the diff report markdown, if dual-kernel diff was executed.
+    pub diff_report_path: Option<PathBuf>,
+}
+
+/// Optional Go API configuration for passive snapshot collection.
+#[derive(Debug, Clone, Default)]
+pub struct GoApiConfig {
+    pub api_base: Option<String>,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -122,6 +133,7 @@ pub async fn run_case(
     case: &CaseSpec,
     kernel_override: Option<KernelMode>,
     artifacts_root: &Path,
+    go_api: &GoApiConfig,
 ) -> Result<RunOutput> {
     let run_id = format!("{}-{}", Utc::now().format("%Y%m%dT%H%M%SZ"), Uuid::new_v4());
     let run_dir = artifacts_root.join(&case.id).join(&run_id);
@@ -268,11 +280,63 @@ pub async fn run_case(
         .await
         .with_context(|| format!("writing {}", summary_path.display()))?;
 
+    // --- Go passive snapshot collection (L10.1.2) ---
+    let diff_report_path = if let Some(go_api_base) = &go_api.api_base {
+        // Collect Go snapshot from the running Clash API
+        match collect_go_snapshot(go_api_base, go_api.token.as_deref(), &case.id).await {
+            Ok(go_snapshot) => {
+                match save_go_snapshot_to_dir(&go_snapshot, &run_dir) {
+                    Ok(go_snap_path) => {
+                        snapshot_files.push(go_snap_path);
+                        // Try to produce a diff if we have a Rust snapshot
+                        let rust_snap_path = run_dir.join("rust.snapshot.json");
+                        if rust_snap_path.exists() {
+                            let rust_raw = std::fs::read_to_string(&rust_snap_path)
+                                .with_context(|| "reading rust snapshot for diff")?;
+                            let rust_snapshot: NormalizedSnapshot = serde_json::from_str(&rust_raw)
+                                .with_context(|| "parsing rust snapshot for diff")?;
+                            let report = build_diff_report(
+                                &case.id,
+                                run_dir.clone(),
+                                &rust_snapshot,
+                                &go_snapshot,
+                                &case.oracle,
+                            );
+                            let md_path = run_dir.join("diff.md");
+                            std::fs::write(&md_path, diff_to_markdown(&report))
+                                .with_context(|| "writing diff markdown")?;
+                            let json_path = run_dir.join("diff.json");
+                            let json = serde_json::to_string_pretty(&report)
+                                .with_context(|| "serializing diff report")?;
+                            std::fs::write(&json_path, json)
+                                .with_context(|| "writing diff json")?;
+                            println!("diff clean={} gate_score={} report={}", report.is_clean(), report.gate_score, md_path.display());
+                            Some(md_path)
+                        } else {
+                            None
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("warning: failed to save Go snapshot: {err}");
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("warning: Go passive collection failed: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(RunOutput {
         case_id: case.id.clone(),
         run_id,
         run_dir,
         snapshot_files,
+        diff_report_path,
     })
 }
 
@@ -630,6 +694,7 @@ pub async fn run_cases(
     cases: &[CaseSpec],
     kernel_override: Option<KernelMode>,
     artifacts_root: &Path,
+    go_api: &GoApiConfig,
 ) -> Result<Vec<RunOutput>> {
     if cases.is_empty() {
         return Err(anyhow!("no cases selected"));
@@ -637,7 +702,7 @@ pub async fn run_cases(
 
     let mut outputs = Vec::with_capacity(cases.len());
     for case in cases {
-        let output = run_case(case, kernel_override.clone(), artifacts_root)
+        let output = run_case(case, kernel_override.clone(), artifacts_root, go_api)
             .await
             .with_context(|| format!("running case {}", case.id))?;
         outputs.push(output);

@@ -18,6 +18,8 @@ pub struct DiffReport {
     pub ws_mismatches: Vec<Mismatch>,
     pub subscription_mismatches: Vec<Mismatch>,
     pub traffic_mismatches: Vec<Mismatch>,
+    pub connection_mismatches: Vec<Mismatch>,
+    pub memory_mismatches: Vec<Mismatch>,
     pub ignored_http_count: usize,
     pub ignored_ws_count: usize,
     pub ignored_counter_jitter_count: usize,
@@ -38,6 +40,8 @@ impl DiffReport {
             && self.ws_mismatches.is_empty()
             && self.subscription_mismatches.is_empty()
             && self.traffic_mismatches.is_empty()
+            && self.connection_mismatches.is_empty()
+            && self.memory_mismatches.is_empty()
     }
 }
 
@@ -91,7 +95,7 @@ pub async fn diff_latest_case(
     Ok((report, diff_markdown_path))
 }
 
-fn build_diff_report(
+pub fn build_diff_report(
     case_id: &str,
     run_dir: PathBuf,
     rust_snapshot: &NormalizedSnapshot,
@@ -174,10 +178,74 @@ fn build_diff_report(
         });
     }
 
+    // --- Connections diff (L10.2.1) ---
+    let mut connection_mismatches = Vec::new();
+    let rust_conn_count = rust_snapshot
+        .conn_summary
+        .as_ref()
+        .and_then(|v| v.get("connections"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.len());
+    let go_conn_count = go_snapshot
+        .conn_summary
+        .as_ref()
+        .and_then(|v| v.get("connections"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.len());
+    if rust_conn_count != go_conn_count {
+        connection_mismatches.push(Mismatch {
+            key: "connections.count".to_string(),
+            rust_value: json!(rust_conn_count),
+            go_value: json!(go_conn_count),
+        });
+    }
+    for field in ["downloadTotal", "uploadTotal"] {
+        let rust_val = rust_snapshot.conn_summary.as_ref().and_then(|v| v.get(field)).cloned();
+        let go_val = go_snapshot.conn_summary.as_ref().and_then(|v| v.get(field)).cloned();
+        if rust_val != go_val {
+            if oracle.tolerate_counter_jitter {
+                if let (Some(a), Some(b)) = (
+                    rust_val.as_ref().and_then(|v| v.as_i64()),
+                    go_val.as_ref().and_then(|v| v.as_i64()),
+                ) {
+                    if (a - b).abs() <= oracle.counter_jitter_abs {
+                        ignored_counter_jitter_count += 1;
+                        continue;
+                    }
+                }
+            }
+            connection_mismatches.push(Mismatch {
+                key: format!("connections.{field}"),
+                rust_value: json!(rust_val),
+                go_value: json!(go_val),
+            });
+        }
+    }
+
+    // --- Memory diff (L10.2.1) ---
+    let mut memory_mismatches = Vec::new();
+    let rust_mem_peak = rust_snapshot.memory_series.iter().map(|m| m.inuse).max();
+    let go_mem_peak = go_snapshot.memory_series.iter().map(|m| m.inuse).max();
+    if let (Some(r), Some(g)) = (rust_mem_peak, go_mem_peak) {
+        // Flag if Rust peak is >2x Go peak (or vice versa) — significant divergence
+        if r > 0 && g > 0 {
+            let ratio = (r as f64) / (g as f64);
+            if ratio > 2.0 || ratio < 0.5 {
+                memory_mismatches.push(Mismatch {
+                    key: "memory.peak_ratio".to_string(),
+                    rust_value: json!({"peak_bytes": r}),
+                    go_value: json!({"peak_bytes": g}),
+                });
+            }
+        }
+    }
+
     let gate_score = http_mismatches.len()
         + ws_mismatches.len()
         + subscription_mismatches.len()
-        + traffic_mismatches.len();
+        + traffic_mismatches.len()
+        + connection_mismatches.len()
+        + memory_mismatches.len();
 
     DiffReport {
         case_id: case_id.to_string(),
@@ -187,6 +255,8 @@ fn build_diff_report(
         ws_mismatches,
         subscription_mismatches,
         traffic_mismatches,
+        connection_mismatches,
+        memory_mismatches,
         ignored_http_count,
         ignored_ws_count,
         ignored_counter_jitter_count,
@@ -298,7 +368,7 @@ fn is_ignored_path(path: &str, ignore_paths: &[String]) -> bool {
     })
 }
 
-fn to_markdown(report: &DiffReport) -> String {
+pub fn to_markdown(report: &DiffReport) -> String {
     let mut md = String::new();
     md.push_str(&format!("# Diff Report: {}\n\n", report.case_id));
     md.push_str(&format!("- Compared at: {}\n", report.compared_at));
@@ -326,6 +396,8 @@ fn to_markdown(report: &DiffReport) -> String {
         ("WebSocket", &report.ws_mismatches),
         ("Subscription", &report.subscription_mismatches),
         ("Traffic", &report.traffic_mismatches),
+        ("Connections", &report.connection_mismatches),
+        ("Memory", &report.memory_mismatches),
     ] {
         md.push_str(&format!("## {}\n\n", title));
         if items.is_empty() {

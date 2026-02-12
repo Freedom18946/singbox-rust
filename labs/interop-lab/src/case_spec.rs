@@ -193,6 +193,10 @@ pub enum TrafficAction {
         payload: String,
         #[serde(default)]
         proxy: Option<String>,
+        /// When set, generates a deterministic payload of this size (bytes)
+        /// instead of using the `payload` string.
+        #[serde(default)]
+        payload_size: Option<usize>,
     },
     UdpRoundTrip {
         name: String,
@@ -200,6 +204,10 @@ pub enum TrafficAction {
         payload: String,
         #[serde(default)]
         proxy: Option<String>,
+        /// When set, generates a deterministic payload of this size (bytes)
+        /// instead of using the `payload` string.
+        #[serde(default)]
+        payload_size: Option<usize>,
     },
     DnsQuery {
         name: String,

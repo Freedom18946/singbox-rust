@@ -80,6 +80,11 @@ fn looks_like_html(body: &str) -> bool {
 }
 
 fn parse_subscription_content(source_type: &str, raw: &str) -> Result<SubscriptionResult> {
+    // Guard: empty or whitespace-only input is unsupported
+    if raw.trim().is_empty() {
+        return Err(anyhow!("unsupported subscription format"));
+    }
+
     if let Ok(value) = serde_json::from_str::<Value>(raw) {
         if let Some(outbounds) = value.get("outbounds").and_then(Value::as_array) {
             let protocols = extract_json_protocols(outbounds);
@@ -127,11 +132,14 @@ fn parse_subscription_content(source_type: &str, raw: &str) -> Result<Subscripti
 
     if let Ok(decoded) = STANDARD.decode(raw.trim()) {
         if let Ok(text) = String::from_utf8(decoded) {
-            let decoded_res = parse_subscription_content(source_type, &text)?;
-            return Ok(SubscriptionResult {
-                format: format!("base64:{}", decoded_res.format),
-                ..decoded_res
-            });
+            // Guard: avoid infinite recursion if decoded text is same as input or empty
+            if !text.is_empty() && text != raw {
+                let decoded_res = parse_subscription_content(source_type, &text)?;
+                return Ok(SubscriptionResult {
+                    format: format!("base64:{}", decoded_res.format),
+                    ..decoded_res
+                });
+            }
         }
     }
 
@@ -213,5 +221,58 @@ mod tests {
             assert_eq!(snapshot.format, "yaml_proxies");
             assert_eq!(snapshot.node_count, 2);
         }
+    }
+
+    #[tokio::test]
+    async fn parse_malformed_json_returns_error() {
+        let input = SubscriptionInputSpec::Inline {
+            content: r#"{"outbounds": [{"type": }]}"#.to_string(),
+        };
+        let result = parse_subscription(&input).await;
+        assert!(result.is_err(), "malformed JSON should return error");
+    }
+
+    #[tokio::test]
+    async fn parse_truncated_base64_returns_error() {
+        // This is not valid base64 and not valid as any other format either
+        let input = SubscriptionInputSpec::Inline {
+            content: "!!!TOTALLY_INVALID_BASE64$$$\n".to_string(),
+        };
+        let result = parse_subscription(&input).await;
+        assert!(result.is_err(), "truncated/invalid base64 should return error");
+    }
+
+    #[tokio::test]
+    async fn parse_empty_string_returns_error() {
+        let input = SubscriptionInputSpec::Inline {
+            content: "".to_string(),
+        };
+        let result = parse_subscription(&input).await;
+        assert!(result.is_err(), "empty string should return error");
+    }
+
+    #[tokio::test]
+    async fn parse_link_with_unknown_scheme() {
+        let input = SubscriptionInputSpec::Inline {
+            content: "foo://host:1234\nbar://example.com:5678#tag1\n".to_string(),
+        };
+        let result = parse_subscription(&input).await;
+        assert!(result.is_ok(), "unknown schemes should still be parseable as link_lines");
+        if let Ok(snapshot) = result {
+            assert_eq!(snapshot.format, "link_lines");
+            assert_eq!(snapshot.node_count, 2);
+            assert!(snapshot.protocols.contains(&"foo".to_string()));
+            assert!(snapshot.protocols.contains(&"bar".to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_yaml_without_proxies_key() {
+        let input = SubscriptionInputSpec::Inline {
+            content: "servers:\n  - {name: a, type: ss}\n".to_string(),
+        };
+        let result = parse_subscription(&input).await;
+        // YAML without 'proxies' key should not parse as yaml_proxies
+        assert!(result.is_err(), "YAML without 'proxies' key should fail");
     }
 }

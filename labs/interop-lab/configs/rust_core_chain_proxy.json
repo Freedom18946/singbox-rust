@@ -1,0 +1,35 @@
+{
+    "log": {
+        "level": "info"
+    },
+    "inbounds": [
+        {
+            "type": "socks",
+            "tag": "socks-in",
+            "listen": "127.0.0.1",
+            "listen_port": 11801
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "socks",
+            "tag": "socks-hop",
+            "server": "127.0.0.1",
+            "server_port": 11802,
+            "version": "5"
+        },
+        {
+            "type": "direct",
+            "tag": "direct-out"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "inbound": "socks-in",
+                "outbound": "socks-hop"
+            }
+        ],
+        "final": "direct-out"
+    }
+}

@@ -1,0 +1,46 @@
+id: p1_dataplane_large_payload_http
+title: large HTTP body roundtrip (256KB) via SOCKS5
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - dataplane
+  - large_payload
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_socks_http.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+gui_sequence:
+  - kind: http
+    name: healthz
+    method: GET
+    path: /healthz
+    expect_status: 200
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: http_get
+    name: large_http_256kb
+    url: "{{upstream.local_http}}/echo?size=262144"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+assertions:
+  - key: http.healthz.status
+    op: eq
+    expected: 200
+  - key: traffic.large_http_256kb.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true

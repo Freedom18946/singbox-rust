@@ -2,8 +2,10 @@ mod attribution;
 mod case_spec;
 mod cli;
 mod diff_report;
+mod go_collector;
 mod gui_replay;
 mod kernel;
+mod leak_detector;
 mod orchestrator;
 mod report;
 mod snapshot;
@@ -15,12 +17,14 @@ use anyhow::{Context, Result};
 use case_spec::{EnvClass, KernelMode, Priority};
 use clap::Parser;
 use cli::{
-    CaseCommand, Cli, EnvClassArg, KernelModeArg, PriorityArg, ReportCommand, TopCommand,
+    CaseCommand, Cli, EnvClassArg, GoSnapshotArgs, KernelModeArg, PriorityArg, ReportCommand,
+    TopCommand,
 };
+use go_collector::{collect_go_snapshot, save_go_snapshot};
 use diff_report::diff_latest_case;
 use orchestrator::{
     apply_case_filter, list_cases, load_single_case, render_run_plan_summary, run_case, run_cases,
-    CaseFilter,
+    CaseFilter, GoApiConfig,
 };
 use report::{latest_report_path, read_report};
 use std::path::Path;
@@ -38,6 +42,9 @@ async fn main() -> Result<()> {
             handle_case_command(command, &cases_dir, &artifacts_dir).await
         }
         TopCommand::Report { command } => handle_report_command(command, &artifacts_dir).await,
+        TopCommand::GoSnapshot(args) => {
+            handle_go_snapshot(args, &artifacts_dir).await
+        }
     }
 }
 
@@ -68,6 +75,8 @@ async fn handle_case_command(
             tag,
             exclude_tag,
             env_class,
+            go_api,
+            go_token,
         } => {
             let kernel_override = kernel.map(map_kernel_mode_arg);
             let filter = CaseFilter {
@@ -75,6 +84,10 @@ async fn handle_case_command(
                 include_tags: tag,
                 exclude_tags: exclude_tag,
                 env_class: env_class.map(map_env_class_arg),
+            };
+            let go_api_cfg = GoApiConfig {
+                api_base: go_api,
+                token: go_token,
             };
 
             if let Some(id) = id {
@@ -86,11 +99,14 @@ async fn handle_case_command(
                     "{}",
                     render_run_plan_summary(std::slice::from_ref(&case), kernel_override.clone(), &filter)
                 );
-                let output = run_case(&case, kernel_override, artifacts_dir)
+                let output = run_case(&case, kernel_override, artifacts_dir, &go_api_cfg)
                     .await
                     .with_context(|| format!("running case {id}"))?;
                 println!("case={} run_id={}", output.case_id, output.run_id);
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
+                if let Some(diff_path) = &output.diff_report_path {
+                    println!("diff_report={}", canonicalize_or(diff_path).display());
+                }
                 for snapshot in output.snapshot_files {
                     println!("snapshot={}", canonicalize_or(&snapshot).display());
                 }
@@ -103,7 +119,7 @@ async fn handle_case_command(
                 "{}",
                 render_run_plan_summary(&selected, kernel_override.clone(), &filter)
             );
-            let outputs = run_cases(&selected, kernel_override, artifacts_dir).await?;
+            let outputs = run_cases(&selected, kernel_override, artifacts_dir, &go_api_cfg).await?;
             for output in outputs {
                 println!("case={} run_id={}", output.case_id, output.run_id);
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
@@ -146,6 +162,21 @@ async fn handle_report_command(command: ReportCommand, artifacts_dir: &Path) -> 
             Ok(())
         }
     }
+}
+
+async fn handle_go_snapshot(args: GoSnapshotArgs, artifacts_dir: &Path) -> Result<()> {
+    let token = args.token.as_deref();
+    println!("Collecting Go snapshot from {} ...", args.api);
+    let snapshot = collect_go_snapshot(&args.api, token, &args.case_id)
+        .await
+        .with_context(|| "collecting Go snapshot")?;
+    println!("HTTP results: {}", snapshot.http_results.len());
+    println!("WS captures:  {}", snapshot.ws_frames.len());
+    println!("Memory pts:   {}", snapshot.memory_series.len());
+    println!("Errors:       {}", snapshot.errors.len());
+    let path = save_go_snapshot(&snapshot, artifacts_dir)?;
+    println!("Saved: {}", canonicalize_or(&path).display());
+    Ok(())
 }
 
 fn map_kernel_mode_arg(mode: KernelModeArg) -> KernelMode {

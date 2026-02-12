@@ -32,12 +32,14 @@
 - `ws_mismatches`
 - `subscription_mismatches`
 - `traffic_mismatches`
+- `connection_mismatches` — 连接数 + downloadTotal/uploadTotal（L10.2.1）
+- `memory_mismatches` — 内存峰值比率 >2x 时报警（L10.2.1）
 - `ignored_http_count`
 - `ignored_ws_count`
 - `ignored_counter_jitter_count`
 - `gate_score`
 
-`gate_score = mismatch 总数`，不包含 ignored 项。
+`gate_score = http + ws + subscription + traffic + connection + memory mismatch 总数`，不包含 ignored 项。
 
 ## 断言算子（L6.2.1）
 

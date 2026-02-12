@@ -31,6 +31,10 @@
 | YAML `proxies` | 解析节点与协议类型 | `p0_subscription_yaml` | `strict` | implemented |
 | Base64 | 自动解码后复用解析链 | `p0_subscription_base64` | `strict` | implemented |
 | URL 文件输入 | 样本治理与环境归因 | `p1_subscription_file_urls` | `env_limited` | implemented |
+| Malformed JSON | 恶意输入优雅报错 | `p2_subscription_malformed_json` | `strict` | implemented |
+| Truncated Base64 | 截断编码处理 | `p2_subscription_truncated_base64` | `strict` | implemented |
+| Empty input | 空输入报错 | `p2_subscription_empty_input` | `strict` | implemented |
+| Unknown protocol | 未知协议链接提取 | `p2_subscription_unknown_protocol` | `strict` | implemented |
 
 ## 数据面覆盖矩阵（协议 × 故障/恢复）
 
@@ -45,9 +49,26 @@
 | WS 稳定性 | concurrency | soak | trend gate | — | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` |
 | Trojan 协议 | suite | auth fault | recovery/restart | — | `p2_trojan_*` |
 | Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` |
+| Large TCP (128KB) | yes | — | — | — | `p1_dataplane_large_payload_tcp` |
+| Large UDP (8KB) | yes | — | — | — | `p1_dataplane_large_payload_udp` |
+| Large HTTP (256KB) | yes | — | — | — | `p1_dataplane_large_payload_http` |
+| Chain proxy (2-hop) | yes | — | — | — | `p2_dataplane_chain_proxy` |
+
+## 双核差分维度矩阵（L10.2.1）
+
+| Diff 维度 | 比较内容 | Oracle 支持 | Status |
+| --- | --- | --- | --- |
+| HTTP status + body_hash | 端点状态码 + 内容摘要 | `ignore_http_paths` | implemented |
+| WS frame_count + frame_hash | 帧数 + 帧内容摘要 | `ignore_ws_paths` | implemented |
+| Subscription format + node_count | 解析格式 + 节点数 | — | implemented |
+| Traffic action success | 流量动作成功率 | — | implemented |
+| Connections count + totals | 连接数 + 上下行总量 | `tolerate_counter_jitter` | implemented |
+| Memory peak ratio | 内存峰值比率（>2x 报警） | — | implemented |
 
 ## 参考实现映射
 
 - Go reference: `experimental/clashapi/*.go`
 - Rust reference: `crates/sb-api/src/clash/{handlers.rs,websocket.rs}`
 - interop harness: `labs/interop-lab/src/{case_spec.rs,orchestrator.rs,diff_report.rs,upstream.rs}`
+- Go collector: `labs/interop-lab/src/go_collector.rs`
+- Leak detector: `labs/interop-lab/src/leak_detector.rs`
