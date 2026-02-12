@@ -75,6 +75,7 @@
 | **L13 Services 安全与生命周期** | 2026-02-12 | Clash API auth middleware（Go parity）、SSMAPI auth middleware、non-localhost binding warning、ServiceStatus enum 服务故障隔离、Health API endpoint；2 interop-lab case |
 | **L14 TLS/Endpoint 高级能力** | 2026-02-12 | TLS高级能力 + 证书管理 + 趋势门禁CI化 + interop-lab TLS case |
 | **L15 CLI 完善与功能补全** | 2026-02-12 | generate uuid/rand/ech-keypair + AdGuard convert + Chrome cert store + format -w + 验收清单签署 + 4 interop-lab CLI case |
+| **L16 质量验证与性能基线** | 2026-02-12 | Criterion baseline + Go/Rust throughput/memory 对比 + feature-matrix 46/46 + hot_reload/signal 长稳测试 + CI bench gate non-blocking + 2 interop bench case |
 
 ### L12 迁移兼容治理（2026-02-12 已完成）
 
@@ -133,32 +134,36 @@
 
 ---
 
-## ✅ 最新完成：L15 CLI 完善与功能补全
+## ✅ 最新完成：L16 质量验证与性能基线
 
 **日期**: 2026-02-12
 
 **完成项**:
-- **generate 命令补全**: `uuid`（UUID v4）、`rand --base64/--hex`、`ech-keypair`（Go 兼容 PEM）— 13 个单元测试，全部 E2E 验证通过
-- **AdGuard DNS filter 解析器**: `rule-set convert --type adguard` — 723 行，20 个单元测试，支持 `||domain^`/`@@`/`/regex/`/`$important`/hosts 格式
-- **rule-set format --write/-w**: 原地格式化写回 — 3 个单元测试
-- **Chrome 证书存储模式**: `CertificateStoreMode::Chrome`（webpki-roots）— 4 个测试
-- **PX-015 CI 占位**: `linux-resolved-validation.yml`（workflow_dispatch）
-- **验收清单签署**: 33 项全部 `[x]` 并附证据链
-- **4 个 interop-lab CLI case**: uuid/rand/adguard/ech-keypair 断言
-- **测试修复**: `dns_integration.rs` 环境变量竞态消除
+- **L16.1.1 Criterion 基准正式化**: `scripts/run_benchmarks.sh` 统一落盘 `reports/benchmarks/`，`baseline.json` 汇总全 bench（116 键）。
+- **L16.1.2 Go vs Rust 吞吐框架**: `scripts/bench_vs_go.sh` 固定 CSV schema，4 协议 rust/go 均有记录（`pass` 或 `env_limited`）。
+- **L16.1.3 延迟百分位基线**: `latency_percentiles.json` 含 socks5/shadowsocks/vmess/trojan 的 `p50/p95/p99/sample_size`。
+- **L16.1.4 Feature matrix**: `service_resolved` 依赖 `dns_udp` 修复，`cargo run -p xtask -- feature-matrix` 达成 46/46。
+- **L16.2.1 内存对比基准**: `scripts/bench_memory.sh` 输出统一 JSON 结构（rust/go + idle/100/1000 + delta/status/reason）。
+- **L16.2.2 热重载稳定性**: `app/tests/hot_reload_stability.rs` 增强健康检查/FD/RSS 阈值；产出 `hot_reload_100x.json`。
+- **L16.2.3 信号与资源稳定性**: `app/tests/signal_reliability.rs` 增强 SIGTERM/端口回收/active task 趋势判定；产出 `signal_reliability_10x.json`。
+- **L16.2.4 Interop 性能 case**: `p2_bench_socks5_throughput`、`p2_bench_shadowsocks_throughput` 可执行并可追溯归档。
+- **L16.3.1 CI bench gate**: `bench_compare.sh` 产出 `pass|warn|fail` JSON，workflow 告警但不阻断合并。
+- **L16.3.2 状态总线同步**: `CLAUDE.md`、`active_context.md`、`workpackage_latest.md` 口径对齐。
 
 **关键文件变更**:
 | 文件 | 改动 |
 |------|------|
-| `app/src/cli/generate.rs` | +Uuid/Rand/EchKeypair 变体 + 13 测试 |
-| `app/src/cli/ruleset.rs` | +ConvertType::Adguard + Format --write/-w + 3 测试 |
-| `crates/sb-core/src/router/ruleset/adguard.rs` | 新建：723 行 AdGuard 解析器 + 20 测试 |
-| `crates/sb-tls/src/ech_keygen.rs` | 新建：262 行 ECH keygen + 6 测试 |
-| `crates/sb-tls/src/global.rs` | +CertificateStoreMode::Chrome |
-| `crates/sb-core/src/router/dns_integration.rs` | 修复 env var 竞态 |
-| `.github/workflows/linux-resolved-validation.yml` | PX-015 CI workflow |
+| `scripts/run_benchmarks.sh` | baseline + latency percentiles 聚合落盘 |
+| `scripts/bench_vs_go.sh` | Go/Rust 吞吐对比 + 固定 CSV schema |
+| `scripts/bench_memory.sh` | 内存对比统一结构输出 |
+| `scripts/bench_compare.sh` | 机器可读 `pass/warn/fail` + 状态文件 |
+| `.github/workflows/bench-regression.yml` | bench gate 告警化、non-blocking |
+| `crates/sb-core/Cargo.toml` | `service_resolved = [\"dns_udp\"]` |
+| `crates/sb-core/src/admin/http.rs` | `/metricsz` 增加 task monitor 计数字段 |
+| `app/tests/hot_reload_stability.rs` | 100x 热重载稳定性断言与报告 |
+| `app/tests/signal_reliability.rs` | 10x 信号稳定性/泄漏趋势断言与报告 |
 
-**验证**: `cargo test --workspace` 1617 passed；81 interop-lab cases
+**验证**: `cargo run -p xtask -- feature-matrix` 46/46；long_tests 2 项通过；interop-lab 83 cases
 
 ## ✅ 最新完成：L5-L7 联测仿真全量实施（22 工作包）
 
@@ -912,4 +917,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-12（L12 迁移兼容治理 + L13 Services 安全与生命周期 + L14 Go规格收敛 + L15 CLI完善与功能补全 全部完成）*
+*最后更新：2026-02-12（L12 迁移兼容治理 + L13 Services 安全与生命周期 + L14 Go规格收敛 + L15 CLI完善与功能补全 + L16 质量验证与性能基线 全部完成）*

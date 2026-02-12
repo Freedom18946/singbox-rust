@@ -1,11 +1,11 @@
 
 # L15-L17 详细工作包规划
 
-状态: 🔲 规划中
+状态: ✅ L15/L16 已完成；🔄 L17 规划中（更新：2026-02-12）
 
 ## Context
 
-singbox-rust 已完成 L1-L14 全部里程碑：架构整固、功能对齐（99.52% parity, 208/209）、联测仿真（77 case）、CI 治理、迁移治理、服务安全、TLS 高级能力。1587+ 测试通过，边界检查 exit 0。唯一未关闭项 PX-015（Linux resolved 实机验证）因无 Linux 环境暂时 deferred。
+singbox-rust 已完成 L1-L16 里程碑：架构整固、功能对齐（99.52% parity, 208/209）、联测仿真（83 case）、CI 治理、迁移治理、服务安全、TLS 高级能力、质量验证与性能基线。1617+ 测试通过，边界检查 exit 0。唯一未关闭项 PX-015（Linux resolved 实机验证）因无 Linux 环境暂时 deferred。
 
 L15-L17 将项目从"功能可用"推向"可发布"：
 - **L15 CLI 完善与功能补全（12 WP）**：补齐 CLI 最后缺口（uuid/rand/ECH/AdGuard）、Chrome 证书模式、Go specs 验收签署
