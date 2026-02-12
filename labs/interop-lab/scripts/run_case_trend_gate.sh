@@ -10,15 +10,61 @@ RUN_TAGS="${RUN_TAGS:-}"
 RUN_EXCLUDE_TAGS="${RUN_EXCLUDE_TAGS:-}"
 RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
 
-MAX_RUST_ERRORS="${MAX_RUST_ERRORS:-0}"
-MAX_FAILED_TRAFFIC="${MAX_FAILED_TRAFFIC:-0}"
-MAX_HTTP_MISMATCHES="${MAX_HTTP_MISMATCHES:-0}"
-MAX_WS_MISMATCHES="${MAX_WS_MISMATCHES:-0}"
-MAX_SUB_MISMATCHES="${MAX_SUB_MISMATCHES:-0}"
-MAX_TRAFFIC_MISMATCHES="${MAX_TRAFFIC_MISMATCHES:-0}"
+# --- Threshold configuration ---
+# If THRESHOLD_CONFIG points to a YAML file and THRESHOLD_TEMPLATE names a
+# section (strict / env_limited / development), thresholds are read from that
+# file.  Otherwise the hardcoded defaults below are used.  Individual env-var
+# overrides still win when set explicitly.
 
-ALLOW_MISSING_DIFF="${ALLOW_MISSING_DIFF:-1}"
-ENFORCE_NON_INCREASING_SCORE="${ENFORCE_NON_INCREASING_SCORE:-1}"
+THRESHOLD_CONFIG="${THRESHOLD_CONFIG:-}"
+THRESHOLD_TEMPLATE="${THRESHOLD_TEMPLATE:-}"
+
+# Helper: read a value from the YAML config under the chosen template section.
+# Uses plain grep+sed so we don't require yq on the runner.
+# Usage: _yaml_val <key> <default>
+_yaml_val() {
+  local key="$1" default="$2"
+  if [[ -z "${THRESHOLD_CONFIG}" || -z "${THRESHOLD_TEMPLATE}" ]]; then
+    printf '%s' "${default}"
+    return
+  fi
+  if [[ ! -f "${THRESHOLD_CONFIG}" ]]; then
+    echo "warn: THRESHOLD_CONFIG=${THRESHOLD_CONFIG} not found, using defaults" >&2
+    printf '%s' "${default}"
+    return
+  fi
+  # Locate the template section and extract the key's value.
+  # YAML structure is flat per-section, so we find the section header and then
+  # scan subsequent indented lines until the next top-level key.
+  local value
+  value="$(sed -n "/^${THRESHOLD_TEMPLATE}:/,/^[^ ]/{
+    s/^[[:space:]]*${key}:[[:space:]]*//p
+  }" "${THRESHOLD_CONFIG}" | head -n 1)"
+  if [[ -z "${value}" ]]; then
+    printf '%s' "${default}"
+    return
+  fi
+  # Normalise YAML booleans to the 0/1 integers the rest of the script expects.
+  case "${value}" in
+    true|True|TRUE)   printf '1' ;;
+    false|False|FALSE) printf '0' ;;
+    *)                 printf '%s' "${value}" ;;
+  esac
+}
+
+MAX_RUST_ERRORS="${MAX_RUST_ERRORS:-$(_yaml_val max_rust_errors 0)}"
+MAX_FAILED_TRAFFIC="${MAX_FAILED_TRAFFIC:-$(_yaml_val max_failed_traffic 0)}"
+MAX_HTTP_MISMATCHES="${MAX_HTTP_MISMATCHES:-$(_yaml_val max_http_mismatches 0)}"
+MAX_WS_MISMATCHES="${MAX_WS_MISMATCHES:-$(_yaml_val max_ws_mismatches 0)}"
+MAX_SUB_MISMATCHES="${MAX_SUB_MISMATCHES:-$(_yaml_val max_sub_mismatches 0)}"
+MAX_TRAFFIC_MISMATCHES="${MAX_TRAFFIC_MISMATCHES:-$(_yaml_val max_traffic_mismatches 0)}"
+
+ALLOW_MISSING_DIFF="${ALLOW_MISSING_DIFF:-$(_yaml_val allow_missing_diff 1)}"
+ENFORCE_NON_INCREASING_SCORE="${ENFORCE_NON_INCREASING_SCORE:-$(_yaml_val enforce_non_increasing_score 1)}"
+
+if [[ -n "${THRESHOLD_CONFIG}" && -n "${THRESHOLD_TEMPLATE}" && -f "${THRESHOLD_CONFIG}" ]]; then
+  echo "threshold-config: file=${THRESHOLD_CONFIG} template=${THRESHOLD_TEMPLATE}"
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "error: jq is required by run_case_trend_gate.sh"

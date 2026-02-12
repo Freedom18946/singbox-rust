@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "log": { "level": "warn" },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 18903
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks5",
+      "tag": "socks-proxy",
+      "server": "192.168.1.1",
+      "server_port": 1080
+    },
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "default_outbound": "direct-out",
+  "route": {
+    "rules": [
+      {
+        "domain_suffix": ["example.com"],
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}

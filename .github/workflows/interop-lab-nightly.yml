@@ -55,12 +55,31 @@ jobs:
       - name: Trend gate - P0 strict
         run: |
           ITERATIONS=2 KERNEL=rust RUN_PRIORITY=p0 RUN_ENV_CLASS=strict \
+            THRESHOLD_CONFIG=labs/interop-lab/configs/trend_thresholds.yaml \
+            THRESHOLD_TEMPLATE=strict \
             bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
 
       - name: Trend gate - P1 strict
         run: |
           ITERATIONS=2 KERNEL=rust RUN_PRIORITY=p1 RUN_ENV_CLASS=strict \
+            THRESHOLD_CONFIG=labs/interop-lab/configs/trend_thresholds.yaml \
+            THRESHOLD_TEMPLATE=strict \
             bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
+
+      - name: Trend gate - env_limited
+        continue-on-error: true
+        run: |
+          ITERATIONS=2 KERNEL=rust RUN_ENV_CLASS=env_limited \
+            THRESHOLD_CONFIG=labs/interop-lab/configs/trend_thresholds.yaml \
+            THRESHOLD_TEMPLATE=env_limited \
+            bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
+
+      - name: Aggregate trend report with history
+        if: always()
+        run: |
+          ITERATIONS=2 KERNEL=rust \
+            ARTIFACTS_DIR=labs/interop-lab/artifacts \
+            bash labs/interop-lab/scripts/aggregate_trend_report.sh ALL
 
       - name: Upload artifacts
         if: always()

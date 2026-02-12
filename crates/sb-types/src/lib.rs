@@ -105,6 +105,10 @@ pub enum IssueCode {
     /// 两个字段之间的逻辑冲突（例如，A 要求 B 未设置）。
     Conflict,
 
+    /// Field or feature is deprecated and will be removed in a future version.
+    /// 字段或功能已弃用，将在未来版本中移除。
+    Deprecated,
+
     // ----- Legacy compatibility / 遗留兼容性 -----
     // Kept for backward compatibility with older config parsers.
     // 保留以向后兼容旧的配置解析器。
@@ -183,6 +187,14 @@ pub enum IssueCode {
     /// Uncategorized upstream error.
     /// 未分类的上游错误。
     UpstreamOther,
+
+    // ========================================================================
+    // Security Warnings
+    // 安全警告
+    // ========================================================================
+    /// Service binds to a non-localhost address without authentication.
+    /// 服务绑定到非本地地址但未配置身份验证。
+    InsecureBinding,
 }
 
 impl IssueCode {
@@ -200,6 +212,7 @@ impl IssueCode {
             RangeExceeded => "RangeExceeded",
             InvalidEnum => "InvalidEnum",
             Conflict => "Conflict",
+            Deprecated => "Deprecated",
             InvalidType => "InvalidType",
             OutOfRange => "OutOfRange",
             DuplicateTag => "DuplicateTag",
@@ -220,6 +233,7 @@ impl IssueCode {
             UpstreamIcmp => "UpstreamIcmp",
             UpstreamRefused => "UpstreamRefused",
             UpstreamOther => "UpstreamOther",
+            InsecureBinding => "InsecureBinding",
         }
     }
 }

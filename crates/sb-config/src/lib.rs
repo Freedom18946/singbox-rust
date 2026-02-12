@@ -51,6 +51,7 @@ pub mod rule;
 pub mod schema_v2;
 pub mod subscribe;
 pub mod validator;
+pub mod deprecation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -428,7 +429,7 @@ impl Config {
             Ok(v) => v,
             Err(_) => serde_yaml::from_str(&text)?,
         };
-        let migrated = compat::migrate_to_v2(&raw);
+        let (migrated, _migration_diagnostics) = compat::migrate_to_v2(&raw);
 
         // Go parity: strict validation - unknown fields are errors (DisallowUnknownFields)
         let issues = crate::validator::v2::validate_v2(&migrated, false);
@@ -551,7 +552,7 @@ impl Config {
                 *self = merged;
                 let _ = e;
                 self.raw =
-                    compat::migrate_to_v2(&serde_json::to_value(&*self).unwrap_or(Value::Null));
+                    compat::migrate_to_v2(&serde_json::to_value(&*self).unwrap_or(Value::Null)).0;
                 self.ir = crate::validator::v2::to_ir_v1(&self.raw);
             }
         }
@@ -571,7 +572,7 @@ impl Config {
 /// Returns an error if any step fails, with descriptive message including
 /// validation pointer and message where applicable.
 pub fn config_from_raw_value(raw: Value) -> Result<(Config, ir::ConfigIR)> {
-    let migrated = compat::migrate_to_v2(&raw);
+    let (migrated, _migration_diagnostics) = compat::migrate_to_v2(&raw);
 
     // Strict validation (Go parity)
     let issues = crate::validator::v2::validate_v2(&migrated, false);
@@ -956,7 +957,7 @@ endpoints:
         let raw: Value = serde_json::from_str(json).unwrap();
 
         // Full pipeline: migrate + validate + parse
-        let migrated = crate::compat::migrate_to_v2(&raw);
+        let (migrated, _diags) = crate::compat::migrate_to_v2(&raw);
 
         // $schema should be preserved but not cause errors
         assert!(migrated.get("$schema").is_some());

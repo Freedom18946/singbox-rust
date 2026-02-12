@@ -53,7 +53,7 @@ fn schema_v2_validate_flag_works() {
 schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18082 } ]
 outbounds: [ { type: direct, name: direct } ]
-route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
+route: { rules: [ { when: { domain_suffix: ["example.com"] }, to: "direct" } ] }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();

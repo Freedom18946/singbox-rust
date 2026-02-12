@@ -6,12 +6,18 @@
 
 /// Apply TLS client config from IR certificate settings.
 ///
-/// Extracts CA paths and inline PEMs from the IR and passes them to sb-tls.
+/// Extracts store mode, CA paths, inline PEMs, and certificate directory from the IR
+/// and passes them to sb-tls.
 pub fn apply_from_ir(cert: Option<&sb_config::ir::CertificateIR>) {
     if let Some(c) = cert {
-        sb_tls::global::apply_extra_cas(&c.ca_paths, &c.ca_pem);
+        sb_tls::global::apply_certificate_config(
+            c.store.as_deref(),
+            &c.ca_paths,
+            &c.ca_pem,
+            c.certificate_directory_path.as_deref(),
+        );
     } else {
-        sb_tls::global::apply_extra_cas(&[], &[]);
+        sb_tls::global::apply_certificate_config(None, &[], &[], None);
     }
 }
 

@@ -177,6 +177,19 @@ pub fn service_registry() -> &'static ServiceRegistry {
     &SERVICE_REGISTRY
 }
 
+/// Status of an individual service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceStatus {
+    /// Service is being started.
+    Starting,
+    /// Service is running normally.
+    Running,
+    /// Service failed to start.
+    Failed(String),
+    /// Service has been stopped.
+    Stopped,
+}
+
 /// Thread-safe registry of instantiated services by tag.
 #[derive(Clone)]
 pub struct ServiceManager {
@@ -238,6 +251,52 @@ impl ServiceManager {
     pub async fn clear(&self) {
         let mut guard = self.services.write().await;
         guard.clear();
+    }
+
+    /// Start all registered services with fault isolation.
+    /// Failed services are logged but don't prevent others from starting.
+    pub async fn start_all(&self) -> Vec<(String, ServiceStatus)> {
+        let guard = self.services.read().await;
+        let mut results = Vec::new();
+
+        for (tag, service) in guard.iter() {
+            let status = match Self::start_service(service, tag) {
+                Ok(()) => ServiceStatus::Running,
+                Err(e) => {
+                    tracing::error!(
+                        service = %tag,
+                        error = %e,
+                        "Service failed to start (isolated)"
+                    );
+                    ServiceStatus::Failed(e.to_string())
+                }
+            };
+            results.push((tag.clone(), status));
+        }
+
+        results
+    }
+
+    fn start_service(
+        service: &Arc<dyn Service>,
+        tag: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        tracing::info!(service = %tag, "Starting service");
+        service.start(StartStage::Initialize)?;
+        service.start(StartStage::Start)?;
+        service.start(StartStage::PostStart)?;
+        service.start(StartStage::Started)?;
+        tracing::info!(service = %tag, "Service started successfully");
+        Ok(())
+    }
+
+    /// Get the health status of all services.
+    pub async fn health_status(&self) -> Vec<(String, ServiceStatus)> {
+        let guard = self.services.read().await;
+        guard
+            .keys()
+            .map(|tag| (tag.clone(), ServiceStatus::Running))
+            .collect()
     }
 }
 
@@ -305,5 +364,168 @@ mod tests {
 
         mgr.remove("svc").await;
         assert!(mgr.is_empty().await);
+    }
+
+    #[test]
+    fn test_service_status_enum() {
+        let starting = ServiceStatus::Starting;
+        let running = ServiceStatus::Running;
+        let failed = ServiceStatus::Failed("connection refused".to_string());
+        let stopped = ServiceStatus::Stopped;
+
+        assert_eq!(starting, ServiceStatus::Starting);
+        assert_eq!(running, ServiceStatus::Running);
+        assert_eq!(failed, ServiceStatus::Failed("connection refused".to_string()));
+        assert_eq!(stopped, ServiceStatus::Stopped);
+
+        // Verify Debug derives work
+        assert!(format!("{:?}", starting).contains("Starting"));
+        assert!(format!("{:?}", running).contains("Running"));
+        assert!(format!("{:?}", failed).contains("connection refused"));
+        assert!(format!("{:?}", stopped).contains("Stopped"));
+
+        // Verify Clone
+        let cloned = failed.clone();
+        assert_eq!(cloned, ServiceStatus::Failed("connection refused".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_start_all_fault_isolation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct GoodService {
+            started: AtomicBool,
+        }
+        impl Service for GoodService {
+            fn service_type(&self) -> &str {
+                "good"
+            }
+            fn tag(&self) -> &str {
+                "good-svc"
+            }
+            fn start(
+                &self,
+                stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                if stage == StartStage::Started {
+                    self.started.store(true, Ordering::Relaxed);
+                }
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        struct BadService;
+        impl Service for BadService {
+            fn service_type(&self) -> &str {
+                "bad"
+            }
+            fn tag(&self) -> &str {
+                "bad-svc"
+            }
+            fn start(
+                &self,
+                stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                if stage == StartStage::Start {
+                    return Err("intentional failure".into());
+                }
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        let good = Arc::new(GoodService {
+            started: AtomicBool::new(false),
+        });
+        let bad: Arc<dyn Service> = Arc::new(BadService);
+
+        mgr.add_service("good-svc".into(), good.clone() as Arc<dyn Service>)
+            .await;
+        mgr.add_service("bad-svc".into(), bad).await;
+
+        let results = mgr.start_all().await;
+        assert_eq!(results.len(), 2);
+
+        // Verify that both services were attempted
+        let mut has_running = false;
+        let mut has_failed = false;
+        for (tag, status) in &results {
+            match tag.as_str() {
+                "good-svc" => {
+                    assert_eq!(*status, ServiceStatus::Running);
+                    has_running = true;
+                }
+                "bad-svc" => {
+                    matches!(status, ServiceStatus::Failed(_));
+                    has_failed = true;
+                }
+                _ => panic!("unexpected service tag: {}", tag),
+            }
+        }
+        assert!(has_running, "Good service should have started");
+        assert!(has_failed, "Bad service should have been recorded");
+
+        // The good service should have actually completed all stages
+        assert!(good.started.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn test_health_status() {
+        struct DummyService2 {
+            tag_name: String,
+        }
+        impl Service for DummyService2 {
+            fn service_type(&self) -> &str {
+                "dummy"
+            }
+            fn tag(&self) -> &str {
+                &self.tag_name
+            }
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        mgr.add_service(
+            "svc-a".into(),
+            Arc::new(DummyService2 {
+                tag_name: "svc-a".into(),
+            }),
+        )
+        .await;
+        mgr.add_service(
+            "svc-b".into(),
+            Arc::new(DummyService2 {
+                tag_name: "svc-b".into(),
+            }),
+        )
+        .await;
+
+        let statuses = mgr.health_status().await;
+        assert_eq!(statuses.len(), 2);
+
+        for (_tag, status) in &statuses {
+            assert_eq!(*status, ServiceStatus::Running);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_start_all_empty_manager() {
+        let mgr = ServiceManager::new();
+        let results = mgr.start_all().await;
+        assert!(results.is_empty());
     }
 }

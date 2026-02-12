@@ -7,11 +7,12 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L5-L7 ✅ Closed + L12-L14 规划中**（L1 ✅ Closed, L2 ✅ Closed；功能对齐已完成；联测仿真已完成）
+**当前阶段**: **L12-L14 ✅ Closed**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L14 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: 1492+ passed；boundary gate snapshot (2026-02-10): `check-boundaries.sh` pass（V4a=24 <= 25）
+**Tests**: 1587+ passed；boundary gate snapshot (2026-02-12): `check-boundaries.sh` pass（V4a=24 <= 25）
+**Interop-lab cases**: 77 total (68 strict, 8 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
 ### 联测运行约束（2026-02-10 新增）
 
@@ -51,6 +52,37 @@
 | **L1 架构整固** | 2026-02-07 | M1.1 + M1.2 + M1.3，check-boundaries.sh exit 0 |
 | **L2 功能对齐** | 2026-02-08 | Tier 1 (L2.1-L2.5) + Tier 2 (L2.6-L2.10)，88% → 99% parity |
 | **L5-L7 联测仿真** | 2026-02-11 | 22 工作包全部完成，57 case，6×4 故障矩阵全覆盖，GUI 回放 7 case |
+| **L8-L11 CI治理** | 2026-02-12 | 数据面/订阅/双核差分/CI准入全闭环，trend_history.jsonl 历史追踪 + 回归检测 |
+| **L12 迁移兼容治理** | 2026-02-12 | WireGuard outbound→endpoint 迁移检测、V1→V2 字段重命名、flat conditions→when wrapper、default_outbound→route.default；3 interop-lab case |
+| **L13 Services 安全与生命周期** | 2026-02-12 | Clash API auth middleware（Go parity）、SSMAPI auth middleware、non-localhost binding warning、ServiceStatus enum 服务故障隔离、Health API endpoint；2 interop-lab case |
+| **L14 TLS/Endpoint 高级能力** | 2026-02-12 | TLS高级能力 + 证书管理 + 趋势门禁CI化 + interop-lab TLS case |
+
+### L12 迁移兼容治理（2026-02-12 已完成）
+
+- **WireGuard outbound → endpoint 迁移检测**: 识别 V1 风格 `type: "wireguard"` outbound 配置，输出迁移提示到 endpoint 模型。
+- **V1→V2 字段重命名检测**: `tag`→`name`、`server_port`→`port`、`socks5`→`socks` 等字段自动识别 + deprecation 警告。
+- **Flat conditions → when wrapper 检测**: 平铺路由条件迁移到 `when` 包装结构的检测与警告。
+- **default_outbound → route.default 检测**: 顶层 `default_outbound` 迁移到 `route.default` 的检测与警告。
+- **Non-localhost binding warning**: 非 localhost 绑定地址安全提示。
+- **interop-lab case（3 个）**: `p1_deprecated_wireguard_outbound`、`p1_deprecated_v1_style_config`、`p1_deprecated_mixed_config`。
+
+### L13 Services 安全与生命周期（2026-02-12 已完成）
+
+- **Clash API auth middleware**: Bearer token 鉴权中间件，Go parity（`experimental.clash_api.secret` 配置项），覆盖 HTTP（`Authorization: Bearer`）和 WebSocket（`?token=`）路径。8 个单元测试。
+- **SSMAPI auth middleware**: SSMAPI 服务独立 Bearer token 鉴权（`ServiceIR.auth_token`），与 Clash API 隔离。6 个单元测试。
+- **Non-localhost binding warning**: 当 Clash API 或 SSMAPI 绑定非 localhost 地址且无认证时，输出 `IssueCode::InsecureBinding` 安全警告。6 个单元测试。
+- **ServiceStatus enum 服务故障隔离**: `Starting`/`Running`/`Failed(String)`/`Stopped` 四态，`start_all()` 捕获单个服务启动失败但不阻塞其他服务。6 个单元测试。
+- **Health API endpoint**: `GET /services/health` 返回服务健康状态聚合（当前为静态响应，ServiceManager 集成待后续架构管道打通）。
+- **interop-lab case（2 个）**: `p1_clash_api_auth_enforcement`（Clash API 鉴权正/负测试：无 token→401、正确 Bearer→200、错误 Bearer→401）、`p1_service_failure_isolation`（单服务故障不阻塞 + Clash API 可达验证）。
+
+### L14 TLS/Endpoint 高级能力与趋势门禁（2026-02-12 已完成）
+
+- **证书存储模式（L14.1.1）**: `CertificateStoreMode` 枚举（System/Mozilla/None），System 模式通过 `rustls-native-certs` 加载 OS 证书库（Mozilla 回退），None 模式空池+仅自定义 CA，`certificate_directory_path` 递归加载 PEM 目录。`CertificateIR` 新增 `store`/`certificate_directory_path` 字段。5 个单元测试。
+- **证书热重载（L14.1.2）**: `CertificateWatcher` 基于 `notify` crate 的文件监听，`CancellationToken` 优雅终止，`cert-watch` feature gate。4 个单元测试。
+- **TLS fragment 配置→运行时接线验证（L14.1.3）**: `tls_fragment`/`tls_record_fragment`/`tls_fragment_fallback_delay` 加入 `allowed_route_keys()`，validator 不再误报 `UnknownField`。1 个单元测试。
+- **TLS 能力矩阵验证（L14.1.4）**: `check_tls_capabilities()` 函数检测 uTLS/ECH/REALITY 配置并产生 info 级诊断（支持状态说明）。7 个单元测试。
+- **Nightly 趋势门禁模板（L14.2.1）**: 五套阈值配置模板 — `strict`/`strict_default`（零容错）、`env_limited`/`env_limited_default`（适度容忍）、`development`（宽松），与 `run_case_trend_gate.sh` 集成。
+- **interop-lab TLS case（4 个）**: `p1_tls_cert_store_mozilla`（mozilla 模式 TLS 验证）、`p1_tls_cert_store_none_custom_ca`（none 模式+自定义 CA）、`p1_tls_fragment_activation`（TLS fragment 激活验证）、`p1_tls_fragment_wiring`（TLS fragment 配置→运行时接线验证）。
 
 ### 关键参考
 
@@ -818,4 +850,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-11（L5-L7 联测仿真 22 工作包全部完成）*
+*最后更新：2026-02-12（L12 迁移兼容治理 + L13 Services 安全与生命周期 + L14 Go规格收敛全部完成）*

@@ -166,6 +166,9 @@ pub struct SsmapiService {
     last_saved_cache: Arc<parking_lot::Mutex<Vec<u8>>>,
     save_task: parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>,
 
+    /// Optional Bearer token for authentication (Go parity).
+    auth_token: Option<String>,
+
     // TLS Configuration
     /// TLS certificate path (enables HTTPS + HTTP/2).
     tls_cert_path: Option<PathBuf>,
@@ -186,6 +189,34 @@ pub struct SsmapiService {
     tcp_fast_open: bool,
     #[allow(dead_code)]
     tcp_multi_path: bool,
+}
+
+/// Simple Bearer token auth check for SSMAPI.
+/// Returns 401 if token is configured but not provided/incorrect.
+async fn ssmapi_auth_middleware(
+    auth_token: Option<String>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{header, StatusCode};
+    use axum::response::IntoResponse;
+
+    let token = match auth_token {
+        Some(ref t) if !t.is_empty() => t.as_str(),
+        _ => return next.run(req).await,
+    };
+
+    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION) {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if let Some(provided) = auth_str.strip_prefix("Bearer ") {
+                if provided == token {
+                    return next.run(req).await;
+                }
+            }
+        }
+    }
+
+    (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
 }
 
 impl SsmapiService {
@@ -303,6 +334,9 @@ impl SsmapiService {
         // Parse cache path
         let cache_path = ir.cache_path.as_ref().map(PathBuf::from);
 
+        // Parse auth token
+        let auth_token = ir.auth_token.clone();
+
         // Parse TLS config (Go parity: `tls.enabled` + `certificate_path`/`certificate` + `key_path`/`key`)
         let (tls_cert_path, tls_key_path, tls_cert_pem, tls_key_pem) =
             if ir.tls.as_ref().is_some_and(|t| t.enabled) {
@@ -347,6 +381,7 @@ impl SsmapiService {
             cache_path,
             last_saved_cache: Arc::new(parking_lot::Mutex::new(Vec::new())),
             save_task: parking_lot::Mutex::new(None),
+            auth_token,
             tls_cert_path,
             tls_key_path,
             tls_cert_pem,
@@ -661,6 +696,14 @@ impl SsmapiService {
                 router = router.nest(endpoint, mounted);
             }
         }
+
+        // Apply Bearer token auth middleware if configured.
+        let auth_token = self.auth_token.clone();
+        router = router.layer(axum::middleware::from_fn(move |req, next| {
+            let t = auth_token.clone();
+            ssmapi_auth_middleware(t, req, next)
+        }));
+
         router
     }
 
@@ -1220,5 +1263,157 @@ mod tests {
         let json = std::fs::read_to_string(cache_path).unwrap();
         assert!(json.contains("\"user_uplink\""));
         assert!(!json.contains("\"userUplink\""));
+    }
+
+    // --- Auth middleware tests ---
+
+    #[tokio::test]
+    async fn test_auth_middleware_no_token_configured() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let app = axum::Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(move |req, next| {
+                ssmapi_auth_middleware(None, req, next)
+            }));
+
+        let resp = app
+            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_valid_token() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let token = Some("secret123".to_string());
+        let app = axum::Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(move |req, next| {
+                let t = token.clone();
+                ssmapi_auth_middleware(t, req, next)
+            }));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("Authorization", "Bearer secret123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_invalid_token() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let token = Some("secret123".to_string());
+        let app = axum::Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(move |req, next| {
+                let t = token.clone();
+                ssmapi_auth_middleware(t, req, next)
+            }));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("Authorization", "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_missing_header() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        let token = Some("secret123".to_string());
+        let app = axum::Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(move |req, next| {
+                let t = token.clone();
+                ssmapi_auth_middleware(t, req, next)
+            }));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_empty_token_passes_through() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use axum::routing::get;
+        use tower::ServiceExt;
+
+        // Empty string token should be treated as "no auth configured"
+        let token = Some(String::new());
+        let app = axum::Router::new()
+            .route("/health", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(move |req, next| {
+                let t = token.clone();
+                ssmapi_auth_middleware(t, req, next)
+            }));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_auth_token_from_ir() {
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+
+        let (mut ir, _port) = create_test_ir();
+        ir.auth_token = Some("my-secret".to_string());
+
+        let ctx = ServiceContext::default();
+        let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
+
+        assert_eq!(service.auth_token.as_deref(), Some("my-secret"));
     }
 }

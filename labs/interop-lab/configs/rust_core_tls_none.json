@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "log": { "level": "debug" },
+  "certificate": {
+    "store": "none"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1:18911"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "route": {
+    "default": "direct-out"
+  }
+}

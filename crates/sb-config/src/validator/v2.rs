@@ -1,3 +1,4 @@
+use crate::deprecation::{deprecation_directory, DeprecationSeverity};
 use crate::ir::{
     ConfigIR, Credentials, DerpMeshPeerIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, HeaderEntry,
     InboundTlsOptionsIR, Listable, StringOrObj,
@@ -46,6 +47,9 @@ fn allowed_route_keys() -> &'static HashSet<String> {
             "default_resolver",
             "default_network_strategy",
             "fallback_delay",
+            "tls_fragment",
+            "tls_record_fragment",
+            "tls_fragment_fallback_delay",
         ] {
             set.insert(key.to_string());
         }
@@ -786,10 +790,322 @@ fn normalize_credentials(ir: &mut ConfigIR) {
     }
 }
 
+/// Check the raw JSON config for deprecated fields using the deprecation directory.
+/// Iterates all known deprecated patterns, resolves wildcards against the document,
+/// and emits `IssueCode::Deprecated` issues for each match found.
+///
+/// 使用弃用目录检查原始 JSON 配置中的已弃用字段。
+/// 遍历所有已知弃用模式，针对文档解析通配符，
+/// 为每个匹配项生成 `IssueCode::Deprecated` 问题。
+pub fn check_deprecations(doc: &Value) -> Vec<Value> {
+    let mut issues = Vec::new();
+    let directory = deprecation_directory();
+
+    for entry in directory {
+        let kind = match entry.severity {
+            DeprecationSeverity::Info => "info",
+            DeprecationSeverity::Warning => "warning",
+            DeprecationSeverity::Error => "error",
+        };
+
+        // Parse the pattern into segments (skip leading empty segment from leading '/')
+        let segments: Vec<&str> = entry.json_pointer.split('/').skip(1).collect();
+
+        if segments.is_empty() {
+            continue;
+        }
+
+        // Resolve the pattern against the document and collect matching concrete pointers
+        let matched_pointers = resolve_deprecation_pattern(doc, &segments);
+
+        for ptr in matched_pointers {
+            issues.push(emit_issue(
+                kind,
+                IssueCode::Deprecated,
+                &ptr,
+                entry.description,
+                entry.replacement,
+            ));
+        }
+    }
+
+    issues
+}
+
+/// Resolve a deprecation pattern (split into segments) against a JSON document.
+/// Returns all concrete JSON pointer strings that match.
+///
+/// Handles:
+/// - `*` wildcard matching any array index
+/// - `key=value` matching objects where object[key] == value (treated as terminal match)
+/// - plain key matching object property existence
+fn resolve_deprecation_pattern(doc: &Value, segments: &[&str]) -> Vec<String> {
+    let mut results = Vec::new();
+    resolve_pattern_recursive(doc, segments, String::new(), &mut results);
+    results
+}
+
+fn resolve_pattern_recursive(
+    current: &Value,
+    remaining: &[&str],
+    prefix: String,
+    results: &mut Vec<String>,
+) {
+    if remaining.is_empty() {
+        return;
+    }
+
+    let segment = remaining[0];
+    let rest = &remaining[1..];
+
+    // Handle type=value pattern (e.g., "type=wireguard")
+    if let Some(eq_pos) = segment.find('=') {
+        let key = &segment[..eq_pos];
+        let expected_value = &segment[eq_pos + 1..];
+
+        // This pattern checks the current value (which should be an object)
+        // for a field matching key=value. It's terminal — if it matches,
+        // the current object pointer is the result.
+        if let Some(obj) = current.as_object() {
+            if let Some(actual) = obj.get(key).and_then(|v| v.as_str()) {
+                if actual == expected_value {
+                    results.push(prefix);
+                }
+            }
+        }
+        return;
+    }
+
+    if segment == "*" {
+        // Wildcard: iterate array elements
+        if let Some(arr) = current.as_array() {
+            for (i, item) in arr.iter().enumerate() {
+                let child_prefix = format!("{}/{}", prefix, i);
+                if rest.is_empty() {
+                    // Wildcard is terminal — shouldn't normally happen, but handle it
+                    results.push(child_prefix);
+                } else {
+                    resolve_pattern_recursive(item, rest, child_prefix, results);
+                }
+            }
+        }
+    } else {
+        // Named key: descend into the object
+        if let Some(obj) = current.as_object() {
+            if rest.is_empty() {
+                // Terminal segment: check if the key exists
+                if obj.contains_key(segment) {
+                    results.push(format!("{}/{}", prefix, segment));
+                }
+            } else {
+                // Non-terminal: descend
+                if let Some(child) = obj.get(segment) {
+                    let child_prefix = format!("{}/{}", prefix, segment);
+                    resolve_pattern_recursive(child, rest, child_prefix, results);
+                }
+            }
+        }
+    }
+}
+
 /// Convert internal errors to a unified structure.
 /// 将内部错误统一转换为固定结构。
 pub fn emit_issue(kind: &str, code: IssueCode, ptr: &str, msg: &str, hint: &str) -> Value {
     json!({"kind": kind, "code": code.as_str(), "ptr": ptr, "msg": msg, "hint": hint})
+}
+
+/// Returns true if the address string refers to a localhost address.
+/// Empty strings are treated as localhost (will bind to loopback by default).
+fn is_localhost_addr(addr: &str) -> bool {
+    let host = addr.split(':').next().unwrap_or(addr);
+    matches!(host, "127.0.0.1" | "::1" | "localhost" | "[::1]" | "")
+}
+
+/// Check for services and experimental.clash_api that bind to non-localhost
+/// addresses without authentication configured. Emits warnings for each
+/// insecure binding found.
+///
+/// 检查绑定到非本地地址但未配置身份验证的服务和 experimental.clash_api。
+/// 为每个发现的不安全绑定发出警告。
+pub fn check_non_localhost_binding_warnings(doc: &Value) -> Vec<Value> {
+    let mut issues = Vec::new();
+
+    // 1) Check experimental.clash_api.external_controller
+    if let Some(clash_api) = doc
+        .get("experimental")
+        .and_then(|e| e.get("clash_api"))
+        .and_then(|c| c.as_object())
+    {
+        if let Some(ext_ctrl) = clash_api
+            .get("external_controller")
+            .and_then(|v| v.as_str())
+        {
+            if !is_localhost_addr(ext_ctrl) {
+                let has_secret = clash_api
+                    .get("secret")
+                    .and_then(|v| v.as_str())
+                    .map_or(false, |s| !s.is_empty());
+                if !has_secret {
+                    issues.push(emit_issue(
+                        "warning",
+                        IssueCode::InsecureBinding,
+                        "/experimental/clash_api/external_controller",
+                        &format!(
+                            "Clash API binds to non-localhost address '{}' without secret — accessible to the network",
+                            ext_ctrl
+                        ),
+                        "set experimental.clash_api.secret or bind to 127.0.0.1",
+                    ));
+                }
+            }
+        }
+    }
+
+    // 2) Check each service
+    if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
+        for (i, svc) in services.iter().enumerate() {
+            let listen = svc.get("listen").and_then(|v| v.as_str()).unwrap_or("");
+            if !is_localhost_addr(listen) {
+                let has_auth = svc
+                    .get("auth_token")
+                    .and_then(|v| v.as_str())
+                    .map_or(false, |s| !s.is_empty());
+                if !has_auth {
+                    let svc_tag = svc
+                        .get("tag")
+                        .or_else(|| svc.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unnamed");
+                    issues.push(emit_issue(
+                        "warning",
+                        IssueCode::InsecureBinding,
+                        &format!("/services/{}/listen", i),
+                        &format!(
+                            "service '{}' binds to non-localhost address '{}' without auth_token — accessible to the network",
+                            svc_tag, listen
+                        ),
+                        "set auth_token or bind to 127.0.0.1",
+                    ));
+                }
+            }
+        }
+    }
+
+    issues
+}
+
+/// Check outbound TLS configurations for capabilities that have known
+/// limitations in the Rust implementation. Emits info-level diagnostics for:
+/// - uTLS fingerprints other than "chrome" or empty (limited support)
+/// - ECH (encrypted_client_hello) configuration (behind feature flag)
+/// - REALITY TLS (supported, informational notice)
+///
+/// 检查出站 TLS 配置中在 Rust 实现中有已知限制的功能。
+/// 为以下情况发出 info 级别的诊断：
+/// - 非 "chrome" 或空的 uTLS 指纹（有限支持）
+/// - ECH（encrypted_client_hello）配置（需要 feature flag）
+/// - REALITY TLS（已支持，信息通知）
+pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
+    let mut issues = Vec::new();
+
+    let outbounds = match doc.get("outbounds").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return issues,
+    };
+
+    for (i, ob) in outbounds.iter().enumerate() {
+        let obj = match ob.as_object() {
+            Some(o) => o,
+            None => continue,
+        };
+
+        let outbound_tag = obj
+            .get("tag")
+            .or_else(|| obj.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unnamed");
+
+        // Check uTLS fingerprint
+        if let Some(fp_val) = obj.get("utls_fingerprint").or_else(|| {
+            // Also check nested tls.utls.fingerprint pattern
+            obj.get("tls")
+                .and_then(|t| t.get("utls"))
+                .and_then(|u| u.get("fingerprint"))
+        }) {
+            if let Some(fp) = fp_val.as_str() {
+                let fp_lower = fp.to_ascii_lowercase();
+                if !fp_lower.is_empty() && fp_lower != "chrome" {
+                    issues.push(emit_issue(
+                        "info",
+                        IssueCode::Deprecated,
+                        &format!("/outbounds/{}/utls_fingerprint", i),
+                        &format!(
+                            "outbound '{}': uTLS fingerprint '{}' has limited support in Rust; \
+                             'chrome' is the most reliable fingerprint, others may fall back to native TLS",
+                            outbound_tag, fp
+                        ),
+                        "use 'chrome' fingerprint for best compatibility, or omit for native TLS",
+                    ));
+                }
+            }
+        }
+
+        // Check ECH (encrypted_client_hello)
+        if let Some(ech_val) = obj.get("encrypted_client_hello").or_else(|| {
+            obj.get("tls")
+                .and_then(|t| t.get("ech"))
+                .or_else(|| obj.get("tls").and_then(|t| t.get("encrypted_client_hello")))
+        }) {
+            let ech_enabled = match ech_val {
+                Value::Bool(b) => *b,
+                Value::Object(o) => o
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                _ => false,
+            };
+            if ech_enabled {
+                issues.push(emit_issue(
+                    "info",
+                    IssueCode::Deprecated,
+                    &format!("/outbounds/{}/encrypted_client_hello", i),
+                    &format!(
+                        "outbound '{}': Encrypted Client Hello (ECH) is behind the 'tls_ech' feature flag; \
+                         without it, ECH configuration is silently ignored",
+                        outbound_tag
+                    ),
+                    "enable the 'tls_ech' feature flag at build time for ECH support",
+                ));
+            }
+        }
+
+        // Check REALITY TLS
+        let reality_enabled = obj
+            .get("reality_enabled")
+            .or_else(|| {
+                obj.get("tls")
+                    .and_then(|t| t.get("reality"))
+                    .and_then(|r| r.get("enabled"))
+            })
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if reality_enabled {
+            issues.push(emit_issue(
+                "info",
+                IssueCode::Deprecated,
+                &format!("/outbounds/{}/reality_enabled", i),
+                &format!(
+                    "outbound '{}': REALITY TLS is supported in Rust via rustls; \
+                     verify public_key and short_id are correctly configured",
+                    outbound_tag
+                ),
+                "ensure reality_public_key and reality_short_id are set correctly",
+            ));
+        }
+    }
+
+    issues
 }
 
 /// Lightweight schema validation (placeholder implementation): parses built-in schema, checks against field set for UnknownField/TypeMismatch/MissingRequired.
@@ -1320,6 +1636,12 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             }
         }
     }
+    // Deprecation detection pass
+    issues.extend(check_deprecations(doc));
+    // Security: non-localhost binding warnings
+    issues.extend(check_non_localhost_binding_warnings(doc));
+    // TLS capability matrix validation
+    issues.extend(check_tls_capabilities(doc));
     issues
 }
 
@@ -2734,6 +3056,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
     // Parse optional certificate block (top-level)
     if let Some(cert) = doc.get("certificate").and_then(|v| v.as_object()) {
         let mut c = crate::ir::CertificateIR::default();
+        // Parse store mode ("system", "mozilla", or "none")
+        c.store = cert
+            .get("store")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         if let Some(arr) = cert.get("ca_paths").and_then(|v| v.as_array()) {
             for p in arr {
                 if let Some(s) = p.as_str() {
@@ -2768,6 +3096,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             }
             _ => {}
         }
+        // Parse certificate directory path
+        c.certificate_directory_path = cert
+            .get("certificate_directory_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         ir.certificate = Some(c);
     }
 
@@ -4075,5 +4409,661 @@ mod tests {
         assert_eq!(s.server_type.as_deref(), Some("resolved"));
         assert_eq!(s.service.as_deref(), Some("resolved"));
         assert_eq!(s.accept_default_resolvers, Some(false));
+    }
+
+    // ───── Deprecation detection tests ─────
+
+    #[test]
+    fn test_deprecation_wireguard_outbound() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "wireguard",
+                    "name": "wg-out",
+                    "server": "1.2.3.4",
+                    "port": 51820,
+                    "private_key": "abc123"
+                }
+            ]
+        });
+        let issues = check_deprecations(&doc);
+        let deprecated_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("Deprecated"))
+            .collect();
+        assert!(
+            deprecated_issues
+                .iter()
+                .any(|i| i["ptr"].as_str() == Some("/outbounds/0")),
+            "Expected WireGuard outbound deprecation at /outbounds/0, got: {:?}",
+            deprecated_issues
+        );
+        // Should be a warning per the directory
+        let wg_issue = deprecated_issues
+            .iter()
+            .find(|i| i["ptr"].as_str() == Some("/outbounds/0"))
+            .unwrap();
+        assert_eq!(wg_issue["kind"].as_str(), Some("warning"));
+    }
+
+    #[test]
+    fn test_deprecation_legacy_tag_field() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "tag": "direct-out"
+                }
+            ]
+        });
+        let issues = check_deprecations(&doc);
+        let tag_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["code"].as_str() == Some("Deprecated")
+                    && i["ptr"].as_str() == Some("/outbounds/0/tag")
+            })
+            .collect();
+        assert!(
+            !tag_issues.is_empty(),
+            "Expected deprecation for outbound tag field"
+        );
+        assert_eq!(tag_issues[0]["kind"].as_str(), Some("warning"));
+    }
+
+    #[test]
+    fn test_deprecation_server_port_info() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "shadowsocks",
+                    "name": "ss-out",
+                    "server": "1.2.3.4",
+                    "server_port": 8388,
+                    "method": "aes-256-gcm",
+                    "password": "test"
+                }
+            ]
+        });
+        let issues = check_deprecations(&doc);
+        let sp_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["code"].as_str() == Some("Deprecated")
+                    && i["ptr"].as_str() == Some("/outbounds/0/server_port")
+            })
+            .collect();
+        assert!(
+            !sp_issues.is_empty(),
+            "Expected deprecation for server_port"
+        );
+        // server_port is Info severity
+        assert_eq!(sp_issues[0]["kind"].as_str(), Some("info"));
+    }
+
+    #[test]
+    fn test_deprecation_clean_config_no_issues() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "name": "direct-out"
+                },
+                {
+                    "type": "shadowsocks",
+                    "name": "ss-out",
+                    "server": "1.2.3.4",
+                    "port": 8388,
+                    "method": "aes-256-gcm",
+                    "password": "test"
+                }
+            ],
+            "inbounds": [
+                {
+                    "type": "mixed",
+                    "name": "mixed-in",
+                    "listen": "127.0.0.1:2080"
+                }
+            ],
+            "route": {
+                "rules": [
+                    {
+                        "when": { "domain_suffix": [".example.com"] },
+                        "to": "ss-out"
+                    }
+                ]
+            }
+        });
+        let issues = check_deprecations(&doc);
+        let deprecated: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("Deprecated"))
+            .collect();
+        assert!(
+            deprecated.is_empty(),
+            "Clean modern config should produce zero deprecation issues, got: {:?}",
+            deprecated
+        );
+    }
+
+    #[test]
+    fn test_deprecation_multiple_deprecated_fields() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "default_outbound": "direct",
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "tag": "direct-out",
+                    "server_port": 443
+                },
+                {
+                    "type": "wireguard",
+                    "tag": "wg-out",
+                    "server": "1.2.3.4",
+                    "port": 51820
+                }
+            ],
+            "inbounds": [
+                {
+                    "type": "mixed",
+                    "tag": "mixed-in",
+                    "listen_port": 2080,
+                    "sniff": true
+                }
+            ],
+            "route": {
+                "rules": [
+                    {
+                        "domain_suffix": [".example.com"],
+                        "outbound": "direct-out"
+                    }
+                ]
+            }
+        });
+        let issues = check_deprecations(&doc);
+        let deprecated: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("Deprecated"))
+            .collect();
+        // Expect at least: default_outbound, outbound[0].tag, outbound[0].server_port,
+        // outbound[1] wireguard, outbound[1].tag, inbound[0].tag, inbound[0].listen_port,
+        // inbound[0].sniff, route.rules[0].outbound, route.rules[0].domain_suffix
+        assert!(
+            deprecated.len() >= 8,
+            "Expected at least 8 deprecation issues for a config with many legacy fields, got {}: {:?}",
+            deprecated.len(),
+            deprecated
+        );
+    }
+
+    #[test]
+    fn test_deprecation_default_outbound_at_root() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "default_outbound": "direct",
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "name": "direct"
+                }
+            ]
+        });
+        let issues = check_deprecations(&doc);
+        let default_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["code"].as_str() == Some("Deprecated")
+                    && i["ptr"].as_str() == Some("/default_outbound")
+            })
+            .collect();
+        assert!(
+            !default_issues.is_empty(),
+            "Expected deprecation for root-level default_outbound"
+        );
+        assert_eq!(default_issues[0]["kind"].as_str(), Some("warning"));
+        assert!(
+            default_issues[0]["hint"]
+                .as_str()
+                .unwrap_or("")
+                .contains("route.default"),
+            "Hint should mention route.default"
+        );
+    }
+
+    #[test]
+    fn test_deprecation_integrated_in_validate_v2() {
+        // Verify that validate_v2 includes deprecation issues
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "tag": "legacy-tag"
+                }
+            ]
+        });
+        let issues = validate_v2(&doc, true);
+        let deprecated: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("Deprecated"))
+            .collect();
+        assert!(
+            !deprecated.is_empty(),
+            "validate_v2 should include deprecation issues from check_deprecations"
+        );
+    }
+
+    #[test]
+    fn test_deprecation_inbound_sniff() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "inbounds": [
+                {
+                    "type": "mixed",
+                    "name": "in1",
+                    "listen": "127.0.0.1:2080",
+                    "sniff": true
+                },
+                {
+                    "type": "tun",
+                    "name": "in2",
+                    "sniff": false
+                }
+            ]
+        });
+        let issues = check_deprecations(&doc);
+        let sniff_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["code"].as_str() == Some("Deprecated")
+                    && i["ptr"]
+                        .as_str()
+                        .map(|p| p.ends_with("/sniff"))
+                        .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(
+            sniff_issues.len(),
+            2,
+            "Expected 2 sniff deprecation issues (one per inbound), got: {:?}",
+            sniff_issues
+        );
+        assert_eq!(sniff_issues[0]["kind"].as_str(), Some("warning"));
+    }
+
+    // ───── Non-localhost binding security warning tests ─────
+
+    #[test]
+    fn test_insecure_binding_clash_api_no_secret() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "clash_api": {
+                    "external_controller": "0.0.0.0:9090"
+                }
+            }
+        });
+        let issues = check_non_localhost_binding_warnings(&doc);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert_eq!(
+            insecure.len(),
+            1,
+            "Expected 1 InsecureBinding warning for clash_api without secret, got: {:?}",
+            insecure
+        );
+        assert_eq!(insecure[0]["kind"].as_str(), Some("warning"));
+        assert_eq!(
+            insecure[0]["ptr"].as_str(),
+            Some("/experimental/clash_api/external_controller")
+        );
+    }
+
+    #[test]
+    fn test_secure_binding_clash_api_localhost() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "clash_api": {
+                    "external_controller": "127.0.0.1:9090"
+                }
+            }
+        });
+        let issues = check_non_localhost_binding_warnings(&doc);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert!(
+            insecure.is_empty(),
+            "localhost binding should not produce InsecureBinding warning, got: {:?}",
+            insecure
+        );
+    }
+
+    #[test]
+    fn test_secure_binding_clash_api_with_secret() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "clash_api": {
+                    "external_controller": "0.0.0.0:9090",
+                    "secret": "my-secret"
+                }
+            }
+        });
+        let issues = check_non_localhost_binding_warnings(&doc);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert!(
+            insecure.is_empty(),
+            "clash_api with secret should not produce InsecureBinding warning, got: {:?}",
+            insecure
+        );
+    }
+
+    #[test]
+    fn test_insecure_binding_service_no_auth_token() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "services": [
+                {
+                    "type": "ssm-api",
+                    "tag": "ssm",
+                    "listen": "0.0.0.0",
+                    "listen_port": 8080
+                }
+            ]
+        });
+        let issues = check_non_localhost_binding_warnings(&doc);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert_eq!(
+            insecure.len(),
+            1,
+            "Expected 1 InsecureBinding warning for service without auth_token, got: {:?}",
+            insecure
+        );
+        assert_eq!(insecure[0]["kind"].as_str(), Some("warning"));
+        assert_eq!(
+            insecure[0]["ptr"].as_str(),
+            Some("/services/0/listen")
+        );
+    }
+
+    #[test]
+    fn test_secure_binding_service_with_auth_token() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "services": [
+                {
+                    "type": "ssm-api",
+                    "tag": "ssm",
+                    "listen": "0.0.0.0",
+                    "listen_port": 8080,
+                    "auth_token": "secret-token"
+                }
+            ]
+        });
+        let issues = check_non_localhost_binding_warnings(&doc);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert!(
+            insecure.is_empty(),
+            "service with auth_token should not produce InsecureBinding warning, got: {:?}",
+            insecure
+        );
+    }
+
+    #[test]
+    fn test_insecure_binding_integrated_in_validate_v2() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "clash_api": {
+                    "external_controller": "0.0.0.0:9090"
+                }
+            }
+        });
+        let issues = validate_v2(&doc, true);
+        let insecure: Vec<_> = issues
+            .iter()
+            .filter(|i| i["code"].as_str() == Some("InsecureBinding"))
+            .collect();
+        assert!(
+            !insecure.is_empty(),
+            "validate_v2 should include InsecureBinding warnings from check_non_localhost_binding_warnings"
+        );
+    }
+
+    // ───── TLS fragment route key acceptance test ─────
+
+    #[test]
+    fn test_tls_fragment_route_keys_accepted() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "route": {
+                "tls_fragment": true,
+                "tls_record_fragment": {
+                    "enabled": true,
+                    "size_min": 1,
+                    "size_max": 5
+                },
+                "tls_fragment_fallback_delay": "300ms"
+            }
+        });
+        let issues = validate_v2(&doc, false);
+        let unknown: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["code"].as_str() == Some("UnknownField")
+                    && i["ptr"]
+                        .as_str()
+                        .map_or(false, |p| p.starts_with("/route/tls_fragment"))
+            })
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "tls_fragment keys should be accepted in route, but got unknown field errors: {:?}",
+            unknown
+        );
+    }
+
+    // ───── TLS capability matrix validation tests (L14.1.4) ─────
+
+    #[test]
+    fn test_tls_utls_non_chrome_fingerprint_emits_info() {
+        let doc = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "my-vless",
+                    "server": "example.com",
+                    "port": 443,
+                    "utls_fingerprint": "firefox"
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let utls_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("info")
+                    && i["ptr"]
+                        .as_str()
+                        .map_or(false, |p| p.contains("utls_fingerprint"))
+            })
+            .collect();
+        assert!(
+            !utls_issues.is_empty(),
+            "Non-chrome uTLS fingerprint should emit info diagnostic, got: {:?}",
+            issues
+        );
+        // Verify the message mentions the fingerprint
+        let msg = utls_issues[0]["msg"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("firefox"),
+            "Info message should mention the fingerprint 'firefox', got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_tls_utls_chrome_fingerprint_no_warning() {
+        let doc = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "my-vless",
+                    "server": "example.com",
+                    "port": 443,
+                    "utls_fingerprint": "chrome"
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let utls_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["ptr"]
+                    .as_str()
+                    .map_or(false, |p| p.contains("utls_fingerprint"))
+            })
+            .collect();
+        assert!(
+            utls_issues.is_empty(),
+            "'chrome' fingerprint should not emit any diagnostic, got: {:?}",
+            utls_issues
+        );
+    }
+
+    #[test]
+    fn test_tls_ech_emits_info() {
+        let doc = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "trojan",
+                    "tag": "ech-proxy",
+                    "server": "example.com",
+                    "port": 443,
+                    "encrypted_client_hello": true
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let ech_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("info")
+                    && i["ptr"]
+                        .as_str()
+                        .map_or(false, |p| p.contains("encrypted_client_hello"))
+            })
+            .collect();
+        assert!(
+            !ech_issues.is_empty(),
+            "ECH enabled should emit info diagnostic, got: {:?}",
+            issues
+        );
+        let msg = ech_issues[0]["msg"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("ECH") || msg.contains("Encrypted Client Hello"),
+            "Info message should mention ECH, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_tls_reality_emits_info() {
+        let doc = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "reality-proxy",
+                    "server": "example.com",
+                    "port": 443,
+                    "reality_enabled": true,
+                    "reality_public_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0",
+                    "reality_short_id": "01ab"
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let reality_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("info")
+                    && i["ptr"]
+                        .as_str()
+                        .map_or(false, |p| p.contains("reality_enabled"))
+            })
+            .collect();
+        assert!(
+            !reality_issues.is_empty(),
+            "REALITY enabled should emit info diagnostic, got: {:?}",
+            issues
+        );
+        let msg = reality_issues[0]["msg"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("REALITY"),
+            "Info message should mention REALITY, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_tls_capabilities_integrated_in_validate_v2() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "fp-proxy",
+                    "server": "example.com",
+                    "port": 443,
+                    "utls_fingerprint": "safari"
+                }
+            ]
+        });
+        let issues = validate_v2(&doc, true);
+        let tls_info: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("info")
+                    && i["ptr"]
+                        .as_str()
+                        .map_or(false, |p| p.contains("utls_fingerprint"))
+            })
+            .collect();
+        assert!(
+            !tls_info.is_empty(),
+            "validate_v2 should include TLS capability info from check_tls_capabilities"
+        );
+    }
+
+    #[test]
+    fn test_tls_no_outbounds_no_crash() {
+        // Ensure the function handles missing outbounds gracefully
+        let doc = serde_json::json!({
+            "schema_version": 2
+        });
+        let issues = check_tls_capabilities(&doc);
+        assert!(
+            issues.is_empty(),
+            "No outbounds should produce no TLS capability issues"
+        );
     }
 }

@@ -65,6 +65,43 @@
 | Connections count + totals | 连接数 + 上下行总量 | `tolerate_counter_jitter` | implemented |
 | Memory peak ratio | 内存峰值比率（>2x 报警） | — | implemented |
 
+## 迁移兼容 / Deprecation 覆盖矩阵（L12）
+
+| Deprecation 类型 | 检测目标 | Case ID | 状态 |
+| --- | --- | --- | --- |
+| WireGuard outbound → endpoint | outbound type "wireguard" 迁移到 endpoint 模型检测 | `p1_deprecated_wireguard_outbound` | implemented |
+| V1→V2 field rename: `tag`→`name` | V1 风格 `tag` 字段重命名为 `name` | `p1_deprecated_v1_style_config` | implemented |
+| V1→V2 field rename: `server_port`→`port` | V1 风格 `server_port` 重命名为 `port` | `p1_deprecated_v1_style_config` | implemented |
+| V1→V2 protocol rename: `socks5`→`socks` | V1 风格 `socks5` 协议名重命名为 `socks` | `p1_deprecated_v1_style_config` | implemented |
+| Flat conditions → `when` wrapper | 平铺条件迁移到 `when` 包装结构 | `p1_deprecated_mixed_config` | implemented |
+| `default_outbound` → `route.default` | 顶层 `default_outbound` 迁移到 `route.default` | `p1_deprecated_mixed_config` | implemented |
+| Non-localhost binding warning | 非 localhost 绑定地址安全警告 | `p1_deprecated_mixed_config` | implemented |
+
+## 服务安全覆盖矩阵（L13）
+
+| 安全能力 | 检测目标 | Case ID | 状态 |
+| --- | --- | --- | --- |
+| Clash API Bearer auth | token 为空→跳过; 正确→200; 错误→401; 缺失→401 | `p1_clash_api_auth_enforcement` | implemented |
+| SSMAPI Bearer auth | ServiceIR.auth_token 独立鉴权 | — (单元测试覆盖) | implemented |
+| WS ?token= auth | WebSocket 升级请求 query param 鉴权 | `p1_clash_api_auth_enforcement` | implemented |
+| 非 localhost 绑定警告 | 0.0.0.0 绑定 + 无 secret → InsecureBinding | — (单元测试覆盖) | implemented |
+| 服务故障隔离 | 单服务启动失败不阻塞其他服务 | `p1_service_failure_isolation` | implemented |
+| 健康 API 端点 | GET /services/health 聚合状态 | `p1_service_failure_isolation` | implemented |
+
+## TLS 能力覆盖矩阵（L14）
+
+| TLS 能力 | 实现状态 | Case ID | 状态 |
+| --- | --- | --- | --- |
+| 证书存储: System | rustls-native-certs + Mozilla 回退 | — (单元测试覆盖) | implemented |
+| 证书存储: Mozilla | webpki_roots 内置根证书 | `p1_tls_cert_store_mozilla` | implemented |
+| 证书存储: None | 空池 + 仅自定义 CA | `p1_tls_cert_store_none_custom_ca` | implemented |
+| 证书目录加载 | 递归 PEM 目录扫描 | — (单元测试覆盖) | implemented |
+| 证书热重载 | notify 文件监听 + CancellationToken | — (单元测试覆盖) | implemented |
+| TLS fragment | tls_fragment/tls_record_fragment/tls_fragment_fallback_delay | `p1_tls_fragment_activation` / `p1_tls_fragment_wiring` | implemented |
+| uTLS 能力诊断 | 非 chrome 指纹 → info 诊断 | — (单元测试覆盖) | implemented |
+| ECH 能力诊断 | ECH 配置 → 实现状态 info | — (单元测试覆盖) | implemented |
+| REALITY 能力诊断 | REALITY 配置 → 实现状态 info | — (单元测试覆盖) | implemented |
+
 ## 参考实现映射
 
 - Go reference: `experimental/clashapi/*.go`

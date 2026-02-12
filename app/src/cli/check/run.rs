@@ -56,8 +56,11 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
     let mut raw = config_loader::load_merged_value(&entries)?;
 
     // Optional migration to v2 schema view
+    let mut migration_diagnostics: Vec<cfg_compat::MigrationDiagnostic> = Vec::new();
     if args.migrate {
-        raw = cfg_compat::migrate_to_v2(&raw);
+        let (migrated, diags) = cfg_compat::migrate_to_v2(&raw);
+        raw = migrated;
+        migration_diagnostics = diags;
     }
 
     let mut issues: Vec<CheckIssue> = Vec::new();
@@ -196,15 +199,29 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
         None
     };
 
+    let deprecation_count = issues
+        .iter()
+        .filter(|i| matches!(i.code, IssueCode::Deprecated))
+        .count();
+
+    let mut summary = serde_json::json!({
+        "total_issues": issues.len(),
+        "errors": issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count(),
+        "warnings": issues.iter().filter(|i| matches!(i.kind, IssueKind::Warning)).count(),
+    });
+    if deprecation_count > 0 {
+        summary["deprecations"] = serde_json::json!(deprecation_count);
+    }
+    if !migration_diagnostics.is_empty() {
+        summary["migration_actions"] = serde_json::json!(migration_diagnostics.len());
+        summary["migration_details"] = serde_json::json!(migration_diagnostics);
+    }
+
     let report = CheckReport {
         ok,
         file: primary_path.clone(),
         issues: issues.clone(),
-        summary: serde_json::json!({
-            "total_issues": issues.len(),
-            "errors": issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count(),
-            "warnings": issues.iter().filter(|i| matches!(i.kind, IssueKind::Warning)).count(),
-        }),
+        summary,
         fingerprint,
         canonical,
     };
@@ -279,6 +296,20 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
                 },
                 &report,
             );
+        }
+    }
+
+    // Print migration diagnostics for human output
+    if !migration_diagnostics.is_empty() && fmt == Format::Human {
+        eprintln!("\nMigration diagnostics ({} actions):", migration_diagnostics.len());
+        for diag in &migration_diagnostics {
+            let action_str = match diag.action {
+                cfg_compat::MigrationAction::Renamed => "RENAMED",
+                cfg_compat::MigrationAction::Moved => "MOVED",
+                cfg_compat::MigrationAction::Normalized => "NORMALIZED",
+                cfg_compat::MigrationAction::Wrapped => "WRAPPED",
+            };
+            eprintln!("  [{action_str}] {} -> {}: {}", diag.from_path, diag.to_path, diag.detail);
         }
     }
 
@@ -628,24 +659,34 @@ fn validate_geo_resources(config: &Value, issues: &mut Vec<CheckIssue>) {
 fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Result<()> {
     let ptr = format!("/route/rules/{index}");
 
-    // Check if rule has at least one match condition
-    let has_match = rule.get("domain").is_some()
-        || rule.get("domain_suffix").is_some()
-        || rule.get("domain_keyword").is_some()
-        || rule.get("domain_regex").is_some()
-        || rule.get("ip_cidr").is_some()
-        || rule.get("source_ip_cidr").is_some()
-        || rule.get("port").is_some()
-        || rule.get("port_range").is_some()
-        || rule.get("source_port").is_some()
-        || rule.get("source_port_range").is_some()
-        || rule.get("process_name").is_some()
-        || rule.get("process_path").is_some()
-        || rule.get("process").is_some()
-        || rule.get("protocol").is_some()
-        || rule.get("network").is_some()
-        || rule.get("geoip").is_some()
-        || rule.get("geosite").is_some();
+    // Check if rule has at least one match condition (v1 flat or v2 `when` wrapper)
+    let when_obj = rule.get("when");
+    let has_condition = |key: &str| -> bool {
+        rule.get(key).is_some() || when_obj.is_some_and(|w| w.get(key).is_some())
+    };
+    let has_match = has_condition("domain")
+        || has_condition("domain_suffix")
+        || has_condition("domain_keyword")
+        || has_condition("domain_regex")
+        || has_condition("ip_cidr")
+        || has_condition("source_ip_cidr")
+        || has_condition("port")
+        || has_condition("port_range")
+        || has_condition("source_port")
+        || has_condition("source_port_range")
+        || has_condition("process_name")
+        || has_condition("process_path")
+        || has_condition("process")
+        || has_condition("protocol")
+        || has_condition("network")
+        || has_condition("geoip")
+        || has_condition("geosite")
+        // v2 short-form condition keys inside `when`
+        || when_obj.is_some_and(|w| {
+            w.get("suffix").is_some()
+                || w.get("keyword").is_some()
+                || w.get("regex").is_some()
+        });
 
     if !has_match {
         push_warn(
@@ -895,6 +936,9 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     let kind = match kind_str {
         "error" => IssueKind::Error,
         "warning" => IssueKind::Warning,
+        // Deprecation issues from check_deprecations() use "info" severity;
+        // surface them as warnings in the CLI so --strict can act on them.
+        "info" => IssueKind::Warning,
         _ => IssueKind::Warning,
     };
 
@@ -904,6 +948,8 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
         "MissingRequired" => IssueCode::MissingRequired,
         "TypeMismatch" => IssueCode::TypeMismatch,
         "Conflict" => IssueCode::Conflict,
+        "Deprecated" => IssueCode::Deprecated,
+        "InsecureBinding" => IssueCode::InsecureBinding,
         _ => IssueCode::SchemaInvalid,
     };
 
@@ -1004,7 +1050,8 @@ fn load_config_file(path: &str, args: &CheckArgs) -> Result<Value> {
 
     // Apply migration if requested
     if args.migrate {
-        raw = cfg_compat::migrate_to_v2(&raw);
+        let (migrated, _migration_diagnostics) = cfg_compat::migrate_to_v2(&raw);
+        raw = migrated;
     }
 
     Ok(raw)

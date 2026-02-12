@@ -86,7 +86,7 @@ fn test_v1_variants_pass_migration() {
 
     let mut pass_count = 0;
     for (i, case) in test_cases.iter().enumerate() {
-        let result = sb_config::compat::migrate_to_v2(case);
+        let (result, _diags) = sb_config::compat::migrate_to_v2(case);
         assert_eq!(
             result["schema_version"], 2,
             "Test case {} should migrate to v2",

@@ -117,7 +117,7 @@ use clap::{ArgAction, Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// Output format for CLI commands
-#[derive(ValueEnum, Debug, Clone, Copy)]
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     /// Human-readable output
     Human,

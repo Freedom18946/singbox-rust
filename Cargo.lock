@@ -3362,7 +3362,7 @@ dependencies = [
  "hyper 1.8.1",
  "hyper-util",
  "rustls",
- "rustls-native-certs",
+ "rustls-native-certs 0.8.3",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
@@ -6263,6 +6263,19 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5bfb394eeed242e909609f56089eecfe5fda225042e8b171791b9c95f5931e5"
+dependencies = [
+ "openssl-probe 0.1.6",
+ "rustls-pemfile",
+ "rustls-pki-types",
+ "schannel",
+ "security-framework 2.11.1",
+]
+
+[[package]]
+name = "rustls-native-certs"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "612460d5f7bea540c490b2b6395d8e34a953e52b491accd6c86c8164c5932a63"
@@ -6304,7 +6317,7 @@ dependencies = [
  "log",
  "once_cell",
  "rustls",
- "rustls-native-certs",
+ "rustls-native-certs 0.8.3",
  "rustls-platform-verifier-android",
  "rustls-webpki",
  "security-framework 3.5.1",
@@ -6433,7 +6446,7 @@ dependencies = [
  "russh",
  "russh-keys",
  "rustls",
- "rustls-native-certs",
+ "rustls-native-certs 0.8.3",
  "rustls-pemfile",
  "rustls-pki-types",
  "sb-config",
@@ -6761,21 +6774,25 @@ dependencies = [
  "hkdf",
  "hmac",
  "instant-acme",
+ "notify 6.1.1",
  "once_cell",
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rcgen 0.13.2",
  "ring",
  "rustls",
+ "rustls-native-certs 0.7.3",
  "rustls-pemfile",
  "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror 2.0.17",
  "time",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "webpki-roots 0.26.11",
  "x25519-dalek",

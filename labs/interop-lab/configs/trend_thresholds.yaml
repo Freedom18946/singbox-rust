@@ -1,0 +1,61 @@
+# Trend gate threshold configuration for interop-lab.
+#
+# Select a template via THRESHOLD_TEMPLATE env var:
+#   strict / strict_default      — zero tolerance, <5% degradation
+#   env_limited / env_limited_default — moderate tolerance, <10% degradation
+#   development                  — very relaxed, for local iteration
+#
+# The run_case_trend_gate.sh script reads this file when THRESHOLD_CONFIG points to it.
+
+# --- strict: zero tolerance ---
+strict:
+  max_rust_errors: 0
+  max_failed_traffic: 0
+  max_http_mismatches: 0
+  max_ws_mismatches: 0
+  max_sub_mismatches: 0
+  max_traffic_mismatches: 0
+  enforce_non_increasing_score: true
+  allow_missing_diff: false
+
+strict_default:
+  max_rust_errors: 0
+  max_failed_traffic: 0
+  max_http_mismatches: 0
+  max_ws_mismatches: 0
+  max_sub_mismatches: 0
+  max_traffic_mismatches: 0
+  enforce_non_increasing_score: true
+  allow_missing_diff: false
+
+# --- env_limited: moderate tolerance ---
+env_limited:
+  max_rust_errors: 2
+  max_failed_traffic: 2
+  max_http_mismatches: 1
+  max_ws_mismatches: 1
+  max_sub_mismatches: 1
+  max_traffic_mismatches: 1
+  enforce_non_increasing_score: true
+  allow_missing_diff: true
+
+env_limited_default:
+  max_rust_errors: 2
+  max_failed_traffic: 2
+  max_http_mismatches: 1
+  max_ws_mismatches: 1
+  max_sub_mismatches: 1
+  max_traffic_mismatches: 1
+  enforce_non_increasing_score: true
+  allow_missing_diff: true
+
+# --- development: very relaxed ---
+development:
+  max_rust_errors: 10
+  max_failed_traffic: 10
+  max_http_mismatches: 10
+  max_ws_mismatches: 10
+  max_sub_mismatches: 10
+  max_traffic_mismatches: 10
+  enforce_non_increasing_score: false
+  allow_missing_diff: true

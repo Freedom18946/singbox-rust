@@ -7,7 +7,7 @@ fn migrate_v1_to_v2_moves_rules_and_default() -> anyhow::Result<()> {
         "rules": [{"domain_suffix":["example.com"],"outbound":"direct"}],
         "default_outbound":"direct"
     });
-    let v2 = sb_config::compat::migrate_to_v2(&v1);
+    let (v2, _diags) = sb_config::compat::migrate_to_v2(&v1);
     assert_eq!(v2["schema_version"], 2);
     assert!(v2.get("rules").is_none());
     assert!(v2.get("default_outbound").is_none());
@@ -22,7 +22,7 @@ fn migrate_normalizes_socks5_type() -> anyhow::Result<()> {
         "outbounds": [{"type":"socks5","name":"s","server":"127.0.0.1","port":1080}],
         "rules": [{"domain_suffix":["example.com"],"outbound":"s"}]
     });
-    let v2 = sb_config::compat::migrate_to_v2(&v1);
+    let (v2, _diags) = sb_config::compat::migrate_to_v2(&v1);
     assert_eq!(v2["outbounds"][0]["type"], "socks");
     Ok(())
 }

@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "log": { "level": "warn" },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "new-style-in",
+      "listen": "127.0.0.1:18904"
+    },
+    {
+      "type": "socks",
+      "tag": "old-style-in",
+      "listen": "127.0.0.1",
+      "listen_port": 18905
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "route": {
+    "default": "direct-out",
+    "rules": [
+      {
+        "when": { "suffix": "example.com" },
+        "to": "direct-out"
+      }
+    ]
+  }
+}

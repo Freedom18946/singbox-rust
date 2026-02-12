@@ -2317,6 +2317,9 @@ pub struct ServiceIR {
     /// Cache file path (Go: `cache_path`).
     #[serde(default)]
     pub cache_path: Option<String>,
+    /// Authentication token for SSMAPI service (Go parity).
+    #[serde(default)]
+    pub auth_token: Option<String>,
 
     // DERP service fields
     /// DERP key/config file path (Go: `config_path`).
@@ -2389,12 +2392,19 @@ pub use experimental::*;
 /// Certificate configuration (global)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CertificateIR {
+    /// Certificate store mode: "system", "mozilla", or "none"
+    /// Defaults to "system" (Go parity)
+    #[serde(default)]
+    pub store: Option<String>,
     /// Additional CA certificate file paths (PEM)
     #[serde(default)]
     pub ca_paths: Vec<String>,
     /// Additional CA certificate PEM blocks (inline)
     #[serde(default)]
     pub ca_pem: Vec<String>,
+    /// Directory path to load additional CA certificates from (recursive PEM scan)
+    #[serde(default)]
+    pub certificate_directory_path: Option<String>,
 }
 
 impl OutboundIR {

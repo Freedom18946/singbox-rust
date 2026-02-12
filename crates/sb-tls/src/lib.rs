@@ -134,6 +134,9 @@ pub use ech::{EchClientConfig, EchConnector, EchKeypair, EchServerConfig};
 #[cfg(feature = "utls")]
 pub use utls::{CustomFingerprint, UtlsConfig, UtlsFingerprint, available_fingerprints};
 
+#[cfg(feature = "cert-watch")]
+pub use global::CertificateWatcher;
+
 /// TLS error types
 /// TLS 错误类型
 #[derive(Debug, thiserror::Error)]

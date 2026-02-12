@@ -1,7 +1,7 @@
 # L5-L11 单项目联测仿真计划（实施版）
 
-> 更新日期：2026-02-10
-> 状态：L5/L6 已开工，基础设施已入库（`labs/interop-lab`）
+> 更新日期：2026-02-12
+> 状态：**L5-L14 ✅ 全部 Closed**
 
 ## 运行基线约束（强制）
 
@@ -78,14 +78,19 @@
 - `case diff <id>` 输出 `diff.json` + `diff.md`
 - 比较维度：HTTP、WS、subscription、traffic
 
-## L11 CI 准入与治理
+## L11 CI 准入与治理 ✅ Closed
 
 ### 规划
 - PR smoke：P0 核心 case
 - nightly full：全矩阵 + 故障注入
 
-### 当前状态
-- 待接入 `.github/workflows`（下一迭代）
+### 交付
+- ✅ CI workflow：`interop-lab-smoke.yml`（PR）+ `interop-lab-nightly.yml`（定时全量）
+- ✅ 趋势门禁脚本：`run_case_trend_gate.sh` + `aggregate_trend_report.sh`
+- ✅ 历史趋势追踪：`trend_history.jsonl`（JSONL 格式，ISO 时间戳）
+- ✅ 回归检测：strict case score 退化 >10% 自动 REGRESSION_WARNING
+- ✅ Nightly workflow 集成聚合趋势报告 + 历史追踪
+- ✅ L11 闭环完成
 
 ## L11 -> L12 交接（新增）
 
@@ -96,3 +101,41 @@ L5-L11 完成后，下一阶段进入“Go 规格驱动的能力收敛”：
   - 弃用与迁移治理（deprecated 提示、迁移路径可操作化）
   - Endpoint/Services/TLS 高级能力收敛
   - 长时回归趋势门禁 CI 化
+
+## L12-L14 闭环总结（2026-02-12）
+
+L12-L14 阶段为"Go 规格驱动的能力收敛"，在 L5-L11 联测仿真与 CI 治理基础上，完成了以下三个层级的工作：
+
+### L12 迁移兼容治理
+
+- 弃用字段 deprecated 提示体系（配置层 warning 日志）
+- 迁移路径文档化与可操作化验证
+- 配置 schema 兼容性回归
+
+### L13 Services 安全与生命周期
+
+- 服务生命周期增强（graceful shutdown、依赖顺序）
+- 安全相关配置验证（凭据格式、端口冲突检测）
+- 服务间通信契约收紧
+
+### L14 TLS/Endpoint 高级能力与趋势门禁 CI 化
+
+- **证书存储模式**: `CertStoreMode`（System/Mozilla/None），通过 `rustls-native-certs` 加载系统证书库
+- **证书热重载**: `notify` crate 文件监听 + `CancellationToken` 优雅终止，自动重建 `rustls::ServerConfig`
+- **TLS fragment 闭环验证**: sb-config `TlsFragmentIR` -> sb-tls `TlsFragmentConfig` -> sb-core 运行时路径已确认
+- **TLS 能力矩阵诊断**: `TlsCapabilityMatrix` 工具输出 uTLS/ECH/REALITY 能力状态（accepted limitation 明确标注）
+- **Nightly 趋势门禁模板**: `strict_default` / `env_limited_default` / `development` 三套阈值配置
+- **interop-lab TLS case**: 3 个 TLS 互操作 case + 1 个 TLS fragment case
+
+### 状态
+
+- **L12**: ✅ Closed
+- **L13**: ✅ Closed
+- **L14**: ✅ Closed（含 L14.3.1 集成验证）
+
+### 后续方向
+
+L12-L14 完成后，所有已规划的能力收敛工作已结项。后续可能的方向：
+- 实机联测（Linux runtime 验证、实网 TLS 对照）
+- 性能基准建立（M3.2）
+- 生产化准备（日志/监控/部署自动化）

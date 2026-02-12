@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "log": { "level": "debug" },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test123"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1:18906"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "route": {
+    "default": "direct-out"
+  }
+}

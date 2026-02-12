@@ -1660,6 +1660,18 @@ pub async fn test_script(
         .into_response()
 }
 
+/// Get services health status (GET /services/health)
+///
+/// Returns aggregated health status of all registered services.
+/// This is a basic implementation that returns a static healthy response.
+/// Full integration with RuntimeHealth would require additional plumbing.
+pub async fn get_services_health(State(_state): State<ApiState>) -> impl IntoResponse {
+    Json(json!({
+        "healthy": true,
+        "services": []
+    }))
+}
+
 /// Meta upgrade endpoint (GET /metaUpgrade)
 ///
 /// Provides information about upgrading to Meta version.

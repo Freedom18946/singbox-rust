@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "log": { "level": "warn" },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1:18902"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "wireguard",
+      "name": "wg-out",
+      "server": "10.0.0.1",
+      "port": 51820,
+      "private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+      "local_address": ["10.0.0.2/32"]
+    },
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "route": {
+    "default": "direct-out"
+  }
+}

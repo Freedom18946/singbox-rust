@@ -289,6 +289,8 @@ impl ClashApiServer {
             .route("/connectionsUpgrade", get(handlers::get_connections_or_ws))
             .route("/metaUpgrade", get(handlers::get_meta_upgrade))
             .route("/meta/upgrade/ui", post(handlers::upgrade_external_ui))
+            // Service health
+            .route("/services/health", get(handlers::get_services_health))
             // Version and status
             .route("/version", get(handlers::get_version))
             .route("/", get(handlers::get_status))
@@ -318,6 +320,13 @@ impl ClashApiServer {
 
             app = app.layer(cors);
         }
+
+        // Add authentication middleware (Go parity: clashapi/server.go L256-290)
+        let auth_token = self.state.config.auth_token.clone();
+        app = app.layer(axum::middleware::from_fn(move |req, next| {
+            let token = auth_token.clone();
+            super::auth::auth_middleware(token, req, next)
+        }));
 
         app
     }

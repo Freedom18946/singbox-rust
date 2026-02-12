@@ -31,7 +31,7 @@ pub fn merge(base: Config, sub: Config) -> Config {
         Err(_) => {
             let mut typed = merge_typed(base, sub);
             let value = serde_json::to_value(&typed).unwrap_or(Value::Null);
-            let migrated = super::compat::migrate_to_v2(&value);
+            let (migrated, _migration_diagnostics) = super::compat::migrate_to_v2(&value);
             match Config::from_value(migrated.clone()) {
                 Ok(cfg) => cfg,
                 Err(_) => {

@@ -2,11 +2,11 @@
 
 联测执行基线与实战流程见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
 
-## 统计快照（2026-02-11）
+## 统计快照（2026-02-12）
 
-- 总 case：68
-- `strict`：61
-- `env_limited`：6
+- 总 case：77
+- `strict`：68
+- `env_limited`：8
 - `env_limited` → `strict` 升级：1（`p0_clash_api_contract` → `p0_clash_api_contract_strict`）
 - 状态口径：`implemented` / `planned` / `blocked`
 
@@ -77,6 +77,30 @@
 | `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented |
 | `p1_gui_connections_tracking` | connections tracking 断言 (chains/rule) | `strict` | implemented |
 | `p1_gui_full_session_replay` | 完整用户会话端到端回放 capstone | `strict` | implemented |
+
+### 迁移兼容 / Deprecation（L12）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_deprecated_wireguard_outbound` | WireGuard outbound → endpoint 迁移检测 | `strict` | implemented |
+| `p1_deprecated_v1_style_config` | V1→V2 字段重命名检测（tag→name, server_port→port, socks5→socks 等） | `strict` | implemented |
+| `p1_deprecated_mixed_config` | 混合配置检测（flat conditions→when wrapper, default_outbound→route.default 等） | `strict` | implemented |
+
+### 服务安全（L13）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_clash_api_auth_enforcement` | Clash API auth enforcement: 无 token→401, Bearer→200, 错误→401 | `strict` | implemented |
+| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented |
+
+### TLS 高级能力（L14）
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_tls_cert_store_mozilla` | mozilla 模式 TLS 连接验证 | `strict` | implemented |
+| `p1_tls_cert_store_none_custom_ca` | none 模式+自定义 CA 验证 | `env_limited` | implemented |
+| `p1_tls_fragment_activation` | TLS fragment 激活验证 | `strict` | implemented |
+| `p1_tls_fragment_wiring` | TLS fragment 配置→运行时接线验证 | `strict` | implemented |
 
 ### 订阅样本治理
 

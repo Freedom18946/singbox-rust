@@ -1,0 +1,32 @@
+id: p1_tls_cert_store_mozilla
+title: mozilla certificate store mode uses webpki root certificates
+priority: p1
+kernel_mode: rust
+env_class: strict
+tags:
+  - tls
+  - certificate
+  - mozilla
+owner: L14
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_tls_mozilla.json
+      - run
+      - --admin-listen
+      - "127.0.0.1:19306"
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: "http://127.0.0.1:19306"
+gui_sequence: []
+upstream_topology: []
+traffic_plan: []
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true

@@ -122,3 +122,52 @@ echo "${summary}" | jq '.' > "${output_file}"
 
 echo "trend_summary written to ${output_file}"
 echo "${summary}" | jq '.cases[] | "\(.id): trend=\(.trend) scores=\(.scores)"' -r
+
+# Append to history (JSONL format)
+history_file="${ARTIFACTS_DIR}/trend_history.jsonl"
+history_entry=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + {timestamp: $ts}' <<< "${summary}")
+echo "${history_entry}" >> "${history_file}"
+echo "trend_history appended to ${history_file}"
+
+# Regression detection: check if strict cases degraded >10% over last 5 runs
+if [[ -f "${history_file}" ]]; then
+  recent_count=$(wc -l < "${history_file}" | tr -d ' ')
+  if (( recent_count >= 2 )); then
+    echo
+    echo "=== regression check (last ${recent_count} runs, max 5) ==="
+
+    # Get last 5 entries' per-case scores
+    tail -5 "${history_file}" | jq -r '.cases[]? | "\(.id) \(.scores | add)"' 2>/dev/null | \
+    awk '{
+      case_id = $1
+      score = $2 + 0
+      if (!(case_id in first_score)) {
+        first_score[case_id] = score
+      }
+      last_score[case_id] = score
+      count[case_id]++
+    }
+    END {
+      regression_found = 0
+      for (id in first_score) {
+        if (count[id] >= 2) {
+          first = first_score[id]
+          last = last_score[id]
+          if (first == 0 && last > 0) {
+            printf "REGRESSION_WARNING: case=%s score %d -> %d (was zero)\n", id, first, last
+            regression_found = 1
+          } else if (first > 0) {
+            pct_change = (last - first) * 100 / first
+            if (pct_change > 10) {
+              printf "REGRESSION_WARNING: case=%s score %d -> %d (%.0f%% degradation)\n", id, first, last, pct_change
+              regression_found = 1
+            }
+          }
+        }
+      }
+      if (!regression_found) {
+        print "regression check: no degradation detected"
+      }
+    }'
+  fi
+fi

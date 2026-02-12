@@ -153,6 +153,43 @@
 | 50 | Cache Key 新增 transport_tag 字段 | `Key { name, qtype }` → `Key { name, qtype, transport_tag }` | grep 所有 `Key {` 构造处加 `transport_tag: None` (~8 处) |
 | 51 | Agent 403 配额错误中断 Task | opus agent token 配额用尽 | 验证 agent 已完成工作后标记任务完成，后续任务用新 agent |
 
+### Interop-Lab / L5-L7 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 52 | `cargo run -p interop-lab -- case list` 报 "missing field `kind`" | GuiStep 用 `kind:` tag 而非 `type:` | YAML 中 gui_sequence entry 必须用 `kind: http/ws_collect/sleep` |
+| 53 | GuiStep 反序列化报 "missing field `name`" | 字段名是 `name` 不是 `label` | 所有 HTTP/WS gui step 必须有 `name:` 字段 |
+| 54 | traffic_plan 报 "invalid type: map, expected a sequence" | `traffic_plan` 是平铺 `Vec<TrafficAction>` 而非嵌套 `{ steps: [] }` | 写 `traffic_plan: []` 而非 `traffic_plan: { steps: [] }` |
+| 55 | assertions 报 "missing field `expected`" | assertions 用 `expected:` 不是 `value:` | `- key: errors.count, op: eq, expected: 0` |
+| 56 | case 反序列化报 "missing field `bootstrap`" | CaseSpec 要求 `bootstrap:` 必填（含 `rust:` 子结构） | 必须包含 `bootstrap.rust.{command, args, api.base_url}` |
+| 57 | `upstream_topology` vs `upstreams` | CaseSpec 字段名是 `upstream_topology` 不是 `upstreams` | 检查 case_spec.rs 确认字段名 |
+| 58 | `description` vs `title` | CaseSpec 用 `title: Option<String>` 不是 `description` | 用 `title:` 字段 |
+| 59 | 并行 case 运行端口冲突 | admin port 和 base_url port 全局不唯一 | 每个 case 分配唯一端口范围（19301-19309 for L11-L14 cases） |
+
+### 弃用检测 / L12 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 60 | migrate_to_v2() 签名变更破坏 7 处调用方 | 返回类型从 `Value` 改为 `(Value, Vec<MigrationDiagnostic>)` | grep 所有 `migrate_to_v2` 调用方，添加 `.0` 或解构 `let (val, diags) = ...` |
+| 61 | check_cli 测试 `schema_v2_validate_flag_works` 失败 | v1 风格测试配置触发新增的弃用检测 | 更新测试配置为 v2 语法（`when: { domain_suffix: [...] }, to: "direct"`） |
+| 62 | v2 rule validation 误报 "no match conditions" | `validate_rule()` 仅检查平铺属性，忽略 v2 `when` wrapper | 添加对 `when` 对象的检查，包括 v2 短格式 keys（`suffix`, `keyword`, `regex`） |
+
+### 服务安全 / L13 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 63 | sb-core/Cargo.toml 添加 tower dev-dependency 导致 boundary violation | check-boundaries.sh 扫描所有依赖（含 dev-dependencies）中的禁止 crate | 移除 tower dev-dependency（service.rs 测试不需要它） |
+| 64 | `get_services_health` 无法访问 ServiceManager 实例 | sb-api 无法直接引用 sb-core 的 ServiceManager（跨 crate 架构限制） | 返回静态响应作为占位，后续通过 ApiState 扩展注入 |
+| 65 | `balancer_socks5_ok` 在 `cargo test --workspace` 中 flaky 失败 | 全工作空间并行运行时端口冲突（SOCKS5 handshake error） | 已知预存问题，单独运行 `cargo test -p sb-core --test udp_balancer` 始终通过 |
+
+### TLS / L14 相关
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 66 | rustls-native-certs 在 CI Linux 上可能失败 | 某些 CI 环境无系统证书库 | System 模式加载失败时自动回退 Mozilla 模式（`base_root_store()` fallback 逻辑） |
+| 67 | notify crate 在 CI 中不触发事件 | CI 无真实文件变化 | CertificateWatcher 单元测试仅验证启动/停止/Drop，真实文件监听在集成测试验证 |
+| 68 | CertificateIR 新字段破坏现有配置解析 | 新增 `store`/`certificate_directory_path` 字段 | 全部使用 `Option<T>` + `#[serde(default)]`，向后兼容 |
+
 ---
 
-*最后更新：2026-02-08（L2.10 DNS 栈对齐）*
+*最后更新：2026-02-12（L14 Capstone 完成，新增 L5-L14 踩坑记录）*

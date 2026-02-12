@@ -149,6 +149,59 @@
 | reverse_mapping 用 parking_lot::Mutex | `parking_lot::Mutex<lru::LruCache<IpAddr, String>>`（1024 entries）。非 async，同步短锁。每次成功解析后存储 IP→domain 映射，由 `lookup_reverse_mapping()` 暴露 |
 | lookup 跳过 FakeIP | `DnsRouter.lookup()` / `lookup_default()` 禁止 FakeIP upstream（Go: `allowFakeIP = false`）。若 default 是 FakeIP，找第一个非 FakeIP upstream 替代 |
 
+### Interop-Lab Case 编写模式（L5-L7）
+
+| 模式 | 说明 |
+|------|------|
+| CaseSpec schema 严格匹配 | GuiStep 必须用 `kind:` (非 `type:`)，`name:` (非 `label:`)；`traffic_plan` 是平铺列表 `[]` (非 `{ steps: [] }`)；assertions 用 `expected:` (非 `value:`)；`upstream_topology` (非 `upstreams:`) |
+| 每 case 独立端口 | admin port + base_url port 必须全局唯一，避免并行运行端口冲突 |
+| bootstrap 必须完整 | `command`, `args`, `startup_timeout_ms`, `ready_path`, `api.base_url` 全部必填 |
+| env_class 分层 | `strict` = 自包含无外部依赖，`env_limited` = 需要外部服务/网络 |
+| oracle 容忍配置 | `tolerate_counter_jitter: true` + `counter_jitter_abs` 处理计数器抖动 |
+| payload_size 大包生成 | TrafficAction 中 `payload_size` 字段触发确定性 payload 生成 + hash 校验 |
+| JSONL 历史追踪 | `trend_history.jsonl` 每行一个 JSON 对象（含 ISO 时间戳），`>>` 追加模式 |
+| 回归检测阈值 | 最近 5 次运行 score 退化 >10% 或 zero→nonzero 变化触发 REGRESSION_WARNING |
+
+### 弃用检测与迁移模式（L12）
+
+| 模式 | 说明 |
+|------|------|
+| 静态弃用目录 > 分散硬编码 | `deprecation_directory()` 返回 `&'static [DeprecatedField]`，所有弃用信息集中管理 |
+| JSON pointer 通配符匹配 | `/outbounds/*/tag` 用 `*` 匹配数组索引，`/outbounds/*/type=wireguard` 用 `key=value` 匹配特定类型 |
+| Severity 分级 | Info（信息性提示）→ Warning（建议迁移）→ Error（即将移除） |
+| 迁移诊断元组返回 | `migrate_to_v2()` 返回 `(Value, Vec<MigrationDiagnostic>)` 而非修改原值+静默转换 |
+| CLI severity 提升 | validator "info" → CLI Warning（使 --strict 可操作弃用字段） |
+| 调用方全面更新 | 改变公共函数签名时 grep 所有调用方（7 处），否则编译失败 |
+
+### 认证中间件模式（L13）
+
+| 模式 | 说明 |
+|------|------|
+| Go parity 鉴权 | axum middleware 完全复刻 Go clashapi/server.go：None→跳过，WS→?token= query，HTTP→Authorization: Bearer |
+| 401 响应格式 | `{"message": "Unauthorized"}` + `Content-Type: application/json`（与 Go 一致） |
+| 跨服务认证复用 | Clash API 和 SSMAPI 使用相同 Bearer 模式但独立 token 配置 |
+| 非 localhost 安全警告 | `is_localhost_addr()` 检查 127.0.0.1/::1/localhost/[::1]/空串，绑定非 localhost 无 secret→InsecureBinding |
+| ServiceStatus 四态隔离 | Starting/Running/Failed(String)/Stopped，start_all() 捕获失败继续其他服务 |
+
+### TLS 证书管理模式（L14）
+
+| 模式 | 说明 |
+|------|------|
+| 三模式证书存储 | System（OS 证书+Mozilla 回退）/ Mozilla（webpki_roots）/ None（空池+仅自定义 CA） |
+| feature gate 隔离 | `native-certs` gate `rustls-native-certs`，`cert-watch` gate `notify`+`tokio-util` |
+| 递归 PEM 目录加载 | `load_pem_directory()` 递归遍历，过滤 .pem/.crt/.cer 后缀 |
+| 文件监听热重载 | `notify::recommended_watcher()` + `CancellationToken`，变化时重建 root store |
+| TLS 能力矩阵诊断 | uTLS/ECH/REALITY 配置产生 info 级诊断说明支持状态（而非静默忽略） |
+| 阈值配置三层回退 | 显式环境变量 > YAML 配置文件（sed 解析）> 硬编码默认值 |
+
+### 边界检查与 CI 模式（L11）
+
+| 模式 | 说明 |
+|------|------|
+| dev-dependencies 也受边界检查 | sb-core 的 `[dev-dependencies]` 中的 tower/axum 等同样触发 boundary violation |
+| YAML 阈值无 yq | `_yaml_val()` 用 sed 提取 YAML 值，避免 CI 环境安装 yq |
+| 命名模板选择 | `THRESHOLD_TEMPLATE` 环境变量选择配置文件中的命名模板节，不需要多个配置文件 |
+
 ---
 
-*最后更新：2026-02-08（L2.10 DNS 栈对齐模式）*
+*最后更新：2026-02-12（L14 Capstone 完成，新增 L5-L14 模式）*

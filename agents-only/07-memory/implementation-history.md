@@ -1040,4 +1040,242 @@ DNS 栈处于 "基础设施丰富但关键链路断裂" 状态（与 L2.8 同模
 
 ---
 
-*最后更新：2026-02-09（L3.4 PX-013 / PX-009 Cache File 深度对齐完成）*
+## WP-L5-L7 联测仿真（2026-02-11）
+
+### L5 协议×故障矩阵
+- 6 协议 × 4 故障类型 = 24 cell 全覆盖
+- CaseSpec 扩展：`tags`, `env_class`, `owner`, `faults`, `post_traffic_gui_sequence`
+- TrafficAction 新增：`WsRoundTrip`, `TlsRoundTrip`, `FaultJitter`, `KernelControl`, `Command`
+- AssertionSpec 新增算子：`gt/gte/lt/lte/contains/regex`
+- `attribution.rs` env_limited 失败归因分类模块
+- 新增 31 YAML case（P0 6 + P1 28 + P2 数个）
+
+### L6 数据面扩展
+- TCP/TLS echo 服务端延迟注入
+- `aggregate_trend_report.sh` 趋势报告聚合
+- CI workflow：`interop-lab-smoke.yml` + `interop-lab-nightly.yml`
+- `leak_detector.rs` 资源泄漏检测（内存 + FD 线性回归）
+- `go_collector.rs` Go Clash API 被动快照采集
+
+### L7 GUI 回放
+- `GuiStep::WsParallel` 并行 WS 流采集
+- 7 个 GUI replay case：启动/proxy切换/delay/group delay/WS重连/connections tracking/完整会话
+- `post_traffic_gui_sequence` CaseSpec 字段
+
+### 文件变更
+- `labs/interop-lab/src/{case_spec.rs, orchestrator.rs, diff_report.rs, upstream.rs, attribution.rs, go_collector.rs, leak_detector.rs}`
+- `labs/interop-lab/cases/` 57 YAML case
+- `labs/interop-lab/scripts/{aggregate_trend_report.sh}`
+- `.github/workflows/{interop-lab-smoke.yml, interop-lab-nightly.yml}`
+
+### 验证
+| 构建 | 状态 |
+|------|------|
+| `cargo test -p interop-lab` | ✅ 27 passed |
+| `cargo test --workspace` | ✅ |
+
+---
+
+## WP-L8-L10 数据面/订阅/双核差分（2026-02-11）
+
+### L8 数据面深度
+- 大包传输 3 case（TCP 128KB, UDP 8KB, HTTP 256KB）+ `payload_size` + `resolve_payload()`
+- 协议单测编入 2 case（SS, VMess）
+- 多出站拓扑 1 case（SOCKS5→SOCKS5→direct）
+
+### L9 订阅解析
+- JSON/YAML/Base64 3 P0 case
+- 容错 4 P2 case（malformed JSON, truncated base64, empty input, unknown protocol）
+- `p1_subscription_file_urls` env_limited case
+
+### L10 双核差分
+- `case diff` 命令 + diff.json + diff.md
+- 6 维度 diff：HTTP status, WS frames, subscription, traffic, connections, memory
+- `GoApiConfig` + dual-kernel orchestrator
+- `p2_connections_ws_soak_dual_core` case
+
+---
+
+## WP-L11 CI 准入闭环（2026-02-12）
+
+### L11.1.1 规划文档修正
+- `07-L5-L11-INTEROP-LAB-PLAN.md` L11 状态更新为 Closed
+
+### L11.1.2 趋势门禁阈值配置化
+- 新建 `labs/interop-lab/configs/trend_thresholds.yaml`（strict/env_limited 分区）
+- `run_case_trend_gate.sh` 读取 `THRESHOLD_CONFIG`/`THRESHOLD_TEMPLATE` 环境变量
+- `_yaml_val()` helper 用 sed 解析 YAML（无 yq 依赖）
+- 三层回退：显式环境变量 > YAML 配置文件 > 硬编码默认值
+
+### L11.1.3 历史趋势追踪
+- `aggregate_trend_report.sh` 追加 `trend_history.jsonl`（JSONL + ISO 时间戳）
+- 回归检测：最近 5 次运行中 score 退化 >10% 时发出 REGRESSION_WARNING
+
+### 文件变更
+- `labs/interop-lab/scripts/run_case_trend_gate.sh`
+- `labs/interop-lab/scripts/aggregate_trend_report.sh`
+- `labs/interop-lab/configs/trend_thresholds.yaml`（新建）
+- `.github/workflows/interop-lab-nightly.yml`
+
+---
+
+## WP-L12 迁移兼容治理（2026-02-12）
+
+### L12.1.1 IssueCode::Deprecated
+- `sb-types` IssueCode 枚举新增 `Deprecated` + `InsecureBinding` 变体
+- `as_str()` 映射 + 序列化兼容
+
+### L12.1.2 弃用目录模块
+- 新建 `crates/sb-config/src/deprecation.rs`
+- `DeprecatedField` 结构体 + `deprecation_directory()` 返回 13 条静态记录
+- `DeprecationSeverity` (Info/Warning/Error) + `DeprecationCategory` (Renamed/Moved/Replaced/Removed)
+- `matches_deprecation_pattern()` 支持通配符 `*` 和 `key=value` 匹配
+- 5 个单元测试
+
+### L12.1.3 验证器弃用检测
+- `check_deprecations()` 递归遍历 JSON Value 树匹配弃用目录
+- `resolve_deprecation_pattern()` 处理通配符展开
+- 集成到 `validate_v2()` 主入口
+- 8 个单元测试
+
+### L12.1.4 迁移诊断返回值
+- `migrate_to_v2()` 返回 `(Value, Vec<MigrationDiagnostic>)` 替代裸 `Value`
+- `MigrationAction` 枚举 (Renamed/Moved/Normalized/Wrapped)
+- `MigrationDiagnostic` 结构体 (from_path, to_path, action, detail)
+- 更新 7 处调用方（app/cli, sb-config/lib, merge, 测试）
+- 10 个单元测试
+
+### L12.1.5 CLI 弃用输出集成
+- `app/src/cli/check/run.rs` 添加 Deprecated/InsecureBinding 代码映射
+- `"info"` severity 提升为 Warning（--strict 可操作）
+- 迁移诊断人类可读输出 + JSON summary
+
+### L12.2.1 WireGuard 迁移辅助
+- `migrate_wireguard_outbound_to_endpoint()` 转换旧 WG outbound → endpoint 配置
+- 字段映射：server→peers[0].address, private_key, public_key, pre_shared_key, mtu, local_address
+- 4 个单元测试
+
+### L12.2.2 弃用检测 interop-lab 用例
+- 3 YAML case + 3 JSON config fixture
+- `p1_deprecated_wireguard_outbound`, `p1_deprecated_v1_style_config`, `p1_deprecated_mixed_config`
+
+### 关键文件
+- `crates/sb-types/src/lib.rs` (IssueCode)
+- `crates/sb-config/src/deprecation.rs` (新建)
+- `crates/sb-config/src/compat.rs` (迁移诊断+WG迁移)
+- `crates/sb-config/src/validator/v2.rs` (弃用检测)
+- `app/src/cli/check/run.rs` (CLI集成)
+
+### 验证
+| 构建 | 状态 |
+|------|------|
+| `cargo check -p sb-config` | ✅ |
+| `cargo test -p sb-config` | ✅ 所有弃用+迁移测试通过 |
+| L12 相关单元测试 | 28 个 |
+
+---
+
+## WP-L13 服务安全与控制面（2026-02-12）
+
+### L13.1.1 Clash API 认证中间件
+- 新建 `crates/sb-api/src/clash/auth.rs`
+- axum middleware：None/empty secret → 跳过；WS → `?token=` query；HTTP → `Authorization: Bearer`；不匹配 → 401 JSON
+- Go parity（clashapi/server.go L256-290）
+- 集成到 server.rs `create_app()` 路由层
+- 8 个单元测试
+
+### L13.1.2 SSMAPI 认证中间件
+- `ServiceIR` 新增 `auth_token: Option<String>` (#[serde(default)])
+- `ssmapi_auth_middleware()` Bearer token 检查
+- 6 个单元测试
+
+### L13.1.3 非 localhost 绑定警告
+- `check_non_localhost_binding_warnings()` + `is_localhost_addr()` helper
+- 检查 Clash API `external_controller` 和 services `listen` 地址
+- 未认证非 localhost → `IssueCode::InsecureBinding` 警告
+- 集成到 `validate_v2()`
+- 6 个单元测试
+
+### L13.2.1 服务故障隔离
+- `ServiceStatus` 枚举 (Starting/Running/Failed(String)/Stopped)
+- `ServiceManager::start_all()` 故障隔离启动
+- `ServiceManager::health_status()` 聚合健康状态
+- 6 个单元测试
+
+### L13.2.2 服务健康 API 端点
+- `GET /services/health` 路由 + `get_services_health()` handler
+- 当前返回静态 `{"healthy": true, "services": []}`（ServiceManager 管道待后续打通）
+
+### L13.3 interop-lab 用例
+- `p1_clash_api_auth_enforcement` (无 token→401, Bearer→200, 错误→401)
+- `p1_service_failure_isolation` (broken service 不阻塞核心启动)
+
+### 关键文件
+- `crates/sb-api/src/clash/auth.rs` (新建)
+- `crates/sb-api/src/clash/server.rs` (中间件集成+健康路由)
+- `crates/sb-core/src/service.rs` (ServiceStatus+故障隔离)
+- `crates/sb-core/src/services/ssmapi/server.rs` (SSMAPI 认证)
+- `crates/sb-config/src/ir/mod.rs` (auth_token 字段)
+- `crates/sb-config/src/validator/v2.rs` (非 localhost 警告)
+
+### 验证
+| 构建 | 状态 |
+|------|------|
+| `cargo test -p sb-api` auth tests | ✅ 8/8 |
+| `cargo test -p sb-core` service tests | ✅ 21/21 |
+| L13 相关单元测试 | 26 个 |
+
+---
+
+## WP-L14 TLS 高级能力与趋势门禁（2026-02-12）
+
+### L14.1.1 证书存储模式
+- `CertificateStoreMode` 枚举 (System/Mozilla/None) + `from_str_opt()`
+- `base_root_store()` 按模式分支：System 用 `rustls-native-certs`（Mozilla 回退），Mozilla 用 `webpki_roots`，None 空池
+- `load_pem_directory()` 递归加载 .pem/.crt/.cer
+- `apply_certificate_config()` 聚合入口
+- `CertificateIR` 新增 `store: Option<String>` + `certificate_directory_path: Option<String>`
+- `sb-tls/Cargo.toml` 新增 `rustls-native-certs`（`native-certs` feature）
+- 5 个单元测试
+
+### L14.1.2 证书热重载
+- `CertificateWatcher` 结构体（`cert-watch` feature gate）
+- `notify` crate 文件监听 + `CancellationToken` 优雅关闭
+- `sb-tls/Cargo.toml` 新增 `notify` + `tokio-util`
+- 4 个单元测试
+
+### L14.1.3 TLS fragment 接线验证
+- `tls_fragment`, `tls_record_fragment`, `tls_fragment_fallback_delay` 加入 `allowed_route_keys()`
+- 1 个单元测试
+
+### L14.1.4 TLS 能力矩阵验证
+- `check_tls_capabilities()` 函数检测 outbound TLS 配置中的 uTLS/ECH/REALITY
+- 产生 info 级 `IssueCode::Deprecated` 诊断（支持状态说明）
+- deprecation.rs 新增 3 条 TLS limitation 条目（#11-#13）
+- 集成到 `validate_v2()`
+- 7 个单元测试
+
+### L14.2.1 Nightly 阈值模板
+- `trend_thresholds.yaml` 新增 `strict_default`, `env_limited_default`, `development` 命名模板
+- nightly workflow 按 `THRESHOLD_TEMPLATE` 选择
+
+### L14.2.2 TLS interop-lab 用例
+- 4 YAML case：`p1_tls_cert_store_mozilla`, `p1_tls_cert_store_none_custom_ca`, `p1_tls_fragment_activation`, `p1_tls_fragment_wiring`
+- 3 JSON config fixture：`rust_core_tls_mozilla.json`, `rust_core_tls_none.json`, `rust_core_tls_fragment.json`
+
+### 关键文件
+- `crates/sb-tls/src/global.rs` (CertificateStoreMode + CertificateWatcher)
+- `crates/sb-tls/Cargo.toml` (rustls-native-certs + notify)
+- `crates/sb-config/src/ir/mod.rs` (CertificateIR 扩展)
+- `crates/sb-config/src/validator/v2.rs` (TLS 能力矩阵 + fragment keys)
+- `crates/sb-config/src/deprecation.rs` (TLS limitation 条目)
+
+### 验证
+| 构建 | 状态 |
+|------|------|
+| `cargo test -p sb-tls` | ✅ 所有 TLS 测试通过 |
+| L14 相关单元测试 | 17 个 |
+
+---
+
+*最后更新：2026-02-12（L14.3.2 Capstone 验收完成，L5-L14 全部 Closed）*

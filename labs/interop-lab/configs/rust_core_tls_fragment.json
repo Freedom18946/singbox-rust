@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "log": { "level": "debug" },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1:18901"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct-out"
+    }
+  ],
+  "route": {
+    "default": "direct-out",
+    "tls_fragment": true,
+    "tls_record_fragment": {
+      "enabled": true,
+      "size_min": 1,
+      "size_max": 5
+    },
+    "tls_fragment_fallback_delay": "300ms"
+  }
+}
