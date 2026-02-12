@@ -17,7 +17,7 @@
 //!   确保规则集在部署前符合模式。
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -26,6 +26,21 @@ use std::path::PathBuf;
 pub struct RulesetArgs {
     #[command(subcommand)]
     pub command: RulesetCmd,
+}
+
+/// Input type hint for the Convert subcommand
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ConvertType {
+    /// Auto-detect from file extension
+    Auto,
+    /// AdGuard DNS filter format
+    Adguard,
+}
+
+impl Default for ConvertType {
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -53,6 +68,10 @@ pub enum RulesetCmd {
         /// Output file (default: stdout)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Write formatted output back to the input file
+        #[arg(short = 'w', long)]
+        write: bool,
     },
 
     /// Decompile a binary .srs file into JSON source format
@@ -104,7 +123,7 @@ pub enum RulesetCmd {
 
     /// Convert between JSON and SRS formats based on extension
     Convert {
-        /// Input file (.json or .srs)
+        /// Input file (.json, .srs, or AdGuard filter text)
         #[arg(value_name = "INPUT")]
         input: PathBuf,
         /// Output file (.json or .srs)
@@ -113,6 +132,9 @@ pub enum RulesetCmd {
         /// Version to write when output is SRS
         #[arg(long)]
         version: Option<u8>,
+        /// Input type hint (auto, adguard)
+        #[arg(short = 't', long = "type", value_enum, default_value_t = ConvertType::Auto)]
+        input_type: ConvertType,
     },
 
     /// Merge multiple rule-set files (append rules) and write to output
@@ -145,7 +167,11 @@ pub async fn run(args: RulesetArgs) -> Result<()> {
     match args.command {
         RulesetCmd::Validate { file } => validate_ruleset(file).await,
         RulesetCmd::Info { file } => show_info(file).await,
-        RulesetCmd::Format { file, output } => format_ruleset(file, output),
+        RulesetCmd::Format {
+            file,
+            output,
+            write,
+        } => format_ruleset(file, output, write),
         RulesetCmd::Decompile { file, output } => decompile_ruleset(file, output).await,
         RulesetCmd::Match {
             file,
@@ -163,7 +189,8 @@ pub async fn run(args: RulesetArgs) -> Result<()> {
             input,
             output,
             version,
-        } => convert_ruleset(input, output, version).await,
+            input_type,
+        } => convert_ruleset(input, output, version, input_type).await,
         RulesetCmd::Merge {
             inputs,
             output,
@@ -250,8 +277,13 @@ async fn show_info(file: PathBuf) -> Result<()> {
 }
 
 /// Format a JSON rule-set (prettify)
-fn format_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()> {
+fn format_ruleset(file: PathBuf, output: Option<PathBuf>, write: bool) -> Result<()> {
     use std::fs;
+
+    // When both --write and --output are given, prefer --output (match Go behavior)
+    if write && output.is_some() {
+        anyhow::bail!("cannot use both --write and --output flags simultaneously");
+    }
 
     // Read JSON file
     let data = fs::read(&file).context("Failed to read file")?;
@@ -266,8 +298,11 @@ fn format_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()> {
 
     // Output
     if let Some(output_file) = output {
-        fs::write(&output_file, formatted).context("Failed to write output file")?;
-        println!("✓ Formatted rule-set written to: {}", output_file.display());
+        fs::write(&output_file, &formatted).context("Failed to write output file")?;
+        println!("Formatted rule-set written to: {}", output_file.display());
+    } else if write {
+        fs::write(&file, &formatted).context("Failed to write back to input file")?;
+        println!("Formatted rule-set written to: {}", file.display());
     } else {
         println!("{formatted}");
     }
@@ -492,8 +527,51 @@ async fn compile_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -
     Ok(())
 }
 
-async fn convert_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -> Result<()> {
-    use sb_core::router::ruleset::{binary, source, RuleSetFormat};
+async fn convert_ruleset(
+    input: PathBuf,
+    output: PathBuf,
+    version: Option<u8>,
+    input_type: ConvertType,
+) -> Result<()> {
+    use sb_core::router::ruleset::{binary, source, RuleSetFormat, RULESET_VERSION_CURRENT};
+
+    // Handle AdGuard input type
+    if input_type == ConvertType::Adguard {
+        let text =
+            std::fs::read_to_string(&input).context("Failed to read AdGuard filter file")?;
+        let rules = sb_core::router::ruleset::adguard::parse_adguard_rules(&text)
+            .context("Failed to parse AdGuard rules")?;
+        let ver = version.unwrap_or(RULESET_VERSION_CURRENT);
+        let json_value = serde_json::json!({
+            "version": ver,
+            "rules": rules,
+        });
+
+        let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or(""))
+            .ok_or_else(|| anyhow::anyhow!("cannot infer output format from extension"))?;
+
+        match out_fmt {
+            RuleSetFormat::Source => {
+                let pretty = serde_json::to_string_pretty(&json_value)
+                    .context("Failed to format JSON")?;
+                std::fs::write(&output, pretty).context("Failed to write output file")?;
+                println!("{}", output.display());
+            }
+            RuleSetFormat::Binary => {
+                // Write JSON to a temp file, load it, then compile to SRS
+                let tmp_json = std::env::temp_dir().join("singbox_adguard_converted.json");
+                let json_str = serde_json::to_string_pretty(&json_value)?;
+                std::fs::write(&tmp_json, &json_str)?;
+                let rs = binary::load_from_file(&tmp_json, RuleSetFormat::Source).await?;
+                let _ = std::fs::remove_file(&tmp_json); // cleanup
+                binary::write_to_file(&output, &rs.rules, ver).await?;
+                println!("{}", output.display());
+            }
+        }
+        return Ok(());
+    }
+
+    // Auto mode: standard format conversion
     let in_fmt = source::infer_format_from_path(input.to_str().unwrap_or(""))
         .ok_or_else(|| anyhow::anyhow!("cannot infer input format"))?;
     let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or(""))
@@ -576,4 +654,50 @@ async fn upgrade_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_write_flag_writes_back_to_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let input_path = dir.path().join("test.json");
+
+        // Write minified JSON
+        let minified = r#"{"version":2,"rules":[{"domain":["example.com"]}]}"#;
+        std::fs::write(&input_path, minified).unwrap();
+
+        // Call format with --write
+        format_ruleset(input_path.clone(), None, true).unwrap();
+
+        // Read back and verify it was prettified
+        let result = std::fs::read_to_string(&input_path).unwrap();
+        assert!(result.contains('\n'), "output should be pretty-printed");
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["version"], 2);
+        assert_eq!(parsed["rules"][0]["domain"][0], "example.com");
+    }
+
+    #[test]
+    fn test_format_write_and_output_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let input_path = dir.path().join("test.json");
+        let output_path = dir.path().join("out.json");
+
+        std::fs::write(&input_path, r#"{"version":2,"rules":[]}"#).unwrap();
+
+        let result = format_ruleset(input_path, Some(output_path), true);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot use both --write and --output"));
+    }
+
+    #[test]
+    fn test_convert_type_enum_default() {
+        assert_eq!(ConvertType::default(), ConvertType::Auto);
+    }
 }

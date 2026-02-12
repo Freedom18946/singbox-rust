@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "run_id": "20260212T151436Z-970816e6-3656-43b3-a7a5-c7479d6d59a2",
+  "case_id": "p2_bench_socks5_throughput",
+  "kernel": "rust",
+  "started_at": "2026-02-12T15:14:36.628198Z",
+  "finished_at": "2026-02-12T15:16:36.996885Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "socks5_bench",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "bench",
+          "-p",
+          "sb-benches",
+          "--bench",
+          "socks5_throughput",
+          "--",
+          "--noplot",
+          "--sample-size",
+          "20",
+          "--measurement-time",
+          "5"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 114404,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "   Compiling ring v0.17.14\n   Compiling rustls v0.23.35\n   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)\n   Compiling rustls-webpki v0.103.8\n   Compiling rcgen v0.13.2\n   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.6.2\n   Compiling quinn-proto v0.11.13\n   Compiling hyper-rustls v0.27.7\n   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)\n   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)\n   Compiling reqwest v0.12.28\n   Compiling quinn v0.11.9\n   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)\n   Compiling sb-benches v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches)\n    Finished `bench` profile [optimized] target(s) in 1m 22s\n     Running benches/socks5_throughput.rs (target/release/deps/socks5_throughput-eda4467e9adacc81)\nGnuplot not found, using plotters backend\nBenchmarking socks5_handshake\nBenchmarking socks5_handshake: Warming up for 3.0000 s\nBenchmarking socks5_handshake: Collecting 20 samples in estimated 5.0173 s (11k iterations)\nBenchmarking socks5_handshake: Analyzing\nBenchmarking socks5_throughput/1024\nBenchmarking socks5_throughput/1024: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1024: Collecting 20 samples in estimated 5.0060 s (11k iterations)\nBenchmarking socks5_throughput/1024: Analyzing\nBenchmarking socks5_throughput/65536\nBenchmarking socks5_throughput/65536: Warming up for 3.0000 s\nBenchmarking socks5_throughput/65536: Collecting 20 samples in estimated 5.0559 s (5880 iterations)\nBenchmarking socks5_throughput/65536: Analyzing\nBenchmarking socks5_throughput/1048576\nBenchmarking socks5_throughput/1048576: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1048576: Collecting 20 samples in estimated 5.0224 s (840 iterations)\nBenchmarking socks5_throughput/1048576: Analyzing\n",
+        "stdout": "socks5_handshake        time:   [303.90 µs 420.63 µs 515.68 µs]\n                        change: [-22.061% +26.319% +118.19%] (p = 0.37 > 0.05)\n                        No change in performance detected.\n\nsocks5_throughput/1024  time:   [176.25 µs 297.33 µs 399.82 µs]\n                        thrpt:  [2.4425 MiB/s 3.2845 MiB/s 5.5409 MiB/s]\n                 change:\n                        time:   [-89.809% -83.515% -72.727%] (p = 0.00 < 0.05)\n                        thrpt:  [+266.66% +506.61% +881.29%]\n                        Performance has improved.\nFound 1 outliers among 20 measurements (5.00%)\n  1 (5.00%) high mild\nsocks5_throughput/65536 time:   [809.50 µs 818.77 µs 830.21 µs]\n                        thrpt:  [75.282 MiB/s 76.334 MiB/s 77.209 MiB/s]\n                 change:\n                        time:   [-0.9157% +6.9379% +15.011%] (p = 0.08 > 0.05)\n                        thrpt:  [-13.052% -6.4878% +0.9242%]\n                        No change in performance detected.\nsocks5_throughput/1048576\n                        time:   [5.9289 ms 5.9871 ms 6.1233 ms]\n                        thrpt:  [163.31 MiB/s 167.03 MiB/s 168.66 MiB/s]\n                 change:\n                        time:   [-4.0809% +0.6656% +7.5071%] (p = 0.87 > 0.05)\n                        thrpt:  [-6.9829% -0.6612% +4.2545%]\n                        No change in performance detected.\nFound 1 outliers among 20 measurements (5.00%)\n  1 (5.00%) high severe\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [
+    {
+      "stage": "assertion:traffic.socks5_bench.exit_code",
+      "message": "assertion failed: key=traffic.socks5_bench.exit_code op=eq expected=0 actual=null"
+    }
+  ],
+  "fd_samples": []
+}

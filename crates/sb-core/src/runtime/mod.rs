@@ -90,6 +90,7 @@ impl<'a> Runtime<'a> {
     pub fn start(mut self) -> Self {
         for ib in &self.bridge.inbounds {
             // Late binding for TunInboundService
+            #[cfg(feature = "in_tun")]
             if let Some(any) = ib.as_any() {
                 if let Some(tun) = any.downcast_ref::<crate::inbound::tun::TunInboundService>() {
                     #[cfg(feature = "router")]

@@ -1,6 +1,9 @@
 # Cargo configuration for singbox-rust
 # This file provides workspace-wide build settings and compiler flags
 
+[alias]
+xtask = "run --package xtask --"
+
 [build]
 # Compiler optimization flags
 rustflags = [

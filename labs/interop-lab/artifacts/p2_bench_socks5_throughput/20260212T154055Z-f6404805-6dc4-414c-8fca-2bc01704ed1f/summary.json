@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_bench_socks5_throughput",
+  "generated_at": "2026-02-12T15:42:56.816955Z",
+  "run_id": "20260212T154055Z-f6404805-6dc4-414c-8fca-2bc01704ed1f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_bench_socks5_throughput/20260212T154055Z-f6404805-6dc4-414c-8fca-2bc01704ed1f/rust.snapshot.json"
+  ]
+}

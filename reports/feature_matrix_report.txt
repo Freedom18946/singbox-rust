@@ -1,0 +1,51 @@
+Feature Matrix Report
+Total: 46 cases
+Passed: 46
+Failed: 0
+
+[PASS] app: Minimal CLI — OK
+[PASS] app: Router preset — OK
+[PASS] app: Observe preset — OK
+[PASS] app: Full preset — OK
+[PASS] sb-core: DNS UDP only — OK
+[PASS] sb-core: DNS DoH only — OK
+[PASS] sb-core: DNS DoT only — OK
+[PASS] sb-core: DNS DoQ only — OK
+[PASS] sb-core: DNS DoH3 only — OK
+[PASS] sb-core: All DNS transports — OK
+[PASS] sb-core: DNS transports + TLS — OK
+[PASS] sb-core: TUIC outbound core — OK
+[PASS] sb-core: Hysteria2 outbound core — OK
+[PASS] sb-core: ShadowTLS outbound — OK
+[PASS] sb-core: WireGuard outbound — OK
+[PASS] sb-adapters: HTTP adapter — OK
+[PASS] sb-adapters: SOCKS adapter — OK
+[PASS] sb-adapters: Shadowsocks adapter — OK
+[PASS] sb-adapters: Trojan adapter — OK
+[PASS] sb-adapters: VMess adapter — OK
+[PASS] sb-adapters: VLESS adapter — OK
+[PASS] sb-adapters: Naive adapter — OK
+[PASS] sb-adapters: ShadowTLS adapter — OK
+[PASS] sb-adapters: Hysteria adapter — OK
+[PASS] sb-adapters: Hysteria2 adapter — OK
+[PASS] sb-adapters: TUIC adapter — OK
+[PASS] sb-adapters: WireGuard adapter — OK
+[PASS] sb-adapters: DNS adapter — OK
+[PASS] sb-adapters: HTTP + SOCKS adapters — OK
+[PASS] sb-adapters: Encrypted proxy set — OK
+[PASS] sb-adapters: DNS DoH + HTTP adapter — OK
+[PASS] sb-adapters: All DNS + core adapters — OK
+[PASS] app: Empty features — OK
+[PASS] sb-adapters: AnyTLS adapter — OK
+[PASS] sb-adapters: SSH adapter — OK
+[PASS] sb-adapters: TUN adapter — OK
+[PASS] app: Tools only — OK
+[PASS] app: Parity preset — OK
+[PASS] app: Acceptance preset — OK
+[PASS] sb-core: NTP service — OK
+[PASS] sb-core: Resolved service — OK
+[PASS] sb-core: Router + legacy — OK
+[PASS] sb-adapters: All QUIC adapters — OK
+[PASS] sb-adapters: TLS adapters — OK
+[PASS] sb-tls: Default TLS — OK
+[PASS] sb-tls: ECH feature — OK

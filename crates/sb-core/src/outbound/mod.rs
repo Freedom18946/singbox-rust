@@ -27,6 +27,7 @@
     feature = "out_naive",
 ))]
 pub mod block_connector;
+#[cfg(feature = "router")]
 pub mod chain;
 pub mod direct_connector;
 #[cfg(feature = "out_http")]

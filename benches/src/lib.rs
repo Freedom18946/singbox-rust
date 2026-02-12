@@ -75,6 +75,23 @@ pub fn setup_tracing() {
         .try_init();
 }
 
+/// Compute percentiles (P50, P95, P99) from a vector of durations.
+/// Returns (p50, p95, p99) or None if the input is empty.
+pub fn compute_percentiles(
+    durations: &[std::time::Duration],
+) -> Option<(std::time::Duration, std::time::Duration, std::time::Duration)> {
+    if durations.is_empty() {
+        return None;
+    }
+    let mut sorted: Vec<std::time::Duration> = durations.to_vec();
+    sorted.sort();
+    let len = sorted.len();
+    let p50 = sorted[len * 50 / 100];
+    let p95 = sorted[len * 95 / 100];
+    let p99 = sorted[len.saturating_sub(1).min(len * 99 / 100)];
+    Some((p50, p95, p99))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +106,21 @@ mod tests {
     fn test_calculate_mbps() {
         let mbps = calculate_mbps(1_048_576, std::time::Duration::from_secs(1));
         assert!((mbps - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_percentiles() {
+        let durations: Vec<std::time::Duration> = (1..=100)
+            .map(|i| std::time::Duration::from_micros(i * 10))
+            .collect();
+        let (p50, p95, p99) = compute_percentiles(&durations).unwrap();
+        assert_eq!(p50, std::time::Duration::from_micros(510));
+        assert_eq!(p95, std::time::Duration::from_micros(960));
+        assert_eq!(p99, std::time::Duration::from_micros(1000));
+    }
+
+    #[test]
+    fn test_compute_percentiles_empty() {
+        assert!(compute_percentiles(&[]).is_none());
     }
 }

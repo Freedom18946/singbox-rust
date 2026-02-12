@@ -6536,6 +6536,7 @@ dependencies = [
  "sb-config",
  "sb-core",
  "sb-types",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",

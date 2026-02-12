@@ -1,6 +1,6 @@
 //! Global TLS configuration utilities.
 //!
-//! Provides certificate store modes (System/Mozilla/None) and a process-wide
+//! Provides certificate store modes (System/Mozilla/Chrome/None) and a process-wide
 //! global certificate override mechanism. This centralizes TLS trust configuration
 //! so that all components (DNS, transports, outbounds) share a consistent trust store.
 
@@ -20,13 +20,15 @@ static CERT_DIRS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(V
 static STORE_MODE: LazyLock<RwLock<CertificateStoreMode>> =
     LazyLock::new(|| RwLock::new(CertificateStoreMode::System));
 
-/// Certificate store mode (Go parity: system/mozilla/none).
+/// Certificate store mode (Go parity: system/mozilla/chrome/none).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CertificateStoreMode {
     /// Load OS-native certificate pool (default, Go parity)
     System,
     /// Use built-in Mozilla/webpki root certificates
     Mozilla,
+    /// Chrome root store (approximated via webpki-roots; Chrome/Mozilla roots highly overlap)
+    Chrome,
     /// Empty pool — only custom CAs will be trusted
     None,
 }
@@ -36,6 +38,7 @@ impl CertificateStoreMode {
     pub fn from_str_opt(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "mozilla" => Self::Mozilla,
+            "chrome" => Self::Chrome,
             "none" => Self::None,
             _ => Self::System, // default
         }
@@ -89,6 +92,10 @@ pub fn base_root_store() -> RootCertStore {
             }
         }
         CertificateStoreMode::Mozilla => {
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        }
+        CertificateStoreMode::Chrome => {
+            tracing::debug!("Chrome certificate store mode: using webpki-roots (Chrome/Mozilla roots highly overlap)");
             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
         CertificateStoreMode::None => {
@@ -382,6 +389,42 @@ mod tests {
         // Should not panic on nonexistent directory
         load_pem_directory(&mut roots, "/nonexistent/path");
         assert!(roots.is_empty());
+    }
+
+    #[test]
+    fn test_chrome_mode_from_str_lowercase() {
+        assert_eq!(
+            CertificateStoreMode::from_str_opt("chrome"),
+            CertificateStoreMode::Chrome
+        );
+    }
+
+    #[test]
+    fn test_chrome_mode_from_str_mixed_case() {
+        assert_eq!(
+            CertificateStoreMode::from_str_opt("Chrome"),
+            CertificateStoreMode::Chrome
+        );
+        assert_eq!(
+            CertificateStoreMode::from_str_opt("CHROME"),
+            CertificateStoreMode::Chrome
+        );
+    }
+
+    #[test]
+    fn test_chrome_mode_non_empty() {
+        set_store_mode(CertificateStoreMode::Chrome);
+        // Clear any extras so we only measure what Chrome mode provides
+        *EXTRA_CA_PATHS.write() = Vec::new();
+        *EXTRA_CA_PEMS.write() = Vec::new();
+        *CERT_DIRS.write() = Vec::new();
+        let roots = base_root_store();
+        assert!(
+            !roots.is_empty(),
+            "Chrome mode should produce non-empty root store"
+        );
+        // Reset
+        set_store_mode(CertificateStoreMode::System);
     }
 }
 

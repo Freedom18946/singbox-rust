@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  singbox-rust:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        BUILD_FEATURES: "parity"
+    container_name: singbox-rust
+    restart: unless-stopped
+    ports:
+      - "1080:1080"   # SOCKS proxy
+      - "8080:8080"   # HTTP proxy
+      - "9090:9090"   # API
+    volumes:
+      - ./config:/etc/singbox:ro
+      - singbox-data:/var/lib/singbox
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9090/services/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  singbox-data:

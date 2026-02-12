@@ -37,6 +37,14 @@ harness = false
 name = "aead_crypto"
 harness = false
 
+[[bench]]
+name = "rate_limit_bench"
+harness = false
+
+[[bench]]
+name = "trojan_throughput"
+harness = false
+
 [dependencies]
 # Core dependencies
 sb-core = { path = "../crates/sb-core", features = ["router", "dns_udp", "dns_doh", "dns_dot", "dns_doq"] }
@@ -71,6 +79,7 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = "0.3"
 rand = "0.8"
+serde_json = "1.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -455,9 +455,15 @@ fn handle(
                     _ => {}
                 }
             }
+            let active_tasks = bridge.context.task_monitor.active_tasks();
+            let task_count = active_tasks.len();
             let obj = serde_json::json!({
                 "inbound": { "total_active": total_inbound, "entries": inb },
-                "cb_states": { "closed": cb_closed, "half_open": cb_half, "open": cb_open }
+                "cb_states": { "closed": cb_closed, "half_open": cb_half, "open": cb_open },
+                "task_monitor": {
+                    "count": task_count,
+                    "active_tasks": active_tasks
+                }
             });
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)

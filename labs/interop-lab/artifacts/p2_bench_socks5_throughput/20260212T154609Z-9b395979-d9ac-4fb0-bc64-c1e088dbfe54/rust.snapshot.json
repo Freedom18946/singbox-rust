@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "run_id": "20260212T154609Z-9b395979-d9ac-4fb0-bc64-c1e088dbfe54",
+  "case_id": "p2_bench_socks5_throughput",
+  "kernel": "rust",
+  "started_at": "2026-02-12T15:46:09.184874Z",
+  "finished_at": "2026-02-12T15:46:51.218112Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "socks5_bench",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "bench",
+          "-p",
+          "sb-benches",
+          "--bench",
+          "socks5_throughput",
+          "--",
+          "--noplot",
+          "--sample-size",
+          "20",
+          "--measurement-time",
+          "5"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 40087,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on build directory\n    Finished `bench` profile [optimized] target(s) in 0.40s\n     Running benches/socks5_throughput.rs (target/release/deps/socks5_throughput-eda4467e9adacc81)\nGnuplot not found, using plotters backend\nBenchmarking socks5_handshake\nBenchmarking socks5_handshake: Warming up for 3.0000 s\nBenchmarking socks5_handshake: Collecting 20 samples in estimated 5.0149 s (18k iterations)\nBenchmarking socks5_handshake: Analyzing\nBenchmarking socks5_throughput/1024\nBenchmarking socks5_throughput/1024: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1024: Collecting 20 samples in estimated 5.0141 s (19k iterations)\nBenchmarking socks5_throughput/1024: Analyzing\nBenchmarking socks5_throughput/65536\nBenchmarking socks5_throughput/65536: Warming up for 3.0000 s\nBenchmarking socks5_throughput/65536: Collecting 20 samples in estimated 5.1369 s (6300 iterations)\nBenchmarking socks5_throughput/65536: Analyzing\nBenchmarking socks5_throughput/1048576\nBenchmarking socks5_throughput/1048576: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1048576: Collecting 20 samples in estimated 5.0624 s (840 iterations)\nBenchmarking socks5_throughput/1048576: Analyzing\n",
+        "stdout": "socks5_handshake        time:   [200.33 µs 257.60 µs 340.32 µs]\n                        change: [-25.991% +12.896% +66.390%] (p = 0.59 > 0.05)\n                        No change in performance detected.\nFound 3 outliers among 20 measurements (15.00%)\n  3 (15.00%) high mild\n\nsocks5_throughput/1024  time:   [418.98 µs 427.67 µs 445.50 µs]\n                        thrpt:  [2.1921 MiB/s 2.2834 MiB/s 2.3308 MiB/s]\n                 change:\n                        time:   [-8.1702% +25.110% +66.166%] (p = 0.17 > 0.05)\n                        thrpt:  [-39.819% -20.071% +8.8971%]\n                        No change in performance detected.\nFound 5 outliers among 20 measurements (25.00%)\n  1 (5.00%) high mild\n  4 (20.00%) high severe\nsocks5_throughput/65536 time:   [779.49 µs 793.88 µs 813.69 µs]\n                        thrpt:  [76.811 MiB/s 78.727 MiB/s 80.181 MiB/s]\n                 change:\n                        time:   [+9.2647% +11.377% +13.733%] (p = 0.00 < 0.05)\n                        thrpt:  [-12.074% -10.215% -8.4791%]\n                        Performance has regressed.\nFound 3 outliers among 20 measurements (15.00%)\n  2 (10.00%) low mild\n  1 (5.00%) high mild\nsocks5_throughput/1048576\n                        time:   [5.9647 ms 6.0068 ms 6.0620 ms]\n                        thrpt:  [164.96 MiB/s 166.48 MiB/s 167.65 MiB/s]\n                 change:\n                        time:   [-10.443% -5.6235% -0.7125%] (p = 0.04 < 0.05)\n                        thrpt:  [+0.7177% +5.9586% +11.660%]\n                        Change within noise threshold.\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

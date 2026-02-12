@@ -8,6 +8,7 @@
 //! - Auto-update with ETag/If-Modified-Since
 //! - Graceful fallback on download failure
 
+pub mod adguard;
 pub mod binary;
 pub mod cache;
 pub mod matcher;

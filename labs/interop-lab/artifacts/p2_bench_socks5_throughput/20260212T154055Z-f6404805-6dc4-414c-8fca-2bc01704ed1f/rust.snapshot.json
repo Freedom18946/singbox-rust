@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "run_id": "20260212T154055Z-f6404805-6dc4-414c-8fca-2bc01704ed1f",
+  "case_id": "p2_bench_socks5_throughput",
+  "kernel": "rust",
+  "started_at": "2026-02-12T15:40:55.010715Z",
+  "finished_at": "2026-02-12T15:42:56.816237Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "socks5_bench",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "bench",
+          "-p",
+          "sb-benches",
+          "--bench",
+          "socks5_throughput",
+          "--",
+          "--noplot",
+          "--sample-size",
+          "20",
+          "--measurement-time",
+          "5"
+        ],
+        "command": "cargo",
+        "elapsed_ms": 119237,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n   Compiling ring v0.17.14\n   Compiling rustls v0.23.35\n   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)\n   Compiling rustls-webpki v0.103.8\n   Compiling rcgen v0.13.2\n   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)\n   Compiling tokio-rustls v0.26.4\n   Compiling rustls-platform-verifier v0.6.2\n   Compiling quinn-proto v0.11.13\n   Compiling hyper-rustls v0.27.7\n   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)\n   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)\n   Compiling reqwest v0.12.28\n   Compiling quinn v0.11.9\n   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)\n   Compiling sb-benches v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches)\n    Finished `bench` profile [optimized] target(s) in 1m 14s\n     Running benches/socks5_throughput.rs (target/release/deps/socks5_throughput-eda4467e9adacc81)\nGnuplot not found, using plotters backend\nBenchmarking socks5_handshake\nBenchmarking socks5_handshake: Warming up for 3.0000 s\nBenchmarking socks5_handshake: Collecting 20 samples in estimated 5.0246 s (18k iterations)\nBenchmarking socks5_handshake: Analyzing\nBenchmarking socks5_throughput/1024\nBenchmarking socks5_throughput/1024: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1024: Collecting 20 samples in estimated 5.0410 s (21k iterations)\nBenchmarking socks5_throughput/1024: Analyzing\nBenchmarking socks5_throughput/65536\nBenchmarking socks5_throughput/65536: Warming up for 3.0000 s\nBenchmarking socks5_throughput/65536: Collecting 20 samples in estimated 5.1068 s (6930 iterations)\nBenchmarking socks5_throughput/65536: Analyzing\nBenchmarking socks5_throughput/1048576\nBenchmarking socks5_throughput/1048576: Warming up for 3.0000 s\nBenchmarking socks5_throughput/1048576: Collecting 20 samples in estimated 6.2238 s (1050 iterations)\nBenchmarking socks5_throughput/1048576: Analyzing\n",
+        "stdout": "socks5_handshake        time:   [214.11 µs 292.95 µs 374.11 µs]\n                        change: [-34.852% -12.749% +18.019%] (p = 0.37 > 0.05)\n                        No change in performance detected.\n\nsocks5_throughput/1024  time:   [393.06 µs 402.52 µs 416.51 µs]\n                        thrpt:  [2.3446 MiB/s 2.4261 MiB/s 2.4845 MiB/s]\n                 change:\n                        time:   [+49.188% +115.15% +234.32%] (p = 0.00 < 0.05)\n                        thrpt:  [-70.089% -53.520% -32.971%]\n                        Performance has regressed.\nFound 1 outliers among 20 measurements (5.00%)\n  1 (5.00%) high severe\nsocks5_throughput/65536 time:   [727.63 µs 736.76 µs 747.22 µs]\n                        thrpt:  [83.643 MiB/s 84.831 MiB/s 85.896 MiB/s]\n                 change:\n                        time:   [-11.837% -10.675% -9.4980%] (p = 0.00 < 0.05)\n                        thrpt:  [+10.495% +11.951% +13.426%]\n                        Performance has improved.\nFound 1 outliers among 20 measurements (5.00%)\n  1 (5.00%) high mild\nsocks5_throughput/1048576\n                        time:   [6.4088 ms 6.9252 ms 7.2667 ms]\n                        thrpt:  [137.61 MiB/s 144.40 MiB/s 156.03 MiB/s]\n                 change:\n                        time:   [-4.3447% +4.0419% +11.355%] (p = 0.34 > 0.05)\n                        thrpt:  [-10.197% -3.8849% +4.5420%]\n                        No change in performance detected.\n\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

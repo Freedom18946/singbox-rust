@@ -734,9 +734,12 @@ impl Bridge {
         );
 
         // Best-effort DNSRouter for services (e.g., DERP /bootstrap-dns).
+        #[cfg(feature = "router")]
         let dns_router = crate::dns::config_builder::build_dns_components(ir, None)
             .ok()
             .and_then(|(_resolver, router)| router);
+        #[cfg(not(feature = "router"))]
+        let dns_router: Option<std::sync::Arc<dyn crate::dns::DnsRouter>> = None;
 
         // Build services from IR
         for service_ir in &ir.services {

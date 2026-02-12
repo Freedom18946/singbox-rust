@@ -1,11 +1,40 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-11
-> **当前阶段**：L5-L7 ✅ Closed + L12-L14 规划中
+> **最后更新**：2026-02-12
+> **当前阶段**：L16 ✅ Closed（单分支并行收口）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
-> **Interop Lab**：57 YAML case，11 unit tests，22/22 work packages complete
+> **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## ✅ 最新进展：L16 全量落地完成（10/10 WP）
+
+**日期**：2026-02-12  
+**状态**：✅ 全部完成
+
+**完成要点**：
+- ✅ L16.1.1 Criterion 基准正式化：`scripts/run_benchmarks.sh` 统一产物目录，`baseline.json` 汇总 116 benchmark 键。
+- ✅ L16.1.2 Go vs Rust 吞吐对比：`scripts/bench_vs_go.sh` 产出固定列 CSV，4 协议均有 rust/go 记录（pass 或 env_limited）。
+- ✅ L16.1.3 延迟百分位基线：`latency_percentiles.json` 含 socks5/shadowsocks/vmess/trojan 的 `p50/p95/p99/sample_size`。
+- ✅ L16.1.4 Feature matrix：`service_resolved` 依赖修复（`dns_udp`），`cargo run -p xtask -- feature-matrix` 46/46 全绿。
+- ✅ L16.2.1 内存对比：`scripts/bench_memory.sh` 统一 rust/go 结构输出，含 idle/100/1000 与 delta/status/reason。
+- ✅ L16.2.2 热重载稳定性：`app/tests/hot_reload_stability.rs` 增强 `/healthz` 连续可达 + FD/RSS 阈值；`reports/stability/hot_reload_100x.json`。
+- ✅ L16.2.3 信号稳定性：`app/tests/signal_reliability.rs` 增强 SIGTERM/端口回收/active task 趋势判定；`reports/stability/signal_reliability_10x.json`。
+- ✅ L16.2.4 interop bench case：`p2_bench_socks5_throughput`、`p2_bench_shadowsocks_throughput` 可执行并产出 artifacts。
+- ✅ L16.3.1 CI bench gate：`bench_compare.sh` 产出 `pass|warn|fail` JSON，workflow 告警但不阻断合并。
+- ✅ L16.3.2 状态总线同步：`CLAUDE.md`、`agents-only/active_context.md`、`agents-only/workpackage_latest.md` 已更新。
+
+**关键证据路径**：
+- `reports/benchmarks/baseline.json`
+- `reports/benchmarks/latency_percentiles.json`
+- `reports/benchmarks/go_vs_rust_throughput.csv`
+- `reports/benchmarks/memory_comparison.json`
+- `reports/benchmarks/bench_regression_status.json`
+- `reports/feature_matrix_report.txt`
+- `reports/stability/hot_reload_100x.json`
+- `reports/stability/signal_reliability_10x.json`
 
 ---
 

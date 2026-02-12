@@ -1,0 +1,133 @@
+{
+  "binary": "../target/debug/run",
+  "config": "../labs/interop-lab/configs/bench_rust.json",
+  "iterations": 10,
+  "result": "pass",
+  "rounds": [
+    {
+      "admin_addr": "127.0.0.1:19190",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72453,
+      "port_released": true,
+      "round": 1,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19191",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72462,
+      "port_released": true,
+      "round": 2,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19192",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72473,
+      "port_released": true,
+      "round": 3,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19193",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72482,
+      "port_released": true,
+      "round": 4,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19194",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72492,
+      "port_released": true,
+      "round": 5,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19195",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72501,
+      "port_released": true,
+      "round": 6,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19196",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72511,
+      "port_released": true,
+      "round": 7,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19197",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72520,
+      "port_released": true,
+      "round": 8,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19198",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72530,
+      "port_released": true,
+      "round": 9,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    },
+    {
+      "admin_addr": "127.0.0.1:19199",
+      "exited_in_time": true,
+      "health_ready": true,
+      "pid": 72539,
+      "port_released": true,
+      "round": 10,
+      "sigterm_exit_code": 0,
+      "task_count": 0
+    }
+  ],
+  "task_count_series": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "test": "signal_reliability_10x",
+  "threshold_check": {
+    "active_task_not_persistently_increasing": true,
+    "first_task_count": 0,
+    "health_ready_all_rounds": true,
+    "increasing_streak_detected": false,
+    "last_task_count": 0,
+    "max_allowed_task_delta": 2,
+    "port_released_all_rounds": true,
+    "sigterm_exit_zero_all_rounds": true,
+    "task_delta": 0
+  },
+  "timestamp": "2026-02-12T15:21:16.543358+00:00"
+}

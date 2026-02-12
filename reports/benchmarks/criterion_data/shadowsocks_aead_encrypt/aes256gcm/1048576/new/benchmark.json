@@ -1,0 +1,1 @@
+{"group_id":"shadowsocks_aead_encrypt","function_id":"aes256gcm","value_str":"1048576","throughput":{"Bytes":1048576},"full_id":"shadowsocks_aead_encrypt/aes256gcm/1048576","directory_name":"shadowsocks_aead_encrypt/aes256gcm/1048576","title":"shadowsocks_aead_encrypt/aes256gcm/1048576"}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p2_bench_shadowsocks_throughput",
+  "generated_at": "2026-02-12T15:45:06.301990Z",
+  "run_id": "20260212T154055Z-1b359c55-168b-41e3-95b6-d35e587f22c2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p2_bench_shadowsocks_throughput/20260212T154055Z-1b359c55-168b-41e3-95b6-d35e587f22c2/rust.snapshot.json"
+  ]
+}

@@ -1,0 +1,6 @@
+! Title: Test AdGuard filter for interop-lab
+! Last modified: 2026-02-12
+||example.com^
+||ads.example.net^
+@@||safe.example.com^
+/banner/*/img^

@@ -475,6 +475,16 @@ path = "tests/multiplex_vless_e2e.rs"
 # It remains gated behind a non-declared feature to avoid breaking all-features runs.
 required-features = ["net_e2e", "tls_reality", "vless_mux_ready"]
 
+[[test]]
+name = "hot_reload_stability"
+path = "tests/hot_reload_stability.rs"
+required-features = ["long_tests"]
+
+[[test]]
+name = "signal_reliability"
+path = "tests/signal_reliability.rs"
+required-features = ["long_tests"]
+
 [[bench]]
 name = "bench_p0_protocols"
 harness = false

@@ -1,0 +1,76 @@
+name: Bench Regression Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'benches/**'
+      - 'app/**'
+
+jobs:
+  bench-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Run subset benchmarks
+        run: |
+          cargo bench -p sb-benches -- --save-baseline pr 2>&1 | tee bench_output.txt || true
+
+      - name: Compare with baseline
+        id: bench_gate
+        run: |
+          chmod +x scripts/bench_compare.sh
+          set +e
+          scripts/bench_compare.sh \
+            bench_output.txt \
+            reports/benchmarks/baseline.json \
+            reports/benchmarks/bench_regression_status.json
+          CODE=$?
+          echo "exit_code=${CODE}" >> "$GITHUB_OUTPUT"
+          if [ "$CODE" -eq 2 ]; then
+            echo "::warning::Benchmark regression >10% detected (non-blocking gate)"
+          elif [ "$CODE" -eq 1 ]; then
+            echo "::warning::Benchmark regression >5% detected (non-blocking gate)"
+          fi
+          set -e
+        continue-on-error: true
+
+      - name: Write bench gate summary
+        if: always()
+        run: |
+          echo "### Bench Regression Gate" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/benchmarks/bench_regression_status.json ]; then
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat reports/benchmarks/bench_regression_status.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_No status report generated._" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            bench_output.txt
+            reports/benchmarks/
+            reports/benchmarks/bench_regression_status.json
+          retention-days: 30

@@ -1,0 +1,39 @@
+id: p2_bench_socks5_throughput
+title: SOCKS5 throughput benchmark integration
+priority: p2
+kernel_mode: rust
+env_class: env_limited
+tags:
+  - benchmark
+  - throughput
+  - socks5
+owner: L16
+bootstrap:
+  rust:
+    startup_timeout_ms: 5000
+    ready_path: /
+    api:
+      base_url: https://example.com
+gui_sequence: []
+upstream_topology: []
+traffic_plan:
+  - kind: command
+    name: socks5_bench
+    command: cargo
+    args:
+      - bench
+      - -p
+      - sb-benches
+      - --bench
+      - socks5_throughput
+      - --
+      - --noplot
+      - --sample-size
+      - "20"
+      - --measurement-time
+      - "5"
+    timeout_ms: 600000
+    expect_exit: 0
+assertions: []
+oracle:
+  tolerate_counter_jitter: true

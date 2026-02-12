@@ -1,0 +1,1 @@
+{"group_id":"shadowsocks_decrypt","function_id":"aes-256-gcm","value_str":"1024","throughput":{"Bytes":1024},"full_id":"shadowsocks_decrypt/aes-256-gcm/1024","directory_name":"shadowsocks_decrypt/aes-256-gcm/1024","title":"shadowsocks_decrypt/aes-256-gcm/1024"}

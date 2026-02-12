@@ -1,0 +1,9 @@
+protocol,core,throughput_mbps,latency_p50_ms,latency_p95_ms,status,reason,timestamp
+socks5,rust,1363.568,6.152,6.326,pass,,2026-02-12T14:58:40Z
+socks5,go,0.0,0.0,0.0,env_limited,go_binary_built_no_protocol_bench_suite,2026-02-12T14:58:40Z
+shadowsocks,rust,1466.748,5.719,5.816,pass,,2026-02-12T14:58:40Z
+shadowsocks,go,0.0,0.0,0.0,env_limited,go_binary_built_no_protocol_bench_suite,2026-02-12T14:58:40Z
+vmess,rust,1533.521,5.47,5.522,pass,,2026-02-12T14:58:40Z
+vmess,go,0.0,0.0,0.0,env_limited,go_binary_built_no_protocol_bench_suite,2026-02-12T14:58:40Z
+trojan,rust,0.0,0.0,0.0,env_limited,unable_to_parse_rust_benchmark_metrics,2026-02-12T14:58:40Z
+trojan,go,0.0,0.0,0.0,env_limited,go_binary_built_no_protocol_bench_suite,2026-02-12T14:58:40Z

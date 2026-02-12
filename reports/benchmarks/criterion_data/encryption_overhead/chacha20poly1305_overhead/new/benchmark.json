@@ -1,0 +1,1 @@
+{"group_id":"encryption_overhead","function_id":"chacha20poly1305_overhead","value_str":null,"throughput":{"Bytes":65536},"full_id":"encryption_overhead/chacha20poly1305_overhead","directory_name":"encryption_overhead/chacha20poly1305_overhead","title":"encryption_overhead/chacha20poly1305_overhead"}

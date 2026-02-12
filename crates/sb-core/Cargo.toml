@@ -240,7 +240,7 @@ service_ssmapi     = ["dep:axum", "dep:axum-server"]
 service_clash_api  = ["dep:axum"]
 service_v2ray_api  = ["dep:axum", "dep:tonic", "dep:tonic-build"]
 service_derp       = ["dep:tokio-tungstenite", "dep:hyper", "dep:reqwest", "tls_rustls"]
-service_resolved   = []
+service_resolved   = ["dns_udp"]
 # Network monitor for tracking network changes (Linux netlink)
 network_monitor    = []
 

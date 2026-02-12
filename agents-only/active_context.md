@@ -7,12 +7,30 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L12-L14 ✅ Closed**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L14 ✅）
+**当前阶段**: **L12-L16 ✅ Closed**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: 1587+ passed；boundary gate snapshot (2026-02-12): `check-boundaries.sh` pass（V4a=24 <= 25）
-**Interop-lab cases**: 77 total (68 strict, 8 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
+**Tests**: 1617 passed；boundary gate snapshot (2026-02-12): `check-boundaries.sh` pass（V4a=24 <= 25）
+**Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
+
+### L16 基准与稳定性（2026-02-12 已完成）
+
+- `feature-matrix` 全绿：`cargo run -p xtask -- feature-matrix` → 46/46（`reports/feature_matrix_report.txt`）。
+- Benchmark 产物已落地：
+  - `reports/benchmarks/baseline.json`（116 benchmark 键）
+  - `reports/benchmarks/latency_percentiles.json`（socks5/shadowsocks/vmess/trojan 四项 p50/p95/p99/sample_size）
+  - `reports/benchmarks/go_vs_rust_throughput.csv`（固定列，4 协议 × rust/go）
+  - `reports/benchmarks/memory_comparison.json`（rust/go + idle/100/1000 + delta + status/reason）
+- 长稳测试通过并落盘：
+  - `cargo test -p app --test hot_reload_stability --features long_tests`
+  - `cargo test -p app --test signal_reliability --features long_tests`
+  - 报告：`reports/stability/hot_reload_100x.json`、`reports/stability/signal_reliability_10x.json`
+- CI bench gate 收口：`scripts/bench_compare.sh` 产出 `reports/benchmarks/bench_regression_status.json`（`pass|warn|fail`）；`.github/workflows/bench-regression.yml` 已改为 warn/fail 告警且 non-blocking。
+- L16.2.4 interop case 已可执行并有证据目录：
+  - `cargo run -p interop-lab -- case run p2_bench_socks5_throughput`
+  - `cargo run -p interop-lab -- case run p2_bench_shadowsocks_throughput`
+  - artifacts: `labs/interop-lab/artifacts/p2_bench_*/<run_id>/rust.snapshot.json`
 
 ### 联测运行约束（2026-02-10 新增）
 
@@ -56,6 +74,7 @@
 | **L12 迁移兼容治理** | 2026-02-12 | WireGuard outbound→endpoint 迁移检测、V1→V2 字段重命名、flat conditions→when wrapper、default_outbound→route.default；3 interop-lab case |
 | **L13 Services 安全与生命周期** | 2026-02-12 | Clash API auth middleware（Go parity）、SSMAPI auth middleware、non-localhost binding warning、ServiceStatus enum 服务故障隔离、Health API endpoint；2 interop-lab case |
 | **L14 TLS/Endpoint 高级能力** | 2026-02-12 | TLS高级能力 + 证书管理 + 趋势门禁CI化 + interop-lab TLS case |
+| **L15 CLI 完善与功能补全** | 2026-02-12 | generate uuid/rand/ech-keypair + AdGuard convert + Chrome cert store + format -w + 验收清单签署 + 4 interop-lab CLI case |
 
 ### L12 迁移兼容治理（2026-02-12 已完成）
 
@@ -84,6 +103,20 @@
 - **Nightly 趋势门禁模板（L14.2.1）**: 五套阈值配置模板 — `strict`/`strict_default`（零容错）、`env_limited`/`env_limited_default`（适度容忍）、`development`（宽松），与 `run_case_trend_gate.sh` 集成。
 - **interop-lab TLS case（4 个）**: `p1_tls_cert_store_mozilla`（mozilla 模式 TLS 验证）、`p1_tls_cert_store_none_custom_ca`（none 模式+自定义 CA）、`p1_tls_fragment_activation`（TLS fragment 激活验证）、`p1_tls_fragment_wiring`（TLS fragment 配置→运行时接线验证）。
 
+### L15 CLI 完善与功能补全（2026-02-12 已完成）
+
+- **generate uuid（L15.1.1）**: UUID v4 生成，`uuid` crate。1 个单元测试 + E2E 验证（36 字符，version=4，variant=8/9/a/b）。
+- **generate rand（L15.1.2）**: 随机字节生成，支持 `--base64`（24 字符/16 bytes）和 `--hex`（32 字符/16 bytes）输出格式。3 个单元测试 + E2E 验证。
+- **generate ech-keypair（L15.1.3）**: Go 兼容 ECH PEM 编码（`ECH CONFIGS` / `ECH KEYS` header），X25519 DHKEM + 3 cipher suites wire-format。`crates/sb-tls/src/ech_keygen.rs`（262 行，6 个单元测试）。E2E 验证含 `server_name` 参数。
+- **rule-set convert --type adguard（L15.1.4）**: AdGuard DNS filter 解析器，`crates/sb-core/src/router/ruleset/adguard.rs`（723 行）。支持 `||domain^`/`@@||domain^`/`/regex/`/`$important`/hosts 格式/纯域名。20 个单元测试。
+- **rule-set format --write/-w（L15.1.5）**: 原地写回格式化 JSON。3 个单元测试（写回验证、`--write`+`--output` 冲突检测、ConvertType 默认值）。
+- **Chrome 证书存储模式（L15.1.6）**: `CertificateStoreMode::Chrome` 变体，使用 webpki-roots（与 Mozilla 模式共享根证书库）。4 个 Chrome 专属测试（大小写解析、非空验证、fingerprint）。
+- **PX-015 CI 占位（L15.2.3）**: `.github/workflows/linux-resolved-validation.yml`（workflow_dispatch 触发，ubuntu-latest，dual/single/both 场景选择）。GO_PARITY_MATRIX.md PX-015 行已标注 deferred + CI workflow 引用。
+- **验收清单签署（L15.2.1）**: `99-验收清单总表.md` 全部 33 项 A~I 节已 `[x]` 并附证据链。签署日期 2026-02-12。
+- **interop-lab CLI case（4 个）**: `p1_cli_generate_uuid_format`（UUID v4 正则断言）、`p1_cli_generate_rand_base64`（24 字符长度断言）、`p1_cli_ruleset_convert_adguard`（domain_suffix 输出断言）、`p1_cli_ech_keypair_pem_format`（ECH PEM header 断言）。
+- **测试修复**: `dns_integration.rs` 环境变量竞态修复（`set_var`→显式 config 传参，5 轮稳定）。
+- **验证结果**: `cargo test --workspace` 1617 passed；`cargo test -p sb-tls` 93 passed；`cargo test -p sb-core --lib` 448 passed；全部 CLI 命令 E2E 通过。
+
 ### 关键参考
 
 - **Clash API 审计报告**: `agents-only/05-analysis/CLASH-API-AUDIT.md`
@@ -94,9 +127,38 @@
 - **PX-015 Linux 验证记录**: `reports/PX015_LINUX_VALIDATION_2026-02-10.md`
 - **L5-L11 联测仿真计划（实施版）**: `agents-only/03-planning/07-L5-L11-INTEROP-LAB-PLAN.md`
 - **L5~L7 详细工作包规划**: `agents-only/03-planning/09-L5-L7-DETAILED-WORKPACKAGES.md`
+- **L15-L17 工作包规划**: `agents-only/03-planning/11-L15-L17-DETAILED-WORKPACKAGES.md`
+- **Go Specs 验收清单（已签署）**: `agents-only/dump/go-version-analysis/2026-02-11-intake/sing-box-core-specs/99-验收清单总表.md`
 - **历史 L3 Scope（服务补全）**: 见下方（已并入 M2.4）
 
 ---
+
+## ✅ 最新完成：L15 CLI 完善与功能补全
+
+**日期**: 2026-02-12
+
+**完成项**:
+- **generate 命令补全**: `uuid`（UUID v4）、`rand --base64/--hex`、`ech-keypair`（Go 兼容 PEM）— 13 个单元测试，全部 E2E 验证通过
+- **AdGuard DNS filter 解析器**: `rule-set convert --type adguard` — 723 行，20 个单元测试，支持 `||domain^`/`@@`/`/regex/`/`$important`/hosts 格式
+- **rule-set format --write/-w**: 原地格式化写回 — 3 个单元测试
+- **Chrome 证书存储模式**: `CertificateStoreMode::Chrome`（webpki-roots）— 4 个测试
+- **PX-015 CI 占位**: `linux-resolved-validation.yml`（workflow_dispatch）
+- **验收清单签署**: 33 项全部 `[x]` 并附证据链
+- **4 个 interop-lab CLI case**: uuid/rand/adguard/ech-keypair 断言
+- **测试修复**: `dns_integration.rs` 环境变量竞态消除
+
+**关键文件变更**:
+| 文件 | 改动 |
+|------|------|
+| `app/src/cli/generate.rs` | +Uuid/Rand/EchKeypair 变体 + 13 测试 |
+| `app/src/cli/ruleset.rs` | +ConvertType::Adguard + Format --write/-w + 3 测试 |
+| `crates/sb-core/src/router/ruleset/adguard.rs` | 新建：723 行 AdGuard 解析器 + 20 测试 |
+| `crates/sb-tls/src/ech_keygen.rs` | 新建：262 行 ECH keygen + 6 测试 |
+| `crates/sb-tls/src/global.rs` | +CertificateStoreMode::Chrome |
+| `crates/sb-core/src/router/dns_integration.rs` | 修复 env var 竞态 |
+| `.github/workflows/linux-resolved-validation.yml` | PX-015 CI workflow |
+
+**验证**: `cargo test --workspace` 1617 passed；81 interop-lab cases
 
 ## ✅ 最新完成：L5-L7 联测仿真全量实施（22 工作包）
 
@@ -850,4 +912,4 @@ PX-007 Won't Fix (架构差异)
 
 ---
 
-*最后更新：2026-02-12（L12 迁移兼容治理 + L13 Services 安全与生命周期 + L14 Go规格收敛全部完成）*
+*最后更新：2026-02-12（L12 迁移兼容治理 + L13 Services 安全与生命周期 + L14 Go规格收敛 + L15 CLI完善与功能补全 全部完成）*

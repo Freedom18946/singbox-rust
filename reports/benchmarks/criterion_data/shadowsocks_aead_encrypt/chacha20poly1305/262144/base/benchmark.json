@@ -1,0 +1,1 @@
+{"group_id":"shadowsocks_aead_encrypt","function_id":"chacha20poly1305","value_str":"262144","throughput":{"Bytes":262144},"full_id":"shadowsocks_aead_encrypt/chacha20poly1305/262144","directory_name":"shadowsocks_aead_encrypt/chacha20poly1305/262144","title":"shadowsocks_aead_encrypt/chacha20poly1305/262144"}

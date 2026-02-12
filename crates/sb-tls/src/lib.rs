@@ -114,6 +114,10 @@ pub mod ech;
 #[cfg(feature = "acme")]
 pub mod acme;
 
+/// ECH keypair generation (Go-compatible PEM output)
+/// ECH 密钥对生成（Go 兼容 PEM 输出）
+pub mod ech_keygen;
+
 /// uTLS Client Fingerprinting
 /// uTLS 客户端指纹模拟
 ///

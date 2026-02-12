@@ -1,5 +1,12 @@
+# cargo-deny configuration
+# Run: cargo deny check
+
 [advisories]
 version = 2
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "deny"          # No yanked crates allowed
+notice = "warn"
 ignore = [
   # Unmaintained - no upgrade available, tracking for future replacement
   "RUSTSEC-2025-0119",  # number_prefix unmaintained (via indicatif)
@@ -7,12 +14,28 @@ ignore = [
   "RUSTSEC-2025-0057",  # fxhash unmaintained (via sled)
   "RUSTSEC-2024-0384",  # instant unmaintained (via sled->parking_lot 0.11)
 ]
-yanked = "deny"          # Changed from warn to deny - no yanked crates allowed
-unmaintained = "all"     # Report all unmaintained crates
 
 [licenses]
 version = 2
-allow = ["MIT","Apache-2.0","BSD-3-Clause","BSD-2-Clause","ISC","Unicode-DFS-2016","Unicode-3.0","CDLA-Permissive-2.0","Zlib","OpenSSL","0BSD","CC0-1.0","WTFPL"]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "BSL-1.0",
+    "OpenSSL",
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "0BSD",
+    "WTFPL",
+]
+copyleft = "warn"
 confidence-threshold = 0.8
 # Workspace crates without explicit license - allow them
 [licenses.private]
@@ -22,3 +45,9 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

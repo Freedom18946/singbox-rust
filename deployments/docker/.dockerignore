@@ -1,0 +1,9 @@
+target/
+.git/
+agents-only/
+go_fork_source/
+GUI_fork_source/
+labs/
+reports/
+*.md
+!README.md

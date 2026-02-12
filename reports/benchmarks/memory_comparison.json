@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-02-12T15:34:08.097282+00:00",
+  "platform": "Darwin-arm64",
+  "rust": {
+    "status": "pass",
+    "reason": "",
+    "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/run",
+    "config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/bench_rust.json",
+    "measurements": {
+      "idle": {
+        "rss_kb": 1808,
+        "fd_count": 11
+      },
+      "connections_100": {
+        "rss_kb": 1808,
+        "fd_count": 11,
+        "delta_over_idle_kb": 0,
+        "note": "measured"
+      },
+      "connections_1000": {
+        "rss_kb": 1024,
+        "fd_count": 11,
+        "delta_over_idle_kb": -784,
+        "note": "measured"
+      }
+    }
+  },
+  "go": {
+    "status": "env_limited",
+    "reason": "process_failed_to_start",
+    "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box",
+    "config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/bench_go.json",
+    "measurements": {
+      "idle": {
+        "rss_kb": 0,
+        "fd_count": 0
+      },
+      "connections_100": {
+        "rss_kb": 0,
+        "fd_count": 0,
+        "delta_over_idle_kb": 0,
+        "note": "unavailable"
+      },
+      "connections_1000": {
+        "rss_kb": 0,
+        "fd_count": 0,
+        "delta_over_idle_kb": 0,
+        "note": "unavailable"
+      }
+    }
+  }
+}

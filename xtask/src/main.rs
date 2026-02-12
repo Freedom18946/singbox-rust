@@ -144,6 +144,7 @@ fn cmd_feature_matrix() -> Result<()> {
     let cases = build_feature_matrix_cases();
     let total = cases.len();
     let mut failures = Vec::new();
+    let mut results: Vec<(&str, &str, bool)> = Vec::new();
 
     for (idx, case) in cases.iter().enumerate() {
         info(&format!(
@@ -155,17 +156,43 @@ fn cmd_feature_matrix() -> Result<()> {
         ));
         info(&format!("    {}", describe_case(case)));
 
-        match run_feature_case(case) {
-            Ok(_) => success("通过"),
+        let passed = match run_feature_case(case) {
+            Ok(_) => {
+                success("通过");
+                true
+            }
             Err(err) => {
                 warn(&format!("失败: {}", err));
                 failures.push((case.name, err.to_string()));
+                false
             }
-        }
+        };
+        results.push((case.package, case.name, passed));
     }
 
+    // Write report
+    let report_dir = Path::new("reports");
+    let _ = std::fs::create_dir_all(report_dir);
+    let passed_count = results.iter().filter(|r| r.2).count();
+    let mut report = format!(
+        "Feature Matrix Report\nTotal: {} cases\nPassed: {}\nFailed: {}\n\n",
+        total, passed_count, failures.len()
+    );
+    for (pkg, name, passed) in &results {
+        report.push_str(&format!(
+            "[{}] {}: {} — {}\n",
+            if *passed { "PASS" } else { "FAIL" },
+            pkg,
+            name,
+            if *passed { "OK" } else { "FAILED" }
+        ));
+    }
+    let report_path = report_dir.join("feature_matrix_report.txt");
+    let _ = std::fs::write(&report_path, &report);
+    info(&format!("报告已写入: {}", report_path.display()));
+
     if failures.is_empty() {
-        success("特性矩阵全部通过");
+        success(&format!("特性矩阵全部通过 ({} cases)", total));
         Ok(())
     } else {
         warn("以下特性组合失败：");
@@ -300,6 +327,65 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
                 "adapter-socks",
                 "adapter-shadowsocks",
             ]),
+        // ────────────────────────────────────────────────────────
+        // L16.1.4 — Exhaustive expansion (14 new cases)
+        // ────────────────────────────────────────────────────────
+
+        // Empty features (truly minimal build)
+        MatrixCase::new("app", "Empty features", Check)
+            .with_no_default(),
+
+        // Each adapter independently — adapters not yet covered above
+        MatrixCase::new("sb-adapters", "AnyTLS adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-anytls"]),
+        MatrixCase::new("sb-adapters", "SSH adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-ssh"]),
+        MatrixCase::new("sb-adapters", "TUN adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-tun"]),
+
+        // App with tools-only
+        MatrixCase::new("app", "Tools only", Check)
+            .with_no_default()
+            .with_features(&["tools"]),
+
+        // App with parity preset
+        MatrixCase::new("app", "Parity preset", Check)
+            .with_no_default()
+            .with_features(&["parity"]),
+
+        // App acceptance preset
+        MatrixCase::new("app", "Acceptance preset", Check)
+            .with_no_default()
+            .with_features(&["acceptance"]),
+
+        // sb-core services
+        MatrixCase::new("sb-core", "NTP service", Check)
+            .with_no_default()
+            .with_features(&["service_ntp"]),
+        MatrixCase::new("sb-core", "Resolved service", Check)
+            .with_no_default()
+            .with_features(&["service_resolved"]),
+        MatrixCase::new("sb-core", "Router + legacy", Check)
+            .with_no_default()
+            .with_features(&["router", "legacy_protocols"]),
+
+        // sb-adapters combinations
+        MatrixCase::new("sb-adapters", "All QUIC adapters", Check)
+            .with_no_default()
+            .with_features(&["adapter-hysteria", "adapter-hysteria2", "adapter-tuic"]),
+        MatrixCase::new("sb-adapters", "TLS adapters", Check)
+            .with_no_default()
+            .with_features(&["adapter-trojan", "adapter-vless", "tls_reality"]),
+
+        // sb-tls combinations
+        MatrixCase::new("sb-tls", "Default TLS", Check)
+            .with_no_default(),
+        MatrixCase::new("sb-tls", "ECH feature", Check)
+            .with_no_default()
+            .with_features(&["ech"]),
     ]
 }
 

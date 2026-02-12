@@ -1,0 +1,1 @@
+{"group_id":"shadowsocks_encrypt","function_id":"chacha20-poly1305","value_str":"1024","throughput":{"Bytes":1024},"full_id":"shadowsocks_encrypt/chacha20-poly1305/1024","directory_name":"shadowsocks_encrypt/chacha20-poly1305/1024","title":"shadowsocks_encrypt/chacha20-poly1305/1024"}

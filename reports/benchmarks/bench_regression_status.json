@@ -1,0 +1,11 @@
+{
+  "status": "pass",
+  "reason": "within_threshold",
+  "generated": "2026-02-12T15:34:34.563328+00:00",
+  "summary": {
+    "compared": 16,
+    "improved": 0,
+    "warnings": 0,
+    "regressions": 0
+  }
+}

@@ -4,9 +4,9 @@
 
 ## 统计快照（2026-02-12）
 
-- 总 case：77
-- `strict`：68
-- `env_limited`：8
+- 总 case：83
+- `strict`：72
+- `env_limited`：10
 - `env_limited` → `strict` 升级：1（`p0_clash_api_contract` → `p0_clash_api_contract_strict`）
 - 状态口径：`implemented` / `planned` / `blocked`
 
@@ -102,6 +102,15 @@
 | `p1_tls_fragment_activation` | TLS fragment 激活验证 | `strict` | implemented |
 | `p1_tls_fragment_wiring` | TLS fragment 配置→运行时接线验证 | `strict` | implemented |
 
+### CLI 工具 (L15)
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p1_cli_generate_uuid_format` | generate uuid 产生合法 UUID v4 | `strict` | implemented |
+| `p1_cli_generate_rand_base64` | generate rand 16 --base64 产生 24 字符 base64 | `strict` | implemented |
+| `p1_cli_ruleset_convert_adguard` | rule-set convert --type adguard 转换 AdGuard filter 含 domain_suffix | `strict` | implemented |
+| `p1_cli_ech_keypair_pem_format` | generate ech-keypair 产生 ECH CONFIGS/KEYS PEM | `strict` | implemented |
+
 ### 订阅样本治理
 
 | Case ID | Goal | Env Class | Status |
@@ -158,6 +167,13 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p2_connections_ws_soak_dual_core` | WS soak 双核对照 + 自动 diff | `strict` | implemented |
+
+### 性能基准 (L16)
+
+| Case ID | Goal | Env Class | Status |
+| --- | --- | --- | --- |
+| `p2_bench_socks5_throughput` | SOCKS5 throughput Criterion benchmark exit 0 | `env_limited` | implemented |
+| `p2_bench_shadowsocks_throughput` | Shadowsocks throughput Criterion benchmark exit 0 | `env_limited` | implemented |
 
 ## 协议 × 故障类型矩阵（L5.2.1）
 
