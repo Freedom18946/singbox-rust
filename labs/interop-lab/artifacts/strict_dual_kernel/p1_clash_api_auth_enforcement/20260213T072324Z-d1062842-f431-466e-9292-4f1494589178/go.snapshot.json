@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072324Z-d1062842-f431-466e-9292-4f1494589178",
+  "case_id": "p1_clash_api_auth_enforcement",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:23:39.568575Z",
+  "finished_at": "2026-02-13T07:23:39.568782Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_clash_api_auth_enforcement missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

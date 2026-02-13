@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072343Z-4315d439-73d0-4a4d-90b6-ed66b6e572e6",
+  "case_id": "p1_cli_ruleset_convert_adguard",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:23:45.469436Z",
+  "finished_at": "2026-02-13T07:23:45.469664Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_cli_ruleset_convert_adguard missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_cli_generate_rand_base64",
+  "generated_at": "2026-02-13T07:23:42.066660Z",
+  "run_id": "20260213T072340Z-85e15c2a-2a33-46a7-b70f-3970a4b8bdd2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_generate_rand_base64/20260213T072340Z-85e15c2a-2a33-46a7-b70f-3970a4b8bdd2/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_generate_rand_base64/20260213T072340Z-85e15c2a-2a33-46a7-b70f-3970a4b8bdd2/go.snapshot.json"
+  ]
+}

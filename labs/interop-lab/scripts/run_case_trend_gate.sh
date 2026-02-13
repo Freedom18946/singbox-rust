@@ -9,11 +9,12 @@ RUN_PRIORITY="${RUN_PRIORITY:-}"
 RUN_TAGS="${RUN_TAGS:-}"
 RUN_EXCLUDE_TAGS="${RUN_EXCLUDE_TAGS:-}"
 RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
+INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
 
 # --- Threshold configuration ---
 # If THRESHOLD_CONFIG points to a YAML file and THRESHOLD_TEMPLATE names a
 # section (strict / env_limited / development), thresholds are read from that
-# file.  Otherwise the hardcoded defaults below are used.  Individual env-var
+# file. Otherwise the hardcoded defaults below are used. Individual env-var
 # overrides still win when set explicitly.
 
 THRESHOLD_CONFIG="${THRESHOLD_CONFIG:-}"
@@ -33,9 +34,6 @@ _yaml_val() {
     printf '%s' "${default}"
     return
   fi
-  # Locate the template section and extract the key's value.
-  # YAML structure is flat per-section, so we find the section header and then
-  # scan subsequent indented lines until the next top-level key.
   local value
   value="$(sed -n "/^${THRESHOLD_TEMPLATE}:/,/^[^ ]/{
     s/^[[:space:]]*${key}:[[:space:]]*//p
@@ -44,11 +42,10 @@ _yaml_val() {
     printf '%s' "${default}"
     return
   fi
-  # Normalise YAML booleans to the 0/1 integers the rest of the script expects.
   case "${value}" in
-    true|True|TRUE)   printf '1' ;;
+    true|True|TRUE) printf '1' ;;
     false|False|FALSE) printf '0' ;;
-    *)                 printf '%s' "${value}" ;;
+    *) printf '%s' "${value}" ;;
   esac
 }
 
@@ -71,14 +68,20 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none}"
+if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
+  echo "prebuild: cargo build -p app --features acceptance --bin app"
+  cargo build -p app --features acceptance --bin app >/dev/null
+fi
+
+echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none} artifacts_dir=${ARTIFACTS_DIR}"
 
 prev_score=-1
 
 for ((i = 1; i <= ITERATIONS; i++)); do
   echo
   echo "=== iteration ${i}/${ITERATIONS}: case run ${CASE_ID} ==="
-  run_cmd=(cargo run -p interop-lab -- case run)
+
+  run_cmd=(cargo run -p interop-lab -- --artifacts-dir "${ARTIFACTS_DIR}" case run)
   if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
     run_cmd+=("${CASE_ID}")
   fi
@@ -105,82 +108,112 @@ for ((i = 1; i <= ITERATIONS; i++)); do
       fi
     done
   fi
+
   run_output="$("${run_cmd[@]}")"
   echo "${run_output}"
 
-  run_dir="$(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p' | tail -n 1)"
-  if [[ -z "${run_dir}" ]]; then
+  run_dirs=()
+  while IFS= read -r run_dir; do
+    if [[ -n "${run_dir}" ]]; then
+      run_dirs+=("${run_dir}")
+    fi
+  done < <(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p')
+
+  if [[ ${#run_dirs[@]} -eq 0 ]]; then
     echo "error: run_dir not found in case run output"
     exit 1
   fi
 
-  rust_snapshot="${run_dir}/rust.snapshot.json"
-  if [[ ! -f "${rust_snapshot}" ]]; then
-    echo "error: missing rust snapshot: ${rust_snapshot}"
-    exit 1
-  fi
+  iteration_score=0
 
-  rust_errors="$(jq '.errors | length' "${rust_snapshot}")"
-  failed_traffic="$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")"
-
-  if (( rust_errors > MAX_RUST_ERRORS )); then
-    echo "error: rust errors ${rust_errors} exceed gate ${MAX_RUST_ERRORS}"
-    exit 1
-  fi
-  if (( failed_traffic > MAX_FAILED_TRAFFIC )); then
-    echo "error: failed traffic ${failed_traffic} exceed gate ${MAX_FAILED_TRAFFIC}"
-    exit 1
-  fi
-
-  http_mismatches=0
-  ws_mismatches=0
-  sub_mismatches=0
-  traffic_mismatches=0
-
-  echo "=== iteration ${i}/${ITERATIONS}: case diff ${CASE_ID} ==="
-  diff_output_file="$(mktemp)"
-  if cargo run -p interop-lab -- case diff "${CASE_ID}" >"${diff_output_file}" 2>&1; then
-    cat "${diff_output_file}"
-    http_mismatches="$(awk -F= '/^http_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    ws_mismatches="$(awk -F= '/^ws_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    sub_mismatches="$(awk -F= '/^subscription_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    traffic_mismatches="$(awk -F= '/^traffic_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-  else
-    cat "${diff_output_file}"
-    if [[ "${ALLOW_MISSING_DIFF}" != "1" ]]; then
-      echo "error: case diff failed and ALLOW_MISSING_DIFF=0"
-      rm -f "${diff_output_file}"
+  for run_dir in "${run_dirs[@]}"; do
+    rust_snapshot="${run_dir}/rust.snapshot.json"
+    if [[ ! -f "${rust_snapshot}" ]]; then
+      echo "error: missing rust snapshot: ${rust_snapshot}"
       exit 1
     fi
-    echo "warn: case diff unavailable, skipping mismatch gates for this iteration"
-  fi
-  rm -f "${diff_output_file}"
 
-  if (( http_mismatches > MAX_HTTP_MISMATCHES )); then
-    echo "error: http mismatches ${http_mismatches} exceed gate ${MAX_HTTP_MISMATCHES}"
-    exit 1
-  fi
-  if (( ws_mismatches > MAX_WS_MISMATCHES )); then
-    echo "error: ws mismatches ${ws_mismatches} exceed gate ${MAX_WS_MISMATCHES}"
-    exit 1
-  fi
-  if (( sub_mismatches > MAX_SUB_MISMATCHES )); then
-    echo "error: subscription mismatches ${sub_mismatches} exceed gate ${MAX_SUB_MISMATCHES}"
-    exit 1
-  fi
-  if (( traffic_mismatches > MAX_TRAFFIC_MISMATCHES )); then
-    echo "error: traffic mismatches ${traffic_mismatches} exceed gate ${MAX_TRAFFIC_MISMATCHES}"
-    exit 1
-  fi
+    case_id="$(jq -r '.case_id // empty' "${rust_snapshot}")"
+    if [[ -z "${case_id}" ]]; then
+      case_id="$(basename "$(dirname "${run_dir}")")"
+    fi
 
-  score=$((rust_errors + failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches))
-  echo "iteration ${i} score=${score} (errors=${rust_errors}, failed_traffic=${failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches})"
+    rust_errors="$(jq '.errors | length' "${rust_snapshot}")"
+    failed_traffic="$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")"
 
-  if [[ "${ENFORCE_NON_INCREASING_SCORE}" == "1" ]] && (( prev_score >= 0 )) && (( score > prev_score )); then
-    echo "error: trend gate violated (score increased ${prev_score} -> ${score})"
+    if (( rust_errors > MAX_RUST_ERRORS )); then
+      echo "error: case=${case_id} rust errors ${rust_errors} exceed gate ${MAX_RUST_ERRORS}"
+      exit 1
+    fi
+    if (( failed_traffic > MAX_FAILED_TRAFFIC )); then
+      echo "error: case=${case_id} failed traffic ${failed_traffic} exceed gate ${MAX_FAILED_TRAFFIC}"
+      exit 1
+    fi
+
+    http_mismatches=0
+    ws_mismatches=0
+    sub_mismatches=0
+    traffic_mismatches=0
+
+    diff_case_id="${case_id}"
+    if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
+      diff_case_id="${CASE_ID}"
+    fi
+
+    echo "=== iteration ${i}/${ITERATIONS}: case diff ${diff_case_id} ==="
+    diff_output_file="$(mktemp)"
+    if cargo run -p interop-lab -- --artifacts-dir "${ARTIFACTS_DIR}" case diff "${diff_case_id}" >"${diff_output_file}" 2>&1; then
+      cat "${diff_output_file}"
+      http_mismatches="$(awk -F= '/^http_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+      ws_mismatches="$(awk -F= '/^ws_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+      sub_mismatches="$(awk -F= '/^subscription_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+      traffic_mismatches="$(awk -F= '/^traffic_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+    else
+      cat "${diff_output_file}"
+      if [[ "${ALLOW_MISSING_DIFF}" != "1" ]]; then
+        echo "error: case=${diff_case_id} case diff failed and ALLOW_MISSING_DIFF=0"
+        rm -f "${diff_output_file}"
+        exit 1
+      fi
+      echo "warn: case=${diff_case_id} case diff unavailable, skipping mismatch gates for this iteration"
+    fi
+    rm -f "${diff_output_file}"
+
+    http_mismatches="${http_mismatches:-0}"
+    ws_mismatches="${ws_mismatches:-0}"
+    sub_mismatches="${sub_mismatches:-0}"
+    traffic_mismatches="${traffic_mismatches:-0}"
+
+    if (( http_mismatches > MAX_HTTP_MISMATCHES )); then
+      echo "error: case=${case_id} http mismatches ${http_mismatches} exceed gate ${MAX_HTTP_MISMATCHES}"
+      exit 1
+    fi
+    if (( ws_mismatches > MAX_WS_MISMATCHES )); then
+      echo "error: case=${case_id} ws mismatches ${ws_mismatches} exceed gate ${MAX_WS_MISMATCHES}"
+      exit 1
+    fi
+    if (( sub_mismatches > MAX_SUB_MISMATCHES )); then
+      echo "error: case=${case_id} subscription mismatches ${sub_mismatches} exceed gate ${MAX_SUB_MISMATCHES}"
+      exit 1
+    fi
+    if (( traffic_mismatches > MAX_TRAFFIC_MISMATCHES )); then
+      echo "error: case=${case_id} traffic mismatches ${traffic_mismatches} exceed gate ${MAX_TRAFFIC_MISMATCHES}"
+      exit 1
+    fi
+
+    case_score=$((rust_errors + failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches))
+    iteration_score=$((iteration_score + case_score))
+
+    echo "iteration ${i} case=${case_id} score=${case_score} (errors=${rust_errors}, failed_traffic=${failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches})"
+  done
+
+  echo "iteration ${i} total_score=${iteration_score}"
+
+  if [[ "${ENFORCE_NON_INCREASING_SCORE}" == "1" ]] && (( prev_score >= 0 )) && (( iteration_score > prev_score )); then
+    echo "error: trend gate violated (total score increased ${prev_score} -> ${iteration_score})"
     exit 1
   fi
-  prev_score="${score}"
+  prev_score="${iteration_score}"
 done
 
 echo

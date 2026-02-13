@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_delay_tls_upstream",
+  "generated_at": "2026-02-13T07:26:17.203182Z",
+  "run_id": "20260213T072602Z-18be123d-a472-4d48-8fce-272365bb660a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_tls_upstream/20260213T072602Z-18be123d-a472-4d48-8fce-272365bb660a/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_tls_upstream/20260213T072602Z-18be123d-a472-4d48-8fce-272365bb660a/go.snapshot.json"
+  ]
+}

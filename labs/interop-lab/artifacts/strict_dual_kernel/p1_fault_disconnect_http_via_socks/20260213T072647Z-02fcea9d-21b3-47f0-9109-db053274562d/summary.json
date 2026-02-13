@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_disconnect_http_via_socks",
+  "generated_at": "2026-02-13T07:27:02.683491Z",
+  "run_id": "20260213T072647Z-02fcea9d-21b3-47f0-9109-db053274562d",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_http_via_socks/20260213T072647Z-02fcea9d-21b3-47f0-9109-db053274562d/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_http_via_socks/20260213T072647Z-02fcea9d-21b3-47f0-9109-db053274562d/go.snapshot.json"
+  ]
+}

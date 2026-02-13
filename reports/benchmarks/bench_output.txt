@@ -1,21 +1,6 @@
-   Compiling ring v0.17.14
-   Compiling rustls v0.23.35
-   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
-   Compiling rustls-webpki v0.103.8
-   Compiling rcgen v0.13.2
-   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)
-   Compiling tokio-rustls v0.26.4
-   Compiling rustls-platform-verifier v0.6.2
-   Compiling quinn-proto v0.11.13
-   Compiling hyper-rustls v0.27.7
-   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
-   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
-   Compiling reqwest v0.12.28
-   Compiling quinn v0.11.9
-   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
    Compiling sb-benches v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches)
-    Finished `bench` profile [optimized] target(s) in 2m 17s
-     Running unittests src/lib.rs (target/release/deps/sb_benches-8b9202f1e0ad6a75)
+    Finished `bench` profile [optimized] target(s) in 1m 05s
+     Running unittests src/lib.rs (target/release/deps/sb_benches-285ba6a4db7a867a)
 
 running 4 tests
 test tests::test_calculate_mbps ... ignored
@@ -25,121 +10,36 @@ test tests::test_generate_random_data ... ignored
 
 test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running benches/aead_crypto.rs (target/release/deps/aead_crypto-e7d40de866614111)
+     Running benches/aead_crypto.rs (target/release/deps/aead_crypto-f019006cf54d59ae)
 Gnuplot not found, using plotters backend
 Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024
 Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Collecting 100 samples in estimated 10.009 s (768k iterations)
+Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Collecting 100 samples in estimated 10.025 s (778k iterations)
 Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Analyzing
 shadowsocks_aead_encrypt/aes256gcm/1024
-                        time:   [13.089 µs 13.156 µs 13.244 µs]
-                        thrpt:  [73.734 MiB/s 74.230 MiB/s 74.608 MiB/s]
+                        time:   [12.893 µs 12.895 µs 12.898 µs]
+                        thrpt:  [75.717 MiB/s 75.731 MiB/s 75.743 MiB/s]
                  change:
-                        time:   [-4.1916% -3.1205% -2.1233%] (p = 0.00 < 0.05)
-                        thrpt:  [+2.1693% +3.2210% +4.3750%]
+                        time:   [-64.912% -62.493% -59.818%] (p = 0.00 < 0.05)
+                        thrpt:  [+148.87% +166.62% +185.00%]
                         Performance has improved.
 Found 14 outliers among 100 measurements (14.00%)
-  1 (1.00%) high mild
-  13 (13.00%) high severe
+  1 (1.00%) low mild
+  4 (4.00%) high mild
+  9 (9.00%) high severe
 Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024
 Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Collecting 100 samples in estimated 10.030 s (1.3M iterations)
+Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Collecting 100 samples in estimated 10.019 s (1.3M iterations)
 Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Analyzing
 shadowsocks_aead_encrypt/chacha20poly1305/1024
-                        time:   [7.8316 µs 7.8379 µs 7.8474 µs]
-                        thrpt:  [124.44 MiB/s 124.59 MiB/s 124.69 MiB/s]
+                        time:   [7.8916 µs 7.9099 µs 7.9365 µs]
+                        thrpt:  [123.05 MiB/s 123.46 MiB/s 123.75 MiB/s]
                  change:
-                        time:   [-4.3032% -3.0404% -1.8434%] (p = 0.00 < 0.05)
-                        thrpt:  [+1.8780% +3.1357% +4.4967%]
+                        time:   [-64.569% -62.498% -60.234%] (p = 0.00 < 0.05)
+                        thrpt:  [+151.47% +166.65% +182.24%]
                         Performance has improved.
-Found 15 outliers among 100 measurements (15.00%)
-  4 (4.00%) high mild
-  11 (11.00%) high severe
+Found 10 outliers among 100 measurements (10.00%)
+  1 (1.00%) high mild
+  9 (9.00%) high severe
 Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384
 Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Collecting 100 samples in estimated 10.433 s (56k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/16384
-                        time:   [189.00 µs 190.38 µs 192.00 µs]
-                        thrpt:  [81.381 MiB/s 82.072 MiB/s 82.672 MiB/s]
-                 change:
-                        time:   [-30.291% -23.631% -16.313%] (p = 0.00 < 0.05)
-                        thrpt:  [+19.493% +30.942% +43.453%]
-                        Performance has improved.
-Found 16 outliers among 100 measurements (16.00%)
-  2 (2.00%) high mild
-  14 (14.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Collecting 100 samples in estimated 10.299 s (86k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/16384
-                        time:   [119.98 µs 120.01 µs 120.04 µs]
-                        thrpt:  [130.17 MiB/s 130.20 MiB/s 130.23 MiB/s]
-                 change:
-                        time:   [-65.985% -63.625% -61.174%] (p = 0.00 < 0.05)
-                        thrpt:  [+157.56% +174.92% +193.99%]
-                        Performance has improved.
-Found 16 outliers among 100 measurements (16.00%)
-  8 (8.00%) high mild
-  8 (8.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Collecting 100 samples in estimated 11.485 s (15k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/65536
-                        time:   [752.45 µs 758.38 µs 765.47 µs]
-                        thrpt:  [81.649 MiB/s 82.412 MiB/s 83.061 MiB/s]
-                 change:
-                        time:   [-59.645% -55.829% -51.397%] (p = 0.00 < 0.05)
-                        thrpt:  [+105.75% +126.39% +147.80%]
-                        Performance has improved.
-Found 9 outliers among 100 measurements (9.00%)
-  4 (4.00%) high mild
-  5 (5.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Collecting 100 samples in estimated 12.152 s (25k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/65536
-                        time:   [481.78 µs 482.29 µs 482.89 µs]
-                        thrpt:  [129.43 MiB/s 129.59 MiB/s 129.73 MiB/s]
-                 change:
-                        time:   [-34.705% -29.808% -24.553%] (p = 0.00 < 0.05)
-                        thrpt:  [+32.544% +42.466% +53.150%]
-                        Performance has improved.
-Found 13 outliers among 100 measurements (13.00%)
-  3 (3.00%) high mild
-  10 (10.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Warming up for 3.0000 s
-
-Warning: Unable to complete 100 samples in 10.0s. You may wish to increase target time to 15.1s, enable flat sampling, or reduce sample count to 50.
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Collecting 100 samples in estimated 15.084 s (5050 iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/262144
-                        time:   [2.9921 ms 3.0069 ms 3.0258 ms]
-                        thrpt:  [82.622 MiB/s 83.141 MiB/s 83.552 MiB/s]
-                 change:
-                        time:   [-61.264% -57.629% -53.541%] (p = 0.00 < 0.05)
-                        thrpt:  [+115.24% +136.01% +158.16%]
-                        Performance has improved.
-Found 16 outliers among 100 measurements (16.00%)
-  5 (5.00%) high mild
-  11 (11.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Collecting 100 samples in estimated 19.449 s (10k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/262144
-                        time:   [1.9239 ms 1.9297 ms 1.9396 ms]
-                        thrpt:  [128.89 MiB/s 129.55 MiB/s 129.95 MiB/s]
-                 change:
-                        time:   [-2.3130% -1.4068% -0.7932%] (p = 0.00 < 0.05)
-                        thrpt:  [+0.7995% +1.4269% +2.3677%]
-                        Change within noise threshold.
-Found 18 outliers among 100 measurements (18.00%)
-  6 (6.00%) high mild
-  12 (12.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576: Warming up for 3.0000 s

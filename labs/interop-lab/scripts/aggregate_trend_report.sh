@@ -10,44 +10,43 @@ KERNEL="${KERNEL:-rust}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-labs/interop-lab/artifacts}"
 RUN_PRIORITY="${RUN_PRIORITY:-}"
 RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
+INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "error: jq is required by aggregate_trend_report.sh"
   exit 2
 fi
 
-# Build the base run command
-build_run_cmd() {
-  local cmd=(cargo run -p interop-lab -- case run)
-  if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
-    cmd+=("${CASE_ID}")
-  fi
-  cmd+=(--kernel "${KERNEL}")
-  if [[ -n "${RUN_PRIORITY}" ]]; then
-    cmd+=(--priority "${RUN_PRIORITY}")
-  fi
-  if [[ -n "${RUN_ENV_CLASS}" ]]; then
-    cmd+=(--env-class "${RUN_ENV_CLASS}")
-  fi
-  echo "${cmd[@]}"
-}
+if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
+  echo "prebuild: cargo build -p app --features acceptance --bin app"
+  cargo build -p app --features acceptance --bin app >/dev/null
+fi
 
-echo "aggregate-trend case=${CASE_ID:-ALL} iterations=${ITERATIONS} kernel=${KERNEL}"
+echo "aggregate-trend case=${CASE_ID:-ALL} iterations=${ITERATIONS} kernel=${KERNEL} artifacts_dir=${ARTIFACTS_DIR}"
 
-# Collect results per case across iterations
-declare -A case_scores
+# JSON map: { "case_id": [score1, score2, ...] }
+scores_map='{}'
 
 for ((i = 1; i <= ITERATIONS; i++)); do
   echo
   echo "=== iteration ${i}/${ITERATIONS} ==="
 
-  run_cmd=$(build_run_cmd)
-  run_output=$(eval "${run_cmd}")
+  run_cmd=(cargo run -p interop-lab -- --artifacts-dir "${ARTIFACTS_DIR}" case run)
+  if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
+    run_cmd+=("${CASE_ID}")
+  fi
+  run_cmd+=(--kernel "${KERNEL}")
+  if [[ -n "${RUN_PRIORITY}" ]]; then
+    run_cmd+=(--priority "${RUN_PRIORITY}")
+  fi
+  if [[ -n "${RUN_ENV_CLASS}" ]]; then
+    run_cmd+=(--env-class "${RUN_ENV_CLASS}")
+  fi
+
+  run_output="$("${run_cmd[@]}")"
   echo "${run_output}"
 
-  # Extract all run_dir lines
-  while IFS= read -r line; do
-    run_dir="${line#run_dir=}"
+  while IFS= read -r run_dir; do
     if [[ -z "${run_dir}" || ! -d "${run_dir}" ]]; then
       continue
     fi
@@ -57,64 +56,54 @@ for ((i = 1; i <= ITERATIONS; i++)); do
       continue
     fi
 
-    cid=$(jq -r '.case_id' "${rust_snapshot}")
-    rust_errors=$(jq '.errors | length' "${rust_snapshot}")
-    failed_traffic=$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")
-    score=$((rust_errors + failed_traffic))
-
-    # Accumulate scores
-    if [[ -v "case_scores[${cid}]" ]]; then
-      case_scores["${cid}"]="${case_scores[${cid}]},${score}"
-    else
-      case_scores["${cid}"]="${score}"
+    cid="$(jq -r '.case_id // empty' "${rust_snapshot}")"
+    if [[ -z "${cid}" ]]; then
+      cid="$(basename "$(dirname "${run_dir}")")"
     fi
 
-    echo "  case=${cid} iteration=${i} score=${score} (errors=${rust_errors}, failed=${failed_traffic})"
+    rust_errors="$(jq '.errors | length' "${rust_snapshot}")"
+    failed_traffic="$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")"
+    score=$((rust_errors + failed_traffic))
 
-  done < <(printf '%s\n' "${run_output}" | grep '^run_dir=' | sed 's/^run_dir=//')
+    scores_map="$(jq \
+      --arg id "${cid}" \
+      --argjson score "${score}" \
+      '.[$id] = ((.[$id] // []) + [$score])' \
+      <<< "${scores_map}")"
+
+    echo "  case=${cid} iteration=${i} score=${score} (errors=${rust_errors}, failed=${failed_traffic})"
+  done < <(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p')
 done
 
-# Build JSON output
 echo
 echo "=== generating trend_summary.json ==="
 
-json_cases="[]"
+json_cases="$(jq -n --argjson m "${scores_map}" '
+  [
+    $m
+    | to_entries[]
+    | {
+        id: .key,
+        scores: .value,
+        trend: (
+          if (.value | length) < 2 then "stable"
+          elif .value[-1] < .value[0] then "improving"
+          elif .value[-1] > .value[0] then "degrading"
+          else "stable"
+          end
+        ),
+        env_attributions: []
+      }
+  ]
+  | sort_by(.id)
+')"
 
-for cid in $(printf '%s\n' "${!case_scores[@]}" | sort); do
-  scores="${case_scores[${cid}]}"
-  IFS=',' read -r -a score_arr <<<"${scores}"
-
-  # Determine trend
-  trend="stable"
-  if (( ${#score_arr[@]} >= 2 )); then
-    first="${score_arr[0]}"
-    last="${score_arr[-1]}"
-    if (( last < first )); then
-      trend="improving"
-    elif (( last > first )); then
-      trend="degrading"
-    fi
-  fi
-
-  # Build scores JSON array
-  scores_json=$(printf '%s\n' "${score_arr[@]}" | jq -s '.')
-
-  # Build case entry
-  case_json=$(jq -n \
-    --arg id "${cid}" \
-    --argjson scores "${scores_json}" \
-    --arg trend "${trend}" \
-    '{ id: $id, scores: $scores, trend: $trend, env_attributions: [] }')
-
-  json_cases=$(echo "${json_cases}" | jq --argjson c "${case_json}" '. + [$c]')
-done
-
-summary=$(jq -n \
+summary="$(jq -n \
   --argjson cases "${json_cases}" \
   --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg kernel "${KERNEL}" \
   --argjson iterations "${ITERATIONS}" \
-  '{ generated_at: $generated_at, kernel: $kernel, iterations: $iterations, cases: $cases }')
+  '{ generated_at: $generated_at, kernel: $kernel, iterations: $iterations, cases: $cases }')"
 
 output_file="${ARTIFACTS_DIR}/trend_summary.json"
 mkdir -p "$(dirname "${output_file}")"
@@ -125,18 +114,17 @@ echo "${summary}" | jq '.cases[] | "\(.id): trend=\(.trend) scores=\(.scores)"' 
 
 # Append to history (JSONL format)
 history_file="${ARTIFACTS_DIR}/trend_history.jsonl"
-history_entry=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + {timestamp: $ts}' <<< "${summary}")
+history_entry="$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + {timestamp: $ts}' <<< "${summary}")"
 echo "${history_entry}" >> "${history_file}"
 echo "trend_history appended to ${history_file}"
 
 # Regression detection: check if strict cases degraded >10% over last 5 runs
 if [[ -f "${history_file}" ]]; then
-  recent_count=$(wc -l < "${history_file}" | tr -d ' ')
+  recent_count="$(wc -l < "${history_file}" | tr -d ' ')"
   if (( recent_count >= 2 )); then
     echo
     echo "=== regression check (last ${recent_count} runs, max 5) ==="
 
-    # Get last 5 entries' per-case scores
     tail -5 "${history_file}" | jq -r '.cases[]? | "\(.id) \(.scores | add)"' 2>/dev/null | \
     awk '{
       case_id = $1

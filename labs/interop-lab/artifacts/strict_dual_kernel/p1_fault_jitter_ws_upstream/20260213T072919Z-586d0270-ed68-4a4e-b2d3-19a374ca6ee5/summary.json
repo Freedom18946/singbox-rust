@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_jitter_ws_upstream",
+  "generated_at": "2026-02-13T07:29:34.199545Z",
+  "run_id": "20260213T072919Z-586d0270-ed68-4a4e-b2d3-19a374ca6ee5",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_ws_upstream/20260213T072919Z-586d0270-ed68-4a4e-b2d3-19a374ca6ee5/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_ws_upstream/20260213T072919Z-586d0270-ed68-4a4e-b2d3-19a374ca6ee5/go.snapshot.json"
+  ]
+}

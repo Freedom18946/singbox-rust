@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T075032Z-51a33a96-631e-4beb-999e-d8dd0d8eada7",
+  "case_id": "p1_dataplane_large_payload_http",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:50:32.211063Z",
+  "finished_at": "2026-02-13T07:50:47.360641Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

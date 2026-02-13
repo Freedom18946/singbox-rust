@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_rust_core_udp_via_socks",
+  "generated_at": "2026-02-13T08:01:23.508347Z",
+  "run_id": "20260213T080108Z-0879d230-aa11-43a5-880c-886525de0945",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_rust_core_udp_via_socks/20260213T080108Z-0879d230-aa11-43a5-880c-886525de0945/rust.snapshot.json"
+  ]
+}

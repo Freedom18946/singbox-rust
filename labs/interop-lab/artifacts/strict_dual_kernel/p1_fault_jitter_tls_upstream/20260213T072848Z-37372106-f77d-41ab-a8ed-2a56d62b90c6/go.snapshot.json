@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072848Z-37372106-f77d-41ab-a8ed-2a56d62b90c6",
+  "case_id": "p1_fault_jitter_tls_upstream",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:29:03.920013Z",
+  "finished_at": "2026-02-13T07:29:03.920080Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_fault_jitter_tls_upstream missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

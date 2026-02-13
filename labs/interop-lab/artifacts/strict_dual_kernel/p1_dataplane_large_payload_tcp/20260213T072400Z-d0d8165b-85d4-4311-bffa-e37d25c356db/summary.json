@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_dataplane_large_payload_tcp",
+  "generated_at": "2026-02-13T07:24:15.686211Z",
+  "run_id": "20260213T072400Z-d0d8165b-85d4-4311-bffa-e37d25c356db",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_dataplane_large_payload_tcp/20260213T072400Z-d0d8165b-85d4-4311-bffa-e37d25c356db/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_dataplane_large_payload_tcp/20260213T072400Z-d0d8165b-85d4-4311-bffa-e37d25c356db/go.snapshot.json"
+  ]
+}

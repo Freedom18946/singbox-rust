@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_dataplane_large_payload_http",
+  "generated_at": "2026-02-13T07:24:00.488258Z",
+  "run_id": "20260213T072345Z-80d1b5b3-6e8f-4245-8304-dc3e7ae7046f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_dataplane_large_payload_http/20260213T072345Z-80d1b5b3-6e8f-4245-8304-dc3e7ae7046f/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_dataplane_large_payload_http/20260213T072345Z-80d1b5b3-6e8f-4245-8304-dc3e7ae7046f/go.snapshot.json"
+  ]
+}

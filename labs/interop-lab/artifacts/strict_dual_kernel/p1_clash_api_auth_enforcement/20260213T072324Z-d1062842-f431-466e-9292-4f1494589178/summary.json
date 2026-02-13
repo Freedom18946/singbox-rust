@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_clash_api_auth_enforcement",
+  "generated_at": "2026-02-13T07:23:39.569129Z",
+  "run_id": "20260213T072324Z-d1062842-f431-466e-9292-4f1494589178",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_clash_api_auth_enforcement/20260213T072324Z-d1062842-f431-466e-9292-4f1494589178/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_clash_api_auth_enforcement/20260213T072324Z-d1062842-f431-466e-9292-4f1494589178/go.snapshot.json"
+  ]
+}

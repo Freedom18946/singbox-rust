@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_cli_ruleset_convert_adguard",
+  "generated_at": "2026-02-13T07:38:06.266263Z",
+  "run_id": "20260213T073804Z-30b069ee-d20a-48f9-a807-d8822fea8f7c",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_cli_ruleset_convert_adguard/20260213T073804Z-30b069ee-d20a-48f9-a807-d8822fea8f7c/rust.snapshot.json"
+  ]
+}

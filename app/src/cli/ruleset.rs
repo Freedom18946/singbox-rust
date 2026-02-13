@@ -126,9 +126,12 @@ pub enum RulesetCmd {
         /// Input file (.json, .srs, or AdGuard filter text)
         #[arg(value_name = "INPUT")]
         input: PathBuf,
-        /// Output file (.json or .srs)
+        /// Output file (.json or .srs). Optional for `--type adguard` (stdout JSON).
         #[arg(value_name = "OUTPUT")]
-        output: PathBuf,
+        output: Option<PathBuf>,
+        /// Output file path (alternative to positional OUTPUT).
+        #[arg(short = 'o', long = "output", value_name = "OUTPUT")]
+        output_path: Option<PathBuf>,
         /// Version to write when output is SRS
         #[arg(long)]
         version: Option<u8>,
@@ -188,9 +191,10 @@ pub async fn run(args: RulesetArgs) -> Result<()> {
         RulesetCmd::Convert {
             input,
             output,
+            output_path,
             version,
             input_type,
-        } => convert_ruleset(input, output, version, input_type).await,
+        } => convert_ruleset(input, output, output_path, version, input_type).await,
         RulesetCmd::Merge {
             inputs,
             output,
@@ -529,11 +533,18 @@ async fn compile_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -
 
 async fn convert_ruleset(
     input: PathBuf,
-    output: PathBuf,
+    output: Option<PathBuf>,
+    output_path: Option<PathBuf>,
     version: Option<u8>,
     input_type: ConvertType,
 ) -> Result<()> {
     use sb_core::router::ruleset::{binary, source, RuleSetFormat, RULESET_VERSION_CURRENT};
+
+    let resolved_output = match (output, output_path) {
+        (Some(_), Some(_)) => anyhow::bail!("please provide OUTPUT either positionally or with -o/--output, not both"),
+        (Some(path), None) | (None, Some(path)) => Some(path),
+        (None, None) => None,
+    };
 
     // Handle AdGuard input type
     if input_type == ConvertType::Adguard {
@@ -547,8 +558,17 @@ async fn convert_ruleset(
             "rules": rules,
         });
 
-        let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or(""))
-            .ok_or_else(|| anyhow::anyhow!("cannot infer output format from extension"))?;
+        let Some(output) = resolved_output else {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json_value).context("Failed to format JSON")?
+            );
+            return Ok(());
+        };
+
+        let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or("")).ok_or_else(
+            || anyhow::anyhow!("cannot infer output format from extension"),
+        )?;
 
         match out_fmt {
             RuleSetFormat::Source => {
@@ -559,7 +579,14 @@ async fn convert_ruleset(
             }
             RuleSetFormat::Binary => {
                 // Write JSON to a temp file, load it, then compile to SRS
-                let tmp_json = std::env::temp_dir().join("singbox_adguard_converted.json");
+                let tmp_json = std::env::temp_dir().join(format!(
+                    "singbox_adguard_converted_{}_{}.json",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|v| v.as_millis())
+                        .unwrap_or(0)
+                ));
                 let json_str = serde_json::to_string_pretty(&json_value)?;
                 std::fs::write(&tmp_json, &json_str)?;
                 let rs = binary::load_from_file(&tmp_json, RuleSetFormat::Source).await?;
@@ -570,6 +597,12 @@ async fn convert_ruleset(
         }
         return Ok(());
     }
+
+    let output = resolved_output.ok_or_else(|| {
+        anyhow::anyhow!(
+            "convert requires OUTPUT path for auto mode (.json <-> .srs); adguard stdout mode requires --type adguard without OUTPUT"
+        )
+    })?;
 
     // Auto mode: standard format conversion
     let in_fmt = source::infer_format_from_path(input.to_str().unwrap_or(""))

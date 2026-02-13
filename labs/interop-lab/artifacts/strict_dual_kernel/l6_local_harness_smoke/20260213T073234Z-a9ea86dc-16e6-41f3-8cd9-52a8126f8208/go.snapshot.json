@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T073234Z-a9ea86dc-16e6-41f3-8cd9-52a8126f8208",
+  "case_id": "l6_local_harness_smoke",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:32:34.050638Z",
+  "finished_at": "2026-02-13T07:32:34.052117Z",
+  "http_results": [
+    {
+      "name": "ping_root",
+      "method": "GET",
+      "path": "/",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": "988850e89361bb3950e72fc7ec2dc2231e54991a432bf6c8748f6c2fbaba2b42"
+    },
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "body_len": 0,
+        "method": "GET",
+        "path": "/proxies",
+        "query": null,
+        "service": "local_http"
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "body_len": 0,
+    "method": "GET",
+    "path": "/connections",
+    "query": null,
+    "service": "local_http"
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": {
+    "source_type": "inline",
+    "success": true,
+    "format": "json_outbounds",
+    "node_count": 2,
+    "filtered_node_count": 2,
+    "protocols": [
+      "trojan",
+      "vmess"
+    ],
+    "detail": {
+      "outbounds": 2
+    }
+  },
+  "traffic_results": [
+    {
+      "name": "http_echo",
+      "success": true,
+      "detail": {
+        "body": "{\"body_len\":0,\"method\":\"GET\",\"path\":\"/v1/echo\",\"query\":null,\"service\":\"local_http\"}",
+        "proxy": null,
+        "status": 200,
+        "url": "http://127.0.0.1:50757/v1/echo"
+      }
+    },
+    {
+      "name": "tcp_echo",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:50758",
+        "echo_hash": "e929fc190c7b517daf749da319caca16151b31a04f504c0f4363a33f22a5c697",
+        "echo_len": 22,
+        "payload_hash": "e929fc190c7b517daf749da319caca16151b31a04f504c0f4363a33f22a5c697",
+        "payload_len": 22,
+        "proxy": null
+      }
+    },
+    {
+      "name": "udp_echo",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:56725",
+        "echo_hash": "7b1daea8366152449b5655646cff3ee4ad276fdfb60ba453822bd44c8cc02d08",
+        "echo_len": 9,
+        "payload_hash": "7b1daea8366152449b5655646cff3ee4ad276fdfb60ba453822bd44c8cc02d08",
+        "payload_len": 9,
+        "proxy": null
+      }
+    },
+    {
+      "name": "dns_stub",
+      "success": true,
+      "detail": {
+        "addr": "127.0.0.1:59099",
+        "answers": 0,
+        "id": 4660,
+        "message_type": "Response",
+        "proxy": null,
+        "rcode": "NoError"
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

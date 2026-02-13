@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T075030Z-b77545aa-3369-43c8-9e38-bef376dd8f43",
+  "case_id": "p1_cli_ruleset_convert_adguard",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:50:30.941787Z",
+  "finished_at": "2026-02-13T07:50:32.210057Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "run_cli",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "rule-set",
+          "convert",
+          "--type",
+          "adguard",
+          "labs/interop-lab/configs/test_adguard_filter.txt"
+        ],
+        "command": "./target/debug/app",
+        "elapsed_ms": 9,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "2026-02-13T07:50:32.206877Z  INFO app::logging: Logging system initialized format=Compact level=info sampling=None redact=true\n2026-02-13T07:50:32.209465Z  INFO sb_core::router::ruleset::adguard: parsed rules: 3/4\n",
+        "stdout": "{\n  \"rules\": [\n    {\n      \"mode\": \"and\",\n      \"rules\": [\n        {\n          \"domain\": [\n            \"||safe.example.com^\"\n          ],\n          \"invert\": true\n        },\n        {\n          \"domain\": [\n            \"||example.com^\",\n            \"||ads.example.net^\"\n          ]\n        }\n      ],\n      \"type\": \"logical\"\n    }\n  ],\n  \"version\": 3\n}\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

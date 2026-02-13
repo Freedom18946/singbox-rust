@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_delay_http_via_socks",
+  "generated_at": "2026-02-13T07:52:33.446777Z",
+  "run_id": "20260213T075218Z-fc3e5cee-ebe6-4f65-af5c-2fb238cc94a0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_delay_http_via_socks/20260213T075218Z-fc3e5cee-ebe6-4f65-af5c-2fb238cc94a0/rust.snapshot.json"
+  ]
+}

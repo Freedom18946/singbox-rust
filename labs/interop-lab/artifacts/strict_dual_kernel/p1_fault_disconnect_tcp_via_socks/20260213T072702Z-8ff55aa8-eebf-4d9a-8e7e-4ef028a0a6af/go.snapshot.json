@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072702Z-8ff55aa8-eebf-4d9a-8e7e-4ef028a0a6af",
+  "case_id": "p1_fault_disconnect_tcp_via_socks",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:27:17.936387Z",
+  "finished_at": "2026-02-13T07:27:17.936587Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_fault_disconnect_tcp_via_socks missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

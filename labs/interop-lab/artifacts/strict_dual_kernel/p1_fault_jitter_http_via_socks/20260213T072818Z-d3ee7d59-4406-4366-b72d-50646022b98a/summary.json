@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_jitter_http_via_socks",
+  "generated_at": "2026-02-13T07:28:33.630953Z",
+  "run_id": "20260213T072818Z-d3ee7d59-4406-4366-b72d-50646022b98a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_http_via_socks/20260213T072818Z-d3ee7d59-4406-4366-b72d-50646022b98a/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_http_via_socks/20260213T072818Z-d3ee7d59-4406-4366-b72d-50646022b98a/go.snapshot.json"
+  ]
+}

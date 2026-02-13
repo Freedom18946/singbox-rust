@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_deprecated_wireguard_outbound",
+  "generated_at": "2026-02-13T07:25:16.422741Z",
+  "run_id": "20260213T072501Z-69605af6-1738-4599-9cec-dbf4d8cbc1b6",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_deprecated_wireguard_outbound/20260213T072501Z-69605af6-1738-4599-9cec-dbf4d8cbc1b6/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_deprecated_wireguard_outbound/20260213T072501Z-69605af6-1738-4599-9cec-dbf4d8cbc1b6/go.snapshot.json"
+  ]
+}

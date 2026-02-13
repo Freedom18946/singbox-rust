@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_jitter_dns_via_socks",
+  "generated_at": "2026-02-13T07:55:04.645701Z",
+  "run_id": "20260213T075449Z-1849e943-9d55-4061-8f73-e4e6893e5a4c",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_jitter_dns_via_socks/20260213T075449Z-1849e943-9d55-4061-8f73-e4e6893e5a4c/rust.snapshot.json"
+  ]
+}

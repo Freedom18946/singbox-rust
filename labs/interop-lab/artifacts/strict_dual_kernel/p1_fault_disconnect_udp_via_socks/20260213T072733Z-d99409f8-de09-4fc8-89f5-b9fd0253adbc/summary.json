@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_disconnect_udp_via_socks",
+  "generated_at": "2026-02-13T07:27:48.225548Z",
+  "run_id": "20260213T072733Z-d99409f8-de09-4fc8-89f5-b9fd0253adbc",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_udp_via_socks/20260213T072733Z-d99409f8-de09-4fc8-89f5-b9fd0253adbc/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_udp_via_socks/20260213T072733Z-d99409f8-de09-4fc8-89f5-b9fd0253adbc/go.snapshot.json"
+  ]
+}

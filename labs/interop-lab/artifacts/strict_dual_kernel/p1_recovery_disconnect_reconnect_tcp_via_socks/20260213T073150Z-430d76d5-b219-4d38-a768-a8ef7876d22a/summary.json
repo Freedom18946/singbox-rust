@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_recovery_disconnect_reconnect_tcp_via_socks",
+  "generated_at": "2026-02-13T07:32:05.664718Z",
+  "run_id": "20260213T073150Z-430d76d5-b219-4d38-a768-a8ef7876d22a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_recovery_disconnect_reconnect_tcp_via_socks/20260213T073150Z-430d76d5-b219-4d38-a768-a8ef7876d22a/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_recovery_disconnect_reconnect_tcp_via_socks/20260213T073150Z-430d76d5-b219-4d38-a768-a8ef7876d22a/go.snapshot.json"
+  ]
+}

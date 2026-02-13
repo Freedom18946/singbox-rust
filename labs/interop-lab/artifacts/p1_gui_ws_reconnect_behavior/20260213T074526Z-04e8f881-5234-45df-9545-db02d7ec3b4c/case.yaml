@@ -1,0 +1,72 @@
+id: p1_gui_ws_reconnect_behavior
+title: gui ws reconnect behavior after kernel restart
+owner: null
+priority: p1
+kernel_mode: rust
+tags:
+- control-plane
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_clash_api.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go: null
+gui_sequence:
+- kind: ws_parallel
+  name: pre_restart_ws
+  streams:
+  - path: /traffic
+    max_frames: 2
+    params: null
+  - path: /connections
+    max_frames: 2
+    params: null
+  duration_ms: 2000
+upstream_topology: []
+traffic_plan:
+- kind: kernel_control
+  name: restart_kernel
+  action: restart
+  target: rust
+  wait_ready_ms: 15000
+subscription_input: null
+faults: []
+assertions:
+- key: errors.count
+  op: eq
+  expected: 0
+- key: traffic.restart_kernel.success
+  op: eq
+  expected: true
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths:
+  - /traffic
+  - /connections
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence:
+- kind: sleep
+  ms: 1000
+- kind: ws_parallel
+  name: post_restart_ws
+  streams:
+  - path: /traffic
+    max_frames: 2
+    params: null
+  - path: /connections
+    max_frames: 2
+    params: null
+  duration_ms: 2000

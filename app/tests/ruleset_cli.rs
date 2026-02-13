@@ -46,6 +46,16 @@ fn ruleset_validate_and_info() {
 }
 
 #[test]
+fn rule_set_alias_validate_works() {
+    let file = write_ruleset_file();
+    assert_cmd::cargo::cargo_bin_cmd!("app")
+        .args(["rule-set", "validate", file.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(contains("Rule-set is valid"));
+}
+
+#[test]
 fn ruleset_format_outputs_pretty_json() {
     let file = write_ruleset_file();
     assert_cmd::cargo::cargo_bin_cmd!("app")
@@ -121,6 +131,37 @@ fn ruleset_compile_and_convert_roundtrip() {
         .success();
     let json_text = fs::read_to_string(json_out.path()).expect("read converted json");
     assert!(json_text.contains("example.com"));
+}
+
+#[test]
+fn ruleset_convert_adguard_stdout_json() {
+    let file = Builder::new()
+        .suffix(".txt")
+        .tempfile()
+        .expect("adguard filter file");
+    fs::write(
+        file.path(),
+        "||example.com^\n@@||ads.example.com^\n! comment line\n",
+    )
+    .expect("write adguard filter");
+
+    let assert = assert_cmd::cargo::cargo_bin_cmd!("app")
+        .args([
+            "rule-set",
+            "convert",
+            "--type",
+            "adguard",
+            file.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid json");
+    assert!(
+        parsed["rules"].as_array().is_some(),
+        "expected JSON object with rules array"
+    );
 }
 
 fn write_ruleset_with_domain(domain: &str) -> NamedTempFile {

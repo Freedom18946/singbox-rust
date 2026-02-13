@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_lifecycle_restart_reload_replay",
+  "generated_at": "2026-02-13T07:58:21.751138Z",
+  "run_id": "20260213T075806Z-b50ed518-e2f6-4cd7-b6fa-234652107c2f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_lifecycle_restart_reload_replay/20260213T075806Z-b50ed518-e2f6-4cd7-b6fa-234652107c2f/rust.snapshot.json"
+  ]
+}

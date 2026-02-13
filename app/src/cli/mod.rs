@@ -201,6 +201,7 @@ pub enum Commands {
     Geosite(geosite::GeositeArgs),
     /// Rule-set management (validate/compile/etc.)
     #[cfg(feature = "router")]
+    #[command(alias = "rule-set")]
     Ruleset(ruleset::RulesetArgs),
     /// 生成 man page
     #[cfg(feature = "manpage")]

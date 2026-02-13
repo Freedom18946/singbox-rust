@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_delay_dns_via_socks",
+  "generated_at": "2026-02-13T07:25:31.639954Z",
+  "run_id": "20260213T072516Z-0909df04-55e1-4ef5-8cf1-c958c54182c0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_dns_via_socks/20260213T072516Z-0909df04-55e1-4ef5-8cf1-c958c54182c0/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_dns_via_socks/20260213T072516Z-0909df04-55e1-4ef5-8cf1-c958c54182c0/go.snapshot.json"
+  ]
+}

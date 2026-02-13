@@ -1,0 +1,9 @@
+{
+  "case_id": "p0_clash_api_contract_strict",
+  "generated_at": "2026-02-13T07:23:24.529616Z",
+  "run_id": "20260213T072309Z-160e187d-fd00-494e-aa3a-1cafd2131cb2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p0_clash_api_contract_strict/20260213T072309Z-160e187d-fd00-494e-aa3a-1cafd2131cb2/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p0_clash_api_contract_strict/20260213T072309Z-160e187d-fd00-494e-aa3a-1cafd2131cb2/go.snapshot.json"
+  ]
+}

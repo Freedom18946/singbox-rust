@@ -1,0 +1,79 @@
+id: p1_optional_endpoints_contract
+title: optional endpoints contract for providers rules script profile
+owner: null
+priority: p1
+kernel_mode: both
+tags:
+- control-plane
+env_class: env_limited
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_RUST_API_BASE}
+      secret: ${INTEROP_RUST_API_SECRET}
+  go:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_GO_API_BASE}
+      secret: ${INTEROP_GO_API_SECRET}
+gui_sequence:
+- kind: http
+  name: get_providers
+  method: GET
+  path: /providers
+  body: null
+  expect_status: null
+- kind: http
+  name: get_rules
+  method: GET
+  path: /rules
+  body: null
+  expect_status: null
+- kind: http
+  name: get_script
+  method: GET
+  path: /script
+  body: null
+  expect_status: null
+- kind: http
+  name: get_profile
+  method: GET
+  path: /profile
+  body: null
+  expect_status: null
+upstream_topology: []
+traffic_plan: []
+subscription_input: null
+faults: []
+assertions:
+- key: http.get_providers.status
+  op: lte
+  expected: 501
+- key: http.get_rules.status
+  op: lte
+  expected: 501
+- key: http.get_script.status
+  op: lte
+  expected: 501
+- key: http.get_profile.status
+  op: lte
+  expected: 501
+oracle:
+  ignore_http_paths:
+  - /script
+  - /profile
+  ignore_ws_paths: []
+  tolerate_counter_jitter: false
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null
