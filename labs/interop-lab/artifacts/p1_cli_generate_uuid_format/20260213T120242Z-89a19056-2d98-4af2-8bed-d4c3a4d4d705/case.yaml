@@ -1,0 +1,46 @@
+id: p1_cli_generate_uuid_format
+title: generate uuid produces valid UUID v4 format
+owner: L15
+priority: p1
+kernel_mode: rust
+tags:
+- cli
+- generate
+env_class: strict
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 5000
+    ready_path: /
+    api:
+      base_url: https://example.com
+      secret: null
+  go: null
+gui_sequence: []
+upstream_topology: []
+traffic_plan:
+- kind: command
+  name: run_cli
+  command: ./target/debug/app
+  args:
+  - generate
+  - uuid
+  env: {}
+  workdir: null
+  timeout_ms: 30000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.run_cli.detail.exit_code
+  op: eq
+  expected: 0
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_recovery_multi_flap_http_via_socks",
+  "generated_at": "2026-02-13T11:52:06.604440Z",
+  "run_id": "20260213T115151Z-f56c03f2-ae60-42ed-bd26-0441f520110b",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_recovery_multi_flap_http_via_socks/20260213T115151Z-f56c03f2-ae60-42ed-bd26-0441f520110b/rust.snapshot.json"
+  ]
+}

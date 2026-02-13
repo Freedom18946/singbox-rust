@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_cli_generate_uuid_format",
+  "generated_at": "2026-02-13T11:57:05.497427Z",
+  "run_id": "20260213T115702Z-b5662a47-dfe1-4232-8a4c-c1d528fe0b23",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_cli_generate_uuid_format/20260213T115702Z-b5662a47-dfe1-4232-8a4c-c1d528fe0b23/rust.snapshot.json"
+  ]
+}

@@ -1,45 +1,151 @@
    Compiling sb-benches v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches)
-    Finished `bench` profile [optimized] target(s) in 1m 05s
-     Running unittests src/lib.rs (target/release/deps/sb_benches-285ba6a4db7a867a)
+error[E0507]: cannot move out of `dropped_iterations`, a captured variable in an `FnMut` closure
+   --> benches/benches/shadowsocks_throughput.rs:133:57
+    |
+131 |                     let dropped_iterations = Arc::clone(&dropped_iterations);
+    |                         ------------------   ------------------------------- move occurs because `dropped_iterations` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                         |
+    |                         captured outer variable
+132 |                     let reconnect_failures = Arc::clone(&reconnect_failures);
+133 |                     b.to_async(&rt).iter_custom(|iters| async move {
+    |                                                 ------- ^^^^^^^^^^ `dropped_iterations` is moved here
+    |                                                 |
+    |                                                 captured by this `FnMut` closure
+...
+168 |                             dropped_iterations.fetch_add(1, Ordering::Relaxed);
+    |                             ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+133 ~                     b.to_async(&rt).iter_custom(|iters| {
+134 +                     let value = dropped_iterations.clone();
+135 ~                     async move {
+136 |                         let client_config = ShadowsocksConfig {
+...
+169 |                         let Some(mut stream) = connect().await else {
+170 ~                             value.fetch_add(1, Ordering::Relaxed);
+171 |                             return Duration::from_secs(0);
+...
+226 |                         started.elapsed()
+227 ~                     }
+228 ~                     });
+    |
 
-running 4 tests
-test tests::test_calculate_mbps ... ignored
-test tests::test_compute_percentiles ... ignored
-test tests::test_compute_percentiles_empty ... ignored
-test tests::test_generate_random_data ... ignored
+error[E0507]: cannot move out of `reconnect_failures`, a captured variable in an `FnMut` closure
+   --> benches/benches/shadowsocks_throughput.rs:133:57
+    |
+132 |                     let reconnect_failures = Arc::clone(&reconnect_failures);
+    |                         ------------------   ------------------------------- move occurs because `reconnect_failures` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                         |
+    |                         captured outer variable
+133 |                     b.to_async(&rt).iter_custom(|iters| async move {
+    |                                                 ------- ^^^^^^^^^^ `reconnect_failures` is moved here
+    |                                                 |
+    |                                                 captured by this `FnMut` closure
+...
+183 |                                         reconnect_failures.fetch_add(1, Ordering::Relaxed);
+    |                                         ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+133 ~                     b.to_async(&rt).iter_custom(|iters| {
+134 +                     let value = reconnect_failures.clone();
+135 ~                     async move {
+136 |                         let client_config = ShadowsocksConfig {
+...
+184 |                                     } else {
+185 ~                                         value.fetch_add(1, Ordering::Relaxed);
+186 |                                         break;
+...
+226 |                         started.elapsed()
+227 ~                     }
+228 ~                     });
+    |
 
-test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error[E0507]: cannot move out of `dropped_iterations`, a captured variable in an `FnMut` closure
+   --> benches/benches/trojan_throughput.rs:174:49
+    |
+172 |             let dropped_iterations = Arc::clone(&dropped_iterations);
+    |                 ------------------   ------------------------------- move occurs because `dropped_iterations` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                 |
+    |                 captured outer variable
+173 |             let reconnect_failures = Arc::clone(&reconnect_failures);
+174 |             b.to_async(&rt).iter_custom(|iters| async move {
+    |                                         ------- ^^^^^^^^^^ `dropped_iterations` is moved here
+    |                                         |
+    |                                         captured by this `FnMut` closure
+...
+213 |                     dropped_iterations.fetch_add(1, Ordering::Relaxed);
+    |                     ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+174 ~             b.to_async(&rt).iter_custom(|iters| {
+175 +             let value = dropped_iterations.clone();
+176 ~             async move {
+177 |                 let client_config = TrojanConfig {
+...
+214 |                 let Some(mut stream) = connect().await else {
+215 ~                     value.fetch_add(1, Ordering::Relaxed);
+216 |                     return Duration::from_secs(0);
+...
+276 |                 started.elapsed()
+277 ~             }
+278 ~             });
+    |
 
-     Running benches/aead_crypto.rs (target/release/deps/aead_crypto-f019006cf54d59ae)
-Gnuplot not found, using plotters backend
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Collecting 100 samples in estimated 10.025 s (778k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/1024
-                        time:   [12.893 µs 12.895 µs 12.898 µs]
-                        thrpt:  [75.717 MiB/s 75.731 MiB/s 75.743 MiB/s]
-                 change:
-                        time:   [-64.912% -62.493% -59.818%] (p = 0.00 < 0.05)
-                        thrpt:  [+148.87% +166.62% +185.00%]
-                        Performance has improved.
-Found 14 outliers among 100 measurements (14.00%)
-  1 (1.00%) low mild
-  4 (4.00%) high mild
-  9 (9.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Collecting 100 samples in estimated 10.019 s (1.3M iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/1024
-                        time:   [7.8916 µs 7.9099 µs 7.9365 µs]
-                        thrpt:  [123.05 MiB/s 123.46 MiB/s 123.75 MiB/s]
-                 change:
-                        time:   [-64.569% -62.498% -60.234%] (p = 0.00 < 0.05)
-                        thrpt:  [+151.47% +166.65% +182.24%]
-                        Performance has improved.
-Found 10 outliers among 100 measurements (10.00%)
-  1 (1.00%) high mild
-  9 (9.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Warming up for 3.0000 s
+error[E0507]: cannot move out of `reconnect_failures`, a captured variable in an `FnMut` closure
+   --> benches/benches/trojan_throughput.rs:174:49
+    |
+173 |             let reconnect_failures = Arc::clone(&reconnect_failures);
+    |                 ------------------   ------------------------------- move occurs because `reconnect_failures` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                 |
+    |                 captured outer variable
+174 |             b.to_async(&rt).iter_custom(|iters| async move {
+    |                                         ------- ^^^^^^^^^^ `reconnect_failures` is moved here
+    |                                         |
+    |                                         captured by this `FnMut` closure
+...
+230 |                                 reconnect_failures.fetch_add(1, Ordering::Relaxed);
+    |                                 ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+174 ~             b.to_async(&rt).iter_custom(|iters| {
+175 +             let value = reconnect_failures.clone();
+176 ~             async move {
+177 |                 let client_config = TrojanConfig {
+...
+231 |                             } else {
+232 ~                                 value.fetch_add(1, Ordering::Relaxed);
+233 |                                 break;
+...
+276 |                 started.elapsed()
+277 ~             }
+278 ~             });
+    |
+
+For more information about this error, try `rustc --explain E0507`.
+error: could not compile `sb-benches` (bench "shadowsocks_throughput") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `sb-benches` (bench "trojan_throughput") due to 2 previous errors

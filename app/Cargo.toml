@@ -7,7 +7,7 @@ default-run = "app"
 
 [features]
 ## 默认最小构建：不启用任何可选特性，降低默认噪声
-default = []
+default = ["router"]
 minimal = []
 ## 验收构建聚合特性集（便于一次性开启验收所需能力）
 acceptance = [

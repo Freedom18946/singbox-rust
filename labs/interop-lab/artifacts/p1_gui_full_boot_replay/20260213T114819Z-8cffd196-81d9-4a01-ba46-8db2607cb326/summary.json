@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_full_boot_replay",
+  "generated_at": "2026-02-13T11:48:34.524508Z",
+  "run_id": "20260213T114819Z-8cffd196-81d9-4a01-ba46-8db2607cb326",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_full_boot_replay/20260213T114819Z-8cffd196-81d9-4a01-ba46-8db2607cb326/rust.snapshot.json"
+  ]
+}

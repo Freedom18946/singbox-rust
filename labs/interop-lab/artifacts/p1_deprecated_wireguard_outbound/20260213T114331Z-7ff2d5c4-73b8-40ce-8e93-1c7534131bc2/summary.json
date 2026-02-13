@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_deprecated_wireguard_outbound",
+  "generated_at": "2026-02-13T11:43:46.574669Z",
+  "run_id": "20260213T114331Z-7ff2d5c4-73b8-40ce-8e93-1c7534131bc2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_deprecated_wireguard_outbound/20260213T114331Z-7ff2d5c4-73b8-40ce-8e93-1c7534131bc2/rust.snapshot.json"
+  ]
+}

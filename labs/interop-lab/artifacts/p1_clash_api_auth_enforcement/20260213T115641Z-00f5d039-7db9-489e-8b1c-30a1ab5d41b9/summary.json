@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_clash_api_auth_enforcement",
+  "generated_at": "2026-02-13T11:56:56.820512Z",
+  "run_id": "20260213T115641Z-00f5d039-7db9-489e-8b1c-30a1ab5d41b9",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_clash_api_auth_enforcement/20260213T115641Z-00f5d039-7db9-489e-8b1c-30a1ab5d41b9/rust.snapshot.json"
+  ]
+}

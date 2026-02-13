@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_cli_generate_rand_base64",
+  "generated_at": "2026-02-13T11:55:07.333996Z",
+  "run_id": "20260213T115505Z-8edf5e6d-f46f-4e3c-9dd5-c4c668858619",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_cli_generate_rand_base64/20260213T115505Z-8edf5e6d-f46f-4e3c-9dd5-c4c668858619/rust.snapshot.json"
+  ]
+}

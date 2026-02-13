@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_tls_fragment_activation",
+  "generated_at": "2026-02-13T11:53:52.602890Z",
+  "run_id": "20260213T115337Z-8a95c093-b1f4-4915-8f82-175b7d03716f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_tls_fragment_activation/20260213T115337Z-8a95c093-b1f4-4915-8f82-175b7d03716f/rust.snapshot.json"
+  ]
+}

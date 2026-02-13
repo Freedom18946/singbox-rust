@@ -9,6 +9,7 @@ use sb_benches::setup_tracing;
 use sb_core::router::engine::RouterHandle;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -102,11 +103,49 @@ async fn start_trojan_server() -> TrojanServerHandle {
     }
 }
 
+async fn wait_for_trojan_ready(server_addr: SocketAddr, target: SocketAddr, timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let client_config = TrojanConfig {
+            server: server_addr.to_string(),
+            tag: None,
+            password: "benchmark-pass".to_string(),
+            connect_timeout_sec: Some(2),
+            sni: Some("localhost".to_string()),
+            alpn: None,
+            skip_cert_verify: true,
+            transport_layer: TransportConfig::Tcp,
+            reality: None,
+            multiplex: None,
+        };
+        let connector = TrojanConnector::new(client_config);
+        let dial = connector
+            .dial(
+                Target {
+                    host: target.ip().to_string(),
+                    port: target.port(),
+                    kind: TransportKind::Tcp,
+                },
+                DialOpts::default(),
+            )
+            .await;
+        if dial.is_ok() {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 fn bench_trojan_throughput(c: &mut Criterion) {
     setup_tracing();
     disable_inbound_rate_limit_for_bench();
 
     let rt = Runtime::new().unwrap();
+    let dropped_iterations = Arc::new(AtomicU64::new(0));
+    let reconnect_failures = Arc::new(AtomicU64::new(0));
     let mut group = c.benchmark_group("trojan_throughput");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(20);
@@ -118,12 +157,24 @@ fn bench_trojan_throughput(c: &mut Criterion) {
         (echo, trojan)
     });
     let trojan_addr = trojan_server.addr;
+    rt.block_on(async {
+        if !wait_for_trojan_ready(trojan_addr, echo_addr, Duration::from_secs(3)).await {
+            eprintln!("warn: trojan server readiness probe timed out at {}", trojan_addr);
+        }
+    });
 
     for size in [1024, 65536, 1_048_576] {
         group.throughput(Throughput::Bytes(size as u64));
+        let dropped_iterations = Arc::clone(&dropped_iterations);
+        let reconnect_failures = Arc::clone(&reconnect_failures);
 
         group.bench_with_input(BenchmarkId::new("tls_1_3", size), &size, |b, &size| {
-            b.to_async(&rt).iter_custom(|iters| async move {
+            let dropped_iterations = Arc::clone(&dropped_iterations);
+            let reconnect_failures = Arc::clone(&reconnect_failures);
+            b.to_async(&rt).iter_custom(move |iters| {
+                let dropped_iterations = Arc::clone(&dropped_iterations);
+                let reconnect_failures = Arc::clone(&reconnect_failures);
+                async move {
                 let client_config = TrojanConfig {
                     server: trojan_addr.to_string(),
                     tag: None,
@@ -162,6 +213,7 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                 };
 
                 let Some(mut stream) = connect().await else {
+                    dropped_iterations.fetch_add(1, Ordering::Relaxed);
                     return Duration::from_secs(0);
                 };
                 let data = vec![0u8; size];
@@ -178,6 +230,7 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                             if let Some(new_stream) = connect().await {
                                 stream = new_stream;
                             } else {
+                                reconnect_failures.fetch_add(1, Ordering::Relaxed);
                                 break;
                             }
                             continue;
@@ -187,6 +240,7 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                             if let Some(new_stream) = connect().await {
                                 stream = new_stream;
                             } else {
+                                reconnect_failures.fetch_add(1, Ordering::Relaxed);
                                 break;
                             }
                             continue;
@@ -202,6 +256,7 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                             if let Some(new_stream) = connect().await {
                                 stream = new_stream;
                             } else {
+                                reconnect_failures.fetch_add(1, Ordering::Relaxed);
                                 break;
                             }
                             continue;
@@ -211,6 +266,7 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                             if let Some(new_stream) = connect().await {
                                 stream = new_stream;
                             } else {
+                                reconnect_failures.fetch_add(1, Ordering::Relaxed);
                                 break;
                             }
                             continue;
@@ -219,11 +275,17 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                     black_box(&buf);
                 }
                 started.elapsed()
+            }
             });
         });
     }
 
     group.finish();
+    eprintln!(
+        "trojan_throughput summary: dropped_iterations={} reconnect_failures={}",
+        dropped_iterations.load(Ordering::Relaxed),
+        reconnect_failures.load(Ordering::Relaxed)
+    );
 }
 
 fn bench_trojan_handshake_overhead(c: &mut Criterion) {
@@ -231,6 +293,7 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
     disable_inbound_rate_limit_for_bench();
 
     let rt = Runtime::new().unwrap();
+    let handshake_skips = Arc::new(AtomicU64::new(0));
     let mut group = c.benchmark_group("trojan_handshake");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(50);
@@ -241,8 +304,17 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
         (echo, trojan)
     });
     let trojan_addr = trojan_server.addr;
+    rt.block_on(async {
+        if !wait_for_trojan_ready(trojan_addr, echo_addr, Duration::from_secs(3)).await {
+            eprintln!(
+                "warn: trojan handshake server readiness probe timed out at {}",
+                trojan_addr
+            );
+        }
+    });
 
     group.bench_function("connect_tls", |b| {
+        let handshake_skips = Arc::clone(&handshake_skips);
         b.to_async(&rt).iter(|| async {
             let client_config = TrojanConfig {
                 server: trojan_addr.to_string(),
@@ -281,6 +353,7 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
                 match connected {
                     Some(stream) => stream,
                     None => {
+                        handshake_skips.fetch_add(1, Ordering::Relaxed);
                         eprintln!(
                             "skip iteration: TCP connection to Trojan server {} failed after retries: {}",
                             trojan_addr, last_err
@@ -295,6 +368,10 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
     });
 
     group.finish();
+    eprintln!(
+        "trojan_handshake summary: skipped_iterations={}",
+        handshake_skips.load(Ordering::Relaxed)
+    );
 }
 
 criterion_group!(

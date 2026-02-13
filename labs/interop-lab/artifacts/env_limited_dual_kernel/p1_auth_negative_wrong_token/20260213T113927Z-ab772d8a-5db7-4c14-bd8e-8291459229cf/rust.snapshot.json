@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T113927Z-ab772d8a-5db7-4c14-bd8e-8291459229cf",
+  "case_id": "p1_auth_negative_wrong_token",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:39:27.499028Z",
+  "finished_at": "2026-02-13T11:39:57.516983Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at /version"
+    }
+  ],
+  "fd_samples": []
+}

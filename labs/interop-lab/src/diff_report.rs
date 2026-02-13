@@ -261,7 +261,7 @@ pub fn build_diff_report(
         ignored_ws_count,
         ignored_counter_jitter_count,
         gate_score,
-        env_limited_attributions: Vec::new(),
+        env_limited_attributions: crate::attribution::classify_env_limited_failures(rust_snapshot),
     }
 }
 

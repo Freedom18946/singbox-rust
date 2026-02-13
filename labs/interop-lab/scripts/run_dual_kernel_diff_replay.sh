@@ -6,6 +6,11 @@ STRICT_ARTIFACTS_DIR="${STRICT_ARTIFACTS_DIR:-${ROOT_ARTIFACTS_DIR}/strict_dual_
 ENV_ARTIFACTS_DIR="${ENV_ARTIFACTS_DIR:-${ROOT_ARTIFACTS_DIR}/env_limited_dual_kernel}"
 INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
 
+EXIT_DIFF_FAIL=1
+EXIT_USAGE=2
+EXIT_NO_CASES=3
+EXIT_ARTIFACT_INCOMPLETE=4
+
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
   echo "prebuild: cargo build -p app --features acceptance --bin app"
   cargo build -p app --features acceptance --bin app >/dev/null
@@ -14,6 +19,10 @@ fi
 echo "dual-kernel replay: strict_artifacts=${STRICT_ARTIFACTS_DIR} env_artifacts=${ENV_ARTIFACTS_DIR}"
 
 case_list_output="$(cargo run -p interop-lab -- case list)"
+if [[ -z "${case_list_output}" ]]; then
+  echo "error: empty case list output"
+  exit "${EXIT_NO_CASES}"
+fi
 
 strict_cases=()
 env_cases=()
@@ -37,11 +46,34 @@ done <<< "${case_list_output}"
 
 echo "detected both-kernel cases: strict=${#strict_cases[@]} env_limited=${#env_cases[@]}"
 
+if [[ ${#strict_cases[@]} -eq 0 && ${#env_cases[@]} -eq 0 ]]; then
+  echo "error: no kernel_mode=both cases found in case list"
+  exit "${EXIT_NO_CASES}"
+fi
+
+mkdir -p "${STRICT_ARTIFACTS_DIR}" "${ENV_ARTIFACTS_DIR}"
+
+run_fail_count=0
+artifacts_fail_count=0
+
 if [[ ${#strict_cases[@]} -gt 0 ]]; then
   echo "running strict dual-kernel cases..."
   for case_id in "${strict_cases[@]}"; do
     echo "  run case=${case_id} artifacts=${STRICT_ARTIFACTS_DIR}"
-    cargo run -p interop-lab -- --artifacts-dir "${STRICT_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class strict
+    run_output="$(cargo run -p interop-lab -- --artifacts-dir "${STRICT_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class strict)"
+    echo "${run_output}"
+
+    run_dir="$(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p' | tail -n1)"
+    if [[ -z "${run_dir}" || ! -d "${run_dir}" ]]; then
+      echo "error: strict case=${case_id} missing run_dir in output"
+      run_fail_count=$((run_fail_count + 1))
+      continue
+    fi
+
+    if [[ ! -f "${run_dir}/rust.snapshot.json" || ! -f "${run_dir}/go.snapshot.json" ]]; then
+      echo "error: strict case=${case_id} incomplete artifacts under ${run_dir}"
+      artifacts_fail_count=$((artifacts_fail_count + 1))
+    fi
   done
 else
   echo "skip strict run: no both-kernel strict cases"
@@ -51,10 +83,41 @@ if [[ ${#env_cases[@]} -gt 0 ]]; then
   echo "running env-limited dual-kernel cases..."
   for case_id in "${env_cases[@]}"; do
     echo "  run case=${case_id} artifacts=${ENV_ARTIFACTS_DIR}"
-    cargo run -p interop-lab -- --artifacts-dir "${ENV_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class env-limited
+    run_output="$(cargo run -p interop-lab -- --artifacts-dir "${ENV_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class env-limited)"
+    echo "${run_output}"
+
+    run_dir="$(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p' | tail -n1)"
+    if [[ -z "${run_dir}" || ! -d "${run_dir}" ]]; then
+      echo "error: env-limited case=${case_id} missing run_dir in output"
+      run_fail_count=$((run_fail_count + 1))
+      continue
+    fi
+
+    if [[ ! -f "${run_dir}/rust.snapshot.json" || ! -f "${run_dir}/go.snapshot.json" ]]; then
+      echo "error: env-limited case=${case_id} incomplete artifacts under ${run_dir}"
+      artifacts_fail_count=$((artifacts_fail_count + 1))
+    fi
   done
 else
   echo "skip env-limited run: no both-kernel env-limited cases"
+fi
+
+if [[ ${run_fail_count} -gt 0 ]]; then
+  echo "error: run replay failed for ${run_fail_count} case(s)"
+  echo "summary_pass=0"
+  echo "summary_fail=0"
+  echo "summary_run_fail=${run_fail_count}"
+  echo "summary_artifact_fail=${artifacts_fail_count}"
+  exit "${EXIT_USAGE}"
+fi
+
+if [[ ${artifacts_fail_count} -gt 0 ]]; then
+  echo "error: artifact integrity check failed for ${artifacts_fail_count} case(s)"
+  echo "summary_pass=0"
+  echo "summary_fail=0"
+  echo "summary_run_fail=${run_fail_count}"
+  echo "summary_artifact_fail=${artifacts_fail_count}"
+  exit "${EXIT_ARTIFACT_INCOMPLETE}"
 fi
 
 pass_count=0
@@ -81,6 +144,11 @@ for case_id in "${env_cases[@]}"; do
 done
 
 echo "dual-kernel diff replay summary: pass=${pass_count} fail=${fail_count}"
+echo "summary_pass=${pass_count}"
+echo "summary_fail=${fail_count}"
+echo "summary_run_fail=${run_fail_count}"
+echo "summary_artifact_fail=${artifacts_fail_count}"
+
 if [[ ${fail_count} -gt 0 ]]; then
-  exit 1
+  exit "${EXIT_DIFF_FAIL}"
 fi

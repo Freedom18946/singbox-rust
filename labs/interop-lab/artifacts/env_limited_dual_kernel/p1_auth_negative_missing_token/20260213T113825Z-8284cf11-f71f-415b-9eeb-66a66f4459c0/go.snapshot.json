@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T113825Z-8284cf11-f71f-415b-9eeb-66a66f4459c0",
+  "case_id": "p1_auth_negative_missing_token",
+  "kernel": "go",
+  "started_at": "2026-02-13T11:38:55.996217Z",
+  "finished_at": "2026-02-13T11:39:26.238531Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at /version"
+    }
+  ],
+  "fd_samples": []
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T114028Z-0579dc87-a69c-4baf-bae7-1995c2d8a656",
+  "case_id": "p1_optional_endpoints_contract",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:40:28.636994Z",
+  "finished_at": "2026-02-13T11:40:58.884567Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at /version"
+    }
+  ],
+  "fd_samples": []
+}

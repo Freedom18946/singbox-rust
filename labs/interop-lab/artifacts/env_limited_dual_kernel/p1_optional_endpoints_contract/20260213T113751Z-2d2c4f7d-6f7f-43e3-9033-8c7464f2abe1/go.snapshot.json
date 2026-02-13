@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T113751Z-2d2c4f7d-6f7f-43e3-9033-8c7464f2abe1",
+  "case_id": "p1_optional_endpoints_contract",
+  "kernel": "go",
+  "started_at": "2026-02-13T11:38:22.036416Z",
+  "finished_at": "2026-02-13T11:38:52.042540Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at /version"
+    }
+  ],
+  "fd_samples": []
+}

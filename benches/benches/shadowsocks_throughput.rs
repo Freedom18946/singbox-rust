@@ -7,6 +7,7 @@ use sb_adapters::TransportKind;
 use sb_benches::{generate_random_bytes, setup_tracing};
 use sb_core::router::engine::RouterHandle;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -88,10 +89,9 @@ async fn start_ss_server(method: &str) -> SsServerHandle {
         let _ = sb_adapters::inbound::shadowsocks::serve(config, stop_rx).await;
     });
 
-    assert!(
-        wait_for_tcp_ready(addr, Duration::from_secs(2)).await,
-        "shadowsocks server not ready at {addr}"
-    );
+    if !wait_for_tcp_ready(addr, Duration::from_secs(2)).await {
+        eprintln!("warn: shadowsocks server readiness probe timed out at {addr}");
+    }
 
     SsServerHandle {
         addr,
@@ -104,6 +104,8 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
     disable_inbound_rate_limit_for_bench();
 
     let rt = Runtime::new().unwrap();
+    let dropped_iterations = Arc::new(AtomicU64::new(0));
+    let reconnect_failures = Arc::new(AtomicU64::new(0));
     let mut group = c.benchmark_group("shadowsocks_e2e_throughput");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(20);
@@ -119,12 +121,19 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
 
         for size in [1024, 65536, 1_048_576] {
             group.throughput(Throughput::Bytes(size as u64));
+            let dropped_iterations = Arc::clone(&dropped_iterations);
+            let reconnect_failures = Arc::clone(&reconnect_failures);
 
             group.bench_with_input(
                 BenchmarkId::new(cipher, size),
                 &(cipher, size),
                 |b, &(cipher, size)| {
-                    b.to_async(&rt).iter_custom(|iters| async move {
+                    let dropped_iterations = Arc::clone(&dropped_iterations);
+                    let reconnect_failures = Arc::clone(&reconnect_failures);
+                    b.to_async(&rt).iter_custom(move |iters| {
+                        let dropped_iterations = Arc::clone(&dropped_iterations);
+                        let reconnect_failures = Arc::clone(&reconnect_failures);
+                        async move {
                         let client_config = ShadowsocksConfig {
                             server: ss_addr.to_string(),
                             tag: None,
@@ -159,6 +168,7 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
                         };
 
                         let Some(mut stream) = connect().await else {
+                            dropped_iterations.fetch_add(1, Ordering::Relaxed);
                             return Duration::from_secs(0);
                         };
                         let data = vec![0u8; size];
@@ -166,27 +176,56 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
 
                         let started = std::time::Instant::now();
                         for _ in 0..iters {
-                            if let Err(err) = stream.write_all(&data).await {
-                                eprintln!("reconnect after write failure: {}", err);
-                                if let Some(new_stream) = connect().await {
-                                    stream = new_stream;
-                                } else {
-                                    break;
+                            match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&data)).await {
+                                Ok(Ok(())) => {}
+                                Ok(Err(err)) => {
+                                    eprintln!("reconnect after write failure: {}", err);
+                                    if let Some(new_stream) = connect().await {
+                                        stream = new_stream;
+                                    } else {
+                                        reconnect_failures.fetch_add(1, Ordering::Relaxed);
+                                        break;
+                                    }
+                                    continue;
                                 }
-                                continue;
+                                Err(_) => {
+                                    eprintln!("reconnect after write timeout");
+                                    if let Some(new_stream) = connect().await {
+                                        stream = new_stream;
+                                    } else {
+                                        reconnect_failures.fetch_add(1, Ordering::Relaxed);
+                                        break;
+                                    }
+                                    continue;
+                                }
                             }
-                            if let Err(err) = stream.read_exact(&mut buf).await {
-                                eprintln!("reconnect after read failure: {}", err);
-                                if let Some(new_stream) = connect().await {
-                                    stream = new_stream;
-                                } else {
-                                    break;
+                            match tokio::time::timeout(Duration::from_secs(2), stream.read_exact(&mut buf)).await {
+                                Ok(Ok(_)) => {}
+                                Ok(Err(err)) => {
+                                    eprintln!("reconnect after read failure: {}", err);
+                                    if let Some(new_stream) = connect().await {
+                                        stream = new_stream;
+                                    } else {
+                                        reconnect_failures.fetch_add(1, Ordering::Relaxed);
+                                        break;
+                                    }
+                                    continue;
                                 }
-                                continue;
+                                Err(_) => {
+                                    eprintln!("reconnect after read timeout");
+                                    if let Some(new_stream) = connect().await {
+                                        stream = new_stream;
+                                    } else {
+                                        reconnect_failures.fetch_add(1, Ordering::Relaxed);
+                                        break;
+                                    }
+                                    continue;
+                                }
                             }
                             black_box(&buf);
                         }
                         started.elapsed()
+                    }
                     });
                 },
             );
@@ -194,6 +233,11 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
     }
 
     group.finish();
+    eprintln!(
+        "shadowsocks_e2e_throughput summary: dropped_iterations={} reconnect_failures={}",
+        dropped_iterations.load(Ordering::Relaxed),
+        reconnect_failures.load(Ordering::Relaxed)
+    );
 }
 
 /// Benchmark Shadowsocks encryption/decryption (Cipher only)

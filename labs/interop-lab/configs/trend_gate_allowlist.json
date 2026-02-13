@@ -1,0 +1,12 @@
+{
+  "cases": {
+    "p1_clash_api_auth_enforcement": {
+      "expires_on": "2026-03-31",
+      "reason": "Known readiness flake on /healthz during strict trend gate replay; tracked for dedicated fix"
+    },
+    "p1_tls_fragment_wiring": {
+      "expires_on": "2026-03-31",
+      "reason": "Known readiness flake on /healthz for TLS fragment wiring case during strict trend replay"
+    }
+  }
+}

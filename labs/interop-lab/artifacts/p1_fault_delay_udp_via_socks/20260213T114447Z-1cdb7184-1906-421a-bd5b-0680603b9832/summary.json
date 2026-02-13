@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_delay_udp_via_socks",
+  "generated_at": "2026-02-13T11:45:02.307980Z",
+  "run_id": "20260213T114447Z-1cdb7184-1906-421a-bd5b-0680603b9832",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_delay_udp_via_socks/20260213T114447Z-1cdb7184-1906-421a-bd5b-0680603b9832/rust.snapshot.json"
+  ]
+}
