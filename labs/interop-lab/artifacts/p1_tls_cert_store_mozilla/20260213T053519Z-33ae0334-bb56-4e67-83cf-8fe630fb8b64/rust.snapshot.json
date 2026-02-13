@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T053519Z-33ae0334-bb56-4e67-83cf-8fe630fb8b64",
+  "case_id": "p1_tls_cert_store_mozilla",
+  "kernel": "rust",
+  "started_at": "2026-02-13T05:35:19.707355Z",
+  "finished_at": "2026-02-13T05:35:34.834831Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19306/healthz"
+    }
+  ],
+  "fd_samples": []
+}

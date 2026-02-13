@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T052659Z-1b30889c-f75f-4772-a64e-21fd70f35c27",
+  "case_id": "p1_fault_delay_ws_upstream",
+  "kernel": "rust",
+  "started_at": "2026-02-13T05:26:59.538733Z",
+  "finished_at": "2026-02-13T05:27:14.714299Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

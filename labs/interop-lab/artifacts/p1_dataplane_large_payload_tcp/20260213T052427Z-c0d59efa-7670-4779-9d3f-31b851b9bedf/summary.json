@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_dataplane_large_payload_tcp",
+  "generated_at": "2026-02-13T05:24:43.096760Z",
+  "run_id": "20260213T052427Z-c0d59efa-7670-4779-9d3f-31b851b9bedf",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_dataplane_large_payload_tcp/20260213T052427Z-c0d59efa-7670-4779-9d3f-31b851b9bedf/rust.snapshot.json"
+  ]
+}

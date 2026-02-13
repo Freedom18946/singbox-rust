@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T061718Z-88d23a3c-9aad-42a9-bcd2-d022cfda68a7",
+  "case_id": "p1_fault_jitter_tcp_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:17:18.765625Z",
+  "finished_at": "2026-02-13T06:17:33.915054Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

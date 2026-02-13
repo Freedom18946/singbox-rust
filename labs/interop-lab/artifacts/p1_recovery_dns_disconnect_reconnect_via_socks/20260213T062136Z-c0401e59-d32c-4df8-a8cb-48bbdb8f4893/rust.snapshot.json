@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T062136Z-c0401e59-d32c-4df8-a8cb-48bbdb8f4893",
+  "case_id": "p1_recovery_dns_disconnect_reconnect_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:21:36.476769Z",
+  "finished_at": "2026-02-13T06:21:51.620325Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

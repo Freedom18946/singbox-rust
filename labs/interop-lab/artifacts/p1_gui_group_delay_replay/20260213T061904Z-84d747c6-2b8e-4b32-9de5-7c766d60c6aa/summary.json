@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_group_delay_replay",
+  "generated_at": "2026-02-13T06:19:20.056169Z",
+  "run_id": "20260213T061904Z-84d747c6-2b8e-4b32-9de5-7c766d60c6aa",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_group_delay_replay/20260213T061904Z-84d747c6-2b8e-4b32-9de5-7c766d60c6aa/rust.snapshot.json"
+  ]
+}

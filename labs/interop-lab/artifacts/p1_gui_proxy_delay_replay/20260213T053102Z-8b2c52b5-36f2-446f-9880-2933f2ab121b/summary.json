@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_proxy_delay_replay",
+  "generated_at": "2026-02-13T05:31:17.287494Z",
+  "run_id": "20260213T053102Z-8b2c52b5-36f2-446f-9880-2933f2ab121b",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_proxy_delay_replay/20260213T053102Z-8b2c52b5-36f2-446f-9880-2933f2ab121b/rust.snapshot.json"
+  ]
+}

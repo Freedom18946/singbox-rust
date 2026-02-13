@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T061225Z-4c92eda9-8721-4d83-91ba-ef7fb8e1ef0f",
+  "case_id": "p1_cli_ech_keypair_pem_format",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:12:25.038071Z",
+  "finished_at": "2026-02-13T06:12:26.527637Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "run_cli",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "generate",
+          "ech-keypair",
+          "test.example.com"
+        ],
+        "command": "./target/debug/app",
+        "elapsed_ms": 27,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "2026-02-13T06:12:26.518198Z  INFO app::logging: Logging system initialized format=Compact level=info sampling=None redact=true\n",
+        "stdout": "-----BEGIN ECH CONFIGS-----\nAEv+DQBHAAAgACCBX3KUsl7N4iWqvSQ/hrxJxxWPqAt5PkCOouXb76KTbQAMAAEA\nAQABAAIAAQADABB0ZXN0LmV4YW1wbGUuY29tAAA=\n-----END ECH CONFIGS-----\n-----BEGIN ECH KEYS-----\nACBCQ77493dj0w/mGDqmDupARLnC8zo2Nb0tFuXDaWetGwBL/g0ARwAAIAAggV9y\nlLJezeIlqr0kP4a8SccVj6gLeT5AjqLl2++ik20ADAABAAEAAQACAAEAAwAQdGVz\ndC5leGFtcGxlLmNvbQAA\n-----END ECH KEYS-----\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}
