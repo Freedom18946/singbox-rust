@@ -11,7 +11,7 @@
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: L17 复验快照（2026-02-13）：`check-boundaries.sh` ✅；`cargo check -p app --features parity` ✅；`cargo test --workspace` ❌（`udp_balancer::balancer_socks5_ok`）
+**Tests**: L17 复验快照（2026-02-13）：`check-boundaries.sh` ✅；`cargo check -p app --features parity` ✅；`cargo test --workspace` ❌（`udp_balancer::balancer_socks5_ok`）；long_tests 定向复验（2026-02-14）：`hot_reload_stability` ✅、`signal_reliability` ✅
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
 ### L17 发布就绪收口（2026-02-13）
@@ -34,6 +34,24 @@
 - `cargo test --workspace`：`sb-core` 测试 `balancer_socks5_ok` 失败。
 - Docker daemon 未启动：无法本机完成 Docker build/run/health 终验。
 - Canary 24h 短跑需单独持续执行（脚本参数已固定）。
+
+### L16.2.x long_tests 稳定性补丁（2026-02-14）
+
+- 修复文件：
+  - `app/tests/hot_reload_stability.rs`
+  - `app/tests/signal_reliability.rs`
+- 修复内容：
+  - readiness 超时/重试窗口增强（`SINGBOX_HEALTH_READY_TIMEOUT_SECS`，默认 30s）
+  - 启动前端口可用性预检与端口占用诊断
+  - 失败路径统一进程清理（TERM/kill）与 stderr/stdout tail 输出
+  - 默认使用动态端口，降低并发/残留进程导致的 `/healthz` 假失败
+  - 默认配置改为临时 `{}`（仍支持 `SINGBOX_CONFIG` 覆盖），默认二进制优先 `CARGO_BIN_EXE_*`
+- 复验结果：
+  - `cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture` ✅
+  - `cargo test -p app --test signal_reliability --features long_tests -- --nocapture` ✅
+- 证据产物：
+  - `reports/stability/hot_reload_100x.json`
+  - `reports/stability/signal_reliability_10x.json`
 
 ### L16 基准与稳定性（2026-02-12 已完成）
 

@@ -1,11 +1,36 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-13
+> **最后更新**：2026-02-14
 > **当前阶段**：L17 收口执行中（多流并行 + Integrator 合流）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L16.2.x long_tests 稳定性修复与复验（2026-02-14）
+
+**状态**：✅ 已完成（定向修复 + 定向复验）
+
+**修复范围**：
+- `app/tests/hot_reload_stability.rs`
+- `app/tests/signal_reliability.rs`
+
+**修复要点**：
+- readiness 增强：支持更宽就绪窗口（`SINGBOX_HEALTH_READY_TIMEOUT_SECS`，默认 30s）与轮询重试。
+- 端口占用防误杀：启动前端口可用性预检 + 占用进程诊断输出。
+- 进程治理：失败路径统一 `TERM -> timeout -> kill` 清理，避免残留进程/端口污染后续轮次。
+- 失败可观测性：采集并输出子进程 `stdout/stderr` tail。
+- 配置与二进制选择稳态：优先 `CARGO_BIN_EXE_*`；默认生成临时 `{}` 配置，避免特性集与历史配置漂移导致的假失败。
+
+**复验命令（通过）**：
+- ✅ `cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture`
+- ✅ `cargo test -p app --test signal_reliability --features long_tests -- --nocapture`
+
+**证据产物**：
+- `reports/stability/hot_reload_100x.json`
+- `reports/stability/signal_reliability_10x.json`
 
 ---
 
