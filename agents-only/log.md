@@ -966,4 +966,21 @@ L2.8.4-6 Handlers + WebSocket:
 - `agents-only/active_context.md`（L17 状态改为快跑闭环后 `PASS_ENV_LIMITED`）
 - `agents-only/workpackage_latest.md`（新增 L17 Capstone 快跑闭环节）
 
+### [2026-02-14] Agent: Codex (GPT-5)
+
+**任务**: 同步状态总线文档到最新进度口径（L17 快跑收口后）
+
+**文档更新**:
+- `agents-only/active_context.md`：`当前阶段` 更新为 **L17 收口完成（PASS_ENV_LIMITED）**
+- `agents-only/workpackage_latest.md`：`当前阶段` 更新为 **L17 收口完成（PASS_ENV_LIMITED，环境项待复跑）**
+- `CLAUDE.md`：
+  - 阶段更新为 **L17 收口完成（PASS_ENV_LIMITED）**
+  - L17 状态更新时间更新到 2026-02-14
+  - 构建状态更新：`fmt/clippy/workspace test` 由失败改为 PASS
+  - interop 统计更新为 `83 total (72 strict, 10 env_limited, 1 smoke)`
+
+**结果**: 成功
+**备注**:
+- 本次为文档口径同步，不引入代码行为变更。
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

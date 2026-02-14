@@ -7,7 +7,7 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L17 收口执行中**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
+**当前阶段**: **L17 收口完成（PASS_ENV_LIMITED）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）

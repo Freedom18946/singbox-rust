@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-14
-> **当前阶段**：L17 收口执行中（多流并行 + Integrator 合流）
+> **当前阶段**：L17 收口完成（`PASS_ENV_LIMITED`，环境项待复跑）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
