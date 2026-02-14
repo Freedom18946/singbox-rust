@@ -147,6 +147,8 @@ impl std::fmt::Debug for TcpTransport {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, SocketAddr};
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
 
     #[test]
     fn test_tcp_transport_creation() {
@@ -249,8 +251,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_tcp_invalid_server() {
-        // 使用无效的服务器地址测试超时
-        let server = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 53)); // TEST-NET-1, should be unreachable
+        // 启动一个本地“黑洞”TCP服务：接受请求但不返回DNS响应，确保稳定触发读超时。
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind local tcp listener");
+        let server = listener.local_addr().expect("read local listener addr");
+
+        let server_task = tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let mut length_buf = [0u8; 2];
+                if stream.read_exact(&mut length_buf).await.is_ok() {
+                    let packet_len = u16::from_be_bytes(length_buf) as usize;
+                    let mut packet_buf = vec![0u8; packet_len];
+                    let _ = stream.read_exact(&mut packet_buf).await;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        });
+
         let transport = TcpTransport::new(server).with_timeout(Duration::from_millis(100));
 
         let query_packet = vec![
@@ -258,10 +276,16 @@ mod tests {
             b'o', b'o', b'g', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00, 0x01, 0x00, 0x01,
         ];
 
-        let result = transport.query(&query_packet).await;
+        let err = transport
+            .query(&query_packet)
+            .await
+            .expect_err("query should fail with timeout/read timeout");
+        let err_msg = err.to_string().to_lowercase();
         assert!(
-            result.is_err(),
-            "Query to invalid server should fail with timeout"
+            err_msg.contains("timeout"),
+            "expected timeout-like error, got: {err_msg}"
         );
+
+        let _ = tokio::time::timeout(Duration::from_secs(1), server_task).await;
     }
 }

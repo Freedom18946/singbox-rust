@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_disconnect_tcp_via_socks",
+  "generated_at": "2026-02-13T07:27:17.940854Z",
+  "run_id": "20260213T072702Z-8ff55aa8-eebf-4d9a-8e7e-4ef028a0a6af",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_tcp_via_socks/20260213T072702Z-8ff55aa8-eebf-4d9a-8e7e-4ef028a0a6af/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_tcp_via_socks/20260213T072702Z-8ff55aa8-eebf-4d9a-8e7e-4ef028a0a6af/go.snapshot.json"
+  ]
+}

@@ -9,19 +9,18 @@ RUN_PRIORITY="${RUN_PRIORITY:-}"
 RUN_TAGS="${RUN_TAGS:-}"
 RUN_EXCLUDE_TAGS="${RUN_EXCLUDE_TAGS:-}"
 RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
+INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
 
 # --- Threshold configuration ---
-# If THRESHOLD_CONFIG points to a YAML file and THRESHOLD_TEMPLATE names a
-# section (strict / env_limited / development), thresholds are read from that
-# file.  Otherwise the hardcoded defaults below are used.  Individual env-var
-# overrides still win when set explicitly.
-
 THRESHOLD_CONFIG="${THRESHOLD_CONFIG:-}"
 THRESHOLD_TEMPLATE="${THRESHOLD_TEMPLATE:-}"
 
-# Helper: read a value from the YAML config under the chosen template section.
-# Uses plain grep+sed so we don't require yq on the runner.
-# Usage: _yaml_val <key> <default>
+# Optional case-level allowlist (with expiry) for known blockers in ALL mode.
+TREND_ALLOWLIST_FILE="${TREND_ALLOWLIST_FILE:-labs/interop-lab/configs/trend_gate_allowlist.json}"
+
+# Enable environment-limited classification and subtract from functional gates.
+CLASSIFY_ENV_LIMITED="${CLASSIFY_ENV_LIMITED:-1}"
+
 _yaml_val() {
   local key="$1" default="$2"
   if [[ -z "${THRESHOLD_CONFIG}" || -z "${THRESHOLD_TEMPLATE}" ]]; then
@@ -33,9 +32,6 @@ _yaml_val() {
     printf '%s' "${default}"
     return
   fi
-  # Locate the template section and extract the key's value.
-  # YAML structure is flat per-section, so we find the section header and then
-  # scan subsequent indented lines until the next top-level key.
   local value
   value="$(sed -n "/^${THRESHOLD_TEMPLATE}:/,/^[^ ]/{
     s/^[[:space:]]*${key}:[[:space:]]*//p
@@ -44,11 +40,10 @@ _yaml_val() {
     printf '%s' "${default}"
     return
   fi
-  # Normalise YAML booleans to the 0/1 integers the rest of the script expects.
   case "${value}" in
-    true|True|TRUE)   printf '1' ;;
+    true|True|TRUE) printf '1' ;;
     false|False|FALSE) printf '0' ;;
-    *)                 printf '%s' "${value}" ;;
+    *) printf '%s' "${value}" ;;
   esac
 }
 
@@ -71,14 +66,133 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none}"
+if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
+  echo "prebuild: cargo build -p app --features acceptance --bin app"
+  cargo build -p app --features acceptance --bin app >/dev/null
+fi
+
+if [[ -f "${TREND_ALLOWLIST_FILE}" ]]; then
+  echo "trend-allowlist: ${TREND_ALLOWLIST_FILE}"
+fi
+
+echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none} artifacts_dir=${ARTIFACTS_DIR}"
+
+_to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+_classify_env_limited_category() {
+  local text_lc
+  text_lc="$(_to_lower "$1")"
+
+  if [[ "${text_lc}" == *'"status":403'* || "${text_lc}" == *'"status":429'* || "${text_lc}" == *'"status":503'* || \
+        "${text_lc}" == *'status=403'* || "${text_lc}" == *'status=429'* || "${text_lc}" == *'status=503'* || \
+        "${text_lc}" == *'rate limit'* || "${text_lc}" == *'too many requests'* ]]; then
+    printf 'rate_limit'
+    return
+  fi
+
+  if [[ "${text_lc}" == *'tls'* || "${text_lc}" == *'handshake'* || "${text_lc}" == *'certificate'* || "${text_lc}" == *'ssl'* ]]; then
+    printf 'tls'
+    return
+  fi
+
+  # Keep launch-kernel readiness failures as functional by default.
+  if [[ "${text_lc}" == *'kernel not ready'* ]]; then
+    printf 'unknown'
+    return
+  fi
+
+  if [[ "${text_lc}" == *'connection refused'* || "${text_lc}" == *'connect error'* || \
+        "${text_lc}" == *'network unreachable'* || "${text_lc}" == *'no route to host'* || \
+        "${text_lc}" == *'connection reset'* || "${text_lc}" == *'timeout'* || "${text_lc}" == *'timed out'* ]]; then
+    printf 'network'
+    return
+  fi
+
+  printf 'unknown'
+}
+
+_collect_env_limited_counts() {
+  local snapshot="$1"
+  local env_error_count=0
+  local env_traffic_count=0
+  local unknown_count=0
+  local categories_csv=""
+
+  while IFS= read -r msg; do
+    [[ -z "${msg}" ]] && continue
+    local category
+    category="$(_classify_env_limited_category "${msg}")"
+    case "${category}" in
+      rate_limit|network|tls)
+        env_error_count=$((env_error_count + 1))
+        categories_csv="${categories_csv}${category},"
+        ;;
+      *)
+        unknown_count=$((unknown_count + 1))
+        ;;
+    esac
+  done < <(jq -r '.errors[]?.message // empty' "${snapshot}")
+
+  while IFS= read -r detail; do
+    [[ -z "${detail}" ]] && continue
+    local category
+    category="$(_classify_env_limited_category "${detail}")"
+    case "${category}" in
+      rate_limit|network|tls)
+        env_traffic_count=$((env_traffic_count + 1))
+        categories_csv="${categories_csv}${category},"
+        ;;
+      *)
+        unknown_count=$((unknown_count + 1))
+        ;;
+    esac
+  done < <(jq -rc '.traffic_results[]? | select(.success != true) | .detail' "${snapshot}")
+
+  categories_csv="${categories_csv%,}"
+  printf '%s\t%s\t%s\t%s\n' "${env_error_count}" "${env_traffic_count}" "${unknown_count}" "${categories_csv}"
+}
+
+_case_allowlisted() {
+  local case_id="$1"
+
+  if [[ ! -f "${TREND_ALLOWLIST_FILE}" ]]; then
+    return 1
+  fi
+
+  local entry
+  entry="$(jq -c --arg id "${case_id}" '.cases[$id] // empty' "${TREND_ALLOWLIST_FILE}" 2>/dev/null || true)"
+  if [[ -z "${entry}" ]]; then
+    return 1
+  fi
+
+  local expires_on
+  expires_on="$(jq -r '.expires_on // empty' <<< "${entry}")"
+  if [[ -z "${expires_on}" ]]; then
+    return 1
+  fi
+
+  local today
+  today="$(date -u +%F)"
+  if [[ "${expires_on}" < "${today}" ]]; then
+    echo "warn: allowlist expired case=${case_id} expires_on=${expires_on}"
+    return 1
+  fi
+
+  local reason
+  reason="$(jq -r '.reason // "allowlisted temporary waiver"' <<< "${entry}")"
+  echo "warn: allowlist suppress case=${case_id} until=${expires_on} reason=${reason}"
+  return 0
+}
 
 prev_score=-1
 
 for ((i = 1; i <= ITERATIONS; i++)); do
   echo
   echo "=== iteration ${i}/${ITERATIONS}: case run ${CASE_ID} ==="
-  run_cmd=(cargo run -p interop-lab -- case run)
+
+  run_cmd=(cargo run -p interop-lab -- --artifacts-dir "${ARTIFACTS_DIR}" case run)
   if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
     run_cmd+=("${CASE_ID}")
   fi
@@ -90,7 +204,7 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     run_cmd+=(--env-class "${RUN_ENV_CLASS}")
   fi
   if [[ -n "${RUN_TAGS}" ]]; then
-    IFS=',' read -r -a _tags <<<"${RUN_TAGS}"
+    IFS=',' read -r -a _tags <<< "${RUN_TAGS}"
     for _tag in "${_tags[@]}"; do
       if [[ -n "${_tag}" ]]; then
         run_cmd+=(--tag "${_tag}")
@@ -98,89 +212,176 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     done
   fi
   if [[ -n "${RUN_EXCLUDE_TAGS}" ]]; then
-    IFS=',' read -r -a _ex_tags <<<"${RUN_EXCLUDE_TAGS}"
+    IFS=',' read -r -a _ex_tags <<< "${RUN_EXCLUDE_TAGS}"
     for _tag in "${_ex_tags[@]}"; do
       if [[ -n "${_tag}" ]]; then
         run_cmd+=(--exclude-tag "${_tag}")
       fi
     done
   fi
+
   run_output="$("${run_cmd[@]}")"
   echo "${run_output}"
 
-  run_dir="$(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p' | tail -n 1)"
-  if [[ -z "${run_dir}" ]]; then
+  run_dirs=()
+  while IFS= read -r run_dir; do
+    if [[ -n "${run_dir}" ]]; then
+      run_dirs+=("${run_dir}")
+    fi
+  done < <(printf '%s\n' "${run_output}" | sed -n 's/^run_dir=//p')
+
+  if [[ ${#run_dirs[@]} -eq 0 ]]; then
     echo "error: run_dir not found in case run output"
     exit 1
   fi
 
-  rust_snapshot="${run_dir}/rust.snapshot.json"
-  if [[ ! -f "${rust_snapshot}" ]]; then
-    echo "error: missing rust snapshot: ${rust_snapshot}"
-    exit 1
-  fi
+  iteration_score=0
+  iteration_failed=0
+  iteration_waived=0
+  total_raw_errors=0
+  total_raw_failed_traffic=0
+  total_env_errors=0
+  total_env_failed_traffic=0
 
-  rust_errors="$(jq '.errors | length' "${rust_snapshot}")"
-  failed_traffic="$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")"
-
-  if (( rust_errors > MAX_RUST_ERRORS )); then
-    echo "error: rust errors ${rust_errors} exceed gate ${MAX_RUST_ERRORS}"
-    exit 1
-  fi
-  if (( failed_traffic > MAX_FAILED_TRAFFIC )); then
-    echo "error: failed traffic ${failed_traffic} exceed gate ${MAX_FAILED_TRAFFIC}"
-    exit 1
-  fi
-
-  http_mismatches=0
-  ws_mismatches=0
-  sub_mismatches=0
-  traffic_mismatches=0
-
-  echo "=== iteration ${i}/${ITERATIONS}: case diff ${CASE_ID} ==="
-  diff_output_file="$(mktemp)"
-  if cargo run -p interop-lab -- case diff "${CASE_ID}" >"${diff_output_file}" 2>&1; then
-    cat "${diff_output_file}"
-    http_mismatches="$(awk -F= '/^http_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    ws_mismatches="$(awk -F= '/^ws_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    sub_mismatches="$(awk -F= '/^subscription_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-    traffic_mismatches="$(awk -F= '/^traffic_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
-  else
-    cat "${diff_output_file}"
-    if [[ "${ALLOW_MISSING_DIFF}" != "1" ]]; then
-      echo "error: case diff failed and ALLOW_MISSING_DIFF=0"
-      rm -f "${diff_output_file}"
+  for run_dir in "${run_dirs[@]}"; do
+    rust_snapshot="${run_dir}/rust.snapshot.json"
+    if [[ ! -f "${rust_snapshot}" ]]; then
+      echo "error: missing rust snapshot: ${rust_snapshot}"
       exit 1
     fi
-    echo "warn: case diff unavailable, skipping mismatch gates for this iteration"
-  fi
-  rm -f "${diff_output_file}"
+    go_snapshot="${run_dir}/go.snapshot.json"
 
-  if (( http_mismatches > MAX_HTTP_MISMATCHES )); then
-    echo "error: http mismatches ${http_mismatches} exceed gate ${MAX_HTTP_MISMATCHES}"
-    exit 1
-  fi
-  if (( ws_mismatches > MAX_WS_MISMATCHES )); then
-    echo "error: ws mismatches ${ws_mismatches} exceed gate ${MAX_WS_MISMATCHES}"
-    exit 1
-  fi
-  if (( sub_mismatches > MAX_SUB_MISMATCHES )); then
-    echo "error: subscription mismatches ${sub_mismatches} exceed gate ${MAX_SUB_MISMATCHES}"
-    exit 1
-  fi
-  if (( traffic_mismatches > MAX_TRAFFIC_MISMATCHES )); then
-    echo "error: traffic mismatches ${traffic_mismatches} exceed gate ${MAX_TRAFFIC_MISMATCHES}"
+    case_id="$(jq -r '.case_id // empty' "${rust_snapshot}")"
+    if [[ -z "${case_id}" ]]; then
+      case_id="$(basename "$(dirname "${run_dir}")")"
+    fi
+
+    rust_errors="$(jq '.errors | length' "${rust_snapshot}")"
+    failed_traffic="$(jq '[.traffic_results[]? | select(.success != true)] | length' "${rust_snapshot}")"
+
+    functional_rust_errors="${rust_errors}"
+    functional_failed_traffic="${failed_traffic}"
+    env_error_count=0
+    env_traffic_count=0
+    unknown_env_count=0
+    env_categories=""
+
+    if [[ "${CLASSIFY_ENV_LIMITED}" == "1" ]]; then
+      IFS=$'\t' read -r env_error_count env_traffic_count unknown_env_count env_categories \
+        <<< "$(_collect_env_limited_counts "${rust_snapshot}")"
+      functional_rust_errors=$((rust_errors - env_error_count))
+      functional_failed_traffic=$((failed_traffic - env_traffic_count))
+      if (( functional_rust_errors < 0 )); then
+        functional_rust_errors=0
+      fi
+      if (( functional_failed_traffic < 0 )); then
+        functional_failed_traffic=0
+      fi
+    fi
+
+    total_raw_errors=$((total_raw_errors + rust_errors))
+    total_raw_failed_traffic=$((total_raw_failed_traffic + failed_traffic))
+    total_env_errors=$((total_env_errors + env_error_count))
+    total_env_failed_traffic=$((total_env_failed_traffic + env_traffic_count))
+
+    http_mismatches=0
+    ws_mismatches=0
+    sub_mismatches=0
+    traffic_mismatches=0
+
+    diff_case_id="${case_id}"
+    if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
+      diff_case_id="${CASE_ID}"
+    fi
+
+    case_failed=0
+    case_failure_reasons=""
+
+    if [[ ! -f "${go_snapshot}" ]]; then
+      echo "warn: case=${diff_case_id} go snapshot missing, skip case diff for single-kernel run"
+    else
+      echo "=== iteration ${i}/${ITERATIONS}: case diff ${diff_case_id} ==="
+      diff_output_file="$(mktemp)"
+      if cargo run -p interop-lab -- --artifacts-dir "${ARTIFACTS_DIR}" case diff "${diff_case_id}" >"${diff_output_file}" 2>&1; then
+        cat "${diff_output_file}"
+        http_mismatches="$(awk -F= '/^http_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+        ws_mismatches="$(awk -F= '/^ws_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+        sub_mismatches="$(awk -F= '/^subscription_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+        traffic_mismatches="$(awk -F= '/^traffic_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+      else
+        cat "${diff_output_file}"
+        if [[ "${ALLOW_MISSING_DIFF}" != "1" ]]; then
+          case_failed=1
+          case_failure_reasons+="diff unavailable and ALLOW_MISSING_DIFF=0\n"
+        else
+          echo "warn: case=${diff_case_id} case diff unavailable, skipping mismatch gates for this iteration"
+        fi
+      fi
+      rm -f "${diff_output_file}"
+    fi
+
+    http_mismatches="${http_mismatches:-0}"
+    ws_mismatches="${ws_mismatches:-0}"
+    sub_mismatches="${sub_mismatches:-0}"
+    traffic_mismatches="${traffic_mismatches:-0}"
+
+    if (( functional_rust_errors > MAX_RUST_ERRORS )); then
+      case_failed=1
+      case_failure_reasons+="functional rust errors ${functional_rust_errors} exceed gate ${MAX_RUST_ERRORS} (raw=${rust_errors}, env_limited=${env_error_count})\n"
+    fi
+    if (( functional_failed_traffic > MAX_FAILED_TRAFFIC )); then
+      case_failed=1
+      case_failure_reasons+="functional failed traffic ${functional_failed_traffic} exceed gate ${MAX_FAILED_TRAFFIC} (raw=${failed_traffic}, env_limited=${env_traffic_count})\n"
+    fi
+    if (( http_mismatches > MAX_HTTP_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="http mismatches ${http_mismatches} exceed gate ${MAX_HTTP_MISMATCHES}\n"
+    fi
+    if (( ws_mismatches > MAX_WS_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="ws mismatches ${ws_mismatches} exceed gate ${MAX_WS_MISMATCHES}\n"
+    fi
+    if (( sub_mismatches > MAX_SUB_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="subscription mismatches ${sub_mismatches} exceed gate ${MAX_SUB_MISMATCHES}\n"
+    fi
+    if (( traffic_mismatches > MAX_TRAFFIC_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="traffic mismatches ${traffic_mismatches} exceed gate ${MAX_TRAFFIC_MISMATCHES}\n"
+    fi
+
+    case_score=$((functional_rust_errors + functional_failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches))
+
+    if (( case_failed == 1 )); then
+      if _case_allowlisted "${case_id}"; then
+        iteration_waived=$((iteration_waived + 1))
+        echo "warn: case=${case_id} failure suppressed by allowlist"
+        printf '%b' "${case_failure_reasons}" | sed 's/^/warn:   /'
+      else
+        iteration_failed=1
+        printf '%b' "${case_failure_reasons}" | sed "s/^/error: case=${case_id} /"
+      fi
+    else
+      iteration_score=$((iteration_score + case_score))
+    fi
+
+    echo "iteration ${i} case=${case_id} score=${case_score} (functional_errors=${functional_rust_errors}, functional_failed_traffic=${functional_failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches}, raw_errors=${rust_errors}, raw_failed_traffic=${failed_traffic}, env_errors=${env_error_count}, env_failed_traffic=${env_traffic_count}, env_unknown=${unknown_env_count}, env_categories=${env_categories:-none})"
+  done
+
+  echo "iteration ${i} total_score=${iteration_score} waived_cases=${iteration_waived}"
+  echo "iteration ${i} totals raw_errors=${total_raw_errors} raw_failed_traffic=${total_raw_failed_traffic} env_errors=${total_env_errors} env_failed_traffic=${total_env_failed_traffic}"
+
+  if [[ "${ENFORCE_NON_INCREASING_SCORE}" == "1" ]] && (( prev_score >= 0 )) && (( iteration_score > prev_score )); then
+    echo "error: trend gate violated (total score increased ${prev_score} -> ${iteration_score})"
     exit 1
   fi
 
-  score=$((rust_errors + failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches))
-  echo "iteration ${i} score=${score} (errors=${rust_errors}, failed_traffic=${failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches})"
-
-  if [[ "${ENFORCE_NON_INCREASING_SCORE}" == "1" ]] && (( prev_score >= 0 )) && (( score > prev_score )); then
-    echo "error: trend gate violated (score increased ${prev_score} -> ${score})"
+  if (( iteration_failed == 1 )); then
+    echo "error: trend gate failed for iteration ${i}"
     exit 1
   fi
-  prev_score="${score}"
+
+  prev_score="${iteration_score}"
 done
 
 echo

@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_deprecated_mixed_config",
+  "generated_at": "2026-02-13T07:24:46.154043Z",
+  "run_id": "20260213T072430Z-40545027-dbdf-4db9-951f-4a31c3482a9a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_deprecated_mixed_config/20260213T072430Z-40545027-dbdf-4db9-951f-4a31c3482a9a/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_deprecated_mixed_config/20260213T072430Z-40545027-dbdf-4db9-951f-4a31c3482a9a/go.snapshot.json"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T073836Z-6dda24c5-4027-4fe2-b715-ba96cbb9c6e8",
+  "case_id": "p1_dataplane_large_payload_udp",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:38:36.529936Z",
+  "finished_at": "2026-02-13T07:38:51.700678Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

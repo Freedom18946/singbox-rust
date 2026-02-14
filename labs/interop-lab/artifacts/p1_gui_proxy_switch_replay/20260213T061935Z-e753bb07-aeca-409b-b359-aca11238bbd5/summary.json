@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_proxy_switch_replay",
+  "generated_at": "2026-02-13T06:19:50.384911Z",
+  "run_id": "20260213T061935Z-e753bb07-aeca-409b-b359-aca11238bbd5",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_proxy_switch_replay/20260213T061935Z-e753bb07-aeca-409b-b359-aca11238bbd5/rust.snapshot.json"
+  ]
+}

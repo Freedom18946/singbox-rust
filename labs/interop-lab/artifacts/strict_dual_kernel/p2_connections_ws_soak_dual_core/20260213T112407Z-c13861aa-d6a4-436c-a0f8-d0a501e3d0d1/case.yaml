@@ -1,0 +1,79 @@
+id: p2_connections_ws_soak_dual_core
+title: clash connections websocket soak — dual-core (Rust + Go passive)
+owner: null
+priority: p2
+kernel_mode: both
+tags:
+- ws
+- dual_core
+- soak
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_socks_http.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+      secret: null
+  go:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /configs
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: null
+gui_sequence: []
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: command
+  name: connections_ws_long_running_soak
+  command: cargo
+  args:
+  - test
+  - -p
+  - sb-api
+  - --test
+  - clash_websocket_e2e
+  - test_connections_ws_long_running_soak
+  - --
+  - --ignored
+  - --nocapture
+  env:
+    SB_WS_SOAK_CLIENTS_PER_WAVE: '24'
+    SB_WS_SOAK_OVERALL_SUCCESS_PERCENT: '97'
+    SB_WS_SOAK_WAVES: '20'
+    SB_WS_SOAK_WAVE_DELAY_MS: '120'
+    SB_WS_SOAK_WAVE_SUCCESS_PERCENT: '95'
+  workdir: null
+  timeout_ms: 900000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.connections_ws_long_running_soak.success
+  op: eq
+  expected: true
+- key: errors.count
+  op: eq
+  expected: 0
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 50
+post_traffic_gui_sequence: null

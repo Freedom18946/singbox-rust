@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_cli_ruleset_convert_adguard",
+  "generated_at": "2026-02-13T07:23:45.470172Z",
+  "run_id": "20260213T072343Z-4315d439-73d0-4a4d-90b6-ed66b6e572e6",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_ruleset_convert_adguard/20260213T072343Z-4315d439-73d0-4a4d-90b6-ed66b6e572e6/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_ruleset_convert_adguard/20260213T072343Z-4315d439-73d0-4a4d-90b6-ed66b6e572e6/go.snapshot.json"
+  ]
+}

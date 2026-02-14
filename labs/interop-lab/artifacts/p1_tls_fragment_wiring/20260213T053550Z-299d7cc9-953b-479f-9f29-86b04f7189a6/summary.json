@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_tls_fragment_wiring",
+  "generated_at": "2026-02-13T05:36:05.171675Z",
+  "run_id": "20260213T053550Z-299d7cc9-953b-479f-9f29-86b04f7189a6",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_tls_fragment_wiring/20260213T053550Z-299d7cc9-953b-479f-9f29-86b04f7189a6/rust.snapshot.json"
+  ]
+}

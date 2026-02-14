@@ -220,11 +220,7 @@ fn test_transport_names_unique() {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_feature_enabled() {
-    // Simple test to verify the dns_doh3 feature is working
-    assert!(
-        cfg!(feature = "dns_doh3"),
-        "dns_doh3 feature should be enabled for this test"
-    );
+    // Compiling/running this test already proves the feature gate is active.
 }
 
 // Integration test with real DNS server (marked as ignored by default)

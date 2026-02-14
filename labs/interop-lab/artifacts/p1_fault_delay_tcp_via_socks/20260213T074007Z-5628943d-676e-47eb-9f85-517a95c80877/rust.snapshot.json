@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T074007Z-5628943d-676e-47eb-9f85-517a95c80877",
+  "case_id": "p1_fault_delay_tcp_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:40:07.672019Z",
+  "finished_at": "2026-02-13T07:40:22.857809Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

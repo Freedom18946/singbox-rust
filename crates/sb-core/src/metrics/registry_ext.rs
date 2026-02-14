@@ -353,10 +353,10 @@ mod loom_smoke {
             let mut first: Option<usize> = None;
             for h in hs {
                 let v = h.join().unwrap();
-                if first.is_none() {
-                    first = Some(v);
+                if let Some(first_v) = first {
+                    assert_eq!(first_v, v);
                 } else {
-                    assert_eq!(first.unwrap(), v);
+                    first = Some(v);
                 }
             }
         });

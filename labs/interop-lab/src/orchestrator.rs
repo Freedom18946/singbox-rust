@@ -81,7 +81,10 @@ pub fn load_single_case(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
 }
 
 pub fn apply_case_filter(cases: Vec<CaseSpec>, filter: &CaseFilter) -> Vec<CaseSpec> {
-    cases.into_iter().filter(|case| filter.matches(case)).collect()
+    cases
+        .into_iter()
+        .filter(|case| filter.matches(case))
+        .collect()
 }
 
 pub fn render_run_plan_summary(
@@ -310,7 +313,12 @@ pub async fn run_case(
                                 .with_context(|| "serializing diff report")?;
                             std::fs::write(&json_path, json)
                                 .with_context(|| "writing diff json")?;
-                            println!("diff clean={} gate_score={} report={}", report.is_clean(), report.gate_score, md_path.display());
+                            println!(
+                                "diff clean={} gate_score={} report={}",
+                                report.is_clean(),
+                                report.gate_score,
+                                md_path.display()
+                            );
                             Some(md_path)
                         } else {
                             None
@@ -412,20 +420,29 @@ async fn execute_kernel_control_action(
             match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
                 Ok(new_session) => {
                     *session = new_session;
-                    wait_until_ready(&session.api, &launch_spec.ready_path, wait_ready_ms.max(100))
-                        .await
+                    wait_until_ready(
+                        &session.api,
+                        &launch_spec.ready_path,
+                        wait_ready_ms.max(100),
+                    )
+                    .await
                 }
                 Err(err) => Err(err),
             }
         }
         KernelControlAction::Reload => {
             let reload_detail = trigger_reload(session).await;
-            match wait_until_ready(&session.api, &launch_spec.ready_path, wait_ready_ms.max(100))
-                .await
+            match wait_until_ready(
+                &session.api,
+                &launch_spec.ready_path,
+                wait_ready_ms.max(100),
+            )
+            .await
             {
                 Ok(()) => Ok(()),
                 Err(err) => {
-                    let info = reload_detail.unwrap_or_else(|| "reload attempt unavailable".to_string());
+                    let info =
+                        reload_detail.unwrap_or_else(|| "reload attempt unavailable".to_string());
                     Err(anyhow!("{err}; {info}"))
                 }
             }
@@ -465,7 +482,10 @@ fn target_matches_mode(target: &KernelTarget, mode: &KernelKind) -> bool {
 }
 
 async fn trigger_reload(session: &KernelSession) -> Option<String> {
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().ok()?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .ok()?;
     let mut attempts = Vec::new();
     let candidates = [
         (reqwest::Method::POST, "/-/reload"),
@@ -501,7 +521,8 @@ async fn trigger_reload(session: &KernelSession) -> Option<String> {
 fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     for assertion in &case.assertions {
         let actual = resolve_assertion_value(snapshot, &assertion.key);
-        let passed = evaluate_assertion_op(assertion.op.as_str(), actual.as_ref(), &assertion.expected);
+        let passed =
+            evaluate_assertion_op(assertion.op.as_str(), actual.as_ref(), &assertion.expected);
         if !passed {
             snapshot.errors.push(NormalizedError {
                 stage: format!("assertion:{}", assertion.key),
@@ -564,7 +585,9 @@ fn matches_regex(actual: &Value, expected: &Value) -> bool {
         Some(v) => v,
         None => return false,
     };
-    Regex::new(pattern).map(|re| re.is_match(text)).unwrap_or(false)
+    Regex::new(pattern)
+        .map(|re| re.is_match(text))
+        .unwrap_or(false)
 }
 
 fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<Value> {
@@ -574,13 +597,18 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
     }
     match parts[0] {
         "errors" if parts.as_slice() == ["errors", "count"] => Some(json!(snapshot.errors.len())),
-        "subscription" if parts.len() == 2 => snapshot.subscription_result.as_ref().and_then(|res| match parts[1] {
-            "node_count" => Some(json!(res.node_count)),
-            "filtered_node_count" => Some(json!(res.filtered_node_count)),
-            "format" => Some(json!(res.format)),
-            "success" => Some(json!(res.success)),
-            _ => None,
-        }),
+        "subscription" if parts.len() == 2 => {
+            snapshot
+                .subscription_result
+                .as_ref()
+                .and_then(|res| match parts[1] {
+                    "node_count" => Some(json!(res.node_count)),
+                    "filtered_node_count" => Some(json!(res.filtered_node_count)),
+                    "format" => Some(json!(res.format)),
+                    "success" => Some(json!(res.success)),
+                    _ => None,
+                })
+        }
         "ws" if parts.len() == 3 => snapshot
             .ws_frames
             .iter()
@@ -713,17 +741,15 @@ pub async fn run_cases(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::{KernelKind, NormalizedSnapshot, SubscriptionResult, TrafficResult, WsFrameCapture};
+    use crate::snapshot::{
+        KernelKind, NormalizedSnapshot, SubscriptionResult, TrafficResult, WsFrameCapture,
+    };
 
     #[test]
     fn resolve_assertion_extended_paths() {
         let now = Utc::now();
-        let mut snapshot = NormalizedSnapshot::new(
-            "run".to_string(),
-            "case".to_string(),
-            KernelKind::Rust,
-            now,
-        );
+        let mut snapshot =
+            NormalizedSnapshot::new("run".to_string(), "case".to_string(), KernelKind::Rust, now);
         snapshot.ws_frames.push(WsFrameCapture {
             name: "connections_stream".to_string(),
             path: "/connections".to_string(),

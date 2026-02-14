@@ -23,6 +23,44 @@
 
 ## 日志记录
 
+### [2026-02-13 01:35] Agent: Codex (GPT-5)
+
+**任务**: 按 L17 全量收口计划执行并合流（L17.1.1 ~ L17.3.3）
+**变更**:
+- Release 流（Agent-R 对应）：
+  - 更新 `.github/workflows/ci.yml`（fmt/clippy/test/parity/boundaries 门禁固定）
+  - 更新 `.github/workflows/release.yml`（6 target matrix + os/arch/archive 元数据 + 统一命名）
+  - 新增 `scripts/package_release.sh`（统一打包 + checksum）
+  - 新增 `deployments/config-template.json`
+- Ops 流（Agent-O 对应）：
+  - 更新 `deployments/docker/{Dockerfile,.dockerignore,docker-compose.yml}`（non-root + healthcheck + size-check 链）
+  - 新增 `scripts/gui_smoke_test.sh`
+  - 新增 `scripts/canary_7day.sh`
+  - 新增 `reports/gui_integration_test.md`
+  - 新增/更新 `reports/stability/canary_summary.md`、`reports/stability/canary_7day.jsonl`
+- Docs+Security 流（Agent-D 对应）：
+  - 更新 `CHANGELOG.md`
+  - 新增 `docs/configuration.md`、`docs/migration-from-go.md`
+  - 规范化 `docs/troubleshooting.md`（由 `docs/TROUBLESHOOTING.md` 重命名）
+  - 更新 `docs/README.md` 链接
+  - 更新 `deny.toml`（cargo-deny 0.18 兼容）
+  - 重写 `reports/security_audit.md`（实跑命令 + 结论）
+- Integrator（Agent-I 对应）：
+  - 更新 `CLAUDE.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/log.md`
+- 关键验收执行：
+  - 通过：`check-boundaries.sh`、`cargo check -p app --features parity`、`cargo deny check licenses`
+  - 失败/阻塞：`cargo fmt --check`、`cargo clippy ... -D warnings`、`cargo test --workspace`（`udp_balancer` 单测失败）、Docker daemon 不可用
+
+**结果**: 部分完成（L17 交付已落地，Release Ready 结论待门禁/环境阻塞清障）
+**备注**:
+- `cargo audit` 结果为 1 个 medium（`RUSTSEC-2023-0071`）+ 多个 unmaintained，按 L17 策略（仅 HIGH/CRITICAL 阻断）记为跟踪项。
+- Canary 24h 短跑框架就绪，需独立持续运行窗口执行。
+
+---
+
 ### [2026-02-10 19:41] Agent: Codex (GPT-5)
 
 **任务**: 执行 L4.x 工作包（L4.1~L4.6）首轮落地：治理闭环优先
@@ -904,5 +942,45 @@ L2.8.4-6 Handlers + WebSocket:
 **验证**:
 - `./agents-only/06-scripts/check-boundaries.sh` exit 0
 - `cargo clippy --all-targets --all-features -- -D warnings` PASS
+
+### [2026-02-14] Agent: Codex (GPT-5)
+
+**任务**: 按 L17 收口计划完成快跑闭环、修复新增门禁回归、更新证据与状态总线
+
+**关键修复**:
+- `crates/sb-core/src/services/ssmapi/server.rs`：鉴权测试改为本地 listener + HTTP 请求，不再依赖 `tower::oneshot`
+- `crates/sb-core/Cargo.toml`：移除 `tower` dev-dependency，恢复边界门禁
+- `xtests/tests/check_analyze_groups.rs`：按当前 checker 语义更新冲突夹具断言
+- `xtests/tests/check_schema.rs`：夹具切换为 `bad_unreachable.yaml`，恢复稳定断言
+
+**统一复验**:
+- `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
+- 输出：`reports/stability/l17_capstone_status.json`
+- 结果：`PASS_ENV_LIMITED`
+- 门禁：`boundaries/parity/workspace_test/fmt/clippy/hot_reload(20x)/signal(5x)` 全部 `PASS`
+- 环境项：`docker/gui_smoke/canary` = `ENV_LIMITED`（`docker_daemon_unavailable` / `gui_smoke_manual_step` / `canary_api_unreachable`）
+
+**证据与文档更新**:
+- `reports/gui_integration_test.md`（模板 -> 本轮 `ENV_LIMITED` 实证 + 复跑命令）
+- `reports/stability/canary_summary.md`（模板 -> 本轮 `ENV_LIMITED` + fast 复跑命令）
+- `agents-only/active_context.md`（L17 状态改为快跑闭环后 `PASS_ENV_LIMITED`）
+- `agents-only/workpackage_latest.md`（新增 L17 Capstone 快跑闭环节）
+
+### [2026-02-14] Agent: Codex (GPT-5)
+
+**任务**: 同步状态总线文档到最新进度口径（L17 快跑收口后）
+
+**文档更新**:
+- `agents-only/active_context.md`：`当前阶段` 更新为 **L17 收口完成（PASS_ENV_LIMITED）**
+- `agents-only/workpackage_latest.md`：`当前阶段` 更新为 **L17 收口完成（PASS_ENV_LIMITED，环境项待复跑）**
+- `CLAUDE.md`：
+  - 阶段更新为 **L17 收口完成（PASS_ENV_LIMITED）**
+  - L17 状态更新时间更新到 2026-02-14
+  - 构建状态更新：`fmt/clippy/workspace test` 由失败改为 PASS
+  - interop 统计更新为 `83 total (72 strict, 10 env_limited, 1 smoke)`
+
+**结果**: 成功
+**备注**:
+- 本次为文档口径同步，不引入代码行为变更。
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

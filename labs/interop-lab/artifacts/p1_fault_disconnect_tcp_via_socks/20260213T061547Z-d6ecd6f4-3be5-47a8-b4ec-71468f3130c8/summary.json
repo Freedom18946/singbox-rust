@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_disconnect_tcp_via_socks",
+  "generated_at": "2026-02-13T06:16:03.010663Z",
+  "run_id": "20260213T061547Z-d6ecd6f4-3be5-47a8-b4ec-71468f3130c8",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_disconnect_tcp_via_socks/20260213T061547Z-d6ecd6f4-3be5-47a8-b4ec-71468f3130c8/rust.snapshot.json"
+  ]
+}

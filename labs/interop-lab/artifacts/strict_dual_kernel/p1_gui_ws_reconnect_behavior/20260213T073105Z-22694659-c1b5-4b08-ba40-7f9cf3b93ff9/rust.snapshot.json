@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T073105Z-22694659-c1b5-4b08-ba40-7f9cf3b93ff9",
+  "case_id": "p1_gui_ws_reconnect_behavior",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:31:05.038462Z",
+  "finished_at": "2026-02-13T07:31:20.145886Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19290/version"
+    }
+  ],
+  "fd_samples": []
+}

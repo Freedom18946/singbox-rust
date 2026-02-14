@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T074426Z-df3ab82d-5b01-4292-9e1a-c397f55fc5ae",
+  "case_id": "p1_gui_full_session_replay",
+  "kernel": "rust",
+  "started_at": "2026-02-13T07:44:26.008669Z",
+  "finished_at": "2026-02-13T07:44:41.211646Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19290/version"
+    }
+  ],
+  "fd_samples": []
+}

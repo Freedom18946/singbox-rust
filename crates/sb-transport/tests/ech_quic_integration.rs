@@ -77,9 +77,11 @@ mod ech_quic_tests {
         };
 
         // Create QUIC configuration with ECH
-        let mut quic_config = QuicConfig::default();
-        quic_config.server_name = "secret.example.com".to_string();
-        quic_config.ech_config = Some(ech_config);
+        let quic_config = QuicConfig {
+            server_name: "secret.example.com".to_string(),
+            ech_config: Some(ech_config),
+            ..Default::default()
+        };
 
         // Create QUIC dialer
         let result = QuicDialer::new(quic_config);
@@ -96,8 +98,10 @@ mod ech_quic_tests {
     #[tokio::test]
     async fn test_quic_dialer_without_ech() {
         // Create QUIC configuration without ECH
-        let mut quic_config = QuicConfig::default();
-        quic_config.server_name = "example.com".to_string();
+        let quic_config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ..Default::default()
+        };
 
         // Create QUIC dialer
         let result = QuicDialer::new(quic_config);
@@ -122,9 +126,11 @@ mod ech_quic_tests {
         };
 
         // Create QUIC configuration with disabled ECH
-        let mut quic_config = QuicConfig::default();
-        quic_config.server_name = "example.com".to_string();
-        quic_config.ech_config = Some(ech_config);
+        let quic_config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(ech_config),
+            ..Default::default()
+        };
 
         // Create QUIC dialer
         let result = QuicDialer::new(quic_config);
@@ -149,9 +155,11 @@ mod ech_quic_tests {
         };
 
         // Create QUIC configuration with invalid ECH
-        let mut quic_config = QuicConfig::default();
-        quic_config.server_name = "example.com".to_string();
-        quic_config.ech_config = Some(ech_config);
+        let quic_config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(ech_config),
+            ..Default::default()
+        };
 
         // Create QUIC dialer - should fail
         let result = QuicDialer::new(quic_config);
@@ -171,9 +179,11 @@ mod ech_quic_tests {
             dynamic_record_sizing_disabled: None,
         };
 
-        let mut quic_config = QuicConfig::default();
-        quic_config.server_name = "secret.example.com".to_string();
-        quic_config.ech_config = Some(ech_config);
+        let quic_config = QuicConfig {
+            server_name: "secret.example.com".to_string(),
+            ech_config: Some(ech_config),
+            ..Default::default()
+        };
 
         let _dialer = QuicDialer::new(quic_config).expect("Failed to create dialer");
 

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T114209Z-c3d3188c-6eeb-4e6c-9c13-c330066f978b",
+  "case_id": "p1_cli_generate_rand_base64",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:42:09.774003Z",
+  "finished_at": "2026-02-13T11:42:12.438607Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "run_cli",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "generate",
+          "rand",
+          "16",
+          "--base64"
+        ],
+        "command": "./target/debug/app",
+        "elapsed_ms": 8,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "2026-02-13T11:42:12.436486Z  INFO app::logging: Logging system initialized format=Compact level=info sampling=None redact=true\n",
+        "stdout": "msQQW2oWmMJiTsPMe/nS3Q==\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

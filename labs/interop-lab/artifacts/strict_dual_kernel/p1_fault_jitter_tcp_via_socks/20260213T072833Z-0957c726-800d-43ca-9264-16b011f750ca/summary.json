@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_jitter_tcp_via_socks",
+  "generated_at": "2026-02-13T07:28:48.771355Z",
+  "run_id": "20260213T072833Z-0957c726-800d-43ca-9264-16b011f750ca",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_tcp_via_socks/20260213T072833Z-0957c726-800d-43ca-9264-16b011f750ca/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_tcp_via_socks/20260213T072833Z-0957c726-800d-43ca-9264-16b011f750ca/go.snapshot.json"
+  ]
+}

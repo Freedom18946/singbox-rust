@@ -239,7 +239,10 @@ mod tests {
             content: "!!!TOTALLY_INVALID_BASE64$$$\n".to_string(),
         };
         let result = parse_subscription(&input).await;
-        assert!(result.is_err(), "truncated/invalid base64 should return error");
+        assert!(
+            result.is_err(),
+            "truncated/invalid base64 should return error"
+        );
     }
 
     #[tokio::test]
@@ -257,7 +260,10 @@ mod tests {
             content: "foo://host:1234\nbar://example.com:5678#tag1\n".to_string(),
         };
         let result = parse_subscription(&input).await;
-        assert!(result.is_ok(), "unknown schemes should still be parseable as link_lines");
+        assert!(
+            result.is_ok(),
+            "unknown schemes should still be parseable as link_lines"
+        );
         if let Ok(snapshot) = result {
             assert_eq!(snapshot.format, "link_lines");
             assert_eq!(snapshot.node_count, 2);

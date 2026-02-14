@@ -247,9 +247,5 @@ async fn test_doh_vs_doh3_consistency() -> Result<()> {
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_upstream_feature_enabled() {
-    // Simple test to verify the dns_doh3 feature is working for upstream
-    assert!(
-        cfg!(feature = "dns_doh3"),
-        "dns_doh3 feature should be enabled for this test"
-    );
+    // Compiling/running this test already proves the feature gate is active.
 }

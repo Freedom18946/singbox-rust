@@ -177,7 +177,11 @@ mod tests {
         // If SB_ROUTER_DNS happens to be "1" (set by another test), this would fail,
         // but in practice, validation just checks consistency.
         // Test the direct logic: router without resolver and dns not enabled = ok
-        if std::env::var("SB_ROUTER_DNS").ok().map(|v| v == "1").unwrap_or(false) {
+        if std::env::var("SB_ROUTER_DNS")
+            .ok()
+            .map(|v| v == "1")
+            .unwrap_or(false)
+        {
             // Another test set the env var; skip this assertion
             assert!(validate_dns_integration(&router).is_err());
         } else {

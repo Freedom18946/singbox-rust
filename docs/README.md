@@ -2,7 +2,7 @@
 
 Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite of sing-box, designed for high performance, memory safety, and cross-platform compatibility.
 
-**Project Status**: v0.2.0+ | Production-ready ⭐⭐⭐⭐⭐ (9.9/10) | Feature Parity: 88% (183/209) vs sing-box 1.12.14
+**Project Status**: v0.2.0+ | Release-ready candidate | Feature Parity: 99.52% (208/209) vs sing-box 1.12.14
 
 ---
 
@@ -35,7 +35,9 @@ Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite o
 
 - **[Advanced Topics →](06-advanced-topics/)** - REALITY, ECH, advanced routing, DSL
 - **[Reference →](07-reference/)** - Schemas, error codes, glossary
-- **[Migration Guide →](MIGRATION_GUIDE.md)** - Go → Rust migration notes
+- **[Migration Guide (L17 Entry) →](migration-from-go.md)** - Current migration entry and accepted limitations
+- **[Configuration Reference (L17 Entry) →](configuration.md)** - Top-level configuration domains
+- **[Troubleshooting (L17 Entry) →](troubleshooting.md)** - Release-readiness triage
 
 ---
 
@@ -151,7 +153,7 @@ docs/
 
 ### Common Issues
 
-- **[Troubleshooting Guide](TROUBLESHOOTING.md)** - Common errors and fixes
+- **[Troubleshooting Guide](troubleshooting.md)** - Common errors and fixes
 - **[User Guide](01-user-guide/README.md)** - Configuration and usage reference
 - **[Deployment Checklist](DEPLOYMENT_CHECKLIST.md)** - Preflight ops checklist
 
@@ -196,7 +198,9 @@ This documentation follows these principles:
 
 ## 🔄 Recent Updates
 
-- **2026-01-07**: Parity recalibrated to 88% (183/209) vs sing-box 1.12.14; protocol coverage remains 18/18 inbound, 19/19 outbound
+- **2026-02-12**: L15-L16 closed; parity recalibrated to 99.52% (208/209), remaining `PX-015` tracked as Linux runtime validation evidence item
+- **2026-02-12**: Added L17 entry docs (`configuration.md`, `migration-from-go.md`, `troubleshooting.md`) and release-readiness workflows/scripts
+- **2026-01-07**: Historical parity snapshot at 88% (183/209) vs sing-box 1.12.14
 - **2025-11-23**: 100% protocol coverage achieved (Go 1.12.12 baseline, 历史基线) - 17/17 inbound, 19/19 outbound
 - **2025-10-18**: Complete documentation restructure - organized by user role
 - **2025-10-09**: TLS infrastructure complete (REALITY, ECH, Standard TLS)

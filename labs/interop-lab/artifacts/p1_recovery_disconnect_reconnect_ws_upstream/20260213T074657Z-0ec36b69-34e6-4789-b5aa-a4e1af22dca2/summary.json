@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_recovery_disconnect_reconnect_ws_upstream",
+  "generated_at": "2026-02-13T07:47:13.162507Z",
+  "run_id": "20260213T074657Z-0ec36b69-34e6-4789-b5aa-a4e1af22dca2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_recovery_disconnect_reconnect_ws_upstream/20260213T074657Z-0ec36b69-34e6-4789-b5aa-a4e1af22dca2/rust.snapshot.json"
+  ]
+}

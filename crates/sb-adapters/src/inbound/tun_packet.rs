@@ -166,9 +166,7 @@ mod tests {
             0x45, 0x00, 0x00, 0x3c, 0x1c, 0x46, 0x40, 0x00, 0x40, 0x06, 0x00, 0x00, 0xac, 0x10,
             0x0a, 0x63, 0xac, 0x10, 0x0a, 0x0c,
         ];
-        let checksum = calculate_checksum(&data);
-        // Just verify it doesn't panic
-        assert!(checksum != 0 || checksum == 0); // Always true, just testing execution
+        let _checksum = calculate_checksum(&data);
     }
 
     #[test]

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T061229Z-30d510de-8272-4e06-aab6-db79c7ac168a",
+  "case_id": "p1_cli_ruleset_convert_adguard",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:12:29.258767Z",
+  "finished_at": "2026-02-13T06:12:30.797322Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "run_cli",
+      "success": false,
+      "detail": {
+        "action": "command",
+        "args": [
+          "rule-set",
+          "convert",
+          "--type",
+          "adguard",
+          "labs/interop-lab/configs/test_adguard_filter.txt"
+        ],
+        "command": "./target/debug/app",
+        "elapsed_ms": 14,
+        "env": {},
+        "exit_code": 2,
+        "expect_exit": 0,
+        "stderr": "error: unrecognized subcommand 'rule-set'\n\nUsage: app [OPTIONS] <COMMAND>\n\nFor more information, try '--help'.\n",
+        "stdout": "",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [
+    {
+      "stage": "assertion:traffic.run_cli.detail.exit_code",
+      "message": "assertion failed: key=traffic.run_cli.detail.exit_code op=eq expected=0 actual=2"
+    }
+  ],
+  "fd_samples": []
+}

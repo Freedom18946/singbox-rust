@@ -1537,8 +1537,12 @@ mod sys_windows {
 // Tests
 // -------------------
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     // use sb_core::router::RequestMeta; // Using local placeholder
@@ -1581,7 +1585,7 @@ mod tests {
     #[test]
     fn config_defaults_2_3c() {
         let d = TunInboundConfig::default();
-        assert_eq!(d.dry_run, true);
+        assert!(d.dry_run);
         assert!(d.user_tag.is_none());
         assert!(d.timeout_ms >= 5_000); // 默认应为一个合理超时
     }
@@ -1599,7 +1603,7 @@ mod tests {
         let cfg: TunInboundConfig = serde_json::from_value(v).unwrap();
         assert_eq!(cfg.name, "utun5");
         assert_eq!(cfg.mtu, 1400);
-        assert_eq!(cfg.dry_run, false);
+        assert!(!cfg.dry_run);
         assert_eq!(cfg.user_tag.as_deref(), Some("alice"));
         assert_eq!(cfg.timeout_ms, 8000);
     }

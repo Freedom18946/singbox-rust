@@ -956,15 +956,20 @@ impl InboundService for Socks5 {
 
 // UDP SOCKS5 utility functions (keep as-is, already async)
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::net::TcpStream as AsyncTcpStream;
 
 /// Perform SOCKS5 greeting without authentication
 pub async fn greet_noauth(stream: &mut AsyncTcpStream) -> anyhow::Result<()> {
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    // Send greeting response: no auth required
-    stream.write_all(&[0x05, 0x00]).await?;
+    // VER=5, NMETHODS=1, METHODS=[NO_AUTH]
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await?;
+    if resp != [0x05, 0x00] {
+        anyhow::bail!("socks5: server rejected no-auth");
+    }
     Ok(())
 }
 
@@ -975,33 +980,61 @@ pub async fn udp_associate(
 ) -> anyhow::Result<SocketAddr> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    // Read UDP ASSOCIATE request
-    let mut req = [0u8; 10];
-    stream.read_exact(&mut req).await?;
-
-    // For simplicity, return a dummy relay address
-    let relay_addr = bind_hint.unwrap_or_else(|| {
-        "127.0.0.1:8080"
-            .parse()
-            .expect("Default relay address should always be valid")
-    });
-
-    // Send successful response
-    let mut response = vec![0x05, 0x00, 0x00, 0x01]; // Success, IPv4
-    match relay_addr {
-        SocketAddr::V4(addr) => {
-            response.extend_from_slice(&addr.ip().octets());
-            response.extend_from_slice(&addr.port().to_be_bytes());
+    // VER=5, CMD=3(UDP ASSOCIATE), RSV=0, ATYP/ADDR/PORT
+    let bind = bind_hint.unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
+    let mut req = vec![0x05, 0x03, 0x00];
+    match bind.ip() {
+        IpAddr::V4(ip) => {
+            req.push(0x01);
+            req.extend_from_slice(&ip.octets());
         }
-        SocketAddr::V6(addr) => {
-            response[3] = 0x04; // IPv6
-            response.extend_from_slice(&addr.ip().octets());
-            response.extend_from_slice(&addr.port().to_be_bytes());
+        IpAddr::V6(ip) => {
+            req.push(0x04);
+            req.extend_from_slice(&ip.octets());
         }
     }
+    req.extend_from_slice(&bind.port().to_be_bytes());
+    stream.write_all(&req).await?;
 
-    stream.write_all(&response).await?;
-    Ok(relay_addr)
+    // Response: VER, REP, RSV, ATYP, BND.ADDR, BND.PORT
+    let mut head = [0u8; 4];
+    stream.read_exact(&mut head).await?;
+    if head[0] != 0x05 {
+        anyhow::bail!("socks5: bad version {}", head[0]);
+    }
+    if head[1] != 0x00 {
+        anyhow::bail!("socks5: udp associate failed rep={}", head[1]);
+    }
+
+    let relay = match head[3] {
+        0x01 => {
+            let mut a = [0u8; 4];
+            let mut p = [0u8; 2];
+            stream.read_exact(&mut a).await?;
+            stream.read_exact(&mut p).await?;
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::from(a)), u16::from_be_bytes(p))
+        }
+        0x04 => {
+            let mut a = [0u8; 16];
+            let mut p = [0u8; 2];
+            stream.read_exact(&mut a).await?;
+            stream.read_exact(&mut p).await?;
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::from(a)), u16::from_be_bytes(p))
+        }
+        0x03 => {
+            // Domain-form relay reply: skip domain and return localhost:port.
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut domain = vec![0u8; len[0] as usize];
+            stream.read_exact(&mut domain).await?;
+            let mut p = [0u8; 2];
+            stream.read_exact(&mut p).await?;
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), u16::from_be_bytes(p))
+        }
+        atyp => anyhow::bail!("socks5: bad atyp in reply {}", atyp),
+    };
+
+    Ok(relay)
 }
 
 /// Encode UDP request packet for SOCKS5

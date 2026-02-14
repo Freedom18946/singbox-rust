@@ -1,0 +1,42 @@
+id: p1_tls_fragment_activation
+title: tls fragment activation from route options starts without errors
+owner: L14
+priority: p1
+kernel_mode: rust
+tags:
+- tls
+- fragment
+- activation
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_tls_fragment.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19308
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19308
+      secret: null
+  go: null
+gui_sequence: []
+upstream_topology: []
+traffic_plan: []
+subscription_input: null
+faults: []
+assertions:
+- key: errors.count
+  op: eq
+  expected: 0
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

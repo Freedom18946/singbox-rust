@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_delay_ws_upstream",
+  "generated_at": "2026-02-13T06:15:32.718233Z",
+  "run_id": "20260213T061517Z-fc51a0bc-8c79-4d3a-943c-3afb987ee9f4",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_delay_ws_upstream/20260213T061517Z-fc51a0bc-8c79-4d3a-943c-3afb987ee9f4/rust.snapshot.json"
+  ]
+}

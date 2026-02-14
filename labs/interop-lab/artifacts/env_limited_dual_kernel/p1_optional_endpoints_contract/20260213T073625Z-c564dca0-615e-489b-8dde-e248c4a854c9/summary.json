@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_optional_endpoints_contract",
+  "generated_at": "2026-02-13T07:37:25.514015Z",
+  "run_id": "20260213T073625Z-c564dca0-615e-489b-8dde-e248c4a854c9",
+  "snapshots": [
+    "labs/interop-lab/artifacts/env_limited_dual_kernel/p1_optional_endpoints_contract/20260213T073625Z-c564dca0-615e-489b-8dde-e248c4a854c9/rust.snapshot.json",
+    "labs/interop-lab/artifacts/env_limited_dual_kernel/p1_optional_endpoints_contract/20260213T073625Z-c564dca0-615e-489b-8dde-e248c4a854c9/go.snapshot.json"
+  ]
+}

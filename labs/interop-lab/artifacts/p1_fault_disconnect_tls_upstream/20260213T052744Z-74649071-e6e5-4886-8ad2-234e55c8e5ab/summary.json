@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_disconnect_tls_upstream",
+  "generated_at": "2026-02-13T05:28:00.136641Z",
+  "run_id": "20260213T052744Z-74649071-e6e5-4886-8ad2-234e55c8e5ab",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_disconnect_tls_upstream/20260213T052744Z-74649071-e6e5-4886-8ad2-234e55c8e5ab/rust.snapshot.json"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_service_failure_isolation",
+  "generated_at": "2026-02-13T07:49:14.746554Z",
+  "run_id": "20260213T074859Z-615f08db-fb4f-46a2-ae60-33fc0084e578",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_service_failure_isolation/20260213T074859Z-615f08db-fb4f-46a2-ae60-33fc0084e578/rust.snapshot.json"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_jitter_tls_upstream",
+  "generated_at": "2026-02-13T11:47:33.905211Z",
+  "run_id": "20260213T114718Z-9447594a-0ada-4911-b24c-9d88dea65542",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_jitter_tls_upstream/20260213T114718Z-9447594a-0ada-4911-b24c-9d88dea65542/rust.snapshot.json"
+  ]
+}

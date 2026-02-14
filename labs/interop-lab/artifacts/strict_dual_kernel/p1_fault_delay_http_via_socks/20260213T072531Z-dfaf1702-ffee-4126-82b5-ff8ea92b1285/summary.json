@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_delay_http_via_socks",
+  "generated_at": "2026-02-13T07:25:46.819846Z",
+  "run_id": "20260213T072531Z-dfaf1702-ffee-4126-82b5-ff8ea92b1285",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_http_via_socks/20260213T072531Z-dfaf1702-ffee-4126-82b5-ff8ea92b1285/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_http_via_socks/20260213T072531Z-dfaf1702-ffee-4126-82b5-ff8ea92b1285/go.snapshot.json"
+  ]
+}

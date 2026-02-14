@@ -43,13 +43,8 @@ impl Socks5Mock {
         tokio::spawn(async move {
             let sock = &me.udp_echo;
             let mut buf = vec![0u8; 64 * 1024];
-            loop {
-                match sock.recv_from(&mut buf).await {
-                    Ok((n, peer)) => {
-                        let _ = sock.send_to(&buf[..n], peer).await;
-                    }
-                    Err(_) => break,
-                }
+            while let Ok((n, peer)) = sock.recv_from(&mut buf).await {
+                let _ = sock.send_to(&buf[..n], peer).await;
             }
         });
         let me = self.clone();

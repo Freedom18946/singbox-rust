@@ -68,8 +68,8 @@ pub async fn diff_latest_case(
         .with_context(|| format!("parsing {}", rust_path.display()))?;
     let go_snapshot: NormalizedSnapshot = serde_json::from_slice(&go_raw)
         .with_context(|| format!("parsing {}", go_path.display()))?;
-    let case_spec: CaseSpec =
-        serde_yaml::from_str(&case_raw).with_context(|| format!("parsing {}", case_path.display()))?;
+    let case_spec: CaseSpec = serde_yaml::from_str(&case_raw)
+        .with_context(|| format!("parsing {}", case_path.display()))?;
 
     let report = build_diff_report(
         case_id,
@@ -107,8 +107,11 @@ pub fn build_diff_report(
         &go_snapshot.http_results,
         &oracle.ignore_http_paths,
     );
-    let (ws_mismatches, ignored_ws_count) =
-        diff_ws(&rust_snapshot.ws_frames, &go_snapshot.ws_frames, &oracle.ignore_ws_paths);
+    let (ws_mismatches, ignored_ws_count) = diff_ws(
+        &rust_snapshot.ws_frames,
+        &go_snapshot.ws_frames,
+        &oracle.ignore_ws_paths,
+    );
 
     let mut subscription_mismatches = Vec::new();
     if rust_snapshot
@@ -140,7 +143,11 @@ pub fn build_diff_report(
         .map(|item| (item.name.clone(), item.success))
         .collect();
 
-    let keys: BTreeSet<_> = rust_traffic.keys().chain(go_traffic.keys()).cloned().collect();
+    let keys: BTreeSet<_> = rust_traffic
+        .keys()
+        .chain(go_traffic.keys())
+        .cloned()
+        .collect();
     for key in keys {
         let left = rust_traffic.get(&key).copied();
         let right = go_traffic.get(&key).copied();
@@ -154,14 +161,16 @@ pub fn build_diff_report(
     }
 
     for field in ["up", "down"] {
-        let left = rust_snapshot
-            .traffic_counters
-            .as_ref()
-            .map(|c| if field == "up" { c.up } else { c.down });
-        let right = go_snapshot
-            .traffic_counters
-            .as_ref()
-            .map(|c| if field == "up" { c.up } else { c.down });
+        let left =
+            rust_snapshot
+                .traffic_counters
+                .as_ref()
+                .map(|c| if field == "up" { c.up } else { c.down });
+        let right =
+            go_snapshot
+                .traffic_counters
+                .as_ref()
+                .map(|c| if field == "up" { c.up } else { c.down });
         if left == right {
             continue;
         }
@@ -200,8 +209,16 @@ pub fn build_diff_report(
         });
     }
     for field in ["downloadTotal", "uploadTotal"] {
-        let rust_val = rust_snapshot.conn_summary.as_ref().and_then(|v| v.get(field)).cloned();
-        let go_val = go_snapshot.conn_summary.as_ref().and_then(|v| v.get(field)).cloned();
+        let rust_val = rust_snapshot
+            .conn_summary
+            .as_ref()
+            .and_then(|v| v.get(field))
+            .cloned();
+        let go_val = go_snapshot
+            .conn_summary
+            .as_ref()
+            .and_then(|v| v.get(field))
+            .cloned();
         if rust_val != go_val {
             if oracle.tolerate_counter_jitter {
                 if let (Some(a), Some(b)) = (
@@ -230,7 +247,7 @@ pub fn build_diff_report(
         // Flag if Rust peak is >2x Go peak (or vice versa) — significant divergence
         if r > 0 && g > 0 {
             let ratio = (r as f64) / (g as f64);
-            if ratio > 2.0 || ratio < 0.5 {
+            if !(0.5..=2.0).contains(&ratio) {
                 memory_mismatches.push(Mismatch {
                     key: "memory.peak_ratio".to_string(),
                     rust_value: json!({"peak_bytes": r}),
@@ -261,7 +278,7 @@ pub fn build_diff_report(
         ignored_ws_count,
         ignored_counter_jitter_count,
         gate_score,
-        env_limited_attributions: Vec::new(),
+        env_limited_attributions: crate::attribution::classify_env_limited_failures(rust_snapshot),
     }
 }
 
@@ -299,7 +316,10 @@ fn diff_http(
         if left == right {
             continue;
         }
-        let path = key.split_once(' ').map(|(_, path)| path).unwrap_or_default();
+        let path = key
+            .split_once(' ')
+            .map(|(_, path)| path)
+            .unwrap_or_default();
         if is_ignored_path(path, ignore_paths) {
             ignored += 1;
             continue;
@@ -325,14 +345,22 @@ fn diff_ws(
     let rust_map: BTreeMap<String, String> = rust_ws
         .iter()
         .map(|item| {
-            let hash = sha256_hex(serde_json::to_string(&item.frames).unwrap_or_default().as_bytes());
+            let hash = sha256_hex(
+                serde_json::to_string(&item.frames)
+                    .unwrap_or_default()
+                    .as_bytes(),
+            );
             (item.path.clone(), format!("{}:{}", item.frames.len(), hash))
         })
         .collect();
     let go_map: BTreeMap<String, String> = go_ws
         .iter()
         .map(|item| {
-            let hash = sha256_hex(serde_json::to_string(&item.frames).unwrap_or_default().as_bytes());
+            let hash = sha256_hex(
+                serde_json::to_string(&item.frames)
+                    .unwrap_or_default()
+                    .as_bytes(),
+            );
             (item.path.clone(), format!("{}:{}", item.frames.len(), hash))
         })
         .collect();
@@ -373,8 +401,14 @@ pub fn to_markdown(report: &DiffReport) -> String {
     md.push_str(&format!("# Diff Report: {}\n\n", report.case_id));
     md.push_str(&format!("- Compared at: {}\n", report.compared_at));
     md.push_str(&format!("- Run dir: {}\n", report.run_dir.display()));
-    md.push_str(&format!("- HTTP mismatches: {}\n", report.http_mismatches.len()));
-    md.push_str(&format!("- WS mismatches: {}\n", report.ws_mismatches.len()));
+    md.push_str(&format!(
+        "- HTTP mismatches: {}\n",
+        report.http_mismatches.len()
+    ));
+    md.push_str(&format!(
+        "- WS mismatches: {}\n",
+        report.ws_mismatches.len()
+    ));
     md.push_str(&format!(
         "- Subscription mismatches: {}\n",
         report.subscription_mismatches.len()

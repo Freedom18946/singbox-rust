@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_ws_reconnect_behavior",
+  "generated_at": "2026-02-13T05:31:47.396173Z",
+  "run_id": "20260213T053132Z-d47091eb-8eef-4ed4-bceb-652361974805",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_ws_reconnect_behavior/20260213T053132Z-d47091eb-8eef-4ed4-bceb-652361974805/rust.snapshot.json"
+  ]
+}

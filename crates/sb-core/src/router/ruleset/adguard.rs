@@ -202,20 +202,14 @@ pub fn parse_adguard_rules(input: &str) -> anyhow::Result<Vec<serde_json::Value>
             // Reject rules with path
             if working.contains('/') {
                 ignored_lines += 1;
-                tracing::debug!(
-                    "ignored unsupported rule with path: {}",
-                    origin_rule_line
-                );
+                tracing::debug!("ignored unsupported rule with path: {}", origin_rule_line);
                 continue;
             }
 
             // Reject rules with query
             if working.contains('?') || working.contains('&') {
                 ignored_lines += 1;
-                tracing::debug!(
-                    "ignored unsupported rule with query: {}",
-                    origin_rule_line
-                );
+                tracing::debug!("ignored unsupported rule with query: {}", origin_rule_line);
                 continue;
             }
 
@@ -228,20 +222,14 @@ pub fn parse_adguard_rules(input: &str) -> anyhow::Result<Vec<serde_json::Value>
                 || working.contains('#')
             {
                 ignored_lines += 1;
-                tracing::debug!(
-                    "ignored unsupported cosmetic filter: {}",
-                    origin_rule_line
-                );
+                tracing::debug!("ignored unsupported cosmetic filter: {}", origin_rule_line);
                 continue;
             }
 
             // Reject tilde modifier
             if working.contains('~') {
                 ignored_lines += 1;
-                tracing::debug!(
-                    "ignored unsupported rule modifier: {}",
-                    origin_rule_line
-                );
+                tracing::debug!("ignored unsupported rule modifier: {}", origin_rule_line);
                 continue;
             }
 
@@ -267,18 +255,12 @@ pub fn parse_adguard_rules(input: &str) -> anyhow::Result<Vec<serde_json::Value>
                 // Check if it's an IP/CIDR line
                 if parse_ip_cidr_line(&working).is_some() {
                     ignored_lines += 1;
-                    tracing::debug!(
-                        "ignored unsupported rule with IPCIDR: {}",
-                        origin_rule_line
-                    );
+                    tracing::debug!("ignored unsupported rule with IPCIDR: {}", origin_rule_line);
                     continue;
                 }
                 // Check if it contains a port
                 if domain_check.contains(':') {
-                    tracing::debug!(
-                        "ignored unsupported rule with port: {}",
-                        origin_rule_line
-                    );
+                    tracing::debug!("ignored unsupported rule with port: {}", origin_rule_line);
                 } else {
                     tracing::debug!(
                         "ignored unsupported rule with invalid domain: {}",
@@ -495,7 +477,7 @@ fn is_domain_name(s: &str) -> bool {
 /// (e.g., 127.0.0.1 pointing to a real address — skip), or `None` if not a hosts line.
 fn parse_host_line(line: &str) -> Option<String> {
     // Split on first whitespace
-    let parts: Vec<&str> = line.splitn(2, |c: char| c == ' ' || c == '\t').collect();
+    let parts: Vec<&str> = line.splitn(2, [' ', '\t']).collect();
     if parts.len() != 2 {
         return None;
     }
@@ -588,7 +570,7 @@ mod tests {
         let sub_rules = rule["rules"].as_array().unwrap();
         assert_eq!(sub_rules.len(), 2);
         // First sub-rule should be inverted (exclude)
-        assert_eq!(sub_rules[0]["invert"].as_bool().unwrap(), true);
+        assert!(sub_rules[0]["invert"].as_bool().unwrap());
         let exclude_domains = sub_rules[0]["domain"].as_array().unwrap();
         assert!(exclude_domains
             .iter()

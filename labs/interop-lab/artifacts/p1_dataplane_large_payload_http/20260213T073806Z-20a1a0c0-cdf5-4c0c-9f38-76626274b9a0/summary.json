@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_dataplane_large_payload_http",
+  "generated_at": "2026-02-13T07:38:21.400670Z",
+  "run_id": "20260213T073806Z-20a1a0c0-cdf5-4c0c-9f38-76626274b9a0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_dataplane_large_payload_http/20260213T073806Z-20a1a0c0-cdf5-4c0c-9f38-76626274b9a0/rust.snapshot.json"
+  ]
+}

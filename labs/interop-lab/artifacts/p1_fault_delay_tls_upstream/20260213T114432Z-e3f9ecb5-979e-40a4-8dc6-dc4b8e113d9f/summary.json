@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_delay_tls_upstream",
+  "generated_at": "2026-02-13T11:44:47.183976Z",
+  "run_id": "20260213T114432Z-e3f9ecb5-979e-40a4-8dc6-dc4b8e113d9f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_delay_tls_upstream/20260213T114432Z-e3f9ecb5-979e-40a4-8dc6-dc4b8e113d9f/rust.snapshot.json"
+  ]
+}

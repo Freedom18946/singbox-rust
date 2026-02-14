@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T061227Z-99718d4d-b093-48e4-a159-722a8e36b423",
+  "case_id": "p1_cli_generate_uuid_format",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:12:27.952342Z",
+  "finished_at": "2026-02-13T06:12:29.256807Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "run_cli",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "generate",
+          "uuid"
+        ],
+        "command": "./target/debug/app",
+        "elapsed_ms": 18,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "2026-02-13T06:12:29.250826Z  INFO app::logging: Logging system initialized format=Compact level=info sampling=None redact=true\n",
+        "stdout": "4ba3f88e-878e-49ae-8aa7-a6b9fb23e21b\n",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072803Z-7f06828c-f277-4ba9-af89-4685492012a5",
+  "case_id": "p1_fault_jitter_dns_via_socks",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:28:18.481290Z",
+  "finished_at": "2026-02-13T07:28:18.481376Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_fault_jitter_dns_via_socks missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

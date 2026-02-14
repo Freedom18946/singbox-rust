@@ -4,6 +4,7 @@
 //! PEM-encoded config/key blocks compatible with sing-box Go (`common/tls/ech_shared.go`).
 
 use rand::rngs::OsRng;
+use std::fmt::Write as _;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 // ── Wire-format constants ────────────────────────────────────────────
@@ -20,12 +21,7 @@ const AEAD_CHACHA20_POLY1305: u16 = 0x0003;
 /// Build an ECHConfig wire-format blob (no outer length prefix).
 ///
 /// This matches the Go `marshalECHConfig` function from `common/tls/ech_shared.go`.
-pub fn marshal_ech_config(
-    id: u8,
-    pub_key: &[u8],
-    public_name: &str,
-    max_name_len: u8,
-) -> Vec<u8> {
+pub fn marshal_ech_config(id: u8, pub_key: &[u8], public_name: &str, max_name_len: u8) -> Vec<u8> {
     // Inner content (everything inside the outer u16-length-prefixed block)
     let mut inner = Vec::new();
     inner.push(id);
@@ -119,10 +115,12 @@ fn encode_pem(label: &str, data: &[u8]) -> String {
     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
     let mut pem = format!("-----BEGIN {label}-----\n");
     for chunk in b64.as_bytes().chunks(64) {
-        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        for &byte in chunk {
+            pem.push(char::from(byte));
+        }
         pem.push('\n');
     }
-    pem.push_str(&format!("-----END {label}-----\n"));
+    let _ = writeln!(&mut pem, "-----END {label}-----");
     pem
 }
 
@@ -163,9 +161,7 @@ mod tests {
 
         // The config should contain the public name bytes
         let name_bytes = b"test.example.org";
-        let config_str = config
-            .windows(name_bytes.len())
-            .any(|w| w == name_bytes);
+        let config_str = config.windows(name_bytes.len()).any(|w| w == name_bytes);
         assert!(config_str, "ECHConfig must contain the public_name");
     }
 
@@ -181,16 +177,34 @@ mod tests {
         assert_eq!(suites_len, 12);
 
         // First suite: KDF=0x0001, AEAD=0x0001
-        assert_eq!(u16::from_be_bytes([config[43], config[44]]), KDF_HKDF_SHA256);
-        assert_eq!(u16::from_be_bytes([config[45], config[46]]), AEAD_AES_128_GCM);
+        assert_eq!(
+            u16::from_be_bytes([config[43], config[44]]),
+            KDF_HKDF_SHA256
+        );
+        assert_eq!(
+            u16::from_be_bytes([config[45], config[46]]),
+            AEAD_AES_128_GCM
+        );
 
         // Second suite: KDF=0x0001, AEAD=0x0002
-        assert_eq!(u16::from_be_bytes([config[47], config[48]]), KDF_HKDF_SHA256);
-        assert_eq!(u16::from_be_bytes([config[49], config[50]]), AEAD_AES_256_GCM);
+        assert_eq!(
+            u16::from_be_bytes([config[47], config[48]]),
+            KDF_HKDF_SHA256
+        );
+        assert_eq!(
+            u16::from_be_bytes([config[49], config[50]]),
+            AEAD_AES_256_GCM
+        );
 
         // Third suite: KDF=0x0001, AEAD=0x0003
-        assert_eq!(u16::from_be_bytes([config[51], config[52]]), KDF_HKDF_SHA256);
-        assert_eq!(u16::from_be_bytes([config[53], config[54]]), AEAD_CHACHA20_POLY1305);
+        assert_eq!(
+            u16::from_be_bytes([config[51], config[52]]),
+            KDF_HKDF_SHA256
+        );
+        assert_eq!(
+            u16::from_be_bytes([config[53], config[54]]),
+            AEAD_CHACHA20_POLY1305
+        );
     }
 
     #[test]
@@ -216,9 +230,14 @@ mod tests {
             .lines()
             .filter(|l| !l.starts_with("-----"))
             .collect();
-        let config_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&config_b64)
-            .expect("config PEM body must be valid base64");
+        let config_decoded = base64::engine::general_purpose::STANDARD.decode(&config_b64);
+        assert!(
+            config_decoded.is_ok(),
+            "config PEM body must be valid base64"
+        );
+        let Ok(config_bytes) = config_decoded else {
+            return;
+        };
 
         // First two bytes of decoded config_bytes are u16 length prefix
         let inner_len = u16::from_be_bytes([config_bytes[0], config_bytes[1]]) as usize;
@@ -233,9 +252,11 @@ mod tests {
             .lines()
             .filter(|l| !l.starts_with("-----"))
             .collect();
-        let key_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&key_b64)
-            .expect("key PEM body must be valid base64");
+        let key_decoded = base64::engine::general_purpose::STANDARD.decode(&key_b64);
+        assert!(key_decoded.is_ok(), "key PEM body must be valid base64");
+        let Ok(key_bytes) = key_decoded else {
+            return;
+        };
 
         // key_bytes = u16_prefix(32-byte private key) + u16_prefix(ech_config)
         let priv_len = u16::from_be_bytes([key_bytes[0], key_bytes[1]]) as usize;

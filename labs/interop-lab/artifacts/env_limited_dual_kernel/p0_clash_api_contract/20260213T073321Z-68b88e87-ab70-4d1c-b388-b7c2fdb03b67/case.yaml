@@ -1,0 +1,98 @@
+id: p0_clash_api_contract
+title: clash api and ws contract replay
+owner: null
+priority: p0
+kernel_mode: both
+tags:
+- control-plane
+env_class: env_limited
+bootstrap:
+  rust:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_RUST_API_BASE}
+      secret: ${INTEROP_RUST_API_SECRET}
+  go:
+    command: null
+    args: []
+    env: {}
+    workdir: null
+    startup_timeout_ms: 30000
+    ready_path: /version
+    api:
+      base_url: ${INTEROP_GO_API_BASE}
+      secret: ${INTEROP_GO_API_SECRET}
+gui_sequence:
+- kind: http
+  name: get_configs
+  method: GET
+  path: /configs
+  body: null
+  expect_status: 200
+- kind: http
+  name: patch_configs_mode
+  method: PATCH
+  path: /configs
+  body:
+    mode: rule
+  expect_status: 204
+- kind: http
+  name: get_proxies
+  method: GET
+  path: /proxies
+  body: null
+  expect_status: 200
+- kind: http
+  name: get_proxy_delay
+  method: GET
+  path: /proxies/DIRECT/delay?timeout=1000
+  body: null
+  expect_status: null
+- kind: http
+  name: get_connections
+  method: GET
+  path: /connections
+  body: null
+  expect_status: 200
+- kind: http
+  name: close_connection_probe
+  method: DELETE
+  path: /connections/non-existent-connection-id
+  body: null
+  expect_status: null
+- kind: ws_collect
+  name: memory_stream
+  path: /memory
+  max_frames: 2
+  duration_ms: 3000
+- kind: ws_collect
+  name: traffic_stream
+  path: /traffic
+  max_frames: 2
+  duration_ms: 3000
+- kind: ws_collect
+  name: connections_stream
+  path: /connections
+  max_frames: 2
+  duration_ms: 3000
+- kind: ws_collect
+  name: logs_stream
+  path: /logs
+  max_frames: 2
+  duration_ms: 3000
+upstream_topology: []
+traffic_plan: []
+subscription_input: null
+faults: []
+assertions: []
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: false
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

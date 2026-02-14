@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_cli_ech_keypair_pem_format",
+  "generated_at": "2026-02-13T07:23:40.887113Z",
+  "run_id": "20260213T072339Z-490f6657-c299-4abd-8d2a-5adfe215c319",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_ech_keypair_pem_format/20260213T072339Z-490f6657-c299-4abd-8d2a-5adfe215c319/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_ech_keypair_pem_format/20260213T072339Z-490f6657-c299-4abd-8d2a-5adfe215c319/go.snapshot.json"
+  ]
+}

@@ -301,7 +301,10 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
 
     // Print migration diagnostics for human output
     if !migration_diagnostics.is_empty() && fmt == Format::Human {
-        eprintln!("\nMigration diagnostics ({} actions):", migration_diagnostics.len());
+        eprintln!(
+            "\nMigration diagnostics ({} actions):",
+            migration_diagnostics.len()
+        );
         for diag in &migration_diagnostics {
             let action_str = match diag.action {
                 cfg_compat::MigrationAction::Renamed => "RENAMED",
@@ -309,7 +312,10 @@ pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
                 cfg_compat::MigrationAction::Normalized => "NORMALIZED",
                 cfg_compat::MigrationAction::Wrapped => "WRAPPED",
             };
-            eprintln!("  [{action_str}] {} -> {}: {}", diag.from_path, diag.to_path, diag.detail);
+            eprintln!(
+                "  [{action_str}] {} -> {}: {}",
+                diag.from_path, diag.to_path, diag.detail
+            );
         }
     }
 

@@ -1,0 +1,22 @@
+{
+  "case_id": "p1_auth_negative_missing_token",
+  "run_dir": "labs/interop-lab/artifacts/env_limited_dual_kernel/p1_auth_negative_missing_token/20260213T113825Z-8284cf11-f71f-415b-9eeb-66a66f4459c0",
+  "compared_at": "2026-02-13T11:41:32.193129+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 0,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": [
+    {
+      "action_name": "launch_kernel",
+      "category": "unknown",
+      "evidence": "unclassified"
+    }
+  ]
+}

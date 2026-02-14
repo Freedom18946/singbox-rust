@@ -8,79 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `generate uuid` subcommand for V4 UUID generation (L15.1.1)
-- `generate rand` subcommand with `--base64`/`--hex` flags (L15.1.2)
-- ECH keypair PEM encoding compatible with Go sing-box format (L15.1.3)
-- AdGuard DNS filter rule-set conversion (`rule-set convert --type adguard`) (L15.1.4)
-- `rule-set format --write` flag for in-place formatting (L15.1.5)
-- Chrome certificate store mode (L15.1.6)
-- Criterion benchmark suite formalization with baseline JSON (L16.1.1)
-- Go vs Rust throughput comparison framework (L16.1.2)
-- Feature-gate matrix expanded to 40+ combinations (L16.1.4)
-- Memory usage benchmark script (L16.2.1)
-- Hot reload stability test (100x SIGHUP) (L16.2.2)
-- Signal handling and resource leak detection tests (L16.2.3)
-- CI/CD pipeline: lint, test, parity check, boundary check (L17.1.1)
-- Multi-platform release builds (6 targets) (L17.1.2)
-- Docker production image with health check (L17.1.3)
-- Security audit checklist and `cargo deny` integration (L17.2.3)
-- User documentation: configuration reference, migration guide, troubleshooting (L17.2.2)
-- 7-day canary stability framework (L17.3.2)
+- Release packaging script `scripts/package_release.sh` with unified artifact layout (`bin/`, `config/`, `docs/`) and checksum output (L17.2.1).
+- Deployment config template `deployments/config-template.json` for release artifacts (L17.2.1).
+- GUI smoke framework `scripts/gui_smoke_test.sh` with report and artifact generation (L17.3.1).
+- Canary framework `scripts/canary_7day.sh` with JSONL sampling and summary generation (L17.3.2).
+- Top-level docs entry points: `docs/configuration.md`, `docs/migration-from-go.md`, `docs/troubleshooting.md` (L17.2.2).
 
 ### Changed
-- PX-015 (Linux resolved validation) deferred with CI placeholder workflow (L15.2.3)
+- CI gate hardened: clippy now runs with `--workspace --all-features --all-targets -D warnings` (L17.1.1).
+- Release workflow now packages artifacts via `scripts/package_release.sh` and names outputs as `singbox-rust-{version}-{os}-{arch}` (L17.1.2, L17.2.1).
+- Docker runtime chain updated: non-root runtime, `/services/health` healthcheck, and explicit `<50MB` image-size validation command in deployment flow (L17.1.3).
+- `deny.toml` rewritten for `cargo-deny 0.18.x` compatibility and current advisory tracking policy (L17.2.3).
 
 ## [0.1.0] - 2026-02-12
 
 ### Added
 
 #### Architecture (L1)
-- Rust workspace with 8 crates: sb-types, sb-config, sb-core, sb-adapters, sb-tls, sb-transport, sb-runtime, app
-- Port-trait architecture: OutboundConnector, InboundHandler, DnsPort, AdminPort, etc.
-- Feature-gate system for modular builds
-- Architecture boundary enforcement via check-boundaries.sh
+- Rust workspace with modular crates and explicit boundary constraints.
+- Port-trait architecture for connector/inbound/service abstractions.
+- Architecture boundary enforcement via `check-boundaries.sh`.
 
-#### Protocol Parity (L2)
-- 10 outbound protocols: Direct, SOCKS5, HTTP, Shadowsocks, VMess, VLESS, Trojan, Hysteria2, TUIC, WireGuard
-- 8 inbound protocols: SOCKS5, HTTP, Mixed, Shadowsocks, VMess, Trojan, Naive, TUN
-- DNS resolvers: UDP, DoH, DoT, DoQ, DoH3, DHCP, systemd-resolved, Tailscale
-- Rule-set: SRS binary format v1-v3, JSON source, remote HTTP with caching
-- Router: domain/IP/port/process matching, logical rules, rule-set references
-- Transport: WebSocket, HTTP/2, gRPC, QUIC, multiplex (smux/yamux/h2mux)
-- 208/209 Go features implemented (99.52% parity)
+#### Protocol & Feature Parity (L2-L14)
+- Go parity closure to 208/209 items (99.52%) with one deferred Linux runtime validation item (`PX-015`).
+- Core protocol, routing, DNS, migration governance, service security, and TLS advanced capabilities delivered.
 
-#### Interop Testing (L5-L7)
-- 77 interop-lab test cases (68 strict, 8 env_limited, 1 smoke)
-- Protocol x fault matrix: 6 protocols x 4 fault types = 24 cell coverage
-- WebSocket/TLS round-trip delay injection and trend reporting
-- GUI startup/switch/reconnect replay testing
-- E2E capstone test suite
-
-#### CI Governance (L8-L11)
-- Interop-lab smoke and nightly CI workflows
-- Configurable trend gates with JSONL history tracking
-- Regression detection across test runs
-
-#### Migration Governance (L12)
-- IssueCode::Deprecated detection in validator
-- Deprecation directory and migration diagnostics
-- Working group migration assistance tooling
-
-#### Service Security (L13)
-- Clash API and SSMAPI authentication middleware
-- Non-localhost binding warnings
-- ServiceStatus fault isolation
-- Health API endpoint (/services/health)
-
-#### TLS Advanced (L14)
-- Certificate store modes: System, Mozilla, None
-- Certificate file hot reload with file watcher
-- TLS fragment configuration wiring
-- TLS capability matrix and trend templates
+#### Quality & Baseline (L15-L16)
+- CLI parity additions (`generate uuid`, `generate rand`, ECH keypair, AdGuard conversion, format write mode).
+- Benchmark baseline outputs, feature matrix, long-run stability tests, and bench regression gate.
 
 ### Known Limitations
-- PX-015: Linux systemd-resolved validation requires real Linux environment (deferred)
-- Chrome certificate store mode uses webpki-roots (Chrome/Mozilla roots highly overlap)
+- `PX-015`: Linux `systemd-resolved` runtime validation requires real Linux environment evidence.
+- Chrome certificate store mode currently maps to `webpki-roots` equivalence.
+
+## Contributing
+
+- Contribution guide: `docs/04-development/contributing/getting-started.md`
+- Pull request process: `docs/04-development/contributing/pull-requests.md`
 
 [Unreleased]: https://github.com/nicekid1/singbox-rust/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/nicekid1/singbox-rust/releases/tag/v0.1.0

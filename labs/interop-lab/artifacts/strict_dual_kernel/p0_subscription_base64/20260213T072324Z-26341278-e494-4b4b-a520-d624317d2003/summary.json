@@ -1,0 +1,9 @@
+{
+  "case_id": "p0_subscription_base64",
+  "generated_at": "2026-02-13T07:23:24.535214Z",
+  "run_id": "20260213T072324Z-26341278-e494-4b4b-a520-d624317d2003",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p0_subscription_base64/20260213T072324Z-26341278-e494-4b4b-a520-d624317d2003/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p0_subscription_base64/20260213T072324Z-26341278-e494-4b4b-a520-d624317d2003/go.snapshot.json"
+  ]
+}

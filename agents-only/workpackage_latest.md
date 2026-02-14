@@ -1,11 +1,87 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-12
-> **当前阶段**：L16 ✅ Closed（单分支并行收口）
+> **最后更新**：2026-02-14
+> **当前阶段**：L17 收口完成（`PASS_ENV_LIMITED`，环境项待复跑）
 > **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
 > **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L17 Capstone 快跑闭环（2026-02-14）
+
+**状态**：✅ `PASS_ENV_LIMITED`（功能门禁全通过，环境项留痕可复跑）
+
+**统一执行**：
+- `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
+- 状态文件：`reports/stability/l17_capstone_status.json`
+
+**门禁结果**：
+- ✅ `boundaries`
+- ✅ `parity_check`
+- ✅ `workspace_test`
+- ✅ `fmt_check`
+- ✅ `clippy`
+- ✅ `hot_reload_long_test`（`SINGBOX_HOT_RELOAD_ITERATIONS=20`）
+- ✅ `signal_long_test`（`SINGBOX_SIGNAL_ITERATIONS=5`）
+- ⚠️ `docker` = `ENV_LIMITED`（`docker_daemon_unavailable`）
+- ⚠️ `gui_smoke` = `ENV_LIMITED`（`gui_smoke_manual_step`）
+- ⚠️ `canary` = `ENV_LIMITED`（`canary_api_unreachable`）
+
+---
+
+## 🆕 最新进展：L16.2.x long_tests 稳定性修复与复验（2026-02-14）
+
+**状态**：✅ 已完成（定向修复 + 定向复验）
+
+**修复范围**：
+- `app/tests/hot_reload_stability.rs`
+- `app/tests/signal_reliability.rs`
+
+**修复要点**：
+- readiness 增强：支持更宽就绪窗口（`SINGBOX_HEALTH_READY_TIMEOUT_SECS`，默认 30s）与轮询重试。
+- 端口占用防误杀：启动前端口可用性预检 + 占用进程诊断输出。
+- 进程治理：失败路径统一 `TERM -> timeout -> kill` 清理，避免残留进程/端口污染后续轮次。
+- 失败可观测性：采集并输出子进程 `stdout/stderr` tail。
+- 配置与二进制选择稳态：优先 `CARGO_BIN_EXE_*`；默认生成临时 `{}` 配置，避免特性集与历史配置漂移导致的假失败。
+
+**复验命令（通过）**：
+- ✅ `cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture`
+- ✅ `cargo test -p app --test signal_reliability --features long_tests -- --nocapture`
+
+**证据产物**：
+- `reports/stability/hot_reload_100x.json`
+- `reports/stability/signal_reliability_10x.json`
+
+---
+
+## 🚧 最新进展：L17 全量收口实施（L17.1.1 ~ L17.3.3）
+
+**日期**：2026-02-13  
+**状态**：代码与文档交付已完成；2026-02-14 快跑门禁闭环，按 `PASS_ENV_LIMITED` 结项
+
+**已落地工作包**：
+- ✅ L17.1.1 CI/CD Pipeline：`ci.yml` 已固定 fmt/clippy/test/parity/boundaries 门禁。
+- ✅ L17.1.2 多平台构建：`release.yml` 保留 6 target matrix，并引入 os/arch/archive 元数据。
+- ✅ L17.1.3 Docker 正式化：Dockerfile/compose 已统一 non-root、healthcheck、镜像体积校验链说明。
+- ✅ L17.1.4 CHANGELOG：按 Keep a Changelog 更新 L17 条目与贡献入口。
+- ✅ L17.2.1 Release 打包：新增 `scripts/package_release.sh` 与 `deployments/config-template.json`，并统一 checksum 产出。
+- ✅ L17.2.2 用户文档：新增 `docs/configuration.md`、`docs/migration-from-go.md`、`docs/troubleshooting.md`。
+- ✅ L17.2.3 安全清单：`deny.toml` 适配 cargo-deny 0.18，`reports/security_audit.md` 已转实跑结论。
+- ✅ L17.3.1 GUI 冒烟：新增 `scripts/gui_smoke_test.sh` + `reports/gui_integration_test.md`。
+- ✅ L17.3.2 Canary 框架：新增 `scripts/canary_7day.sh` + `reports/stability/canary_summary.md`。
+- ✅ L17.3.3 Capstone：`CLAUDE.md` / `active_context.md` / `workpackage_latest.md` / `log.md` 已同步。
+
+**本轮复验快照（更新）**：
+- ✅ `bash agents-only/06-scripts/check-boundaries.sh`
+- ✅ `cargo check -p app --features parity`
+- ✅ `cargo fmt --all -- --check`
+- ✅ `cargo clippy --workspace --all-features --all-targets -- -D warnings`
+- ✅ `cargo test --workspace`
+- ✅ `SINGBOX_HOT_RELOAD_ITERATIONS=20 cargo test -p app --test hot_reload_stability --features long_tests`
+- ✅ `SINGBOX_SIGNAL_ITERATIONS=5 cargo test -p app --test signal_reliability --features long_tests`
+- ⚠️ Docker/GUI/Canary：`ENV_LIMITED`（详见 `reports/stability/l17_capstone_status.json`）
 
 ---
 

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_jitter_tcp_via_socks",
+  "generated_at": "2026-02-13T07:55:34.952050Z",
+  "run_id": "20260213T075519Z-21f448b7-7ee6-4767-9f59-50a1ea329eb5",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_jitter_tcp_via_socks/20260213T075519Z-21f448b7-7ee6-4767-9f59-50a1ea329eb5/rust.snapshot.json"
+  ]
+}

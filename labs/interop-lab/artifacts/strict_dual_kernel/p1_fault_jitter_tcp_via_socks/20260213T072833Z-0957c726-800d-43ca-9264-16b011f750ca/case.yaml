@@ -1,0 +1,64 @@
+id: p1_fault_jitter_tcp_via_socks
+title: fault jitter on upstream tcp to validate timeout observability
+owner: null
+priority: p1
+kernel_mode: rust
+tags:
+- dataplane
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_socks_http.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19190
+      secret: null
+  go: null
+gui_sequence:
+- kind: http
+  name: healthz
+  method: GET
+  path: /healthz
+  body: null
+  expect_status: 200
+upstream_topology:
+- name: local_tcp
+  kind: tcp_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: fault_jitter
+  name: inject_jitter
+  target: local_tcp
+  base_ms: 12000
+  jitter_ms: 2000
+  ratio: 1.0
+- kind: tcp_round_trip
+  name: jitter_tcp_should_timeout
+  addr: '{{upstream.local_tcp}}'
+  payload: hello-tcp-fault-jitter
+  proxy: socks5://127.0.0.1:11801
+  payload_size: null
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.inject_jitter.detail.applied_delay_ms
+  op: gte
+  expected: 12000
+- key: traffic.jitter_tcp_should_timeout.success
+  op: eq
+  expected: false
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

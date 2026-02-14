@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_disconnect_udp_via_socks",
+  "generated_at": "2026-02-13T07:54:34.347164Z",
+  "run_id": "20260213T075419Z-da5c9ad4-4e52-4179-b6a5-eb8baff8efd2",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_disconnect_udp_via_socks/20260213T075419Z-da5c9ad4-4e52-4179-b6a5-eb8baff8efd2/rust.snapshot.json"
+  ]
+}

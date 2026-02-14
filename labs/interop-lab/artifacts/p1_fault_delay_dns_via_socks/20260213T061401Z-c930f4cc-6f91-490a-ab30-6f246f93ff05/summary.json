@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_delay_dns_via_socks",
+  "generated_at": "2026-02-13T06:14:16.936454Z",
+  "run_id": "20260213T061401Z-c930f4cc-6f91-490a-ab30-6f246f93ff05",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_delay_dns_via_socks/20260213T061401Z-c930f4cc-6f91-490a-ab30-6f246f93ff05/rust.snapshot.json"
+  ]
+}

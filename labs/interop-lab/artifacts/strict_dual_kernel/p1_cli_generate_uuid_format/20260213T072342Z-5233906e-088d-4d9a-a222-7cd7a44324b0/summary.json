@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_cli_generate_uuid_format",
+  "generated_at": "2026-02-13T07:23:43.839745Z",
+  "run_id": "20260213T072342Z-5233906e-088d-4d9a-a222-7cd7a44324b0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_generate_uuid_format/20260213T072342Z-5233906e-088d-4d9a-a222-7cd7a44324b0/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_cli_generate_uuid_format/20260213T072342Z-5233906e-088d-4d9a-a222-7cd7a44324b0/go.snapshot.json"
+  ]
+}

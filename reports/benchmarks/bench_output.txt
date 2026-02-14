@@ -1,1187 +1,151 @@
-   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
-   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
    Compiling sb-benches v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/benches)
-    Finished `bench` profile [optimized] target(s) in 2m 13s
-     Running unittests src/lib.rs (target/release/deps/sb_benches-8b9202f1e0ad6a75)
+error[E0507]: cannot move out of `dropped_iterations`, a captured variable in an `FnMut` closure
+   --> benches/benches/shadowsocks_throughput.rs:133:57
+    |
+131 |                     let dropped_iterations = Arc::clone(&dropped_iterations);
+    |                         ------------------   ------------------------------- move occurs because `dropped_iterations` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                         |
+    |                         captured outer variable
+132 |                     let reconnect_failures = Arc::clone(&reconnect_failures);
+133 |                     b.to_async(&rt).iter_custom(|iters| async move {
+    |                                                 ------- ^^^^^^^^^^ `dropped_iterations` is moved here
+    |                                                 |
+    |                                                 captured by this `FnMut` closure
+...
+168 |                             dropped_iterations.fetch_add(1, Ordering::Relaxed);
+    |                             ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+133 ~                     b.to_async(&rt).iter_custom(|iters| {
+134 +                     let value = dropped_iterations.clone();
+135 ~                     async move {
+136 |                         let client_config = ShadowsocksConfig {
+...
+169 |                         let Some(mut stream) = connect().await else {
+170 ~                             value.fetch_add(1, Ordering::Relaxed);
+171 |                             return Duration::from_secs(0);
+...
+226 |                         started.elapsed()
+227 ~                     }
+228 ~                     });
+    |
 
-running 4 tests
-test tests::test_calculate_mbps ... ignored
-test tests::test_compute_percentiles ... ignored
-test tests::test_compute_percentiles_empty ... ignored
-test tests::test_generate_random_data ... ignored
+error[E0507]: cannot move out of `reconnect_failures`, a captured variable in an `FnMut` closure
+   --> benches/benches/shadowsocks_throughput.rs:133:57
+    |
+132 |                     let reconnect_failures = Arc::clone(&reconnect_failures);
+    |                         ------------------   ------------------------------- move occurs because `reconnect_failures` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                         |
+    |                         captured outer variable
+133 |                     b.to_async(&rt).iter_custom(|iters| async move {
+    |                                                 ------- ^^^^^^^^^^ `reconnect_failures` is moved here
+    |                                                 |
+    |                                                 captured by this `FnMut` closure
+...
+183 |                                         reconnect_failures.fetch_add(1, Ordering::Relaxed);
+    |                                         ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+133 ~                     b.to_async(&rt).iter_custom(|iters| {
+134 +                     let value = reconnect_failures.clone();
+135 ~                     async move {
+136 |                         let client_config = ShadowsocksConfig {
+...
+184 |                                     } else {
+185 ~                                         value.fetch_add(1, Ordering::Relaxed);
+186 |                                         break;
+...
+226 |                         started.elapsed()
+227 ~                     }
+228 ~                     });
+    |
 
-test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error[E0507]: cannot move out of `dropped_iterations`, a captured variable in an `FnMut` closure
+   --> benches/benches/trojan_throughput.rs:174:49
+    |
+172 |             let dropped_iterations = Arc::clone(&dropped_iterations);
+    |                 ------------------   ------------------------------- move occurs because `dropped_iterations` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                 |
+    |                 captured outer variable
+173 |             let reconnect_failures = Arc::clone(&reconnect_failures);
+174 |             b.to_async(&rt).iter_custom(|iters| async move {
+    |                                         ------- ^^^^^^^^^^ `dropped_iterations` is moved here
+    |                                         |
+    |                                         captured by this `FnMut` closure
+...
+213 |                     dropped_iterations.fetch_add(1, Ordering::Relaxed);
+    |                     ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+174 ~             b.to_async(&rt).iter_custom(|iters| {
+175 +             let value = dropped_iterations.clone();
+176 ~             async move {
+177 |                 let client_config = TrojanConfig {
+...
+214 |                 let Some(mut stream) = connect().await else {
+215 ~                     value.fetch_add(1, Ordering::Relaxed);
+216 |                     return Duration::from_secs(0);
+...
+276 |                 started.elapsed()
+277 ~             }
+278 ~             });
+    |
 
-     Running benches/aead_crypto.rs (target/release/deps/aead_crypto-e7d40de866614111)
-Gnuplot not found, using plotters backend
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Collecting 100 samples in estimated 10.016 s (773k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1024: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/1024
-                        time:   [12.941 µs 12.948 µs 12.956 µs]
-                        thrpt:  [75.376 MiB/s 75.420 MiB/s 75.461 MiB/s]
-Found 4 outliers among 100 measurements (4.00%)
-  2 (2.00%) high mild
-  2 (2.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Collecting 100 samples in estimated 10.032 s (1.3M iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1024: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/1024
-                        time:   [7.9000 µs 7.9208 µs 7.9483 µs]
-                        thrpt:  [122.86 MiB/s 123.29 MiB/s 123.62 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  5 (5.00%) high mild
-  8 (8.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Collecting 100 samples in estimated 10.572 s (56k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/16384: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/16384
-                        time:   [186.49 µs 186.77 µs 187.21 µs]
-                        thrpt:  [83.462 MiB/s 83.657 MiB/s 83.783 MiB/s]
-Found 7 outliers among 100 measurements (7.00%)
-  2 (2.00%) high mild
-  5 (5.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Collecting 100 samples in estimated 10.384 s (86k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/16384: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/16384
-                        time:   [120.89 µs 120.97 µs 121.05 µs]
-                        thrpt:  [129.08 MiB/s 129.17 MiB/s 129.25 MiB/s]
-Found 7 outliers among 100 measurements (7.00%)
-  3 (3.00%) low mild
-  1 (1.00%) high mild
-  3 (3.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Collecting 100 samples in estimated 11.267 s (15k iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/65536: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/65536
-                        time:   [745.42 µs 748.44 µs 752.69 µs]
-                        thrpt:  [83.036 MiB/s 83.507 MiB/s 83.846 MiB/s]
-Found 12 outliers among 100 measurements (12.00%)
-  1 (1.00%) low mild
-  11 (11.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Collecting 100 samples in estimated 12.260 s (25k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/65536: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/65536
-                        time:   [485.14 µs 485.52 µs 485.98 µs]
-                        thrpt:  [128.61 MiB/s 128.73 MiB/s 128.83 MiB/s]
-Found 11 outliers among 100 measurements (11.00%)
-  2 (2.00%) low mild
-  5 (5.00%) high mild
-  4 (4.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Warming up for 3.0000 s
+error[E0507]: cannot move out of `reconnect_failures`, a captured variable in an `FnMut` closure
+   --> benches/benches/trojan_throughput.rs:174:49
+    |
+173 |             let reconnect_failures = Arc::clone(&reconnect_failures);
+    |                 ------------------   ------------------------------- move occurs because `reconnect_failures` has type `Arc<AtomicU64>`, which does not implement the `Copy` trait
+    |                 |
+    |                 captured outer variable
+174 |             b.to_async(&rt).iter_custom(|iters| async move {
+    |                                         ------- ^^^^^^^^^^ `reconnect_failures` is moved here
+    |                                         |
+    |                                         captured by this `FnMut` closure
+...
+230 |                                 reconnect_failures.fetch_add(1, Ordering::Relaxed);
+    |                                 ------------------ variable moved due to use in coroutine
+    |
+help: `Fn` and `FnMut` closures require captured values to be able to be consumed multiple times, but `FnOnce` closures may consume them only once
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1/src/bencher.rs:494:12
+    |
+494 |         R: FnMut(u64) -> F,
+    |            ^^^^^^^^^^^^^^^
+help: consider cloning the value before moving it into the closure
+    |
+174 ~             b.to_async(&rt).iter_custom(|iters| {
+175 +             let value = reconnect_failures.clone();
+176 ~             async move {
+177 |                 let client_config = TrojanConfig {
+...
+231 |                             } else {
+232 ~                                 value.fetch_add(1, Ordering::Relaxed);
+233 |                                 break;
+...
+276 |                 started.elapsed()
+277 ~             }
+278 ~             });
+    |
 
-Warning: Unable to complete 100 samples in 10.0s. You may wish to increase target time to 15.0s, enable flat sampling, or reduce sample count to 50.
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Collecting 100 samples in estimated 14.981 s (5050 iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/262144: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/262144
-                        time:   [2.9740 ms 2.9815 ms 2.9923 ms]
-                        thrpt:  [83.547 MiB/s 83.850 MiB/s 84.061 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  10 (10.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Collecting 100 samples in estimated 19.596 s (10k iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/262144: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/262144
-                        time:   [1.9388 ms 1.9484 ms 1.9604 ms]
-                        thrpt:  [127.53 MiB/s 128.31 MiB/s 128.95 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  5 (5.00%) low mild
-  4 (4.00%) high mild
-  4 (4.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576: Collecting 100 samples in estimated 10.676 s (900 iterations)
-Benchmarking shadowsocks_aead_encrypt/aes256gcm/1048576: Analyzing
-shadowsocks_aead_encrypt/aes256gcm/1048576
-                        time:   [11.868 ms 11.876 ms 11.885 ms]
-                        thrpt:  [84.141 MiB/s 84.204 MiB/s 84.259 MiB/s]
-Found 5 outliers among 100 measurements (5.00%)
-  3 (3.00%) low mild
-  1 (1.00%) high mild
-  1 (1.00%) high severe
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1048576
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1048576: Collecting 100 samples in estimated 10.081 s (1300 iterations)
-Benchmarking shadowsocks_aead_encrypt/chacha20poly1305/1048576: Analyzing
-shadowsocks_aead_encrypt/chacha20poly1305/1048576
-                        time:   [7.7893 ms 7.8322 ms 7.8822 ms]
-                        thrpt:  [126.87 MiB/s 127.68 MiB/s 128.38 MiB/s]
-Found 20 outliers among 100 measurements (20.00%)
-  8 (8.00%) high mild
-  12 (12.00%) high severe
-
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1024
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1024: Collecting 100 samples in estimated 10.096 s (490k iterations)
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1024: Analyzing
-shadowsocks_aead_decrypt/aes256gcm/1024
-                        time:   [20.593 µs 20.947 µs 21.455 µs]
-                        thrpt:  [45.516 MiB/s 46.621 MiB/s 47.422 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  1 (1.00%) low mild
-  7 (7.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1024
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1024: Collecting 100 samples in estimated 10.033 s (874k iterations)
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1024: Analyzing
-shadowsocks_aead_decrypt/chacha20poly1305/1024
-                        time:   [11.353 µs 11.475 µs 11.624 µs]
-                        thrpt:  [84.012 MiB/s 85.101 MiB/s 86.015 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  1 (1.00%) high mild
-  9 (9.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/16384
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/16384: Collecting 100 samples in estimated 10.661 s (35k iterations)
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/16384: Analyzing
-shadowsocks_aead_decrypt/aes256gcm/16384
-                        time:   [299.72 µs 299.91 µs 300.07 µs]
-                        thrpt:  [52.071 MiB/s 52.099 MiB/s 52.131 MiB/s]
-Found 17 outliers among 100 measurements (17.00%)
-  12 (12.00%) low mild
-  4 (4.00%) high mild
-  1 (1.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/16384
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/16384: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/16384: Collecting 100 samples in estimated 10.311 s (61k iterations)
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/16384: Analyzing
-shadowsocks_aead_decrypt/chacha20poly1305/16384
-                        time:   [170.58 µs 172.00 µs 173.59 µs]
-                        thrpt:  [90.011 MiB/s 90.841 MiB/s 91.597 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  1 (1.00%) high mild
-  7 (7.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/65536
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/65536: Collecting 100 samples in estimated 12.114 s (10k iterations)
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/65536: Analyzing
-shadowsocks_aead_decrypt/aes256gcm/65536
-                        time:   [1.1991 ms 1.1999 ms 1.2009 ms]
-                        thrpt:  [52.045 MiB/s 52.087 MiB/s 52.124 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  8 (8.00%) low mild
-  1 (1.00%) high mild
-  4 (4.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/65536
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/65536: Collecting 100 samples in estimated 10.328 s (15k iterations)
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/65536: Analyzing
-shadowsocks_aead_decrypt/chacha20poly1305/65536
-                        time:   [686.49 µs 693.05 µs 700.60 µs]
-                        thrpt:  [89.209 MiB/s 90.181 MiB/s 91.043 MiB/s]
-Found 20 outliers among 100 measurements (20.00%)
-  6 (6.00%) low mild
-  1 (1.00%) high mild
-  13 (13.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/262144
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/262144: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/262144: Collecting 100 samples in estimated 10.057 s (2100 iterations)
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/262144: Analyzing
-shadowsocks_aead_decrypt/aes256gcm/262144
-                        time:   [4.7868 ms 4.7893 ms 4.7919 ms]
-                        thrpt:  [52.171 MiB/s 52.199 MiB/s 52.227 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  6 (6.00%) low mild
-  2 (2.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/262144
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/262144: Warming up for 3.0000 s
-
-Warning: Unable to complete 100 samples in 10.0s. You may wish to increase target time to 13.7s, enable flat sampling, or reduce sample count to 60.
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/262144: Collecting 100 samples in estimated 13.749 s (5050 iterations)
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/262144: Analyzing
-shadowsocks_aead_decrypt/chacha20poly1305/262144
-                        time:   [2.7252 ms 2.7410 ms 2.7614 ms]
-                        thrpt:  [90.533 MiB/s 91.206 MiB/s 91.736 MiB/s]
-Found 18 outliers among 100 measurements (18.00%)
-  1 (1.00%) low severe
-  5 (5.00%) low mild
-  4 (4.00%) high mild
-  8 (8.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1048576
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1048576: Collecting 100 samples in estimated 11.480 s (600 iterations)
-Benchmarking shadowsocks_aead_decrypt/aes256gcm/1048576: Analyzing
-shadowsocks_aead_decrypt/aes256gcm/1048576
-                        time:   [19.134 ms 19.145 ms 19.157 ms]
-                        thrpt:  [52.201 MiB/s 52.232 MiB/s 52.262 MiB/s]
-Found 6 outliers among 100 measurements (6.00%)
-  4 (4.00%) low mild
-  1 (1.00%) high mild
-  1 (1.00%) high severe
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1048576
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1048576: Collecting 100 samples in estimated 10.862 s (1000 iterations)
-Benchmarking shadowsocks_aead_decrypt/chacha20poly1305/1048576: Analyzing
-shadowsocks_aead_decrypt/chacha20poly1305/1048576
-                        time:   [10.908 ms 10.966 ms 11.034 ms]
-                        thrpt:  [90.627 MiB/s 91.192 MiB/s 91.677 MiB/s]
-Found 16 outliers among 100 measurements (16.00%)
-  6 (6.00%) low mild
-  1 (1.00%) high mild
-  9 (9.00%) high severe
-
-Benchmarking encryption_overhead/baseline_copy
-Benchmarking encryption_overhead/baseline_copy: Warming up for 3.0000 s
-Benchmarking encryption_overhead/baseline_copy: Collecting 100 samples in estimated 10.000 s (1.0B iterations)
-Benchmarking encryption_overhead/baseline_copy: Analyzing
-encryption_overhead/baseline_copy
-                        time:   [9.6647 ns 9.6826 ns 9.7015 ns]
-                        thrpt:  [6291.3 GiB/s 6303.6 GiB/s 6315.2 GiB/s]
-Benchmarking encryption_overhead/aes256gcm_overhead
-Benchmarking encryption_overhead/aes256gcm_overhead: Warming up for 3.0000 s
-Benchmarking encryption_overhead/aes256gcm_overhead: Collecting 100 samples in estimated 11.281 s (15k iterations)
-Benchmarking encryption_overhead/aes256gcm_overhead: Analyzing
-encryption_overhead/aes256gcm_overhead
-                        time:   [746.58 µs 749.54 µs 753.30 µs]
-                        thrpt:  [82.968 MiB/s 83.385 MiB/s 83.715 MiB/s]
-Found 12 outliers among 100 measurements (12.00%)
-  1 (1.00%) low mild
-  2 (2.00%) high mild
-  9 (9.00%) high severe
-Benchmarking encryption_overhead/chacha20poly1305_overhead
-Benchmarking encryption_overhead/chacha20poly1305_overhead: Warming up for 3.0000 s
-Benchmarking encryption_overhead/chacha20poly1305_overhead: Collecting 100 samples in estimated 12.275 s (25k iterations)
-Benchmarking encryption_overhead/chacha20poly1305_overhead: Analyzing
-encryption_overhead/chacha20poly1305_overhead
-                        time:   [485.92 µs 486.20 µs 486.49 µs]
-                        thrpt:  [128.47 MiB/s 128.55 MiB/s 128.62 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  3 (3.00%) low severe
-  5 (5.00%) low mild
-  3 (3.00%) high mild
-  2 (2.00%) high severe
-
-Benchmarking realistic_packets/aes256gcm/tcp_control
-Benchmarking realistic_packets/aes256gcm/tcp_control: Warming up for 3.0000 s
-Benchmarking realistic_packets/aes256gcm/tcp_control: Collecting 100 samples in estimated 10.003 s (5.0M iterations)
-Benchmarking realistic_packets/aes256gcm/tcp_control: Analyzing
-realistic_packets/aes256gcm/tcp_control
-                        time:   [1.9852 µs 1.9862 µs 1.9872 µs]
-                        thrpt:  [30.715 MiB/s 30.729 MiB/s 30.745 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  11 (11.00%) low mild
-  2 (2.00%) high severe
-Benchmarking realistic_packets/chacha20/tcp_control
-Benchmarking realistic_packets/chacha20/tcp_control: Warming up for 3.0000 s
-Benchmarking realistic_packets/chacha20/tcp_control: Collecting 100 samples in estimated 10.002 s (12M iterations)
-Benchmarking realistic_packets/chacha20/tcp_control: Analyzing
-realistic_packets/chacha20/tcp_control
-                        time:   [834.56 ns 835.83 ns 837.32 ns]
-                        thrpt:  [72.893 MiB/s 73.023 MiB/s 73.134 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  3 (3.00%) high mild
-  7 (7.00%) high severe
-Benchmarking realistic_packets/aes256gcm/small_http
-Benchmarking realistic_packets/aes256gcm/small_http: Warming up for 3.0000 s
-Benchmarking realistic_packets/aes256gcm/small_http: Collecting 100 samples in estimated 10.024 s (1.4M iterations)
-Benchmarking realistic_packets/aes256gcm/small_http: Analyzing
-realistic_packets/aes256gcm/small_http
-                        time:   [7.1550 µs 7.2638 µs 7.4663 µs]
-                        thrpt:  [65.398 MiB/s 67.221 MiB/s 68.244 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  2 (2.00%) high mild
-  6 (6.00%) high severe
-Benchmarking realistic_packets/chacha20/small_http
-Benchmarking realistic_packets/chacha20/small_http: Warming up for 3.0000 s
-Benchmarking realistic_packets/chacha20/small_http: Collecting 100 samples in estimated 10.018 s (2.4M iterations)
-Benchmarking realistic_packets/chacha20/small_http: Analyzing
-realistic_packets/chacha20/small_http
-                        time:   [4.1048 µs 4.1122 µs 4.1224 µs]
-                        thrpt:  [118.45 MiB/s 118.74 MiB/s 118.95 MiB/s]
-Found 18 outliers among 100 measurements (18.00%)
-  6 (6.00%) low mild
-  1 (1.00%) high mild
-  11 (11.00%) high severe
-Benchmarking realistic_packets/aes256gcm/http_response
-Benchmarking realistic_packets/aes256gcm/http_response: Warming up for 3.0000 s
-Benchmarking realistic_packets/aes256gcm/http_response: Collecting 100 samples in estimated 10.055 s (530k iterations)
-Benchmarking realistic_packets/aes256gcm/http_response: Analyzing
-realistic_packets/aes256gcm/http_response
-                        time:   [18.948 µs 18.958 µs 18.967 µs]
-                        thrpt:  [73.409 MiB/s 73.445 MiB/s 73.482 MiB/s]
-Found 7 outliers among 100 measurements (7.00%)
-  1 (1.00%) low severe
-  3 (3.00%) low mild
-  2 (2.00%) high mild
-  1 (1.00%) high severe
-Benchmarking realistic_packets/chacha20/http_response
-Benchmarking realistic_packets/chacha20/http_response: Warming up for 3.0000 s
-Benchmarking realistic_packets/chacha20/http_response: Collecting 100 samples in estimated 10.023 s (894k iterations)
-Benchmarking realistic_packets/chacha20/http_response: Analyzing
-realistic_packets/chacha20/http_response
-                        time:   [11.111 µs 11.127 µs 11.149 µs]
-                        thrpt:  [124.89 MiB/s 125.13 MiB/s 125.32 MiB/s]
-Found 6 outliers among 100 measurements (6.00%)
-  1 (1.00%) low mild
-  5 (5.00%) high severe
-Benchmarking realistic_packets/aes256gcm/video_chunk
-Benchmarking realistic_packets/aes256gcm/video_chunk: Warming up for 3.0000 s
-Benchmarking realistic_packets/aes256gcm/video_chunk: Collecting 100 samples in estimated 10.373 s (56k iterations)
-Benchmarking realistic_packets/aes256gcm/video_chunk: Analyzing
-realistic_packets/aes256gcm/video_chunk
-                        time:   [186.53 µs 186.66 µs 186.78 µs]
-                        thrpt:  [83.654 MiB/s 83.707 MiB/s 83.767 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  6 (6.00%) low mild
-  3 (3.00%) high mild
-  1 (1.00%) high severe
-Benchmarking realistic_packets/chacha20/video_chunk
-Benchmarking realistic_packets/chacha20/video_chunk: Warming up for 3.0000 s
-Benchmarking realistic_packets/chacha20/video_chunk: Collecting 100 samples in estimated 10.404 s (86k iterations)
-Benchmarking realistic_packets/chacha20/video_chunk: Analyzing
-realistic_packets/chacha20/video_chunk
-                        time:   [121.45 µs 121.93 µs 122.54 µs]
-                        thrpt:  [127.51 MiB/s 128.15 MiB/s 128.66 MiB/s]
-Found 11 outliers among 100 measurements (11.00%)
-  11 (11.00%) high severe
-Benchmarking realistic_packets/aes256gcm/bulk_data
-Benchmarking realistic_packets/aes256gcm/bulk_data: Warming up for 3.0000 s
-Benchmarking realistic_packets/aes256gcm/bulk_data: Collecting 100 samples in estimated 11.286 s (15k iterations)
-Benchmarking realistic_packets/aes256gcm/bulk_data: Analyzing
-realistic_packets/aes256gcm/bulk_data
-                        time:   [743.69 µs 744.40 µs 745.07 µs]
-                        thrpt:  [83.885 MiB/s 83.960 MiB/s 84.041 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  1 (1.00%) low severe
-  5 (5.00%) low mild
-  2 (2.00%) high mild
-Benchmarking realistic_packets/chacha20/bulk_data
-Benchmarking realistic_packets/chacha20/bulk_data: Warming up for 3.0000 s
-Benchmarking realistic_packets/chacha20/bulk_data: Collecting 100 samples in estimated 12.271 s (25k iterations)
-Benchmarking realistic_packets/chacha20/bulk_data: Analyzing
-realistic_packets/chacha20/bulk_data
-                        time:   [486.34 µs 488.80 µs 492.16 µs]
-                        thrpt:  [126.99 MiB/s 127.86 MiB/s 128.51 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  1 (1.00%) high mild
-  9 (9.00%) high severe
-
-     Running benches/dns_performance.rs (target/release/deps/dns_performance-0c4571cbc198b756)
-Gnuplot not found, using plotters backend
-Benchmarking dns_query_parse
-Benchmarking dns_query_parse: Warming up for 3.0000 s
-Benchmarking dns_query_parse: Collecting 200 samples in estimated 5.0006 s (78M iterations)
-Benchmarking dns_query_parse: Analyzing
-dns_query_parse         time:   [63.980 ns 64.082 ns 64.189 ns]
-Found 16 outliers among 200 measurements (8.00%)
-  9 (4.50%) low mild
-  2 (1.00%) high mild
-  5 (2.50%) high severe
-
-Benchmarking dns_response_build
-Benchmarking dns_response_build: Warming up for 3.0000 s
-Benchmarking dns_response_build: Collecting 200 samples in estimated 5.0003 s (78M iterations)
-Benchmarking dns_response_build: Analyzing
-dns_response_build      time:   [63.815 ns 63.866 ns 63.915 ns]
-Found 12 outliers among 200 measurements (6.00%)
-  10 (5.00%) low mild
-  1 (0.50%) high mild
-  1 (0.50%) high severe
-
-Benchmarking dns_cache_lookup/100
-Benchmarking dns_cache_lookup/100: Warming up for 3.0000 s
-Benchmarking dns_cache_lookup/100: Collecting 200 samples in estimated 5.0234 s (482k iterations)
-Benchmarking dns_cache_lookup/100: Analyzing
-dns_cache_lookup/100    time:   [10.246 µs 10.270 µs 10.297 µs]
-Found 26 outliers among 200 measurements (13.00%)
-  1 (0.50%) low mild
-  12 (6.00%) high mild
-  13 (6.50%) high severe
-Benchmarking dns_cache_lookup/1000
-Benchmarking dns_cache_lookup/1000: Warming up for 3.0000 s
-Benchmarking dns_cache_lookup/1000: Collecting 200 samples in estimated 7.1776 s (60k iterations)
-Benchmarking dns_cache_lookup/1000: Analyzing
-dns_cache_lookup/1000   time:   [118.73 µs 118.92 µs 119.10 µs]
-Found 10 outliers among 200 measurements (5.00%)
-  1 (0.50%) low mild
-  3 (1.50%) high mild
-  6 (3.00%) high severe
-Benchmarking dns_cache_lookup/10000
-Benchmarking dns_cache_lookup/10000: Warming up for 3.0000 s
-Benchmarking dns_cache_lookup/10000: Collecting 200 samples in estimated 5.1399 s (4600 iterations)
-Benchmarking dns_cache_lookup/10000: Analyzing
-dns_cache_lookup/10000  time:   [1.1133 ms 1.1149 ms 1.1168 ms]
-Found 22 outliers among 200 measurements (11.00%)
-  15 (7.50%) high mild
-  7 (3.50%) high severe
-
-     Running benches/protocol_comprehensive.rs (target/release/deps/protocol_comprehensive-7cb407c1043b04fc)
-Gnuplot not found, using plotters backend
-Benchmarking inbound_throughput/socks5/1024
-Benchmarking inbound_throughput/socks5/1024: Warming up for 3.0000 s
-Benchmarking inbound_throughput/socks5/1024: Collecting 50 samples in estimated 10.004 s (2.2M iterations)
-Benchmarking inbound_throughput/socks5/1024: Analyzing
-inbound_throughput/socks5/1024
-                        time:   [4.5893 µs 4.5937 µs 4.5982 µs]
-                        thrpt:  [212.38 MiB/s 212.59 MiB/s 212.79 MiB/s]
-Found 6 outliers among 50 measurements (12.00%)
-  3 (6.00%) low mild
-  1 (2.00%) high mild
-  2 (4.00%) high severe
-Benchmarking inbound_throughput/http/1024
-Benchmarking inbound_throughput/http/1024: Warming up for 3.0000 s
-Benchmarking inbound_throughput/http/1024: Collecting 50 samples in estimated 10.001 s (2.2M iterations)
-Benchmarking inbound_throughput/http/1024: Analyzing
-inbound_throughput/http/1024
-                        time:   [4.5676 µs 4.5740 µs 4.5813 µs]
-                        thrpt:  [213.16 MiB/s 213.50 MiB/s 213.80 MiB/s]
-Found 9 outliers among 50 measurements (18.00%)
-  2 (4.00%) low severe
-  2 (4.00%) low mild
-  3 (6.00%) high mild
-  2 (4.00%) high severe
-Benchmarking inbound_throughput/mixed/1024
-Benchmarking inbound_throughput/mixed/1024: Warming up for 3.0000 s
-Benchmarking inbound_throughput/mixed/1024: Collecting 50 samples in estimated 10.006 s (2.1M iterations)
-Benchmarking inbound_throughput/mixed/1024: Analyzing
-inbound_throughput/mixed/1024
-                        time:   [4.5673 µs 4.5772 µs 4.5889 µs]
-                        thrpt:  [212.81 MiB/s 213.35 MiB/s 213.81 MiB/s]
-Found 4 outliers among 50 measurements (8.00%)
-  4 (8.00%) high mild
-Benchmarking inbound_throughput/socks5/65536
-Benchmarking inbound_throughput/socks5/65536: Warming up for 3.0000 s
-Benchmarking inbound_throughput/socks5/65536: Collecting 50 samples in estimated 10.360 s (36k iterations)
-Benchmarking inbound_throughput/socks5/65536: Analyzing
-inbound_throughput/socks5/65536
-                        time:   [289.99 µs 290.32 µs 290.70 µs]
-                        thrpt:  [215.00 MiB/s 215.28 MiB/s 215.53 MiB/s]
-Found 2 outliers among 50 measurements (4.00%)
-  1 (2.00%) high mild
-  1 (2.00%) high severe
-Benchmarking inbound_throughput/http/65536
-Benchmarking inbound_throughput/http/65536: Warming up for 3.0000 s
-Benchmarking inbound_throughput/http/65536: Collecting 50 samples in estimated 10.153 s (34k iterations)
-Benchmarking inbound_throughput/http/65536: Analyzing
-inbound_throughput/http/65536
-                        time:   [289.65 µs 289.91 µs 290.16 µs]
-                        thrpt:  [215.40 MiB/s 215.59 MiB/s 215.78 MiB/s]
-Found 5 outliers among 50 measurements (10.00%)
-  2 (4.00%) low mild
-  2 (4.00%) high mild
-  1 (2.00%) high severe
-Benchmarking inbound_throughput/mixed/65536
-Benchmarking inbound_throughput/mixed/65536: Warming up for 3.0000 s
-Benchmarking inbound_throughput/mixed/65536: Collecting 50 samples in estimated 10.013 s (34k iterations)
-Benchmarking inbound_throughput/mixed/65536: Analyzing
-inbound_throughput/mixed/65536
-                        time:   [289.99 µs 290.25 µs 290.54 µs]
-                        thrpt:  [215.12 MiB/s 215.33 MiB/s 215.52 MiB/s]
-Found 3 outliers among 50 measurements (6.00%)
-  2 (4.00%) high mild
-  1 (2.00%) high severe
-Benchmarking inbound_throughput/socks5/1048576
-Benchmarking inbound_throughput/socks5/1048576: Warming up for 3.0000 s
-Benchmarking inbound_throughput/socks5/1048576: Collecting 50 samples in estimated 12.092 s (2550 iterations)
-Benchmarking inbound_throughput/socks5/1048576: Analyzing
-inbound_throughput/socks5/1048576
-                        time:   [4.6521 ms 4.6592 ms 4.6672 ms]
-                        thrpt:  [214.26 MiB/s 214.63 MiB/s 214.96 MiB/s]
-Found 4 outliers among 50 measurements (8.00%)
-  3 (6.00%) high mild
-  1 (2.00%) high severe
-Benchmarking inbound_throughput/http/1048576
-Benchmarking inbound_throughput/http/1048576: Warming up for 3.0000 s
-Benchmarking inbound_throughput/http/1048576: Collecting 50 samples in estimated 11.903 s (2550 iterations)
-Benchmarking inbound_throughput/http/1048576: Analyzing
-inbound_throughput/http/1048576
-                        time:   [4.6693 ms 4.7109 ms 4.7636 ms]
-                        thrpt:  [209.92 MiB/s 212.27 MiB/s 214.16 MiB/s]
-Found 5 outliers among 50 measurements (10.00%)
-  3 (6.00%) high mild
-  2 (4.00%) high severe
-Benchmarking inbound_throughput/mixed/1048576
-Benchmarking inbound_throughput/mixed/1048576: Warming up for 3.0000 s
-Benchmarking inbound_throughput/mixed/1048576: Collecting 50 samples in estimated 12.095 s (2550 iterations)
-Benchmarking inbound_throughput/mixed/1048576: Analyzing
-inbound_throughput/mixed/1048576
-                        time:   [4.6403 ms 4.6464 ms 4.6525 ms]
-                        thrpt:  [214.94 MiB/s 215.22 MiB/s 215.50 MiB/s]
-Found 4 outliers among 50 measurements (8.00%)
-  1 (2.00%) low mild
-  3 (6.00%) high mild
-
-Benchmarking encrypted_throughput/shadowsocks/1024
-Benchmarking encrypted_throughput/shadowsocks/1024: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/shadowsocks/1024: Collecting 50 samples in estimated 10.001 s (2.2M iterations)
-Benchmarking encrypted_throughput/shadowsocks/1024: Analyzing
-encrypted_throughput/shadowsocks/1024
-                        time:   [4.5669 µs 4.5991 µs 4.6373 µs]
-                        thrpt:  [210.59 MiB/s 212.34 MiB/s 213.84 MiB/s]
-Found 4 outliers among 50 measurements (8.00%)
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking encrypted_throughput/vmess/1024
-Benchmarking encrypted_throughput/vmess/1024: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vmess/1024: Collecting 50 samples in estimated 10.004 s (2.2M iterations)
-Benchmarking encrypted_throughput/vmess/1024: Analyzing
-encrypted_throughput/vmess/1024
-                        time:   [4.5560 µs 4.5607 µs 4.5648 µs]
-                        thrpt:  [213.93 MiB/s 214.13 MiB/s 214.35 MiB/s]
-Found 9 outliers among 50 measurements (18.00%)
-  2 (4.00%) low severe
-  3 (6.00%) low mild
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking encrypted_throughput/vless/1024
-Benchmarking encrypted_throughput/vless/1024: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vless/1024: Collecting 50 samples in estimated 10.003 s (2.2M iterations)
-Benchmarking encrypted_throughput/vless/1024: Analyzing
-encrypted_throughput/vless/1024
-                        time:   [4.5556 µs 4.5943 µs 4.6435 µs]
-                        thrpt:  [210.31 MiB/s 212.56 MiB/s 214.36 MiB/s]
-Found 3 outliers among 50 measurements (6.00%)
-  1 (2.00%) high mild
-  2 (4.00%) high severe
-Benchmarking encrypted_throughput/trojan/1024
-Benchmarking encrypted_throughput/trojan/1024: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/trojan/1024: Collecting 50 samples in estimated 10.005 s (2.2M iterations)
-Benchmarking encrypted_throughput/trojan/1024: Analyzing
-encrypted_throughput/trojan/1024
-                        time:   [4.5582 µs 4.5606 µs 4.5628 µs]
-                        thrpt:  [214.03 MiB/s 214.13 MiB/s 214.24 MiB/s]
-Found 7 outliers among 50 measurements (14.00%)
-  1 (2.00%) low severe
-  2 (4.00%) low mild
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking encrypted_throughput/shadowsocks/65536
-Benchmarking encrypted_throughput/shadowsocks/65536: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/shadowsocks/65536: Collecting 50 samples in estimated 10.319 s (36k iterations)
-Benchmarking encrypted_throughput/shadowsocks/65536: Analyzing
-encrypted_throughput/shadowsocks/65536
-                        time:   [289.19 µs 290.52 µs 292.20 µs]
-                        thrpt:  [213.89 MiB/s 215.13 MiB/s 216.12 MiB/s]
-Found 8 outliers among 50 measurements (16.00%)
-  4 (8.00%) low mild
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking encrypted_throughput/vmess/65536
-Benchmarking encrypted_throughput/vmess/65536: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vmess/65536: Collecting 50 samples in estimated 10.040 s (34k iterations)
-Benchmarking encrypted_throughput/vmess/65536: Analyzing
-encrypted_throughput/vmess/65536
-                        time:   [288.98 µs 289.25 µs 289.51 µs]
-                        thrpt:  [215.88 MiB/s 216.07 MiB/s 216.27 MiB/s]
-Found 5 outliers among 50 measurements (10.00%)
-  4 (8.00%) low mild
-  1 (2.00%) high severe
-Benchmarking encrypted_throughput/vless/65536
-Benchmarking encrypted_throughput/vless/65536: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vless/65536: Collecting 50 samples in estimated 10.326 s (36k iterations)
-Benchmarking encrypted_throughput/vless/65536: Analyzing
-encrypted_throughput/vless/65536
-                        time:   [292.00 µs 310.27 µs 345.71 µs]
-                        thrpt:  [180.79 MiB/s 201.44 MiB/s 214.04 MiB/s]
-Found 7 outliers among 50 measurements (14.00%)
-  7 (14.00%) high severe
-Benchmarking encrypted_throughput/trojan/65536
-Benchmarking encrypted_throughput/trojan/65536: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/trojan/65536: Collecting 50 samples in estimated 10.022 s (34k iterations)
-Benchmarking encrypted_throughput/trojan/65536: Analyzing
-encrypted_throughput/trojan/65536
-                        time:   [288.89 µs 289.27 µs 289.63 µs]
-                        thrpt:  [215.80 MiB/s 216.06 MiB/s 216.35 MiB/s]
-Benchmarking encrypted_throughput/shadowsocks/1048576
-Benchmarking encrypted_throughput/shadowsocks/1048576: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/shadowsocks/1048576: Collecting 50 samples in estimated 11.842 s (2550 iterations)
-Benchmarking encrypted_throughput/shadowsocks/1048576: Analyzing
-encrypted_throughput/shadowsocks/1048576
-                        time:   [4.6369 ms 4.6715 ms 4.7167 ms]
-                        thrpt:  [212.01 MiB/s 214.07 MiB/s 215.66 MiB/s]
-Found 4 outliers among 50 measurements (8.00%)
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking encrypted_throughput/vmess/1048576
-Benchmarking encrypted_throughput/vmess/1048576: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vmess/1048576: Collecting 50 samples in estimated 11.932 s (2550 iterations)
-Benchmarking encrypted_throughput/vmess/1048576: Analyzing
-encrypted_throughput/vmess/1048576
-                        time:   [4.6528 ms 4.6589 ms 4.6658 ms]
-                        thrpt:  [214.33 MiB/s 214.64 MiB/s 214.92 MiB/s]
-Found 2 outliers among 50 measurements (4.00%)
-  2 (4.00%) high severe
-Benchmarking encrypted_throughput/vless/1048576
-Benchmarking encrypted_throughput/vless/1048576: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/vless/1048576: Collecting 50 samples in estimated 11.852 s (2550 iterations)
-Benchmarking encrypted_throughput/vless/1048576: Analyzing
-encrypted_throughput/vless/1048576
-                        time:   [4.6737 ms 4.7187 ms 4.7692 ms]
-                        thrpt:  [209.68 MiB/s 211.92 MiB/s 213.96 MiB/s]
-Found 11 outliers among 50 measurements (22.00%)
-  3 (6.00%) low mild
-  1 (2.00%) high mild
-  7 (14.00%) high severe
-Benchmarking encrypted_throughput/trojan/1048576
-Benchmarking encrypted_throughput/trojan/1048576: Warming up for 3.0000 s
-Benchmarking encrypted_throughput/trojan/1048576: Collecting 50 samples in estimated 11.845 s (2550 iterations)
-Benchmarking encrypted_throughput/trojan/1048576: Analyzing
-encrypted_throughput/trojan/1048576
-                        time:   [4.6462 ms 4.6495 ms 4.6537 ms]
-                        thrpt:  [214.88 MiB/s 215.07 MiB/s 215.23 MiB/s]
-Found 7 outliers among 50 measurements (14.00%)
-  2 (4.00%) low mild
-  5 (10.00%) high mild
-
-Benchmarking quic_throughput/tuic/1024
-Benchmarking quic_throughput/tuic/1024: Warming up for 3.0000 s
-Benchmarking quic_throughput/tuic/1024: Collecting 50 samples in estimated 10.005 s (2.2M iterations)
-Benchmarking quic_throughput/tuic/1024: Analyzing
-quic_throughput/tuic/1024
-                        time:   [4.6908 µs 4.8634 µs 5.1513 µs]
-                        thrpt:  [189.58 MiB/s 200.80 MiB/s 208.19 MiB/s]
-                 change:
-                        time:   [-3.7986% +3.2663% +14.288%] (p = 0.64 > 0.05)
-                        thrpt:  [-12.502% -3.1630% +3.9486%]
-                        No change in performance detected.
-Found 5 outliers among 50 measurements (10.00%)
-  1 (2.00%) high mild
-  4 (8.00%) high severe
-Benchmarking quic_throughput/hysteria/1024
-Benchmarking quic_throughput/hysteria/1024: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria/1024: Collecting 50 samples in estimated 10.001 s (2.2M iterations)
-Benchmarking quic_throughput/hysteria/1024: Analyzing
-quic_throughput/hysteria/1024
-                        time:   [4.5708 µs 4.5837 µs 4.5996 µs]
-                        thrpt:  [212.32 MiB/s 213.05 MiB/s 213.65 MiB/s]
-                 change:
-                        time:   [-11.751% -8.0995% -4.7838%] (p = 0.00 < 0.05)
-                        thrpt:  [+5.0241% +8.8133% +13.315%]
-                        Performance has improved.
-Found 5 outliers among 50 measurements (10.00%)
-  5 (10.00%) high severe
-Benchmarking quic_throughput/hysteria2/1024
-Benchmarking quic_throughput/hysteria2/1024: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria2/1024: Collecting 50 samples in estimated 10.002 s (2.2M iterations)
-Benchmarking quic_throughput/hysteria2/1024: Analyzing
-quic_throughput/hysteria2/1024
-                        time:   [4.6680 µs 4.7602 µs 4.8806 µs]
-                        thrpt:  [200.09 MiB/s 205.15 MiB/s 209.20 MiB/s]
-                 change:
-                        time:   [-13.813% -6.1449% +0.7327%] (p = 0.15 > 0.05)
-                        thrpt:  [-0.7273% +6.5472% +16.027%]
-                        No change in performance detected.
-Found 6 outliers among 50 measurements (12.00%)
-  1 (2.00%) high mild
-  5 (10.00%) high severe
-Benchmarking quic_throughput/tuic/65536
-Benchmarking quic_throughput/tuic/65536: Warming up for 3.0000 s
-Benchmarking quic_throughput/tuic/65536: Collecting 50 samples in estimated 10.303 s (36k iterations)
-Benchmarking quic_throughput/tuic/65536: Analyzing
-quic_throughput/tuic/65536
-                        time:   [289.14 µs 289.42 µs 289.70 µs]
-                        thrpt:  [215.74 MiB/s 215.95 MiB/s 216.16 MiB/s]
-                 change:
-                        time:   [-4.0949% -2.9232% -2.0512%] (p = 0.00 < 0.05)
-                        thrpt:  [+2.0941% +3.0112% +4.2697%]
-                        Performance has improved.
-Benchmarking quic_throughput/hysteria/65536
-Benchmarking quic_throughput/hysteria/65536: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria/65536: Collecting 50 samples in estimated 10.343 s (36k iterations)
-Benchmarking quic_throughput/hysteria/65536: Analyzing
-quic_throughput/hysteria/65536
-                        time:   [288.98 µs 291.13 µs 293.82 µs]
-                        thrpt:  [212.72 MiB/s 214.68 MiB/s 216.28 MiB/s]
-                 change:
-                        time:   [-20.930% -13.080% -5.5751%] (p = 0.00 < 0.05)
-                        thrpt:  [+5.9042% +15.049% +26.471%]
-                        Performance has improved.
-Found 7 outliers among 50 measurements (14.00%)
-  3 (6.00%) low mild
-  1 (2.00%) high mild
-  3 (6.00%) high severe
-Benchmarking quic_throughput/hysteria2/65536
-Benchmarking quic_throughput/hysteria2/65536: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria2/65536: Collecting 50 samples in estimated 10.025 s (34k iterations)
-Benchmarking quic_throughput/hysteria2/65536: Analyzing
-quic_throughput/hysteria2/65536
-                        time:   [289.29 µs 289.77 µs 290.32 µs]
-                        thrpt:  [215.28 MiB/s 215.69 MiB/s 216.05 MiB/s]
-                 change:
-                        time:   [-2.6852% -1.8628% -1.1397%] (p = 0.00 < 0.05)
-                        thrpt:  [+1.1529% +1.8982% +2.7593%]
-                        Performance has improved.
-Found 2 outliers among 50 measurements (4.00%)
-  1 (2.00%) low mild
-  1 (2.00%) high mild
-Benchmarking quic_throughput/tuic/1048576
-Benchmarking quic_throughput/tuic/1048576: Warming up for 3.0000 s
-Benchmarking quic_throughput/tuic/1048576: Collecting 50 samples in estimated 11.822 s (2550 iterations)
-Benchmarking quic_throughput/tuic/1048576: Analyzing
-quic_throughput/tuic/1048576
-                        time:   [4.6525 ms 4.6897 ms 4.7303 ms]
-                        thrpt:  [211.40 MiB/s 213.24 MiB/s 214.94 MiB/s]
-                 change:
-                        time:   [-2.6953% -1.5312% -0.5157%] (p = 0.00 < 0.05)
-                        thrpt:  [+0.5184% +1.5550% +2.7700%]
-                        Change within noise threshold.
-Found 5 outliers among 50 measurements (10.00%)
-  1 (2.00%) high mild
-  4 (8.00%) high severe
-Benchmarking quic_throughput/hysteria/1048576
-Benchmarking quic_throughput/hysteria/1048576: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria/1048576: Collecting 50 samples in estimated 11.802 s (2550 iterations)
-Benchmarking quic_throughput/hysteria/1048576: Analyzing
-quic_throughput/hysteria/1048576
-                        time:   [4.6519 ms 4.6904 ms 4.7744 ms]
-                        thrpt:  [209.45 MiB/s 213.20 MiB/s 214.97 MiB/s]
-                 change:
-                        time:   [-1.6228% -0.0411% +2.7448%] (p = 0.98 > 0.05)
-                        thrpt:  [-2.6714% +0.0411% +1.6496%]
-                        No change in performance detected.
-Found 3 outliers among 50 measurements (6.00%)
-  1 (2.00%) high mild
-  2 (4.00%) high severe
-Benchmarking quic_throughput/hysteria2/1048576
-Benchmarking quic_throughput/hysteria2/1048576: Warming up for 3.0000 s
-Benchmarking quic_throughput/hysteria2/1048576: Collecting 50 samples in estimated 11.893 s (2550 iterations)
-Benchmarking quic_throughput/hysteria2/1048576: Analyzing
-quic_throughput/hysteria2/1048576
-                        time:   [4.7235 ms 4.8236 ms 4.9401 ms]
-                        thrpt:  [202.42 MiB/s 207.31 MiB/s 211.71 MiB/s]
-                 change:
-                        time:   [-0.4490% +0.8455% +2.2338%] (p = 0.24 > 0.05)
-                        thrpt:  [-2.1850% -0.8384% +0.4511%]
-                        No change in performance detected.
-Found 11 outliers among 50 measurements (22.00%)
-  2 (4.00%) low mild
-  1 (2.00%) high mild
-  8 (16.00%) high severe
-
-Benchmarking connection_latency/tcp_handshake
-Benchmarking connection_latency/tcp_handshake: Warming up for 3.0000 s
-Benchmarking connection_latency/tcp_handshake: Collecting 50 samples in estimated 10.000 s (236M iterations)
-Benchmarking connection_latency/tcp_handshake: Analyzing
-connection_latency/tcp_handshake
-                        time:   [42.378 ns 42.404 ns 42.430 ns]
-                        change: [-0.6904% -0.1607% +0.1916%] (p = 0.59 > 0.05)
-                        No change in performance detected.
-Found 7 outliers among 50 measurements (14.00%)
-  4 (8.00%) low mild
-  2 (4.00%) high mild
-  1 (2.00%) high severe
-Benchmarking connection_latency/tls_negotiation
-Benchmarking connection_latency/tls_negotiation: Warming up for 3.0000 s
-Benchmarking connection_latency/tls_negotiation: Collecting 50 samples in estimated 10.000 s (237M iterations)
-Benchmarking connection_latency/tls_negotiation: Analyzing
-connection_latency/tls_negotiation
-                        time:   [41.869 ns 42.177 ns 42.607 ns]
-                        change: [-2.3484% -1.2551% -0.0315%] (p = 0.04 < 0.05)
-                        Change within noise threshold.
-Found 5 outliers among 50 measurements (10.00%)
-  2 (4.00%) high mild
-  3 (6.00%) high severe
-Benchmarking connection_latency/quic_connection
-Benchmarking connection_latency/quic_connection: Warming up for 3.0000 s
-Benchmarking connection_latency/quic_connection: Collecting 50 samples in estimated 10.000 s (240M iterations)
-Benchmarking connection_latency/quic_connection: Analyzing
-connection_latency/quic_connection
-                        time:   [41.843 ns 41.991 ns 42.132 ns]
-                        change: [-2.2745% -1.5288% -0.8685%] (p = 0.00 < 0.05)
-                        Change within noise threshold.
-
-Benchmarking latency_percentiles/socks5
-Benchmarking latency_percentiles/socks5: Warming up for 3.0000 s
-Benchmarking latency_percentiles/socks5: Collecting 100 samples in estimated 5.0043 s (1.1M iterations)
-Benchmarking latency_percentiles/socks5: Analyzing
-latency_percentiles/socks5
-                        time:   [4.7768 µs 4.8982 µs 5.0506 µs]
-                        change: [+1.8349% +5.3567% +9.3789%] (p = 0.00 < 0.05)
-                        Performance has regressed.
-Found 7 outliers among 100 measurements (7.00%)
-  3 (3.00%) high mild
-  4 (4.00%) high severe
-Benchmarking latency_percentiles/shadowsocks
-Benchmarking latency_percentiles/shadowsocks: Warming up for 3.0000 s
-Benchmarking latency_percentiles/shadowsocks: Collecting 100 samples in estimated 5.0280 s (803k iterations)
-Benchmarking latency_percentiles/shadowsocks: Analyzing
-latency_percentiles/shadowsocks
-                        time:   [4.7112 µs 4.7637 µs 4.8313 µs]
-                        change: [+7.0141% +11.754% +16.665%] (p = 0.00 < 0.05)
-                        Performance has regressed.
-Found 8 outliers among 100 measurements (8.00%)
-  4 (4.00%) high mild
-  4 (4.00%) high severe
-Benchmarking latency_percentiles/vmess
-Benchmarking latency_percentiles/vmess: Warming up for 3.0000 s
-Benchmarking latency_percentiles/vmess: Collecting 100 samples in estimated 5.0218 s (1.1M iterations)
-Benchmarking latency_percentiles/vmess: Analyzing
-latency_percentiles/vmess
-                        time:   [4.6152 µs 4.6425 µs 4.6776 µs]
-                        change: [-40.462% -37.790% -34.988%] (p = 0.00 < 0.05)
-                        Performance has improved.
-Found 6 outliers among 100 measurements (6.00%)
-  3 (3.00%) high mild
-  3 (3.00%) high severe
-Benchmarking latency_percentiles/trojan
-Benchmarking latency_percentiles/trojan: Warming up for 3.0000 s
-Benchmarking latency_percentiles/trojan: Collecting 100 samples in estimated 5.0182 s (1.1M iterations)
-Benchmarking latency_percentiles/trojan: Analyzing
-latency_percentiles/trojan
-                        time:   [4.6829 µs 4.7344 µs 4.7950 µs]
-                        change: [-43.892% -41.361% -38.663%] (p = 0.00 < 0.05)
-                        Performance has improved.
-Found 10 outliers among 100 measurements (10.00%)
-  4 (4.00%) high mild
-  6 (6.00%) high severe
-
-     Running benches/rate_limit_bench.rs (target/release/deps/rate_limit_bench-e7abc5e982b728ea)
-Gnuplot not found, using plotters backend
-Benchmarking allow_connection_single_ip
-Benchmarking allow_connection_single_ip: Warming up for 3.0000 s
-Benchmarking allow_connection_single_ip: Collecting 100 samples in estimated 5.0002 s (144M iterations)
-Benchmarking allow_connection_single_ip: Analyzing
-allow_connection_single_ip
-                        time:   [34.212 ns 34.366 ns 34.541 ns]
-Found 7 outliers among 100 measurements (7.00%)
-  5 (5.00%) high mild
-  2 (2.00%) high severe
-
-Benchmarking concurrent_ips/10
-Benchmarking concurrent_ips/10: Warming up for 3.0000 s
-Benchmarking concurrent_ips/10: Collecting 100 samples in estimated 5.0017 s (14M iterations)
-Benchmarking concurrent_ips/10: Analyzing
-concurrent_ips/10       time:   [343.51 ns 345.62 ns 348.54 ns]
-Found 13 outliers among 100 measurements (13.00%)
-  11 (11.00%) high mild
-  2 (2.00%) high severe
-Benchmarking concurrent_ips/100
-Benchmarking concurrent_ips/100: Warming up for 3.0000 s
-Benchmarking concurrent_ips/100: Collecting 100 samples in estimated 5.0131 s (1.4M iterations)
-Benchmarking concurrent_ips/100: Analyzing
-concurrent_ips/100      time:   [3.7722 µs 4.1449 µs 4.5937 µs]
-Found 11 outliers among 100 measurements (11.00%)
-  4 (4.00%) high mild
-  7 (7.00%) high severe
-Benchmarking concurrent_ips/1000
-Benchmarking concurrent_ips/1000: Warming up for 3.0000 s
-Benchmarking concurrent_ips/1000: Collecting 100 samples in estimated 5.1763 s (141k iterations)
-Benchmarking concurrent_ips/1000: Analyzing
-concurrent_ips/1000     time:   [35.516 µs 36.133 µs 37.073 µs]
-Found 3 outliers among 100 measurements (3.00%)
-  3 (3.00%) high severe
-
-Benchmarking qps_limiting/10
-Benchmarking qps_limiting/10: Warming up for 3.0000 s
-Benchmarking qps_limiting/10: Collecting 100 samples in estimated 5.0001 s (106M iterations)
-Benchmarking qps_limiting/10: Analyzing
-qps_limiting/10         time:   [47.643 ns 47.898 ns 48.217 ns]
-Found 6 outliers among 100 measurements (6.00%)
-  1 (1.00%) low mild
-  1 (1.00%) high mild
-  4 (4.00%) high severe
-Benchmarking qps_limiting/100
-Benchmarking qps_limiting/100: Warming up for 3.0000 s
-Benchmarking qps_limiting/100: Collecting 100 samples in estimated 5.0000 s (105M iterations)
-Benchmarking qps_limiting/100: Analyzing
-qps_limiting/100        time:   [47.985 ns 48.690 ns 49.487 ns]
-Found 11 outliers among 100 measurements (11.00%)
-  1 (1.00%) high mild
-  10 (10.00%) high severe
-Benchmarking qps_limiting/1000
-Benchmarking qps_limiting/1000: Warming up for 3.0000 s
-Benchmarking qps_limiting/1000: Collecting 100 samples in estimated 5.0001 s (101M iterations)
-Benchmarking qps_limiting/1000: Analyzing
-qps_limiting/1000       time:   [47.134 ns 47.213 ns 47.310 ns]
-Found 1 outliers among 100 measurements (1.00%)
-  1 (1.00%) high mild
-
-Benchmarking record_auth_failure
-Benchmarking record_auth_failure: Warming up for 3.0000 s
-Benchmarking record_auth_failure: Collecting 100 samples in estimated 5.0002 s (141M iterations)
-Benchmarking record_auth_failure: Analyzing
-record_auth_failure     time:   [35.448 ns 35.476 ns 35.506 ns]
-Found 6 outliers among 100 measurements (6.00%)
-  1 (1.00%) high mild
-  5 (5.00%) high severe
-
-Benchmarking is_banned_check
-Benchmarking is_banned_check: Warming up for 3.0000 s
-Benchmarking is_banned_check: Collecting 100 samples in estimated 5.0001 s (148M iterations)
-Benchmarking is_banned_check: Analyzing
-is_banned_check         time:   [33.579 ns 33.736 ns 33.948 ns]
-Found 8 outliers among 100 measurements (8.00%)
-  2 (2.00%) high mild
-  6 (6.00%) high severe
-
-Benchmarking memory_footprint/1000
-Benchmarking memory_footprint/1000: Warming up for 3.0000 s
-Benchmarking memory_footprint/1000: Collecting 10 samples in estimated 5.0022 s (68k iterations)
-Benchmarking memory_footprint/1000: Analyzing
-memory_footprint/1000   time:   [73.040 µs 73.377 µs 74.113 µs]
-Found 3 outliers among 10 measurements (30.00%)
-  1 (10.00%) low severe
-  2 (20.00%) high severe
-Benchmarking memory_footprint/5000
-Benchmarking memory_footprint/5000: Warming up for 3.0000 s
-Benchmarking memory_footprint/5000: Collecting 10 samples in estimated 5.0112 s (14k iterations)
-Benchmarking memory_footprint/5000: Analyzing
-memory_footprint/5000   time:   [358.15 µs 358.90 µs 359.24 µs]
-Benchmarking memory_footprint/10000
-Benchmarking memory_footprint/10000: Warming up for 3.0000 s
-Benchmarking memory_footprint/10000: Collecting 10 samples in estimated 5.0025 s (7040 iterations)
-Benchmarking memory_footprint/10000: Analyzing
-memory_footprint/10000  time:   [708.97 µs 722.50 µs 745.00 µs]
-Found 1 outliers among 10 measurements (10.00%)
-  1 (10.00%) high severe
-
-     Running benches/resource_usage.rs (target/release/deps/resource_usage-fa3a4704267746be)
-Gnuplot not found, using plotters backend
-Benchmarking memory_allocation/buffer_allocation_64kb
-Benchmarking memory_allocation/buffer_allocation_64kb: Warming up for 3.0000 s
-Benchmarking memory_allocation/buffer_allocation_64kb: Collecting 100 samples in estimated 5.0072 s (2.6M iterations)
-Benchmarking memory_allocation/buffer_allocation_64kb: Analyzing
-memory_allocation/buffer_allocation_64kb
-                        time:   [1.8827 µs 1.9414 µs 1.9981 µs]
-Found 22 outliers among 100 measurements (22.00%)
-  18 (18.00%) low severe
-  3 (3.00%) high mild
-  1 (1.00%) high severe
-Benchmarking memory_allocation/connection_state_creation
-Benchmarking memory_allocation/connection_state_creation: Warming up for 3.0000 s
-Benchmarking memory_allocation/connection_state_creation: Collecting 100 samples in estimated 5.0001 s (78M iterations)
-Benchmarking memory_allocation/connection_state_creation: Analyzing
-memory_allocation/connection_state_creation
-                        time:   [63.988 ns 64.151 ns 64.313 ns]
-Benchmarking memory_allocation/zero_copy_header_parse
-Benchmarking memory_allocation/zero_copy_header_parse: Warming up for 3.0000 s
-Benchmarking memory_allocation/zero_copy_header_parse: Collecting 100 samples in estimated 5.0000 s (16B iterations)
-Benchmarking memory_allocation/zero_copy_header_parse: Analyzing
-memory_allocation/zero_copy_header_parse
-                        time:   [322.99 ps 326.20 ps 329.68 ps]
-Found 16 outliers among 100 measurements (16.00%)
-  3 (3.00%) high mild
-  13 (13.00%) high severe
-Benchmarking memory_allocation/copy_header_parse
-Benchmarking memory_allocation/copy_header_parse: Warming up for 3.0000 s
-Benchmarking memory_allocation/copy_header_parse: Collecting 100 samples in estimated 5.0001 s (210M iterations)
-Benchmarking memory_allocation/copy_header_parse: Analyzing
-memory_allocation/copy_header_parse
-                        time:   [23.779 ns 23.837 ns 23.925 ns]
-Found 6 outliers among 100 measurements (6.00%)
-  3 (3.00%) high mild
-  3 (3.00%) high severe
-
-Benchmarking concurrent_connections/10
-Benchmarking concurrent_connections/10: Warming up for 3.0000 s
-Benchmarking concurrent_connections/10: Collecting 100 samples in estimated 5.0023 s (7.8M iterations)
-Benchmarking concurrent_connections/10: Analyzing
-concurrent_connections/10
-                        time:   [652.14 ns 659.83 ns 667.63 ns]
-Found 13 outliers among 100 measurements (13.00%)
-  5 (5.00%) high mild
-  8 (8.00%) high severe
-Benchmarking concurrent_connections/100
-Benchmarking concurrent_connections/100: Warming up for 3.0000 s
-Benchmarking concurrent_connections/100: Collecting 100 samples in estimated 5.0246 s (874k iterations)
-Benchmarking concurrent_connections/100: Analyzing
-concurrent_connections/100
-                        time:   [5.7769 µs 5.8343 µs 5.8975 µs]
-Found 2 outliers among 100 measurements (2.00%)
-  2 (2.00%) high mild
-Benchmarking concurrent_connections/1000
-Benchmarking concurrent_connections/1000: Warming up for 3.0000 s
-Benchmarking concurrent_connections/1000: Collecting 100 samples in estimated 5.0021 s (76k iterations)
-Benchmarking concurrent_connections/1000: Analyzing
-concurrent_connections/1000
-                        time:   [66.239 µs 66.549 µs 66.957 µs]
-Found 1 outliers among 100 measurements (1.00%)
-  1 (1.00%) high severe
-
-Benchmarking routing_overhead/domain_match
-Benchmarking routing_overhead/domain_match: Warming up for 3.0000 s
-Benchmarking routing_overhead/domain_match: Collecting 100 samples in estimated 5.0001 s (115M iterations)
-Benchmarking routing_overhead/domain_match: Analyzing
-routing_overhead/domain_match
-                        time:   [43.564 ns 43.613 ns 43.667 ns]
-Found 8 outliers among 100 measurements (8.00%)
-  4 (4.00%) high mild
-  4 (4.00%) high severe
-Benchmarking routing_overhead/ip_match
-Benchmarking routing_overhead/ip_match: Warming up for 3.0000 s
-Benchmarking routing_overhead/ip_match: Collecting 100 samples in estimated 5.0000 s (16B iterations)
-Benchmarking routing_overhead/ip_match: Analyzing
-routing_overhead/ip_match
-                        time:   [322.20 ps 325.55 ps 329.48 ps]
-Found 14 outliers among 100 measurements (14.00%)
-  1 (1.00%) low mild
-  1 (1.00%) high mild
-  12 (12.00%) high severe
-Benchmarking routing_overhead/geoip_lookup
-Benchmarking routing_overhead/geoip_lookup: Warming up for 3.0000 s
-Benchmarking routing_overhead/geoip_lookup: Collecting 100 samples in estimated 5.0000 s (221M iterations)
-Benchmarking routing_overhead/geoip_lookup: Analyzing
-routing_overhead/geoip_lookup
-                        time:   [22.812 ns 23.283 ns 23.702 ns]
-
-Benchmarking crypto_operations/aes256gcm_encrypt_1kb
-Benchmarking crypto_operations/aes256gcm_encrypt_1kb: Warming up for 3.0000 s
-Benchmarking crypto_operations/aes256gcm_encrypt_1kb: Collecting 100 samples in estimated 5.0003 s (84M iterations)
-Benchmarking crypto_operations/aes256gcm_encrypt_1kb: Analyzing
-crypto_operations/aes256gcm_encrypt_1kb
-                        time:   [59.311 ns 59.361 ns 59.414 ns]
-Found 10 outliers among 100 measurements (10.00%)
-  9 (9.00%) high mild
-  1 (1.00%) high severe
-Benchmarking crypto_operations/chacha20poly1305_encrypt_1kb
-Benchmarking crypto_operations/chacha20poly1305_encrypt_1kb: Warming up for 3.0000 s
-Benchmarking crypto_operations/chacha20poly1305_encrypt_1kb: Collecting 100 samples in estimated 5.0003 s (84M iterations)
-Benchmarking crypto_operations/chacha20poly1305_encrypt_1kb: Analyzing
-crypto_operations/chacha20poly1305_encrypt_1kb
-                        time:   [59.602 ns 60.112 ns 60.700 ns]
-Found 12 outliers among 100 measurements (12.00%)
-  4 (4.00%) high mild
-  8 (8.00%) high severe
-Benchmarking crypto_operations/sha256_hash_1kb
-Benchmarking crypto_operations/sha256_hash_1kb: Warming up for 3.0000 s
-Benchmarking crypto_operations/sha256_hash_1kb: Collecting 100 samples in estimated 5.0000 s (16B iterations)
-Benchmarking crypto_operations/sha256_hash_1kb: Analyzing
-crypto_operations/sha256_hash_1kb
-                        time:   [319.56 ps 319.72 ps 319.90 ps]
-Found 18 outliers among 100 measurements (18.00%)
-  2 (2.00%) low mild
-  13 (13.00%) high mild
-  3 (3.00%) high severe
-
-     Running benches/shadowsocks_throughput.rs (target/release/deps/shadowsocks_throughput-4a4ab193b687befc)
-Gnuplot not found, using plotters backend
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1024
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1024: Collecting 100 samples in estimated 10.021 s (1.9M iterations)
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1024: Analyzing
-shadowsocks_encrypt/aes-256-gcm/1024
-                        time:   [5.1330 µs 5.1432 µs 5.1592 µs]
-                        thrpt:  [189.29 MiB/s 189.87 MiB/s 190.25 MiB/s]
-Found 7 outliers among 100 measurements (7.00%)
-  5 (5.00%) high mild
-  2 (2.00%) high severe
-Benchmarking shadowsocks_encrypt/aes-256-gcm/65536
-Benchmarking shadowsocks_encrypt/aes-256-gcm/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/aes-256-gcm/65536: Collecting 100 samples in estimated 10.128 s (30k iterations)
-Benchmarking shadowsocks_encrypt/aes-256-gcm/65536: Analyzing
-shadowsocks_encrypt/aes-256-gcm/65536
-                        time:   [332.05 µs 341.86 µs 355.26 µs]
-                        thrpt:  [175.93 MiB/s 182.82 MiB/s 188.22 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  2 (2.00%) high mild
-  6 (6.00%) high severe
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1048576
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1048576: Collecting 100 samples in estimated 10.305 s (1500 iterations)
-Benchmarking shadowsocks_encrypt/aes-256-gcm/1048576: Analyzing
-shadowsocks_encrypt/aes-256-gcm/1048576
-                        time:   [5.1915 ms 5.2294 ms 5.2776 ms]
-                        thrpt:  [189.48 MiB/s 191.23 MiB/s 192.62 MiB/s]
-Found 6 outliers among 100 measurements (6.00%)
-  2 (2.00%) high mild
-  4 (4.00%) high severe
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1024
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1024: Collecting 100 samples in estimated 10.018 s (1.9M iterations)
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1024: Analyzing
-shadowsocks_encrypt/chacha20-poly1305/1024
-                        time:   [5.1437 µs 5.1641 µs 5.1961 µs]
-                        thrpt:  [187.94 MiB/s 189.10 MiB/s 189.86 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  3 (3.00%) high mild
-  5 (5.00%) high severe
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/65536
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/65536: Collecting 100 samples in estimated 10.415 s (30k iterations)
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/65536: Analyzing
-shadowsocks_encrypt/chacha20-poly1305/65536
-                        time:   [328.53 µs 329.49 µs 330.66 µs]
-                        thrpt:  [189.02 MiB/s 189.69 MiB/s 190.24 MiB/s]
-Found 14 outliers among 100 measurements (14.00%)
-  6 (6.00%) high mild
-  8 (8.00%) high severe
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1048576
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1048576: Collecting 100 samples in estimated 10.198 s (1800 iterations)
-Benchmarking shadowsocks_encrypt/chacha20-poly1305/1048576: Analyzing
-shadowsocks_encrypt/chacha20-poly1305/1048576
-                        time:   [5.2523 ms 5.2670 ms 5.2827 ms]
-                        thrpt:  [189.30 MiB/s 189.86 MiB/s 190.39 MiB/s]
-Found 6 outliers among 100 measurements (6.00%)
-  5 (5.00%) high mild
-  1 (1.00%) high severe
-
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1024
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1024: Collecting 100 samples in estimated 10.015 s (1.8M iterations)
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1024: Analyzing
-shadowsocks_decrypt/aes-256-gcm/1024
-                        time:   [5.7030 µs 5.7239 µs 5.7457 µs]
-                        thrpt:  [169.97 MiB/s 170.61 MiB/s 171.24 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  4 (4.00%) high mild
-  4 (4.00%) high severe
-Benchmarking shadowsocks_decrypt/aes-256-gcm/65536
-Benchmarking shadowsocks_decrypt/aes-256-gcm/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/aes-256-gcm/65536: Collecting 100 samples in estimated 11.216 s (30k iterations)
-Benchmarking shadowsocks_decrypt/aes-256-gcm/65536: Analyzing
-shadowsocks_decrypt/aes-256-gcm/65536
-                        time:   [366.50 µs 369.69 µs 373.38 µs]
-                        thrpt:  [167.39 MiB/s 169.06 MiB/s 170.53 MiB/s]
-Found 13 outliers among 100 measurements (13.00%)
-  2 (2.00%) high mild
-  11 (11.00%) high severe
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1048576
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1048576: Collecting 100 samples in estimated 10.092 s (1700 iterations)
-Benchmarking shadowsocks_decrypt/aes-256-gcm/1048576: Analyzing
-shadowsocks_decrypt/aes-256-gcm/1048576
-                        time:   [5.7997 ms 5.8270 ms 5.8611 ms]
-                        thrpt:  [170.62 MiB/s 171.61 MiB/s 172.42 MiB/s]
-Found 8 outliers among 100 measurements (8.00%)
-  3 (3.00%) high mild
-  5 (5.00%) high severe
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1024
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1024: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1024: Collecting 100 samples in estimated 10.014 s (1.7M iterations)
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1024: Analyzing
-shadowsocks_decrypt/chacha20-poly1305/1024
-                        time:   [5.7121 µs 5.7258 µs 5.7428 µs]
-                        thrpt:  [170.05 MiB/s 170.55 MiB/s 170.96 MiB/s]
-Found 4 outliers among 100 measurements (4.00%)
-  3 (3.00%) high mild
-  1 (1.00%) high severe
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/65536
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/65536: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/65536: Collecting 100 samples in estimated 11.103 s (30k iterations)
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/65536: Analyzing
-shadowsocks_decrypt/chacha20-poly1305/65536
-                        time:   [368.56 µs 369.48 µs 370.46 µs]
-                        thrpt:  [168.71 MiB/s 169.16 MiB/s 169.58 MiB/s]
-Found 5 outliers among 100 measurements (5.00%)
-  4 (4.00%) high mild
-  1 (1.00%) high severe
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1048576
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1048576: Warming up for 3.0000 s
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1048576: Collecting 100 samples in estimated 10.131 s (1700 iterations)
-Benchmarking shadowsocks_decrypt/chacha20-poly1305/1048576: Analyzing
-shadowsocks_decrypt/chacha20-poly1305/1048576
-                        time:   [5.8747 ms 5.9928 ms 6.1440 ms]
-                        thrpt:  [162.76 MiB/s 166.87 MiB/s 170.22 MiB/s]
-Found 10 outliers among 100 measurements (10.00%)
-  2 (2.00%) high mild
-  8 (8.00%) high severe
-
-Benchmarking shadowsocks_e2e_throughput/aes-256-gcm/1024
-Benchmarking shadowsocks_e2e_throughput/aes-256-gcm/1024: Warming up for 3.0000 s
-
-thread 'main' (2113718) panicked at benches/benches/shadowsocks_throughput.rs:110:92:
-called `Result::unwrap()` on an `Err` value: Other("TCP connection to Shadowsocks server 127.0.0.1:54352 failed")
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
-error: bench failed, to rerun pass `-p sb-benches --bench shadowsocks_throughput`
+For more information about this error, try `rustc --explain E0507`.
+error: could not compile `sb-benches` (bench "shadowsocks_throughput") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `sb-benches` (bench "trojan_throughput") due to 2 previous errors

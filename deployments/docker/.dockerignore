@@ -1,4 +1,5 @@
 target/
+target-alt/
 .git/
 agents-only/
 go_fork_source/

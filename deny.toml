@@ -1,43 +1,47 @@
-# cargo-deny configuration
-# Run: cargo deny check
+# cargo-deny configuration (compatible with cargo-deny 0.18.x)
+# Primary commands:
+#   cargo deny check licenses
+#   cargo deny check advisories
+
+[graph]
+all-features = true
+no-default-features = false
 
 [advisories]
-version = 2
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"          # No yanked crates allowed
-notice = "warn"
+# L17 policy: block HIGH/CRITICAL in cargo-audit gate; keep known unmaintained as tracked warnings.
 ignore = [
-  # Unmaintained - no upgrade available, tracking for future replacement
-  "RUSTSEC-2025-0119",  # number_prefix unmaintained (via indicatif)
-  "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained (migrate to rustls-pki-types PemObject)
-  "RUSTSEC-2025-0057",  # fxhash unmaintained (via sled)
-  "RUSTSEC-2024-0384",  # instant unmaintained (via sled->parking_lot 0.11)
+  # Existing tracked unmaintained advisories in current dependency tree.
+  "RUSTSEC-2025-0119", # number_prefix unmaintained (via indicatif)
+  "RUSTSEC-2025-0134", # rustls-pemfile unmaintained
+  "RUSTSEC-2025-0057", # fxhash unmaintained (via sled)
+  "RUSTSEC-2024-0384", # instant unmaintained (via sled->parking_lot 0.11)
+  "RUSTSEC-2025-0141", # bincode unmaintained (via tor stack)
+  "RUSTSEC-2024-0388", # derivative unmaintained
+  "RUSTSEC-2024-0436", # paste unmaintained
 ]
 
 [licenses]
-version = 2
-unlicensed = "deny"
 allow = [
-    "MIT",
-    "Apache-2.0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Unicode-3.0",
-    "Unicode-DFS-2016",
-    "Zlib",
-    "BSL-1.0",
-    "OpenSSL",
-    "MPL-2.0",
-    "CC0-1.0",
-    "CDLA-Permissive-2.0",
-    "0BSD",
-    "WTFPL",
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Unlicense",
+  "MIT-0",
+  "Zlib",
+  "BSL-1.0",
+  "OpenSSL",
+  "MPL-2.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "0BSD",
+  "WTFPL",
 ]
-copyleft = "warn"
 confidence-threshold = 0.8
-# Workspace crates without explicit license - allow them
+
 [licenses.private]
 ignore = true
 

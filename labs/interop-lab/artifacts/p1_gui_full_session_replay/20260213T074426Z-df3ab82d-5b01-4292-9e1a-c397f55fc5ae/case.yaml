@@ -1,0 +1,146 @@
+id: p1_gui_full_session_replay
+title: full user session end-to-end replay capstone
+owner: null
+priority: p1
+kernel_mode: rust
+tags:
+- control-plane
+- dataplane
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_clash_api_full.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go: null
+gui_sequence:
+- kind: ws_parallel
+  name: boot_ws
+  streams:
+  - path: /memory
+    max_frames: 2
+    params: null
+  - path: /traffic
+    max_frames: 2
+    params: null
+  - path: /connections
+    max_frames: 2
+    params: null
+  - path: /logs
+    max_frames: 2
+    params: null
+  duration_ms: 3000
+- kind: http
+  name: get_configs
+  method: GET
+  path: /configs
+  body: null
+  expect_status: 200
+- kind: http
+  name: get_proxies_initial
+  method: GET
+  path: /proxies
+  body: null
+  expect_status: 200
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+traffic_plan:
+- kind: http_get
+  name: browse_before_switch
+  url: '{{upstream.local_http}}/v1/echo?scene=full-session-before'
+  proxy: socks5://127.0.0.1:11801
+  expect_status: 200
+- kind: sleep
+  name: wait_for_connections
+  ms: 500
+- kind: command
+  name: switch_proxy
+  command: curl
+  args:
+  - -sS
+  - -X
+  - PUT
+  - -H
+  - 'Authorization: Bearer test-secret'
+  - -H
+  - 'Content-Type: application/json'
+  - -d
+  - '{"name":"alt-direct"}'
+  - http://127.0.0.1:19290/proxies/my-group
+  env: {}
+  workdir: null
+  timeout_ms: 5000
+  expect_exit: 0
+- kind: sleep
+  name: wait_after_switch
+  ms: 200
+- kind: http_get
+  name: browse_after_switch
+  url: '{{upstream.local_http}}/v1/echo?scene=full-session-after'
+  proxy: socks5://127.0.0.1:11801
+  expect_status: 200
+subscription_input: null
+faults: []
+assertions:
+- key: errors.count
+  op: eq
+  expected: 0
+- key: http.get_configs.status
+  op: eq
+  expected: 200
+- key: http.get_proxies_initial.status
+  op: eq
+  expected: 200
+- key: traffic.browse_before_switch.success
+  op: eq
+  expected: true
+- key: traffic.switch_proxy.success
+  op: eq
+  expected: true
+- key: traffic.browse_after_switch.success
+  op: eq
+  expected: true
+- key: http.get_connections_final.status
+  op: eq
+  expected: 200
+- key: http.get_proxies_final.status
+  op: eq
+  expected: 200
+- key: connections.count
+  op: gt
+  expected: 0
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths:
+  - /memory
+  - /traffic
+  - /connections
+  - /logs
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence:
+- kind: http
+  name: get_connections_final
+  method: GET
+  path: /connections
+  body: null
+  expect_status: 200
+- kind: http
+  name: get_proxies_final
+  method: GET
+  path: /proxies
+  body: null
+  expect_status: 200

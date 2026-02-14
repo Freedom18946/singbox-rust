@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_fault_jitter_http_via_socks",
+  "generated_at": "2026-02-13T11:47:03.555350Z",
+  "run_id": "20260213T114648Z-c889e479-6425-499b-8f60-f2ee094bccc0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fault_jitter_http_via_socks/20260213T114648Z-c889e479-6425-499b-8f60-f2ee094bccc0/rust.snapshot.json"
+  ]
+}

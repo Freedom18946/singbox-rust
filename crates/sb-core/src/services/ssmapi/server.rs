@@ -1267,135 +1267,101 @@ mod tests {
 
     // --- Auth middleware tests ---
 
-    #[tokio::test]
-    async fn test_auth_middleware_no_token_configured() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
+    async fn auth_health_status(
+        token: Option<String>,
+        auth_header: Option<&str>,
+    ) -> http::StatusCode {
+        use axum::http::StatusCode;
         use axum::routing::get;
-        use tower::ServiceExt;
+        use tokio::net::TcpListener;
 
         let app = axum::Router::new()
             .route("/health", get(|| async { "ok" }))
             .layer(axum::middleware::from_fn(move |req, next| {
-                ssmapi_auth_middleware(None, req, next)
+                let configured = token.clone();
+                ssmapi_auth_middleware(configured, req, next)
             }));
 
-        let resp = app
-            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(v) => v,
+            Err(err) => panic!("bind test listener failed: {err}"),
+        };
+        let addr = match listener.local_addr() {
+            Ok(v) => v,
+            Err(err) => panic!("get listener addr failed: {err}"),
+        };
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server_task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = shutdown_rx.await;
+                })
+                .await;
+        });
+
+        let url = format!("http://{addr}/health");
+        let client = reqwest::Client::new();
+        let mut last_err = String::new();
+        let mut status = StatusCode::SERVICE_UNAVAILABLE;
+
+        for _ in 0..20 {
+            let mut req = client.get(&url);
+            if let Some(header) = auth_header {
+                req = req.header("Authorization", header);
+            }
+            match req.send().await {
+                Ok(resp) => {
+                    status = resp.status();
+                    break;
+                }
+                Err(err) => {
+                    last_err = err.to_string();
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            }
+        }
+
+        if status == StatusCode::SERVICE_UNAVAILABLE && !last_err.is_empty() {
+            panic!("request to auth test server failed: {last_err}");
+        }
+
+        let _ = shutdown_tx.send(());
+        let _ = server_task.await;
+        status
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_no_token_configured() {
+        let status = auth_health_status(None, None).await;
+        assert_eq!(status, http::StatusCode::OK);
     }
 
     #[tokio::test]
     async fn test_auth_middleware_valid_token() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
-        use axum::routing::get;
-        use tower::ServiceExt;
-
-        let token = Some("secret123".to_string());
-        let app = axum::Router::new()
-            .route("/health", get(|| async { "ok" }))
-            .layer(axum::middleware::from_fn(move |req, next| {
-                let t = token.clone();
-                ssmapi_auth_middleware(t, req, next)
-            }));
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .header("Authorization", "Bearer secret123")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        let status =
+            auth_health_status(Some("secret123".to_string()), Some("Bearer secret123")).await;
+        assert_eq!(status, http::StatusCode::OK);
     }
 
     #[tokio::test]
     async fn test_auth_middleware_invalid_token() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
-        use axum::routing::get;
-        use tower::ServiceExt;
-
-        let token = Some("secret123".to_string());
-        let app = axum::Router::new()
-            .route("/health", get(|| async { "ok" }))
-            .layer(axum::middleware::from_fn(move |req, next| {
-                let t = token.clone();
-                ssmapi_auth_middleware(t, req, next)
-            }));
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .header("Authorization", "Bearer wrong-token")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        let status =
+            auth_health_status(Some("secret123".to_string()), Some("Bearer wrong-token")).await;
+        assert_eq!(status, http::StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn test_auth_middleware_missing_header() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
-        use axum::routing::get;
-        use tower::ServiceExt;
-
-        let token = Some("secret123".to_string());
-        let app = axum::Router::new()
-            .route("/health", get(|| async { "ok" }))
-            .layer(axum::middleware::from_fn(move |req, next| {
-                let t = token.clone();
-                ssmapi_auth_middleware(t, req, next)
-            }));
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        let status = auth_health_status(Some("secret123".to_string()), None).await;
+        assert_eq!(status, http::StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn test_auth_middleware_empty_token_passes_through() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
-        use axum::routing::get;
-        use tower::ServiceExt;
-
-        // Empty string token should be treated as "no auth configured"
-        let token = Some(String::new());
-        let app = axum::Router::new()
-            .route("/health", get(|| async { "ok" }))
-            .layer(axum::middleware::from_fn(move |req, next| {
-                let t = token.clone();
-                ssmapi_auth_middleware(t, req, next)
-            }));
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        // Empty token is treated as "auth disabled".
+        let status = auth_health_status(Some(String::new()), None).await;
+        assert_eq!(status, http::StatusCode::OK);
     }
 
     #[test]

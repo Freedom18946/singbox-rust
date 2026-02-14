@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_deprecated_mixed_config",
+  "generated_at": "2026-02-13T11:58:09.145900Z",
+  "run_id": "20260213T115753Z-5a36b4ea-f1c8-4f77-8c4a-2b40dda43dbb",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_deprecated_mixed_config/20260213T115753Z-5a36b4ea-f1c8-4f77-8c4a-2b40dda43dbb/rust.snapshot.json"
+  ]
+}

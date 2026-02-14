@@ -38,6 +38,7 @@ use std::path::Path;
 pub mod compat;
 pub mod de;
 pub mod defaults;
+pub mod deprecation;
 pub mod inbound;
 pub mod ir;
 pub mod json_norm;
@@ -51,7 +52,6 @@ pub mod rule;
 pub mod schema_v2;
 pub mod subscribe;
 pub mod validator;
-pub mod deprecation;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {

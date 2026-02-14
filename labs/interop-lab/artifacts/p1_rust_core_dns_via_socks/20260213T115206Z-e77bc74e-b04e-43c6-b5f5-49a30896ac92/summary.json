@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_rust_core_dns_via_socks",
+  "generated_at": "2026-02-13T11:52:21.785773Z",
+  "run_id": "20260213T115206Z-e77bc74e-b04e-43c6-b5f5-49a30896ac92",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_rust_core_dns_via_socks/20260213T115206Z-e77bc74e-b04e-43c6-b5f5-49a30896ac92/rust.snapshot.json"
+  ]
+}

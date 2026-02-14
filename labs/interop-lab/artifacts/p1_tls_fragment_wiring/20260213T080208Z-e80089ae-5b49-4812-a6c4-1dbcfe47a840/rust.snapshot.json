@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T080208Z-e80089ae-5b49-4812-a6c4-1dbcfe47a840",
+  "case_id": "p1_tls_fragment_wiring",
+  "kernel": "rust",
+  "started_at": "2026-02-13T08:02:08.952810Z",
+  "finished_at": "2026-02-13T08:02:24.108115Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19309/healthz"
+    }
+  ],
+  "fd_samples": []
+}

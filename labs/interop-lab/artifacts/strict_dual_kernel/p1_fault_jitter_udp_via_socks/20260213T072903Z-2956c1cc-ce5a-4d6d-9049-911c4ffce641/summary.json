@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_jitter_udp_via_socks",
+  "generated_at": "2026-02-13T07:29:19.060489Z",
+  "run_id": "20260213T072903Z-2956c1cc-ce5a-4d6d-9049-911c4ffce641",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_udp_via_socks/20260213T072903Z-2956c1cc-ce5a-4d6d-9049-911c4ffce641/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_jitter_udp_via_socks/20260213T072903Z-2956c1cc-ce5a-4d6d-9049-911c4ffce641/go.snapshot.json"
+  ]
+}

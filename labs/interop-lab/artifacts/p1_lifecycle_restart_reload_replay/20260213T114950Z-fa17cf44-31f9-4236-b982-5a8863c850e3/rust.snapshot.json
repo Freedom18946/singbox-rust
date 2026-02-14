@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T114950Z-fa17cf44-31f9-4236-b982-5a8863c850e3",
+  "case_id": "p1_lifecycle_restart_reload_replay",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:49:50.230234Z",
+  "finished_at": "2026-02-13T11:50:05.373449Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

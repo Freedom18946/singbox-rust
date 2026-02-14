@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072733Z-d99409f8-de09-4fc8-89f5-b9fd0253adbc",
+  "case_id": "p1_fault_disconnect_udp_via_socks",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:27:48.220840Z",
+  "finished_at": "2026-02-13T07:27:48.221088Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p1_fault_disconnect_udp_via_socks missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

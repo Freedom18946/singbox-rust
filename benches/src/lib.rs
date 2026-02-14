@@ -79,7 +79,11 @@ pub fn setup_tracing() {
 /// Returns (p50, p95, p99) or None if the input is empty.
 pub fn compute_percentiles(
     durations: &[std::time::Duration],
-) -> Option<(std::time::Duration, std::time::Duration, std::time::Duration)> {
+) -> Option<(
+    std::time::Duration,
+    std::time::Duration,
+    std::time::Duration,
+)> {
     if durations.is_empty() {
         return None;
     }

@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_disconnect_ws_upstream",
+  "generated_at": "2026-02-13T07:28:03.304520Z",
+  "run_id": "20260213T072748Z-d8bdb116-116c-45d1-a366-576fd8c879f3",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_ws_upstream/20260213T072748Z-d8bdb116-116c-45d1-a366-576fd8c879f3/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_disconnect_ws_upstream/20260213T072748Z-d8bdb116-116c-45d1-a366-576fd8c879f3/go.snapshot.json"
+  ]
+}

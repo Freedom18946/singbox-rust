@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T115221Z-d5c60685-2485-4b60-8a3f-6ca0b180c442",
+  "case_id": "p1_rust_core_http_via_socks",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:52:21.794816Z",
+  "finished_at": "2026-02-13T11:52:36.920078Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19190/healthz"
+    }
+  ],
+  "fd_samples": []
+}

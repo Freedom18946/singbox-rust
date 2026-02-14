@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T061834Z-6b917d7f-39e3-42be-afac-159cf5070d4f",
+  "case_id": "p1_gui_full_boot_replay",
+  "kernel": "rust",
+  "started_at": "2026-02-13T06:18:34.529002Z",
+  "finished_at": "2026-02-13T06:18:49.670293Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19290/version"
+    }
+  ],
+  "fd_samples": []
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_gui_connections_tracking",
+  "generated_at": "2026-02-13T07:44:10.807308Z",
+  "run_id": "20260213T074355Z-a54dc6c7-55c3-4838-93b5-d32d8fd0a92a",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_gui_connections_tracking/20260213T074355Z-a54dc6c7-55c3-4838-93b5-d32d8fd0a92a/rust.snapshot.json"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_gui_proxy_switch_replay",
+  "generated_at": "2026-02-13T07:31:05.036896Z",
+  "run_id": "20260213T073050Z-c01d28c1-0ba2-44d2-978c-186e686927d3",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_gui_proxy_switch_replay/20260213T073050Z-c01d28c1-0ba2-44d2-978c-186e686927d3/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_gui_proxy_switch_replay/20260213T073050Z-c01d28c1-0ba2-44d2-978c-186e686927d3/go.snapshot.json"
+  ]
+}

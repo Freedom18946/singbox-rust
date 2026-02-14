@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T112407Z-c13861aa-d6a4-436c-a0f8-d0a501e3d0d1",
+  "case_id": "p2_connections_ws_soak_dual_core",
+  "kernel": "go",
+  "started_at": "2026-02-13T11:24:22.467210Z",
+  "finished_at": "2026-02-13T11:24:52.557566Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 30000 ms at http://127.0.0.1:9090/configs"
+    }
+  ],
+  "fd_samples": []
+}

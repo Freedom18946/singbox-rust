@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_auth_negative_missing_token",
+  "generated_at": "2026-02-13T11:39:26.238854Z",
+  "run_id": "20260213T113825Z-8284cf11-f71f-415b-9eeb-66a66f4459c0",
+  "snapshots": [
+    "labs/interop-lab/artifacts/env_limited_dual_kernel/p1_auth_negative_missing_token/20260213T113825Z-8284cf11-f71f-415b-9eeb-66a66f4459c0/rust.snapshot.json",
+    "labs/interop-lab/artifacts/env_limited_dual_kernel/p1_auth_negative_missing_token/20260213T113825Z-8284cf11-f71f-415b-9eeb-66a66f4459c0/go.snapshot.json"
+  ]
+}

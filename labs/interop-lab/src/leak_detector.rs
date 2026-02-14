@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 // L10.2.2 — Resource leak detector.
 //
 // Analyses memory series and fd counts to detect upward trends that suggest
@@ -36,10 +38,7 @@ const DEFAULT_FD_SLOPE_THRESHOLD: f64 = 1.0;
 ///
 /// Uses simple linear regression on the `inuse` field.  If the slope
 /// exceeds the threshold the function returns `Some(LeakSignal)`.
-pub fn detect_memory_leak(
-    series: &[MemoryPoint],
-    threshold: Option<f64>,
-) -> Option<LeakSignal> {
+pub fn detect_memory_leak(series: &[MemoryPoint], threshold: Option<f64>) -> Option<LeakSignal> {
     let threshold = threshold.unwrap_or(DEFAULT_MEMORY_SLOPE_THRESHOLD);
     if series.len() < 3 {
         return None;
@@ -65,10 +64,7 @@ pub fn detect_memory_leak(
 /// Detect a file descriptor leak from a series of fd-count samples.
 ///
 /// Expects samples taken at regular intervals (e.g. via `lsof -p`).
-pub fn detect_fd_leak(
-    fd_samples: &[u64],
-    threshold: Option<f64>,
-) -> Option<LeakSignal> {
+pub fn detect_fd_leak(fd_samples: &[u64], threshold: Option<f64>) -> Option<LeakSignal> {
     let threshold = threshold.unwrap_or(DEFAULT_FD_SLOPE_THRESHOLD);
     if fd_samples.len() < 3 {
         return None;

@@ -23,8 +23,7 @@ use std::time::Duration;
 use crate::outbound::prelude::*;
 use sb_core::{
     adapter::OutboundConnector as CoreOutboundConnector,
-    outbound::direct_connector::DirectConnector,
-    services::tailscale::coordinator::Coordinator,
+    outbound::direct_connector::DirectConnector, services::tailscale::coordinator::Coordinator,
 };
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;

@@ -1,0 +1,9 @@
+{
+  "case_id": "p2_connections_ws_soak_dual_core",
+  "generated_at": "2026-02-13T07:33:19.949414Z",
+  "run_id": "20260213T073234Z-f2a56623-186d-44ab-aeb2-b58cad4335ed",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p2_connections_ws_soak_dual_core/20260213T073234Z-f2a56623-186d-44ab-aeb2-b58cad4335ed/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p2_connections_ws_soak_dual_core/20260213T073234Z-f2a56623-186d-44ab-aeb2-b58cad4335ed/go.snapshot.json"
+  ]
+}

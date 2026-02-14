@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T115809Z-e642983f-0c8f-4d13-9b2d-abe479e25569",
+  "case_id": "p1_deprecated_v1_style_config",
+  "kernel": "rust",
+  "started_at": "2026-02-13T11:58:09.146293Z",
+  "finished_at": "2026-02-13T11:58:24.293551Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "launch_kernel",
+      "message": "kernel not ready within 15000 ms at http://127.0.0.1:19302/healthz"
+    }
+  ],
+  "fd_samples": []
+}

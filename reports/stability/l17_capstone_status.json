@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-02-14T11:30:05Z",
+  "profile": "fast",
+  "overall": "PASS_ENV_LIMITED",
+  "api_url": "http://127.0.0.1:19090",
+  "fast_profile": {
+    "hot_reload_iterations": 20,
+    "signal_iterations": 5,
+    "canary_duration_hours": 1,
+    "canary_sample_interval_sec": 300
+  },
+  "gates": {
+    "boundaries": "PASS",
+    "parity_check": "PASS",
+    "workspace_test": "PASS",
+    "fmt_check": "PASS",
+    "clippy": "PASS",
+    "hot_reload_long_test": "PASS",
+    "signal_long_test": "PASS",
+    "canary": "ENV_LIMITED",
+    "docker": "ENV_LIMITED",
+    "gui_smoke": "ENV_LIMITED"
+  },
+  "env_limited_reasons": ["docker_daemon_unavailable", "gui_smoke_manual_step", "canary_api_unreachable"]
+}

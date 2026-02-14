@@ -49,7 +49,7 @@ pub struct DeprecatedField {
 
 /// Returns the full deprecation directory (all known deprecated fields/patterns).
 pub fn deprecation_directory() -> &'static [DeprecatedField] {
-    &DEPRECATION_ENTRIES
+    DEPRECATION_ENTRIES
 }
 
 static DEPRECATION_ENTRIES: &[DeprecatedField] = &[
@@ -236,7 +236,9 @@ mod tests {
     fn test_severity_coverage() {
         let dir = deprecation_directory();
         let has_info = dir.iter().any(|e| e.severity == DeprecationSeverity::Info);
-        let has_warning = dir.iter().any(|e| e.severity == DeprecationSeverity::Warning);
+        let has_warning = dir
+            .iter()
+            .any(|e| e.severity == DeprecationSeverity::Warning);
         assert!(has_info, "Should have at least one Info severity entry");
         assert!(
             has_warning,

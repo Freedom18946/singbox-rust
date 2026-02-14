@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fault_delay_tcp_via_socks",
+  "generated_at": "2026-02-13T07:26:02.007255Z",
+  "run_id": "20260213T072546Z-c364a5f9-dbc3-4fa3-a8de-a957e6380b86",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_tcp_via_socks/20260213T072546Z-c364a5f9-dbc3-4fa3-a8de-a957e6380b86/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_fault_delay_tcp_via_socks/20260213T072546Z-c364a5f9-dbc3-4fa3-a8de-a957e6380b86/go.snapshot.json"
+  ]
+}

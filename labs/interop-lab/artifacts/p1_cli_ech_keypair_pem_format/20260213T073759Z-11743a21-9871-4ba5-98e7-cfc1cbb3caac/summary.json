@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_cli_ech_keypair_pem_format",
+  "generated_at": "2026-02-13T07:38:01.753953Z",
+  "run_id": "20260213T073759Z-11743a21-9871-4ba5-98e7-cfc1cbb3caac",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_cli_ech_keypair_pem_format/20260213T073759Z-11743a21-9871-4ba5-98e7-cfc1cbb3caac/rust.snapshot.json"
+  ]
+}

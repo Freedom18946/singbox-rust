@@ -2854,11 +2854,13 @@ mod tests {
 
     #[test]
     fn build_dns_outbound_accepts_doh() {
-        let mut ir = OutboundIR::default();
-        ir.ty = OutboundType::Dns;
-        ir.server = Some("1.1.1.1".into());
-        ir.port = Some(443);
-        ir.dns_transport = Some("doh".into());
+        let ir = OutboundIR {
+            ty: OutboundType::Dns,
+            server: Some("1.1.1.1".into()),
+            port: Some(443),
+            dns_transport: Some("doh".into()),
+            ..Default::default()
+        };
         let param = OutboundParam {
             kind: "dns".into(),
             name: Some("dns".into()),

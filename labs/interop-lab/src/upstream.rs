@@ -15,8 +15,8 @@ use hickory_proto::rr::{Name, RecordType};
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -130,7 +130,10 @@ pub async fn start_upstreams(specs: &[UpstreamServiceSpec]) -> Result<UpstreamHa
     Ok(harness)
 }
 
-async fn start_single_upstream(harness: &mut UpstreamHarness, spec: &UpstreamServiceSpec) -> Result<()> {
+async fn start_single_upstream(
+    harness: &mut UpstreamHarness,
+    spec: &UpstreamServiceSpec,
+) -> Result<()> {
     match spec.kind {
         UpstreamKind::HttpEcho => {
             let listener = TcpListener::bind(&spec.bind)
@@ -596,42 +599,46 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
-            TrafficAction::FaultDisconnect { name, target } => match harness.disconnect_target(target).await {
-                Ok(()) => TrafficResult {
-                    name: name.clone(),
-                    success: true,
-                    detail: json!({ "action": "fault_disconnect", "target": target }),
-                },
-                Err(err) => TrafficResult {
-                    name: name.clone(),
-                    success: false,
-                    detail: json!({
-                        "action": "fault_disconnect",
-                        "target": target,
-                        "error": err.to_string()
-                    }),
-                },
-            },
-            TrafficAction::FaultReconnect { name, target } => match harness.reconnect_target(target).await {
-                Ok(()) => TrafficResult {
-                    name: name.clone(),
-                    success: true,
-                    detail: json!({
-                        "action": "fault_reconnect",
-                        "target": target,
-                        "endpoint": harness.endpoints.get(target)
-                    }),
-                },
-                Err(err) => TrafficResult {
-                    name: name.clone(),
-                    success: false,
-                    detail: json!({
-                        "action": "fault_reconnect",
-                        "target": target,
-                        "error": err.to_string()
-                    }),
-                },
-            },
+            TrafficAction::FaultDisconnect { name, target } => {
+                match harness.disconnect_target(target).await {
+                    Ok(()) => TrafficResult {
+                        name: name.clone(),
+                        success: true,
+                        detail: json!({ "action": "fault_disconnect", "target": target }),
+                    },
+                    Err(err) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "fault_disconnect",
+                            "target": target,
+                            "error": err.to_string()
+                        }),
+                    },
+                }
+            }
+            TrafficAction::FaultReconnect { name, target } => {
+                match harness.reconnect_target(target).await {
+                    Ok(()) => TrafficResult {
+                        name: name.clone(),
+                        success: true,
+                        detail: json!({
+                            "action": "fault_reconnect",
+                            "target": target,
+                            "endpoint": harness.endpoints.get(target)
+                        }),
+                    },
+                    Err(err) => TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "fault_reconnect",
+                            "target": target,
+                            "error": err.to_string()
+                        }),
+                    },
+                }
+            }
             TrafficAction::Sleep { name, ms } => {
                 tokio::time::sleep(Duration::from_millis(*ms)).await;
                 TrafficResult {
@@ -650,8 +657,10 @@ pub async fn run_traffic_plan(
                 expect_exit,
             } => {
                 let resolved_command = harness.resolve_templates(command);
-                let resolved_args: Vec<String> =
-                    args.iter().map(|arg| harness.resolve_templates(arg)).collect();
+                let resolved_args: Vec<String> = args
+                    .iter()
+                    .map(|arg| harness.resolve_templates(arg))
+                    .collect();
                 let resolved_env: BTreeMap<String, String> = env
                     .iter()
                     .map(|(k, v)| (k.clone(), harness.resolve_templates(v)))
@@ -753,7 +762,8 @@ pub async fn run_traffic_plan(
             } => {
                 let url = harness.resolve_templates(url);
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
-                let result = ws_roundtrip(&url, payload, resolved_proxy.as_deref(), *timeout_ms).await;
+                let result =
+                    ws_roundtrip(&url, payload, resolved_proxy.as_deref(), *timeout_ms).await;
                 match result {
                     Ok(echo) => TrafficResult {
                         name: name.clone(),
@@ -785,7 +795,14 @@ pub async fn run_traffic_plan(
             } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
-                let result = tls_roundtrip(&addr, payload.as_bytes(), resolved_proxy.as_deref(), *skip_verify, *timeout_ms).await;
+                let result = tls_roundtrip(
+                    &addr,
+                    payload.as_bytes(),
+                    resolved_proxy.as_deref(),
+                    *skip_verify,
+                    *timeout_ms,
+                )
+                .await;
                 match result {
                     Ok(back) => TrafficResult {
                         name: name.clone(),
@@ -1035,7 +1052,11 @@ async fn tcp_roundtrip_via_proxy(proxy: &str, addr: &str, payload: &[u8]) -> Res
     Err(anyhow!("unsupported tcp proxy scheme: {proxy}"))
 }
 
-async fn tcp_roundtrip_via_socks5(proxy_addr: &str, target_addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
+async fn tcp_roundtrip_via_socks5(
+    proxy_addr: &str,
+    target_addr: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>> {
     let mut stream = TcpStream::connect(proxy_addr)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
@@ -1095,7 +1116,10 @@ async fn tcp_roundtrip_via_socks5(proxy_addr: &str, target_addr: &str, payload: 
         return Err(anyhow!("invalid socks5 response version: {}", resp_head[0]));
     }
     if resp_head[1] != 0x00 {
-        return Err(anyhow!("socks5 connect rejected with code: {}", resp_head[1]));
+        return Err(anyhow!(
+            "socks5 connect rejected with code: {}",
+            resp_head[1]
+        ));
     }
 
     match resp_head[3] {
@@ -1201,7 +1225,11 @@ async fn udp_roundtrip_via_proxy(proxy: &str, addr: &str, payload: &[u8]) -> Res
     Err(anyhow!("unsupported udp proxy scheme: {proxy}"))
 }
 
-async fn udp_roundtrip_via_socks5(proxy_addr: &str, target_addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
+async fn udp_roundtrip_via_socks5(
+    proxy_addr: &str,
+    target_addr: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>> {
     let mut control = TcpStream::connect(proxy_addr)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
@@ -1370,7 +1398,10 @@ async fn read_socks5_addr_port(stream: &mut TcpStream, atyp: u8) -> Result<(Stri
                 .read_exact(&mut port)
                 .await
                 .with_context(|| "reading socks5 ipv6 port")?;
-            Ok((std::net::Ipv6Addr::from(ip).to_string(), u16::from_be_bytes(port)))
+            Ok((
+                std::net::Ipv6Addr::from(ip).to_string(),
+                u16::from_be_bytes(port),
+            ))
         }
         _ => Err(anyhow!("unknown socks5 atyp: {atyp}")),
     }
@@ -1400,9 +1431,9 @@ async fn dns_query(addr: &str, qname: &str, proxy: Option<&str>) -> Result<serde
         .with_context(|| "encoding dns query")?;
 
     let response = if let Some(proxy) = proxy {
-        udp_roundtrip_via_proxy(proxy, addr, &encoded).await.with_context(|| {
-            format!("dns query via proxy {proxy} to {addr}")
-        })?
+        udp_roundtrip_via_proxy(proxy, addr, &encoded)
+            .await
+            .with_context(|| format!("dns query via proxy {proxy} to {addr}"))?
     } else {
         let socket = UdpSocket::bind("127.0.0.1:0")
             .await
@@ -1608,13 +1639,10 @@ async fn tls_roundtrip(
         .await
         .with_context(|| "tls write payload")?;
     let mut buf = vec![0_u8; payload.len()];
-    tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        tls.read_exact(&mut buf),
-    )
-    .await
-    .map_err(|_| anyhow!("tls read timeout after {timeout_ms}ms"))?
-    .with_context(|| "tls read echo")?;
+    tokio::time::timeout(Duration::from_millis(timeout_ms), tls.read_exact(&mut buf))
+        .await
+        .map_err(|_| anyhow!("tls read timeout after {timeout_ms}ms"))?
+        .with_context(|| "tls read echo")?;
     Ok(buf)
 }
 

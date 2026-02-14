@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_recovery_disconnect_reconnect_tcp_via_socks",
+  "generated_at": "2026-02-13T07:46:27.577493Z",
+  "run_id": "20260213T074612Z-11a3c57c-0b39-4aa4-ac9d-b9109f35e123",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_recovery_disconnect_reconnect_tcp_via_socks/20260213T074612Z-11a3c57c-0b39-4aa4-ac9d-b9109f35e123/rust.snapshot.json"
+  ]
+}

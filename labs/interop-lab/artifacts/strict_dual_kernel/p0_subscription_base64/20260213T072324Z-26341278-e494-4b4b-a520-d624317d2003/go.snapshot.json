@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "20260213T072324Z-26341278-e494-4b4b-a520-d624317d2003",
+  "case_id": "p0_subscription_base64",
+  "kernel": "go",
+  "started_at": "2026-02-13T07:23:24.533407Z",
+  "finished_at": "2026-02-13T07:23:24.533625Z",
+  "http_results": [],
+  "ws_frames": [],
+  "conn_summary": null,
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [
+    {
+      "stage": "select_kernel_spec",
+      "message": "case p0_subscription_base64 missing bootstrap.go"
+    }
+  ],
+  "fd_samples": []
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "p1_tls_cert_store_mozilla",
+  "generated_at": "2026-02-13T11:53:37.473209Z",
+  "run_id": "20260213T115322Z-f76439bd-acfb-40b3-8a1c-46db7a31f8f9",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_tls_cert_store_mozilla/20260213T115322Z-f76439bd-acfb-40b3-8a1c-46db7a31f8f9/rust.snapshot.json"
+  ]
+}

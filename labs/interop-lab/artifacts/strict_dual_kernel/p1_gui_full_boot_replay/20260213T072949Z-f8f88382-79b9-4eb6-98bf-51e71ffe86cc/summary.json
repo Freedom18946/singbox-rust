@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_gui_full_boot_replay",
+  "generated_at": "2026-02-13T07:30:04.505151Z",
+  "run_id": "20260213T072949Z-f8f88382-79b9-4eb6-98bf-51e71ffe86cc",
+  "snapshots": [
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_gui_full_boot_replay/20260213T072949Z-f8f88382-79b9-4eb6-98bf-51e71ffe86cc/rust.snapshot.json",
+    "labs/interop-lab/artifacts/strict_dual_kernel/p1_gui_full_boot_replay/20260213T072949Z-f8f88382-79b9-4eb6-98bf-51e71ffe86cc/go.snapshot.json"
+  ]
+}
