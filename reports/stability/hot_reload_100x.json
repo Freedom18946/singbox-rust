@@ -1,15 +1,15 @@
 {
-  "admin_addr": "127.0.0.1:19090",
+  "admin_addr": "127.0.0.1:63549",
   "binary": "../target/debug/run",
-  "config": "../labs/interop-lab/configs/bench_rust.json",
+  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_58241_1771046920611.json",
   "fd_delta": 0,
-  "final_fds": 22,
-  "final_rss_kb": 21600,
-  "initial_fds": 22,
-  "initial_rss_kb": 21632,
+  "final_fds": 17,
+  "final_rss_kb": 18752,
+  "initial_fds": 17,
+  "initial_rss_kb": 18832,
   "iterations": 100,
   "result": "pass",
-  "rss_delta_kb": -32,
+  "rss_delta_kb": -80,
   "test": "hot_reload_100x_stability",
   "threshold_check": {
     "fd_limit_delta": 50,
@@ -17,5 +17,5 @@
     "health_checks_passed": 100,
     "rss_growth_limit_pct": 10
   },
-  "timestamp": "2026-02-12T15:21:05.975472+00:00"
+  "timestamp": "2026-02-14T05:29:07.601715+00:00"
 }
