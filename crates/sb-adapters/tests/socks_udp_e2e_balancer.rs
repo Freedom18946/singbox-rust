@@ -47,13 +47,8 @@ impl Socks5Mock {
             tokio::spawn(async move {
                 let sock = &me2.udp_echo;
                 let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    match sock.recv_from(&mut buf).await {
-                        Ok((n, peer)) => {
-                            let _ = sock.send_to(&buf[..n], peer).await;
-                        }
-                        Err(_) => break,
-                    }
+                while let Ok((n, peer)) = sock.recv_from(&mut buf).await {
+                    let _ = sock.send_to(&buf[..n], peer).await;
                 }
             });
         }
@@ -199,15 +194,14 @@ async fn socks5_udp_balancer_rr_with_failover() -> anyhow::Result<()> {
         let pkt = encode_udp_datagram(dst, &payload);
         let _ = cli.send_to(&pkt, inbound).await?;
         let mut buf = [0u8; 2048];
-        match tokio::time::timeout(Duration::from_millis(800), cli.recv(&mut buf)).await {
-            Ok(Ok(n)) => {
-                // strip reply header
-                let off = 4 + 4 + 2; // v4 minimal
-                if n >= off && &buf[off..n] == &payload {
-                    ok += 1;
-                }
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(800), cli.recv(&mut buf)).await
+        {
+            // strip reply header
+            let off = 4 + 4 + 2; // v4 minimal
+            if n >= off && buf[off..n] == payload {
+                ok += 1;
             }
-            _ => {}
         }
     }
     // should receive majority despite one backend failing

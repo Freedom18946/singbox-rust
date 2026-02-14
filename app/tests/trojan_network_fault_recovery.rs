@@ -47,7 +47,9 @@ async fn start_echo_server() -> Option<SocketAddr> {
             panic!("Failed to bind echo server: {err}");
         }
     };
-    let addr = listener.local_addr().unwrap_or_else(|err| panic!("echo local_addr: {err}"));
+    let addr = listener
+        .local_addr()
+        .unwrap_or_else(|err| panic!("echo local_addr: {err}"));
 
     tokio::spawn(async move {
         loop {
@@ -126,7 +128,9 @@ async fn start_trojan_server_on(
             panic!("Failed to bind trojan server {listen}: {err}");
         }
     };
-    let addr = listener.local_addr().unwrap_or_else(|err| panic!("trojan local_addr: {err}"));
+    let addr = listener
+        .local_addr()
+        .unwrap_or_else(|err| panic!("trojan local_addr: {err}"));
     drop(listener);
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
@@ -184,7 +188,11 @@ async fn start_trojan_with_retry(
     None
 }
 
-async fn dial_echo_once(connector: &TrojanConnector, echo_addr: SocketAddr, payload: &[u8]) -> bool {
+async fn dial_echo_once(
+    connector: &TrojanConnector,
+    echo_addr: SocketAddr,
+    payload: &[u8],
+) -> bool {
     let target = Target {
         host: echo_addr.ip().to_string(),
         port: echo_addr.port(),

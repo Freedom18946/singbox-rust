@@ -299,10 +299,7 @@ pub fn migrate_wireguard_outbound_to_endpoint(raw: &Value) -> Option<Value> {
     }
 
     if !peer.is_empty() {
-        endpoint.insert(
-            "peers".to_string(),
-            Value::Array(vec![Value::Object(peer)]),
-        );
+        endpoint.insert("peers".to_string(), Value::Array(vec![Value::Object(peer)]));
     }
 
     // private_key -> endpoint private_key
@@ -339,20 +336,16 @@ mod tests {
         let (migrated, diags) = migrate_to_v2(&input);
 
         // Verify value changes
-        assert_eq!(
-            migrated.pointer("/inbounds/0/name"),
-            Some(&json!("in0"))
-        );
+        assert_eq!(migrated.pointer("/inbounds/0/name"), Some(&json!("in0")));
         assert!(migrated.pointer("/inbounds/0/tag").is_none());
-        assert_eq!(
-            migrated.pointer("/outbounds/0/name"),
-            Some(&json!("out0"))
-        );
+        assert_eq!(migrated.pointer("/outbounds/0/name"), Some(&json!("out0")));
 
         // Verify diagnostics
         let rename_diags: Vec<_> = diags
             .iter()
-            .filter(|d| d.action == MigrationAction::Renamed && d.detail.contains("tag renamed to name"))
+            .filter(|d| {
+                d.action == MigrationAction::Renamed && d.detail.contains("tag renamed to name")
+            })
             .collect();
         assert!(
             rename_diags.len() >= 2,
@@ -369,16 +362,17 @@ mod tests {
         });
         let (migrated, diags) = migrate_to_v2(&input);
 
-        assert_eq!(
-            migrated.pointer("/outbounds/0/type"),
-            Some(&json!("socks"))
-        );
+        assert_eq!(migrated.pointer("/outbounds/0/type"), Some(&json!("socks")));
 
         let norm_diags: Vec<_> = diags
             .iter()
             .filter(|d| d.action == MigrationAction::Normalized)
             .collect();
-        assert_eq!(norm_diags.len(), 1, "expected exactly 1 Normalized diagnostic");
+        assert_eq!(
+            norm_diags.len(),
+            1,
+            "expected exactly 1 Normalized diagnostic"
+        );
         assert!(norm_diags[0].detail.contains("socks5"));
         assert!(norm_diags[0].detail.contains("socks"));
     }
@@ -390,10 +384,7 @@ mod tests {
         });
         let (migrated, diags) = migrate_to_v2(&input);
 
-        assert_eq!(
-            migrated.pointer("/outbounds/0/port"),
-            Some(&json!(443))
-        );
+        assert_eq!(migrated.pointer("/outbounds/0/port"), Some(&json!(443)));
         assert!(migrated.pointer("/outbounds/0/server_port").is_none());
 
         let sp_diags: Vec<_> = diags
@@ -418,22 +409,24 @@ mod tests {
         assert!(migrated.pointer("/route/rules").is_some());
         assert!(migrated.get("rules").is_none());
         // default_outbound -> route.default
-        assert_eq!(
-            migrated.pointer("/route/default"),
-            Some(&json!("proxy"))
-        );
+        assert_eq!(migrated.pointer("/route/default"), Some(&json!("proxy")));
 
         // Check Moved diagnostics
         let moved: Vec<_> = diags
             .iter()
             .filter(|d| d.action == MigrationAction::Moved)
             .collect();
-        assert!(moved.len() >= 2, "expected at least 2 Moved diagnostics (rules + default_outbound)");
+        assert!(
+            moved.len() >= 2,
+            "expected at least 2 Moved diagnostics (rules + default_outbound)"
+        );
 
         // Check Renamed (outbound -> to)
         let outbound_to: Vec<_> = diags
             .iter()
-            .filter(|d| d.action == MigrationAction::Renamed && d.detail.contains("outbound renamed to to"))
+            .filter(|d| {
+                d.action == MigrationAction::Renamed && d.detail.contains("outbound renamed to to")
+            })
             .collect();
         assert_eq!(outbound_to.len(), 1);
 

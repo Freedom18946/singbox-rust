@@ -44,6 +44,14 @@ fn read_timeout_secs() -> u64 {
         .unwrap_or(30)
 }
 
+fn read_iterations() -> usize {
+    std::env::var("SINGBOX_HOT_RELOAD_ITERATIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(100)
+}
+
 fn detect_default_binary() -> String {
     for env_key in ["CARGO_BIN_EXE_run", "CARGO_BIN_EXE_app"] {
         if let Ok(path) = std::env::var(env_key) {
@@ -233,7 +241,9 @@ fn get_rss_kb(pid: u32) -> i64 {
 fn http_status(addr: &str, path: &str) -> Option<u16> {
     let mut stream = TcpStream::connect(addr).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_secs(2))).ok()?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .ok()?;
     stream
         .write_all(
             format!(
@@ -270,8 +280,10 @@ fn hot_reload_100x_stability() {
     }
 
     let config = std::env::var("SINGBOX_CONFIG").unwrap_or_else(|_| detect_default_config());
-    let admin_addr = std::env::var("SINGBOX_HEALTH_ADDR").unwrap_or_else(|_| reserve_local_admin_addr());
+    let admin_addr =
+        std::env::var("SINGBOX_HEALTH_ADDR").unwrap_or_else(|_| reserve_local_admin_addr());
     let health_timeout = Duration::from_secs(read_timeout_secs());
+    let iterations = read_iterations();
     let preflight_timeout = Duration::from_secs(8);
 
     assert!(
@@ -314,7 +326,7 @@ fn hot_reload_100x_stability() {
     let initial_rss_kb = get_rss_kb(pid);
     let mut health_checks_ok = 0usize;
 
-    for i in 0..100 {
+    for i in 0..iterations {
         let kill_status = Command::new("kill")
             .args(["-HUP", &pid.to_string()])
             .status()
@@ -379,7 +391,7 @@ fn hot_reload_100x_stability() {
         "test": "hot_reload_100x_stability",
         "timestamp": Utc::now().to_rfc3339(),
         "result": "pass",
-        "iterations": 100,
+        "iterations": iterations,
         "binary": binary,
         "config": config,
         "admin_addr": admin_addr,
@@ -391,7 +403,7 @@ fn hot_reload_100x_stability() {
         "rss_delta_kb": final_rss_kb - initial_rss_kb,
         "threshold_check": {
             "health_checks_passed": health_checks_ok,
-            "health_checks_expected": 100,
+            "health_checks_expected": iterations,
             "fd_limit_delta": 50,
             "rss_growth_limit_pct": 10
         }
@@ -399,9 +411,13 @@ fn hot_reload_100x_stability() {
 
     let report_dir = detect_stability_report_dir();
     let _ = std::fs::create_dir_all(&report_dir);
-    let report_path = report_dir.join("hot_reload_100x.json");
+    let report_path = report_dir.join(format!("hot_reload_{}x.json", iterations));
+    let legacy_report_path = report_dir.join("hot_reload_100x.json");
     if let Ok(json_str) = serde_json::to_string_pretty(&report) {
         let _ = std::fs::write(&report_path, json_str);
+        if report_path != legacy_report_path {
+            let _ = std::fs::copy(&report_path, &legacy_report_path);
+        }
         println!("Report written to: {}", report_path.display());
     }
 }

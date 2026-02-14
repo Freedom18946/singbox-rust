@@ -944,7 +944,7 @@ pub fn check_non_localhost_binding_warnings(doc: &Value) -> Vec<Value> {
                 let has_secret = clash_api
                     .get("secret")
                     .and_then(|v| v.as_str())
-                    .map_or(false, |s| !s.is_empty());
+                    .is_some_and(|s| !s.is_empty());
                 if !has_secret {
                     issues.push(emit_issue(
                         "warning",
@@ -969,7 +969,7 @@ pub fn check_non_localhost_binding_warnings(doc: &Value) -> Vec<Value> {
                 let has_auth = svc
                     .get("auth_token")
                     .and_then(|v| v.as_str())
-                    .map_or(false, |s| !s.is_empty());
+                    .is_some_and(|s| !s.is_empty());
                 if !has_auth {
                     let svc_tag = svc
                         .get("tag")
@@ -1058,10 +1058,7 @@ pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
         }) {
             let ech_enabled = match ech_val {
                 Value::Bool(b) => *b,
-                Value::Object(o) => o
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true),
+                Value::Object(o) => o.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                 _ => false,
             };
             if ech_enabled {
@@ -3055,13 +3052,15 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     // Parse optional certificate block (top-level)
     if let Some(cert) = doc.get("certificate").and_then(|v| v.as_object()) {
-        let mut c = crate::ir::CertificateIR::default();
         // Parse store mode ("system", "mozilla", or "none")
-        c.store = cert
-            .get("store")
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+        let mut c = crate::ir::CertificateIR {
+            store: cert
+                .get("store")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            ..Default::default()
+        };
         if let Some(arr) = cert.get("ca_paths").and_then(|v| v.as_array()) {
             for p in arr {
                 if let Some(s) = p.as_str() {
@@ -4796,10 +4795,7 @@ mod tests {
             insecure
         );
         assert_eq!(insecure[0]["kind"].as_str(), Some("warning"));
-        assert_eq!(
-            insecure[0]["ptr"].as_str(),
-            Some("/services/0/listen")
-        );
+        assert_eq!(insecure[0]["ptr"].as_str(), Some("/services/0/listen"));
     }
 
     #[test]
@@ -4872,7 +4868,7 @@ mod tests {
                 i["code"].as_str() == Some("UnknownField")
                     && i["ptr"]
                         .as_str()
-                        .map_or(false, |p| p.starts_with("/route/tls_fragment"))
+                        .is_some_and(|p| p.starts_with("/route/tls_fragment"))
             })
             .collect();
         assert!(
@@ -4904,7 +4900,7 @@ mod tests {
                 i["kind"].as_str() == Some("info")
                     && i["ptr"]
                         .as_str()
-                        .map_or(false, |p| p.contains("utls_fingerprint"))
+                        .is_some_and(|p| p.contains("utls_fingerprint"))
             })
             .collect();
         assert!(
@@ -4940,7 +4936,7 @@ mod tests {
             .filter(|i| {
                 i["ptr"]
                     .as_str()
-                    .map_or(false, |p| p.contains("utls_fingerprint"))
+                    .is_some_and(|p| p.contains("utls_fingerprint"))
             })
             .collect();
         assert!(
@@ -4970,7 +4966,7 @@ mod tests {
                 i["kind"].as_str() == Some("info")
                     && i["ptr"]
                         .as_str()
-                        .map_or(false, |p| p.contains("encrypted_client_hello"))
+                        .is_some_and(|p| p.contains("encrypted_client_hello"))
             })
             .collect();
         assert!(
@@ -5008,7 +5004,7 @@ mod tests {
                 i["kind"].as_str() == Some("info")
                     && i["ptr"]
                         .as_str()
-                        .map_or(false, |p| p.contains("reality_enabled"))
+                        .is_some_and(|p| p.contains("reality_enabled"))
             })
             .collect();
         assert!(
@@ -5045,7 +5041,7 @@ mod tests {
                 i["kind"].as_str() == Some("info")
                     && i["ptr"]
                         .as_str()
-                        .map_or(false, |p| p.contains("utls_fingerprint"))
+                        .is_some_and(|p| p.contains("utls_fingerprint"))
             })
             .collect();
         assert!(

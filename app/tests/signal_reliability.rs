@@ -82,6 +82,14 @@ fn read_timeout_secs() -> u64 {
         .unwrap_or(30)
 }
 
+fn read_iterations() -> usize {
+    std::env::var("SINGBOX_SIGNAL_ITERATIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(10)
+}
+
 fn http_get_json(addr: &str, path: &str) -> Option<Value> {
     let mut stream = TcpStream::connect(addr).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
@@ -294,7 +302,7 @@ fn signal_reliability_10x() {
     let health_timeout = Duration::from_secs(read_timeout_secs());
     let preflight_timeout = Duration::from_secs(8);
 
-    let iterations = 10usize;
+    let iterations = read_iterations();
     let mut rounds = Vec::with_capacity(iterations);
     let mut round_task_counts = Vec::with_capacity(iterations);
     let mut all_exit_zero = true;
@@ -446,9 +454,13 @@ fn signal_reliability_10x() {
 
     let report_dir = detect_stability_report_dir();
     let _ = std::fs::create_dir_all(&report_dir);
-    let report_path = report_dir.join("signal_reliability_10x.json");
+    let report_path = report_dir.join(format!("signal_reliability_{}x.json", iterations));
+    let legacy_report_path = report_dir.join("signal_reliability_10x.json");
     if let Ok(json_str) = serde_json::to_string_pretty(&report) {
         let _ = std::fs::write(&report_path, json_str);
+        if report_path != legacy_report_path {
+            let _ = std::fs::copy(&report_path, &legacy_report_path);
+        }
         println!("Report written to: {}", report_path.display());
     }
 

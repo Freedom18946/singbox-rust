@@ -9,6 +9,28 @@
 
 ---
 
+## 🆕 最新进展：L17 Capstone 快跑闭环（2026-02-14）
+
+**状态**：✅ `PASS_ENV_LIMITED`（功能门禁全通过，环境项留痕可复跑）
+
+**统一执行**：
+- `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
+- 状态文件：`reports/stability/l17_capstone_status.json`
+
+**门禁结果**：
+- ✅ `boundaries`
+- ✅ `parity_check`
+- ✅ `workspace_test`
+- ✅ `fmt_check`
+- ✅ `clippy`
+- ✅ `hot_reload_long_test`（`SINGBOX_HOT_RELOAD_ITERATIONS=20`）
+- ✅ `signal_long_test`（`SINGBOX_SIGNAL_ITERATIONS=5`）
+- ⚠️ `docker` = `ENV_LIMITED`（`docker_daemon_unavailable`）
+- ⚠️ `gui_smoke` = `ENV_LIMITED`（`gui_smoke_manual_step`）
+- ⚠️ `canary` = `ENV_LIMITED`（`canary_api_unreachable`）
+
+---
+
 ## 🆕 最新进展：L16.2.x long_tests 稳定性修复与复验（2026-02-14）
 
 **状态**：✅ 已完成（定向修复 + 定向复验）
@@ -37,7 +59,7 @@
 ## 🚧 最新进展：L17 全量收口实施（L17.1.1 ~ L17.3.3）
 
 **日期**：2026-02-13  
-**状态**：代码与文档交付已完成；最终 `Release Ready` 受既有门禁失败/环境阻塞影响，待清障
+**状态**：代码与文档交付已完成；2026-02-14 快跑门禁闭环，按 `PASS_ENV_LIMITED` 结项
 
 **已落地工作包**：
 - ✅ L17.1.1 CI/CD Pipeline：`ci.yml` 已固定 fmt/clippy/test/parity/boundaries 门禁。
@@ -51,15 +73,15 @@
 - ✅ L17.3.2 Canary 框架：新增 `scripts/canary_7day.sh` + `reports/stability/canary_summary.md`。
 - ✅ L17.3.3 Capstone：`CLAUDE.md` / `active_context.md` / `workpackage_latest.md` / `log.md` 已同步。
 
-**本轮复验快照**：
+**本轮复验快照（更新）**：
 - ✅ `bash agents-only/06-scripts/check-boundaries.sh`
 - ✅ `cargo check -p app --features parity`
-- ⚠️ `cargo fmt --all -- --check`（既有格式漂移）
-- ⚠️ `cargo clippy --workspace --all-features --all-targets -- -D warnings`（既有 lint）
-- ❌ `cargo test --workspace`（`sb-core --test udp_balancer`: `balancer_socks5_ok`）
-- ⚠️ Docker 验证（daemon 未启动，环境阻塞）
-- ✅ `cargo deny check licenses --hide-inclusion-graph`（pass with warnings）
-- ⚠️ `cargo audit`（1 medium + unmaintained，按 L17 策略不阻断）
+- ✅ `cargo fmt --all -- --check`
+- ✅ `cargo clippy --workspace --all-features --all-targets -- -D warnings`
+- ✅ `cargo test --workspace`
+- ✅ `SINGBOX_HOT_RELOAD_ITERATIONS=20 cargo test -p app --test hot_reload_stability --features long_tests`
+- ✅ `SINGBOX_SIGNAL_ITERATIONS=5 cargo test -p app --test signal_reliability --features long_tests`
+- ⚠️ Docker/GUI/Canary：`ENV_LIMITED`（详见 `reports/stability/l17_capstone_status.json`）
 
 ---
 

@@ -318,8 +318,8 @@ async fn handle_connect(
     let traffic = bridge.v2ray_stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(bridge.inbound_tag.as_deref(), None, ctx.user.as_deref())
     });
-    let dest_host = match &target.host {
-        Host::Name(name) => name.clone(),
+    let dest_host: String = match &target.host {
+        Host::Name(name) => name.to_string(),
         Host::Ip(addr) => addr.to_string(),
     };
     let outbound_tag = match &decision {

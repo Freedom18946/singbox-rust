@@ -25,7 +25,7 @@ fn should_skip_doh3_error(err: &anyhow::Error) -> bool {
 fn build_doh3_upstream(
     url: &str,
     registry: &sb_core::dns::transport::TransportRegistry,
-) -> Result<Option<Arc<dyn sb_core::dns::upstream::DnsUpstream>>> {
+) -> Result<Option<Arc<dyn sb_core::dns::DnsUpstream>>> {
     let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         sb_core::dns::config_builder::build_upstream(url, registry)
     })) {

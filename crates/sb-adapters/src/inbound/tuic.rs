@@ -840,7 +840,7 @@ mod tests {
             stats: None,
         };
 
-        let (mut stream, _) = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())
+        let (mut stream, _, _, _) = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())
             .await
             .expect("route to upstream");
         stream.write_all(b"ping").await.expect("write to upstream");

@@ -71,9 +71,7 @@ pub fn base_root_store() -> RootCertStore {
                             let _ = roots.add(cert);
                         }
                         if roots.is_empty() {
-                            tracing::warn!(
-                                "No native certs found, falling back to mozilla roots"
-                            );
+                            tracing::warn!("No native certs found, falling back to mozilla roots");
                             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
                         }
                     }
@@ -95,7 +93,9 @@ pub fn base_root_store() -> RootCertStore {
             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
         CertificateStoreMode::Chrome => {
-            tracing::debug!("Chrome certificate store mode: using webpki-roots (Chrome/Mozilla roots highly overlap)");
+            tracing::debug!(
+                "Chrome certificate store mode: using webpki-roots (Chrome/Mozilla roots highly overlap)"
+            );
             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
         CertificateStoreMode::None => {
@@ -145,8 +145,7 @@ fn load_pem_directory(roots: &mut RootCertStore, dir_path: &str) {
             load_pem_directory(roots, &path.to_string_lossy());
         } else if path
             .extension()
-            .map(|e| e == "pem" || e == "crt" || e == "cer")
-            .unwrap_or(false)
+            .is_some_and(|e| e == "pem" || e == "crt" || e == "cer")
         {
             load_pem_file(roots, &path.to_string_lossy());
         }
@@ -238,55 +237,47 @@ impl CertificateWatcher {
     /// * `cert_dirs` - Directories watched recursively for certificate changes.
     /// * `shutdown`  - Cancellation token; when cancelled the callback becomes a no-op.
     pub fn start(
-        ca_paths: Vec<String>,
-        ca_pems: Vec<String>,
-        cert_dirs: Vec<String>,
+        ca_paths: &[String],
+        ca_pems: &[String],
+        cert_dirs: &[String],
         shutdown: tokio_util::sync::CancellationToken,
     ) -> Result<Self, notify::Error> {
         use notify::{Event, RecursiveMode, Watcher};
 
-        let ca_paths_reload = ca_paths.clone();
-        let ca_pems_reload = ca_pems.clone();
+        let ca_paths_reload = ca_paths.to_owned();
+        let ca_pems_reload = ca_pems.to_owned();
         let shutdown_cb = shutdown.clone();
 
-        let mut watcher =
-            notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-                if shutdown_cb.is_cancelled() {
-                    return;
-                }
-                match res {
-                    Ok(event) => {
-                        if event.kind.is_modify()
-                            || event.kind.is_create()
-                            || event.kind.is_remove()
-                        {
-                            tracing::info!(
-                                paths = ?event.paths,
-                                "Certificate file change detected, reloading TLS config"
-                            );
-                            apply_extra_cas(&ca_paths_reload, &ca_pems_reload);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Certificate watch error: {}", e);
+        let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+            if shutdown_cb.is_cancelled() {
+                return;
+            }
+            match res {
+                Ok(event) => {
+                    if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
+                        tracing::info!(
+                            paths = ?event.paths,
+                            "Certificate file change detected, reloading TLS config"
+                        );
+                        apply_extra_cas(&ca_paths_reload, &ca_pems_reload);
                     }
                 }
-            })?;
+                Err(e) => {
+                    tracing::warn!("Certificate watch error: {}", e);
+                }
+            }
+        })?;
 
         // Watch individual CA file paths (non-recursive).
-        for path in &ca_paths {
-            if let Err(e) =
-                watcher.watch(std::path::Path::new(path), RecursiveMode::NonRecursive)
-            {
+        for path in ca_paths {
+            if let Err(e) = watcher.watch(std::path::Path::new(path), RecursiveMode::NonRecursive) {
                 tracing::warn!("Cannot watch certificate path {}: {}", path, e);
             }
         }
 
         // Watch certificate directories recursively.
-        for dir in &cert_dirs {
-            if let Err(e) =
-                watcher.watch(std::path::Path::new(dir), RecursiveMode::Recursive)
-            {
+        for dir in cert_dirs {
+            if let Err(e) = watcher.watch(std::path::Path::new(dir), RecursiveMode::Recursive) {
                 tracing::warn!("Cannot watch certificate directory {}: {}", dir, e);
             }
         }
@@ -370,7 +361,10 @@ mod tests {
         *EXTRA_CA_PEMS.write() = Vec::new();
         *CERT_DIRS.write() = Vec::new();
         let roots = base_root_store();
-        assert!(roots.is_empty(), "None mode should produce empty root store");
+        assert!(
+            roots.is_empty(),
+            "None mode should produce empty root store"
+        );
         // Reset
         set_store_mode(CertificateStoreMode::System);
     }
@@ -434,23 +428,19 @@ mod cert_watch_tests {
     use super::*;
 
     #[test]
-    fn test_watcher_starts_and_stops() {
+    fn test_watcher_starts_and_stops() -> Result<(), Box<dyn std::error::Error>> {
         let shutdown = tokio_util::sync::CancellationToken::new();
-        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
+        let dir = tempfile::tempdir()?;
         let cert_path = dir.path().join("test.pem");
-        std::fs::write(&cert_path, "").expect("write should succeed");
+        std::fs::write(&cert_path, "")?;
+        let ca_paths = vec![cert_path.to_string_lossy().to_string()];
+        let ca_pems: Vec<String> = Vec::new();
+        let cert_dirs: Vec<String> = Vec::new();
 
-        let watcher = CertificateWatcher::start(
-            vec![cert_path.to_string_lossy().to_string()],
-            vec![],
-            vec![],
-            shutdown.clone(),
-        );
-        assert!(watcher.is_ok(), "Watcher should start successfully");
-
-        let w = watcher.expect("watcher already asserted ok");
+        let w = CertificateWatcher::start(&ca_paths, &ca_pems, &cert_dirs, shutdown.clone())?;
         w.stop();
         assert!(shutdown.is_cancelled());
+        Ok(())
     }
 
     #[test]
@@ -458,56 +448,46 @@ mod cert_watch_tests {
         let shutdown = tokio_util::sync::CancellationToken::new();
         // Starting with nonexistent paths should not panic.
         // The watcher itself succeeds; individual watch registrations emit warnings.
-        let watcher = CertificateWatcher::start(
-            vec!["/nonexistent/path.pem".to_string()],
-            vec![],
-            vec![],
-            shutdown,
-        );
+        let watcher =
+            CertificateWatcher::start(&["/nonexistent/path.pem".to_string()], &[], &[], shutdown);
         // May succeed or fail depending on OS, but must not panic.
         let _ = watcher;
     }
 
     #[test]
-    fn test_watcher_drop_cancels() {
+    fn test_watcher_drop_cancels() -> Result<(), Box<dyn std::error::Error>> {
         let shutdown = tokio_util::sync::CancellationToken::new();
-        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
+        let dir = tempfile::tempdir()?;
         let cert_path = dir.path().join("test.pem");
-        std::fs::write(&cert_path, "").expect("write should succeed");
+        std::fs::write(&cert_path, "")?;
+        let ca_paths = vec![cert_path.to_string_lossy().to_string()];
+        let ca_pems: Vec<String> = Vec::new();
+        let cert_dirs: Vec<String> = Vec::new();
 
         let shutdown_clone = shutdown.clone();
         {
-            let _watcher = CertificateWatcher::start(
-                vec![cert_path.to_string_lossy().to_string()],
-                vec![],
-                vec![],
-                shutdown,
-            )
-            .expect("watcher should start");
+            let _watcher = CertificateWatcher::start(&ca_paths, &ca_pems, &cert_dirs, shutdown)?;
             // watcher dropped here
         }
         assert!(
             shutdown_clone.is_cancelled(),
             "Drop should cancel the shutdown token"
         );
+        Ok(())
     }
 
     #[test]
-    fn test_watcher_with_directory() {
+    fn test_watcher_with_directory() -> Result<(), Box<dyn std::error::Error>> {
         let shutdown = tokio_util::sync::CancellationToken::new();
-        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
+        let dir = tempfile::tempdir()?;
+        let ca_paths: Vec<String> = Vec::new();
+        let ca_pems: Vec<String> = Vec::new();
+        let cert_dirs = vec![dir.path().to_string_lossy().to_string()];
 
-        let watcher = CertificateWatcher::start(
-            vec![],
-            vec![],
-            vec![dir.path().to_string_lossy().to_string()],
-            shutdown.clone(),
-        );
-        assert!(
-            watcher.is_ok(),
-            "Watcher should start with directory watch"
-        );
+        let _watcher =
+            CertificateWatcher::start(&ca_paths, &ca_pems, &cert_dirs, shutdown.clone())?;
 
         shutdown.cancel();
+        Ok(())
     }
 }

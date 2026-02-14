@@ -289,7 +289,7 @@ async fn test_hysteria2_compatibility_features() {
         server: "example.com".to_string(),
         port: 443,
         password: "compatible-password".to_string(),
-        congestion_control: Some("bbr".to_string()),
+        congestion_control: Some("brutal".to_string()),
         up_mbps: Some(100),
         down_mbps: Some(200),
         obfs: Some("compatible-obfs".to_string()),
@@ -306,20 +306,34 @@ async fn test_hysteria2_compatibility_features() {
         zero_rtt_handshake: false,
     };
 
-    let outbound = Hysteria2Outbound::new(config).unwrap();
+    let outbound = Hysteria2Outbound::new(config.clone()).unwrap();
 
     // Verify all compatibility features are properly configured
     assert_eq!(outbound.protocol_name(), "hysteria2");
-    assert!(matches!(
-        outbound.congestion_control,
-        CongestionControl::Brutal(_)
-    ));
+    match outbound.congestion_control {
+        CongestionControl::Brutal(ref brutal) => {
+            assert_eq!(brutal.up_mbps, 50);
+            assert_eq!(brutal.down_mbps, 100);
+        }
+        _ => panic!("expected brutal congestion control when congestion_control=brutal"),
+    }
     assert!(outbound.bandwidth_limiter.is_some());
 
     // Test authentication hash is deterministic (important for compatibility)
     let hash1 = outbound.generate_auth_hash();
     let hash2 = outbound.generate_auth_hash();
     assert_eq!(hash1, hash2);
+
+    // Regression guard: with `bbr`, brutal limits should not silently switch algorithm.
+    let bbr_outbound = Hysteria2Outbound::new(Hysteria2Config {
+        congestion_control: Some("bbr".to_string()),
+        ..config
+    })
+    .unwrap();
+    assert!(matches!(
+        bbr_outbound.congestion_control,
+        CongestionControl::Bbr
+    ));
 }
 
 #[cfg(feature = "out_hysteria2")]

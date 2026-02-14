@@ -6,8 +6,8 @@
 //! - generate reality-keypair: X25519 keypair for REALITY protocol
 //! - generate ech-keypair: X25519 keypair for ECH with Go-compatible PEM output
 //! - generate tls-keypair: Self-signed TLS certificate + private key (PEM)
-//! - generate vapid-keypair: VAPID (WebPush) P-256 keypair
-//! - generate wireguard-keypair: WireGuard X25519 keypair
+//! - generate vapid-keypair: VAPID (`WebPush`) P-256 keypair
+//! - generate wireguard-keypair: `WireGuard` X25519 keypair
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -37,7 +37,7 @@ pub enum GenerateCommands {
     RealityKeypair,
     /// Generate ECH (Encrypted Client Hello) keypair with PEM output
     EchKeypair {
-        /// Plain server name for the ECHConfig public_name field
+        /// Plain server name for the `ECHConfig` `public_name` field
         server_name: String,
     },
     /// Generate a self-signed TLS keypair (PEM)
@@ -161,7 +161,7 @@ mod ech_keygen {
         (config_pem, key_pem)
     }
 
-    /// Build an ECHConfig wire-format blob.
+    /// Build an `ECHConfig` wire-format blob.
     ///
     /// Matches Go `marshalECHConfig` from `common/tls/ech_shared.go`.
     pub fn marshal_ech_config(
@@ -425,7 +425,11 @@ mod tests {
 
         let rest = &raw[2 + priv_len..];
         let cfg_len = u16::from_be_bytes([rest[0], rest[1]]) as usize;
-        assert_eq!(rest.len(), 2 + cfg_len, "remaining bytes must match config length prefix");
+        assert_eq!(
+            rest.len(),
+            2 + cfg_len,
+            "remaining bytes must match config length prefix"
+        );
     }
 
     #[test]

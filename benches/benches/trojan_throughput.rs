@@ -103,7 +103,11 @@ async fn start_trojan_server() -> TrojanServerHandle {
     }
 }
 
-async fn wait_for_trojan_ready(server_addr: SocketAddr, target: SocketAddr, timeout: Duration) -> bool {
+async fn wait_for_trojan_ready(
+    server_addr: SocketAddr,
+    target: SocketAddr,
+    timeout: Duration,
+) -> bool {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let client_config = TrojanConfig {
@@ -159,7 +163,10 @@ fn bench_trojan_throughput(c: &mut Criterion) {
     let trojan_addr = trojan_server.addr;
     rt.block_on(async {
         if !wait_for_trojan_ready(trojan_addr, echo_addr, Duration::from_secs(3)).await {
-            eprintln!("warn: trojan server readiness probe timed out at {}", trojan_addr);
+            eprintln!(
+                "warn: trojan server readiness probe timed out at {}",
+                trojan_addr
+            );
         }
     });
 

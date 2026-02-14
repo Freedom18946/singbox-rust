@@ -1,25 +1,29 @@
 # Canary Summary
 
-- Generated: 2026-02-12T17:12:04Z
-- API URL: http://127.0.0.1:1
-- PID File: (not provided)
-- Duration Hours (requested): 0
-- Sample Interval Seconds: 1
+- Generated: 2026-02-14T11:30:05Z
+- Profile: `fast`
+- API URL: `http://127.0.0.1:19090`
+- Status: `ENV_LIMITED`
+- Reason: `canary_api_unreachable` (health endpoint unavailable during this run)
+- Related status: `reports/stability/l17_capstone_status.json`
 
-## Metrics
+## Fast-Run Target
 
-- Samples: 1
-- Health 200 Count: 0
-- First RSS (KB): null
-- Last RSS (KB): null
-- Max RSS (KB): null
+- Duration Hours (requested): `1`
+- Sample Interval Seconds (requested): `300`
 
 ## Artifacts
 
-- JSONL: `reports/stability/canary_7day.jsonl`
+- JSONL target path: `reports/stability/canary_7day.jsonl`
+- Summary path: `reports/stability/canary_summary.md`
 
-## Notes
+## Re-run Command
 
-- This report is framework output. For L17 short-run evidence, run with:
-  - `--duration-hours 24 --sample-interval-sec 3600`
-- A result is considered healthy when health remains 200 and RSS/FD show no monotonic leak trend.
+```bash
+scripts/canary_7day.sh \
+  --duration-hours 1 \
+  --sample-interval-sec 300 \
+  --api-url http://127.0.0.1:19090 \
+  --out-jsonl reports/stability/canary_7day.jsonl \
+  --out-summary reports/stability/canary_summary.md
+```

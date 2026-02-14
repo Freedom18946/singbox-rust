@@ -303,7 +303,8 @@ async fn test_shadowsocks_server_multi_flap_recovery() {
             "shadowsocks flow should fail while server is down (flap #{flap})"
         );
 
-        let Some(restarted) = start_ss_with_retry(listen_addr, "aes-256-gcm", "test-password").await
+        let Some(restarted) =
+            start_ss_with_retry(listen_addr, "aes-256-gcm", "test-password").await
         else {
             panic!("shadowsocks multi-flap restart failed to bind on {listen_addr}");
         };

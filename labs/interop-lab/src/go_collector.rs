@@ -61,10 +61,7 @@ pub async fn collect_go_snapshot(
 
     for &(method, path, name) in HTTP_ENDPOINTS {
         let url = format!("{}{}", api_base.trim_end_matches('/'), path);
-        let mut req = client.request(
-            method.parse().unwrap_or(reqwest::Method::GET),
-            &url,
-        );
+        let mut req = client.request(method.parse().unwrap_or(reqwest::Method::GET), &url);
         if let Some(secret) = token {
             req = req.bearer_auth(secret);
         }
@@ -154,29 +151,21 @@ pub async fn collect_go_snapshot(
 }
 
 /// Persist a Go snapshot to the artifacts directory.
-pub fn save_go_snapshot(
-    snapshot: &NormalizedSnapshot,
-    artifacts_root: &Path,
-) -> Result<PathBuf> {
+pub fn save_go_snapshot(snapshot: &NormalizedSnapshot, artifacts_root: &Path) -> Result<PathBuf> {
     let dir = artifacts_root
         .join(&snapshot.case_id)
         .join(&snapshot.run_id);
     crate::util::ensure_dir(&dir)?;
     let file = dir.join("go_snapshot.json");
-    let json = serde_json::to_string_pretty(snapshot)
-        .with_context(|| "serialising Go snapshot")?;
+    let json = serde_json::to_string_pretty(snapshot).with_context(|| "serialising Go snapshot")?;
     std::fs::write(&file, json).with_context(|| format!("writing {}", file.display()))?;
     Ok(file)
 }
 
 /// Persist a Go snapshot directly to a specific directory (no subdirectory creation).
-pub fn save_go_snapshot_to_dir(
-    snapshot: &NormalizedSnapshot,
-    dir: &Path,
-) -> Result<PathBuf> {
+pub fn save_go_snapshot_to_dir(snapshot: &NormalizedSnapshot, dir: &Path) -> Result<PathBuf> {
     let file = dir.join("go_snapshot.json");
-    let json = serde_json::to_string_pretty(snapshot)
-        .with_context(|| "serialising Go snapshot")?;
+    let json = serde_json::to_string_pretty(snapshot).with_context(|| "serialising Go snapshot")?;
     std::fs::write(&file, json).with_context(|| format!("writing {}", file.display()))?;
     Ok(file)
 }
@@ -207,9 +196,7 @@ fn normalize_ws_message(msg: Message) -> Option<Value> {
             .or_else(|| Some(json!({ "binary_b64": STANDARD.encode(data) }))),
         Message::Ping(payload) => Some(json!({ "ping": STANDARD.encode(payload) })),
         Message::Pong(payload) => Some(json!({ "pong": STANDARD.encode(payload) })),
-        Message::Close(frame) => {
-            Some(json!({ "close": frame.map(|f| f.code.to_string()) }))
-        }
+        Message::Close(frame) => Some(json!({ "close": frame.map(|f| f.code.to_string()) })),
         Message::Frame(_) => None,
     }
 }

@@ -11,7 +11,7 @@
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
 **Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: L17 复验快照（2026-02-13）：`check-boundaries.sh` ✅；`cargo check -p app --features parity` ✅；`cargo test --workspace` ❌（`udp_balancer::balancer_socks5_ok`）；long_tests 定向复验（2026-02-14）：`hot_reload_stability` ✅、`signal_reliability` ✅
+**Tests**: L17 快跑复验（2026-02-14）：`scripts/l17_capstone.sh --profile fast` => `PASS_ENV_LIMITED`；门禁 `boundaries/parity/workspace_test/fmt/clippy/hot_reload(20x)/signal(5x)` 全部 ✅；环境项 `docker/gui/canary` 标记 `ENV_LIMITED`
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
 ### L17 发布就绪收口（2026-02-13）
@@ -25,15 +25,16 @@
 - **L17.2.3 安全清单**: `deny.toml` 适配 cargo-deny 0.18；`reports/security_audit.md` 已转为实跑结论（HIGH/CRITICAL 阻断策略）。
 - **L17.3.1 GUI 冒烟**: `scripts/gui_smoke_test.sh` 与 `reports/gui_integration_test.md` 已落地（半自动模板 + 证据位）。
 - **L17.3.2 Canary 框架**: `scripts/canary_7day.sh` 与 `reports/stability/canary_summary.md` 已落地（JSONL + summary）。
-- **L17.3.3 Capstone 状态**: 状态总线已同步；`Release Ready` 判定仍受既有门禁失败/环境阻塞影响（见下）。
+- **L17.3.3 Capstone 状态**: `reports/stability/l17_capstone_status.json` 最新为 `PASS_ENV_LIMITED`（fast 档）；功能门禁闭环完成，仅保留环境型限制。
 
-### L17 当前阻塞（非本轮新增）
+### L17 当前状态（2026-02-14 快跑复验）
 
-- `cargo fmt --all -- --check`：仓库既有格式漂移。
-- `cargo clippy --workspace --all-features --all-targets -- -D warnings`：`sb-tls`/`sb-config` 既有 lint。
-- `cargo test --workspace`：`sb-core` 测试 `balancer_socks5_ok` 失败。
-- Docker daemon 未启动：无法本机完成 Docker build/run/health 终验。
-- Canary 24h 短跑需单独持续执行（脚本参数已固定）。
+- `cargo fmt --all -- --check`：✅ PASS
+- `cargo clippy --workspace --all-features --all-targets -- -D warnings`：✅ PASS
+- `cargo test --workspace`：✅ PASS
+- Docker：`ENV_LIMITED`（`docker_daemon_unavailable`）
+- GUI smoke：`ENV_LIMITED`（`gui_smoke_manual_step`）
+- Canary：`ENV_LIMITED`（`canary_api_unreachable`）
 
 ### L16.2.x long_tests 稳定性补丁（2026-02-14）
 

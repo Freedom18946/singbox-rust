@@ -379,8 +379,10 @@ mod tests {
     #[tokio::test]
     async fn test_quic_dialer_creation() {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut config = QuicConfig::default();
-        config.server_name = "example.com".to_string();
+        let config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ..Default::default()
+        };
         let result = QuicDialer::new(config);
         result.expect("Failed to create QUIC dialer");
     }
@@ -389,15 +391,17 @@ mod tests {
     #[tokio::test]
     async fn test_quic_dialer_with_ech_disabled() {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut config = QuicConfig::default();
-        config.server_name = "example.com".to_string();
-        config.ech_config = Some(sb_tls::EchClientConfig {
-            enabled: false,
-            config: None,
-            config_list: None,
-            pq_signature_schemes_enabled: false,
-            dynamic_record_sizing_disabled: None,
-        });
+        let config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(sb_tls::EchClientConfig {
+                enabled: false,
+                config: None,
+                config_list: None,
+                pq_signature_schemes_enabled: false,
+                dynamic_record_sizing_disabled: None,
+            }),
+            ..Default::default()
+        };
 
         let dialer =
             QuicDialer::new(config).expect("Failed to create QUIC dialer with ECH disabled");
@@ -407,15 +411,17 @@ mod tests {
     #[cfg(feature = "transport_ech")]
     #[tokio::test]
     async fn test_quic_dialer_with_ech_enabled() {
-        let mut config = QuicConfig::default();
-        config.server_name = "example.com".to_string();
-        config.ech_config = Some(sb_tls::EchClientConfig {
-            enabled: true,
-            config: Some("test_config".to_string()),
-            config_list: Some(create_test_ech_config_list()),
-            pq_signature_schemes_enabled: false,
-            dynamic_record_sizing_disabled: None,
-        });
+        let config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(sb_tls::EchClientConfig {
+                enabled: true,
+                config: Some("test_config".to_string()),
+                config_list: Some(create_test_ech_config_list()),
+                pq_signature_schemes_enabled: false,
+                dynamic_record_sizing_disabled: None,
+            }),
+            ..Default::default()
+        };
 
         let dialer =
             QuicDialer::new(config).expect("Failed to create QUIC dialer with ECH enabled");
@@ -426,16 +432,18 @@ mod tests {
     #[cfg(feature = "transport_ech")]
     #[tokio::test]
     async fn test_quic_dialer_with_invalid_ech_config() {
-        let mut config = QuicConfig::default();
-        config.server_name = "example.com".to_string();
         // Invalid: enabled but no config provided
-        config.ech_config = Some(sb_tls::EchClientConfig {
-            enabled: true,
-            config: None,
-            config_list: None,
-            pq_signature_schemes_enabled: false,
-            dynamic_record_sizing_disabled: None,
-        });
+        let config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(sb_tls::EchClientConfig {
+                enabled: true,
+                config: None,
+                config_list: None,
+                pq_signature_schemes_enabled: false,
+                dynamic_record_sizing_disabled: None,
+            }),
+            ..Default::default()
+        };
 
         let result = QuicDialer::new(config);
         assert!(result.is_err());
@@ -452,9 +460,11 @@ mod tests {
             dynamic_record_sizing_disabled: None,
         };
 
-        let mut config = QuicConfig::default();
-        config.server_name = "example.com".to_string();
-        config.ech_config = Some(ech_config);
+        let config = QuicConfig {
+            server_name: "example.com".to_string(),
+            ech_config: Some(ech_config),
+            ..Default::default()
+        };
 
         assert!(config.ech_config.is_some());
         assert!(config.ech_config.as_ref().unwrap().enabled);

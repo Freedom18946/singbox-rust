@@ -1,35 +1,32 @@
-# GUI Integration Test Report (Template)
+# GUI Integration Test Report
 
 - Scope: L17.3.1 GUI.for SingBox smoke validation
-- Baseline: Go+GUI+TUN remains primary network baseline; Rust kernel runs in parallel mode
-- Date: _TBD_
-- Tester: _TBD_
+- Date: 2026-02-14
+- Result: `ENV_LIMITED`
+- Reason: `gui_smoke_manual_step` (this round did not enable GUI auto smoke)
+- Related status: `reports/stability/l17_capstone_status.json`
 
 ## Environment
 
 - GUI path: `/Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0`
-- Rust kernel binary: _TBD_
-- Config path: _TBD_
-- API URL: _TBD_
+- Rust kernel binary: `/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run`
+- Config path: `/Users/bob/Desktop/Projects/ING/sing/singbox-rust/configs/example.json`
+- API URL: `http://127.0.0.1:19090`
 
-## Acceptance Checklist
+## Evidence
 
-- [ ] GUI startup succeeds without crash
-- [ ] Configuration loads successfully
-- [ ] Proxy switch updates GUI state and backend selection
-- [ ] Subscription import succeeds and nodes refresh
-- [ ] Connections panel shows active connections
-- [ ] Logs panel streams entries continuously
+- Capstone status: `PASS_ENV_LIMITED`
+- Gate snapshot: `gui_smoke=ENV_LIMITED`, `docker=ENV_LIMITED`, `canary=ENV_LIMITED`
 
-## Automated Probe Evidence
-
-- Probe artifact: `reports/gui-smoke-artifacts/http_probes.json`
-- Kernel log: `reports/gui-smoke-artifacts/kernel.stdout.log`
-- Manual notes: `reports/gui-smoke-artifacts/manual_notes.md`
-
-## Run Command
+## Re-run Commands
 
 ```bash
+# Optional: include GUI smoke in capstone run
+L17_GUI_SMOKE_AUTO=1 scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090
+```
+
+```bash
+# Direct GUI smoke script
 scripts/gui_smoke_test.sh \
   --gui-root /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0 \
   --kernel-bin /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run \
@@ -38,7 +35,3 @@ scripts/gui_smoke_test.sh \
   --report /Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/gui_integration_test.md \
   --artifacts-dir /Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/gui-smoke-artifacts
 ```
-
-## Findings
-
-- _TBD_

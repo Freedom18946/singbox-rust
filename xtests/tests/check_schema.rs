@@ -24,7 +24,7 @@ fn check_json_shape() {
         .args([
             "check",
             "-c",
-            "tests/assets/check/bad_conflict.yaml",
+            "tests/assets/check/bad_unreachable.yaml",
             "--format",
             "json",
             "--with-rule-id",

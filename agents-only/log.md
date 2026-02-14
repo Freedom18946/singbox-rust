@@ -943,4 +943,27 @@ L2.8.4-6 Handlers + WebSocket:
 - `./agents-only/06-scripts/check-boundaries.sh` exit 0
 - `cargo clippy --all-targets --all-features -- -D warnings` PASS
 
+### [2026-02-14] Agent: Codex (GPT-5)
+
+**任务**: 按 L17 收口计划完成快跑闭环、修复新增门禁回归、更新证据与状态总线
+
+**关键修复**:
+- `crates/sb-core/src/services/ssmapi/server.rs`：鉴权测试改为本地 listener + HTTP 请求，不再依赖 `tower::oneshot`
+- `crates/sb-core/Cargo.toml`：移除 `tower` dev-dependency，恢复边界门禁
+- `xtests/tests/check_analyze_groups.rs`：按当前 checker 语义更新冲突夹具断言
+- `xtests/tests/check_schema.rs`：夹具切换为 `bad_unreachable.yaml`，恢复稳定断言
+
+**统一复验**:
+- `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
+- 输出：`reports/stability/l17_capstone_status.json`
+- 结果：`PASS_ENV_LIMITED`
+- 门禁：`boundaries/parity/workspace_test/fmt/clippy/hot_reload(20x)/signal(5x)` 全部 `PASS`
+- 环境项：`docker/gui_smoke/canary` = `ENV_LIMITED`（`docker_daemon_unavailable` / `gui_smoke_manual_step` / `canary_api_unreachable`）
+
+**证据与文档更新**:
+- `reports/gui_integration_test.md`（模板 -> 本轮 `ENV_LIMITED` 实证 + 复跑命令）
+- `reports/stability/canary_summary.md`（模板 -> 本轮 `ENV_LIMITED` + fast 复跑命令）
+- `agents-only/active_context.md`（L17 状态改为快跑闭环后 `PASS_ENV_LIMITED`）
+- `agents-only/workpackage_latest.md`（新增 L17 Capstone 快跑闭环节）
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

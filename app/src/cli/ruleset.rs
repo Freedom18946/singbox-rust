@@ -29,18 +29,13 @@ pub struct RulesetArgs {
 }
 
 /// Input type hint for the Convert subcommand
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
 pub enum ConvertType {
     /// Auto-detect from file extension
+    #[default]
     Auto,
-    /// AdGuard DNS filter format
+    /// `AdGuard` DNS filter format
     Adguard,
-}
-
-impl Default for ConvertType {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -123,7 +118,7 @@ pub enum RulesetCmd {
 
     /// Convert between JSON and SRS formats based on extension
     Convert {
-        /// Input file (.json, .srs, or AdGuard filter text)
+        /// Input file (.json, .srs, or `AdGuard` filter text)
         #[arg(value_name = "INPUT")]
         input: PathBuf,
         /// Output file (.json or .srs). Optional for `--type adguard` (stdout JSON).
@@ -541,15 +536,16 @@ async fn convert_ruleset(
     use sb_core::router::ruleset::{binary, source, RuleSetFormat, RULESET_VERSION_CURRENT};
 
     let resolved_output = match (output, output_path) {
-        (Some(_), Some(_)) => anyhow::bail!("please provide OUTPUT either positionally or with -o/--output, not both"),
+        (Some(_), Some(_)) => {
+            anyhow::bail!("please provide OUTPUT either positionally or with -o/--output, not both")
+        }
         (Some(path), None) | (None, Some(path)) => Some(path),
         (None, None) => None,
     };
 
     // Handle AdGuard input type
     if input_type == ConvertType::Adguard {
-        let text =
-            std::fs::read_to_string(&input).context("Failed to read AdGuard filter file")?;
+        let text = std::fs::read_to_string(&input).context("Failed to read AdGuard filter file")?;
         let rules = sb_core::router::ruleset::adguard::parse_adguard_rules(&text)
             .context("Failed to parse AdGuard rules")?;
         let ver = version.unwrap_or(RULESET_VERSION_CURRENT);
@@ -566,14 +562,13 @@ async fn convert_ruleset(
             return Ok(());
         };
 
-        let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or("")).ok_or_else(
-            || anyhow::anyhow!("cannot infer output format from extension"),
-        )?;
+        let out_fmt = source::infer_format_from_path(output.to_str().unwrap_or(""))
+            .ok_or_else(|| anyhow::anyhow!("cannot infer output format from extension"))?;
 
         match out_fmt {
             RuleSetFormat::Source => {
-                let pretty = serde_json::to_string_pretty(&json_value)
-                    .context("Failed to format JSON")?;
+                let pretty =
+                    serde_json::to_string_pretty(&json_value).context("Failed to format JSON")?;
                 std::fs::write(&output, pretty).context("Failed to write output file")?;
                 println!("{}", output.display());
             }

@@ -124,7 +124,10 @@ async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
         .send()
         .await?
         .status();
-    assert!(status.is_success(), "expected /connections success, got {status}");
+    assert!(
+        status.is_success(),
+        "expected /connections success, got {status}"
+    );
 
     let ws_url = format!("{}/connections", server.ws_base);
     assert!(

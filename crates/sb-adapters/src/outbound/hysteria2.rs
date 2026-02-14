@@ -631,8 +631,10 @@ mod tests {
     #[cfg(feature = "adapter-hysteria2")]
     #[test]
     fn test_obfuscation_roundtrip() {
-        let mut cfg = Hysteria2AdapterConfig::default();
-        cfg.obfs = Some("testkey".to_string());
+        let cfg = Hysteria2AdapterConfig {
+            obfs: Some("testkey".to_string()),
+            ..Default::default()
+        };
         let inner = Hysteria2Inner::new(&cfg).unwrap();
 
         let original = vec![0xDE, 0xAD, 0xBE, 0xEF];

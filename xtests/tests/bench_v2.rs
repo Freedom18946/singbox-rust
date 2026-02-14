@@ -47,10 +47,20 @@ fn bench_v2_produces_csv_and_json() {
         panic!("bind udp: {e}");
     }
     thread::sleep(Duration::from_millis(100));
-    let out=Command::new("bash").args(["-lc",
-        "SB_BENCH=1 SB_BENCH_N=80 SB_BENCH_PAR=8 SB_BENCH_TCP=127.0.0.1:17107 SB_BENCH_UDP=127.0.0.1:17199 SB_BENCH_CSV=.e2e/bench_udp.csv cargo run --features bench --bin sb-bench --quiet"
-    ]).output().expect("run bench");
-    assert!(out.status.success(), "bench failed");
+    let _ = std::fs::create_dir_all(".e2e");
+    let out = Command::new("bash")
+        .args([
+            "-lc",
+            "SB_BENCH=1 SB_BENCH_N=80 SB_BENCH_PAR=8 SB_BENCH_TCP=127.0.0.1:17107 SB_BENCH_UDP=127.0.0.1:17199 SB_BENCH_CSV=.e2e/bench_udp.csv cargo run -p app --features bench --bin sb-bench --quiet",
+        ])
+        .output()
+        .expect("run bench");
+    assert!(
+        out.status.success(),
+        "bench failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     assert!(v.get("udp_rtt_ms").is_some(), "no udp_rtt_ms");
     assert!(

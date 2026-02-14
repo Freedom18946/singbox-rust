@@ -20,8 +20,8 @@ use cli::{
     CaseCommand, Cli, EnvClassArg, GoSnapshotArgs, KernelModeArg, PriorityArg, ReportCommand,
     TopCommand,
 };
-use go_collector::{collect_go_snapshot, save_go_snapshot};
 use diff_report::diff_latest_case;
+use go_collector::{collect_go_snapshot, save_go_snapshot};
 use orchestrator::{
     apply_case_filter, list_cases, load_single_case, render_run_plan_summary, run_case, run_cases,
     CaseFilter, GoApiConfig,
@@ -42,9 +42,7 @@ async fn main() -> Result<()> {
             handle_case_command(command, &cases_dir, &artifacts_dir).await
         }
         TopCommand::Report { command } => handle_report_command(command, &artifacts_dir).await,
-        TopCommand::GoSnapshot(args) => {
-            handle_go_snapshot(args, &artifacts_dir).await
-        }
+        TopCommand::GoSnapshot(args) => handle_go_snapshot(args, &artifacts_dir).await,
     }
 }
 
@@ -97,7 +95,11 @@ async fn handle_case_command(
                 }
                 println!(
                     "{}",
-                    render_run_plan_summary(std::slice::from_ref(&case), kernel_override.clone(), &filter)
+                    render_run_plan_summary(
+                        std::slice::from_ref(&case),
+                        kernel_override.clone(),
+                        &filter
+                    )
                 );
                 let output = run_case(&case, kernel_override, artifacts_dir, &go_api_cfg)
                     .await
@@ -141,7 +143,10 @@ async fn handle_case_command(
             println!("traffic_mismatches={}", report.traffic_mismatches.len());
             println!("ignored_http={}", report.ignored_http_count);
             println!("ignored_ws={}", report.ignored_ws_count);
-            println!("ignored_counter_jitter={}", report.ignored_counter_jitter_count);
+            println!(
+                "ignored_counter_jitter={}",
+                report.ignored_counter_jitter_count
+            );
             println!("gate_score={}", report.gate_score);
             println!("report={}", canonicalize_or(&markdown_path).display());
             Ok(())

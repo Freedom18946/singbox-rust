@@ -176,7 +176,9 @@ fn cmd_feature_matrix() -> Result<()> {
     let passed_count = results.iter().filter(|r| r.2).count();
     let mut report = format!(
         "Feature Matrix Report\nTotal: {} cases\nPassed: {}\nFailed: {}\n\n",
-        total, passed_count, failures.len()
+        total,
+        passed_count,
+        failures.len()
     );
     for (pkg, name, passed) in &results {
         report.push_str(&format!(
@@ -332,9 +334,7 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
         // ────────────────────────────────────────────────────────
 
         // Empty features (truly minimal build)
-        MatrixCase::new("app", "Empty features", Check)
-            .with_no_default(),
-
+        MatrixCase::new("app", "Empty features", Check).with_no_default(),
         // Each adapter independently — adapters not yet covered above
         MatrixCase::new("sb-adapters", "AnyTLS adapter", Check)
             .with_no_default()
@@ -345,22 +345,18 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
         MatrixCase::new("sb-adapters", "TUN adapter", Check)
             .with_no_default()
             .with_features(&["adapter-tun"]),
-
         // App with tools-only
         MatrixCase::new("app", "Tools only", Check)
             .with_no_default()
             .with_features(&["tools"]),
-
         // App with parity preset
         MatrixCase::new("app", "Parity preset", Check)
             .with_no_default()
             .with_features(&["parity"]),
-
         // App acceptance preset
         MatrixCase::new("app", "Acceptance preset", Check)
             .with_no_default()
             .with_features(&["acceptance"]),
-
         // sb-core services
         MatrixCase::new("sb-core", "NTP service", Check)
             .with_no_default()
@@ -371,7 +367,6 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
         MatrixCase::new("sb-core", "Router + legacy", Check)
             .with_no_default()
             .with_features(&["router", "legacy_protocols"]),
-
         // sb-adapters combinations
         MatrixCase::new("sb-adapters", "All QUIC adapters", Check)
             .with_no_default()
@@ -379,10 +374,8 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
         MatrixCase::new("sb-adapters", "TLS adapters", Check)
             .with_no_default()
             .with_features(&["adapter-trojan", "adapter-vless", "tls_reality"]),
-
         // sb-tls combinations
-        MatrixCase::new("sb-tls", "Default TLS", Check)
-            .with_no_default(),
+        MatrixCase::new("sb-tls", "Default TLS", Check).with_no_default(),
         MatrixCase::new("sb-tls", "ECH feature", Check)
             .with_no_default()
             .with_features(&["ech"]),

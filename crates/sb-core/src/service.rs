@@ -375,7 +375,10 @@ mod tests {
 
         assert_eq!(starting, ServiceStatus::Starting);
         assert_eq!(running, ServiceStatus::Running);
-        assert_eq!(failed, ServiceStatus::Failed("connection refused".to_string()));
+        assert_eq!(
+            failed,
+            ServiceStatus::Failed("connection refused".to_string())
+        );
         assert_eq!(stopped, ServiceStatus::Stopped);
 
         // Verify Debug derives work
@@ -386,7 +389,10 @@ mod tests {
 
         // Verify Clone
         let cloned = failed.clone();
-        assert_eq!(cloned, ServiceStatus::Failed("connection refused".to_string()));
+        assert_eq!(
+            cloned,
+            ServiceStatus::Failed("connection refused".to_string())
+        );
     }
 
     #[tokio::test]
