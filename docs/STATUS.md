@@ -4,8 +4,9 @@
 
 **🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**
 
-> **Latest Update (2026-02-24)**: Acceptance baseline is now **209/209 closed** (includes accepted limitations / won't-fix decisions), and Linux runtime/system-bus PX-015 real-machine evidence is no longer tracked as an open blocking item. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
-> **Latest Capstone Run (2026-02-24)**: `scripts/l17_capstone.sh --profile fast` completed with `overall=PASS_STRICT`; optional environment gates were recorded as `SKIP` (`docker_daemon_unavailable`, `gui_smoke_manual_step`, `canary_api_unreachable`).
+> **Latest Update (2026-02-24)**: L18 replacement-certification framework is now implemented (macOS-only), with mandatory gates under `scripts/l18/*` and CI workflow `.github/workflows/l18-certification-macos.yml`.
+> **L18 Policy Shift (effective 2026-02-24)**: `gui/canary` are mandatory blocking gates; `docker` defaults to non-blocking in local mode (`--require-docker 0`) and can be switched to blocking for CI/certify mode (`--require-docker 1`).
+> **L17 Baseline (historical)**: `scripts/l17_capstone.sh --profile fast` completed with `overall=PASS_STRICT`; optional environment gates were recorded as `SKIP` for L17 only.
 
 ## Achievement Summary
 
@@ -53,6 +54,8 @@
 
 ## Current Status
 
+- ✅ **L18 Design-to-Implementation**: L18 script/workflow/report contracts landed (`scripts/l18/*.sh`, `reports/L18_REPLACEMENT_CERTIFICATION.md`, `l18-certification-macos.yml`)
+- 🔄 **L18 Certification Execution**: waiting for self-hosted macOS `daily/nightly/certify` runs and artifact evidence closure
 - ✅ **Protocol Coverage**: 100% for Go protocols (18/18 inbound, 19/19 outbound; +1 Rust-only inbound)
 - ✅ **Documentation**: Migration guide complete - [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 - ✅ **Verification Framework**: 3-layer validation system - [VERIFICATION_RECORD.md](../reports/VERIFICATION_RECORD.md)

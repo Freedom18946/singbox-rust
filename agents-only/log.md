@@ -23,6 +23,51 @@
 
 ## 日志记录
 
+### [2026-02-24 14:24] Agent: Codex (GPT-5)
+
+**任务**: 根据用户决策将 Docker 改为本机模式非阻断，并重新执行 L18 daily fail-fast 验证
+**变更**:
+- 脚本策略调整：
+  - 更新 `scripts/l18/preflight_macos.sh`（新增 `--require-docker 0|1`，默认 0；Docker 不可用时记 WARN）
+  - 更新 `scripts/l18/l18_capstone.sh`（新增 `--require-docker 0|1`，默认 0；Docker gate 支持 `WARN` 非阻断）
+- 口径同步：
+  - 更新 `docs/STATUS.md`
+  - 更新 `agents-only/03-planning/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `.github/workflows/l18-certification-macos.yml`（CI 显式 `L18_REQUIRE_DOCKER=1`）
+- 执行验证：
+  - 执行 `scripts/l18/preflight_macos.sh --require-docker 0`（PASS + WARN）
+  - 执行 `scripts/l18/preflight_macos.sh --require-docker 1`（FAIL）
+  - 执行 `scripts/l18/l18_capstone.sh --profile daily --fail-fast --require-docker 0`
+  - 更新 `reports/l18/l18_capstone_status.json`（Docker=`WARN`，阻断点=`gui_smoke=FAIL`）
+
+**结果**: 成功（Docker 不再阻断本机替换验证；流程已推进到 GUI 门禁）
+**备注**: 下一步需提供 `--gui-app` 实际可执行路径继续后续门禁（canary/dual_kernel/perf）。
+
+---
+
+### [2026-02-24 14:13] Agent: Codex (GPT-5)
+
+**任务**: 将 L18 “沙盒不扰民”设计写入 agents-only 规划/状态文档，并落地脚本实现后执行 daily 首跑
+**变更**:
+- agents-only 文档：
+  - 新增 `agents-only/03-planning/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`（L18 规划 + 沙盒硬约束）
+  - 更新 `agents-only/active_context.md`（新增沙盒约束与 daily fail-fast 首跑结果）
+  - 更新 `agents-only/workpackage_latest.md`（新增沙盒约束与首跑证据）
+- L18 脚本：
+  - 更新 `scripts/l18/gui_real_cert.sh`（临时 sandbox HOME、loopback 校验、系统代理快照前后对比、真实代理进程/端口互斥检测、端口释放检查）
+  - 更新 `scripts/l18/l18_capstone.sh`（新增 `--fail-fast`、GUI 沙盒参数透传、状态文件记录 sandbox controls）
+  - 新增 `labs/interop-lab/configs/l18_gui_go.json`、`labs/interop-lab/configs/l18_gui_rust.json`（GUI 认证默认配置）
+- 执行验证：
+  - 执行 `scripts/l18/l18_capstone.sh --profile daily --fail-fast`
+  - 更新 `reports/l18/l18_capstone_status.json`（`overall=FAIL`，阻断点 `docker_desktop_unavailable`）
+
+**结果**: 成功（设计已入库，脚本已实现，daily 首跑已执行并给出明确阻断点）
+**备注**: 本轮为 fail-fast 探测，后续门禁为 `NOT_RUN`，待 Docker Desktop 可用后继续全链路 daily。
+
+---
+
 ### [2026-02-24 13:33] Agent: Codex (GPT-5)
 
 **任务**: 按用户要求执行 L17 capstone fast 全量复跑，并将 docs 与 agents-only 状态文件同步到最新快照
@@ -1033,5 +1078,54 @@ L2.8.4-6 Handlers + WebSocket:
 **结果**: 成功
 **备注**:
 - 本次为文档口径同步，不引入代码行为变更。
+
+---
+
+### [2026-02-24 15:10] Agent: Codex (GPT-5)
+
+**任务**: 按“本机无感替换优先”推进 L18，停止 Docker 阻断，执行源码直编（Go）并收敛 GUI 双核联调门禁。
+
+**关键变更**:
+- 更新 `scripts/l18/build_go_oracle.sh`：
+  - 默认 `build_tags=with_clash_api`，确保 Go Oracle 暴露 GUI 所需 Clash API。
+- 更新 `scripts/l18/gui_real_cert.sh`：
+  - Rust 启动命令支持两种 CLI 形态（`<bin> run --config` / `<bin> --config`）。
+  - `curl` 探测统一 `--max-time 5`，避免流式端点导致卡死。
+  - `switch_proxy` 对无 selector/404/405 做兼容处理。
+  - `logs_panel` 在空日志时改用 `/connections` 回退探测。
+  - GUI 就绪检测支持 PID 或进程名。
+- 更新状态总线文档：
+  - `agents-only/active_context.md`
+  - `agents-only/workpackage_latest.md`
+
+**执行结果**:
+- Go Oracle 源码直编成功（run_id=`20260224T064419Z-62ad307b`）：
+  - `reports/l18/oracle/go/20260224T064419Z-62ad307b/sing-box`
+  - `reports/l18/oracle/go/20260224T064419Z-62ad307b/oracle_manifest.json`
+- GUI 实机认证仍为 `FAIL`（`reports/l18/gui_real_cert.json`）：
+  - sandbox pre/post 均通过、系统代理快照未变（不扰民约束满足）。
+  - Go 侧主失败点：`startup` 判定（`gui_or_kernel_not_ready`）。
+  - Rust 侧主失败点：`/proxies` 契约不满足（`403/不可达`），显示当前 Rust 运行路径未对齐 GUI 依赖的 Clash API。
+
+**结论**:
+- “源码直编 Go”已落实并可复现。
+- L18 当前主阻塞已收敛为 Rust GUI API 契约缺口 + GUI startup 判定稳定性，不再是 Docker 或前置工具链问题。
+
+---
+
+### [2026-02-24 15:20] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求同步文档到最新，并固化下一对话可直接接续的二选一任务。
+
+**文档更新**:
+- `agents-only/active_context.md`
+- `agents-only/workpackage_latest.md`
+
+**新增记录（下一步二选一）**:
+1. Rust 侧 Clash API 契约对齐（优先，解决 `/proxies`）。
+2. GUI startup 判定收紧/稳定（先稳判定，再回 Rust API 对齐）。
+
+**结果**:
+- 状态与任务口径已统一，可直接新开对话按二选一继续实施。
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

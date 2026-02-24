@@ -1,11 +1,71 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-02-24
-> **当前阶段**：L17 收口完成（核心门禁 `PASS_STRICT`，环境门禁可选留痕）
+> **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L18 详细设计实现落地（2026-02-24）
+
+**状态**：✅ 设计已转实现（脚本/CI/文档口径已接线），等待 self-hosted macOS 实跑证据闭环
+
+**新增交付**：
+- `scripts/l18/preflight_macos.sh`
+- `scripts/l18/build_go_oracle.sh`
+- `scripts/l18/run_dual_kernel_cert.sh`
+- `scripts/l18/gui_real_cert.sh`
+- `scripts/l18/perf_gate.sh`
+- `scripts/l18/l18_capstone.sh`
+- `.github/workflows/l18-certification-macos.yml`
+- `reports/L18_REPLACEMENT_CERTIFICATION.md`
+- `agents-only/03-planning/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`
+
+**关键策略切换（L17 -> L18）**：
+- `gui_smoke/canary` 由可选留痕改为必过阻断。
+- `docker` 在本机模式默认非阻断（`--require-docker 0`），在 CI/certify 模式可切回阻断（`--require-docker 1`）。
+- 前置缺失直接 `FAIL`，不再允许 `SKIP/BLOCKED`。
+- Go Oracle 每轮本地现编译（`go_fork_source/sing-box-1.12.14`）。
+- 认证环境收敛为 macOS（self-hosted runner）。
+
+**沙盒不扰民（新增硬约束）**：
+- 认证流量仅允许 loopback。
+- GUI 使用临时 sandbox HOME（不污染用户配置）。
+- 禁止 `tun/tproxy/redirect` 系统接管型配置进入认证链路。
+- 默认禁止与真实代理并存（进程/端口检测命中即 FAIL）。
+- `scutil --proxy` 前后快照必须一致，否则 FAIL。
+
+**首跑验证（已执行）**：
+- 命令：`scripts/l18/l18_capstone.sh --profile daily --fail-fast --require-docker 0`
+- 结果：`FAIL`（fail-fast 停在 GUI 门禁）
+- 通过：`preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal`
+- Docker：`WARN`（本机模式非阻断）
+- 原因：`gui_smoke=FAIL`（未提供 `--gui-app`）
+- 证据：`reports/l18/l18_capstone_status.json`
+
+### 2026-02-24 增量：源码直编与 GUI 门禁收敛
+
+- ✅ Go Oracle 源码直编已跑通（默认带 `with_clash_api`）：
+  - `reports/l18/oracle/go/20260224T064419Z-62ad307b/sing-box`
+  - `reports/l18/oracle/go/20260224T064419Z-62ad307b/oracle_manifest.json`
+- ✅ `scripts/l18/gui_real_cert.sh` 已完成本机联调补丁：
+  - Rust 启动命令兼容（有/无 `run` 子命令）
+  - API curl 增加 `--max-time` 防卡死
+  - `switch_proxy` 对 404/无 selector 兼容
+  - `logs_panel` 改为 `/connections` 回退探测
+- ⚠️ 未闭环阻塞（当前 L18 主阻塞）：
+  - Rust 内核当前运行路径未提供 GUI 预期的 Clash `/proxies` 契约（`403/不可达`），导致 GUI 双轨认证未通过。
+  - Go 侧仅剩 `startup` 判定稳定性问题（GUI 进程就绪判定）。
+
+### 下一对话接续任务（二选一）
+
+1. **Rust 侧 Clash API 契约对齐（优先）**
+   - 先解决 `/proxies`，让 Rust 通过 GUI API 关键路径。
+2. **GUI startup 判定收紧/稳定**
+   - 先降低 `gui_or_kernel_not_ready` 误判，再回到 Rust API 对齐。
 
 ---
 

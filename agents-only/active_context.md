@@ -7,12 +7,73 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L17 收口完成（核心门禁 PASS_STRICT）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
+**当前阶段**: **L18 认证替换实施中（认证优先 + 性能零回归并行）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L17 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline），见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）
 **Remaining**: 0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation，不再追踪）
-**Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`；`docker/gui_smoke/canary` 在当前环境按可选门禁 `SKIP` 留痕。
+**Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
+
+### L18 详细设计已落地为可执行资产（2026-02-24）
+
+- `scripts/l18/preflight_macos.sh`：前置检查改为硬失败，并输出 `reports/l18/baseline.lock.json`。
+- `scripts/l18/build_go_oracle.sh`：每轮从 `go_fork_source/sing-box-1.12.14` 现编译 Go Oracle，产出 `oracle_manifest.json`。
+- `scripts/l18/run_dual_kernel_cert.sh`：按 `daily/nightly` 执行双核 run+diff，输出 `summary.json` 与 `diff_gate.json`。
+- `scripts/l18/gui_real_cert.sh`：Go/Rust 双轨真实 GUI 核验（启动/加载配置/切换代理/连接面板/日志面板）并输出 `.md + .json` 对照报告。
+- `scripts/l18/perf_gate.sh`：统一 p95/RSS/startup 三指标硬门禁，输出 `reports/l18/perf_gate.json`。
+- `scripts/l18/l18_capstone.sh`：聚合 `boundaries/parity/workspace/fmt/clippy/hot_reload/signal/docker/gui_smoke/canary/dual_kernel_diff/perf_gate` 为必过门禁。
+- `.github/workflows/l18-certification-macos.yml`：self-hosted macOS 认证流水线，支持 `profile=daily|nightly|certify` 并上传审计产物。
+- `reports/L18_REPLACEMENT_CERTIFICATION.md`：L18 单一结项报告口径（默认无豁免）。
+- `agents-only/03-planning/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`：L18 专项规划（含沙盒不扰民约束与批次执行顺序）。
+
+### L18 沙盒不扰民约束（2026-02-24）
+
+- 二内核与 GUI 认证通信仅允许 loopback（`127.0.0.1/localhost/::1`）。
+- GUI 在临时 sandbox HOME 运行，避免读写用户真实 GUI 配置目录。
+- 认证配置禁止 `tun/tproxy/redirect` 入站，避免接管系统网络。
+- 默认禁止与真实代理并存：检测到常见代理进程/端口即 FAIL。
+- 认证前后执行 `scutil --proxy` 快照对比，若系统代理状态变化则 FAIL。
+- run 结束后强制清理本次进程并校验关键端口释放，未释放则 FAIL。
+- Docker 策略分层：本机替换验证默认非阻断；CI/certify 可开启 `--require-docker 1` 阻断。
+
+### L18 daily fail-fast 首跑结果（2026-02-24）
+
+- 执行：`scripts/l18/l18_capstone.sh --profile daily --fail-fast`
+- 结果：`FAIL`（前置阻断，符合预期）
+- 阻断点：`preflight` 检测 `docker_desktop_unavailable`
+- 状态文件：`reports/l18/l18_capstone_status.json`
+- 说明：本轮为“快速阻断探测”，`--fail-fast` 生效，后续门禁未执行（`NOT_RUN`）
+
+### L18 daily fail-fast 二次首跑（docker 非阻断模式，2026-02-24）
+
+- 执行：`scripts/l18/l18_capstone.sh --profile daily --fail-fast --require-docker 0`
+- 结果：`FAIL`
+- 通过门禁：`preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal`
+- Docker 门禁：`WARN`（`require_docker=0`，不阻断）
+- 当前阻断点：`gui_smoke=FAIL`（未提供 `--gui-app`）
+- 状态文件：`reports/l18/l18_capstone_status.json`（`generated_at=2026-02-24T06:23:54Z`）
+
+### L18 本机源码直编与 GUI 联调现状（2026-02-24 15:10）
+
+- Go Oracle 已按源码直编成功（`go_fork_source/sing-box-1.12.14`）并默认启用 `with_clash_api`：
+  - 产物：`reports/l18/oracle/go/20260224T064419Z-62ad307b/sing-box`
+  - 清单：`reports/l18/oracle/go/20260224T064419Z-62ad307b/oracle_manifest.json`
+- L18 脚本增强已落地：
+  - `scripts/l18/build_go_oracle.sh`：默认 `build_tags=with_clash_api`
+  - `scripts/l18/gui_real_cert.sh`：Rust 启动命令双风格兼容、API 探测超时、`switch_proxy` 404 兼容、日志面板回退探测
+- 当前 GUI 门禁阻塞事实：
+  - Go 侧：`/proxies`、`/connections` 可达，`startup` 仍可能受 GUI 进程就绪判定影响（`gui_or_kernel_not_ready`）。
+  - Rust 侧：当前 `run`/`app run` 路径未暴露 Clash API `/proxies`（返回 403 或不可达），导致 GUI 双轨认证未全绿。
+- 最新报告：`reports/l18/gui_real_cert.json`（`pass=false`，sandbox pre/post 均通过，无系统代理扰动）。
+
+### L18 下一步任务（二选一，供新对话直接接续）
+
+1. **Rust 侧 Clash API 契约对齐（优先）**
+   - 目标：解决 Rust `/proxies` 不可用（`403/不可达`），让 GUI 双轨认证可通过核心 API 步骤。
+   - 完成标准：`gui_real_cert.json` 中 Rust 的 `load_config/switch_proxy/connections_panel` 全部 `PASS`。
+2. **GUI startup 判定收紧/稳定**
+   - 目标：消除 `startup=gui_or_kernel_not_ready` 的偶发误判（Go/Rust 均适用）。
+   - 完成标准：同一环境连续多轮 `gui_real_cert.sh` 不再出现 startup 假失败。
 
 ### L17 发布就绪收口（2026-02-13）
 

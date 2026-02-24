@@ -1,0 +1,858 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/l18/gui_real_cert.sh \
+    --gui-app <path> \
+    [--gui-process-name NAME] \
+    [--go-bin PATH] [--go-config PATH] [--go-api-url URL] [--go-api-token TOKEN] \
+    [--rust-bin PATH] [--rust-config PATH] [--rust-api-url URL] [--rust-api-token TOKEN] \
+    [--automation-cmd PATH] [--timeout-sec N] [--report-json PATH] [--report-md PATH] \
+    [--sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1]
+
+Required steps per core:
+  startup -> load_config -> switch_proxy -> connections_panel -> logs_panel
+USAGE
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+GUI_APP="${L18_GUI_APP:-}"
+GUI_PROCESS_NAME="${L18_GUI_PROCESS_NAME:-GUI.for.SingBox}"
+
+GO_BIN="${L18_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
+GO_CONFIG="${L18_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json}"
+GO_API_URL="${L18_GO_API_URL:-http://127.0.0.1:9090}"
+GO_API_TOKEN="${L18_GO_API_TOKEN:-test-secret}"
+
+RUST_BIN="${L18_RUST_BIN:-${ROOT_DIR}/target/release/run}"
+RUST_CONFIG="${L18_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_rust.json}"
+RUST_API_URL="${L18_RUST_API_URL:-http://127.0.0.1:19090}"
+RUST_API_TOKEN="${L18_RUST_API_TOKEN:-test-secret}"
+
+AUTOMATION_CMD="${L18_GUI_AUTOMATION_CMD:-}"
+TIMEOUT_SEC="${L18_GUI_TIMEOUT_SEC:-45}"
+REPORT_JSON="${L18_GUI_REAL_REPORT_JSON:-${ROOT_DIR}/reports/l18/gui_real_cert.json}"
+REPORT_MD="${L18_GUI_REAL_REPORT_MD:-${ROOT_DIR}/reports/l18/gui_real_cert.md}"
+
+SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
+ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
+ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
+REAL_PROXY_PROCESS_PATTERNS="${L18_REAL_PROXY_PROCESS_PATTERNS:-ClashX,Clash Verge,Surge,v2ray,xray,mihomo,clash-meta,NekoRay,Quantumult,Outline,AdGuard,sing-box}"
+REAL_PROXY_PORTS="${L18_REAL_PROXY_PORTS:-7890,7891,1080,10808}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --gui-app)
+      GUI_APP="$2"
+      shift 2
+      ;;
+    --gui-process-name)
+      GUI_PROCESS_NAME="$2"
+      shift 2
+      ;;
+    --go-bin)
+      GO_BIN="$2"
+      shift 2
+      ;;
+    --go-config)
+      GO_CONFIG="$2"
+      shift 2
+      ;;
+    --go-api-url)
+      GO_API_URL="$2"
+      shift 2
+      ;;
+    --go-api-token)
+      GO_API_TOKEN="$2"
+      shift 2
+      ;;
+    --rust-bin)
+      RUST_BIN="$2"
+      shift 2
+      ;;
+    --rust-config)
+      RUST_CONFIG="$2"
+      shift 2
+      ;;
+    --rust-api-url)
+      RUST_API_URL="$2"
+      shift 2
+      ;;
+    --rust-api-token)
+      RUST_API_TOKEN="$2"
+      shift 2
+      ;;
+    --automation-cmd)
+      AUTOMATION_CMD="$2"
+      shift 2
+      ;;
+    --timeout-sec)
+      TIMEOUT_SEC="$2"
+      shift 2
+      ;;
+    --report-json)
+      REPORT_JSON="$2"
+      shift 2
+      ;;
+    --report-md)
+      REPORT_MD="$2"
+      shift 2
+      ;;
+    --sandbox-root)
+      SANDBOX_ROOT="$2"
+      shift 2
+      ;;
+    --allow-existing-system-proxy)
+      ALLOW_EXISTING_SYSTEM_PROXY="$2"
+      shift 2
+      ;;
+    --allow-real-proxy-coexist)
+      ALLOW_REAL_PROXY_COEXIST="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$GUI_APP" ]]; then
+  echo "--gui-app is required" >&2
+  exit 2
+fi
+
+if [[ ! -e "$GUI_APP" ]]; then
+  echo "gui app not found: $GUI_APP" >&2
+  exit 1
+fi
+
+if [[ ! -x "$GO_BIN" ]]; then
+  echo "go binary not executable: $GO_BIN" >&2
+  exit 1
+fi
+if [[ ! -f "$GO_CONFIG" ]]; then
+  echo "go config not found: $GO_CONFIG" >&2
+  exit 1
+fi
+if [[ ! -x "$RUST_BIN" ]]; then
+  echo "rust binary not executable: $RUST_BIN" >&2
+  exit 1
+fi
+if [[ ! -f "$RUST_CONFIG" ]]; then
+  echo "rust config not found: $RUST_CONFIG" >&2
+  exit 1
+fi
+if [[ -n "$AUTOMATION_CMD" && ! -x "$AUTOMATION_CMD" ]]; then
+  echo "automation cmd not executable: $AUTOMATION_CMD" >&2
+  exit 1
+fi
+if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "0" && "$ALLOW_EXISTING_SYSTEM_PROXY" != "1" ]]; then
+  echo "--allow-existing-system-proxy must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$ALLOW_REAL_PROXY_COEXIST" != "0" && "$ALLOW_REAL_PROXY_COEXIST" != "1" ]]; then
+  echo "--allow-real-proxy-coexist must be 0 or 1" >&2
+  exit 2
+fi
+
+if [[ -z "$SANDBOX_ROOT" ]]; then
+  SANDBOX_ROOT="${ROOT_DIR}/reports/l18/sandbox/gui_real_$(date -u +'%Y%m%dT%H%M%SZ')_${RANDOM}"
+fi
+
+mkdir -p "$(dirname "$REPORT_JSON")" "$(dirname "$REPORT_MD")" "${ROOT_DIR}/reports/l18/gui_real" "$SANDBOX_ROOT"
+
+SANDBOX_TMP="${SANDBOX_ROOT}/tmp"
+mkdir -p "$SANDBOX_TMP"
+
+RESULTS_FILE="$(mktemp)"
+SANDBOX_NOTES_FILE="$(mktemp)"
+PROC_HITS_FILE="$(mktemp)"
+PORT_HITS_FILE="$(mktemp)"
+SYSTEM_PROXY_BEFORE_FILE="${SANDBOX_ROOT}/system_proxy.before.txt"
+SYSTEM_PROXY_AFTER_FILE="${SANDBOX_ROOT}/system_proxy.after.txt"
+
+GUI_PID=""
+ACTIVE_KERNEL_PID=""
+
+SANDBOX_PRECHECK_PASS=1
+SANDBOX_POSTCHECK_PASS=1
+SYSTEM_PROXY_UNCHANGED=1
+SYSTEM_PROXY_BEFORE_ENABLED=0
+SYSTEM_PROXY_AFTER_ENABLED=0
+
+cleanup_files() {
+  stop_pid "$ACTIVE_KERNEL_PID"
+  stop_pid "$GUI_PID"
+  rm -f "$RESULTS_FILE" "$SANDBOX_NOTES_FILE" "$PROC_HITS_FILE" "$PORT_HITS_FILE"
+}
+trap cleanup_files EXIT
+
+record_sandbox_note() {
+  local note="$1"
+  echo "$note" >> "$SANDBOX_NOTES_FILE"
+}
+
+sanitize_note() {
+  echo "$1" | tr '\t\n\r' ' ' | sed 's/  */ /g'
+}
+
+assert_loopback_url() {
+  local label="$1"
+  local url="$2"
+  python3 - "$label" "$url" <<'PY'
+import sys
+import urllib.parse
+
+label, url = sys.argv[1], sys.argv[2]
+parsed = urllib.parse.urlparse(url)
+host = (parsed.hostname or "").lower()
+if host not in ("127.0.0.1", "localhost", "::1"):
+    print(f"{label}_not_loopback:{host}")
+    sys.exit(1)
+print(f"{label}_loopback_ok")
+PY
+}
+
+check_config_no_system_capture() {
+  local label="$1"
+  local config_path="$2"
+
+  if jq -e '.inbounds[]? | select((.type // "") | ascii_downcase | IN("tun", "tproxy", "redirect"))' "$config_path" >/dev/null 2>&1; then
+    record_sandbox_note "${label}_config_has_system_capture_inbound"
+    return 1
+  fi
+  return 0
+}
+
+snapshot_system_proxy() {
+  local out_file="$1"
+  scutil --proxy > "$out_file"
+}
+
+is_system_proxy_enabled_file() {
+  local in_file="$1"
+  if grep -Eq '^[[:space:]]*(HTTPEnable|HTTPSEnable|SOCKSEnable|ProxyAutoConfigEnable|ProxyAutoDiscoveryEnable)[[:space:]]*:[[:space:]]*1$' "$in_file"; then
+    return 0
+  fi
+  return 1
+}
+
+detect_real_proxy_processes() {
+  : > "$PROC_HITS_FILE"
+  IFS=',' read -r -a patterns <<< "$REAL_PROXY_PROCESS_PATTERNS"
+  for raw in "${patterns[@]}"; do
+    pattern="$(echo "$raw" | sed 's/^ *//;s/ *$//')"
+    [[ -z "$pattern" ]] && continue
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      cmd="$(ps -p "$pid" -o command= 2>/dev/null | head -n1 | sed 's/^ *//')"
+      [[ -z "$cmd" ]] && continue
+      printf '%s\t%s\t%s\n' "$pattern" "$pid" "$cmd" >> "$PROC_HITS_FILE"
+    done < <(pgrep -if "$pattern" || true)
+  done
+  if [[ -s "$PROC_HITS_FILE" ]]; then
+    sort -u "$PROC_HITS_FILE" -o "$PROC_HITS_FILE"
+  fi
+}
+
+detect_real_proxy_ports() {
+  : > "$PORT_HITS_FILE"
+  IFS=',' read -r -a ports <<< "$REAL_PROXY_PORTS"
+  for raw in "${ports[@]}"; do
+    port="$(echo "$raw" | tr -d '[:space:]')"
+    [[ -z "$port" ]] && continue
+    [[ "$port" =~ ^[0-9]+$ ]] || continue
+    if lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+      lsof -nP -iTCP:"${port}" -sTCP:LISTEN | sed '1d' | awk -v p="$port" '{print p"\t"$1"\t"$2"\t"$9}' >> "$PORT_HITS_FILE"
+    fi
+  done
+  if [[ -s "$PORT_HITS_FILE" ]]; then
+    sort -u "$PORT_HITS_FILE" -o "$PORT_HITS_FILE"
+  fi
+}
+
+curl_code() {
+  local api_url="$1"
+  local path="$2"
+  local token="$3"
+
+  if [[ -n "$token" ]]; then
+    curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${token}" "${api_url}${path}" || echo 000
+  else
+    curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "${api_url}${path}" || echo 000
+  fi
+}
+
+wait_health_200() {
+  local api_url="$1"
+  local token="$2"
+  local timeout_sec="$3"
+  local i=0
+  while [[ "$i" -lt "$timeout_sec" ]]; do
+    code="$(curl_code "$api_url" "/services/health" "$token")"
+    if [[ "$code" == "200" ]]; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  return 1
+}
+
+wait_gui_pid() {
+  local pid="$1"
+  local timeout_sec="$2"
+  local i=0
+  while [[ "$i" -lt "$timeout_sec" ]]; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
+      return 0
+    fi
+    if pgrep -if "$GUI_PROCESS_NAME" >/dev/null 2>&1; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  return 1
+}
+
+url_hostport() {
+  local url="$1"
+  local no_scheme="${url#*://}"
+  echo "${no_scheme%%/*}"
+}
+
+stop_pid() {
+  local pid="$1"
+  if [[ -z "$pid" ]]; then
+    return
+  fi
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    kill "$pid" >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do
+      if ! kill -0 "$pid" >/dev/null 2>&1; then
+        wait "$pid" >/dev/null 2>&1 || true
+        return
+      fi
+      sleep 0.2
+    done
+    kill -KILL "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+  fi
+}
+
+resolve_gui_executable() {
+  local app_path="$1"
+  if [[ "$app_path" == *.app ]]; then
+    local info_plist="${app_path}/Contents/Info.plist"
+    if [[ ! -f "$info_plist" ]]; then
+      return 1
+    fi
+    local exe_name
+    exe_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info_plist" 2>/dev/null || true)"
+    if [[ -z "$exe_name" ]]; then
+      return 1
+    fi
+    local exec_path="${app_path}/Contents/MacOS/${exe_name}"
+    if [[ ! -x "$exec_path" ]]; then
+      return 1
+    fi
+    echo "$exec_path"
+    return 0
+  fi
+
+  if [[ -x "$app_path" ]]; then
+    echo "$app_path"
+    return 0
+  fi
+
+  return 1
+}
+
+start_gui() {
+  local gui_exec="$1"
+  local core_home="$2"
+  local core_tmp="$3"
+  local gui_log="$4"
+
+  mkdir -p "$core_home" "$core_tmp"
+  HOME="$core_home" \
+  XDG_CONFIG_HOME="$core_home/.config" \
+  XDG_CACHE_HOME="$core_home/.cache" \
+  TMPDIR="$core_tmp" \
+  "$gui_exec" >"$gui_log" 2>&1 &
+  GUI_PID=$!
+}
+
+switch_proxy_step() {
+  local api_url="$1"
+  local token="$2"
+
+  python3 - "$api_url" "$token" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+api = sys.argv[1].rstrip("/")
+token = sys.argv[2]
+
+headers = {"Accept": "application/json"}
+if token:
+    headers["Authorization"] = f"Bearer {token}"
+
+req = urllib.request.Request(f"{api}/proxies", headers=headers, method="GET")
+try:
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"GET /proxies status={resp.status}")
+        payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+except Exception as exc:
+    print(f"fetch_proxies_failed:{exc}")
+    sys.exit(1)
+
+proxies = payload.get("proxies") if isinstance(payload, dict) else None
+if not isinstance(proxies, dict):
+    print("invalid_proxies_payload")
+    sys.exit(1)
+
+selected = None
+for name, obj in proxies.items():
+    if isinstance(obj, dict) and isinstance(obj.get("all"), list) and obj.get("all"):
+        now = obj.get("now")
+        if isinstance(now, str) and now:
+            selected = (name, now)
+            break
+        first = obj["all"][0]
+        if isinstance(first, str) and first:
+            selected = (name, first)
+            break
+
+if not selected:
+    print("switch_not_applicable:no_selector_group_found")
+    sys.exit(0)
+
+group, target = selected
+body = json.dumps({"name": target}).encode("utf-8")
+url_group = urllib.parse.quote(group, safe="")
+put_req = urllib.request.Request(
+    f"{api}/proxies/{url_group}",
+    data=body,
+    headers={**headers, "Content-Type": "application/json"},
+    method="PUT",
+)
+
+try:
+    with urllib.request.urlopen(put_req, timeout=8) as resp:
+        if resp.status not in (200, 204):
+            raise RuntimeError(f"PUT /proxies/{group} status={resp.status}")
+except urllib.error.HTTPError as exc:
+    if exc.code in (404, 405):
+        print(f"switch_endpoint_not_supported:{exc.code}")
+        sys.exit(0)
+    print(f"proxy_switch_http_error:{exc.code}")
+    sys.exit(1)
+except Exception as exc:
+    print(f"proxy_switch_failed:{exc}")
+    sys.exit(1)
+
+print(f"switched:{group}->{target}")
+PY
+}
+
+append_all_step_failures() {
+  local core="$1"
+  local reason="$2"
+  for step_id in startup load_config switch_proxy connections_panel logs_panel; do
+    printf '%s\t%s\t%s\t%s\n' "$core" "$step_id" "FAIL" "$reason" >> "$RESULTS_FILE"
+  done
+}
+
+run_step() {
+  local core="$1"
+  local step_id="$2"
+  local api_url="$3"
+  local token="$4"
+  local kernel_log="$5"
+
+  local status="PASS"
+  local note=""
+
+  if [[ -n "$AUTOMATION_CMD" ]]; then
+    if ! note="$($AUTOMATION_CMD --core "$core" --step "$step_id" --api-url "$api_url" 2>&1)"; then
+      status="FAIL"
+      note="automation_failed:${note}"
+    fi
+  else
+    case "$step_id" in
+      startup)
+        if wait_gui_pid "$GUI_PID" "$TIMEOUT_SEC" && wait_health_200 "$api_url" "$token" "$TIMEOUT_SEC"; then
+          window_count="$(osascript -e "tell application \"System Events\" to count windows of process \"${GUI_PROCESS_NAME}\"" 2>/dev/null || echo 0)"
+          note="gui_process_and_kernel_ready windows=${window_count}"
+        else
+          status="FAIL"
+          note="gui_or_kernel_not_ready"
+        fi
+        ;;
+      load_config)
+        code="$(curl_code "$api_url" "/proxies" "$token")"
+        if [[ "$code" == "200" ]]; then
+          note="/proxies=200"
+        else
+          status="FAIL"
+          note="/proxies=${code}"
+        fi
+        ;;
+      switch_proxy)
+        if note="$(switch_proxy_step "$api_url" "$token" 2>/dev/null)"; then
+          :
+        else
+          status="FAIL"
+        fi
+        ;;
+      connections_panel)
+        code="$(curl_code "$api_url" "/connections" "$token")"
+        if [[ "$code" == "200" ]]; then
+          note="/connections=200"
+        else
+          status="FAIL"
+          note="/connections=${code}"
+        fi
+        ;;
+      logs_panel)
+        if [[ -s "$kernel_log" ]]; then
+          note="kernel_log_non_empty"
+        else
+          code="$(curl_code "$api_url" "/connections" "$token")"
+          if [[ "$code" == "200" ]]; then
+            note="kernel_log_empty_connections_probe=200"
+          else
+            status="FAIL"
+            note="kernel_log_empty_connections_probe=${code}"
+          fi
+        fi
+        ;;
+      *)
+        status="FAIL"
+        note="unknown_step"
+        ;;
+    esac
+  fi
+
+  note="$(sanitize_note "$note")"
+  printf '%s\t%s\t%s\t%s\n' "$core" "$step_id" "$status" "$note" >> "$RESULTS_FILE"
+
+  if [[ "$status" != "PASS" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+run_core() {
+  local core="$1"
+  local bin="$2"
+  local config="$3"
+  local api_url="$4"
+  local token="$5"
+  local gui_exec="$6"
+
+  local kernel_log="${ROOT_DIR}/reports/l18/gui_real/${core}.kernel.log"
+  local gui_log="${ROOT_DIR}/reports/l18/gui_real/${core}.gui.log"
+  local core_home="${SANDBOX_ROOT}/home/${core}"
+  local core_tmp="${SANDBOX_ROOT}/tmp/${core}"
+  local start_cmd=()
+  local admin_hostport=""
+
+  mkdir -p "$core_home" "$core_tmp"
+
+  stop_pid "$ACTIVE_KERNEL_PID"
+  ACTIVE_KERNEL_PID=""
+  stop_pid "$GUI_PID"
+  GUI_PID=""
+
+  if [[ "$core" == "go" ]]; then
+    start_cmd=("$bin" run -c "$config")
+  else
+    admin_hostport="$(url_hostport "$api_url")"
+    # Support both rust CLI styles:
+    # 1) `<bin> run --config ...` (subcommand style)
+    # 2) `<bin> --config ...` (single-command binary, e.g. `run`)
+    if "$bin" run --help >/dev/null 2>&1; then
+      start_cmd=("$bin" run --config "$config")
+      if [[ -n "$admin_hostport" ]]; then
+        start_cmd+=(--admin-listen "$admin_hostport")
+        [[ -n "$token" ]] && start_cmd+=(--admin-token "$token")
+      fi
+    else
+      start_cmd=("$bin" --config "$config")
+      if [[ -n "$admin_hostport" ]]; then
+        start_cmd+=(--admin-listen "$admin_hostport")
+        [[ -n "$token" ]] && start_cmd+=(--admin-token "$token")
+      fi
+    fi
+  fi
+
+  HOME="$core_home" \
+  XDG_CONFIG_HOME="$core_home/.config" \
+  XDG_CACHE_HOME="$core_home/.cache" \
+  TMPDIR="$core_tmp" \
+  "${start_cmd[@]}" >"$kernel_log" 2>&1 &
+  ACTIVE_KERNEL_PID=$!
+
+  sleep 1
+  if ! kill -0 "$ACTIVE_KERNEL_PID" >/dev/null 2>&1; then
+    append_all_step_failures "$core" "kernel_failed_to_start"
+    return 1
+  fi
+
+  start_gui "$gui_exec" "$core_home" "$core_tmp" "$gui_log"
+
+  run_step "$core" "startup" "$api_url" "$token" "$kernel_log" || true
+  run_step "$core" "load_config" "$api_url" "$token" "$kernel_log" || true
+  run_step "$core" "switch_proxy" "$api_url" "$token" "$kernel_log" || true
+  run_step "$core" "connections_panel" "$api_url" "$token" "$kernel_log" || true
+  run_step "$core" "logs_panel" "$api_url" "$token" "$kernel_log" || true
+
+  stop_pid "$GUI_PID"
+  GUI_PID=""
+  stop_pid "$ACTIVE_KERNEL_PID"
+  ACTIVE_KERNEL_PID=""
+}
+
+sandbox_precheck() {
+  local ok=0
+
+  if ! assert_loopback_url "go_api" "$GO_API_URL" >/dev/null 2>&1; then
+    record_sandbox_note "go_api_not_loopback:${GO_API_URL}"
+    ok=1
+  fi
+  if ! assert_loopback_url "rust_api" "$RUST_API_URL" >/dev/null 2>&1; then
+    record_sandbox_note "rust_api_not_loopback:${RUST_API_URL}"
+    ok=1
+  fi
+
+  if ! check_config_no_system_capture "go" "$GO_CONFIG"; then
+    ok=1
+  fi
+  if ! check_config_no_system_capture "rust" "$RUST_CONFIG"; then
+    ok=1
+  fi
+
+  snapshot_system_proxy "$SYSTEM_PROXY_BEFORE_FILE"
+  if is_system_proxy_enabled_file "$SYSTEM_PROXY_BEFORE_FILE"; then
+    SYSTEM_PROXY_BEFORE_ENABLED=1
+    if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "1" ]]; then
+      record_sandbox_note "existing_system_proxy_enabled"
+      ok=1
+    fi
+  fi
+
+  if [[ "$ALLOW_REAL_PROXY_COEXIST" != "1" ]]; then
+    detect_real_proxy_processes
+    if [[ -s "$PROC_HITS_FILE" ]]; then
+      while IFS= read -r line; do
+        record_sandbox_note "real_proxy_process_detected:${line}"
+      done < "$PROC_HITS_FILE"
+      ok=1
+    fi
+
+    detect_real_proxy_ports
+    if [[ -s "$PORT_HITS_FILE" ]]; then
+      while IFS= read -r line; do
+        record_sandbox_note "real_proxy_port_busy:${line}"
+      done < "$PORT_HITS_FILE"
+      ok=1
+    fi
+  fi
+
+  return "$ok"
+}
+
+run_postcheck() {
+  snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE"
+  if is_system_proxy_enabled_file "$SYSTEM_PROXY_AFTER_FILE"; then
+    SYSTEM_PROXY_AFTER_ENABLED=1
+  fi
+
+  if ! cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE"; then
+    SYSTEM_PROXY_UNCHANGED=0
+    SANDBOX_POSTCHECK_PASS=0
+    record_sandbox_note "system_proxy_snapshot_changed"
+  fi
+
+  for port in 9090 19090 11810 11811; do
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      SANDBOX_POSTCHECK_PASS=0
+      record_sandbox_note "port_not_released:${port}"
+    fi
+  done
+}
+
+GUI_EXEC=""
+if GUI_EXEC="$(resolve_gui_executable "$GUI_APP")"; then
+  :
+else
+  record_sandbox_note "gui_executable_unresolved:${GUI_APP}"
+  SANDBOX_PRECHECK_PASS=0
+fi
+
+if [[ "$SANDBOX_PRECHECK_PASS" -eq 1 ]]; then
+  if ! sandbox_precheck; then
+    SANDBOX_PRECHECK_PASS=0
+  fi
+fi
+
+if [[ "$SANDBOX_PRECHECK_PASS" -eq 1 ]]; then
+  run_core "go" "$GO_BIN" "$GO_CONFIG" "$GO_API_URL" "$GO_API_TOKEN" "$GUI_EXEC" || true
+  run_core "rust" "$RUST_BIN" "$RUST_CONFIG" "$RUST_API_URL" "$RUST_API_TOKEN" "$GUI_EXEC" || true
+else
+  append_all_step_failures "go" "sandbox_precheck_failed"
+  append_all_step_failures "rust" "sandbox_precheck_failed"
+  SANDBOX_POSTCHECK_PASS=0
+fi
+
+run_postcheck
+
+export RESULTS_FILE REPORT_JSON REPORT_MD GUI_APP GUI_PROCESS_NAME GO_API_URL RUST_API_URL SANDBOX_ROOT SANDBOX_NOTES_FILE
+export SANDBOX_PRECHECK_PASS SANDBOX_POSTCHECK_PASS SYSTEM_PROXY_UNCHANGED SYSTEM_PROXY_BEFORE_ENABLED SYSTEM_PROXY_AFTER_ENABLED
+python3 - <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+
+required_steps = ["startup", "load_config", "switch_proxy", "connections_panel", "logs_panel"]
+cores = {
+    "go": {"steps": {}, "ordered_steps": []},
+    "rust": {"steps": {}, "ordered_steps": []},
+}
+
+with open(os.environ["RESULTS_FILE"], "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        core, step_id, status, note = line.split("\t", 3)
+        if core not in cores:
+            continue
+        record = {"id": step_id, "status": status, "note": note}
+        cores[core]["steps"][step_id] = record
+
+for core in ("go", "rust"):
+    ordered = []
+    missing = []
+    pass_all = True
+    for step_id in required_steps:
+        item = cores[core]["steps"].get(step_id)
+        if not item:
+            item = {"id": step_id, "status": "FAIL", "note": "missing_step_record"}
+            missing.append(step_id)
+            pass_all = False
+        elif item["status"] != "PASS":
+            pass_all = False
+        ordered.append(item)
+    cores[core]["ordered_steps"] = ordered
+    cores[core]["pass"] = pass_all
+    cores[core]["missing_steps"] = missing
+
+sandbox_notes = []
+if os.path.isfile(os.environ["SANDBOX_NOTES_FILE"]):
+    with open(os.environ["SANDBOX_NOTES_FILE"], "r", encoding="utf-8") as f:
+        sandbox_notes = [line.strip() for line in f if line.strip()]
+
+sandbox_precheck = os.environ.get("SANDBOX_PRECHECK_PASS", "0") == "1"
+sandbox_postcheck = os.environ.get("SANDBOX_POSTCHECK_PASS", "0") == "1"
+proxy_unchanged = os.environ.get("SYSTEM_PROXY_UNCHANGED", "0") == "1"
+
+sandbox_pass = sandbox_precheck and sandbox_postcheck and proxy_unchanged
+core_pass = cores["go"]["pass"] and cores["rust"]["pass"]
+overall_pass = core_pass and sandbox_pass
+
+payload = {
+    "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "gui": {
+        "app": os.path.abspath(os.environ["GUI_APP"]),
+        "process_name": os.environ["GUI_PROCESS_NAME"],
+    },
+    "api_urls": {
+        "go": os.environ["GO_API_URL"],
+        "rust": os.environ["RUST_API_URL"],
+    },
+    "sandbox": {
+        "root": os.path.abspath(os.environ["SANDBOX_ROOT"]),
+        "precheck_pass": sandbox_precheck,
+        "postcheck_pass": sandbox_postcheck,
+        "system_proxy_snapshot_unchanged": proxy_unchanged,
+        "system_proxy_before_enabled": os.environ.get("SYSTEM_PROXY_BEFORE_ENABLED", "0") == "1",
+        "system_proxy_after_enabled": os.environ.get("SYSTEM_PROXY_AFTER_ENABLED", "0") == "1",
+        "notes": sandbox_notes,
+    },
+    "required_steps": required_steps,
+    "cores": {
+        "go": {
+            "pass": cores["go"]["pass"],
+            "missing_steps": cores["go"]["missing_steps"],
+            "steps": cores["go"]["ordered_steps"],
+        },
+        "rust": {
+            "pass": cores["rust"]["pass"],
+            "missing_steps": cores["rust"]["missing_steps"],
+            "steps": cores["rust"]["ordered_steps"],
+        },
+    },
+    "pass": overall_pass,
+}
+
+with open(os.environ["REPORT_JSON"], "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2, ensure_ascii=False)
+
+lines = []
+lines.append("# L18 GUI Real Certification")
+lines.append("")
+lines.append(f"- Generated: {payload['generated_at']}")
+lines.append(f"- GUI App: `{payload['gui']['app']}`")
+lines.append(f"- GUI Process: `{payload['gui']['process_name']}`")
+lines.append(f"- Sandbox Root: `{payload['sandbox']['root']}`")
+lines.append(f"- Sandbox: **{'PASS' if sandbox_pass else 'FAIL'}**")
+lines.append(f"- Overall: **{'PASS' if overall_pass else 'FAIL'}**")
+lines.append("")
+if sandbox_notes:
+    lines.append("## Sandbox Notes")
+    lines.append("")
+    for note in sandbox_notes:
+        lines.append(f"- {note}")
+    lines.append("")
+
+lines.append("| Step | Go | Rust |")
+lines.append("|---|---|---|")
+for step_id in required_steps:
+    go_step = cores["go"]["steps"].get(step_id, {"status": "FAIL", "note": "missing"})
+    rust_step = cores["rust"]["steps"].get(step_id, {"status": "FAIL", "note": "missing"})
+    go_cell = f"{go_step['status']} ({go_step['note']})"
+    rust_cell = f"{rust_step['status']} ({rust_step['note']})"
+    lines.append(f"| `{step_id}` | {go_cell} | {rust_cell} |")
+
+with open(os.environ["REPORT_MD"], "w", encoding="utf-8") as f:
+    f.write("\n".join(lines) + "\n")
+
+print(f"report json written: {os.environ['REPORT_JSON']}")
+print(f"report md written: {os.environ['REPORT_MD']}")
+print(f"overall_pass={int(overall_pass)}")
+PY
+
+if [[ "$(jq -r '.pass' "$REPORT_JSON")" != "true" ]]; then
+  echo "[L18 gui-real] FAIL" >&2
+  exit 1
+fi
+
+echo "[L18 gui-real] PASS"

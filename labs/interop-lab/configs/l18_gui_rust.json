@@ -1,0 +1,39 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19090",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11810
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "name": "my-group",
+      "outbounds": ["direct", "alt-direct"],
+      "default": "direct"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "direct",
+      "name": "alt-direct"
+    }
+  ],
+  "route": {
+    "rules": [],
+    "final": "my-group"
+  }
+}

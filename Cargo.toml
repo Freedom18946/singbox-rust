@@ -93,10 +93,12 @@ regex = "1"
 opt-level = 1
 
 [profile.release]
-# Maximize runtime performance and cross-crate optimization
-opt-level = 3         # highest codegen optimization
-lto = "fat"           # link-time optimization across crates
-codegen-units = 1     # single codegen unit for better inlining
+# Favor release build speed for local replacement/cert loops.
+# Trade-off: slightly lower peak runtime perf vs fat LTO + 1 CGU.
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+incremental = true
 
 # Notes:
 # - Unify versions of common crates to reduce compilation errors due to features/version mismatch
