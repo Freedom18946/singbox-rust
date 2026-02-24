@@ -1,54 +1,54 @@
 {
   "binary": "../target/debug/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_signal_long_test_3012_1771068600112.json",
+  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_signal_long_test_44855_1771910455577.json",
   "iterations": 5,
   "result": "pass",
   "rounds": [
     {
-      "admin_addr": "127.0.0.1:52631",
+      "admin_addr": "127.0.0.1:52936",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 3013,
+      "pid": 44856,
       "port_released": true,
       "round": 1,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:52641",
+      "admin_addr": "127.0.0.1:52949",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 3026,
+      "pid": 44868,
       "port_released": true,
       "round": 2,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:52648",
+      "admin_addr": "127.0.0.1:52956",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 3039,
+      "pid": 44881,
       "port_released": true,
       "round": 3,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:52655",
+      "admin_addr": "127.0.0.1:52963",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 3051,
+      "pid": 44893,
       "port_released": true,
       "round": 4,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:52662",
+      "admin_addr": "127.0.0.1:52972",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 3064,
+      "pid": 44905,
       "port_released": true,
       "round": 5,
       "sigterm_exit_code": 0,
@@ -74,5 +74,5 @@
     "sigterm_exit_zero_all_rounds": true,
     "task_delta": 0
   },
-  "timestamp": "2026-02-14T11:30:05.789003+00:00"
+  "timestamp": "2026-02-24T05:21:01.004914+00:00"
 }

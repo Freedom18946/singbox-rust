@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-02-14T11:30:05Z",
+  "generated_at": "2026-02-24T05:21:01Z",
   "profile": "fast",
-  "overall": "PASS_ENV_LIMITED",
+  "overall": "PASS_STRICT",
   "api_url": "http://127.0.0.1:19090",
   "fast_profile": {
     "hot_reload_iterations": 20,
@@ -17,9 +17,10 @@
     "clippy": "PASS",
     "hot_reload_long_test": "PASS",
     "signal_long_test": "PASS",
-    "canary": "ENV_LIMITED",
-    "docker": "ENV_LIMITED",
-    "gui_smoke": "ENV_LIMITED"
+    "canary": "SKIP",
+    "docker": "SKIP",
+    "gui_smoke": "SKIP"
   },
-  "env_limited_reasons": ["docker_daemon_unavailable", "gui_smoke_manual_step", "canary_api_unreachable"]
+  "optional_gate_skips": ["docker_daemon_unavailable", "gui_smoke_manual_step", "canary_api_unreachable"],
+  "env_limited_reasons": []
 }

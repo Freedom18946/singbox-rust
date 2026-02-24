@@ -1,6 +1,6 @@
 # 项目结构导航（Project Structure Navigation）
 
-> **位置**：已迁移至 `agents-only/08-PROJECT-STRUCTURE.md`
+> **位置**：权威文档位于 `agents-only/02-reference/08-PROJECT-STRUCTURE.md`（本文件即权威位置）
 > **最后更新**：2026-02-07
 >
 > 此文档是项目结构的权威参考。AI 初始化时需验证结构一致性。
@@ -340,8 +340,8 @@ scripts/
 
 ### 📝 Important Files
 
-- 项目战略: `agents-only/06-STRATEGIC-ROADMAP.md` - 战略路线图
-- Go Parity Matrix: `GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
+- 项目战略: `agents-only/03-planning/06-STRATEGIC-ROADMAP.md` - 战略路线图
+- Go Parity Matrix: `agents-only/02-reference/GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
 - Migration Guide: `docs/MIGRATION_GUIDE.md` - Go → Rust full migration path
 - Performance Benchmarks: `benchmark_results/`, `reports/PERFORMANCE_REPORT.md`, and legacy `docs/archive/root-legacy/BENCHMARKS.md`
 - Test Coverage: `reports/TEST_COVERAGE.md`
@@ -368,7 +368,7 @@ scripts/
 
 ### Parity Baseline (2026-01-07)
 
-**Current Baseline**: sing-box Go 1.12.14 — overall parity 88% (183/209), feature-gated parity builds. See `GO_PARITY_MATRIX.md` and `NEXT_STEPS.md`.
+**Current Baseline**: sing-box Go 1.12.14 — acceptance baseline parity 100% (209/209 closed, includes accepted limitations). See `agents-only/02-reference/GO_PARITY_MATRIX.md` and `NEXT_STEPS.md`.
 
 #### Protocol Coverage (Go)
 

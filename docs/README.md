@@ -2,7 +2,7 @@
 
 Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite of sing-box, designed for high performance, memory safety, and cross-platform compatibility.
 
-**Project Status**: v0.2.0+ | Release-ready candidate | Feature Parity: 99.52% (208/209) vs sing-box 1.12.14
+**Project Status**: v0.2.0+ | Release-ready candidate | Feature Parity: 100% acceptance baseline (209/209 closed) vs sing-box 1.12.14
 
 ---
 
@@ -198,7 +198,8 @@ This documentation follows these principles:
 
 ## 🔄 Recent Updates
 
-- **2026-02-12**: L15-L16 closed; parity recalibrated to 99.52% (208/209), remaining `PX-015` tracked as Linux runtime validation evidence item
+- **2026-02-24**: L17 capstone fast rerun completed with `overall=PASS_STRICT`; optional environment gates recorded as `SKIP` (`docker/gui_smoke/canary`) in `reports/stability/l17_capstone_status.json`
+- **2026-02-24**: Parity baseline updated to 209/209 closed (acceptance baseline); PX-015 Linux runtime evidence no longer tracked as open blocker
 - **2026-02-12**: Added L17 entry docs (`configuration.md`, `migration-from-go.md`, `troubleshooting.md`) and release-readiness workflows/scripts
 - **2026-01-07**: Historical parity snapshot at 88% (183/209) vs sing-box 1.12.14
 - **2025-11-23**: 100% protocol coverage achieved (Go 1.12.12 baseline, 历史基线) - 17/17 inbound, 19/19 outbound
@@ -227,6 +228,6 @@ See the documentation guide for structure and link hygiene tips: [Documentation 
 
 **Documentation Version**: v2.0 (restructured)  
 **Project Version**: v0.2.0+  
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-02-24
 
 > _Never break userspace_ — we add, we don't remove.

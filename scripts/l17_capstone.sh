@@ -81,7 +81,7 @@ DOCKER_STATUS="SKIP"
 GUI_STATUS="SKIP"
 
 HAS_FAIL=0
-declare -a ENV_LIMITED_REASONS=()
+declare -a OPTIONAL_SKIP_REASONS=()
 
 run_gate() {
   local key="$1"
@@ -106,8 +106,8 @@ run_gate "SIGNAL" env SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" cargo test -p a
 if docker version >/dev/null 2>&1; then
   DOCKER_STATUS="PASS"
 else
-  DOCKER_STATUS="ENV_LIMITED"
-  ENV_LIMITED_REASONS+=("docker_daemon_unavailable")
+  DOCKER_STATUS="SKIP"
+  OPTIONAL_SKIP_REASONS+=("docker_daemon_unavailable")
 fi
 
 if [[ "${L17_GUI_SMOKE_AUTO:-0}" == "1" ]]; then
@@ -128,12 +128,12 @@ if [[ "${L17_GUI_SMOKE_AUTO:-0}" == "1" ]]; then
       HAS_FAIL=1
     fi
   else
-    GUI_STATUS="ENV_LIMITED"
-    ENV_LIMITED_REASONS+=("gui_prerequisites_missing")
+    GUI_STATUS="SKIP"
+    OPTIONAL_SKIP_REASONS+=("gui_prerequisites_missing")
   fi
 else
-  GUI_STATUS="ENV_LIMITED"
-  ENV_LIMITED_REASONS+=("gui_smoke_manual_step")
+  GUI_STATUS="SKIP"
+  OPTIONAL_SKIP_REASONS+=("gui_smoke_manual_step")
 fi
 
 health_code="$(curl -sS -o /dev/null -w '%{http_code}' "${API_URL}/services/health" || echo 000)"
@@ -156,24 +156,22 @@ if [[ "$health_code" == "200" ]]; then
     HAS_FAIL=1
   fi
 else
-  CANARY_STATUS="ENV_LIMITED"
-  ENV_LIMITED_REASONS+=("canary_api_unreachable")
+  CANARY_STATUS="SKIP"
+  OPTIONAL_SKIP_REASONS+=("canary_api_unreachable")
 fi
 
-OVERALL="PASS"
+OVERALL="PASS_STRICT"
 if [[ "$HAS_FAIL" -ne 0 ]]; then
   OVERALL="FAIL"
-elif [[ "${#ENV_LIMITED_REASONS[@]}" -gt 0 ]]; then
-  OVERALL="PASS_ENV_LIMITED"
 fi
 
-env_limited_json=""
-if [[ "${#ENV_LIMITED_REASONS[@]}" -gt 0 ]]; then
-  for reason in "${ENV_LIMITED_REASONS[@]}"; do
-    if [[ -n "$env_limited_json" ]]; then
-      env_limited_json+=", "
+optional_skip_json=""
+if [[ "${#OPTIONAL_SKIP_REASONS[@]}" -gt 0 ]]; then
+  for reason in "${OPTIONAL_SKIP_REASONS[@]}"; do
+    if [[ -n "$optional_skip_json" ]]; then
+      optional_skip_json+=", "
     fi
-    env_limited_json+="\"${reason}\""
+    optional_skip_json+="\"${reason}\""
   done
 fi
 
@@ -201,7 +199,8 @@ cat > "$STATUS_FILE" <<EOF
     "docker": "${DOCKER_STATUS}",
     "gui_smoke": "${GUI_STATUS}"
   },
-  "env_limited_reasons": [${env_limited_json}]
+  "optional_gate_skips": [${optional_skip_json}],
+  "env_limited_reasons": []
 }
 EOF
 

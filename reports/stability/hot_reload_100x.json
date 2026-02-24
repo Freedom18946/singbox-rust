@@ -1,15 +1,15 @@
 {
-  "admin_addr": "127.0.0.1:52603",
+  "admin_addr": "127.0.0.1:52887",
   "binary": "../target/debug/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_2515_1771068593228.json",
+  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_44508_1771910446656.json",
   "fd_delta": 0,
-  "final_fds": 17,
-  "final_rss_kb": 18640,
-  "initial_fds": 17,
-  "initial_rss_kb": 18624,
+  "final_fds": 18,
+  "final_rss_kb": 18560,
+  "initial_fds": 18,
+  "initial_rss_kb": 18528,
   "iterations": 20,
   "result": "pass",
-  "rss_delta_kb": 16,
+  "rss_delta_kb": 32,
   "test": "hot_reload_100x_stability",
   "threshold_check": {
     "fd_limit_delta": 50,
@@ -17,5 +17,5 @@
     "health_checks_passed": 20,
     "rss_growth_limit_pct": 10
   },
-  "timestamp": "2026-02-14T11:29:59.742900+00:00"
+  "timestamp": "2026-02-24T05:20:53.377966+00:00"
 }

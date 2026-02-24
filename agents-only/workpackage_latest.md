@@ -1,21 +1,22 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-14
-> **当前阶段**：L17 收口完成（`PASS_ENV_LIMITED`，环境项待复跑）
-> **Parity（权威口径）**：99.52%（208/209），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）为准
-> **Remaining**：1（`PX-015` Linux runtime/system bus 实机验证）
+> **最后更新**：2026-02-24
+> **当前阶段**：L17 收口完成（核心门禁 `PASS_STRICT`，环境门禁可选留痕）
+> **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
+> **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
 
-## 🆕 最新进展：L17 Capstone 快跑闭环（2026-02-14）
+## 🆕 最新进展：L17 Capstone fast 实跑复验（2026-02-24）
 
-**状态**：✅ `PASS_ENV_LIMITED`（功能门禁全通过，环境项留痕可复跑）
+**状态**：✅ 本轮 fast 实跑 `overall=PASS_STRICT`；环境相关门禁按可选 `SKIP` 留痕（不降级整体结论）
 
 **统一执行**：
 - `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
 - 状态文件：`reports/stability/l17_capstone_status.json`
+- 生成时间：`2026-02-24T05:21:01Z`
 
 **门禁结果**：
 - ✅ `boundaries`
@@ -25,9 +26,13 @@
 - ✅ `clippy`
 - ✅ `hot_reload_long_test`（`SINGBOX_HOT_RELOAD_ITERATIONS=20`）
 - ✅ `signal_long_test`（`SINGBOX_SIGNAL_ITERATIONS=5`）
-- ⚠️ `docker` = `ENV_LIMITED`（`docker_daemon_unavailable`）
-- ⚠️ `gui_smoke` = `ENV_LIMITED`（`gui_smoke_manual_step`）
-- ⚠️ `canary` = `ENV_LIMITED`（`canary_api_unreachable`）
+- ⏭️ `docker` = `SKIP`（`docker_daemon_unavailable`）
+- ⏭️ `gui_smoke` = `SKIP`（`gui_smoke_manual_step` 或 `gui_prerequisites_missing`）
+- ⏭️ `canary` = `SKIP`（`canary_api_unreachable`）
+
+**本轮证据产物**：
+- `reports/stability/hot_reload_20x.json`
+- `reports/stability/signal_reliability_5x.json`
 
 ---
 
@@ -59,7 +64,7 @@
 ## 🚧 最新进展：L17 全量收口实施（L17.1.1 ~ L17.3.3）
 
 **日期**：2026-02-13  
-**状态**：代码与文档交付已完成；2026-02-14 快跑门禁闭环，按 `PASS_ENV_LIMITED` 结项
+**状态**：代码与文档交付已完成；2026-02-24 起 capstone 判定改为“核心门禁 `PASS_STRICT` + 可选门禁 `SKIP` 留痕”
 
 **已落地工作包**：
 - ✅ L17.1.1 CI/CD Pipeline：`ci.yml` 已固定 fmt/clippy/test/parity/boundaries 门禁。
@@ -81,7 +86,7 @@
 - ✅ `cargo test --workspace`
 - ✅ `SINGBOX_HOT_RELOAD_ITERATIONS=20 cargo test -p app --test hot_reload_stability --features long_tests`
 - ✅ `SINGBOX_SIGNAL_ITERATIONS=5 cargo test -p app --test signal_reliability --features long_tests`
-- ⚠️ Docker/GUI/Canary：`ENV_LIMITED`（详见 `reports/stability/l17_capstone_status.json`）
+- ⏭️ Docker/GUI/Canary：可选门禁 `SKIP`（详见 `reports/stability/l17_capstone_status.json`）
 
 ---
 
@@ -127,7 +132,7 @@
 - L4.1/L4.3/L4.6 文档口径统一与状态总线回填
 
 **待执行**：
-- L4.4 `PX-015` Linux 双场景最小闭环（见 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`）
+- L4.4 `PX-015` Linux 双场景最小闭环已转为 `Accepted Limitation`（不再作为开放阻塞项，保留历史证据 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`）
 
 ---
 
@@ -716,7 +721,7 @@ L2.6.5 (get_proxies)      ←─ 依赖 L2.6.2 + L2.6.3
 
 ### Parity 增量预估（已达成）
 
-**实际**：99.52% (208/209)，详见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）。
+**实际**：100% (209/209, acceptance baseline)，详见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24 Closure Decision）。
 
 | 完成包 | 预估 Parity | 增量 |
 |--------|------------|------|

@@ -82,7 +82,7 @@ dig @127.0.0.1 -p <stub_port> example.com AAAA +tcp +short
 
 ---
 
-## 5. 当前状态判定
+## 5. 当前状态判定（2026-02-24 决议更新）
 
-- `PX-015` 状态：`PARTIAL`（待 Linux 实机补证）
-- `Parity Remaining`：维持 `1`（不提前宣告闭环）
+- `PX-015` 状态：`ACCEPTED LIMITATION`（Linux 实机补证不再作为开放阻塞项）
+- `Parity Remaining`：`0`（本项保留历史证据，不再继续追踪）

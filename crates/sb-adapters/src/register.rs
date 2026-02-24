@@ -419,6 +419,35 @@ fn build_tls_config(ir: &OutboundIR) -> Option<sb_config::outbound::TlsConfig> {
     })
 }
 
+#[cfg(feature = "tls_reality")]
+fn build_reality_client_config(
+    ir: &OutboundIR,
+    fallback_target: &str,
+) -> Option<sb_tls::RealityClientConfig> {
+    if !ir.reality_enabled.unwrap_or(false) {
+        return None;
+    }
+
+    let public_key = ir.reality_public_key.clone()?;
+    let server_name = ir
+        .reality_server_name
+        .clone()
+        .or_else(|| ir.tls_sni.clone())
+        .unwrap_or_else(|| fallback_target.to_string());
+
+    Some(sb_tls::RealityClientConfig {
+        target: server_name.clone(),
+        server_name,
+        public_key,
+        short_id: ir.reality_short_id.clone(),
+        fingerprint: ir
+            .utls_fingerprint
+            .clone()
+            .unwrap_or_else(|| "chrome".to_string()),
+        alpn: ir.tls_alpn.clone().unwrap_or_default(),
+    })
+}
+
 #[cfg(feature = "adapter-http")]
 fn build_http_outbound(
     param: &OutboundParam,
@@ -826,7 +855,7 @@ fn build_trojan_outbound(
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
         transport_layer,
         #[cfg(feature = "tls_reality")]
-        reality: None, // TODO: wire REALITY config from IR
+        reality: build_reality_client_config(ir, server),
         multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
     };
 
@@ -971,7 +1000,7 @@ fn build_vless_outbound(
         #[cfg(feature = "transport_mux")]
         multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
         #[cfg(feature = "tls_reality")]
-        reality: None, // TODO: wire REALITY config from IR
+        reality: build_reality_client_config(ir, server),
         #[cfg(feature = "transport_ech")]
         ech: None,
     };

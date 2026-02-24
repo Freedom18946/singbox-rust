@@ -1,4 +1,4 @@
-name: Linux Resolved Validation (PX-015)
+name: Archived - Linux Resolved Validation (PX-015)
 
 on:
   workflow_dispatch:
@@ -19,6 +19,8 @@ env:
 
 jobs:
   resolved-validation:
+    # Historical optional workflow. PX-015 is accepted limitation and no longer
+    # tracked as a blocking parity item.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

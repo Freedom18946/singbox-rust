@@ -678,7 +678,8 @@ fn build_ech_client_config(
         .with_root_certificates(root_store)
         .with_no_client_auth();
 
-    // TODO: map pq_signature_schemes_enabled and dynamic_record_sizing_disabled when rustls exposes knobs.
+    // rustls currently does not expose stable knobs for
+    // pq_signature_schemes_enabled / dynamic_record_sizing_disabled.
 
     if let Some(base) = base_config {
         config.alpn_protocols = base.alpn_protocols.clone();

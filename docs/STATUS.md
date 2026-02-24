@@ -1,10 +1,11 @@
 # Project Status
 
-**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 88% (183/209)
+**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100% acceptance baseline (209/209 closed)
 
-**🎉 MAJOR MILESTONE: 100% Protocol Coverage Achieved (overall parity 88%)! 🎉**
+**🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**
 
-> **Latest Update (2026-02-01)**: Aligned config validation with Go-compatible aliases (e.g., `auth_str`, `user`, URLTest timing keys, selector/urltest `outbounds`), clarified DNS outbound feature gating, and made WireGuard endpoint tests feature-aware. Overall parity remains 88% (183/209) with feature-gated parity builds; protocol coverage remains 100% for Go inbounds/outbounds. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
+> **Latest Update (2026-02-24)**: Acceptance baseline is now **209/209 closed** (includes accepted limitations / won't-fix decisions), and Linux runtime/system-bus PX-015 real-machine evidence is no longer tracked as an open blocking item. See [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](../NEXT_STEPS.md).
+> **Latest Capstone Run (2026-02-24)**: `scripts/l17_capstone.sh --profile fast` completed with `overall=PASS_STRICT`; optional environment gates were recorded as `SKIP` (`docker_daemon_unavailable`, `gui_smoke_manual_step`, `canary_api_unreachable`).
 
 ## Achievement Summary
 

@@ -23,6 +23,57 @@
 
 ## 日志记录
 
+### [2026-02-24 13:33] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求执行 L17 capstone fast 全量复跑，并将 docs 与 agents-only 状态文件同步到最新快照
+**变更**:
+- 运行与产物：
+  - 执行 `scripts/l17_capstone.sh --profile fast --api-url http://127.0.0.1:19090`
+  - 更新 `reports/stability/l17_capstone_status.json`（`overall=PASS_STRICT`）
+  - 更新 `reports/stability/hot_reload_20x.json`
+  - 更新 `reports/stability/signal_reliability_5x.json`
+- agents-only 状态总线：
+  - 更新 `agents-only/active_context.md`（L17 当前状态改为 2026-02-24 fast 实跑）
+  - 更新 `agents-only/workpackage_latest.md`（最后更新时间、门禁结果、证据路径）
+  - 更新 `agents-only/05-analysis/ACCEPTANCE-GAPS-TRACKER.md`（L4-GAP-003 改为已闭环，Accepted Limitation）
+- 文档口径：
+  - 更新 `docs/STATUS.md`（补充最新 capstone 快照）
+  - 更新 `docs/README.md`（Recent Updates 增加 capstone fast 实跑条目）
+  - 更新 `reports/gui_integration_test.md`（状态术语与新判定模型对齐）
+
+**结果**: 成功（capstone 全量复跑完成且为 `PASS_STRICT`；文档与 agents-only 口径已同步）
+**备注**: 可选环境门禁保持 `SKIP`（`docker_daemon_unavailable` / `gui_smoke_manual_step` / `canary_api_unreachable`）。
+
+---
+
+### [2026-02-24 13:00] Agent: Codex (GPT-5)
+
+**任务**: 按用户决策放弃 PX-015 追踪，统一文档口径，并按既定顺序推进门禁与技术债收口
+**变更**:
+- 口径与文档统一：
+  - 更新 `README.md`、`docs/STATUS.md`、`docs/README.md`、`docs/MIGRATION_GUIDE.md`、`docs/migration-from-go.md`、`docs/configuration.md`
+  - 更新 `agents-only/active_context.md`、`agents-only/workpackage_latest.md`、`agents-only/00-overview/00-PROJECT-OVERVIEW.md`
+  - 更新 `agents-only/03-planning/{06-STRATEGIC-ROADMAP.md,09-L5-L7-DETAILED-WORKPACKAGES.md,10-L11-L14-DETAILED-WORKPACKAGES.md,11-L15-L17-DETAILED-WORKPACKAGES.md}`
+  - 更新 `agents-only/02-reference/{GO_PARITY_MATRIX.md,08-PROJECT-STRUCTURE.md}`
+  - 更新 `agents-only/01-spec/02-ACCEPTANCE-CRITERIA.md`
+  - 新增兼容入口文件：`GO_PARITY_MATRIX.md`、`NEXT_STEPS.md`、`PROJECT_STRUCTURE_NAVIGATION.md`、`agents-only/06-STRATEGIC-ROADMAP.md`、`agents-only/08-PROJECT-STRUCTURE.md`
+- PX-015 状态决议落盘：
+  - 更新 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`（状态改为 Accepted Limitation）
+  - 更新 `.github/workflows/linux-resolved-validation.yml`（标记为 Archived/历史可选）
+- L17 门禁模型：
+  - 更新 `scripts/l17_capstone.sh`（核心门禁 `PASS_STRICT`，环境门禁 `SKIP` 留痕）
+- 代码技术债：
+  - 更新 `crates/sb-adapters/src/register.rs`（Trojan/VLESS REALITY 从 IR 接线）
+  - 更新 `crates/sb-transport/src/tls.rs`（移除未落地 TODO，改为能力说明）
+- 覆盖率文档：
+  - 更新 `reports/TEST_COVERAGE.md`（时间与状态补齐）
+  - 更新 `reports/README.md`、`reports/gui_integration_test.md`（历史口径说明）
+
+**结果**: 成功（文档口径完成统一；代码与脚本修改通过定向校验）
+**备注**: `scripts/l17_capstone.sh --profile fast` 全量重跑已启动但为节省时间中断；未生成新的完整 capstone 状态快照。
+
+---
+
 ### [2026-02-13 01:35] Agent: Codex (GPT-5)
 
 **任务**: 按 L17 全量收口计划执行并合流（L17.1.1 ~ L17.3.3）

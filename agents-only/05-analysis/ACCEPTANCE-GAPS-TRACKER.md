@@ -4,7 +4,7 @@
 >
 > **范围**：L1-L3（含已标注 ✅ Completed 的阶段），先从 L1 开始逐项清零。
 >
-> **最后更新**：2026-02-10
+> **最后更新**：2026-02-24
 
 ---
 
@@ -173,7 +173,9 @@
 ### L4-GAP-003: PX-015 Linux 双场景实机补证未完成
 
 - **观测**
-  - `PX-015` 仍为 Remaining 1；当前主机为 Darwin，缺少 `systemctl/busctl`，不能本机完成 Linux 验证。
+  - 历史阶段该项因当前主机为 Darwin（缺少 `systemctl/busctl`）无法本机完成 Linux 验证。
 - **修复动作**
   - 新增 `reports/PX015_LINUX_VALIDATION_2026-02-10.md`，固化 Linux 主机 A/B 双场景执行清单与证据要求。
-- **状态**：⏸️ 待闭环（Linux 主机执行后回填）
+  - 在 `agents-only/02-reference/GO_PARITY_MATRIX.md` 将 `PX-015` 标记为 Accepted Limitation（不再作为 Remaining 阻塞项）。
+  - 同步更新 `reports/PX015_LINUX_VALIDATION_2026-02-10.md` 状态为“保留历史证据，不再追踪”。
+- **状态**：✅ 已闭环（2026-02-24，Accepted Limitation）

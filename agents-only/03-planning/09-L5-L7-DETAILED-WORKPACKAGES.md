@@ -9,7 +9,7 @@
 
 ## Context
 
-singbox-rust 项目已完成 L1(架构) + L2(功能对齐) + L4(治理)，parity 99.52%。`labs/interop-lab` 联测底座已入库（31 YAML case、6 upstream 模拟器、完整 CLI/orchestrator/diff 流水线）。本规划填补 L5-L7 的剩余缺口：**协议故障矩阵补全（L5）**、**仿真底座能力扩展（L6）**、**GUI 通信回放深化（L7）**。
+singbox-rust 项目已完成 L1(架构) + L2(功能对齐) + L4(治理)，acceptance baseline parity 为 100%（209/209 closed）。`labs/interop-lab` 联测底座已入库（31 YAML case、6 upstream 模拟器、完整 CLI/orchestrator/diff 流水线）。本规划填补 L5-L7 的剩余缺口：**协议故障矩阵补全（L5）**、**仿真底座能力扩展（L6）**、**GUI 通信回放深化（L7）**。
 
 约束：Go+GUI+TUN 基线不可动，Rust 仅并行对照。
 

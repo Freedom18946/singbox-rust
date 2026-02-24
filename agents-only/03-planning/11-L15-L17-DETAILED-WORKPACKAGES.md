@@ -5,7 +5,7 @@
 
 ## Context
 
-singbox-rust 已完成 L1-L16 里程碑：架构整固、功能对齐（99.52% parity, 208/209）、联测仿真（83 case）、CI 治理、迁移治理、服务安全、TLS 高级能力、质量验证与性能基线。1617+ 测试通过，边界检查 exit 0。唯一未关闭项 PX-015（Linux resolved 实机验证）因无 Linux 环境暂时 deferred。
+singbox-rust 已完成 L1-L16 里程碑：架构整固、功能对齐（acceptance baseline 100% parity, 209/209 closed）、联测仿真（83 case）、CI 治理、迁移治理、服务安全、TLS 高级能力、质量验证与性能基线。1617+ 测试通过，边界检查 exit 0。PX-015（Linux resolved 实机验证）已标记为 Accepted Limitation（非阻塞）。
 
 L15-L17 将项目从"功能可用"推向"可发布"：
 - **L15 CLI 完善与功能补全（12 WP）**：补齐 CLI 最后缺口（uuid/rand/ECH/AdGuard）、Chrome 证书模式、Go specs 验收签署
@@ -63,7 +63,7 @@ L15-L17 将项目从"功能可用"推向"可发布"：
 ### L15.2.1 — Go Specs 验收清单系统签署
 
 - **复杂度**: M | **优先级**: P0 | **依赖**: L15.1.1, L15.1.2, L15.1.4, L15.1.6
-- **内容**: 99-验收清单总表.md 含 A~I 九大类 30+ MUST/SHOULD 检查项，当前零 checkmark。逐项对照 Rust 实现验证，记录证据（cargo 命令、测试名、代码引用），未通过项标注 Accepted Limitation + 原因。签署后作为 parity 最终证据。PX-015 标记为 deferred（无 Linux 环境）。
+- **内容**: 99-验收清单总表.md 含 A~I 九大类 30+ MUST/SHOULD 检查项，当前零 checkmark。逐项对照 Rust 实现验证，记录证据（cargo 命令、测试名、代码引用），未通过项标注 Accepted Limitation + 原因。签署后作为 parity 最终证据。PX-015 已记录为 Accepted Limitation（无 Linux 实机补证要求）。
 - **文件**: `agents-only/dump/go-version-analysis/2026-02-11-intake/sing-box-core-specs/99-验收清单总表.md`（逐项打勾），`agents-only/active_context.md`
 - **验收**: 所有 MUST 项 checked 或标注 Accepted Limitation；签署日期和证据完整
 
@@ -74,12 +74,12 @@ L15-L17 将项目从"功能可用"推向"可发布"：
 - **文件**: `labs/interop-lab/cases/` 3 个新 YAML，`labs/interop-lab/configs/test_adguard_filter.txt`（测试用 filter file）
 - **验收**: 3 case 通过；case 总数 80+
 
-### L15.2.3 — PX-015 状态决议与 CI 占位
+### L15.2.3 — PX-015 状态决议与 CI 占位（已归档）
 
 - **复杂度**: S | **优先级**: P1 | **依赖**: 无
-- **内容**: PX-015 因无 Linux 环境暂不可执行。创建 CI workflow 占位 .github/workflows/linux-resolved-validation.yml（手动触发，ubuntu-latest runner，执行 resolved 双场景测试脚本），以便未来有环境时一键验证。更新 parity matrix 注明 deferred 原因和 CI 入口。
+- **内容**: PX-015 已转 Accepted Limitation。保留 `.github/workflows/linux-resolved-validation.yml` 作为历史可选验证入口，不再作为 parity 阻塞项。
 - **文件**: `.github/workflows/linux-resolved-validation.yml`（新建），`agents-only/02-reference/GO_PARITY_MATRIX.md`（PX-015 状态更新）
-- **验收**: workflow 文件可被 gh workflow view 识别；parity matrix PX-015 行注明 deferred + CI path
+- **验收**: workflow 文件可被 gh workflow view 识别；parity matrix PX-015 行注明 accepted limitation + optional CI path
 
 ### L15.3.1 — ECH Keypair 兼容性 interop-lab Case
 

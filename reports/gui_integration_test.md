@@ -1,8 +1,8 @@
 # GUI Integration Test Report
 
 - Scope: L17.3.1 GUI.for SingBox smoke validation
-- Date: 2026-02-14
-- Result: `ENV_LIMITED`
+- Date: 2026-02-14 (historical GUI smoke snapshot)
+- Result: `SKIP` (aligned with current capstone status model; historical run reason unchanged)
 - Reason: `gui_smoke_manual_step` (this round did not enable GUI auto smoke)
 - Related status: `reports/stability/l17_capstone_status.json`
 
@@ -15,8 +15,8 @@
 
 ## Evidence
 
-- Capstone status: `PASS_ENV_LIMITED`
-- Gate snapshot: `gui_smoke=ENV_LIMITED`, `docker=ENV_LIMITED`, `canary=ENV_LIMITED`
+- Capstone status: latest `PASS_STRICT` (2026-02-24 fast run), historical `PASS_ENV_LIMITED` (2026-02-14)
+- Gate snapshot: latest `gui_smoke=SKIP`, `docker=SKIP`, `canary=SKIP`; historical `gui_smoke/docker/canary=ENV_LIMITED`
 
 ## Re-run Commands
 

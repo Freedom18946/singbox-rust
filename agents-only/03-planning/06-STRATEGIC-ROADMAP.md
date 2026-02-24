@@ -211,13 +211,13 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 
 ### 缺口分析
 > **详细文档**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`
-> **当前口径**: `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
+> **当前口径**: `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24 Closure Decision）
 
 | 指标 | 值 |
 |------|------|
 | 总对标项 | 209 |
-| 已闭环（含 Accepted / Won't Fix）✅ | 208 (99.52%) |
-| 剩余待闭环 ⬜ | 1 (`PX-015` Linux runtime/system bus 实机验证) |
+| 已闭环（含 Accepted / Won't Fix）✅ | 209 (100%) |
+| 剩余待闭环 ⬜ | 0 |
 
 ### 关键阻塞
 - ~~`app --features router` maxminddb API 变更~~ ✅ 已修复 (L2.2)
@@ -306,15 +306,15 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 | P0 | L4.1 状态口径与路线图对齐 | 🔄 进行中 | Codex |
 | P0 | L4.2 V4a 门禁回归消除（不改阈值） | ✅ 完成（26→24） | Codex |
 | P0 | L4.3 双轨质量标准落地（STRICT/ENV-LIMITED） | 🔄 进行中 | Codex |
-| P0 | L4.4 PX-015 Linux 双场景最小闭环 | ⏸ 待 Linux 主机执行 | Codex |
+| P0 | L4.4 PX-015 Linux 双场景最小闭环 | ✅ 已转 Accepted Limitation（不再追踪） | Codex |
 | P1 | L4.5 质量复验证据固化 | ✅ 完成 | Codex |
 | P0 | L4.6 矩阵与状态总线回填 | 🔄 进行中 | Codex |
 
 ### 下一步行动
 
 1. **立即**：完成 L4.1/L4.3/L4.6 文档口径统一
-2. **短期**：在 Linux 环境执行 L4.4 双场景补证并出具报告
-3. **中期**：将 PX-015 结果回填到 Parity Matrix 与 Remaining 口径
+2. **短期**：继续巩固 L17 核心门禁 `PASS-STRICT` 运行稳定性
+3. **中期**：维护文档与状态总线口径一致性（Parity / 验收 / 门禁定义）
 4. **长期**：继续推进 M3 的 STRICT 环境复验
 
 ---
@@ -437,7 +437,7 @@ L1.1.1.1    → 子任务层（如：编写 sb-core 依赖检查）
 | L4 | L4.1 状态口径对齐 | 进行中 | 2026-02-10 |
 | L4 | L4.2 V4a 门禁回归 | ✅ 完成（26→24） | 2026-02-10 |
 | L4 | L4.3 双轨质量标准 | 进行中 | 2026-02-10 |
-| L4 | L4.4 PX-015 Linux 补证 | 待 Linux 环境 | TBD |
+| L4 | L4.4 PX-015 Linux 补证 | Accepted Limitation（不再追踪） | CLOSED |
 | L4 | L4.5 质量复验证据 | ✅ 完成 | 2026-02-10 |
 | L4 | L4.6 状态总线回填 | 进行中 | 2026-02-10 |
 

@@ -1,6 +1,6 @@
 # Test Coverage Report
 
-**Last Updated**: 2026-01-18
+**Last Updated**: 2026-02-24
 
 ---
 
@@ -18,6 +18,11 @@
 ## Coverage Summary
 
 This document tracks test coverage for protocol adapters, DNS transports, VPN endpoints/services, and other core functionality.
+
+**Status Update (2026-02-24)**
+- Feature gate matrix is currently green at `46/46` (`reports/feature_matrix_report.txt`).
+- Workspace quality gates are stable in core paths (fmt/clippy/test/parity/boundaries).
+- This report remains the protocol-test-gap tracker; parity closure and acceptance closure are tracked in `agents-only/02-reference/GO_PARITY_MATRIX.md`.
 
 **Updates (2025-11-21)**
 - Added endpoint/service lifecycle coverage: `app/tests/wireguard_endpoint_test.rs`, `app/tests/wireguard_endpoint_e2e.rs`, `app/tests/service_instantiation_e2e.rs`
@@ -207,7 +212,7 @@ Matrix coverage (32 cases, `cargo run -p xtask -- feature-matrix`):
 ## Recommendations
 
 1. **Immediate Actions:**
-   - Run feature gate test script
+   - Refresh this report from latest CI artifacts (feature-matrix + protocol integration suites)
    - Add Shadowsocks integration test
    - Add Trojan integration test
    - Add DNS outbound basic test

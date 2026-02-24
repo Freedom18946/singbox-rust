@@ -8,7 +8,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 
 ## Executive Summary
 
-**Feature Parity Status: 88% (183/209)**
+**Feature Parity Status: 100% acceptance baseline (209/209 closed)**
 
 - ✅ **Protocols**: 100% coverage of Go protocols (18/18 inbound, 19/19 outbound)
 - ✅ **DNS**: 11/11 transports aligned (feature-gated)

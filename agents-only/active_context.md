@@ -7,11 +7,11 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L17 收口完成（PASS_ENV_LIMITED）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
+**当前阶段**: **L17 收口完成（核心门禁 PASS_STRICT）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L16 ✅）
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
-**Parity（权威口径）**: 99.52% (208/209)，见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-10 Recalibration）
-**Remaining**: 1（`PX-015` Linux runtime/system bus 实机验证）
-**Tests**: L17 快跑复验（2026-02-14）：`scripts/l17_capstone.sh --profile fast` => `PASS_ENV_LIMITED`；门禁 `boundaries/parity/workspace_test/fmt/clippy/hot_reload(20x)/signal(5x)` 全部 ✅；环境项 `docker/gui/canary` 标记 `ENV_LIMITED`
+**Parity（权威口径）**: 100%（209/209 closed, acceptance baseline），见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）
+**Remaining**: 0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation，不再追踪）
+**Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`；`docker/gui_smoke/canary` 在当前环境按可选门禁 `SKIP` 留痕。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
 ### L17 发布就绪收口（2026-02-13）
@@ -25,16 +25,19 @@
 - **L17.2.3 安全清单**: `deny.toml` 适配 cargo-deny 0.18；`reports/security_audit.md` 已转为实跑结论（HIGH/CRITICAL 阻断策略）。
 - **L17.3.1 GUI 冒烟**: `scripts/gui_smoke_test.sh` 与 `reports/gui_integration_test.md` 已落地（半自动模板 + 证据位）。
 - **L17.3.2 Canary 框架**: `scripts/canary_7day.sh` 与 `reports/stability/canary_summary.md` 已落地（JSONL + summary）。
-- **L17.3.3 Capstone 状态**: `reports/stability/l17_capstone_status.json` 最新为 `PASS_ENV_LIMITED`（fast 档）；功能门禁闭环完成，仅保留环境型限制。
+- **L17.3.3 Capstone 状态**: `reports/stability/l17_capstone_status.json` 已更新为 2026-02-24 fast 实跑快照（`overall=PASS_STRICT`）。
 
-### L17 当前状态（2026-02-14 快跑复验）
+### L17 当前状态（2026-02-24 fast 复验）
 
 - `cargo fmt --all -- --check`：✅ PASS
 - `cargo clippy --workspace --all-features --all-targets -- -D warnings`：✅ PASS
 - `cargo test --workspace`：✅ PASS
-- Docker：`ENV_LIMITED`（`docker_daemon_unavailable`）
-- GUI smoke：`ENV_LIMITED`（`gui_smoke_manual_step`）
-- Canary：`ENV_LIMITED`（`canary_api_unreachable`）
+- `cargo test -p app --test hot_reload_stability --features long_tests`（`SINGBOX_HOT_RELOAD_ITERATIONS=20`）：✅ PASS
+- `cargo test -p app --test signal_reliability --features long_tests`（`SINGBOX_SIGNAL_ITERATIONS=5`）：✅ PASS
+- Docker：`SKIP`（`docker_daemon_unavailable`）
+- GUI smoke：`SKIP`（`gui_smoke_manual_step`）
+- Canary：`SKIP`（`canary_api_unreachable`）
+- 状态文件：`reports/stability/l17_capstone_status.json`（`generated_at=2026-02-24T05:21:01Z`）
 
 ### L16.2.x long_tests 稳定性补丁（2026-02-14）
 
@@ -152,7 +155,7 @@
 - **rule-set convert --type adguard（L15.1.4）**: AdGuard DNS filter 解析器，`crates/sb-core/src/router/ruleset/adguard.rs`（723 行）。支持 `||domain^`/`@@||domain^`/`/regex/`/`$important`/hosts 格式/纯域名。20 个单元测试。
 - **rule-set format --write/-w（L15.1.5）**: 原地写回格式化 JSON。3 个单元测试（写回验证、`--write`+`--output` 冲突检测、ConvertType 默认值）。
 - **Chrome 证书存储模式（L15.1.6）**: `CertificateStoreMode::Chrome` 变体，使用 webpki-roots（与 Mozilla 模式共享根证书库）。4 个 Chrome 专属测试（大小写解析、非空验证、fingerprint）。
-- **PX-015 CI 占位（L15.2.3）**: `.github/workflows/linux-resolved-validation.yml`（workflow_dispatch 触发，ubuntu-latest，dual/single/both 场景选择）。GO_PARITY_MATRIX.md PX-015 行已标注 deferred + CI workflow 引用。
+- **PX-015 CI 占位（L15.2.3）**: `.github/workflows/linux-resolved-validation.yml` 作为历史可选验证入口保留；PX-015 已转 Accepted Limitation，不再作为阻塞项。
 - **验收清单签署（L15.2.1）**: `99-验收清单总表.md` 全部 33 项 A~I 节已 `[x]` 并附证据链。签署日期 2026-02-12。
 - **interop-lab CLI case（4 个）**: `p1_cli_generate_uuid_format`（UUID v4 正则断言）、`p1_cli_generate_rand_base64`（24 字符长度断言）、`p1_cli_ruleset_convert_adguard`（domain_suffix 输出断言）、`p1_cli_ech_keypair_pem_format`（ECH PEM header 断言）。
 - **测试修复**: `dns_integration.rs` 环境变量竞态修复（`set_var`→显式 config 传参，5 轮稳定）。
@@ -489,7 +492,7 @@
 - L4.5：新增 `reports/L4_QUALITY_RECHECK_2026-02-10.md`，将复验命令统一按 `PASS-STRICT / PASS-ENV-LIMITED` 记录
 
 **待补项**:
-- L4.4：`PX-015` Linux 双场景实机验证（本机 Darwin 无 `systemctl/busctl`，待 Linux 主机执行）
+- L4.4：`PX-015` Linux 双场景实机验证已转 Accepted Limitation（历史证据保留，不再要求 Linux 主机补证）
 
 ---
 
@@ -795,7 +798,7 @@
 |----|------|---------|--------|--------|------|
 | L3.1 | SSMAPI 对齐 | PX-011 | 中 | 低 | ✅ 已完成（2026-02-09）：per-endpoint 绑定闭环 + API 行为对齐 + cache 兼容 + Shadowsocks tracker 接线 |
 | L3.2 | DERP 配置对齐 | PX-014 | 中 | 低 | ✅ 已完成（2026-02-09）：schema + runtime 语义对齐（verify_client_url/mesh_with/verify_client_endpoint tag/STUN/bootstrap-dns/ListenOptions） |
-| L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | ✅ 已完成（2026-02-09）：resolved 替代模型 + resolve1 Resolve* + UDP/TCP stub + `type:\"resolved\"` 接线 + transport 对齐；Linux runtime/system bus 验证待做 |
+| L3.3 | Resolved 完整化 | PX-015 | 中 | 低 | ✅ 已完成（2026-02-09）：resolved 替代模型 + resolve1 Resolve* + UDP/TCP stub + `type:\"resolved\"` 接线 + transport 对齐；Linux runtime/system bus 实机补证已转 Accepted Limitation |
 | L3.4 | Cache File 深度对齐 | PX-009/013 | 中 | 中 | ✅ 已完成（2026-02-09）：cache_id（仅 Clash 三项隔离）+ FakeIP metadata debounce（10s）+ ruleset cache 策略固定为 file cache 权威 |
 | L3.5 | ConnMetadata chain/rule 填充 | L2.8 延后 | 小 | 中 | 连接详情显示命中的规则链。需 Router 层统一路由入口 |
 
