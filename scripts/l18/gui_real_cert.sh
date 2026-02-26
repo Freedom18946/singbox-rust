@@ -8,7 +8,10 @@ Usage:
     --gui-app <path> \
     [--gui-process-name NAME] \
     [--go-bin PATH] [--go-config PATH] [--go-api-url URL] [--go-api-token TOKEN] \
+    [--go-build-enabled 0|1] [--go-build-tags TAGS] \
     [--rust-bin PATH] [--rust-config PATH] [--rust-api-url URL] [--rust-api-token TOKEN] \
+    [--rust-build-enabled 0|1] [--rust-build-features FEATURES] \
+    [--runtime-log-dir PATH] \
     [--automation-cmd PATH] [--timeout-sec N] [--report-json PATH] [--report-md PATH] \
     [--sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1]
 
@@ -23,20 +26,27 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_PROCESS_NAME="${L18_GUI_PROCESS_NAME:-GUI.for.SingBox}"
 
-GO_BIN="${L18_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
+DEFAULT_GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box"
+GO_BIN="${L18_GO_BIN:-${DEFAULT_GO_BIN}}"
 GO_CONFIG="${L18_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json}"
 GO_API_URL="${L18_GO_API_URL:-http://127.0.0.1:9090}"
 GO_API_TOKEN="${L18_GO_API_TOKEN:-test-secret}"
+GO_BUILD_ENABLED="${L18_GUI_GO_BUILD_ENABLED:-1}"
+GO_BUILD_TAGS="${L18_GUI_GO_BUILD_TAGS:-with_clash_api}"
 
-RUST_BIN="${L18_RUST_BIN:-${ROOT_DIR}/target/release/run}"
+DEFAULT_RUST_BIN="${ROOT_DIR}/target/release/run"
+RUST_BIN="${L18_RUST_BIN:-${DEFAULT_RUST_BIN}}"
 RUST_CONFIG="${L18_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_rust.json}"
 RUST_API_URL="${L18_RUST_API_URL:-http://127.0.0.1:19090}"
 RUST_API_TOKEN="${L18_RUST_API_TOKEN:-test-secret}"
+RUST_BUILD_ENABLED="${L18_GUI_RUST_BUILD_ENABLED:-1}"
+RUST_BUILD_FEATURES="${L18_GUI_RUST_BUILD_FEATURES:-parity}"
 
 AUTOMATION_CMD="${L18_GUI_AUTOMATION_CMD:-}"
 TIMEOUT_SEC="${L18_GUI_TIMEOUT_SEC:-45}"
 REPORT_JSON="${L18_GUI_REAL_REPORT_JSON:-${ROOT_DIR}/reports/l18/gui_real_cert.json}"
 REPORT_MD="${L18_GUI_REAL_REPORT_MD:-${ROOT_DIR}/reports/l18/gui_real_cert.md}"
+RUNTIME_LOG_DIR="${L18_GUI_REAL_RUNTIME_LOG_DIR:-${ROOT_DIR}/reports/l18/gui_real}"
 
 SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
 ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
@@ -70,6 +80,14 @@ while [[ $# -gt 0 ]]; do
       GO_API_TOKEN="$2"
       shift 2
       ;;
+    --go-build-enabled)
+      GO_BUILD_ENABLED="$2"
+      shift 2
+      ;;
+    --go-build-tags)
+      GO_BUILD_TAGS="$2"
+      shift 2
+      ;;
     --rust-bin)
       RUST_BIN="$2"
       shift 2
@@ -84,6 +102,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --rust-api-token)
       RUST_API_TOKEN="$2"
+      shift 2
+      ;;
+    --rust-build-enabled)
+      RUST_BUILD_ENABLED="$2"
+      shift 2
+      ;;
+    --rust-build-features)
+      RUST_BUILD_FEATURES="$2"
+      shift 2
+      ;;
+    --runtime-log-dir)
+      RUNTIME_LOG_DIR="$2"
       shift 2
       ;;
     --automation-cmd)
@@ -136,21 +166,25 @@ if [[ ! -e "$GUI_APP" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$GO_BIN" ]]; then
-  echo "go binary not executable: $GO_BIN" >&2
-  exit 1
+if [[ "$GO_BUILD_ENABLED" != "0" && "$GO_BUILD_ENABLED" != "1" ]]; then
+  echo "--go-build-enabled must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$RUST_BUILD_ENABLED" != "0" && "$RUST_BUILD_ENABLED" != "1" ]]; then
+  echo "--rust-build-enabled must be 0 or 1" >&2
+  exit 2
 fi
 if [[ ! -f "$GO_CONFIG" ]]; then
   echo "go config not found: $GO_CONFIG" >&2
   exit 1
 fi
-if [[ ! -x "$RUST_BIN" ]]; then
-  echo "rust binary not executable: $RUST_BIN" >&2
-  exit 1
-fi
 if [[ ! -f "$RUST_CONFIG" ]]; then
   echo "rust config not found: $RUST_CONFIG" >&2
   exit 1
+fi
+if [[ -z "$RUNTIME_LOG_DIR" ]]; then
+  echo "--runtime-log-dir must not be empty" >&2
+  exit 2
 fi
 if [[ -n "$AUTOMATION_CMD" && ! -x "$AUTOMATION_CMD" ]]; then
   echo "automation cmd not executable: $AUTOMATION_CMD" >&2
@@ -165,11 +199,50 @@ if [[ "$ALLOW_REAL_PROXY_COEXIST" != "0" && "$ALLOW_REAL_PROXY_COEXIST" != "1" ]
   exit 2
 fi
 
+if [[ ! ( "$GO_BUILD_ENABLED" == "1" && "$GO_BIN" == "$DEFAULT_GO_BIN" ) && ! -x "$GO_BIN" ]]; then
+  echo "go binary not executable: $GO_BIN" >&2
+  exit 1
+fi
+if [[ ! ( "$RUST_BUILD_ENABLED" == "1" && "$RUST_BIN" == "$DEFAULT_RUST_BIN" ) && ! -x "$RUST_BIN" ]]; then
+  echo "rust binary not executable: $RUST_BIN" >&2
+  exit 1
+fi
+
+if [[ "$GO_BUILD_ENABLED" == "1" && "$GO_BIN" == "$DEFAULT_GO_BIN" ]]; then
+  if [[ ! -x "${ROOT_DIR}/scripts/l18/build_go_oracle.sh" ]]; then
+    echo "go oracle build script not executable: ${ROOT_DIR}/scripts/l18/build_go_oracle.sh" >&2
+    exit 1
+  fi
+  echo "[L18 gui-real] building go oracle (tags=${GO_BUILD_TAGS})..."
+  go_build_output="$("${ROOT_DIR}/scripts/l18/build_go_oracle.sh" --build-tags "$GO_BUILD_TAGS")"
+  built_go_bin="$(printf '%s\n' "$go_build_output" | sed -n 's/^binary=//p' | tail -n1)"
+  if [[ -z "$built_go_bin" || ! -x "$built_go_bin" ]]; then
+    echo "go oracle build succeeded but binary path is invalid" >&2
+    echo "$go_build_output" >&2
+    exit 1
+  fi
+  GO_BIN="$built_go_bin"
+fi
+
+if [[ "$RUST_BUILD_ENABLED" == "1" && "$RUST_BIN" == "$DEFAULT_RUST_BIN" ]]; then
+  echo "[L18 gui-real] building rust run (features=${RUST_BUILD_FEATURES})..."
+  cargo build --release -p app --features "$RUST_BUILD_FEATURES" --bin run >/dev/null
+fi
+
+if [[ ! -x "$GO_BIN" ]]; then
+  echo "go binary not executable after build: $GO_BIN" >&2
+  exit 1
+fi
+if [[ ! -x "$RUST_BIN" ]]; then
+  echo "rust binary not executable after build: $RUST_BIN" >&2
+  exit 1
+fi
+
 if [[ -z "$SANDBOX_ROOT" ]]; then
   SANDBOX_ROOT="${ROOT_DIR}/reports/l18/sandbox/gui_real_$(date -u +'%Y%m%dT%H%M%SZ')_${RANDOM}"
 fi
 
-mkdir -p "$(dirname "$REPORT_JSON")" "$(dirname "$REPORT_MD")" "${ROOT_DIR}/reports/l18/gui_real" "$SANDBOX_ROOT"
+mkdir -p "$(dirname "$REPORT_JSON")" "$(dirname "$REPORT_MD")" "$RUNTIME_LOG_DIR" "$SANDBOX_ROOT"
 
 SANDBOX_TMP="${SANDBOX_ROOT}/tmp"
 mkdir -p "$SANDBOX_TMP"
@@ -309,6 +382,28 @@ wait_health_200() {
   return 1
 }
 
+wait_kernel_ready() {
+  local api_url="$1"
+  local token="$2"
+  local timeout_sec="$3"
+  local i=0
+  while [[ "$i" -lt "$timeout_sec" ]]; do
+    health_code="$(curl_code "$api_url" "/services/health" "$token")"
+    if [[ "$health_code" == "200" ]]; then
+      return 0
+    fi
+
+    proxies_code="$(curl_code "$api_url" "/proxies" "$token")"
+    if [[ "$proxies_code" == "200" ]]; then
+      return 0
+    fi
+
+    i=$((i + 1))
+    sleep 1
+  done
+  return 1
+}
+
 wait_gui_pid() {
   local pid="$1"
   local timeout_sec="$2"
@@ -429,6 +524,8 @@ if not isinstance(proxies, dict):
 
 selected = None
 for name, obj in proxies.items():
+    if name == "GLOBAL":
+        continue
     if isinstance(obj, dict) and isinstance(obj.get("all"), list) and obj.get("all"):
         now = obj.get("now")
         if isinstance(now, str) and now:
@@ -497,7 +594,7 @@ run_step() {
   else
     case "$step_id" in
       startup)
-        if wait_gui_pid "$GUI_PID" "$TIMEOUT_SEC" && wait_health_200 "$api_url" "$token" "$TIMEOUT_SEC"; then
+        if wait_gui_pid "$GUI_PID" "$TIMEOUT_SEC" && wait_kernel_ready "$api_url" "$token" "$TIMEOUT_SEC"; then
           window_count="$(osascript -e "tell application \"System Events\" to count windows of process \"${GUI_PROCESS_NAME}\"" 2>/dev/null || echo 0)"
           note="gui_process_and_kernel_ready windows=${window_count}"
         else
@@ -567,12 +664,11 @@ run_core() {
   local token="$5"
   local gui_exec="$6"
 
-  local kernel_log="${ROOT_DIR}/reports/l18/gui_real/${core}.kernel.log"
-  local gui_log="${ROOT_DIR}/reports/l18/gui_real/${core}.gui.log"
+  local kernel_log="${RUNTIME_LOG_DIR}/${core}.kernel.log"
+  local gui_log="${RUNTIME_LOG_DIR}/${core}.gui.log"
   local core_home="${SANDBOX_ROOT}/home/${core}"
   local core_tmp="${SANDBOX_ROOT}/tmp/${core}"
   local start_cmd=()
-  local admin_hostport=""
 
   mkdir -p "$core_home" "$core_tmp"
 
@@ -584,22 +680,13 @@ run_core() {
   if [[ "$core" == "go" ]]; then
     start_cmd=("$bin" run -c "$config")
   else
-    admin_hostport="$(url_hostport "$api_url")"
     # Support both rust CLI styles:
     # 1) `<bin> run --config ...` (subcommand style)
     # 2) `<bin> --config ...` (single-command binary, e.g. `run`)
     if "$bin" run --help >/dev/null 2>&1; then
       start_cmd=("$bin" run --config "$config")
-      if [[ -n "$admin_hostport" ]]; then
-        start_cmd+=(--admin-listen "$admin_hostport")
-        [[ -n "$token" ]] && start_cmd+=(--admin-token "$token")
-      fi
     else
       start_cmd=("$bin" --config "$config")
-      if [[ -n "$admin_hostport" ]]; then
-        start_cmd+=(--admin-listen "$admin_hostport")
-        [[ -n "$token" ]] && start_cmd+=(--admin-token "$token")
-      fi
     fi
   fi
 

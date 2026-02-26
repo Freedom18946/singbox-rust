@@ -6,15 +6,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPORT_DIR="$ROOT_DIR/reports/benchmarks"
-REPORT_FILE="$REPORT_DIR/memory_comparison.json"
+REPORT_FILE="${BENCH_MEMORY_REPORT_FILE:-$REPORT_DIR/memory_comparison.json}"
+WORK_DIR="${BENCH_MEMORY_WORK_DIR:-$REPORT_DIR/tmp}"
 
-mkdir -p "$REPORT_DIR" "$ROOT_DIR/reports/stability"
+mkdir -p "$REPORT_DIR" "$WORK_DIR"
 
 RUST_BINARY="${SINGBOX_BINARY:-$ROOT_DIR/target/debug/run}"
 RUST_CONFIG="${SINGBOX_CONFIG:-$ROOT_DIR/labs/interop-lab/configs/bench_rust.json}"
 GO_SRC_DIR="$ROOT_DIR/go_fork_source/sing-box-1.12.14"
 GO_BINARY="${GO_BINARY:-$GO_SRC_DIR/sing-box}"
 GO_CONFIG="${GO_CONFIG:-$ROOT_DIR/labs/interop-lab/configs/bench_go.json}"
+RUST_PROXY_ADDR="${RUST_PROXY_ADDR:-127.0.0.1:11810}"
+GO_PROXY_ADDR="${GO_PROXY_ADDR:-127.0.0.1:11811}"
 TARGET_URL="${BENCH_TARGET_URL:-http://httpbin.org/delay/25}"
 
 get_rss_kb() {
@@ -121,7 +124,7 @@ measure_core() {
     local start_cmd="$2"
     local proxy_addr="$3"
 
-    eval "$start_cmd" >/tmp/"${prefix}_bench.log" 2>&1 &
+    eval "$start_cmd" >"${WORK_DIR}/${prefix}_bench.log" 2>&1 &
     local pid=$!
     sleep 3
 
@@ -192,7 +195,7 @@ fi
 if [ ! -f "$RUST_BINARY" ]; then
     set_unmeasured "RUST" "env_limited" "rust_binary_missing"
 else
-    measure_core "RUST" "\"$RUST_BINARY\" --config \"$RUST_CONFIG\"" "127.0.0.1:11810"
+    measure_core "RUST" "\"$RUST_BINARY\" --config \"$RUST_CONFIG\"" "$RUST_PROXY_ADDR"
 fi
 
 if [ ! -f "$GO_BINARY" ] && [ -d "$GO_SRC_DIR" ] && command -v go >/dev/null 2>&1; then
@@ -203,7 +206,7 @@ fi
 if [ ! -f "$GO_BINARY" ]; then
     set_unmeasured "GO" "env_limited" "go_binary_missing"
 else
-    measure_core "GO" "\"$GO_BINARY\" run -c \"$GO_CONFIG\"" "127.0.0.1:11811"
+    measure_core "GO" "\"$GO_BINARY\" run -c \"$GO_CONFIG\"" "$GO_PROXY_ADDR"
 fi
 
 export REPORT_FILE RUST_BINARY RUST_CONFIG GO_BINARY GO_CONFIG

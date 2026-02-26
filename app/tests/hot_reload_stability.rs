@@ -83,6 +83,11 @@ fn detect_default_config() -> String {
 }
 
 fn detect_stability_report_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("SINGBOX_STABILITY_REPORT_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
     if std::path::Path::new("../reports").exists() {
         PathBuf::from("../reports/stability")
     } else {

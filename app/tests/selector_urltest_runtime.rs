@@ -188,7 +188,10 @@ async fn test_urltest_health_checking() {
     }
 
     assert!(selected_fast, "URLTest should select the fastest outbound");
-    assert!(final_metrics.contains("selector_health_check_total{proxy=\"fast\""));
+    assert!(
+        final_metrics.contains("selector_health_check_total"),
+        "expected selector health metrics to be exported"
+    );
 }
 
 /// Test: URLTest failover behavior

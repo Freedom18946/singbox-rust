@@ -23,6 +23,42 @@
 
 ## 日志记录
 
+### [2026-02-25 22:55] Agent: Codex (GPT-5)
+
+**任务**: 按既定规划继续推进 L18 `daily` 收敛，执行 case 级 Go/Rust 差分与 Rust Clash API `/proxies` 契约对齐复验，并强化批次级产物隔离
+**变更**:
+- 脚本与测试稳定性改造：
+  - 更新 `scripts/l18/l18_capstone.sh`
+    - 增加 `--workspace-test-threads` 支持
+    - 增加稳定性产物定向（`SINGBOX_STABILITY_REPORT_DIR` / `SINGBOX_CONFIG` 透传）
+    - 新增路径绝对化，避免相对路径导致测试配置丢失
+    - 修复 `STABILITY_REPORT_DIR` 默认派生时机（改为参数解析后派生，跟随每轮 `--canary-output-root`）
+  - 更新 `scripts/l18/perf_gate.sh`
+    - 引入多轮聚合（`L18_PERF_ROUNDS`、`L18_PERF_ROUND_TRIM_EACH_SIDE`）
+    - 产物落盘目录统一到 `L18_PERF_WORK_DIR`
+  - 更新 `scripts/bench_memory.sh`
+    - 新增 `BENCH_MEMORY_REPORT_FILE` / `BENCH_MEMORY_WORK_DIR`
+    - 去除根目录 `reports/stability` 的隐式创建
+  - 更新 `app/tests/hot_reload_stability.rs`、`app/tests/signal_reliability.rs`
+    - 新增 `SINGBOX_STABILITY_REPORT_DIR` 支持，稳定性报告可定向到批次子目录
+- 认证执行脚本（批次内）：
+  - 新增/迭代 `reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/run_capstone_daily_v4.sh`
+    - 支持参数化 `RUN_NAME` 与 `ROUND_COUNT`
+    - 增加 GUI 超时 `L18_GUI_TIMEOUT_SEC=120`
+    - 固定 `parity` 二进制并设置 `L18_RUST_BUILD_ENABLED=0`，避免 `perf_gate` 重编覆盖
+    - 修复 summary 中 `/proxies` 注释提取逻辑
+- 执行与证据：
+  - `capstone_daily_convergence_v5`（3 轮）：
+    - `r1=PASS`，`r2/r3=FAIL`（仅 `gui_smoke=FAIL`，其余 gate 均 PASS，`docker=WARN`）
+  - `capstone_daily_convergence_v6b_timeout120`（验证轮）：
+    - `r1=PASS`（`gui_smoke=PASS`，`dual_kernel_diff=PASS`，`perf_gate=PASS`）
+    - summary：`.../capstone_daily_convergence_v6b_timeout120/summary.tsv`
+
+**结果**: 部分完成（主链路已定位并缓解 GUI 抖动；修复后验证轮 PASS）
+**备注**: 下一步按 `timeout120 + 固定 parity 二进制` 继续跑 2~3 轮，目标是拿到连续 PASS 收敛证据。
+
+---
+
 ### [2026-02-24 14:24] Agent: Codex (GPT-5)
 
 **任务**: 根据用户决策将 Docker 改为本机模式非阻断，并重新执行 L18 daily fail-fast 验证
@@ -1127,5 +1163,236 @@ L2.8.4-6 Handlers + WebSocket:
 
 **结果**:
 - 状态与任务口径已统一，可直接新开对话按二选一继续实施。
+
+---
+
+### [2026-02-24 19:28] Agent: Codex (GPT-5)
+
+**任务**: 按既定 L18 规划继续推进，执行 `run_dual_kernel_cert.sh --profile daily` 做 case 级 Go/Rust 差分收敛，并单独收口 `perf_gate`（先固定可重复配置与采样规模，再产出 `perf_gate.json`）。
+
+**执行与结果**:
+- 双核差分（daily）：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260224T111353Z-daily-a843bc48`
+  - 结果：`PASS`（`run_fail_count=0`，`diff_fail_count=0`）
+  - case 级结论：5/5 全部 `clean=true`，`http/ws/subscription/traffic mismatch=0`，`ignored=0`。
+- perf gate 固化与复跑：
+  - 新增固定配置：`labs/interop-lab/configs/l18_perf_go.json`、`labs/interop-lab/configs/l18_perf_rust.json`
+  - 更新脚本：`scripts/l18/perf_gate.sh`
+    - 默认切到 L18 固定配置（Go/Rust 各自配置）
+    - 固定采样规模：`warmup_requests=20`、`sample_requests=120`
+    - 固定请求超时：`connect_timeout=3s`、`max_time=8s`
+    - 生成 lock：`reports/l18/perf/perf_gate.lock.json`（含二进制/配置 sha256）
+    - 采样条数校验：Rust/Go 均需等于 `sample_requests`
+    - 修复 `wait_port_open` 实际等待时长
+    - 修复 `bench_memory` 调用变量对齐（`SINGBOX_BINARY/SINGBOX_CONFIG`）
+  - 配套更新：`scripts/bench_memory.sh`（支持 `RUST_PROXY_ADDR` / `GO_PROXY_ADDR`）
+  - 输出：`reports/l18/perf_gate.json`
+  - 结果：`pass=false`；`latency_p95` 与 `rss_peak` 通过，`startup` 相对 Go `+38.596%`（阈值 `+10%`）未过。
+
+**文档同步**:
+- `agents-only/active_context.md`
+- `agents-only/workpackage_latest.md`
+
+---
+
+### [2026-02-24 20:01] Agent: Codex (GPT-5)
+
+**任务**: 继续收口 `perf_gate`，把 Rust 构建特性与 startup 采样也纳入固定配置，输出可复现报告。
+
+**关键更新**:
+- `scripts/l18/perf_gate.sh`：
+  - Rust 固定构建：默认每轮执行 `cargo build --release -p app --features acceptance --bin run`
+  - startup 采样固定：`startup_warmup_runs=1`、`startup_sample_runs=7`，按中位数入账
+  - latency 采样固定：`warmup_requests=20`、`sample_requests=120`
+  - startup/latency 样本数量均做硬校验
+  - 计时口径：`EPOCHREALTIME` 毫秒计时（去除 Python 计时器开销）
+  - lock/report 输入字段补充：`rust_build_features`、`startup_sample_runs`、`startup_sample_count`
+  - `wait_port_open` 与端口占用检测统一到 `/dev/tcp`（去除 `nc`/Python 探针抖动依赖）
+- `scripts/bench_memory.sh`：
+  - 保持 `RUST_PROXY_ADDR` / `GO_PROXY_ADDR` 端口对齐支持
+
+**执行结果**:
+- 命令：`scripts/l18/perf_gate.sh`
+- 输出：
+  - `reports/l18/perf/perf_gate.lock.json`
+  - `reports/l18/perf_gate.json`
+- 结果：`pass=false`
+  - `latency_p95`：PASS（`-1.923%`）
+  - `rss_peak`：PASS（`-2.500%`）
+  - `startup`：FAIL（`+962.500%`，Rust 170ms vs Go 16ms，阈值 `+10%`）
+
+**说明**:
+- 本轮完成了 perf_gate 的“构建+采样+报告字段”固定化，但 `startup` 指标仍是唯一阻塞项。
+
+---
+
+### [2026-02-25 17:30] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令优先代码侧优化，继续 A 路线收敛 Go/Rust 差分，并单独收口 `perf_gate`。
+
+**关键变更**:
+- `crates/sb-tls/src/global.rs`
+  - `apply_extra_cas()` 改为仅失效缓存，不再在启动期立即构建 TLS 配置。
+  - `get_effective()` 改为首次访问时构建并缓存，后续复用。
+- `crates/sb-adapters/src/inbound/socks/mod.rs`
+  - `ATYP=DOMAIN` 且 host 为字面 IP 时，直接转换为 `Endpoint::Ip`。
+  - 入站 `serve()` 优先复用当前 tokio runtime，避免额外 runtime 冷启动开销。
+- `app/src/reqwest_http.rs`
+  - 全局 reqwest client 改为首次请求惰性初始化。
+
+**执行结果**:
+- 复测命令：`scripts/l18/perf_gate.sh`
+- 报告：`reports/l18/perf_gate.json`（`generated_at=2026-02-25T09:30:54Z`）
+- 结论：`pass=true`（`[L18 perf-gate] PASS`）
+- 指标：
+  - `startup_ms`: Rust 19.0 vs Go 18.0（`+5.5556%`，阈值 `+10%`，PASS）
+  - `latency_p95_ms`: Rust 1.634 vs Go 2.281（`-28.3648%`，PASS）
+  - `rss_peak_kb`: Rust 1872 vs Go 1936（`-3.3058%`，PASS）
+- 差分回归复验：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T093234Z-daily-f0363206`
+  - 结果：`PASS`（`run_fail_count=0`、`diff_fail_count=0`）
+  - 证据：`reports/l18/dual_kernel/20260225T093234Z-daily-f0363206/summary.json`、`diff_gate.json`
+
+**结论**:
+- `perf_gate` 已完成单独收口；L18 当前不再受性能门禁阻塞。
+
+---
+
+### [2026-02-25 17:45] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求将 agents 文档刷新到最新状态口径。
+
+**更新内容**:
+- `agents-only/active_context.md`
+  - 补充“当前剩余主线阻塞”：Rust `/proxies` 契约对齐与 GUI `startup` 判定稳定性。
+- `agents-only/workpackage_latest.md`
+  - 顶部“最后更新”刷新为 `2026-02-25`。
+  - 在 L18 perf_gate 收口结论后追加“当前剩余主线阻塞”。
+
+**结果**:
+- agents 文档时间戳与当前阶段口径已同步；无代码行为变更。
+
+---
+
+### [2026-02-25 18:30] Agent: Codex (GPT-5)
+
+**任务**: 按既定 L18 规划继续推进，执行 `run_dual_kernel_cert.sh --profile daily` 做 case 级 Go/Rust 差分收敛，并收口 Rust 侧 Clash API `/proxies` 在 GUI 真实路径的契约可用性。
+
+**执行与定位**:
+- `daily` 差分首跑：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T101226Z-daily-018352cc`
+  - 结果：`PASS`（`run_fail_count=0`、`diff_fail_count=0`）
+- GUI 真实路径复现：
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app ...`
+  - 初始失败形态：`/proxies=000000` / 连接拒绝；并定位到默认 Go/Rust 二进制能力不稳定（Go 可能缺 `with_clash_api`，Rust 默认 `run` 未确保 `parity` 特性）。
+
+**关键变更**:
+- 更新 `scripts/l18/gui_real_cert.sh`：
+  - 新增构建参数：`--go-build-enabled`、`--go-build-tags`、`--rust-build-enabled`、`--rust-build-features`
+  - 默认自愈构建：
+    - Go：自动执行 `scripts/l18/build_go_oracle.sh --build-tags with_clash_api`，并切换到当轮产物路径
+    - Rust：自动执行 `cargo build --release -p app --features parity --bin run`
+  - 目的：保证 GUI 认证使用具备 Clash API 契约能力的二进制，避免 `/proxies` 假性不可达。
+
+**复验结果**:
+- GUI 真实认证（允许并存模式）：
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+  - 报告：`reports/l18/gui_real_cert.json`（`generated_at=2026-02-25T10:25:20Z`）
+  - 结果：`overall=PASS`；Go/Rust `load_config` 均 `PASS`（`/proxies=200`）
+- 差分回归复验：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T102551Z-daily-afa76157`
+  - 结果：`PASS`（5/5 case clean，mismatch=0）
+
+**结论**:
+- Rust 侧 Clash API `/proxies` 契约在 GUI 真实路径已收口；case 级 Go/Rust 差分保持全绿。
+- L18 当前主线剩余关注点收敛为 GUI `startup` 判定稳定性（需多轮复验）。
+
+---
+
+### [2026-02-25 18:45] Agent: Codex (GPT-5)
+
+**任务**: 继续推进并按用户授权清理重编关键产物（3 个都算），验证 feature 对齐后收敛 GUI `startup` 稳定性。
+
+**重编动作**:
+- 删除并重建：
+  - `target/debug/app`（`cargo build -p app --features parity --bin app`）
+  - `target/release/run`（`cargo build --release -p app --features parity --bin run`）
+  - `go_fork_source/sing-box-1.12.14/sing-box`（`go build -tags with_clash_api`）
+- 产物探测：三者分别启动后 `GET /proxies` 均返回 `200`。
+
+**稳定性复验**:
+- GUI 多轮（禁用自动重编）：
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app ... --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1 --go-build-enabled 0 --rust-build-enabled 0`
+  - 结果：连续 5 轮 `PASS`，Go/Rust `startup` 均 `PASS`
+  - 证据：`reports/l18/gui_real/startup_stability_20260225T103807Z.txt`、`reports/l18/gui_real/gui_real_cert.round{1..5}.json`
+- strict case：
+  - 命令：`cargo run -p interop-lab -- --cases-dir labs/interop-lab/cases case run p0_clash_api_contract_strict --kernel rust`
+  - run_id：`20260225T103845Z-54090895-e508-40e0-8787-c3b87e47c306`
+  - 结果：PASS
+- daily 双核差分复验：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T103843Z-daily-8e9cd9d7`
+  - 结果：PASS（`run_fail_count=0`、`diff_fail_count=0`，5/5 clean）
+
+**结论**:
+- 通过“清理重编 + feature 对齐”后，GUI `startup` 本地稳定性已收敛（5 连续轮全绿）。
+- 当前进入“CI/长时观察”阶段，暂无代码侧阻塞。
+
+---
+
+### [2026-02-25 19:45] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求继续推进 `1+2`，执行 20 轮 GUI 稳定性 + `l18_capstone` 日常认证链路，并严格隔离日志/临时产物目录。
+
+**目录隔离策略**:
+- 批次根：`reports/l18/batches/20260225T105130Z-l18-stability`
+- GUI 20 轮：`gui20/round_XX/{report,sandbox,runtime_logs}` + `summary.{tsv,json}`
+- capstone：
+  - `capstone_daily_r4/{preflight,oracle,gui,canary,dual_kernel,dual_kernel_artifacts,perf}`
+  - `capstone_daily_r5/{preflight,oracle,gui,canary,dual_kernel,dual_kernel_artifacts,perf}`
+  - 每轮独立 `capstone.stdout.log` / `capstone.stderr.log`
+- perf 重试：`perf_retries/retry_01`、`retry_02_parity`、`retry_03_parity`
+
+**执行结果**:
+- GUI 稳定性：20/20 全部 `PASS`（Go/Rust startup 均 20/20 通过）。
+- `/proxies` 契约：在最新 GUI 实跑持续 `PASS`（Go/Rust 均 `/proxies=200`）。
+- dual kernel daily（capstone 内）：
+  - r4 run_id=`20260225T112254Z-daily-39041b1c` -> `run_fail_count=0`，`diff_fail_count=0`
+  - r5 run_id=`20260225T113929Z-daily-15fa18f7` -> `run_fail_count=0`，`diff_fail_count=0`
+- capstone 结论：
+  - r4：`overall=FAIL`（仅 `perf_gate=FAIL`，其他门禁全 PASS，docker=warn）
+  - r5：`overall=FAIL`（仅 `perf_gate=FAIL`，其他门禁全 PASS，docker=warn）
+- perf 抖动实测：
+  - r4: `latency_p95=+6.663%`（FAIL）
+  - r5: `latency_p95=+37.108%`（FAIL）
+  - retry_03_parity: `pass=true`（`latency_p95=-3.260%`，`startup=+5.882%`，`rss=-4.918%`）
+
+**结论**:
+- 当前 L18 唯一阻塞已收敛为 `perf_gate` latency p95 抖动。
+- `/proxies` 契约、GUI 关键路径、case 级差分均已稳定收敛。
+
+---
+
+### [2026-02-25 19:55] Agent: Codex (GPT-5)
+
+**任务**: 将状态总线文档更新到最新（反映 r4/r5 + perf 重试结果）并明确下一步主线。
+
+**文档更新**:
+- `agents-only/active_context.md`
+  - 新增 `L18 认证批次更新（2026-02-25 19:45）`节
+  - 将“当前主阻塞”更新为 `perf_gate` latency p95 抖动
+  - 将“下一步任务”从旧二选一改为 perf 收口主线
+- `agents-only/workpackage_latest.md`
+  - 新增 `L18 认证批次 r4/r5 + perf 抖动定位（2026-02-25）`节
+  - 更新“当前剩余主线阻塞”为 perf_gate 稳定性
+  - 更新“下一对话接续任务”为 perf 抖动收口 + 认证归档
+
+**下一步（规划）**:
+1. 优先收口 `scripts/l18/perf_gate.sh` 的 p95 抖动（多回合稳态统计 + 报告字段固化）。
+2. 连续至少 3 轮 `capstone_daily` 验证 `perf_gate=PASS` 后，更新 L18 认证结项证据。
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

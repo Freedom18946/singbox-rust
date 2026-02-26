@@ -335,6 +335,116 @@ impl CloseMonitor {
     }
 }
 
+#[cfg(all(feature = "router", feature = "clash_api"))]
+struct ClashApiHandle {
+    listen_addr: std::net::SocketAddr,
+    shutdown: oneshot::Sender<()>,
+    join: JoinHandle<()>,
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
+impl ClashApiHandle {
+    async fn shutdown(self) {
+        let _ = self.shutdown.send(());
+        let _ = self.join.await;
+    }
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
+fn build_outbound_registry_handle(
+    bridge: &sb_core::adapter::Bridge,
+) -> Arc<sb_core::outbound::OutboundRegistryHandle> {
+    let mut reg = sb_core::outbound::OutboundRegistry::default();
+    for (name, _kind, conn) in &bridge.outbounds {
+        reg.insert(
+            name.clone(),
+            sb_core::outbound::OutboundImpl::Connector(conn.clone()),
+        );
+    }
+    Arc::new(sb_core::outbound::OutboundRegistryHandle::new(reg))
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
+async fn start_clash_api_from_supervisor(
+    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
+) -> Option<ClashApiHandle> {
+    let state_lock = supervisor.handle().state().await;
+    let state_guard = state_lock.read().await;
+
+    let clash_cfg = state_guard
+        .current_ir
+        .experimental
+        .as_ref()
+        .and_then(|exp| exp.clash_api.as_ref())?;
+    let listen = clash_cfg
+        .external_controller
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+
+    let listen_addr: std::net::SocketAddr = match listen.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                listen = %listen,
+                "invalid clash_api listen address, skipping clash api startup"
+            );
+            return None;
+        }
+    };
+
+    let config = sb_api::types::ApiConfig {
+        listen_addr,
+        enable_cors: true,
+        cors_origins: None,
+        auth_token: clash_cfg.secret.clone(),
+        enable_traffic_ws: true,
+        enable_logs_ws: true,
+        traffic_broadcast_interval_ms: 1000,
+        log_buffer_size: 100,
+    };
+
+    let mut server = match sb_api::clash::ClashApiServer::new(config) {
+        Ok(server) => server,
+        Err(e) => {
+            error!(error = %e, "failed to create clash api server");
+            return None;
+        }
+    };
+
+    if let Some(router) = state_guard.bridge.router.clone() {
+        server = server.with_router(router);
+    }
+
+    server = server
+        .with_outbound_registry(build_outbound_registry_handle(&state_guard.bridge))
+        .with_config_ir(Arc::new(state_guard.current_ir.clone()));
+
+    if let Some(cache) = state_guard.context.cache_file.clone() {
+        server = server.with_cache_file(cache);
+    }
+    if let Some(history) = state_guard.context.urltest_history.clone() {
+        server = server.with_urltest_history(history);
+    }
+
+    drop(state_guard);
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let join = tokio::spawn(async move {
+        if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
+            error!(error = %e, "clash api server exited with error");
+        }
+    });
+
+    info!(listen = %listen_addr, "started clash api server from run_engine");
+    Some(ClashApiHandle {
+        listen_addr,
+        shutdown: shutdown_tx,
+        join,
+    })
+}
+
 #[cfg(feature = "router")]
 fn file_mtime(path: &std::path::Path) -> SystemTime {
     fs::metadata(path)
@@ -699,8 +809,25 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     );
     info!("Supervisor::start returned");
 
-    // 6) Admin server (core or debug)
+    // 6) Optional Clash API server (from config.experimental.clash_api)
+    #[cfg(feature = "clash_api")]
+    let clash_api_handle = start_clash_api_from_supervisor(&supervisor).await;
+
+    // 7) Admin server (core or debug)
     if let Some(ref addr) = opts.admin_listen {
+        #[cfg(feature = "clash_api")]
+        if let Some(handle) = clash_api_handle.as_ref() {
+            if let Ok(admin_addr) = addr.parse::<std::net::SocketAddr>() {
+                if admin_addr == handle.listen_addr {
+                    tracing::warn!(
+                        admin_addr = %admin_addr,
+                        clash_addr = %handle.listen_addr,
+                        "admin_listen conflicts with clash_api listen address; admin may fail to bind"
+                    );
+                }
+            }
+        }
+
         match opts.admin_impl {
             AdminImpl::Debug => {
                 #[cfg(feature = "admin_debug")]
@@ -743,7 +870,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         }
     }
 
-    // 7) Startup output
+    // 8) Startup output
     match opts.startup_output {
         StartupOutputMode::LogOnly => {
             if opts.print_startup {
@@ -768,7 +895,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         }
     }
 
-    // 8) Optional watch mode (disabled if stdin config detected)
+    // 9) Optional watch mode (disabled if stdin config detected)
     let watch_handle = if opts.watch && !has_stdin {
         let (stop_tx, mut stop_rx) = oneshot::channel();
         let sup_for_watch = supervisor.clone();
@@ -826,7 +953,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         None
     };
 
-    // 9) Signal handling loop
+    // 10) Signal handling loop
     loop {
         match wait_for_signal().await {
             RunSignal::Reload => {}
@@ -878,10 +1005,15 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
     }
 
-    // 10) Graceful shutdown
+    // 11) Graceful shutdown
     let close_monitor = CloseMonitor::start();
     if let Some(watch) = watch_handle {
         watch.shutdown().await;
+    }
+
+    #[cfg(feature = "clash_api")]
+    if let Some(handle) = clash_api_handle {
+        handle.shutdown().await;
     }
 
     let grace_duration = Duration::from_millis(opts.grace_ms);

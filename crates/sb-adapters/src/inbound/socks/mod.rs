@@ -266,7 +266,11 @@ where
                 domain.push(b);
             }
             let host = String::from_utf8_lossy(&domain).to_string();
-            (Endpoint::Domain(host.clone(), port), host)
+            let endpoint = host.parse::<IpAddr>().map_or_else(
+                |_| Endpoint::Domain(host.clone(), port),
+                |ip| Endpoint::Ip(SocketAddr::new(ip, port)),
+            );
+            (endpoint, host)
         } else {
             (
                 Endpoint::Ip(SocketAddr::new(IpAddr::V4(ip), port)),
@@ -430,7 +434,11 @@ where
             cli.read_exact(&mut d).await?;
             let host = String::from_utf8_lossy(&d).to_string();
             let port = read_u16(cli).await?;
-            (Endpoint::Domain(host.clone(), port), host, port)
+            let endpoint = host.parse::<IpAddr>().map_or_else(
+                |_| Endpoint::Domain(host.clone(), port),
+                |ip| Endpoint::Ip(SocketAddr::new(ip, port)),
+            );
+            (endpoint, host, port)
         }
         _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "bad atyp")),
     };
@@ -1262,17 +1270,22 @@ impl SocksInboundAdapter {
 
 impl InboundService for SocksInboundAdapter {
     fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async { run(cfg, rx).await.map_err(io::Error::other) });
+        let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // Reuse existing runtime to avoid per-inbound runtime cold-start overhead.
+            handle.block_on(async { run(cfg, rx).await.map_err(io::Error::other) })
+        } else {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(io::Error::other)?;
+            rt.block_on(async { run(cfg, rx).await.map_err(io::Error::other) })
+        };
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

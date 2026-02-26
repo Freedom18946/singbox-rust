@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-24
+> **最后更新**：2026-02-25
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -8,6 +8,131 @@
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
+
+## 🆕 最新进展：L18 v5/v6b 收敛复验（2026-02-25 22:55）
+
+**状态**：⚠️ 主阻塞从 `workspace_test` 转为 `gui_smoke` 抖动；已给出可复现实修并拿到修复后 PASS 证据
+
+**批次目录**：
+- `reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/capstone_daily_convergence_v5`
+- `reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/capstone_daily_convergence_v6b_timeout120`
+
+**v5（三轮）结果**：
+- `r1`: `PASS`
+- `r2`: `FAIL`（仅 `gui_smoke=FAIL`）
+- `r3`: `FAIL`（仅 `gui_smoke=FAIL`）
+- 共同特征：Go GUI 路径稳定 `PASS`；Rust GUI 路径在 startup 阶段偶发未就绪（`/proxies=000000`），其余 gate（含 `workspace_test/dual_kernel_diff/perf_gate`）均 `PASS`。
+
+**修复与验证**：
+- 将 GUI 门禁超时由默认 45s 提升为 120s（批次驱动 env：`L18_GUI_TIMEOUT_SEC=120`）。
+- 修复稳定性报告路径绑定：`l18_capstone` 现按每轮 `--canary-output-root` 派生 `SINGBOX_STABILITY_REPORT_DIR`，产物写入 `rN/canary/stability_reports/`。
+- 规避二进制能力漂移：批次驱动先构建 `parity` 版 `target/release/run`，并设置 `L18_RUST_BUILD_ENABLED=0` 避免被 `perf_gate` 重编覆盖。
+- 验证轮（`v6b_timeout120/r1`）结果：`PASS`，且 GUI `go=/proxies=200`、`rust=/proxies=200`。
+
+**当前结论**：
+- `/proxies` 契约在 Rust 侧已可稳定达标（修复后验证轮通过）。
+- 后续收敛重点：以 `timeout120 + 固定二进制特性` 继续补齐连续通过轮次（建议从 `v6b` 参数化脚本直接续跑 2~3 轮）。
+
+## 🆕 最新进展：L18 认证批次 r4/r5 + perf 抖动定位（2026-02-25）
+
+**状态**：⚠️ 除 `perf_gate` 外均已收敛；当前唯一阻塞为 `latency_p95` 抖动
+
+**批次与目录隔离**：
+- 批次根目录：`reports/l18/batches/20260225T105130Z-l18-stability`
+- capstone：
+  - `capstone_daily_r4`（全链路执行，`perf_gate=FAIL`）
+  - `capstone_daily_r5`（全链路执行，`perf_gate=FAIL`）
+- perf 重试：
+  - `perf_retries/retry_01`（FAIL）
+  - `perf_retries/retry_02_parity`（FAIL）
+  - `perf_retries/retry_03_parity`（PASS）
+
+**关键结果**：
+- GUI 20 轮稳定性：`gui20/summary.json` => `overall_pass_rounds=20/20`，Go/Rust startup 均 `20/20 PASS`。
+- Rust `/proxies` 契约在最新 capstone 保持收口：
+  - `capstone_daily_r5/gui/gui_real_cert.json` => Go/Rust `load_config` 均 `PASS`（`/proxies=200`）。
+- case 级差分在 r4/r5 均收敛：
+  - `r4` run_id=`20260225T112254Z-daily-39041b1c`，`run_fail_count=0`，`diff_fail_count=0`
+  - `r5` run_id=`20260225T113929Z-daily-15fa18f7`，`run_fail_count=0`，`diff_fail_count=0`
+- capstone 门禁形态（r4/r5 一致）：
+  - `preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff` 全 `PASS`
+  - `docker=WARN`（非阻断）
+  - `perf_gate=FAIL`（唯一 FAIL）
+
+**perf_gate 指标快照**：
+- r4：`latency_p95=+6.663%`（FAIL），`startup=+5.556%`（PASS），`rss=-4.202%`（PASS）
+- r5：`latency_p95=+37.108%`（FAIL），`startup=+5.882%`（PASS），`rss=-4.065%`（PASS）
+- retry_03_parity：`latency_p95=-3.260%`（PASS），`startup=+5.882%`（PASS），`rss=-4.918%`（PASS）
+
+**结论**：
+- `/proxies` 契约与 case 差分已稳定，不再是阻塞项。
+- 当前主线阻塞单点：`perf_gate` 的 latency p95 波动。
+
+## 🆕 最新进展：L18 perf_gate 代码侧优化收口（2026-02-25）
+
+**状态**：✅ 已通过（`pass=true`）
+
+**执行**：
+- 命令：`scripts/l18/perf_gate.sh`
+- 报告：`reports/l18/perf_gate.json`（`generated_at=2026-02-25T09:30:54Z`）
+- 回归核验：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T093234Z-daily-f0363206`
+  - 结果：`PASS`（`run_fail_count=0`、`diff_fail_count=0`）
+  - 证据：`reports/l18/dual_kernel/20260225T093234Z-daily-f0363206/summary.json`、`diff_gate.json`
+
+**关键代码侧优化**：
+- `crates/sb-tls/src/global.rs`：TLS 全局配置惰性构建（首次真正使用 TLS 时再加载系统根证书并缓存），移除启动期固定证书加载开销。
+- `crates/sb-adapters/src/inbound/socks/mod.rs`：SOCKS `ATYP=DOMAIN` 且 host 为字面 IP 时直接走 `Endpoint::Ip`，减少每请求 DNS 解析抖动。
+- `app/src/reqwest_http.rs`：reqwest client 由启动期改为首次请求惰性初始化。
+
+**本轮门禁指标**：
+- `startup_ms`: Rust `19.0` vs Go `18.0`（`+5.556%`，阈值 `+10%`，✅）
+- `latency_p95_ms`: Rust `1.634` vs Go `2.281`（`-28.365%`，阈值 `+5%`，✅）
+- `rss_peak_kb`: Rust `1872` vs Go `1936`（`-3.306%`，阈值 `+10%`，✅）
+
+**结论**：
+- 代码侧优化路径已闭环，但最新 capstone 批次显示 `latency_p95` 仍存在环境抖动风险。
+- 当前剩余主线阻塞：`perf_gate` 稳定性（latency p95 波动）。
+
+## 🆕 最新进展：L18 GUI `/proxies` 契约对齐收口（2026-02-25）
+
+**状态**：✅ 已收口（Go/Rust 均 `/proxies=200`）
+
+**根因定位**：
+- `gui_real_cert` 默认二进制可能能力不足（Go 未确保 `with_clash_api`、Rust 默认 `run` 未确保 `parity` 特性），导致 GUI 路径 `/proxies` 偶发 `000/不可达`。
+
+**关键实现**：
+- 更新 `scripts/l18/gui_real_cert.sh`：
+  - 新增参数：`--go-build-enabled`、`--go-build-tags`、`--rust-build-enabled`、`--rust-build-features`
+  - 默认自动构建：Go 调 `scripts/l18/build_go_oracle.sh --build-tags with_clash_api`；Rust 执行 `cargo build --release -p app --features parity --bin run`
+
+**验收证据**：
+- GUI 实跑：
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+  - 报告：`reports/l18/gui_real_cert.json`（`generated_at=2026-02-25T10:25:20Z`）
+  - 结果：`overall=PASS`，Go/Rust `load_config` 均 `PASS`（`/proxies=200`）
+- case 级差分回归：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260225T102551Z-daily-afa76157`
+  - 结果：`PASS`（`run_fail_count=0`、`diff_fail_count=0`）
+
+## 🆕 最新进展：L18 三产物重编与 startup 稳定性收敛（2026-02-25）
+
+**状态**：✅ 本地稳定（5 连续轮通过）
+
+**执行**：
+- 按需清理并重编 3 个关键产物：
+  - `target/debug/app`：`cargo build -p app --features parity --bin app`
+  - `target/release/run`：`cargo build --release -p app --features parity --bin run`
+  - `go_fork_source/sing-box-1.12.14/sing-box`：`go build -tags with_clash_api`
+- 产物探测：3 个产物启动后 `GET /proxies` 均为 `200`。
+- startup 多轮复验（关闭自动重编）：
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app ... --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1 --go-build-enabled 0 --rust-build-enabled 0`
+  - 结果：5/5 轮 `overall=PASS`，且 Go/Rust `startup` 均 `PASS`
+  - 证据：`reports/l18/gui_real/startup_stability_20260225T103807Z.txt`、`reports/l18/gui_real/gui_real_cert.round{1..5}.json`
+- 回归：
+  - strict：`p0_clash_api_contract_strict` 通过（run_id=`20260225T103845Z-54090895-e508-40e0-8787-c3b87e47c306`）
+  - daily：`run_dual_kernel_cert.sh --profile daily` 通过（run_id=`20260225T103843Z-daily-8e9cd9d7`）
 
 ## 🆕 最新进展：L18 详细设计实现落地（2026-02-24）
 
@@ -46,6 +171,22 @@
 - 原因：`gui_smoke=FAIL`（未提供 `--gui-app`）
 - 证据：`reports/l18/l18_capstone_status.json`
 
+### 2026-02-24 增量：daily 双核差分已收敛，perf_gate 已固定采样口径
+
+- ✅ `run_dual_kernel_cert.sh --profile daily` 已实跑通过：
+  - run_id：`20260224T111353Z-daily-a843bc48`
+  - 结果：`run_fail_count=0`、`diff_fail_count=0`
+  - case 级结论：5/5 `clean=true`，全部 mismatch=0，ignored=0
+  - 证据：`reports/l18/dual_kernel/20260224T111353Z-daily-a843bc48/summary.json`、`diff_gate.json`
+- ✅ `perf_gate` 可重复配置与采样规模已固化：
+  - 新增配置：`labs/interop-lab/configs/l18_perf_go.json`、`labs/interop-lab/configs/l18_perf_rust.json`
+  - 固定采样：startup warmup/sample=`1/7`，latency warmup/sample=`20/120`（写入 `reports/l18/perf/perf_gate.lock.json`）
+  - 固定构建：Rust `target/release/run` 每轮按 `features=acceptance` 现构建
+  - 报告路径：`reports/l18/perf_gate.json`
+- ⚠️ `perf_gate` 当前阻塞：
+  - `latency_p95`、`rss_peak` 通过；`startup` 相对 Go `+962.500%`（Rust 170ms vs Go 16ms），超出 `+10%` 阈值
+  - 结论：`pass=false`（性能门禁尚未闭环）
+
 ### 2026-02-24 增量：源码直编与 GUI 门禁收敛
 
 - ✅ Go Oracle 源码直编已跑通（默认带 `with_clash_api`）：
@@ -60,12 +201,15 @@
   - Rust 内核当前运行路径未提供 GUI 预期的 Clash `/proxies` 契约（`403/不可达`），导致 GUI 双轨认证未通过。
   - Go 侧仅剩 `startup` 判定稳定性问题（GUI 进程就绪判定）。
 
-### 下一对话接续任务（二选一）
+### 下一对话接续任务（按规划唯一主线）
 
-1. **Rust 侧 Clash API 契约对齐（优先）**
-   - 先解决 `/proxies`，让 Rust 通过 GUI API 关键路径。
-2. **GUI startup 判定收紧/稳定**
-   - 先降低 `gui_or_kernel_not_ready` 误判，再回到 Rust API 对齐。
+1. **收口 perf_gate 抖动（优先）**
+   - 目标：在 capstone 语境下将 `latency_p95` 稳定控制到 `<= +5%`。
+   - 建议：`scripts/l18/perf_gate.sh` 增加多回合采样稳态统计（如回合中位 p95 / 去极值）并写入报告字段。
+   - 验收：连续至少 3 轮 `capstone_daily` 全部 `overall=PASS` 且 `gates.perf_gate=PASS`。
+2. **执行 L18 认证批次归档**
+   - 目标：产出单批次完整 PASS 证据包（status + dual + gui + canary + perf）。
+   - 验收：`reports/L18_REPLACEMENT_CERTIFICATION.md` 更新为最新 PASS 批次证据。
 
 ---
 

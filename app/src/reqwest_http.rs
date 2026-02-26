@@ -6,21 +6,38 @@
 use sb_types::ports::http::{HttpClient, HttpMethod, HttpRequest, HttpResponse};
 use sb_types::CoreError;
 use std::pin::Pin;
+use std::sync::OnceLock;
 
 /// Reqwest-based HTTP client implementing the `HttpClient` port trait.
 pub struct ReqwestHttpClient {
-    client: reqwest::Client,
+    client: OnceLock<Result<reqwest::Client, String>>,
 }
 
 impl ReqwestHttpClient {
-    /// Create a new `ReqwestHttpClient` with default settings.
+    /// Create a new `ReqwestHttpClient`.
     ///
-    /// # Errors
-    ///
-    /// Returns `reqwest::Error` if the underlying client cannot be built.
-    pub fn new() -> Result<Self, reqwest::Error> {
-        let client = reqwest::Client::builder().build()?;
-        Ok(Self { client })
+    /// The underlying reqwest client is lazily initialized on first request to
+    /// reduce process startup overhead when HTTP is not used.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            client: OnceLock::new(),
+        }
+    }
+
+    fn client(&self) -> Result<&reqwest::Client, CoreError> {
+        let result = self.client.get_or_init(|| {
+            reqwest::Client::builder()
+                .build()
+                .map_err(|e| e.to_string())
+        });
+        match result {
+            Ok(client) => Ok(client),
+            Err(err) => Err(CoreError::Io {
+                class: sb_types::errors::ErrorClass::Io,
+                message: format!("failed to initialize HTTP client: {err}"),
+            }),
+        }
     }
 }
 
@@ -31,6 +48,8 @@ impl HttpClient for ReqwestHttpClient {
     ) -> Pin<Box<dyn std::future::Future<Output = Result<HttpResponse, CoreError>> + Send + '_>>
     {
         Box::pin(async move {
+            let client = self.client()?;
+
             let method = match req.method {
                 HttpMethod::Get => reqwest::Method::GET,
                 HttpMethod::Post => reqwest::Method::POST,
@@ -39,7 +58,7 @@ impl HttpClient for ReqwestHttpClient {
                 HttpMethod::Head => reqwest::Method::HEAD,
             };
 
-            let mut builder = self.client.request(method, &req.url);
+            let mut builder = client.request(method, &req.url);
 
             if req.timeout_secs > 0 {
                 builder = builder.timeout(std::time::Duration::from_secs(req.timeout_secs));
@@ -85,14 +104,8 @@ impl HttpClient for ReqwestHttpClient {
 ///
 /// Should be called once at application startup before any HTTP requests are made.
 pub fn install_global_http_client() {
-    match ReqwestHttpClient::new() {
-        Ok(client) => {
-            if sb_core::http_client::install_http_client(Box::new(client)).is_err() {
-                tracing::debug!("HTTP client already installed, skipping");
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Failed to create reqwest HTTP client: {}", e);
-        }
+    let client = ReqwestHttpClient::new();
+    if sb_core::http_client::install_http_client(Box::new(client)).is_err() {
+        tracing::debug!("HTTP client already installed, skipping");
     }
 }

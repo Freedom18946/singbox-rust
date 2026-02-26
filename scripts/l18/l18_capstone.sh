@@ -4,7 +4,7 @@ set -u -o pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/l18/l18_capstone.sh [--profile daily|nightly|certify] [--api-url URL] [--pid-file PATH] [--status-file PATH] [--go-api URL] [--go-token TOKEN] [--gui-app PATH] [--gui-sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1] [--require-docker 0|1] [--fail-fast]
+  scripts/l18/l18_capstone.sh [--profile daily|nightly|certify] [--api-url URL] [--pid-file PATH] [--status-file PATH] [--go-api URL] [--go-token TOKEN] [--gui-app PATH] [--gui-sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1] [--canary-hours N] [--canary-interval-sec N] [--canary-output-root DIR] [--workspace-test-threads N] [--require-docker 0|1] [--fail-fast]
 
 Profiles:
   daily: canary 1h
@@ -28,6 +28,12 @@ ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
 ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
 REQUIRE_DOCKER="${L18_REQUIRE_DOCKER:-0}"
 FAIL_FAST="${L18_FAIL_FAST:-0}"
+CANARY_HOURS_OVERRIDE="${L18_CANARY_HOURS:-}"
+CANARY_INTERVAL_OVERRIDE="${L18_CANARY_INTERVAL_SEC:-}"
+CANARY_OUTPUT_ROOT="${L18_CANARY_OUTPUT_ROOT:-${ROOT_DIR}/reports/l18/stability}"
+WORKSPACE_TEST_THREADS="${L18_WORKSPACE_TEST_THREADS:-1}"
+STABILITY_REPORT_DIR="${L18_STABILITY_REPORT_DIR:-}"
+STABILITY_TEST_CONFIG="${L18_STABILITY_TEST_CONFIG:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -75,6 +81,22 @@ while [[ $# -gt 0 ]]; do
       REQUIRE_DOCKER="$2"
       shift 2
       ;;
+    --canary-hours)
+      CANARY_HOURS_OVERRIDE="$2"
+      shift 2
+      ;;
+    --canary-interval-sec)
+      CANARY_INTERVAL_OVERRIDE="$2"
+      shift 2
+      ;;
+    --canary-output-root)
+      CANARY_OUTPUT_ROOT="$2"
+      shift 2
+      ;;
+    --workspace-test-threads)
+      WORKSPACE_TEST_THREADS="$2"
+      shift 2
+      ;;
     --fail-fast)
       FAIL_FAST=1
       shift
@@ -91,6 +113,27 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$STABILITY_REPORT_DIR" ]]; then
+  STABILITY_REPORT_DIR="${CANARY_OUTPUT_ROOT}/stability_reports"
+fi
+if [[ -z "$STABILITY_TEST_CONFIG" ]]; then
+  STABILITY_TEST_CONFIG="${STABILITY_REPORT_DIR}/stability_test_config.json"
+fi
+
+to_abs_path() {
+  local input="$1"
+  if [[ "$input" = /* ]]; then
+    printf '%s\n' "$input"
+  else
+    printf '%s\n' "${ROOT_DIR}/${input}"
+  fi
+}
+
+STATUS_FILE="$(to_abs_path "$STATUS_FILE")"
+CANARY_OUTPUT_ROOT="$(to_abs_path "$CANARY_OUTPUT_ROOT")"
+STABILITY_REPORT_DIR="$(to_abs_path "$STABILITY_REPORT_DIR")"
+STABILITY_TEST_CONFIG="$(to_abs_path "$STABILITY_TEST_CONFIG")"
+
 if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "0" && "$ALLOW_EXISTING_SYSTEM_PROXY" != "1" ]]; then
   echo "--allow-existing-system-proxy must be 0 or 1" >&2
   exit 2
@@ -105,6 +148,30 @@ if [[ "$REQUIRE_DOCKER" != "0" && "$REQUIRE_DOCKER" != "1" ]]; then
 fi
 if [[ "$FAIL_FAST" != "0" && "$FAIL_FAST" != "1" ]]; then
   echo "--fail-fast must be 0 or 1" >&2
+  exit 2
+fi
+if [[ -n "$CANARY_HOURS_OVERRIDE" && ! "$CANARY_HOURS_OVERRIDE" =~ ^[0-9]+$ ]]; then
+  echo "--canary-hours must be a non-negative integer" >&2
+  exit 2
+fi
+if [[ -n "$CANARY_INTERVAL_OVERRIDE" && ! "$CANARY_INTERVAL_OVERRIDE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--canary-interval-sec must be a positive integer" >&2
+  exit 2
+fi
+if [[ -z "$CANARY_OUTPUT_ROOT" ]]; then
+  echo "--canary-output-root must not be empty" >&2
+  exit 2
+fi
+if ! [[ "$WORKSPACE_TEST_THREADS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--workspace-test-threads must be a positive integer" >&2
+  exit 2
+fi
+if [[ -z "$STABILITY_REPORT_DIR" ]]; then
+  echo "L18_STABILITY_REPORT_DIR must not be empty" >&2
+  exit 2
+fi
+if [[ -z "$STABILITY_TEST_CONFIG" ]]; then
+  echo "L18_STABILITY_TEST_CONFIG must not be empty" >&2
   exit 2
 fi
 
@@ -136,7 +203,17 @@ case "$PROFILE" in
     ;;
 esac
 
-mkdir -p "$(dirname "$STATUS_FILE")" "${ROOT_DIR}/reports/l18/stability"
+if [[ -n "$CANARY_HOURS_OVERRIDE" ]]; then
+  CANARY_HOURS="$CANARY_HOURS_OVERRIDE"
+fi
+if [[ -n "$CANARY_INTERVAL_OVERRIDE" ]]; then
+  CANARY_INTERVAL="$CANARY_INTERVAL_OVERRIDE"
+fi
+
+mkdir -p "$(dirname "$STATUS_FILE")" "$CANARY_OUTPUT_ROOT" "$STABILITY_REPORT_DIR" "$(dirname "$STABILITY_TEST_CONFIG")"
+if [[ ! -f "$STABILITY_TEST_CONFIG" ]]; then
+  printf '{}\n' > "$STABILITY_TEST_CONFIG"
+fi
 
 PREFLIGHT_STATUS="NOT_RUN"
 ORACLE_STATUS="NOT_RUN"
@@ -201,6 +278,10 @@ finalize_status() {
   "canary": {
     "duration_hours": ${CANARY_HOURS},
     "sample_interval_sec": ${CANARY_INTERVAL}
+  },
+  "stability_artifacts": {
+    "report_dir": "${STABILITY_REPORT_DIR}",
+    "config_path": "${STABILITY_TEST_CONFIG}"
   },
   "gates": {
     "preflight": "${PREFLIGHT_STATUS}",
@@ -274,8 +355,8 @@ run_docker_gate() {
 }
 
 run_canary_gate() {
-  local out_jsonl="${ROOT_DIR}/reports/l18/stability/canary_${PROFILE}.jsonl"
-  local out_summary="${ROOT_DIR}/reports/l18/stability/canary_${PROFILE}.md"
+  local out_jsonl="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.jsonl"
+  local out_summary="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.md"
 
   local cmd=(
     "${ROOT_DIR}/scripts/canary_7day.sh"
@@ -335,11 +416,11 @@ run_gate_with_fail_fast "PREFLIGHT" "${ROOT_DIR}/scripts/l18/preflight_macos.sh"
 run_gate_with_fail_fast "ORACLE" "${ROOT_DIR}/scripts/l18/build_go_oracle.sh"
 run_gate_with_fail_fast "BOUNDARIES" bash "${ROOT_DIR}/agents-only/06-scripts/check-boundaries.sh"
 run_gate_with_fail_fast "PARITY" cargo check -p app --features parity
-run_gate_with_fail_fast "WORKSPACE_TEST" cargo test --workspace
+run_gate_with_fail_fast "WORKSPACE_TEST" env RUST_TEST_THREADS="${WORKSPACE_TEST_THREADS}" cargo test --workspace
 run_gate_with_fail_fast "FMT" cargo fmt --all -- --check
 run_gate_with_fail_fast "CLIPPY" cargo clippy --workspace --all-features --all-targets -- -D warnings
-run_gate_with_fail_fast "HOT_RELOAD" env SINGBOX_HOT_RELOAD_ITERATIONS="${HOT_ITER}" cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture
-run_gate_with_fail_fast "SIGNAL" env SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" cargo test -p app --test signal_reliability --features long_tests -- --nocapture
+run_gate_with_fail_fast "HOT_RELOAD" env SINGBOX_HOT_RELOAD_ITERATIONS="${HOT_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture
+run_gate_with_fail_fast "SIGNAL" env SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test signal_reliability --features long_tests -- --nocapture
 if ! run_docker_gate; then
   if [[ "$FAIL_FAST" == "1" ]]; then
     echo "[L18 capstone] fail-fast triggered at gate=DOCKER" >&2

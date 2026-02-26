@@ -155,19 +155,12 @@ fn load_pem_directory(roots: &mut RootCertStore, dir_path: &str) {
 /// Apply extra CA certificates (paths and inline PEMs) to the global store.
 ///
 /// After calling this, `base_root_store()` will include these CAs.
-/// Also rebuilds the global override config.
+/// The effective TLS client config is rebuilt lazily on next `get_effective()`.
 pub fn apply_extra_cas(ca_paths: &[String], ca_pems: &[String]) {
     *EXTRA_CA_PATHS.write() = ca_paths.to_vec();
     *EXTRA_CA_PEMS.write() = ca_pems.to_vec();
-
-    // Rebuild override config
-    let roots = base_root_store();
-    let cfg = Arc::new(
-        ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth(),
-    );
-    *TLS_OVERRIDE.write() = Some(cfg);
+    // Invalidate cached TLS config; rebuild only when first used.
+    *TLS_OVERRIDE.write() = None;
 }
 
 /// Apply full certificate configuration from IR.
@@ -193,7 +186,10 @@ pub fn get_effective() -> Arc<ClientConfig> {
     if let Some(cfg) = TLS_OVERRIDE.read().as_ref() {
         return Arc::clone(cfg);
     }
-    default_config()
+
+    let cfg = default_config();
+    *TLS_OVERRIDE.write() = Some(Arc::clone(&cfg));
+    cfg
 }
 
 /// Build a default TLS client configuration from configured roots.

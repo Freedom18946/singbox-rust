@@ -4,7 +4,7 @@
 
 **🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**
 
-> **Latest Update (2026-02-24)**: L18 replacement-certification framework is now implemented (macOS-only), with mandatory gates under `scripts/l18/*` and CI workflow `.github/workflows/l18-certification-macos.yml`.
+> **Latest Update (2026-02-25)**: L18 `daily` convergence batches were re-run with folder-level artifact isolation. `v5` showed `r1 PASS` and `r2/r3 FAIL` caused only by flaky `gui_smoke` (Rust GUI kernel readiness). After raising GUI timeout to 120s and fixing stability artifact path binding, verification batch `v6b_timeout120/r1` passed all gates (`gui/canary/dual/perf` all PASS, `/proxies` Go+Rust=200).
 > **L18 Policy Shift (effective 2026-02-24)**: `gui/canary` are mandatory blocking gates; `docker` defaults to non-blocking in local mode (`--require-docker 0`) and can be switched to blocking for CI/certify mode (`--require-docker 1`).
 > **L17 Baseline (historical)**: `scripts/l17_capstone.sh --profile fast` completed with `overall=PASS_STRICT`; optional environment gates were recorded as `SKIP` for L17 only.
 

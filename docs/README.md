@@ -198,6 +198,7 @@ This documentation follows these principles:
 
 ## 🔄 Recent Updates
 
+- **2026-02-25**: L18 daily convergence reruns completed with strict artifact isolation under `reports/l18/batches/20260225T134935Z-l18-daily-converge-v4`; `v5` identified `gui_smoke` flake (Rust readiness), and `v6b_timeout120/r1` verified mitigation (`L18_GUI_TIMEOUT_SEC=120`) with full PASS and `/proxies` Go/Rust both `200`
 - **2026-02-24**: L17 capstone fast rerun completed with `overall=PASS_STRICT`; optional environment gates recorded as `SKIP` (`docker/gui_smoke/canary`) in `reports/stability/l17_capstone_status.json`
 - **2026-02-24**: Parity baseline updated to 209/209 closed (acceptance baseline); PX-015 Linux runtime evidence no longer tracked as open blocker
 - **2026-02-12**: Added L17 entry docs (`configuration.md`, `migration-from-go.md`, `troubleshooting.md`) and release-readiness workflows/scripts
@@ -228,6 +229,6 @@ See the documentation guide for structure and link hygiene tips: [Documentation 
 
 **Documentation Version**: v2.0 (restructured)  
 **Project Version**: v0.2.0+  
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25
 
 > _Never break userspace_ — we add, we don't remove.
