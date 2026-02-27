@@ -127,7 +127,7 @@ assertions:
     op: eq
     expected: 200
   # Connections are populated after traffic
-  - key: connections.count
+  - key: connections.downloadTotal
     op: gt
     expected: 0
 oracle:

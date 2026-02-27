@@ -65,6 +65,7 @@
 - `scripts/l18/gui_real_cert.sh`
 - `scripts/l18/perf_gate.sh`
 - `scripts/l18/l18_capstone.sh`
+- `scripts/l18/run_capstone_fixed_profile.sh`
 - `.github/workflows/l18-certification-macos.yml`
 - `reports/L18_REPLACEMENT_CERTIFICATION.md`
 

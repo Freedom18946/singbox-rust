@@ -1,6 +1,6 @@
 use crate::case_spec::{ApiAccess, KernelLaunchSpec};
 use crate::snapshot::KernelKind;
-use crate::util::resolve_with_env;
+use crate::util::{resolve_command_with_fallback, resolve_with_env};
 use anyhow::{anyhow, Context, Result};
 use reqwest::StatusCode;
 use std::path::Path;
@@ -55,7 +55,7 @@ pub async fn launch_kernel(
     let command = spec
         .command
         .as_deref()
-        .map(resolve_with_env)
+        .map(resolve_command_with_fallback)
         .ok_or_else(|| anyhow!("kernel command missing"))?;
 
     let mut cmd = Command::new(command);
@@ -85,7 +85,7 @@ pub async fn launch_kernel(
         .to_string_lossy()
         .to_string();
 
-    let stdout_task = child.stdout.take().map(|stdout| {
+    let mut stdout_task = child.stdout.take().map(|stdout| {
         let path = stdout_path.clone();
         tokio::spawn(async move {
             if let Ok(mut file) = tokio::fs::File::create(path).await {
@@ -99,7 +99,7 @@ pub async fn launch_kernel(
         })
     });
 
-    let stderr_task = child.stderr.take().map(|stderr| {
+    let mut stderr_task = child.stderr.take().map(|stderr| {
         let path = stderr_path.clone();
         tokio::spawn(async move {
             if let Ok(mut file) = tokio::fs::File::create(path).await {
@@ -113,7 +113,17 @@ pub async fn launch_kernel(
         })
     });
 
-    wait_until_ready(&api, &spec.ready_path, spec.startup_timeout_ms).await?;
+    if let Err(err) = wait_until_ready(&api, &spec.ready_path, spec.startup_timeout_ms).await {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        if let Some(task) = stdout_task.take() {
+            let _ = task.await;
+        }
+        if let Some(task) = stderr_task.take() {
+            let _ = task.await;
+        }
+        return Err(err);
+    }
 
     Ok(KernelSession {
         api,

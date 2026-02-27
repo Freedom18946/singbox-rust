@@ -19,7 +19,7 @@ impl ReqwestHttpClient {
     /// The underlying reqwest client is lazily initialized on first request to
     /// reduce process startup overhead when HTTP is not used.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             client: OnceLock::new(),
         }
@@ -38,6 +38,12 @@ impl ReqwestHttpClient {
                 message: format!("failed to initialize HTTP client: {err}"),
             }),
         }
+    }
+}
+
+impl Default for ReqwestHttpClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

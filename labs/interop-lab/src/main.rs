@@ -109,8 +109,33 @@ async fn handle_case_command(
                 if let Some(diff_path) = &output.diff_report_path {
                     println!("diff_report={}", canonicalize_or(diff_path).display());
                 }
-                for snapshot in output.snapshot_files {
-                    println!("snapshot={}", canonicalize_or(&snapshot).display());
+                for snapshot in &output.snapshot_files {
+                    println!("snapshot={}", canonicalize_or(snapshot).display());
+                }
+                if output.is_failed() {
+                    eprintln!("case_run_failed_count=1");
+                    eprintln!(
+                        "case_fail case={} run_id={} run_dir={}",
+                        output.case_id,
+                        output.run_id,
+                        canonicalize_or(&output.run_dir).display()
+                    );
+                    for failure in &output.failures {
+                        eprintln!(
+                            "case_fail_detail case={} run_id={} kernel={:?} stage={} message={}",
+                            output.case_id,
+                            output.run_id,
+                            failure.kernel,
+                            failure.stage,
+                            failure.message
+                        );
+                    }
+                    anyhow::bail!(
+                        "case run failed: case={} run_id={} errors={}",
+                        output.case_id,
+                        output.run_id,
+                        output.failures.len()
+                    );
                 }
                 return Ok(());
             }
@@ -122,9 +147,33 @@ async fn handle_case_command(
                 render_run_plan_summary(&selected, kernel_override.clone(), &filter)
             );
             let outputs = run_cases(&selected, kernel_override, artifacts_dir, &go_api_cfg).await?;
-            for output in outputs {
+            let mut failed_count = 0usize;
+            for output in &outputs {
                 println!("case={} run_id={}", output.case_id, output.run_id);
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
+                if output.is_failed() {
+                    failed_count += 1;
+                    eprintln!(
+                        "case_fail case={} run_id={} run_dir={}",
+                        output.case_id,
+                        output.run_id,
+                        canonicalize_or(&output.run_dir).display()
+                    );
+                    for failure in &output.failures {
+                        eprintln!(
+                            "case_fail_detail case={} run_id={} kernel={:?} stage={} message={}",
+                            output.case_id,
+                            output.run_id,
+                            failure.kernel,
+                            failure.stage,
+                            failure.message
+                        );
+                    }
+                }
+            }
+            if failed_count > 0 {
+                eprintln!("case_run_failed_count={failed_count}");
+                anyhow::bail!("case run failed: {failed_count} case(s) failed");
             }
             Ok(())
         }

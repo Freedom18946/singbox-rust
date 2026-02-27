@@ -23,4 +23,10 @@ subscription_input:
 assertions:
   - key: errors.count
     op: eq
-    expected: 0
+    expected: 1
+  - key: errors.0.stage
+    op: eq
+    expected: subscription_parse
+  - key: errors.0.message
+    op: contains
+    expected: unsupported subscription format

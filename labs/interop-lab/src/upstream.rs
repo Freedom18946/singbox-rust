@@ -1,6 +1,6 @@
 use crate::case_spec::{FaultSpec, TrafficAction, UpstreamKind, UpstreamServiceSpec};
 use crate::snapshot::TrafficResult;
-use crate::util::sha256_hex;
+use crate::util::{resolve_command_with_fallback, resolve_with_env, sha256_hex};
 use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
 use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
@@ -27,6 +27,8 @@ use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
+
+const TCP_ROUNDTRIP_TIMEOUT_MS: u64 = 10_000;
 
 #[derive(Default)]
 pub struct UpstreamHarness {
@@ -491,10 +493,22 @@ pub async fn run_traffic_plan(
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
                 let actual_payload = resolve_payload(payload, *payload_size);
-                let result = if let Some(proxy) = resolved_proxy.as_deref() {
-                    tcp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
-                } else {
-                    tcp_roundtrip(&addr, &actual_payload).await
+                let result = match tokio::time::timeout(
+                    Duration::from_millis(TCP_ROUNDTRIP_TIMEOUT_MS),
+                    async {
+                        if let Some(proxy) = resolved_proxy.as_deref() {
+                            tcp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
+                        } else {
+                            tcp_roundtrip(&addr, &actual_payload).await
+                        }
+                    },
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => Err(anyhow!(
+                        "tcp roundtrip timeout after {TCP_ROUNDTRIP_TIMEOUT_MS}ms"
+                    )),
                 };
                 match result {
                     Ok(back) => {
@@ -656,18 +670,20 @@ pub async fn run_traffic_plan(
                 timeout_ms,
                 expect_exit,
             } => {
-                let resolved_command = harness.resolve_templates(command);
+                let resolved_command = resolve_command_with_fallback(&resolve_with_env(
+                    &harness.resolve_templates(command),
+                ));
                 let resolved_args: Vec<String> = args
                     .iter()
-                    .map(|arg| harness.resolve_templates(arg))
+                    .map(|arg| resolve_with_env(&harness.resolve_templates(arg)))
                     .collect();
                 let resolved_env: BTreeMap<String, String> = env
                     .iter()
-                    .map(|(k, v)| (k.clone(), harness.resolve_templates(v)))
+                    .map(|(k, v)| (k.clone(), resolve_with_env(&harness.resolve_templates(v))))
                     .collect();
                 let resolved_workdir = workdir.as_ref().map(|dir| {
                     let raw = dir.to_string_lossy();
-                    std::path::PathBuf::from(harness.resolve_templates(&raw))
+                    std::path::PathBuf::from(resolve_with_env(&harness.resolve_templates(&raw)))
                 });
 
                 let mut cmd = Command::new(&resolved_command);
@@ -1280,7 +1296,12 @@ async fn udp_roundtrip_via_socks5(
     } else {
         bind_host
     };
-    let relay_addr = format_host_port(&relay_host, bind_port);
+    let relay_port = if bind_port == 0 {
+        parse_host_port(proxy_addr)?.1
+    } else {
+        bind_port
+    };
+    let relay_addr = format_host_port(&relay_host, relay_port);
 
     let (target_host, target_port) = parse_host_port(target_addr)?;
     let mut packet = vec![0x00_u8, 0x00, 0x00]; // RSV + FRAG
@@ -1500,13 +1521,20 @@ async fn ws_roundtrip(
         .await
         .with_context(|| "ws send payload")?;
 
-    let deadline = Duration::from_millis(timeout_ms);
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        let next = tokio::time::timeout(deadline, stream.next()).await;
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return Err(anyhow!("ws roundtrip timeout after {timeout_ms}ms"));
+        }
+        let next =
+            tokio::time::timeout(deadline.saturating_duration_since(now), stream.next()).await;
         match next {
             Ok(Some(Ok(WsMessage::Text(text)))) => {
-                let _ = stream.close(None).await;
-                return Ok(text);
+                if text == payload {
+                    let _ = stream.close(None).await;
+                    return Ok(text);
+                }
             }
             Ok(Some(Ok(_))) => continue,
             Ok(Some(Err(err))) => return Err(anyhow!("ws recv error: {err}")),

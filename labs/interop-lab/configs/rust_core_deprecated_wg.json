@@ -14,9 +14,8 @@
       "name": "wg-out",
       "server": "10.0.0.1",
       "port": 51820,
-      "private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      "public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-      "local_address": ["10.0.0.2/32"]
+      "wireguard_private_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "wireguard_peer_public_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
     },
     {
       "type": "direct",

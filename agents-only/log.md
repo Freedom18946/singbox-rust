@@ -23,6 +23,153 @@
 
 ## 日志记录
 
+### [2026-02-27 18:20] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求同步 agents 文档到最新，记录 L18 当前进度、失败根因与下一步执行计划，并准备下一会话接续口令。
+**变更**:
+- 更新 `agents-only/workpackage_latest.md`
+  - 将 `P0` 状态从“阻塞”更新为“已清零”
+  - 写入最新批次基线与证据路径（`054642Z/091322Z/094308Z`）
+  - 新增 `workspace/gui/canary/dual/perf` 分阶段进度与失败根因
+  - 明确下一步执行顺序（先修复流程问题并复跑，再发车 nightly/certify）
+- 更新 `agents-only/active_context.md`
+  - 更新“文档状态同步”为 2026-02-27 18:20 口径
+  - 对齐最新批次、分阶段状态与下一执行主线
+- 更新 `agents-only/log.md`（新增本条记录）
+
+**结果**: 成功（agents 状态总线已对齐到 P0 清零后的最新状态）
+**备注**: 认证主线当前为“非 P0 阻塞”处理：dual 失败清单与 canary 汇总容错，nightly 整链 PASS 证据待下一轮复跑产出。
+
+---
+
+### [2026-02-26 13:27] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求更新交接文档，并准备下一次新对话可直接使用的开场指令。
+**变更**:
+- 更新 `agents-only/workpackage_latest.md`
+  - 补充会话结束前状态（nightly 尚未完成结论、关键端口已释放）
+  - 补充下次对话直接执行命令与必回传证据文件
+- 更新 `agents-only/active_context.md`
+  - 补充当前会话收尾状态与端口释放快照结论
+- 更新 `reports/L18_REPLACEMENT_CERTIFICATION.md`
+  - `Current Status` 增加 handoff note（Phase A 已完成、下一步命令）
+- 更新 `agents-only/log.md`（新增本条记录）
+
+**结果**: 成功（交接信息已入库，下一会话可零歧义接续）
+**备注**: 本次仅文档同步，不新增长跑任务执行。
+
+---
+
+### [2026-02-26 13:21] Agent: Codex (GPT-5)
+
+**任务**: 实施 L18 收口计划的执行层改造：固化 nightly/certify 同配置运行入口，避免配置漂移，并同步文档到最新状态。
+**变更**:
+- 脚本与 CI：
+  - 新增 `scripts/l18/run_capstone_fixed_profile.sh`
+    - 固化 fixed env（`L18_GUI_TIMEOUT_SEC=120`、`L18_RUST_BUILD_ENABLED=0`、`L18_GUI_GO_BUILD_ENABLED=0`、`L18_GUI_RUST_BUILD_ENABLED=0`）
+    - 自动产出 `config.freeze.json` + `precheck.txt`
+    - 隔离 `r1/{preflight,oracle,gui,canary,dual_kernel,dual_kernel_artifacts,perf}` 目录
+    - 独立 canary runtime（`127.0.0.1:29090`）接线 `l18_capstone`
+  - 更新 `.github/workflows/l18-certification-macos.yml`
+    - 新增 parity 预构建步骤（`cargo build --release -p app --features parity --bin run`）
+    - capstone 运行环境固定为同一 baseline（含 `L18_RUST_BIN` 指向 parity 产物）
+- 文档同步：
+  - 更新 `reports/L18_REPLACEMENT_CERTIFICATION.md`
+  - 更新 `docs/STATUS.md`
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/03-planning/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`
+  - 更新 `agents-only/log.md`（新增本条记录）
+- 运行验证：
+  - 新脚本短程链路验证通过（可完成配置冻结、canary 启动与 capstone 进入执行阶段）
+  - 24h nightly 结果尚待独立长窗口完成并回填
+
+**结果**: 成功（计划的 Phase A 工程化已落地；nightly/certify 统一配置入口已可执行）
+**备注**: 受当前交互会话时长限制，未在本次对话内等待完整 24h `nightly` 完成；建议在稳定窗口直接使用新脚本启动并持续跟踪 `summary.tsv` 与 `l18_capstone_status.json`。
+
+---
+
+### [2026-02-26 10:47] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令将“下一步任务规划”写入文档并同步到最新状态。
+**变更**:
+- 更新 `reports/L18_REPLACEMENT_CERTIFICATION.md`
+  - 新增 `Next Execution Plan (as of 2026-02-26)`（冻结配置 -> nightly 24h 预演 -> certify 7d -> 条件分支强诊断 -> 结项发布）
+- 更新 `agents-only/workpackage_latest.md`
+  - 替换“下一对话接续任务”为带日期的 L18 执行序列（2026-02-26/2026-02-27）
+- 更新 `agents-only/active_context.md`
+  - 替换 `L18 下一步任务` 为同口径执行序列（含固定配置基线与触发式分支）
+- 更新 `docs/STATUS.md`
+  - 新增 `L18 Next Actions (updated 2026-02-26)` 小节，对外同步下一步计划
+- 更新 `agents-only/log.md`（新增本条记录）
+
+**结果**: 成功（规划已写入主报告 + 状态总线 + 对外状态文档）
+**备注**: 当前主线不再是 daily 收敛，已切换为 `nightly 预演` 与 `certify(7d)` 结项执行。
+
+---
+
+### [2026-02-26 10:43] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令“同步”，将对外文档口径更新到 L18 最新 `v7` 连续 PASS 证据。
+**变更**:
+- 更新 `docs/STATUS.md`
+  - `Latest Update` 改为 2026-02-26，写入 baseline dual + `v7` 三连 PASS 证据摘要
+  - `Current Status` 新增“L18 Daily Convergence 已达成”并收敛剩余项到 `certify(7d canary)`
+- 更新 `docs/README.md`
+  - `Recent Updates` 新增 2026-02-26 条目（`v7` 三连 PASS + baseline dual clean）
+  - `Last Updated` 改为 `2026-02-26`
+- 更新 `agents-only/log.md`（新增本条记录）
+
+**结果**: 成功（docs 对外状态与 `reports/L18_REPLACEMENT_CERTIFICATION.md` 已同步）
+**备注**: 当前 L18 结项剩余唯一主线为 self-hosted macOS `certify`（7d canary）证据闭环。
+
+---
+
+### [2026-02-26 10:40] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令“更新”，将 L18 认证主报告同步到最新 `v7` 同配置三连 PASS 证据。
+**变更**:
+- 更新 `reports/L18_REPLACEMENT_CERTIFICATION.md`
+  - `Current Status` 从“仅设计落地”更新为“daily 同配置 3 连 PASS 已达成”
+  - 新增 `Latest Evidence (2026-02-26)` 章节，补充：
+    - baseline dual run（run_id=`20260226T015945Z-daily-dc0b3935`）
+    - `capstone_daily_convergence_v7_timeout120` 3 轮结果（`r1/r2/r3` 全 PASS）
+    - 三轮 dual run_id 与 `run_fail_count/diff_fail_count=0` 证据
+    - GUI `/proxies` 三轮 `go/rust=200` 观测
+- 更新 `agents-only/log.md`（新增本条记录）
+
+**结果**: 成功（L18 认证主报告已对齐到最新连续 PASS 证据）
+**备注**: L18 仍为 `IN_PROGRESS`，剩余结项条件是 `certify(7d canary)` 与 self-hosted macOS CI 证据上传。
+
+---
+
+### [2026-02-26 10:38] Agent: Codex (GPT-5)
+
+**任务**: 按既定规划继续推进 L18 daily 收敛；先跑 `run_dual_kernel_cert.sh --profile daily` 做 case 级 Go/Rust 差分复验，再用同一修复配置连续跑 3 轮 daily，目标拿到连续 PASS 证据。
+**变更**:
+- 执行与证据：
+  - 执行 `scripts/l18/run_dual_kernel_cert.sh --profile daily`
+    - run_id：`20260226T015945Z-daily-dc0b3935`
+    - 结果：`PASS`（`selected_case_count=5`，`run_fail_count=0`，`diff_fail_count=0`）
+  - 执行 `reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/run_capstone_daily_v4.sh capstone_daily_convergence_v7_timeout120 3`
+    - 批次目录：`reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/capstone_daily_convergence_v7_timeout120`
+    - summary：`.../summary.tsv`
+    - 三轮结果：`r1/r2/r3` 全部 `overall=PASS`，且 `gui_smoke=PASS`、`dual_kernel_diff=PASS`、`perf_gate=PASS`（`docker=WARN` 非阻断）
+    - dual run_id：
+      - `r1`: `20260226T021330Z-daily-db9d17f6`（`run_fail_count=0`，`diff_fail_count=0`）
+      - `r2`: `20260226T022257Z-daily-a764c3c1`（`run_fail_count=0`，`diff_fail_count=0`）
+      - `r3`: `20260226T023217Z-daily-d4d10514`（`run_fail_count=0`，`diff_fail_count=0`）
+    - GUI 契约：三轮均 `go=/proxies=200`、`rust=/proxies=200`
+- 文档回填：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（达成“同配置连续 3 轮 daily PASS”目标，case 级 Go/Rust 差分保持全绿）
+**备注**: 本轮未复现 GUI 偶发失败，故未触发 `gui_real_cert` Rust ready 诊断增强改造；该项保留为条件触发动作。
+
+---
+
 ### [2026-02-25 22:55] Agent: Codex (GPT-5)
 
 **任务**: 按既定规划继续推进 L18 `daily` 收敛，执行 case 级 Go/Rust 差分与 Rust Clash API `/proxies` 契约对齐复验，并强化批次级产物隔离
@@ -1394,5 +1541,100 @@ L2.8.4-6 Handlers + WebSocket:
 **下一步（规划）**:
 1. 优先收口 `scripts/l18/perf_gate.sh` 的 p95 抖动（多回合稳态统计 + 报告字段固化）。
 2. 连续至少 3 轮 `capstone_daily` 验证 `perf_gate=PASS` 后，更新 L18 认证结项证据。
+
+### [2026-02-26 13:42] Agent: Codex (GPT-5)
+
+**任务**: 接手 L18 收口执行，启动 fixed-profile nightly；发现并修复 workspace gate 确定性失败后重跑。
+**变更**:
+- 更新 `scripts/l18/run_capstone_fixed_profile.sh`
+  - 修复 `PROFILE` 环境泄漏导致 `cargo test --workspace` 中 `check` 二进制路径解析错误（`target/nightly/check`）
+  - 不再导出 `PROFILE`，改为 `FIXED_PROFILE` 仅用于 `config.freeze.json`
+  - 执行 capstone 时显式 `env -u PROFILE`，防止外部环境污染
+- 执行批次：
+  - 失败中止批次：`reports/l18/batches/20260226T052836Z-l18-nightly-preflight`
+  - 修复后重跑批次：`reports/l18/batches/20260226T053557Z-l18-nightly-preflight`
+
+**结果**: 部分完成（重跑已进入 CANARY 24h 阶段）
+**备注**: 当前已确认 `workspace/fmt/clippy/hot_reload/signal/gui` 通过，`canary_nightly.jsonl` 正在持续写入，待 24h 完成后继续 `dual/perf` 与最终判定。
+
+---
+
+### [2026-02-27 14:07] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令执行“短时高压 48x 复合压力”预演（目标 30 分钟），覆盖 `workspace/gui/canary/dual/perf` 全链路并持续回报进度。
+
+**执行入口**:
+- `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- `batch_root`: `reports/l18/batches/20260227T054642Z-l18-stress-48x`
+
+**关键结果**:
+- 总结：`stress_short_48x/summary.tsv` -> `r1 PASS PASS`
+- 状态：`stress_short_48x/r1/stress_status.json`
+  - `overall=PASS`
+  - `elapsed_sec=1203`（在 30min 预算 1800s 内）
+  - `composite_multiplier=48`
+  - 各 stage：`PREFLIGHT/GUI/ALL_CASES_RUST/SOAK_SHORT_WS/SOAK_SHORT_WS_DUAL_CORE/P2_ROUND_2/3/4/DUAL_NIGHTLY/PERF_3X` 全 `PASS`
+- Canary：
+  - `stress_short_48x/r1/canary/canary_stress_30m.md`
+  - `sample_count=80`，`health_200_count=80`，`pass=true`
+- Dual：
+  - `stress_short_48x/r1/dual_kernel/20260227T060009Z-nightly-7c1032bd/summary.json`
+  - `selected_case_count=6`，`run_fail_count=0`，`diff_fail_count=0`，`pass=true`
+- Perf：
+  - `stress_short_48x/r1/perf/perf_gate.json` -> `pass=true`
+  - `latency_p95=-8.437%`，`rss_peak=0.0%`，`startup=+5.882%`（均在阈值内）
+- GUI：
+  - 本轮证据为 `reports/l18/gui_real_cert.json`（生成时刻 `2026-02-27T05:46:54Z`，`pass=true`）
+  - 已复制到批次目录：`stress_short_48x/r1/gui/gui_real_cert.json`
+
+**附加修复**:
+- `scripts/l18/run_stress_short_48x.sh`
+  - 修复 `stress_status.json` 的 `gui_report` 指针问题（此前指向不存在的 run 内路径）。
+  - 新行为：GUI 阶段后自动复制 `reports/l18/gui_real_cert.{json,md}` 到本轮 `r1/gui/`，并在状态文件中写入可用路径。
+
+**结论**:
+- 短时高压 48x 预演全链路 `PASS`，无失败根因。
+- 该结果属于“加速预演证据”，不替代 L18 结项必需的 `nightly 24h` 与 `certify 7d` 正式证据。
+
+---
+
+### [2026-02-27 14:15] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求优先刷新 `agents-only` 文档到最新状态。
+
+**变更**:
+- 更新 `agents-only/workpackage_latest.md`
+  - `最后更新` 刷新为 `2026-02-27 14:15`
+  - 新增“文档同步（2026-02-27 14:15）”段，确认本次为文档刷新、无新增执行
+- 更新 `agents-only/active_context.md`
+  - 新增“文档状态同步（2026-02-27 14:15）”段，固定当前批次与下一主线
+- 更新 `agents-only/log.md`
+  - 追加本条同步记录
+
+**结果**: 成功（`agents-only` 状态总线已对齐至当前最新执行口径）
+**备注**: 执行结论不变，当前最新有效批次仍为 `20260227T054642Z-l18-stress-48x`（PASS）。
+
+---
+
+### [2026-02-27 14:40] Agent: Codex (GPT-5)
+
+**任务**: 将“当前未对齐/失败项”提升为 L18 收口最高优先级，并同步 `agents-only` 文档主线顺序（先 P0，再 nightly/certify）。
+
+**文档更新**:
+- `agents-only/active_context.md`
+  - 新增 `🚨 P0 最高优先级（2026-02-27 14:40）` 段。
+  - 明确 4 项阻塞：`p2_protocol_unit_vmess`、`p2_subscription_truncated_base64`、`launch_kernel` 前置缺口、`interop-lab case run` 退出语义缺口。
+  - 将“下一步任务”改为：`P0 收口 -> nightly 24h -> certify 7d`。
+- `agents-only/workpackage_latest.md`
+  - 维持既有 `🚨 P0 最高优先级（2026-02-27 14:38）` 为当前唯一发车前置门槛口径。
+
+**当前口径**:
+- `nightly 24h` 与 `certify 7d` 暂不发车，直至 P0 收口标准满足：
+  - 83 case latest snapshot：`assertion_fail=0`、`unexpected launch_kernel fail=0`
+  - `cargo run -p interop-lab -- case run ...`：任一 case 失败即稳定返回非 0。
+
+**结果**: 成功（状态总线已统一为“P0 先行”）。
+
+---
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

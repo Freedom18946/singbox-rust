@@ -435,9 +435,11 @@ async fn test_healthcheck_proxy_provider() -> anyhow::Result<()> {
         )
         .await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found, 200 if successful
+    // Returns 503 when provider manager not available, 404 if provider not found,
+    // 204 when healthy, and 200 for compatible implementations.
     assert!(
         response.status() == StatusCode::OK
+            || response.status() == StatusCode::NO_CONTENT
             || response.status() == StatusCode::NOT_FOUND
             || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );

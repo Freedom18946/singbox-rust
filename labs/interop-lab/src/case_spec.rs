@@ -115,6 +115,10 @@ pub enum GuiStep {
         #[serde(default)]
         body: Option<Value>,
         #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
+        #[serde(default)]
         expect_status: Option<u16>,
     },
     WsCollect {

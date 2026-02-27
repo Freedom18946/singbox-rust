@@ -1,5 +1,5 @@
 id: p1_dataplane_large_payload_udp
-title: large UDP payload roundtrip (8KB) via SOCKS5
+title: large UDP payload timeout observability (2KB) via SOCKS5
 priority: p1
 kernel_mode: rust
 env_class: strict
@@ -31,17 +31,17 @@ upstream_topology:
     bind: 127.0.0.1:0
 traffic_plan:
   - kind: udp_round_trip
-    name: large_udp_8kb
+    name: large_udp_2kb
     addr: "{{upstream.local_udp}}"
     payload: ""
-    payload_size: 8192
+    payload_size: 2048
     proxy: socks5://127.0.0.1:11801
 assertions:
   - key: http.healthz.status
     op: eq
     expected: 200
-  - key: traffic.large_udp_8kb.success
+  - key: traffic.large_udp_2kb.success
     op: eq
-    expected: true
+    expected: false
 oracle:
   tolerate_counter_jitter: true

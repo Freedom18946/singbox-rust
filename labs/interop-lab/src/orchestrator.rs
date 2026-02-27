@@ -23,8 +23,22 @@ pub struct RunOutput {
     pub run_id: String,
     pub run_dir: PathBuf,
     pub snapshot_files: Vec<PathBuf>,
+    pub failures: Vec<CaseFailure>,
     /// Path to the diff report markdown, if dual-kernel diff was executed.
     pub diff_report_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseFailure {
+    pub kernel: KernelKind,
+    pub stage: String,
+    pub message: String,
+}
+
+impl RunOutput {
+    pub fn is_failed(&self) -> bool {
+        !self.failures.is_empty()
+    }
 }
 
 /// Optional Go API configuration for passive snapshot collection.
@@ -162,6 +176,7 @@ pub async fn run_case(
     };
 
     let mut snapshot_files = Vec::new();
+    let mut failures = Vec::new();
 
     for mode in modes {
         let started_at = Utc::now();
@@ -194,6 +209,11 @@ pub async fn run_case(
                 tokio::fs::write(&snapshot_path, content)
                     .await
                     .with_context(|| format!("writing {}", snapshot_path.display()))?;
+                failures.extend(snapshot.errors.iter().map(|err| CaseFailure {
+                    kernel: mode.clone(),
+                    stage: err.stage.clone(),
+                    message: err.message.clone(),
+                }));
                 snapshot_files.push(snapshot_path);
                 continue;
             }
@@ -257,6 +277,7 @@ pub async fn run_case(
         }
 
         snapshot.finished_at = Utc::now();
+        failures.extend(collect_case_failures(case, &mode, &snapshot));
         let snapshot_name = format!("{:?}.snapshot.json", mode).to_lowercase();
         let snapshot_path = run_dir.join(snapshot_name);
         let content = serde_json::to_vec_pretty(&snapshot)
@@ -344,6 +365,7 @@ pub async fn run_case(
         run_id,
         run_dir,
         snapshot_files,
+        failures,
         diff_report_path,
     })
 }
@@ -541,6 +563,36 @@ fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     }
 }
 
+fn collect_case_failures(
+    case: &CaseSpec,
+    mode: &KernelKind,
+    snapshot: &NormalizedSnapshot,
+) -> Vec<CaseFailure> {
+    let has_error_assertions = case
+        .assertions
+        .iter()
+        .any(|assertion| assertion.key == "errors.count" || assertion.key.starts_with("errors."));
+
+    snapshot
+        .errors
+        .iter()
+        .filter(|err| {
+            if err.stage.starts_with("assertion:") {
+                return true;
+            }
+            if err.stage == "launch_kernel" {
+                return true;
+            }
+            !has_error_assertions
+        })
+        .map(|err| CaseFailure {
+            kernel: mode.clone(),
+            stage: err.stage.clone(),
+            message: err.message.clone(),
+        })
+        .collect()
+}
+
 fn evaluate_assertion_op(op: &str, actual: Option<&Value>, expected: &Value) -> bool {
     match (op, actual) {
         ("eq", Some(value)) => value == expected,
@@ -597,6 +649,21 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
     }
     match parts[0] {
         "errors" if parts.as_slice() == ["errors", "count"] => Some(json!(snapshot.errors.len())),
+        "errors" if parts.len() >= 2 => {
+            let idx = parts[1].parse::<usize>().ok()?;
+            let err = snapshot.errors.get(idx)?;
+            if parts.len() == 2 {
+                return Some(json!({
+                    "stage": err.stage.clone(),
+                    "message": err.message.clone()
+                }));
+            }
+            match parts[2] {
+                "stage" if parts.len() == 3 => Some(json!(err.stage.clone())),
+                "message" if parts.len() == 3 => Some(json!(err.message.clone())),
+                _ => None,
+            }
+        }
         "subscription" if parts.len() == 2 => {
             snapshot
                 .subscription_result
@@ -657,12 +724,19 @@ fn resolve_connections_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -
     match path[0] {
         "count" => Some(json!(conns_array.len())),
         idx_str => {
-            let idx = idx_str.parse::<usize>().ok()?;
-            let conn = conns_array.get(idx)?;
-            if path.len() == 1 {
-                return Some(conn.clone());
+            if let Ok(idx) = idx_str.parse::<usize>() {
+                let conn = conns_array.get(idx)?;
+                if path.len() == 1 {
+                    return Some(conn.clone());
+                }
+                return resolve_json_path(conn, &path[1..]);
             }
-            resolve_json_path(conn, &path[1..])
+            if path.len() == 1 {
+                return conn_summary.get(idx_str).cloned();
+            }
+            conn_summary
+                .get(idx_str)
+                .and_then(|value| resolve_json_path(value, &path[1..]))
         }
     }
 }
@@ -774,6 +848,15 @@ mod tests {
                 "msg": "hello-world"
             }),
         });
+        snapshot.errors.push(NormalizedError {
+            stage: "subscription_parse".to_string(),
+            message: "unsupported subscription format".to_string(),
+        });
+        snapshot.conn_summary = Some(json!({
+            "connections": [],
+            "downloadTotal": 42,
+            "uploadTotal": 21
+        }));
 
         assert_eq!(
             resolve_assertion_value(&snapshot, "ws.connections_stream.frame_count"),
@@ -786,6 +869,18 @@ mod tests {
         assert_eq!(
             resolve_assertion_value(&snapshot, "traffic.probe.detail.nested.latency_ms"),
             Some(json!(123))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "errors.0.stage"),
+            Some(json!("subscription_parse"))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "errors.0.message"),
+            Some(json!("unsupported subscription format"))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "connections.downloadTotal"),
+            Some(json!(42))
         );
     }
 

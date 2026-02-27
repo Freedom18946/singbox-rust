@@ -32,6 +32,58 @@ pub fn resolve_with_env(input: &str) -> String {
     out
 }
 
+pub fn resolve_command_with_fallback(input: &str) -> String {
+    let resolved = resolve_with_env(input);
+    if !looks_like_legacy_debug_app(&resolved) {
+        return resolved;
+    }
+    if let Some(override_cmd) = find_rust_runtime_env_override() {
+        return override_cmd;
+    }
+    if Path::new(&resolved).exists() {
+        return resolved;
+    }
+    find_rust_runtime_fallback().unwrap_or(resolved)
+}
+
+fn looks_like_legacy_debug_app(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized == "./target/debug/app"
+        || normalized == "target/debug/app"
+        || normalized.ends_with("/target/debug/app")
+}
+
+fn find_rust_runtime_fallback() -> Option<String> {
+    if let Some(value) = find_rust_runtime_env_override() {
+        return Some(value);
+    }
+
+    for candidate in [
+        "./target/release/app",
+        "target/release/app",
+        "./target/release/run",
+        "target/release/run",
+        "./target/debug/run",
+        "target/debug/run",
+    ] {
+        if Path::new(candidate).exists() {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+fn find_rust_runtime_env_override() -> Option<String> {
+    for key in ["INTEROP_RUST_BIN", "L18_RUST_BIN", "RUST_APP"] {
+        if let Ok(value) = env::var(key) {
+            if !value.is_empty() && Path::new(&value).exists() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
 pub fn sha256_hex(content: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content);

@@ -4,7 +4,7 @@
 
 **🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**
 
-> **Latest Update (2026-02-25)**: L18 `daily` convergence batches were re-run with folder-level artifact isolation. `v5` showed `r1 PASS` and `r2/r3 FAIL` caused only by flaky `gui_smoke` (Rust GUI kernel readiness). After raising GUI timeout to 120s and fixing stability artifact path binding, verification batch `v6b_timeout120/r1` passed all gates (`gui/canary/dual/perf` all PASS, `/proxies` Go+Rust=200).
+> **Latest Update (2026-02-26)**: L18 `daily` convergence now has same-config 3-round continuous PASS evidence. Baseline dual run `20260226T015945Z-daily-dc0b3935` is clean (`run_fail_count=0`, `diff_fail_count=0`), and batch `capstone_daily_convergence_v7_timeout120` finished `r1/r2/r3` all `overall=PASS` with `gui/canary/dual/perf` all PASS (`docker=WARN` non-blocking), plus GUI `/proxies` Go+Rust=`200` in all rounds.
 > **L18 Policy Shift (effective 2026-02-24)**: `gui/canary` are mandatory blocking gates; `docker` defaults to non-blocking in local mode (`--require-docker 0`) and can be switched to blocking for CI/certify mode (`--require-docker 1`).
 > **L17 Baseline (historical)**: `scripts/l17_capstone.sh --profile fast` completed with `overall=PASS_STRICT`; optional environment gates were recorded as `SKIP` for L17 only.
 
@@ -55,7 +55,9 @@
 ## Current Status
 
 - ✅ **L18 Design-to-Implementation**: L18 script/workflow/report contracts landed (`scripts/l18/*.sh`, `reports/L18_REPLACEMENT_CERTIFICATION.md`, `l18-certification-macos.yml`)
-- 🔄 **L18 Certification Execution**: waiting for self-hosted macOS `daily/nightly/certify` runs and artifact evidence closure
+- ✅ **L18 Daily Convergence**: same fixed configuration reached 3 consecutive PASS rounds (`capstone_daily_convergence_v7_timeout120`)
+- ✅ **L18 Fixed-Profile Harness**: added `scripts/l18/run_capstone_fixed_profile.sh` and CI baseline lock for nightly/certify (parity prebuild + fixed env)
+- 🔄 **L18 Certification Execution**: remaining closure item is `certify` profile (7d canary) on self-hosted macOS CI with full artifact upload
 - ✅ **Protocol Coverage**: 100% for Go protocols (18/18 inbound, 19/19 outbound; +1 Rust-only inbound)
 - ✅ **Documentation**: Migration guide complete - [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 - ✅ **Verification Framework**: 3-layer validation system - [VERIFICATION_RECORD.md](../reports/VERIFICATION_RECORD.md)
@@ -64,6 +66,13 @@
 - 🔄 **Testing**: Feature gate matrix verification (`cargo xtask feature-matrix`)
 - 📊 **Observability**: Metrics alignment and monitoring improvements
 - ⚠️ **De-scoped**: Tailscale endpoint (see [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md))
+
+### L18 Next Actions (updated 2026-02-26)
+
+1. Freeze `nightly/certify` parameters to the same stable config already proven by `v7` daily.
+2. Run one `nightly` rehearsal (24h canary) and require `gui_smoke/canary/dual_kernel_diff/perf_gate` all PASS.
+3. Run one `certify` cycle (7d canary) as the closure run.
+4. If GUI flake reappears, add stronger Rust-ready diagnostics in `gui_real_cert` (ready polling trace + port occupancy snapshot) before rerun.
 
 ## Parity Build
 

@@ -29,6 +29,15 @@ gui_sequence:
     max_frames: 1
     duration_ms: 1500
 assertions:
+  - key: errors.count
+    op: eq
+    expected: 1
+  - key: errors.0.stage
+    op: eq
+    expected: ws:connections_wrong_token
+  - key: errors.0.message
+    op: contains
+    expected: "401"
   - key: http.get_configs_wrong_token.status
     op: gte
     expected: 400

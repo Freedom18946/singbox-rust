@@ -279,6 +279,7 @@ impl ClashApiServer {
                 get(handlers::get_meta_group_delay),
             )
             .route("/meta/memory", get(handlers::get_meta_memory))
+            .route("/memory", get(handlers::get_meta_memory))
             .route("/meta/gc", put(handlers::trigger_gc))
             // Script endpoints
             .route("/script", patch(handlers::update_script))

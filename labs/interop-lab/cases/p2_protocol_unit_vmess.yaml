@@ -24,7 +24,7 @@ traffic_plan:
       - -p
       - app
       - --test
-      - vmess_protocol_validation
+      - vmess_websocket_integration
       - --features
       - net_e2e
       - --

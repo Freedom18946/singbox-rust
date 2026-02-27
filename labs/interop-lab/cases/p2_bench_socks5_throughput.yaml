@@ -13,9 +13,12 @@ bootstrap:
     startup_timeout_ms: 5000
     ready_path: /
     api:
-      base_url: https://example.com
+      base_url: "{{upstream.local_http}}"
 gui_sequence: []
-upstream_topology: []
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
 traffic_plan:
   - kind: command
     name: socks5_bench

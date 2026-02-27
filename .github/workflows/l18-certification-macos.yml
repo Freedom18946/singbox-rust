@@ -59,11 +59,21 @@ jobs:
           fi
           echo "value=" >> "$GITHUB_OUTPUT"
 
+      - name: Build Rust parity runtime (fixed baseline)
+        shell: bash
+        run: |
+          cargo build --release -p app --features parity --bin run
+
       - name: Run L18 capstone
         shell: bash
         env:
           L18_GUI_APP: ${{ steps.gui.outputs.value }}
           L18_REQUIRE_DOCKER: "1"
+          L18_GUI_TIMEOUT_SEC: "120"
+          L18_RUST_BUILD_ENABLED: "0"
+          L18_RUST_BIN: ${{ github.workspace }}/target/release/run
+          L18_GUI_GO_BUILD_ENABLED: "0"
+          L18_GUI_RUST_BUILD_ENABLED: "0"
           INTEROP_GO_API_BASE: ${{ vars.INTEROP_GO_API_BASE }}
           INTEROP_GO_API_TOKEN: ${{ secrets.INTEROP_GO_API_TOKEN }}
         run: |

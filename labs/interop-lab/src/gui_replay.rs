@@ -3,7 +3,7 @@ use crate::snapshot::{
     HttpResult, MemoryPoint, NormalizedError, NormalizedSnapshot, TrafficCounters, WsFrameCapture,
 };
 use crate::subscription::parse_subscription;
-use crate::util::sha256_hex;
+use crate::util::{resolve_with_env, sha256_hex};
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -31,13 +31,22 @@ pub async fn run_gui_sequence(
                 method,
                 path,
                 body,
+                no_auth,
+                auth_secret,
                 expect_status,
             } => {
                 let status_expected = *expect_status;
                 let method = method.parse::<Method>().unwrap_or(Method::GET);
                 let url = format!("{}{}", api.base_url.trim_end_matches('/'), path);
                 let mut req = client.request(method.clone(), url);
-                if let Some(secret) = &api.secret {
+                let step_secret = if *no_auth {
+                    None
+                } else if let Some(secret) = auth_secret {
+                    Some(resolve_with_env(secret))
+                } else {
+                    api.secret.clone()
+                };
+                if let Some(secret) = &step_secret {
                     req = req.bearer_auth(secret);
                 }
                 if let Some(body) = body {

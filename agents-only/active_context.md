@@ -14,6 +14,113 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🚨 P0 最高优先级（2026-02-27 18:05）
+
+- **状态**：✅ P0 已收口（已恢复 nightly 固定入口发车）
+- 已完成：
+  1. `p2_protocol_unit_vmess`：case 测试目标修正。
+  2. `p2_subscription_truncated_base64`：断言语义改为“预期报错”口径。
+  3. `launch_kernel` 前置：可执行回退、占位 API 清理、超时后子进程清理、ready_path 修正。
+  4. `interop-lab case run`：任一 case 失败即非 0，并输出失败清单。
+- 收口证据（stress 批次）：
+  - `reports/l18/batches/20260227T091322Z-l18-stress-48x/stress_short_48x/r1/interop_artifacts`
+  - 83 case latest snapshot 聚合：`assertion_fail=0`、`unexpected_launch_kernel_fail=0`（已达门槛）
+- 已执行 nightly 固定入口：
+  - `scripts/l18/run_capstone_fixed_profile.sh --profile nightly ...`
+  - batch: `reports/l18/batches/20260227T094308Z-l18-nightly-preflight`
+  - 当前结论：前置 gate 已出现 FAIL（见下文根因），不影响“P0 已清零”的判断。
+
+### 🆕 本轮阻塞根因（非 P0，2026-02-27）
+
+1. `stress_short_48x` 收尾失败（流程级）
+   - dual 子阶段：`DUAL_NIGHTLY` 失败（`run_fail_count=5`）。
+   - 收尾脚本：canary 汇总 JSON 解析异常（`JSONDecodeError`）。
+   - 证据：`.../stress_short_48x/r1/stress.main.log`，`.../dual_kernel/.../summary.json`。
+2. nightly 固定入口失败（认证级）
+   - `WORKSPACE_TEST`：`crates/sb-api/tests/clash_http_e2e.rs::test_healthcheck_proxy_provider` 失败。
+   - `FMT`：本轮 interop 改动未格式化导致 `cargo fmt --check` 失败（现已执行 `cargo fmt` 修复）。
+   - `CLIPPY`：`app/src/reqwest_http.rs` 的 `new_without_default`/`missing_const_for_fn`（现已修复）。
+   - 证据：`.../capstone_nightly_fixedcfg/r1/capstone.stdout.log` / `capstone.stderr.log`。
+
+### 🆕 下一步任务（Next）
+
+1. 重新执行 nightly 固定入口（建议短路 canary 时长，仅验证前置 gate 全绿）：
+   - 目标：`workspace_test/fmt/clippy/gui` 全 PASS。
+2. 修复 `stress_short_48x` 的流程级问题：
+   - dual `run_fail_count=5` 根因归并（profile/case 与 dual 运行语义对齐）。
+   - canary 汇总脚本容错（忽略非 JSON 行或提前过滤）。
+3. 前置稳定后，再执行正式 24h nightly 与 7d certify。
+
+### 文档状态同步（2026-02-27 18:20）
+
+- 本次同步到 P0 收口后的最新执行状态，涉及批次：
+  - 基线：`reports/l18/batches/20260227T054642Z-l18-stress-48x`
+  - P0 收口 stress：`reports/l18/batches/20260227T091322Z-l18-stress-48x`
+  - nightly 固定入口：`reports/l18/batches/20260227T094308Z-l18-nightly-preflight`
+- 分阶段状态：
+  - `workspace`：nightly preflight 历史失败项已修复并完成针对性回归，待整链复跑确认。
+  - `gui`：PASS（stress 路径可用）。
+  - `canary`：FAIL（收尾汇总 JSON 解析异常）。
+  - `dual`：FAIL（`run_fail_count=5`）。
+  - `perf`：PASS。
+- 下一执行主线：
+  - 先修复 dual + canary 流程问题并重跑 30min stress 48x。
+  - 再执行 nightly 固定入口前置 gate 全绿验证。
+  - 全绿后进入 `nightly 24h` 与 `certify 7d` 正式认证。
+
+### L18 nightly/certify 固定配置执行器（2026-02-26）
+
+- 新增脚本：`scripts/l18/run_capstone_fixed_profile.sh`
+  - 职责：配置冻结、前置校验、批次目录隔离、独立 canary runtime、固定 env 执行 `l18_capstone`
+  - 固定基线：`L18_GUI_TIMEOUT_SEC=120`、`L18_RUST_BUILD_ENABLED=0`、`L18_GUI_GO_BUILD_ENABLED=0`、`L18_GUI_RUST_BUILD_ENABLED=0`、`L18_RUST_BIN=target/release/run`
+  - 产物：`config.freeze.json`、`precheck.txt`、`r1/{preflight,oracle,gui,canary,dual_kernel,dual_kernel_artifacts,perf}`
+- CI 固化：`.github/workflows/l18-certification-macos.yml`
+  - 新增 parity 预构建步骤
+  - capstone step 固定上述 env，避免 nightly/certify 配置漂移
+- 运行入口：
+  - 本地 nightly：`scripts/l18/run_capstone_fixed_profile.sh --profile nightly --gui-app <abs_gui_app> --require-docker 0`
+  - CI certify：workflow dispatch `profile=certify`（保持 `L18_REQUIRE_DOCKER=1`）
+- 会话结束前状态：
+  - 24h `nightly` 尚未产出最终结论文件（需在下一会话持续执行并回填）
+  - 关键端口已释放：`9090/19090/11810/11811/29090/12810` 全 free
+
+### L18 短时高压 48x 预演（2026-02-27 14:07）
+
+- 执行入口：
+  - `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- 批次根：
+  - `reports/l18/batches/20260227T054642Z-l18-stress-48x`
+- 结果：
+  - `summary.tsv`: `r1 PASS PASS`
+  - `stress_status.json`: `overall=PASS`，`elapsed_sec=1203`，`duration_min_target=30`，`composite_multiplier=48`
+  - stage 全通过：`PREFLIGHT/GUI/ALL_CASES_RUST/SOAK_SHORT_WS/SOAK_SHORT_WS_DUAL_CORE/P2_ROUND_2/3/4/DUAL_NIGHTLY/PERF_3X`
+- 证据：
+  - canary：`stress_short_48x/r1/canary/canary_stress_30m.md`（`sample_count=80`，`health_200_count=80`，`pass=true`）
+  - dual：`stress_short_48x/r1/dual_kernel/20260227T060009Z-nightly-7c1032bd/summary.json`（`run_fail_count=0`，`diff_fail_count=0`）
+  - perf：`stress_short_48x/r1/perf/perf_gate.json`（`pass=true`）
+  - gui：`reports/l18/gui_real_cert.json`（已复制到 `stress_short_48x/r1/gui/gui_real_cert.json`）
+- 结论：
+  - 短时高压预演已收口通过，可作为加速回归证据。
+  - **不替代** L18 结项所需 `nightly 24h` 与 `certify 7d` 正式认证证据。
+
+### L18 v7 同配置三连 PASS（2026-02-26 10:38）
+
+- 基线 dual 差分复验：
+  - 命令：`scripts/l18/run_dual_kernel_cert.sh --profile daily`
+  - run_id：`20260226T015945Z-daily-dc0b3935`
+  - 结果：`PASS`（`selected_case_count=5`，`run_fail_count=0`，`diff_fail_count=0`）
+  - 证据：`reports/l18/dual_kernel/20260226T015945Z-daily-dc0b3935/{summary.json,diff_gate.json}`
+- 同配置 3 轮 daily（复用 `timeout120 + parity 固定二进制`）：
+  - 命令：`reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/run_capstone_daily_v4.sh capstone_daily_convergence_v7_timeout120 3`
+  - 汇总：`reports/l18/batches/20260225T134935Z-l18-daily-converge-v4/capstone_daily_convergence_v7_timeout120/summary.tsv`
+  - 结果：`r1/r2/r3` 全部 `overall=PASS`，且 `gui/dual/perf` 全 `PASS`（`docker=WARN` 非阻断）
+- 三轮 dual case 差分：
+  - `r1` run_id=`20260226T021330Z-daily-db9d17f6`：`run_fail_count=0`，`diff_fail_count=0`
+  - `r2` run_id=`20260226T022257Z-daily-a764c3c1`：`run_fail_count=0`，`diff_fail_count=0`
+  - `r3` run_id=`20260226T023217Z-daily-d4d10514`：`run_fail_count=0`，`diff_fail_count=0`
+- GUI 契约观测：三轮 `go=/proxies=200`、`rust=/proxies=200`，未复现偶发 startup 失败。
+- 结论：已满足“连续至少 3 轮 capstone_daily 同配置 PASS（含 perf_gate=PASS）”目标。
+
 ### L18 v5/v6b 收敛更新（2026-02-25 22:55）
 
 - 批次：`reports/l18/batches/20260225T134935Z-l18-daily-converge-v4`
@@ -170,13 +277,18 @@
 
 ### L18 下一步任务（按既定规划）
 
-1. **优先收口 `perf_gate` 抖动（唯一阻塞）**
-   - 目标：在 capstone 语境下稳定满足 `latency_p95 <= +5%`。
-   - 建议动作：在 `scripts/l18/perf_gate.sh` 增加多次采样回合与稳态统计口径（例如中位 p95 或去极值）并保留 lock/report 可追溯字段。
-   - 完成标准：连续至少 3 轮 `capstone_daily`（同配置）均 `perf_gate=PASS`。
-2. **收口后执行 L18 认证批次归档**
-   - 目标：在同一批次目录输出完整 PASS 证据集（preflight/oracle/gui/canary/dual/perf/status）。
-   - 完成标准：`l18_capstone_status.json` 为 `overall=PASS` 且 `gates.perf_gate=PASS`。
+1. **P0 收口（最高优先级，先于 nightly/certify）**
+   - 目标：清零 case 级断言失败与 `launch_kernel` 非预期失败，补齐 `case run` 严格退出语义。
+   - 完成标准：83 case 最新快照 `assertion_fail=0`、`unexpected launch_kernel fail=0`，且存在失败时命令返回非 0。
+2. **冻结 certify/nightly 配置（保持不漂移）**
+   - 目标：`daily/nightly/certify` 全部对齐到同一稳定配置（`L18_GUI_TIMEOUT_SEC=120`、`L18_RUST_BUILD_ENABLED=0`、`L18_GUI_GO_BUILD_ENABLED=0`、`L18_GUI_RUST_BUILD_ENABLED=0`、parity `target/release/run`）。
+   - 完成标准：执行参数与 `reports/L18_REPLACEMENT_CERTIFICATION.md` 的 fixed config 一致。
+3. **nightly 24h 预演（P0 通过后执行）**
+   - 目标：完成固定配置长跑并沉淀 `status + gui + canary + dual + perf` 全证据。
+   - 完成标准：mandatory gate 全 `PASS` 且证据路径可追溯。
+4. **certify 7d 正式跑（nightly 通过后执行）**
+   - 目标：获取 L18 结项认证证据并回填结项文档。
+   - 完成标准：`overall=PASS` 且 mandatory gate 证据完整。
 
 ### L17 发布就绪收口（2026-02-13）
 

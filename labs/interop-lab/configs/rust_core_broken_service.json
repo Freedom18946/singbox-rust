@@ -3,7 +3,7 @@
   "log": { "level": "debug" },
   "experimental": {
     "clash_api": {
-      "external_controller": "127.0.0.1:19291"
+      "external_controller": "127.0.0.1:39291"
     }
   },
   "inbounds": [

@@ -15,8 +15,7 @@
             "type": "socks",
             "tag": "socks-hop",
             "server": "127.0.0.1",
-            "server_port": 11802,
-            "version": "5"
+            "server_port": 11802
         },
         {
             "type": "direct",
@@ -24,12 +23,7 @@
         }
     ],
     "route": {
-        "rules": [
-            {
-                "inbound": "socks-in",
-                "outbound": "socks-hop"
-            }
-        ],
+        "rules": [],
         "final": "direct-out"
     }
 }

@@ -51,7 +51,7 @@ assertions:
   - key: traffic.generate_traffic.success
     op: eq
     expected: true
-  - key: connections.count
+  - key: connections.downloadTotal
     op: gt
     expected: 0
 oracle:

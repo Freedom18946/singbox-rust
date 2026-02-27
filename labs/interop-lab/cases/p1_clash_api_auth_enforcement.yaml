@@ -18,14 +18,16 @@ bootstrap:
       - --admin-listen
       - "127.0.0.1:19304"
     startup_timeout_ms: 15000
-    ready_path: /healthz
+    ready_path: /
     api:
       base_url: "http://127.0.0.1:19290"
+      secret: "test123"
 gui_sequence:
   - kind: http
     name: no_auth_should_reject
     method: GET
     path: /
+    no_auth: true
     expect_status: 401
   - kind: http
     name: correct_bearer_should_pass
@@ -36,6 +38,7 @@ gui_sequence:
     name: wrong_bearer_should_reject
     method: GET
     path: /
+    auth_secret: "wrong-token"
     expect_status: 401
 upstream_topology: []
 traffic_plan: []
