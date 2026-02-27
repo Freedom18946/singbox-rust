@@ -43,6 +43,8 @@ junit.xml
 reports/stress-tests/*.profdata
 reports/stress-tests/*.txt
 reports/stress-tests/latest/
+# L18 runtime certification batch outputs
+reports/l18/
 
 # E2E test artifacts (has its own .gitignore for fine-grained control)
 .e2e/*.sock
@@ -206,6 +208,18 @@ instruction/
 # TUN device test artifacts
 *.tun
 *.tap
+
+# interop-lab generated run artifacts (keep tracked historical fixtures intact)
+labs/interop-lab/artifacts/l18_dual_kernel/
+labs/interop-lab/artifacts/l6_local_harness_smoke/*/
+labs/interop-lab/artifacts/p0_clash_api_contract/*/
+labs/interop-lab/artifacts/p0_clash_api_contract_strict/*/
+labs/interop-lab/artifacts/p0_subscription_base64/*/
+labs/interop-lab/artifacts/p0_subscription_json/*/
+labs/interop-lab/artifacts/p0_subscription_yaml/*/
+labs/interop-lab/artifacts/p1_cli_generate_uuid_format/*/
+labs/interop-lab/artifacts/p2_protocol_unit_vmess/*/
+labs/interop-lab/artifacts/p2_subscription_truncated_base64/*/
 
 # Temporary routing tables or rule files
 routes.tmp
