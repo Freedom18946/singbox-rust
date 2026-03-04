@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.1-wave2-v1|||L21 wave#2 migration assertion allowlist version
+VERSION|l21.2-wave3-v1|||L21 wave#3 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -22,5 +22,12 @@ require|W2-01-runtime-connector-bridge|crates/sb-core/src/runtime/supervisor.rs|
 require|W2-01-runtime-use-bridge-connector|crates/sb-core/src/runtime/supervisor.rs|inner: connector.clone\(\)|Runtime outbound manager must carry assembled bridge connector into manager
 
 forbid|W2-02-no-core-tlsclient-diag|app/src/bin/diag.rs|use sb_core::transport::tls::TlsClient;|TLS diagnostics path must not use sb-core legacy TlsClient
-require|W2-02-diag-uses-sb-transport-tls|app/src/bin/diag.rs|use sb_transport::\{webpki_roots_config, DialError, Dialer as _, TlsDialer\};|TLS diagnostics must depend on sb-transport dialer stack
+require|W2-02-diag-uses-sb-transport-tls|app/src/bin/diag.rs|use sb_transport::\{.*TlsDialer\};|TLS diagnostics must depend on sb-transport dialer stack
 require|W2-02-diag-sni-override|app/src/bin/diag.rs|sni_override: Some\(sni.clone\(\)\)|TLS diagnostics must preserve explicit SNI override semantics
+
+forbid|W3-01-no-core-direct-import-services|crates/sb-api/src/v2ray/services.rs|use sb_core::outbound::DirectConnector;|V2Ray add_outbound must not construct sb-core DirectConnector directly
+forbid|W3-02-no-core-direct-test-import-process-aware|crates/sb-adapters/src/inbound/tun_process_aware.rs|DirectConnector|Process-aware TUN tests must not use core DirectConnector
+forbid|W3-03-no-core-direct-test-import-integration|crates/sb-adapters/tests/tun_process_integration.rs|DirectConnector|TUN integration tests must not use core DirectConnector
+forbid|W3-04-no-core-tcpdialer-diag|app/src/bin/diag.rs|use sb_core::transport::tcp::TcpDialer;|TCP diagnostics path must not use sb-core TcpDialer
+require|W3-01-services-reuse-direct-manager|crates/sb-api/src/v2ray/services.rs|\.get\(\"direct\"\)|V2Ray add_outbound must reuse manager-registered direct connector
+require|W3-04-diag-uses-sb-transport-tcp|app/src/bin/diag.rs|use sb_transport::\{webpki_roots_config, DialError, Dialer as _, TcpDialer, TlsDialer\};|TCP diagnostics must use sb-transport TcpDialer

@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 02:32) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.2-wave3-v1
+  FAIL: [W3-01-no-core-direct-import-services] forbidden pattern matched in crates/sb-api/src/v2ray/services.rs :: V2Ray add_outbound must not construct sb-core DirectConnector directly
+  FAIL: 1/20 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave3-v7-regress.K8SpJD
+[meta] injected_file=crates/sb-api/src/v2ray/services.rs
+[meta] injected_pattern=use sb_core::outbound::DirectConnector;
+[meta] exit_code=1
