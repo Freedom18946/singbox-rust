@@ -1,7 +1,7 @@
 # L20 详细工作包规划：深水区能力实证与迁移收敛
 
-状态：🟡 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1 已落地）
-更新：2026-03-05 01:32 CST
+状态：🟢 收口完成（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1+D2+D3 已落地）
+更新：2026-03-05 01:41 CST
 
 ## Context
 
@@ -190,6 +190,8 @@
 - ✅ `L20.3.2`：`check-boundaries.sh --strict` 已新增 V7 迁移追踪断言并启用版本化 allowlist（8 条断言），详见 `reports/l20/L20_3_2_STRICT_GATE_MIGRATION_ASSERTIONS.md`。
 - ✅ `L20.3.3`：迁移矩阵已回填 `MIG-01~MIG-06` 当前状态（`open/in_progress`）并对齐 wave#1 + V7 门禁证据，详见 `reports/l20/L20_3_3_MIGRATION_MATRIX_BACKFILL.md`。
 - ✅ `L20.4.1`：`/capabilities` 契约已升级到 v2 协商字段（`contract_version/required_by_gui/breaking_changes`），并新增版本协商单测，详见 `reports/l20/L20_4_1_CAPABILITIES_CONTRACT_V2.md`。
+- ✅ `L20.4.2`：`scripts/l18/gui_real_cert.sh` 已接入 `/capabilities` 协商门禁（required core fail-fast + 报告 negotiation section），详见 `reports/l20/L20_4_2_GUI_CAPABILITY_NEGOTIATION_GATE.md`。
+- ✅ `L20.4.3`：L20 capstone 报告已完成，按 12 WP 回填命令/产物/状态三元组并汇总残余风险，详见 `reports/L20_DEEP_ALIGNMENT.md`。
 
 ## L20 完成定义（DoD）
 

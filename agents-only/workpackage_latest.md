@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 01:32
-> **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 01:41
+> **当前阶段**：L20 收口完成（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1+D2+D3 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
@@ -26,7 +26,46 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 收口完成（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1+D2+D3 已完成），本轮按 A/C 并行起步、B 后接、D 收口执行完成。
+
+---
+
+## 🆕 最新进展：L20.4.3 落地（2026-03-05 01:41）
+
+**状态**：✅ `L20.4.3` 完成
+
+**L20.4.3（L20 Capstone 报告）**：
+1. 新增总报告：`reports/L20_DEEP_ALIGNMENT.md`。
+2. 对 `L20.1.1 ~ L20.4.3` 共 12 WP 回填“命令 + 产物 + 状态”三元组。
+3. 汇总统一门禁结果：`check_claims` 与 `check-boundaries --strict` 全绿。
+4. 输出残余风险与后续波次建议（uTLS 验证深度、QUIC-ECH experimental、迁移 wave#2）。
+
+**最小验证**：
+1. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+2. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
+
+---
+
+## 🆕 最新进展：L20.4.2 落地（2026-03-05 01:38）
+
+**状态**：✅ `L20.4.2` 完成
+
+**L20.4.2（GUI 认证链路 capability negotiation gate）**：
+1. `scripts/l18/gui_real_cert.sh` 新增协商门禁参数与环境变量（`capabilities-gate-enabled` + go/rust required 开关）。
+2. 在 core 启动后、GUI 步骤前读取 `/capabilities` 并执行协商判定：
+   - `contract_version >= required_by_gui.min_contract_version`
+   - `required_by_gui.status == ok`
+   - `breaking_changes` 为空
+3. required core 不满足时 fail-fast，直接标记该 core 步骤失败并终止其流程。
+4. `gui_real_cert` 报告新增 `capability_negotiation` 段与 Markdown negotiation 表格。
+5. 验证报告：`reports/l20/L20_4_2_GUI_CAPABILITY_NEGOTIATION_GATE.md`。
+
+**最小验证**：
+1. `bash -n scripts/l18/gui_real_cert.sh`
+2. 提取脚本嵌入 Python 并逐块 `python3 -m py_compile`（4/4）
+3. `cargo test -p sb-api capabilities_contract_suite -- --nocapture`
+4. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+5. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 
