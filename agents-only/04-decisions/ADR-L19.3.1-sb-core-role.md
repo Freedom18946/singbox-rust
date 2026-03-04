@@ -130,7 +130,7 @@
 ## 相关文档
 
 - `agents-only/03-planning/13-L19-REALITY-ALIGNMENT-WORKPACKAGES.md`（L19.3.1/L19.3.2/L19.3.3）
-- `agents-only/第一轮审计意见.md`（2.1/2.2）
+- `reports/第一轮审计意见.md`（2.1/2.2）
 - `agents-only/01-spec/03-ARCHITECTURE-SPEC.md`
 - `agents-only/01-spec/01-REQUIREMENTS-ANALYSIS.md`
 - `agents-only/01-spec/02-ACCEPTANCE-CRITERIA.md`

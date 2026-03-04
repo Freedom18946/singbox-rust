@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 23:53
+> **最后更新**：2026-03-04 23:59
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -9,33 +9,24 @@
 
 ---
 
-## 🆕 下一组规划：L19 事实收敛与能力实证（2026-03-04）
+## 🆕 下一组规划：L20 深水区能力实证与迁移收敛（2026-03-04）
 
-- **触发来源**：`agents-only/第一轮审计意见.md` 已完成逐点复核并获确认。
-- **校准结论**：9 条问题中 `7 条成立 + 2 条部分成立 + 0 条不成立`。
-- **规划文档**：`agents-only/03-planning/13-L19-REALITY-ALIGNMENT-WORKPACKAGES.md`
-- **工作包总量**：16 WP（Batch A~E）
+- **触发来源**：`reports/第一轮审计意见.md` 的执行回填已完成并归档到 `reports/FIRST_REVIEW_EXECUTION_REPORT.md`。
+- **L19 收口状态**：`Batch A~E` 已完成，能力事实源/门禁/探针/GUI 契约 v1 已落地。
+- **规划文档**：`agents-only/03-planning/14-L20-DEEP-ALIGNMENT-WORKPACKAGES.md`
+- **工作包总量**：12 WP（Batch A~D）
 - **主线目标**：
-  1. 建立 `capabilities.json` 单一事实源，统一文档口径。
-  2. 收敛 TUN/uTLS/ECH/QUIC-ECH 的运行能力探针与失败快报。
-  3. 强化架构边界门禁并补齐真实 TUN 数据面验证。
-  4. 将 GUI 兼容升级为 `/capabilities` + 合同测试的强契约模式。
-- **与 L18 关系**：L19 已进入执行；继续与 L18 nightly/certify 隔离并行。
-- **L19 当前进度**：
-  1. ✅ Batch A（L19.1.1~L19.1.4）已落地并接入 claim guard。
-  2. ✅ L19.2.1 已完成：`tun2socks-stub/real` 可切换 + `version/sb-version` 输出能力位。
-  3. ✅ L19.2.2 已完成：Capability Probe 启动探针、统一日志、`runtime_probe` 接入 `capabilities.json`。
-  4. ✅ L19.2.3 已完成：TLS provider 单点决策（`SB_TLS_PROVIDER`）+ 启动确定性日志（provider/ECH 状态）。
-  5. ✅ L19.2.4 已完成：QUIC+ECH 配置硬拒绝（校验阶段失败）+ 替代路径提示（TCP-TLS ECH）。
-  6. ✅ L19.3.1 已完成：`sb-core` 角色决议 ADR（路线 B：内核合集层）+ 宪法文档口径同步。
-  7. ✅ L19.3.2 已完成：`check-boundaries.sh` strict 升级（feature owner tree + default 闭包 + reverse dep allowlist）。
-  8. ✅ L19.3.3 已完成：重叠矩阵 + 第一波迁移 backlog（6 项，owner/target 完整）。
-  9. ✅ L19.4.1 已完成：`scripts/test/tun_linux_e2e.sh` + `reports/stability/templates/tun_linux_e2e_report.template.json`（Linux root 环境执行）。
-  10. ✅ L19.4.2 已完成：`scripts/test/tun_macos_longrun.sh` + `reports/stability/tun_macos_longrun.json`（本机冒烟已产出）。
-  11. ✅ L19.4.3 已完成：性能验收口径重写（Baseline / Router+Clash API / Parity 分层）+ 统一入口 `scripts/test/bench/l19_perf_acceptance.sh`。
-  12. ✅ L19.5.1 已完成：Clash API 新增 `GET /capabilities`（`schema_version + compat_version + capability_matrix`）并接入合同测试。
-  13. ✅ L19.5.2 已完成：GUI 固定请求集合同测试（JSON shape）+ `reports/L19_REALITY_ALIGNMENT.md` 收口报告。
-  14. ▶️ 下一步：L19 收口复核（审阅报告 + 进入下一组 L20 工作包规划）。
+  1. 把 `uTLS/ECH` 从“口径真实”推进到“证据可复算”。
+  2. 推进 `sb-core` 与 `sb-adapters/sb-transport` 重叠迁移第一波并加回流阻断。
+  3. 将 `/capabilities` 从 v1 可读升级到 v2 可协商/可门禁。
+  4. 输出 `reports/L20_DEEP_ALIGNMENT.md` 形成收口证据链。
+- **批次摘要**：
+  1. Batch A：uTLS 指纹真实性与 profile 级能力状态。
+  2. Batch B：ECH/QUIC-ECH 边界模式与互操作最小证据链。
+  3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
+  4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
+- **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
+- **当前阶段**：L20 规划冻结（待执行），按 A/C 并行起步、B 后接、D 收口执行。
 
 ---
 
