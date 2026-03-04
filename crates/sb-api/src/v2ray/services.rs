@@ -345,9 +345,12 @@ impl HandlerService for HandlerServiceImpl {
             outbound_config.tag
         );
 
-        // Create a placeholder connector (in production, parse outbound_config)
-        use sb_core::outbound::DirectConnector;
-        let connector = Arc::new(DirectConnector::new());
+        // Reuse existing direct connector to avoid coupling sb-api to core concrete impl.
+        let connector = self
+            .outbound_manager
+            .get("direct")
+            .await
+            .ok_or_else(|| Status::failed_precondition("direct outbound is not available"))?;
         self.outbound_manager
             .add_connector(outbound_config.tag, connector)
             .await;
