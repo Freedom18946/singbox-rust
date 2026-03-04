@@ -32,6 +32,9 @@
 
 | 优先级 | 源 | 目标 | 内容 | 状态 |
 |--------|-----|------|------|------|
-| P1 | sb-core | sb-api | axum/tonic 相关代码 | ⬜ 待定位 |
-| P1 | sb-core | sb-adapters | 协议实现代码 | ⬜ 待定位 |
-| P2 | sb-adapters | sb-types | 共享契约 | ⬜ 待设计 |
+| P1 | sb-core/outbound | sb-adapters/outbound | MIG-01: Direct/Block 去重（core 保留 thin wrapper） | 🟨 L19.3.3 已建档 |
+| P1 | sb-core/outbound | sb-adapters/outbound | MIG-02: SOCKS5 单实现（统一握手/UDP 路径） | 🟨 L19.3.3 已建档 |
+| P1 | sb-core/outbound | sb-adapters + sb-transport | MIG-03: Hysteria2 单实现 + QUIC util 下沉 | 🟨 L19.3.3 已建档 |
+| P1 | sb-core/inbound | sb-adapters/inbound | MIG-04: HTTP/Mixed 入站收敛 | 🟨 L19.3.3 已建档 |
+| P1 | sb-core/transport | sb-transport | MIG-05: Dialer/TLS 单真源 | 🟨 L19.3.3 已建档 |
+| P2 | sb-adapters/outbound | sb-core/outbound | MIG-06: Selector 职责收敛（语义留 core，adapter 仅适配） | 🟨 L19.3.3 已建档 |
