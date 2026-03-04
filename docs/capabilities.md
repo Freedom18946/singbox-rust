@@ -51,6 +51,8 @@ Provider selection for startup probe/runtime:
 
 - `SB_TLS_PROVIDER=ring|aws-lc|auto` (default `auto` -> `ring`)
 - If `aws-lc` is requested without build feature `tls-provider-aws-lc`, startup falls back to `ring` and logs fallback reason.
+- Probe details for `tls.ech.{tcp,quic}` include provider keys:
+  `tls_provider`, `tls_provider_source`, `tls_provider_install`, `tls_provider_requested`, `tls_provider_fallback_reason`.
 
 ## State Model
 
@@ -131,6 +133,7 @@ Minimum evidence rule:
 - `overall_state`: `implemented_unverified`
 - Evidence anchors: `crates/sb-tls/src/utls.rs`, `crates/sb-tls/README.md`
 - Sub-capabilities: `tls.utls.chrome`, `tls.utls.firefox`, `tls.utls.randomized`
+- Runtime probe details include: `requested_profile`, `effective_profile`, `fallback_reason`, `utls_request_count`
 
 ### <a id="capability-tls-utls-chrome"></a>`tls.utls.chrome`
 

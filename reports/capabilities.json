@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-03-04T16:31:44.704512Z",
-  "source_commit": "5b21b3c",
+  "generated_at": "2026-03-04T16:45:25.303167Z",
+  "source_commit": "5cb69bb",
   "profile": "docs-only",
   "capabilities": [
     {
@@ -140,11 +140,14 @@
       "runtime_probe": {
         "compile_state": "supported",
         "runtime_state": "unverified",
-        "requested": false,
-        "summary": "uTLS is compiled; no utls_fingerprint request detected in current config.",
+        "requested": true,
+        "summary": "uTLS fingerprint is requested in config; startup probe records requested/effective profile mapping without handshake verification.",
         "details": {
+          "effective_profile": "chrome110,firefox105",
+          "fallback_reason": "requested 'chrome_psk' mapped to chrome110 template,requested 'firefox' mapped to firefox105 template,requested 'randomized' mapped to chrome110 template",
           "feature_sb_tls": "yes",
-          "utls_request_count": "0"
+          "requested_profile": "chrome_psk,firefox,randomized",
+          "utls_request_count": "3"
         }
       }
     },
@@ -244,7 +247,7 @@
         {
           "kind": "code",
           "path": "app/src/run_engine.rs",
-          "line": 789,
+          "line": 800,
           "note": "Startup logs provider decision alongside ECH runtime probe status."
         },
         {
@@ -264,8 +267,10 @@
           "feature_sb_tls": "yes",
           "feature_tls_ech": "no",
           "tls_provider": "ring",
+          "tls_provider_fallback_reason": "requested aws-lc but build lacks feature tls-provider-aws-lc",
           "tls_provider_install": "installed",
-          "tls_provider_source": "default"
+          "tls_provider_requested": "aws-lc",
+          "tls_provider_source": "env-fallback"
         }
       }
     },
@@ -307,8 +312,10 @@
           "feature_tls_ech": "no",
           "quic_requested": "no",
           "tls_provider": "ring",
+          "tls_provider_fallback_reason": "requested aws-lc but build lacks feature tls-provider-aws-lc",
           "tls_provider_install": "installed",
-          "tls_provider_source": "default"
+          "tls_provider_requested": "aws-lc",
+          "tls_provider_source": "env-fallback"
         }
       }
     }
@@ -371,7 +378,7 @@
   ],
   "runtime_probe": {
     "source_path": "reports/runtime/capability_probe.json",
-    "generated_at": "2026-03-04T15:00:34Z",
+    "generated_at": "2026-03-04T16:45:17Z",
     "probe_mode": "startup-static",
     "probe_count": 6
   }

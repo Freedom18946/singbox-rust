@@ -52,6 +52,7 @@
 pub mod admin_debug;
 #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 pub mod analyze;
+pub mod capability_probe;
 pub mod cli;
 pub mod config_loader;
 #[cfg(feature = "dev-cli")]
@@ -66,6 +67,7 @@ pub mod panic;
 pub mod reqwest_http;
 pub mod run_engine;
 pub mod telemetry;
+pub mod tls_provider;
 #[cfg(feature = "dev-cli")]
 pub mod tracing_init;
 pub mod util;

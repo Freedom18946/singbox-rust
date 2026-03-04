@@ -25,6 +25,7 @@ acceptance = [
 parity = [
     "router",
     "adapters",
+    "tun2socks-stub",
     "dns_udp",
     "dns_doh",
     "dns_dot",
@@ -84,6 +85,7 @@ io_local_alpha = ["sb-runtime/io_local_alpha"]
 prom = []
 tls_reality = ["sb-tls", "sb-adapters/tls_reality"]
 tls_ech = ["sb-tls/ech"]
+tls-provider-aws-lc = ["rustls/aws_lc_rs", "tokio-rustls/aws_lc_rs"]
 
 ## Empty features for check-cfg quieting
 handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
@@ -117,6 +119,8 @@ dns_resolved = ["sb-core/dns_resolved"]
 dns_tailscale = ["sb-core/dns_tailscale"]
 adapter-wireguard-endpoint = ["sb-adapters/adapter-wireguard-endpoint"]
 vless_mux_ready = []
+tun2socks-stub = ["sb-adapters/tun2socks-stub"]
+tun2socks-real = ["sb-adapters/tun2socks-real"]
 
 # Internal gating to include sb-adapters powered inbounds in bootstrap
 adapters = [

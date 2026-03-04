@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-03-04T16:45:17Z",
+  "probe_mode": "startup-static",
+  "probes": [
+    {
+      "capability_id": "tun.macos.tun2socks",
+      "compile_state": "stubbed",
+      "runtime_state": "unsupported",
+      "requested": false,
+      "summary": "tun2socks is compiled in stub mode.",
+      "details": {
+        "feature_tun2socks_real": "no",
+        "feature_tun2socks_stub": "yes",
+        "tun2socks_mode": "stub"
+      }
+    },
+    {
+      "capability_id": "inbound.redirect",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "requested": false,
+      "summary": "redirect inbound runtime path is not wired in this build."
+    },
+    {
+      "capability_id": "inbound.tproxy",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "requested": false,
+      "summary": "tproxy inbound runtime path is not wired in this build."
+    },
+    {
+      "capability_id": "tls.utls",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "requested": true,
+      "summary": "uTLS fingerprint is requested in config; startup probe records requested/effective profile mapping without handshake verification.",
+      "details": {
+        "effective_profile": "chrome110,firefox105",
+        "fallback_reason": "requested 'chrome_psk' mapped to chrome110 template,requested 'firefox' mapped to firefox105 template,requested 'randomized' mapped to chrome110 template",
+        "feature_sb_tls": "yes",
+        "requested_profile": "chrome_psk,firefox,randomized",
+        "utls_request_count": "3"
+      }
+    },
+    {
+      "capability_id": "tls.ech.tcp",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "requested": false,
+      "summary": "tls_ech feature is disabled in this build, ECH runtime is unavailable.",
+      "details": {
+        "ech_request_count": "0",
+        "feature_sb_tls": "yes",
+        "feature_tls_ech": "no",
+        "tls_provider": "ring",
+        "tls_provider_fallback_reason": "requested aws-lc but build lacks feature tls-provider-aws-lc",
+        "tls_provider_install": "installed",
+        "tls_provider_requested": "aws-lc",
+        "tls_provider_source": "env-fallback"
+      }
+    },
+    {
+      "capability_id": "tls.ech.quic",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "requested": false,
+      "summary": "No QUIC + ECH request detected in current config.",
+      "details": {
+        "ech_request_count": "0",
+        "feature_tls_ech": "no",
+        "quic_requested": "no",
+        "tls_provider": "ring",
+        "tls_provider_fallback_reason": "requested aws-lc but build lacks feature tls-provider-aws-lc",
+        "tls_provider_install": "installed",
+        "tls_provider_requested": "aws-lc",
+        "tls_provider_source": "env-fallback"
+      }
+    }
+  ]
+}

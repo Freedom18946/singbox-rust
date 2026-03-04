@@ -47,7 +47,9 @@ pub fn apply_debug_options(ir: &ConfigIR) {
                 || debug.trace_back.is_some()
                 || debug.oom_killer.is_some()
             {
-                tracing::info!("debug options recorded for parity; behavior is platform-dependent/no-op in Rust build");
+                tracing::info!(
+                    "debug options recorded for parity; behavior is platform-dependent/no-op in Rust build"
+                );
             }
         }
     }
@@ -723,6 +725,101 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
 
     // 2) Load config with raw Value for DNS env bridge
     let (_cfg, ir, raw) = load_config_with_import_raw(&entries, opts.import_path.as_deref())?;
+
+    // 2.0) Rustls crypto provider decision (single-point).
+    // Must happen before transport/runtime startup to avoid provider race and hidden fallback.
+    let tls_provider = app::tls_provider::ensure_default_provider();
+
+    // 2.0) Capability probe (startup-static).
+    // Emits structured logs and can optionally write probe JSON for capability ledger aggregation.
+    let mut capability_probe = app::capability_probe::collect_report(&raw, &ir);
+    for id in ["tls.ech.tcp", "tls.ech.quic"] {
+        if let Some(probe) = capability_probe
+            .probes
+            .iter_mut()
+            .find(|probe| probe.capability_id == id)
+        {
+            probe.details.insert(
+                "tls_provider".to_string(),
+                tls_provider.provider.as_str().to_string(),
+            );
+            probe.details.insert(
+                "tls_provider_source".to_string(),
+                tls_provider.source.to_string(),
+            );
+            probe.details.insert(
+                "tls_provider_install".to_string(),
+                tls_provider.install_result.to_string(),
+            );
+            probe.details.insert(
+                "tls_provider_requested".to_string(),
+                tls_provider.requested.to_string(),
+            );
+            probe.details.insert(
+                "tls_provider_fallback_reason".to_string(),
+                tls_provider
+                    .fallback_reason
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+            );
+        }
+    }
+    app::capability_probe::log_report(&capability_probe);
+
+    let find_probe = |id: &str| {
+        capability_probe
+            .probes
+            .iter()
+            .find(|probe| probe.capability_id == id)
+    };
+    let ech_tcp_requested = find_probe("tls.ech.tcp").is_some_and(|probe| probe.requested);
+    let ech_tcp_runtime = find_probe("tls.ech.tcp")
+        .map(|probe| probe.runtime_state.as_str())
+        .unwrap_or("unsupported");
+    let ech_tcp_compile = find_probe("tls.ech.tcp")
+        .map(|probe| probe.compile_state.as_str())
+        .unwrap_or("absent");
+    let ech_quic_requested = find_probe("tls.ech.quic").is_some_and(|probe| probe.requested);
+    let ech_quic_runtime = find_probe("tls.ech.quic")
+        .map(|probe| probe.runtime_state.as_str())
+        .unwrap_or("unsupported");
+    tracing::info!(
+        target: "app::tls_provider",
+        provider = tls_provider.provider.as_str(),
+        requested = %tls_provider.requested,
+        source = tls_provider.source,
+        install = tls_provider.install_result,
+        fallback = tls_provider.fallback_reason.as_deref().unwrap_or("-"),
+        ech_feature_enabled = cfg!(feature = "tls_ech"),
+        ech_tcp_requested,
+        ech_tcp_compile,
+        ech_tcp_runtime,
+        ech_quic_requested,
+        ech_quic_runtime,
+        aws_lc_compiled = app::tls_provider::aws_lc_compiled(),
+        "tls provider decision"
+    );
+
+    if let Some(path) = app::capability_probe::probe_output_path_from_env() {
+        let out_path = PathBuf::from(&path);
+        match app::capability_probe::write_report(&capability_probe, &out_path) {
+            Ok(()) => tracing::info!(
+                path = %out_path.display(),
+                probe_count = capability_probe.probes.len(),
+                "capability probe report written"
+            ),
+            Err(e) => tracing::warn!(
+                path = %out_path.display(),
+                error = %e,
+                "failed to write capability probe report"
+            ),
+        }
+    }
+
+    if app::capability_probe::probe_only_enabled() {
+        tracing::info!("capability probe only mode enabled; skipping supervisor startup");
+        return Ok(());
+    }
 
     // 2.0.1) Create shared reload state with initial fingerprint (shared across watch + SIGHUP)
     let (initial_fp_numeric, initial_fp_hex) = config_fingerprint(&raw);
