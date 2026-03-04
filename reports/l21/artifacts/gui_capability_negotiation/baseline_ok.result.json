@@ -1,0 +1,14 @@
+{
+  "core": "rust",
+  "url": "file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/scripts/l18/fixtures/capability_negotiation/case_ok.json",
+  "required": true,
+  "checked": true,
+  "pass": true,
+  "status": "ok",
+  "http_status": 200,
+  "contract_version": "2.0.0",
+  "required_min_contract_version": "2.0.0",
+  "required_status": "ok",
+  "breaking_changes_count": 0,
+  "reason": ""
+}

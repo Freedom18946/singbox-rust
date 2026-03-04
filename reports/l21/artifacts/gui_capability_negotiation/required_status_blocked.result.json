@@ -1,0 +1,14 @@
+{
+  "core": "rust",
+  "url": "file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/scripts/l18/fixtures/capability_negotiation/case_required_status_blocked.json",
+  "required": true,
+  "checked": true,
+  "pass": false,
+  "status": "blocked",
+  "http_status": 200,
+  "contract_version": "2.0.0",
+  "required_min_contract_version": "2.0.0",
+  "required_status": "blocked",
+  "breaking_changes_count": 0,
+  "reason": "required_status_not_ok:blocked"
+}

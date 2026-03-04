@@ -407,131 +407,13 @@ check_capabilities_negotiation() {
   local required="$4"
   local out_json="$5"
 
-  python3 - "$core" "$api_url" "$token" "$required" "$CAPABILITIES_GATE_TIMEOUT_SEC" "$out_json" <<'PY'
-import json
-import sys
-import urllib.error
-import urllib.request
-
-core, api_url, token, required_raw, timeout_raw, out_json = sys.argv[1:]
-required = required_raw == "1"
-timeout = int(timeout_raw)
-api_url = api_url.rstrip("/")
-url = f"{api_url}/capabilities"
-
-result = {
-    "core": core,
-    "url": url,
-    "required": required,
-    "checked": False,
-    "pass": False,
-    "status": "unknown",
-    "http_status": None,
-    "contract_version": None,
-    "required_min_contract_version": None,
-    "required_status": None,
-    "breaking_changes_count": None,
-    "reason": "",
-}
-
-def parse_semver_triplet(raw: str):
-    parts = raw.split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        return tuple(int(p) for p in parts)
-    except ValueError:
-        return None
-
-def write_and_exit(code: int):
-    with open(out_json, "w", encoding="utf-8") as fh:
-        json.dump(result, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    raise SystemExit(code)
-
-headers = {"Accept": "application/json"}
-if token:
-    headers["Authorization"] = f"Bearer {token}"
-
-request = urllib.request.Request(url, headers=headers, method="GET")
-try:
-    with urllib.request.urlopen(request, timeout=timeout) as resp:
-        result["http_status"] = resp.status
-        payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
-except urllib.error.HTTPError as exc:
-    result["http_status"] = exc.code
-    result["reason"] = f"http_error:{exc.code}"
-    if required:
-        result["status"] = "blocked"
-        write_and_exit(1)
-    result["status"] = "optional-unavailable"
-    result["pass"] = True
-    write_and_exit(0)
-except Exception as exc:
-    result["reason"] = f"request_failed:{exc}"
-    if required:
-        result["status"] = "blocked"
-        write_and_exit(1)
-    result["status"] = "optional-unavailable"
-    result["pass"] = True
-    write_and_exit(0)
-
-if not isinstance(payload, dict):
-    result["reason"] = "invalid_payload:not_object"
-    if required:
-        result["status"] = "blocked"
-        write_and_exit(1)
-    result["status"] = "optional-invalid"
-    result["pass"] = True
-    write_and_exit(0)
-
-result["checked"] = True
-
-contract_version = payload.get("contract_version")
-required_by_gui = payload.get("required_by_gui")
-breaking_changes = payload.get("breaking_changes")
-
-if not isinstance(contract_version, str):
-    result["reason"] = "missing_contract_version"
-elif not isinstance(required_by_gui, dict):
-    result["reason"] = "missing_required_by_gui"
-elif not isinstance(breaking_changes, list):
-    result["reason"] = "missing_breaking_changes"
-else:
-    min_version = required_by_gui.get("min_contract_version")
-    required_status = required_by_gui.get("status")
-    result["contract_version"] = contract_version
-    result["required_min_contract_version"] = (
-        min_version if isinstance(min_version, str) else None
-    )
-    result["required_status"] = required_status if isinstance(required_status, str) else None
-    result["breaking_changes_count"] = len(breaking_changes)
-
-    actual_v = parse_semver_triplet(contract_version)
-    min_v = parse_semver_triplet(min_version) if isinstance(min_version, str) else None
-    if actual_v is None or min_v is None:
-        result["reason"] = "invalid_semver"
-    elif actual_v < min_v:
-        result["reason"] = "contract_version_below_required"
-    elif required_status != "ok":
-        result["reason"] = f"required_status_not_ok:{required_status}"
-    elif breaking_changes:
-        result["reason"] = f"breaking_changes_non_empty:{len(breaking_changes)}"
-    else:
-        result["status"] = "ok"
-        result["pass"] = True
-
-if result["pass"]:
-    write_and_exit(0)
-
-if required:
-    result["status"] = "blocked"
-    write_and_exit(1)
-
-result["status"] = "optional-invalid"
-result["pass"] = True
-write_and_exit(0)
-PY
+  python3 "${ROOT_DIR}/scripts/l18/capability_negotiation_eval.py" \
+    --core "$core" \
+    --api-url "$api_url" \
+    --token "$token" \
+    --required "$required" \
+    --timeout-sec "$CAPABILITIES_GATE_TIMEOUT_SEC" \
+    --out-json "$out_json"
 }
 
 wait_health_200() {

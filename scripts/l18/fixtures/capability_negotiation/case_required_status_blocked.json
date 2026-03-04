@@ -1,0 +1,8 @@
+{
+  "contract_version": "2.0.0",
+  "required_by_gui": {
+    "min_contract_version": "2.0.0",
+    "status": "blocked"
+  },
+  "breaking_changes": []
+}
