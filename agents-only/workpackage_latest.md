@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 00:20
-> **当前阶段**：L20 执行中（A1 + C1 wave#1 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 00:29
+> **当前阶段**：L20 执行中（A1+A2 + C1 wave#1+C2 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -26,7 +26,30 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1 + C1 wave#1 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1+A2 + C1 wave#1+C2 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.1.2 + L20.3.2 落地（2026-03-05 00:29）
+
+**状态**：✅ `L20.1.2` 完成；✅ `L20.3.2` 完成
+
+**L20.1.2（uTLS profile 能力矩阵细化）**：
+1. `scripts/capabilities/schema.json`：能力对象新增 `parent_capability_id`。
+2. `scripts/capabilities/generate.py`：新增 `tls.utls.chrome/firefox/randomized` capability，claim 映射可落到 profile。
+3. `docs/capabilities.md`：能力索引与详情新增 profile 子能力条目。
+4. `scripts/check_claims.sh`：高风险 uTLS/fingerprint claim 若出现 profile 关键词，强制要求关联 profile capability id。
+5. 验证报告：`reports/l20/L20_1_2_UTLS_PROFILE_CAPABILITIES.md`。
+
+**L20.3.2（strict gate 迁移追踪断言）**：
+1. 新增 allowlist：`agents-only/06-scripts/l20-migration-allowlist.txt`（`l20.3.2-wave1-v1`）。
+2. `agents-only/06-scripts/check-boundaries.sh` 新增 `V7: L20 migration assertions`，执行 `forbid/require` 断言。
+3. 验证报告：`reports/l20/L20_3_2_STRICT_GATE_MIGRATION_ASSERTIONS.md`。
+
+**最小验证**：
+1. `python3 scripts/capabilities/generate.py --out reports/capabilities.json`
+2. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 

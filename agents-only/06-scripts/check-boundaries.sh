@@ -494,6 +494,63 @@ else
     fail
 fi
 
+# ─── V7: L20 迁移追踪断言（防回流） ───────────────────────
+echo "── V7: L20 migration assertions ──"
+
+MIGRATION_ASSERT_FILE="agents-only/06-scripts/l20-migration-allowlist.txt"
+if [ ! -f "$MIGRATION_ASSERT_FILE" ]; then
+    echo "  FAIL: missing migration assertion file: $MIGRATION_ASSERT_FILE"
+    fail
+else
+    MIGRATION_VERSION=$(awk -F'|' '$1=="VERSION"{print $2; exit}' "$MIGRATION_ASSERT_FILE")
+    [ -z "${MIGRATION_VERSION:-}" ] && MIGRATION_VERSION="unknown"
+    echo "  INFO: assertion version: ${MIGRATION_VERSION}"
+
+    V7_FAILS=0
+    V7_CHECKS=0
+    while IFS='|' read -r kind check_id rel_path pattern note; do
+        # Skip comments/empty/version lines
+        case "${kind:-}" in
+            ""|\#*|VERSION) continue ;;
+        esac
+
+        target="${PROJECT_ROOT}/${rel_path}"
+        if [ ! -f "$target" ]; then
+            echo "  FAIL: [$check_id] missing target file: $rel_path"
+            V7_FAILS=$((V7_FAILS + 1))
+            V7_CHECKS=$((V7_CHECKS + 1))
+            continue
+        fi
+
+        case "$kind" in
+            forbid)
+                if rg -n -e "$pattern" "$target" >/dev/null 2>&1; then
+                    echo "  FAIL: [$check_id] forbidden pattern matched in $rel_path :: ${note}"
+                    V7_FAILS=$((V7_FAILS + 1))
+                fi
+                ;;
+            require)
+                if ! rg -n -e "$pattern" "$target" >/dev/null 2>&1; then
+                    echo "  FAIL: [$check_id] required pattern missing in $rel_path :: ${note}"
+                    V7_FAILS=$((V7_FAILS + 1))
+                fi
+                ;;
+            *)
+                echo "  FAIL: [$check_id] unknown assertion kind '$kind'"
+                V7_FAILS=$((V7_FAILS + 1))
+                ;;
+        esac
+        V7_CHECKS=$((V7_CHECKS + 1))
+    done < "$MIGRATION_ASSERT_FILE"
+
+    if [ "$V7_FAILS" -gt 0 ]; then
+        echo "  FAIL: $V7_FAILS/$V7_CHECKS migration assertions failed"
+        fail
+    else
+        echo "  PASS ($V7_CHECKS assertions)"
+    fi
+fi
+
 # ─── 汇总 ─────────────────────────────────────────────
 echo ""
 echo "════════════════════════"

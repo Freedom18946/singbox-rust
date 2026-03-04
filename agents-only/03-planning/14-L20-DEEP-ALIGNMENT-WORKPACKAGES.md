@@ -1,7 +1,7 @@
 # L20 详细工作包规划：深水区能力实证与迁移收敛
 
-状态：🟡 执行中（A1 + C1 wave#1 已落地）
-更新：2026-03-05 00:20 CST
+状态：🟡 执行中（A1+A2 + C1 wave#1+C2 已落地）
+更新：2026-03-05 00:29 CST
 
 ## Context
 
@@ -181,7 +181,9 @@
 ## 执行进展（2026-03-05）
 
 - ✅ `L20.1.1`：已落地 `scripts/test/tls_fingerprint_baseline.sh`，并产出 `reports/security/tls_fingerprint_baseline.json`（覆盖 `chrome/firefox/randomized` 三组）。
+- ✅ `L20.1.2`：已将 `tls.utls` 细化为 profile 子能力（`chrome/firefox/randomized`），并在 claim guard 中增加 profile 级硬链接校验，详见 `reports/l20/L20_1_2_UTLS_PROFILE_CAPABILITIES.md`。
 - ✅ `L20.3.1`（wave#1）：已完成 3 项迁移子项（`direct` builder 收敛、`tailscale` direct 类型解耦、DoT 迁至 `sb-transport`），详见 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md` 的 `3A` 节。
+- ✅ `L20.3.2`：`check-boundaries.sh --strict` 已新增 V7 迁移追踪断言并启用版本化 allowlist（8 条断言），详见 `reports/l20/L20_3_2_STRICT_GATE_MIGRATION_ASSERTIONS.md`。
 
 ## L20 完成定义（DoD）
 
