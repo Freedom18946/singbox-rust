@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 00:29
-> **当前阶段**：L20 执行中（A1+A2 + C1 wave#1+C2 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 00:43
+> **当前阶段**：L20 执行中（A1+A2+A3 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
@@ -26,7 +26,32 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1+A2 + C1 wave#1+C2 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1+A2+A3 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.1.3 + L20.3.3 落地（2026-03-05 00:43）
+
+**状态**：✅ `L20.1.3` 完成；✅ `L20.3.3` 完成
+
+**L20.1.3（启动探针输出 uTLS 实际生效模式）**：
+1. `app/src/capability_probe.rs`：`tls.utls` 探针新增 `requested_profile/effective_profile/fallback_reason`。
+2. `app/src/run_engine.rs`：启动阶段将 provider 决策写入 ECH probe details，支持 `probe-only` 产物输出。
+3. `reports/runtime/capability_probe.json`：生成 startup-static probe 证据，包含 uTLS profile 生效映射与 provider fallback。
+4. 验证报告：`reports/l20/L20_1_3_UTLS_EFFECTIVE_PROFILE_PROBE.md`。
+
+**L20.3.3（迁移后能力矩阵回填）**：
+1. `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`：新增 `3B` 段，回填 `MIG-01~MIG-06` 当前状态。
+2. 状态与门禁对齐：`MIG-01/MIG-05=in_progress`，其余 `open`；依据绑定 wave#1 与 V7 断言。
+3. 验证报告：`reports/l20/L20_3_3_MIGRATION_MATRIX_BACKFILL.md`。
+
+**最小验证**：
+1. `cargo check -p app --features parity --bin run`
+2. `cargo test -p app capability_probe --features parity --lib`
+3. `SB_CAPABILITY_PROBE_ONLY=1 SB_CAPABILITY_PROBE_OUT=reports/runtime/capability_probe.json SB_TLS_PROVIDER=aws-lc cargo run -q -p app --features parity --bin run -- -c /tmp/l20_probe_utls_config.json`
+4. `python3 scripts/capabilities/generate.py --out reports/capabilities.json --probe-report reports/runtime/capability_probe.json`
+5. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+6. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 
