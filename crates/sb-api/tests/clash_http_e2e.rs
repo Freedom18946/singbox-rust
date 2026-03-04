@@ -1,10 +1,10 @@
 //! HTTP E2E Integration Tests for Clash API Endpoints
 //!
-//! This test suite validates all 36 Clash API endpoints with actual HTTP requests.
+//! This test suite validates all 37 Clash API endpoints with actual HTTP requests.
 //! Tests server startup, request handling, response validation, and error cases.
 //!
 //! Sprint 16 - Priority 1: Complete HTTP E2E test coverage
-//! Coverage: 36 endpoints across 11 categories
+//! Coverage: 37 endpoints across 11 categories
 
 use reqwest::{Client, StatusCode};
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
@@ -124,7 +124,7 @@ impl TestServer {
 }
 
 // ============================================================================
-// Core Endpoints (4/36)
+// Core Endpoints (5/37)
 // ============================================================================
 
 /// Test GET / - Health check endpoint
@@ -154,6 +154,29 @@ async fn test_get_version() -> anyhow::Result<()> {
 
     // Should contain version info
     assert!(json.get("version").is_some());
+    Ok(())
+}
+
+/// Test GET /capabilities - Capability matrix contract endpoint
+#[tokio::test]
+async fn test_get_capabilities() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+    let response = server.get("/capabilities").await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+
+    assert_eq!(
+        json.get("schema_version").and_then(|v| v.as_str()),
+        Some("1.0.0")
+    );
+    assert!(json.get("compat_version").is_some());
+    assert!(json
+        .get("capability_matrix")
+        .and_then(|v| v.as_array())
+        .is_some());
     Ok(())
 }
 
@@ -824,7 +847,7 @@ async fn test_upgrade_external_ui_missing_url() -> anyhow::Result<()> {
 #[test]
 fn test_http_e2e_coverage_summary() {
     let test_categories = vec![
-        ("Core Endpoints", 8), // GET /, GET /version, GET/PATCH/PUT /configs (with error cases)
+        ("Core Endpoints", 9), // GET /, GET /version, GET /capabilities, GET/PATCH/PUT /configs (with error cases)
         ("Proxy Management", 3), // GET /proxies, PUT /proxies/:name, GET /proxies/:name/delay
         ("Connection Management", 3), // GET /connections, DELETE /connections, DELETE /connections/:id
         ("Rules", 1),                 // GET /rules
@@ -843,10 +866,10 @@ fn test_http_e2e_coverage_summary() {
         println!("   - {}: {} tests", category, count);
     }
     println!("   Total HTTP E2E Tests: {}", total_tests);
-    println!("   Endpoints Covered: 36/36 (100%)");
+    println!("   Endpoints Covered: 37/37 (100%)");
 
     assert_eq!(
-        total_tests, 40,
-        "Expected 40 HTTP E2E tests (36 endpoints + error cases)"
+        total_tests, 41,
+        "Expected 41 HTTP E2E tests (37 endpoints + error cases)"
     );
 }

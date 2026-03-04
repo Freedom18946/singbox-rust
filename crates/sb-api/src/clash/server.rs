@@ -294,6 +294,7 @@ impl ClashApiServer {
             .route("/services/health", get(handlers::get_services_health))
             // Version and status
             .route("/version", get(handlers::get_version))
+            .route("/capabilities", get(handlers::get_capabilities))
             .route("/", get(handlers::get_status))
             .with_state(self.state.clone());
 

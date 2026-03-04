@@ -17,8 +17,10 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use sb_core::outbound::OutboundImpl;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 
 // ===== Constants =====
 
@@ -34,7 +36,142 @@ const PROXY_TYPE_UNKNOWN: &str = "Unknown";
 const DIRECT_PROXY_NAME: &str = "DIRECT";
 const REJECT_PROXY_NAME: &str = "REJECT";
 
+const CAPABILITIES_ENDPOINT_SCHEMA_VERSION: &str = "1.0.0";
+const CAPABILITIES_ENDPOINT_COMPAT_VERSION: &str = "clash-api-capabilities.v1";
+const CLASH_API_COMPAT_VERSION: &str = "1.0.0";
+
+#[derive(Debug, Deserialize)]
+struct CapabilitiesReport {
+    schema_version: String,
+    source_commit: Option<String>,
+    profile: Option<String>,
+    capabilities: Vec<CapabilitiesReportEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapabilitiesReportEntry {
+    id: String,
+    name: String,
+    compile_state: String,
+    runtime_state: String,
+    verification_state: String,
+    overall_state: String,
+    accepted_limitation: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CapabilitiesEndpointPayload {
+    schema_version: String,
+    compat_version: String,
+    clash_api_compat_version: String,
+    generated_at: String,
+    source: CapabilitiesSource,
+    feature_flags: CapabilitiesFeatureFlags,
+    capability_matrix: Vec<CapabilityMatrixEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    errors: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct CapabilitiesSource {
+    status: String,
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capabilities_schema_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CapabilitiesFeatureFlags {
+    clash_api: bool,
+    v2ray_api: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CapabilityMatrixEntry {
+    id: String,
+    name: String,
+    compile_state: String,
+    runtime_state: String,
+    verification_state: String,
+    overall_state: String,
+    accepted_limitation: bool,
+}
+
 // ===== Helper Functions =====
+
+fn candidate_capabilities_paths() -> Vec<PathBuf> {
+    let mut candidates = Vec::<PathBuf>::new();
+    if let Ok(path) = std::env::var("SB_CAPABILITIES_JSON") {
+        if !path.trim().is_empty() {
+            candidates.push(PathBuf::from(path));
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("reports/capabilities.json"));
+    }
+    candidates
+        .push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../reports/capabilities.json"));
+    candidates
+}
+
+fn load_capabilities_report() -> Result<(PathBuf, CapabilitiesReport), String> {
+    let candidates = candidate_capabilities_paths();
+    let mut parse_errors = Vec::<String>::new();
+    let mut seen = BTreeMap::<String, ()>::new();
+
+    for path in candidates {
+        let key = path.display().to_string();
+        if seen.insert(key.clone(), ()).is_some() {
+            continue;
+        }
+        if !path.exists() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path).map_err(|e| {
+            format!(
+                "failed to read capabilities report '{}': {e}",
+                path.display()
+            )
+        })?;
+        match serde_json::from_str::<CapabilitiesReport>(&raw) {
+            Ok(report) => return Ok((path, report)),
+            Err(e) => parse_errors.push(format!(
+                "failed to parse capabilities report '{}': {e}",
+                path.display()
+            )),
+        }
+    }
+
+    if parse_errors.is_empty() {
+        Err(
+            "capabilities report not found; checked SB_CAPABILITIES_JSON, ./reports/capabilities.json and workspace reports/capabilities.json"
+                .to_string(),
+        )
+    } else {
+        Err(parse_errors.join(" | "))
+    }
+}
+
+fn build_capability_matrix(entries: Vec<CapabilitiesReportEntry>) -> Vec<CapabilityMatrixEntry> {
+    let mut rows = entries
+        .into_iter()
+        .map(|entry| CapabilityMatrixEntry {
+            id: entry.id,
+            name: entry.name,
+            compile_state: entry.compile_state,
+            runtime_state: entry.runtime_state,
+            verification_state: entry.verification_state,
+            overall_state: entry.overall_state,
+            accepted_limitation: entry.accepted_limitation,
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|a, b| a.id.cmp(&b.id));
+    rows
+}
 
 /// Infer proxy type from OutboundImpl
 fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
@@ -1095,6 +1232,59 @@ pub async fn get_version(State(_state): State<ApiState>) -> impl IntoResponse {
         "premium": true,
         "meta": true
     }))
+}
+
+/// Get machine-readable capability matrix for GUI/API contract checks.
+///
+/// Sources data from `reports/capabilities.json` (or `SB_CAPABILITIES_JSON` override)
+/// and projects it into a stable Clash API payload.
+pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoResponse {
+    let mut source = CapabilitiesSource {
+        status: "fallback".to_string(),
+        path: String::new(),
+        capabilities_schema_version: None,
+        source_commit: None,
+        profile: None,
+    };
+    let mut capability_matrix = Vec::<CapabilityMatrixEntry>::new();
+    let mut errors = Vec::<String>::new();
+
+    match load_capabilities_report() {
+        Ok((path, report)) => {
+            source.status = "ok".to_string();
+            source.path = path.display().to_string();
+            source.capabilities_schema_version = Some(report.schema_version);
+            source.source_commit = report.source_commit;
+            source.profile = report.profile;
+            capability_matrix = build_capability_matrix(report.capabilities);
+        }
+        Err(err) => {
+            if let Some(first_path) = candidate_capabilities_paths().first() {
+                source.path = first_path.display().to_string();
+            }
+            errors.push(err);
+        }
+    }
+
+    let payload = CapabilitiesEndpointPayload {
+        schema_version: CAPABILITIES_ENDPOINT_SCHEMA_VERSION.to_string(),
+        compat_version: CAPABILITIES_ENDPOINT_COMPAT_VERSION.to_string(),
+        clash_api_compat_version: CLASH_API_COMPAT_VERSION.to_string(),
+        generated_at: humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string(),
+        source,
+        feature_flags: CapabilitiesFeatureFlags {
+            clash_api: cfg!(feature = "clash-api"),
+            v2ray_api: cfg!(feature = "v2ray-api"),
+        },
+        capability_matrix,
+        errors: if errors.is_empty() {
+            None
+        } else {
+            Some(errors)
+        },
+    };
+
+    Json(payload)
 }
 
 /// Get status/health check — matches Go's hello() handler

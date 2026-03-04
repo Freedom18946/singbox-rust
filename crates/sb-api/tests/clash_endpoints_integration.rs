@@ -352,11 +352,12 @@ fn test_log_broadcast_different_types() -> anyhow::Result<()> {
 /// Summary test documenting discovered Clash API endpoints
 #[test]
 fn test_documented_endpoints_summary() {
-    // This test documents the 36 endpoints implemented in Sprint 14-15
+    // This test documents the 37 endpoints implemented in Sprint 14-15 + L19.5.1
     let endpoints_implemented = vec![
         // Core Endpoints (4/4)
         ("GET", "/"),
         ("GET", "/version"),
+        ("GET", "/capabilities"),
         ("GET", "/configs"),
         ("PATCH", "/configs"),
         // Proxy Management (3/3)
@@ -407,12 +408,12 @@ fn test_documented_endpoints_summary() {
 
     assert_eq!(
         endpoints_implemented.len(),
-        36,
-        "Expected 36 endpoints documented, got {}",
+        37,
+        "Expected 37 endpoints documented, got {}",
         endpoints_implemented.len()
     );
 
-    println!("✅ Clash API Endpoints Documented: 36/43 (83.7%)");
+    println!("✅ Clash API Endpoints Documented: 37/44 (84.1%)");
     println!("✅ Server Configuration Tests: Passing");
     println!("✅ Data Structure Tests: Passing");
     println!("📝 HTTP Endpoint Tests: Deferred to Sprint 15+ (requires running server)");

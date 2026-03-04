@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 23:40
+> **最后更新**：2026-03-04 23:48
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -33,7 +33,8 @@
   9. ✅ L19.4.1 已完成：`scripts/test/tun_linux_e2e.sh` + `reports/stability/templates/tun_linux_e2e_report.template.json`（Linux root 环境执行）。
   10. ✅ L19.4.2 已完成：`scripts/test/tun_macos_longrun.sh` + `reports/stability/tun_macos_longrun.json`（本机冒烟已产出）。
   11. ✅ L19.4.3 已完成：性能验收口径重写（Baseline / Router+Clash API / Parity 分层）+ 统一入口 `scripts/test/bench/l19_perf_acceptance.sh`。
-  12. ▶️ 下一步：L19.5.1（`/capabilities` 强契约端点：schema_version + compat_version + capability matrix）。
+  12. ✅ L19.5.1 已完成：Clash API 新增 `GET /capabilities`（`schema_version + compat_version + capability_matrix`）并接入合同测试。
+  13. ▶️ 下一步：L19.5.2（GUI 合同测试 + `reports/L19_REALITY_ALIGNMENT.md` 收口报告）。
 
 ---
 
