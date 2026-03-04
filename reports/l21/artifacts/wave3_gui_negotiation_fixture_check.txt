@@ -1,0 +1,4 @@
+[fixture-check] PASS required_status_blocked (exit=1, status=blocked, reason=required_status_not_ok:blocked)
+[fixture-check] PASS breaking_changes_non_empty (exit=1, status=blocked, reason=breaking_changes_non_empty:1)
+[fixture-check] PASS baseline_ok (exit=0, status=ok, reason=)
+[fixture-check] all cases passed; artifacts at /Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l21/artifacts/gui_capability_negotiation

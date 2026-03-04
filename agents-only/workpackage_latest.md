@@ -1,11 +1,39 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 02:08
-> **当前阶段**：L21 起步执行完成（wave#2 已落地：MIG-01/MIG-05 迁移推进 + strict gate allowlist 升级 + GUI negotiation 失败样例可复算）
+> **最后更新**：2026-03-05 02:36
+> **当前阶段**：L21 wave#3 收口完成（聚焦 MIG-01/MIG-05：真实代码迁移 + strict gate allowlist 升级 + 回流阻断证据）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=14 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=20 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#3 收口落地（2026-03-05 02:36）
+
+**状态**：✅ `MIG-01/MIG-05 wave#3` 完成；✅ strict gate allowlist 升级到 `l21.2-wave3-v1`；✅ 回流阻断负样例证据落地
+
+1. **迁移 wave#3（优先 MIG-01 / MIG-05）**：
+   - `crates/sb-api/src/v2ray/services.rs`：`add_outbound` 不再构造 `sb_core::outbound::DirectConnector`，改为复用 `outbound_manager.get("direct")`；当 direct 缺失返回 `failed_precondition`。
+   - `crates/sb-adapters/src/inbound/tun_process_aware.rs`、`crates/sb-adapters/tests/tun_process_integration.rs`：测试路径移除 `DirectConnector`，改为本地 `DummyOutboundConnector`（固定错误返回）以避免 core concrete impl 回流。
+   - `app/src/bin/diag.rs`：TCP 诊断路径由 `sb_core::transport::tcp::TcpDialer` 迁移到 `sb_transport::TcpDialer`，并统一复用 `DialError -> (error,class)` 映射。
+   - `crates/sb-core/examples/tls_handshake.rs`、`examples/code-examples/network/tcp_connect.rs`：示例迁移到 `sb-transport` 拨号 API。
+2. **strict gate allowlist 升级（V7 下一版）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.2-wave3-v1`，断言扩展到 20 条（新增 W3-01/W3-02/W3-03 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave3_v7_regression_block.txt`（在临时 root 注入 `services.rs` 回流 import 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过。
+   - `bash scripts/l18/capability_negotiation_fixture_check.sh`：`required_status_not_ok` 与 `breaking_changes_non_empty` 失败样例可复算，产物在 `reports/l21/artifacts/gui_capability_negotiation/`。
+
+**最小验证**：
+1. `cargo check -p sb-api`
+2. `cargo check -p sb-adapters --tests`
+3. `cargo check -p app --bin diag`
+4. `cargo check -p sb-core --example tls_handshake`
+5. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (20 assertions)`）
+6. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见回流阻断证据）
+7. `bash -n scripts/l18/gui_real_cert.sh`
+8. `bash scripts/l18/capability_negotiation_fixture_check.sh`
 
 ---
 
