@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "YYYYMMDDTHHMMSSZ",
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "profile": "l19.4.2-macos-tun-longrun",
+  "overall": "PASS|FAIL|SKIP",
+  "reason": "human-readable summary",
+  "target": {
+    "pid": 12345,
+    "spawned_pid": null
+  },
+  "artifacts": {
+    "output_dir": "reports/stability/tun_macos_longrun/<run_id>",
+    "log_file": "reports/stability/tun_macos_longrun/<run_id>/tun_macos_longrun.log",
+    "process_max_file": "reports/stability/tun_macos_longrun/<run_id>/process_max.json",
+    "process_samples_csv": "reports/stability/tun_macos_longrun/<run_id>/process_samples.csv"
+  },
+  "process_max": {
+    "rss_mib_max": 120,
+    "fd_max": 256,
+    "threads_max": 48
+  },
+  "summary": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0,
+    "skip": 0
+  },
+  "cases": [
+    {
+      "id": "service_boot",
+      "description": "start local tcp/udp/dns services",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "target_alive",
+      "description": "target process existence",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "tcp_10k",
+      "description": "10k tcp echo connections",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "udp_jitter",
+      "description": "udp echo jitter workload",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "dns_jitter",
+      "description": "dns jitter workload",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "target_stability",
+      "description": "target process alive after workload",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    }
+  ]
+}

@@ -197,6 +197,24 @@ Exit codes:
 - `1`: setup or scenario failure
 - `77`: skipped (non-Linux / missing root / missing dependencies)
 
+### `tun_macos_longrun.sh`
+macOS TUN longrun profile for L19.4.2.
+
+```bash
+./scripts/test/tun_macos_longrun.sh --target-pid <pid>
+```
+
+Features:
+- 10k TCP connection workload
+- UDP + DNS jitter workload
+- optional process resource sampling (`rss/fd/threads`)
+- writes latest report to `reports/stability/tun_macos_longrun.json`
+
+Exit codes:
+- `0`: all scenarios passed
+- `1`: one or more scenarios failed
+- `77`: skipped (non-macos / missing dependencies)
+
 ### `mutants-smoke.sh`
 Mutation testing smoke suite.
 
