@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-02-27 18:20
+> **最后更新**：2026-03-04 18:14
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -9,43 +9,45 @@
 
 ---
 
-## 🚨 P0 最高优先级（2026-02-27 18:20）
+## 🚨 P0 最高优先级（2026-03-04 18:14）
 
-**状态**：✅ 已清零（可进入 nightly/certify 前置验证）
+**状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
 
-**P0 收口结果**：
-1. `p2_protocol_unit_vmess` 已修复（case 测试目标对齐）。
-2. `p2_subscription_truncated_base64` 已修复（断言语义改为“预期报错”）。
-3. `launch_kernel` 前置缺口已修复（debug 二进制/占位 API 误用已清理）。
-4. interop-lab 聚合退出语义已修复（任一 case 失败 => 非 0 且输出失败清单）。
-5. case 级指标已达标：`assertion_fail=0`、`unexpected_launch_kernel_fail=0`。
+**本轮执行结果（短路验证，`L18_CANARY_HOURS=0`）**：
+1. 批次：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight`
+2. 汇总：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight/capstone_nightly_fixedcfg/summary.tsv`
+3. 状态：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight/capstone_nightly_fixedcfg/r1/l18_capstone_status.json`
+4. 结论：`overall=PASS`；`workspace/gui/canary/dual/perf` 全 `PASS`
+5. 重点核验：未复现 `clash_http_e2e::test_healthcheck_proxy_provider` 失败；`dual/perf` 未再出现 `target/release/run` 丢失
 
-**基线与批次**：
-- 基线：`reports/l18/batches/20260227T054642Z-l18-stress-48x`
-- P0 收口 stress：`reports/l18/batches/20260227T091322Z-l18-stress-48x`
-- nightly 固定入口：`reports/l18/batches/20260227T094308Z-l18-nightly-preflight`
+**本轮代码修复/对齐**：
+1. `scripts/l18/run_capstone_fixed_profile.sh`：`run+app` 构建并冻结到批次私有 `runtime_bin/{run,app}`，capstone/dual 使用 `L18_RUST_BIN/L18_DUAL_RUST_BIN/L18_DUAL_RUST_APP_BIN` 指向冻结副本（已生效）。
+2. `scripts/l18/run_capstone_fixed_profile.sh`：`precheck.txt` 的 `fixed_env.*` 记录改为冻结二进制路径，保证记录与真实执行一致。
 
-**关键阶段进度（workspace/gui/canary/dual/perf）**：
-- `workspace`：⚠️ nightly preflight 曾失败（`clash_http_e2e::test_healthcheck_proxy_provider`）；已修复断言并单测通过，待整链复跑确认。
-- `gui`：✅ stress 路径通过（有 `gui_real_cert.json` 证据）。
-- `canary`：⚠️ stress 收尾失败，汇总脚本出现 `JSONDecodeError`。
-- `dual`：⚠️ stress 子阶段 `DUAL_NIGHTLY` 失败（`run_fail_count=5`）。
-- `perf`：✅ stress 内 `perf_gate=PASS`。
-
-**结果文件路径**：
-- stress 主日志：`reports/l18/batches/20260227T091322Z-l18-stress-48x/stress_short_48x/r1/stress.main.log`
-- interop 聚合：`reports/l18/batches/20260227T091322Z-l18-stress-48x/stress_short_48x/r1/interop_artifacts/latest_summary.json`
-- nightly 日志：`reports/l18/batches/20260227T094308Z-l18-nightly-preflight/capstone_nightly_fixedcfg/r1/capstone.stdout.log`
-
-**当前根因（非 P0）**：
-1. `DUAL_NIGHTLY` 仍有 5 个 case 失败（dual 语义与当前 profile/case 组合仍需对齐）。
-2. canary 汇总对非 JSON 行容错不足，导致 `JSONDecodeError` 中断收尾。
-3. nightly preflight 前置 gate 历史失败项已局部修复（test/fmt/clippy），但缺少一次整链 PASS 证据。
+**nightly 24h（进行中）**：
+1. `batch_root`：`reports/l18/batches/20260304T101430Z-l18-nightly-24h`
+2. 主进程：`pid=31072`（`run_capstone_fixed_profile.sh`）
+3. 子进程：`pid=31170`（`l18_capstone.sh`）
+4. 日志：
+   - `reports/l18/batches/20260304T101430Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/capstone.stdout.log`
+   - `reports/l18/batches/20260304T101430Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/capstone.stderr.log`
+5. 阶段快照（已开始）：
+   - `preflight=PASS`
+   - `oracle=PASS`
+   - `boundaries=PASS`
+   - `parity=PASS`
+   - `workspace_test=PASS`
+   - `fmt=PASS`
+   - `clippy=PASS`
+   - `hot_reload=PASS`
+   - `signal=PASS`
+   - `gui_smoke=PASS`
+   - `canary=RUNNING`
 
 **下一步任务**：
-1. 先重跑 nightly 固定入口（缩短 canary，仅验证 `workspace/fmt/clippy/gui` 全绿）。
-2. 修复 dual `run_fail_count=5` 与 canary 汇总容错，再跑 30min stress 48x。
-3. 上述稳定后再发车正式 `nightly 24h` 与 `certify 7d`。
+1. 持续监控 `20260304T101430Z-l18-nightly-24h`，完结后回填 `summary.tsv` 与 `l18_capstone_status.json`。
+2. 若本轮出现 FAIL，按日志修复并复跑短路再重启 24h。
+3. `nightly 24h` 全绿后发车 `certify 7d`。
 
 ---
 

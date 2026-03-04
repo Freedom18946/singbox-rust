@@ -22,6 +22,11 @@ PID_FILE="${L18_CANARY_PID_FILE:-}"
 STATUS_FILE="${L18_STATUS_FILE:-${ROOT_DIR}/reports/l18/l18_capstone_status.json}"
 GO_API="${INTEROP_GO_API_BASE:-}"
 GO_TOKEN="${INTEROP_GO_API_TOKEN:-}"
+GO_API_SECRET="${INTEROP_GO_API_SECRET:-}"
+GO_API_SECRET_WRONG="${INTEROP_GO_API_SECRET_WRONG:-l18-capstone-go-secret-wrong}"
+RUST_API="${INTEROP_RUST_API_BASE:-}"
+RUST_API_SECRET="${INTEROP_RUST_API_SECRET:-test-secret}"
+RUST_API_SECRET_WRONG="${INTEROP_RUST_API_SECRET_WRONG:-l18-capstone-rust-secret-wrong}"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
 ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
@@ -34,6 +39,11 @@ CANARY_OUTPUT_ROOT="${L18_CANARY_OUTPUT_ROOT:-${ROOT_DIR}/reports/l18/stability}
 WORKSPACE_TEST_THREADS="${L18_WORKSPACE_TEST_THREADS:-1}"
 STABILITY_REPORT_DIR="${L18_STABILITY_REPORT_DIR:-}"
 STABILITY_TEST_CONFIG="${L18_STABILITY_TEST_CONFIG:-}"
+DUAL_GO_CONFIG="${L18_DUAL_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json}"
+DUAL_RUST_CONFIG="${L18_DUAL_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_rust.json}"
+DUAL_RUST_BIN="${L18_DUAL_RUST_BIN:-${ROOT_DIR}/target/release/run}"
+DUAL_RUST_APP_BIN="${L18_DUAL_RUST_APP_BIN:-${ROOT_DIR}/target/release/app}"
+DUAL_GO_BIN="${L18_DUAL_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -133,6 +143,11 @@ STATUS_FILE="$(to_abs_path "$STATUS_FILE")"
 CANARY_OUTPUT_ROOT="$(to_abs_path "$CANARY_OUTPUT_ROOT")"
 STABILITY_REPORT_DIR="$(to_abs_path "$STABILITY_REPORT_DIR")"
 STABILITY_TEST_CONFIG="$(to_abs_path "$STABILITY_TEST_CONFIG")"
+DUAL_GO_CONFIG="$(to_abs_path "$DUAL_GO_CONFIG")"
+DUAL_RUST_CONFIG="$(to_abs_path "$DUAL_RUST_CONFIG")"
+DUAL_RUST_BIN="$(to_abs_path "$DUAL_RUST_BIN")"
+DUAL_RUST_APP_BIN="$(to_abs_path "$DUAL_RUST_APP_BIN")"
+DUAL_GO_BIN="$(to_abs_path "$DUAL_GO_BIN")"
 
 if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "0" && "$ALLOW_EXISTING_SYSTEM_PROXY" != "1" ]]; then
   echo "--allow-existing-system-proxy must be 0 or 1" >&2
@@ -214,6 +229,14 @@ mkdir -p "$(dirname "$STATUS_FILE")" "$CANARY_OUTPUT_ROOT" "$STABILITY_REPORT_DI
 if [[ ! -f "$STABILITY_TEST_CONFIG" ]]; then
   printf '{}\n' > "$STABILITY_TEST_CONFIG"
 fi
+
+DUAL_RUNTIME_DIR="${L18_DUAL_RUNTIME_DIR:-$(dirname "$STATUS_FILE")/dual_runtime}"
+DUAL_RUNTIME_DIR="$(to_abs_path "$DUAL_RUNTIME_DIR")"
+mkdir -p "$DUAL_RUNTIME_DIR"
+DUAL_GO_PID_FILE="${DUAL_RUNTIME_DIR}/go.pid"
+DUAL_GO_LOG="${DUAL_RUNTIME_DIR}/go.log"
+DUAL_RUST_PID_FILE="${DUAL_RUNTIME_DIR}/rust.pid"
+DUAL_RUST_LOG="${DUAL_RUNTIME_DIR}/rust.log"
 
 PREFLIGHT_STATUS="NOT_RUN"
 ORACLE_STATUS="NOT_RUN"
@@ -354,6 +377,189 @@ run_docker_gate() {
   return 0
 }
 
+check_port_free() {
+  local port="$1"
+  if lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+stop_dual_go_runtime() {
+  if [[ -f "${DUAL_GO_PID_FILE}" ]]; then
+    local gpid
+    gpid="$(cat "${DUAL_GO_PID_FILE}" 2>/dev/null || true)"
+    if [[ -n "${gpid:-}" ]] && kill -0 "$gpid" 2>/dev/null; then
+      kill "$gpid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$gpid" 2>/dev/null && kill -9 "$gpid" 2>/dev/null || true
+    fi
+  fi
+}
+
+stop_dual_rust_runtime() {
+  if [[ -f "${DUAL_RUST_PID_FILE}" ]]; then
+    local rpid
+    rpid="$(cat "${DUAL_RUST_PID_FILE}" 2>/dev/null || true)"
+    if [[ -n "${rpid:-}" ]] && kill -0 "$rpid" 2>/dev/null; then
+      kill "$rpid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$rpid" 2>/dev/null && kill -9 "$rpid" 2>/dev/null || true
+    fi
+  fi
+}
+
+start_dual_go_runtime() {
+  local api_url="$1"
+  local api_secret="$2"
+  if [[ ! -x "${DUAL_GO_BIN}" ]]; then
+    echo "dual go binary not executable: ${DUAL_GO_BIN}" >&2
+    return 1
+  fi
+  if [[ ! -f "${DUAL_GO_CONFIG}" ]]; then
+    echo "dual go config missing: ${DUAL_GO_CONFIG}" >&2
+    return 1
+  fi
+  if ! check_port_free 9090; then
+    echo "dual go runtime requires free port: 9090" >&2
+    lsof -nP -iTCP:9090 -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+
+  "${DUAL_GO_BIN}" run -c "${DUAL_GO_CONFIG}" > "${DUAL_GO_LOG}" 2>&1 &
+  local gpid="$!"
+  echo "${gpid}" > "${DUAL_GO_PID_FILE}"
+
+  local ready=0
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${api_secret}" "${api_url}/version" || true)"
+    if [[ "$code" == "200" || "$code" == "204" || "$code" == "401" ]]; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [[ "$ready" != "1" ]]; then
+    echo "dual go runtime health check failed: ${api_url}" >&2
+    stop_dual_go_runtime
+    return 1
+  fi
+  return 0
+}
+
+start_dual_rust_runtime() {
+  local api_url="$1"
+  local api_secret="$2"
+  if [[ ! -x "${DUAL_RUST_BIN}" ]]; then
+    echo "dual rust binary not executable: ${DUAL_RUST_BIN}" >&2
+    return 1
+  fi
+  if [[ ! -x "${DUAL_RUST_APP_BIN}" ]]; then
+    echo "dual rust app binary not executable: ${DUAL_RUST_APP_BIN}" >&2
+    return 1
+  fi
+  if [[ ! -f "${DUAL_RUST_CONFIG}" ]]; then
+    echo "dual rust config missing: ${DUAL_RUST_CONFIG}" >&2
+    return 1
+  fi
+  if ! check_port_free 19090; then
+    echo "dual rust runtime requires free port: 19090" >&2
+    lsof -nP -iTCP:19090 -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+
+  "${DUAL_RUST_BIN}" --config "${DUAL_RUST_CONFIG}" > "${DUAL_RUST_LOG}" 2>&1 &
+  local rpid="$!"
+  echo "${rpid}" > "${DUAL_RUST_PID_FILE}"
+
+  local ready=0
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${api_secret}" "${api_url}/version" || true)"
+    if [[ "$code" == "200" || "$code" == "204" || "$code" == "401" ]]; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [[ "$ready" != "1" ]]; then
+    echo "dual rust runtime health check failed: ${api_url}" >&2
+    stop_dual_rust_runtime
+    return 1
+  fi
+  return 0
+}
+
+run_dual_gate() {
+  local dual_rust_api="$RUST_API"
+  local dual_rust_secret="$RUST_API_SECRET"
+  local dual_go_api="$GO_API"
+  local dual_go_secret="$GO_API_SECRET"
+  local dual_go_token="$GO_TOKEN"
+  local managed_rust=0
+  local managed_go=0
+  local rc=0
+
+  if [[ -z "$dual_rust_api" ]]; then
+    dual_rust_api="http://127.0.0.1:19090"
+    dual_rust_secret="test-secret"
+    managed_rust=1
+  fi
+
+  if [[ -z "$dual_go_api" ]]; then
+    dual_go_api="http://127.0.0.1:9090"
+    dual_go_secret="test-secret"
+    dual_go_token="test-secret"
+    managed_go=1
+  fi
+
+  if [[ -z "$dual_go_secret" ]]; then
+    dual_go_secret="$dual_go_token"
+  fi
+  if [[ -z "$dual_go_token" ]]; then
+    dual_go_token="$dual_go_secret"
+  fi
+
+  if [[ "$managed_rust" == "1" ]]; then
+    if ! start_dual_rust_runtime "$dual_rust_api" "$dual_rust_secret"; then
+      return 1
+    fi
+  fi
+
+  if [[ "$managed_go" == "1" ]]; then
+    if ! start_dual_go_runtime "$dual_go_api" "$dual_go_secret"; then
+      if [[ "$managed_rust" == "1" ]]; then
+        stop_dual_rust_runtime
+      fi
+      return 1
+    fi
+  fi
+
+  DUAL_CMD=("${ROOT_DIR}/scripts/l18/run_dual_kernel_cert.sh" --profile "$DUAL_PROFILE" --go-api "$dual_go_api")
+  if [[ -n "$dual_go_token" ]]; then
+    DUAL_CMD+=(--go-token "$dual_go_token")
+  fi
+
+  env \
+    INTEROP_RUST_BIN="${DUAL_RUST_APP_BIN}" \
+    INTEROP_RUST_API_BASE="${dual_rust_api}" \
+    INTEROP_RUST_API_SECRET="${dual_rust_secret}" \
+    INTEROP_RUST_API_SECRET_WRONG="${RUST_API_SECRET_WRONG}" \
+    INTEROP_GO_API_BASE="${dual_go_api}" \
+    INTEROP_GO_API_SECRET="${dual_go_secret}" \
+    INTEROP_GO_API_SECRET_WRONG="${GO_API_SECRET_WRONG}" \
+    "${DUAL_CMD[@]}" || rc=$?
+
+  if [[ "$managed_go" == "1" ]]; then
+    stop_dual_go_runtime
+  fi
+  if [[ "$managed_rust" == "1" ]]; then
+    stop_dual_rust_runtime
+  fi
+  return "$rc"
+}
+
 run_canary_gate() {
   local out_jsonl="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.jsonl"
   local out_summary="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.md"
@@ -386,16 +592,31 @@ if not os.path.isfile(path):
 samples = 0
 bad_health = 0
 null_rss = 0
+skipped_non_json = 0
+
+def to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
 with open(path, "r", encoding="utf-8") as f:
     for line in f:
         line = line.strip()
         if not line:
             continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            skipped_non_json += 1
+            continue
+        if not isinstance(row, dict):
+            skipped_non_json += 1
+            continue
         samples += 1
-        row = json.loads(line)
-        if int(row.get("health_code", 0)) != 200:
+        if to_int(row.get("health_code")) != 200:
             bad_health += 1
-        if row.get("rss_kb") in (None, "null"):
+        if to_int(row.get("rss_kb")) is None:
             null_rss += 1
 
 if samples == 0:
@@ -407,6 +628,9 @@ if bad_health > 0:
 if null_rss > 0:
     print(f"null_rss={null_rss}")
     sys.exit(1)
+
+if skipped_non_json > 0:
+    print(f"skipped_non_json={skipped_non_json}")
 
 print("canary_samples_ok")
 PY
@@ -447,14 +671,7 @@ fi
 
 run_gate_with_fail_fast "CANARY" run_canary_gate
 
-DUAL_CMD=("${ROOT_DIR}/scripts/l18/run_dual_kernel_cert.sh" --profile "$DUAL_PROFILE")
-if [[ -n "$GO_API" ]]; then
-  DUAL_CMD+=(--go-api "$GO_API")
-fi
-if [[ -n "$GO_TOKEN" ]]; then
-  DUAL_CMD+=(--go-token "$GO_TOKEN")
-fi
-run_gate_with_fail_fast "DUAL_KERNEL_DIFF" "${DUAL_CMD[@]}"
+run_gate_with_fail_fast "DUAL_KERNEL_DIFF" run_dual_gate
 
 run_gate_with_fail_fast "PERF_GATE" "${ROOT_DIR}/scripts/l18/perf_gate.sh"
 

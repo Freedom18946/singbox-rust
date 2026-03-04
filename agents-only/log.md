@@ -23,6 +23,58 @@
 
 ## 日志记录
 
+### [2026-03-04 18:14] Agent: Codex (GPT-5)
+
+**任务**: 按最新接续口径执行 L18 收口：确认修复、重跑 nightly 短路验证、发车 nightly 24h，并回填 agents 状态总线。
+**变更**:
+- 执行验证：
+  - `L18_CANARY_HOURS=0 scripts/l18/run_capstone_fixed_profile.sh --profile nightly ...`
+  - 产出批次：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight`
+  - 结果：`summary.tsv` 与 `l18_capstone_status.json` 完整，`overall=PASS`，`workspace/fmt/clippy/gui/canary/dual/perf` 全 PASS
+- 代码修正：
+  - 更新 `scripts/l18/run_capstone_fixed_profile.sh`
+  - `precheck.txt` 的 `fixed_env.L18_RUST_BIN` 改为冻结副本路径，并补充 `L18_DUAL_RUST_BIN/L18_DUAL_RUST_APP_BIN` 记录
+- 发车长跑：
+  - 启动 `nightly 24h` 批次：`reports/l18/batches/20260304T101430Z-l18-nightly-24h`
+  - 主进程 `pid=31072`，子进程 `pid=31170`
+  - 日志：`.../r1/capstone.stdout.log`、`.../r1/capstone.stderr.log`
+- 文档更新：
+  - `agents-only/workpackage_latest.md`
+  - `agents-only/active_context.md`
+  - `agents-only/log.md`（新增本条）
+
+**结果**: 部分完成（短路收口完成并全绿；24h 长跑已发车且进行中）
+**备注**:
+- 本轮未复现 `clash_http_e2e::test_healthcheck_proxy_provider` 失败。
+- `dual/perf` 未再出现 `target/release/run` 缺失问题（冻结二进制路径策略生效）。
+
+---
+
+### [2026-02-27 20:22] Agent: Codex (GPT-5)
+
+**任务**: 接手 L18 收口：修复 dual/canary 阻塞、完成 stress + nightly 前置回归，并发车 nightly 24h。
+**变更**:
+- 更新 `scripts/l18/l18_capstone.sh`
+  - dual gate 增加 Go/Rust 双 runtime 启停
+  - dual gate 注入 `INTEROP_RUST_BIN` 与 `INTEROP_{RUST,GO}_API_*` 环境
+  - 保持 canary 汇总 JSON 容错（过滤非 JSON 行）
+- 执行回归：
+  - `scripts/l18/run_stress_short_48x.sh --duration-min 30 ...`
+  - `scripts/l18/run_capstone_fixed_profile.sh --profile nightly`（短路 canary）
+  - 启动 `nightly 24h` 后台批次（detached）
+- 更新文档状态：
+  - `agents-only/workpackage_latest.md`
+  - `agents-only/active_context.md`
+  - `agents-only/log.md`（新增本条）
+
+**结果**: 部分完成（前置收口全绿，nightly 24h 已发车并运行中）
+**备注**:
+- stress 批次 `20260227T120555Z-l18-stress-48x`：`overall=PASS`，dual `run_fail_count=0`，canary `pass=true`。
+- nightly preflight 批次 `20260227T115728Z-l18-nightly-preflight`：`overall=PASS`，`workspace/fmt/clippy/gui/canary/dual/perf` 全 PASS。
+- nightly 24h 批次 `20260227T122137Z-l18-nightly-24h` 已启动（pid=21237，日志 `.../20260227T122137Z-l18-nightly-24h.detached.log`）。
+
+---
+
 ### [2026-02-27 18:20] Agent: Codex (GPT-5)
 
 **任务**: 按用户要求同步 agents 文档到最新，记录 L18 当前进度、失败根因与下一步执行计划，并准备下一会话接续口令。

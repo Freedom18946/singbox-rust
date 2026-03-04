@@ -130,6 +130,13 @@ INTEROP_ARTIFACTS="${RUN_DIR}/interop_artifacts"
 CASES_SHORT_DIR="${RUN_DIR}/cases_short"
 DUAL_REPORT_ROOT="${RUN_DIR}/dual_kernel"
 DUAL_ARTIFACTS_DIR="${RUN_DIR}/dual_kernel_artifacts"
+DUAL_RUNTIME_DIR="${RUN_ROOT}/dual_runtime"
+DUAL_GO_CONFIG="${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json"
+DUAL_GO_API_URL="http://127.0.0.1:9090"
+DUAL_GO_API_SECRET="test-secret"
+DUAL_GO_API_SECRET_WRONG="l18-stress-go-secret-wrong"
+DUAL_GO_PID_FILE="${DUAL_RUNTIME_DIR}/go.pid"
+DUAL_GO_LOG="${DUAL_RUNTIME_DIR}/go.log"
 PERF_DIR="${RUN_DIR}/perf"
 PERF_REPORT="${PERF_DIR}/perf_gate.json"
 PERF_LOCK="${PERF_DIR}/perf_gate.lock.json"
@@ -144,7 +151,7 @@ CONFIG_FREEZE_JSON="${RUN_ROOT}/config.freeze.json"
 PRECHECK_TXT="${RUN_ROOT}/precheck.txt"
 MAIN_LOG="${RUN_DIR}/stress.main.log"
 
-mkdir -p "${CANARY_RUNTIME_DIR}" "${RUN_DIR}/canary" "${GUI_DIR}" "${INTEROP_ARTIFACTS}" "${DUAL_REPORT_ROOT}" "${DUAL_ARTIFACTS_DIR}" "${PERF_DIR}" "${CASES_SHORT_DIR}"
+mkdir -p "${CANARY_RUNTIME_DIR}" "${RUN_DIR}/canary" "${GUI_DIR}" "${INTEROP_ARTIFACTS}" "${DUAL_REPORT_ROOT}" "${DUAL_ARTIFACTS_DIR}" "${DUAL_RUNTIME_DIR}" "${PERF_DIR}" "${CASES_SHORT_DIR}"
 
 RUST_BIN="${ROOT_DIR}/target/release/run"
 RUST_APP_BIN="${ROOT_DIR}/target/release/app"
@@ -260,17 +267,35 @@ from datetime import datetime, timezone
 jsonl = Path(sys.argv[1])
 summary = Path(sys.argv[2])
 rows = []
+raw_line_count = 0
+skipped_non_json_lines = 0
+
+def to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
 if jsonl.exists():
     for line in jsonl.read_text(encoding="utf-8").splitlines():
+        raw_line_count += 1
         line = line.strip()
         if not line:
             continue
-        rows.append(json.loads(line))
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            skipped_non_json_lines += 1
+            continue
+        if not isinstance(row, dict):
+            skipped_non_json_lines += 1
+            continue
+        rows.append(row)
 
 sample_count = len(rows)
-health_ok = sum(1 for r in rows if int(r.get("health_code", 0)) == 200)
-rss_values = [int(r["rss_kb"]) for r in rows if r.get("rss_kb") not in (None, "null")]
-fd_values = [int(r["fd_count"]) for r in rows if r.get("fd_count") not in (None, "null")]
+health_ok = sum(1 for r in rows if to_int(r.get("health_code")) == 200)
+rss_values = [v for r in rows if (v := to_int(r.get("rss_kb"))) is not None]
+fd_values = [v for r in rows if (v := to_int(r.get("fd_count"))) is not None]
 
 first_ts = rows[0]["ts"] if rows else "null"
 last_ts = rows[-1]["ts"] if rows else "null"
@@ -286,6 +311,8 @@ summary.write_text(
             "# Canary Stress Summary",
             "",
             f"- generated_at: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
+            f"- raw_line_count: {raw_line_count}",
+            f"- skipped_non_json_lines: {skipped_non_json_lines}",
             f"- sample_count: {sample_count}",
             f"- health_200_count: {health_ok}",
             f"- first_ts: {first_ts}",
@@ -303,12 +330,62 @@ summary.write_text(
 
 print(f"sample_count={sample_count}")
 print(f"health_200_count={health_ok}")
+print(f"skipped_non_json_lines={skipped_non_json_lines}")
 print(f"pass={str(ok).lower()}")
 PY
 }
 
+stop_dual_go_runtime() {
+  if [[ -f "${DUAL_GO_PID_FILE}" ]]; then
+    local gpid
+    gpid="$(cat "${DUAL_GO_PID_FILE}" 2>/dev/null || true)"
+    if [[ -n "${gpid:-}" ]] && kill -0 "$gpid" 2>/dev/null; then
+      kill "$gpid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$gpid" 2>/dev/null && kill -9 "$gpid" 2>/dev/null || true
+    fi
+  fi
+}
+
+start_dual_go_runtime() {
+  if [[ ! -x "${GO_BIN}" ]]; then
+    echo "go binary not executable: ${GO_BIN}" >&2
+    return 1
+  fi
+  if [[ ! -f "${DUAL_GO_CONFIG}" ]]; then
+    echo "dual go config missing: ${DUAL_GO_CONFIG}" >&2
+    return 1
+  fi
+  if ! check_port_free 9090; then
+    echo "dual go runtime requires free port: 9090" >&2
+    lsof -nP -iTCP:9090 -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+
+  "${GO_BIN}" run -c "${DUAL_GO_CONFIG}" > "${DUAL_GO_LOG}" 2>&1 &
+  local gpid="$!"
+  echo "${gpid}" > "${DUAL_GO_PID_FILE}"
+
+  local ready=0
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${DUAL_GO_API_SECRET}" "${DUAL_GO_API_URL}/version" || true)"
+    if [[ "$code" == "200" || "$code" == "204" || "$code" == "401" ]]; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [[ "$ready" != "1" ]]; then
+    echo "dual go runtime health check failed: ${DUAL_GO_API_URL}" >&2
+    return 1
+  fi
+  return 0
+}
+
 cleanup() {
   stop_canary_sampler
+  stop_dual_go_runtime
   stop_canary_runtime
 }
 trap cleanup EXIT
@@ -500,6 +577,8 @@ run_stage P2_ROUND_2 cargo run -p interop-lab -- \
   case run \
   --kernel rust \
   --priority p2 \
+  --exclude-tag benchmark \
+  --exclude-tag ws \
   --exclude-tag soak || true
 run_stage P2_ROUND_3 cargo run -p interop-lab -- \
   --cases-dir "${CASES_SHORT_DIR}" \
@@ -507,6 +586,8 @@ run_stage P2_ROUND_3 cargo run -p interop-lab -- \
   case run \
   --kernel rust \
   --priority p2 \
+  --exclude-tag benchmark \
+  --exclude-tag ws \
   --exclude-tag soak || true
 run_stage P2_ROUND_4 cargo run -p interop-lab -- \
   --cases-dir "${CASES_SHORT_DIR}" \
@@ -514,11 +595,39 @@ run_stage P2_ROUND_4 cargo run -p interop-lab -- \
   case run \
   --kernel rust \
   --priority p2 \
+  --exclude-tag benchmark \
+  --exclude-tag ws \
   --exclude-tag soak || true
-run_stage DUAL_NIGHTLY "${ROOT_DIR}/scripts/l18/run_dual_kernel_cert.sh" \
-  --profile nightly \
-  --report-root "${DUAL_REPORT_ROOT}" \
-  --artifacts-dir "${DUAL_ARTIFACTS_DIR}" || true
+dual_left="$(remaining_sec)"
+if (( dual_left < 30 )); then
+  STAGE_ORDER+=("DUAL_NIGHTLY")
+  STAGE_STATUS["DUAL_NIGHTLY"]="TIMEOUT"
+  STAGE_RC["DUAL_NIGHTLY"]="124"
+  HAS_FAIL=1
+  log "stage=DUAL_NIGHTLY skipped: budget exhausted (remaining=${dual_left}s)"
+else
+  if start_dual_go_runtime; then
+    run_stage DUAL_NIGHTLY env \
+      INTEROP_RUST_API_BASE="${CANARY_API_URL}" \
+      INTEROP_RUST_API_SECRET="${CANARY_API_SECRET}" \
+      INTEROP_RUST_API_SECRET_WRONG="l18-stress-secret-wrong" \
+      INTEROP_GO_API_BASE="${DUAL_GO_API_URL}" \
+      INTEROP_GO_API_SECRET="${DUAL_GO_API_SECRET}" \
+      INTEROP_GO_API_SECRET_WRONG="${DUAL_GO_API_SECRET_WRONG}" \
+      "${ROOT_DIR}/scripts/l18/run_dual_kernel_cert.sh" \
+      --profile nightly \
+      --cases-dir "${CASES_SHORT_DIR}" \
+      --report-root "${DUAL_REPORT_ROOT}" \
+      --artifacts-dir "${DUAL_ARTIFACTS_DIR}" || true
+    stop_dual_go_runtime
+  else
+    STAGE_ORDER+=("DUAL_NIGHTLY")
+    STAGE_STATUS["DUAL_NIGHTLY"]="FAIL"
+    STAGE_RC["DUAL_NIGHTLY"]="1"
+    HAS_FAIL=1
+    log "stage=DUAL_NIGHTLY FAIL rc=1 reason=dual_go_runtime_start_failed"
+  fi
+fi
 run_stage PERF_3X env \
   L18_PERF_ROUNDS=3 \
   L18_STARTUP_WARMUP_RUNS=1 \

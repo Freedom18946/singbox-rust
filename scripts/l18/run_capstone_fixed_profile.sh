@@ -162,6 +162,10 @@ SUMMARY_TSV="${RUN_ROOT}/summary.tsv"
 GUI_DIR="${RUN_DIR}/gui"
 
 RUST_BIN="${ROOT_DIR}/target/release/run"
+RUST_APP_BIN="${ROOT_DIR}/target/release/app"
+FROZEN_BIN_DIR="${RUN_ROOT}/runtime_bin"
+FROZEN_RUST_BIN="${FROZEN_BIN_DIR}/run"
+FROZEN_RUST_APP_BIN="${FROZEN_BIN_DIR}/app"
 
 check_port_free() {
   local port="$1"
@@ -178,6 +182,9 @@ check_port_free() {
   echo "profile=${PROFILE}"
   echo "gui_app=${GUI_APP}"
   echo "rust_bin=${RUST_BIN}"
+  echo "rust_app_bin=${RUST_APP_BIN}"
+  echo "frozen_rust_bin=${FROZEN_RUST_BIN}"
+  echo "frozen_rust_app_bin=${FROZEN_RUST_APP_BIN}"
   echo "go_oracle_script=${ROOT_DIR}/scripts/l18/build_go_oracle.sh"
   echo "require_docker=${REQUIRE_DOCKER}"
   echo "workspace_test_threads=${WORKSPACE_TEST_THREADS}"
@@ -187,7 +194,9 @@ check_port_free() {
   echo "fixed_env.L18_RUST_BUILD_ENABLED=0"
   echo "fixed_env.L18_GUI_GO_BUILD_ENABLED=0"
   echo "fixed_env.L18_GUI_RUST_BUILD_ENABLED=0"
-  echo "fixed_env.L18_RUST_BIN=${RUST_BIN}"
+  echo "fixed_env.L18_RUST_BIN=${FROZEN_RUST_BIN}"
+  echo "fixed_env.L18_DUAL_RUST_BIN=${FROZEN_RUST_BIN}"
+  echo "fixed_env.L18_DUAL_RUST_APP_BIN=${FROZEN_RUST_APP_BIN}"
   echo "check.port.9090=$(check_port_free 9090 && echo free || echo busy)"
   echo "check.port.19090=$(check_port_free 19090 && echo free || echo busy)"
   echo "check.port.11810=$(check_port_free 11810 && echo free || echo busy)"
@@ -202,16 +211,25 @@ for p in 9090 19090 11810 11811 29090 12810; do
 done
 
 echo "[L18 fixed-profile] building rust parity runtime..."
-cargo build --release -p app --features parity --bin run >/dev/null
+cargo build --release -p app --features parity --bin run --bin app >/dev/null
 
 if [[ ! -x "${RUST_BIN}" ]]; then
   echo "rust binary not executable after parity build: ${RUST_BIN}" >&2
+  exit 1
+fi
+if [[ ! -x "${RUST_APP_BIN}" ]]; then
+  echo "rust app binary not executable after parity build: ${RUST_APP_BIN}" >&2
   exit 1
 fi
 if [[ ! -x "${ROOT_DIR}/scripts/l18/build_go_oracle.sh" ]]; then
   echo "go oracle build script is missing or not executable" >&2
   exit 1
 fi
+
+mkdir -p "${FROZEN_BIN_DIR}"
+cp "${RUST_BIN}" "${FROZEN_RUST_BIN}"
+cp "${RUST_APP_BIN}" "${FROZEN_RUST_APP_BIN}"
+chmod +x "${FROZEN_RUST_BIN}" "${FROZEN_RUST_APP_BIN}"
 
 cat > "${CANARY_CFG}" <<'JSON'
 {
@@ -278,6 +296,7 @@ fi
 export ROOT_DIR GUI_APP RUN_ROOT RUN_DIR STATUS_FILE
 export PRECHECK_TXT CONFIG_FREEZE_JSON RUST_BIN REQUIRE_DOCKER WORKSPACE_TEST_THREADS
 export ALLOW_EXISTING_SYSTEM_PROXY ALLOW_REAL_PROXY_COEXIST CANARY_API_URL CANARY_PID_FILE
+export FROZEN_RUST_BIN FROZEN_RUST_APP_BIN
 export FIXED_PROFILE="${PROFILE}"
 python3 - <<'PY'
 import json
@@ -300,7 +319,9 @@ payload = {
         "L18_RUST_BUILD_ENABLED": "0",
         "L18_GUI_GO_BUILD_ENABLED": "0",
         "L18_GUI_RUST_BUILD_ENABLED": "0",
-        "L18_RUST_BIN": os.environ["RUST_BIN"],
+        "L18_RUST_BIN": os.environ["FROZEN_RUST_BIN"],
+        "L18_DUAL_RUST_BIN": os.environ["FROZEN_RUST_BIN"],
+        "L18_DUAL_RUST_APP_BIN": os.environ["FROZEN_RUST_APP_BIN"],
     },
     "runtime_policy": {
         "require_docker": int(os.environ["REQUIRE_DOCKER"]),
@@ -346,7 +367,9 @@ env -u PROFILE \
   L18_PERF_GATE_REPORT="${RUN_DIR}/perf/perf_gate.json" \
   L18_PERF_WORK_DIR="${RUN_DIR}/perf/work" \
   L18_RUST_BUILD_ENABLED=0 \
-  L18_RUST_BIN="${RUST_BIN}" \
+  L18_RUST_BIN="${FROZEN_RUST_BIN}" \
+  L18_DUAL_RUST_BIN="${FROZEN_RUST_BIN}" \
+  L18_DUAL_RUST_APP_BIN="${FROZEN_RUST_APP_BIN}" \
   L18_GUI_REAL_REPORT_JSON="${GUI_DIR}/gui_real_cert.json" \
   L18_GUI_REAL_REPORT_MD="${GUI_DIR}/gui_real_cert.md" \
   L18_GUI_REAL_RUNTIME_LOG_DIR="${GUI_DIR}/runtime" \

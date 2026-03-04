@@ -14,59 +14,45 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
-### 🚨 P0 最高优先级（2026-02-27 18:05）
+### 🚨 P0 最高优先级（2026-03-04 18:14）
 
-- **状态**：✅ P0 已收口（已恢复 nightly 固定入口发车）
-- 已完成：
-  1. `p2_protocol_unit_vmess`：case 测试目标修正。
-  2. `p2_subscription_truncated_base64`：断言语义改为“预期报错”口径。
-  3. `launch_kernel` 前置：可执行回退、占位 API 清理、超时后子进程清理、ready_path 修正。
-  4. `interop-lab case run`：任一 case 失败即非 0，并输出失败清单。
-- 收口证据（stress 批次）：
-  - `reports/l18/batches/20260227T091322Z-l18-stress-48x/stress_short_48x/r1/interop_artifacts`
-  - 83 case latest snapshot 聚合：`assertion_fail=0`、`unexpected_launch_kernel_fail=0`（已达门槛）
-- 已执行 nightly 固定入口：
-  - `scripts/l18/run_capstone_fixed_profile.sh --profile nightly ...`
-  - batch: `reports/l18/batches/20260227T094308Z-l18-nightly-preflight`
-  - 当前结论：前置 gate 已出现 FAIL（见下文根因），不影响“P0 已清零”的判断。
+- **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
+- 本轮已完成：
+  1. `scripts/l18/run_capstone_fixed_profile.sh` 已使用批次私有冻结二进制（`runtime_bin/{run,app}`）驱动 capstone/dual，规避 `target/` 产物波动。
+  2. 短路批次（`L18_CANARY_HOURS=0`）已完整收口：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight`。
+  3. `summary.tsv` + `l18_capstone_status.json` 完整生成，`overall=PASS`，`workspace/fmt/clippy/gui/canary/dual/perf` 全 `PASS`。
+  4. 未复现 `clash_http_e2e::test_healthcheck_proxy_provider` 失败；`dual/perf` 未再出现 `target/release/run` 丢失。
+  5. `precheck.txt` 固定环境记录已对齐冻结路径（`fixed_env.L18_RUST_BIN/L18_DUAL_RUST_BIN/L18_DUAL_RUST_APP_BIN`）。
+- 关键证据：
+  - 短路汇总：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight/capstone_nightly_fixedcfg/summary.tsv`
+  - 短路状态：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight/capstone_nightly_fixedcfg/r1/l18_capstone_status.json`
+  - capstone 标准输出：`reports/l18/batches/20260304T093912Z-l18-nightly-preflight/capstone_nightly_fixedcfg/r1/capstone.stdout.log`
 
-### 🆕 本轮阻塞根因（非 P0，2026-02-27）
+### 🆕 当前执行主线（2026-03-04 18:14）
 
-1. `stress_short_48x` 收尾失败（流程级）
-   - dual 子阶段：`DUAL_NIGHTLY` 失败（`run_fail_count=5`）。
-   - 收尾脚本：canary 汇总 JSON 解析异常（`JSONDecodeError`）。
-   - 证据：`.../stress_short_48x/r1/stress.main.log`，`.../dual_kernel/.../summary.json`。
-2. nightly 固定入口失败（认证级）
-   - `WORKSPACE_TEST`：`crates/sb-api/tests/clash_http_e2e.rs::test_healthcheck_proxy_provider` 失败。
-   - `FMT`：本轮 interop 改动未格式化导致 `cargo fmt --check` 失败（现已执行 `cargo fmt` 修复）。
-   - `CLIPPY`：`app/src/reqwest_http.rs` 的 `new_without_default`/`missing_const_for_fn`（现已修复）。
-   - 证据：`.../capstone_nightly_fixedcfg/r1/capstone.stdout.log` / `capstone.stderr.log`。
-
-### 🆕 下一步任务（Next）
-
-1. 重新执行 nightly 固定入口（建议短路 canary 时长，仅验证前置 gate 全绿）：
-   - 目标：`workspace_test/fmt/clippy/gui` 全 PASS。
-2. 修复 `stress_short_48x` 的流程级问题：
-   - dual `run_fail_count=5` 根因归并（profile/case 与 dual 运行语义对齐）。
-   - canary 汇总脚本容错（忽略非 JSON 行或提前过滤）。
-3. 前置稳定后，再执行正式 24h nightly 与 7d certify。
-
-### 文档状态同步（2026-02-27 18:20）
-
-- 本次同步到 P0 收口后的最新执行状态，涉及批次：
-  - 基线：`reports/l18/batches/20260227T054642Z-l18-stress-48x`
-  - P0 收口 stress：`reports/l18/batches/20260227T091322Z-l18-stress-48x`
-  - nightly 固定入口：`reports/l18/batches/20260227T094308Z-l18-nightly-preflight`
-- 分阶段状态：
-  - `workspace`：nightly preflight 历史失败项已修复并完成针对性回归，待整链复跑确认。
-  - `gui`：PASS（stress 路径可用）。
-  - `canary`：FAIL（收尾汇总 JSON 解析异常）。
-  - `dual`：FAIL（`run_fail_count=5`）。
-  - `perf`：PASS。
-- 下一执行主线：
-  - 先修复 dual + canary 流程问题并重跑 30min stress 48x。
-  - 再执行 nightly 固定入口前置 gate 全绿验证。
-  - 全绿后进入 `nightly 24h` 与 `certify 7d` 正式认证。
+1. `nightly 24h` 已启动并在运行：
+   - batch: `reports/l18/batches/20260304T101430Z-l18-nightly-24h`
+   - 主进程: `pid=31072`（`run_capstone_fixed_profile.sh`）
+   - 子进程: `pid=31170`（`l18_capstone.sh`）
+   - 日志:
+     - `reports/l18/batches/20260304T101430Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/capstone.stdout.log`
+     - `reports/l18/batches/20260304T101430Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/capstone.stderr.log`
+2. 进行中阶段快照（来自 `capstone.stdout.log`）：
+   - `preflight=PASS`
+   - `oracle=PASS`
+   - `boundaries=PASS`
+   - `parity=PASS`
+   - `workspace_test=PASS`
+   - `fmt=PASS`
+   - `clippy=PASS`
+   - `hot_reload=PASS`
+   - `signal=PASS`
+   - `gui_smoke=PASS`
+   - `canary=RUNNING`
+3. 下一动作：
+   - 持续监控 `20260304T101430Z-l18-nightly-24h`，完成后回填 `summary.tsv` + `l18_capstone_status.json`
+   - 若失败按日志修复并重跑短路，再次发车 24h
+   - 24h 全绿后发车 `certify 7d`
 
 ### L18 nightly/certify 固定配置执行器（2026-02-26）
 
