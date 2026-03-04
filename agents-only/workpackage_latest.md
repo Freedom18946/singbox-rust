@@ -1,11 +1,26 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 18:14
+> **最后更新**：2026-03-04 21:36
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 下一组规划：L19 事实收敛与能力实证（2026-03-04）
+
+- **触发来源**：`agents-only/第一轮审计意见.md` 已完成逐点复核并获确认。
+- **校准结论**：9 条问题中 `7 条成立 + 2 条部分成立 + 0 条不成立`。
+- **规划文档**：`agents-only/03-planning/13-L19-REALITY-ALIGNMENT-WORKPACKAGES.md`
+- **工作包总量**：16 WP（Batch A~E）
+- **主线目标**：
+  1. 建立 `capabilities.json` 单一事实源，统一文档口径。
+  2. 收敛 TUN/uTLS/ECH/QUIC-ECH 的运行能力探针与失败快报。
+  3. 强化架构边界门禁并补齐真实 TUN 数据面验证。
+  4. 将 GUI 兼容升级为 `/capabilities` + 合同测试的强契约模式。
+- **与 L18 关系**：L19 当前为“规划冻结，待执行”；不影响正在进行的 L18 nightly/certify 主线。
 
 ---
 

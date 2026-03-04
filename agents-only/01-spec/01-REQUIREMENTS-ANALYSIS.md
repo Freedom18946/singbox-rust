@@ -8,12 +8,14 @@
 
 ### 1.1 协议支持
 
-#### Inbound 协议（18/18 已对齐）
+#### Inbound 协议（18/18 已对齐，含 accepted limitations）
 | 协议 | 状态 | 备注 |
 |------|------|------|
 | SOCKS5, HTTP, Mixed | ✅ | 完整支持 |
 | Direct, DNS | ✅ | 完整支持 |
-| TUN, Redirect, TProxy | ✅ | Linux/macOS 支持 |
+| TUN (`tun.macos.tun2socks`) | ◐ | scaffold 模式默认；能力状态见 `docs/capabilities.md` |
+| Redirect (`inbound.redirect`) | ◐ | Linux 代码存在，当前构建未接线，运行时报 clear error |
+| TProxy (`inbound.tproxy`) | ◐ | Linux 代码存在，当前构建未接线，运行时报 clear error |
 | Shadowsocks, VMess, VLESS, Trojan | ✅ | 多用户支持 |
 | Naive, ShadowTLS, AnyTLS | ✅ | 完整支持 |
 | Hysteria v1, Hysteria2, TUIC | ✅ | QUIC 支持 |

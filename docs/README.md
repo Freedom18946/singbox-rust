@@ -79,7 +79,7 @@ docs/
 
 ### Development
 
-- [Architecture Index](04-development/architecture/README.md)
+- [Architecture Index](04-development/architecture/overview.md)
 - [Contributing Index](04-development/contributing/README.md)
 - [Build System Index](04-development/build-system/README.md)
 - [Quality Gates Index](04-development/quality-gates/README.md)

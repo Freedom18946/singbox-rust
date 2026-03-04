@@ -16,6 +16,30 @@
 
 > `PASS-ENV-LIMITED` 仅用于“环境不可得”场景，不可替代功能缺陷。
 
+### 0.1 能力三态模型（L19 Batch A）
+
+为统一“实现状态/可运行状态/证据状态”的口径，`reports/capabilities.json` 采用以下四元字段：
+
+| 字段 | 枚举 |
+|------|------|
+| `compile_state` | `supported | gated_off | stubbed | absent` |
+| `runtime_state` | `verified | unverified | unsupported | blocked` |
+| `verification_state` | `e2e_verified | integration_verified | compile_only | no_evidence` |
+| `overall_state` | `implemented_verified | implemented_unverified | scaffold_stub` |
+
+`overall_state` 判定规则（按优先级）：
+
+1. `compile_state in {stubbed, absent}` -> `scaffold_stub`
+2. `runtime_state in {unsupported, blocked}` -> `scaffold_stub`
+3. `verification_state in {e2e_verified, integration_verified}` 且 `runtime_state=verified` -> `implemented_verified`
+4. 其他可运行但证据不足 -> `implemented_unverified`
+
+证据最小要求：
+
+- 每个 capability 至少 1 条 `evidence`。
+- 单条格式固定：`{kind,path,line,note}`。
+- `kind` 推荐值：`code | test | doc | ci`。
+
 ---
 
 ## 1. 功能对齐验收（Parity Acceptance）

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 bash scripts/ci/tasks/docs-links.sh
+python3 scripts/capabilities/generate.py --out reports/capabilities.json
+bash scripts/check_claims.sh
 bash scripts/ci/accept.sh
 
 # 按平台判定门槛

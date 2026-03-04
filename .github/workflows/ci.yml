@@ -70,6 +70,15 @@ jobs:
       - name: Check parity build
         run: cargo check -p app --features parity
 
+  claim-guard:
+    name: Claim Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check documentation claims
+        run: bash scripts/check_claims.sh
+
   boundaries:
     name: Architecture Boundaries
     runs-on: ubuntu-latest

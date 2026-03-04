@@ -1,8 +1,10 @@
 # Project Status
 
-**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100% acceptance baseline (209/209 closed)
+**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100% acceptance baseline (209/209 closed, includes accepted limitations)
 
 **🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**
+
+> Capability facts (tri-state + evidence) are maintained in **[capabilities.md](capabilities.md)** and generated from `reports/capabilities.json`.
 
 > **Latest Update (2026-02-26)**: L18 `daily` convergence now has same-config 3-round continuous PASS evidence. Baseline dual run `20260226T015945Z-daily-dc0b3935` is clean (`run_fail_count=0`, `diff_fail_count=0`), and batch `capstone_daily_convergence_v7_timeout120` finished `r1/r2/r3` all `overall=PASS` with `gui/canary/dual/perf` all PASS (`docker=WARN` non-blocking), plus GUI `/proxies` Go+Rust=`200` in all rounds.
 > **L18 Policy Shift (effective 2026-02-24)**: `gui/canary` are mandatory blocking gates; `docker` defaults to non-blocking in local mode (`--require-docker 0`) and can be switched to blocking for CI/certify mode (`--require-docker 1`).
@@ -14,6 +16,10 @@
 - ✅ **Outbound Protocols**: **19/19 (100% of Go protocols)**; de-scoped: ShadowsocksR, Tailscale
 - ✅ **DNS Transports**: **11/11 aligned** (feature-gated)
 - ✅ **VPN Endpoints**: WireGuard userspace endpoint (boringtun + TUN, feature-gated; UDP listen/reserved unsupported)
+- ⚠️ **TUN/redirect/tproxy tri-state**: see
+  [`tun.macos.tun2socks`](capabilities.md#capability-tun-macos-tun2socks),
+  [`inbound.redirect`](capabilities.md#capability-inbound-redirect),
+  [`inbound.tproxy`](capabilities.md#capability-inbound-tproxy)
 - ✅ **Services**: DERP **mesh networking complete**; V2Ray API gRPC parity partial; Resolved/SSMAPI feature-gated
 - 📚 **Migration Guide**: [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) - Complete Go → Rust migration reference
 
@@ -34,17 +40,17 @@
 - ✅ **Sprint 2** (2025-10-02): macOS native process matching (**149.4x faster**), cardinality monitoring
 - ✅ **Sprint 3** (2025-10-02): Windows native process matching, VLESS support
 - ✅ **Sprint 4** (2025-10-02): Constant-time credential verification, comprehensive module documentation
-- ✅ **Sprint 5** (2025-10-09): **TLS INFRASTRUCTURE COMPLETE** - REALITY, ECH, Hysteria v1/v2, TUIC, Direct inbound
+- ✅ **Sprint 5** (2025-10-09): TLS infrastructure milestone (REALITY + ECH path landed; detailed state tracked in `capabilities`)
 - ✅ **Sprint 6** (2025-11): **100% PROTOCOL COVERAGE** - All 36 protocols complete, DERP mesh networking, Migration guide
 
 ## Core Features Complete
 
 - 🎉 **Protocol Coverage**: 100% of Go protocols (18 inbound, 19 outbound) vs sing-box 1.12.14
-- 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS (unblocks 15+ protocols)
+- 🎉 **TLS Infrastructure**: REALITY, Standard TLS, ECH path (tri-state tracked in `capabilities`)
 - 🎉 **Transport Layer**: WebSocket, HTTP/2, HTTPUpgrade, gRPC, Multiplex, QUIC
 - 🎉 **CLI Tools**: 100% complete (check, route, ruleset, geoip, geosite, format, merge, tools)
 - 🎉 **Mesh Networking**: DERP server federation with cross-region relay
-- 🔐 **Advanced TLS**: REALITY handshake, ECH with HPKE, Standard TLS 1.2/1.3
+- 🔐 **Advanced TLS**: REALITY handshake, Standard TLS 1.2/1.3, ECH TCP=`implemented_unverified`, QUIC ECH=`scaffold_stub`, uTLS=`implemented_unverified`
 - 🚀 **Cross-platform**: Native process matching - macOS (149.4x), Windows (20-50x)
 - 📊 **Observability**: Prometheus metrics with cardinality monitoring, Selector/URLTest health metrics
 - 🔐 **Security**: Timing-attack resistant credential verification

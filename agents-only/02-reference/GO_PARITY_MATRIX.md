@@ -19,7 +19,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | **Total Target** | **209** |
 | **Closed（含 Accepted Limitation / Won't Fix 决策项）** | **209** |
 | **Remaining** | **0** |
-| **Current Parity** | **100% (209/209, acceptance baseline)** |
+| **Current Parity** | **100% (209/209, acceptance baseline, includes accepted limitations)** |
 
 ### Recalibration Scope
 
@@ -90,7 +90,7 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 - **SSMAPI (PX-011)**: per-endpoint binding + tracker wiring + API behavior parity + cache format/cadence aligned; Shadowsocks inbound multi-user auth + runtime user updates + traffic tracking wired; unit tests added.
 
 **Resolved Gaps (2026-01-01; still resolved)**:
-- **TUN Inbound**: Full session management (1574 lines) in `crates/sb-adapters/src/inbound/tun/mod.rs` with platform config, TCP handling, and stack integration.
+- **TUN Inbound**: Session management implementation (1574 lines) landed in `crates/sb-adapters/src/inbound/tun/mod.rs`; runtime wiring status follows capability tri-state (`tun.macos.tun2socks`).
 - **DNS Rule Engine**: Complete geosite/geoip matching (1044 lines) in `crates/sb-core/src/dns/rule_engine.rs`.
 - **CacheFile Service**: Persistence via sled (575 lines) in `crates/sb-core/src/services/cache_file.rs` with FakeIP/RDRC/Clash mode/selection/rule_set storage.
 - **Router Rules**: All 38 rule items verified complete.
@@ -143,7 +143,7 @@ Notes:
 
 ## Protocol Parity Matrix
 
-### Inbound Protocols (19 → 18 aligned + 0 partial + 1 Rust-only)
+### Inbound Protocols (19 → aligned baseline with accepted limitations; see capability tri-state)
 
 | # | Go Protocol | Go File | Rust File | Status | Notes |
 |---|-------------|---------|-----------|--------|-------|
@@ -155,14 +155,14 @@ Notes:
 | 6 | hysteria2 | `protocol/hysteria2/inbound.go` | `inbound/hysteria2.rs` | ✅ | Full (feature-gated) |
 | 7 | mixed | `protocol/mixed/inbound.go` | `inbound/mixed.rs` | ✅ | HTTP+SOCKS (feature-gated) |
 | 8 | naive | `protocol/naive/inbound.go` | `inbound/naive.rs` | ✅ | Full (feature-gated) |
-| 9 | redirect | `protocol/redirect/redirect.go` | `inbound/redirect.rs` | ✅ | Linux (feature-gated) |
+| 9 | redirect | `protocol/redirect/redirect.go` | `inbound/redirect.rs` | ◐ | Linux code exists; current build keeps runtime as unsupported (`inbound.redirect`) |
 | 10 | shadowsocks | `protocol/shadowsocks/inbound*.go` | `inbound/shadowsocks.rs` | ✅ | Multi-user (feature-gated) |
 | 11 | shadowtls | `protocol/shadowtls/inbound.go` | `inbound/shadowtls.rs` | ✅ | Full (feature-gated) |
 | 12 | socks | `protocol/socks/inbound.go` | `inbound/socks/` | ✅ | SOCKS4/5 (feature-gated) |
-| 13 | tproxy | `protocol/redirect/tproxy.go` | `inbound/tproxy.rs` | ✅ | Linux (feature-gated) |
+| 13 | tproxy | `protocol/redirect/tproxy.go` | `inbound/tproxy.rs` | ◐ | Linux code exists; current build keeps runtime as unsupported (`inbound.tproxy`) |
 | 14 | trojan | `protocol/trojan/inbound.go` | `inbound/trojan.rs` | ✅ | Full (feature-gated) |
 | 15 | tuic | `protocol/tuic/inbound.go` | `inbound/tuic.rs` | ✅ | QUIC (feature-gated) |
-| 16 | tun | `protocol/tun/inbound.go` | `inbound/tun/` | ✅ | Session management + forwarding implemented (feature-gated) |
+| 16 | tun | `protocol/tun/inbound.go` | `inbound/tun/` | ◐ | Session management implemented; runtime path remains scaffold/stub in default wiring (`tun.macos.tun2socks`) |
 | 17 | vless | `protocol/vless/inbound.go` | `inbound/vless.rs` | ✅ | Full (feature-gated) |
 | 18 | vmess | `protocol/vmess/inbound.go` | `inbound/vmess.rs` | ✅ | Full (feature-gated) |
 | 19 | ssh | *(Go: outbound only)* | `inbound/ssh.rs` | ➕ | Rust extension |

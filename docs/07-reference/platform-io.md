@@ -2,6 +2,11 @@
 
 This page summarizes platform-specific IO capabilities (TUN/wintun and transparent proxy inbounds like redirect/tproxy), their current status in the Rust implementation, and suggested alternatives when unavailable.
 
+Authoritative capability IDs and evidence:
+- [`tun.macos.tun2socks`](../capabilities.md#capability-tun-macos-tun2socks)
+- [`inbound.redirect`](../capabilities.md#capability-inbound-redirect)
+- [`inbound.tproxy`](../capabilities.md#capability-inbound-tproxy)
+
 Status legend: ✅ Supported • ◐ Partial • ✗ Not available
 
 ## Summary
@@ -42,4 +47,3 @@ This is intentional per WS9: document platform differences, provide safe default
 
 - For Linux transparent proxying today, prefer `type: tun` with appropriate route rules. When adapter wiring is enabled in a future milestone, `redirect`/`tproxy` will be turned on under Linux with clear capability checks.
 - WinTun requires driver installation and Administrator privileges. The current Windows implementation is a placeholder; use SOCKS/HTTP inbounds as a fallback.
-

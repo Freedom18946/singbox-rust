@@ -2,8 +2,9 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **🚀 Production Ready**: **100% Parity (Acceptance Baseline)** with upstream sing-box 1.12.14 (**209/209 closed**, includes accepted limitations).
-> See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for authoritative matrix and [NEXT_STEPS.md](NEXT_STEPS.md) for current milestones.
+> **Acceptance Baseline**: **209/209 closed** (includes accepted limitations) against upstream sing-box 1.12.14.
+> Capability facts, evidence, and claim mapping are defined in **[docs/capabilities.md](docs/capabilities.md)** (`reports/capabilities.json`).
+> See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for matrix context and [NEXT_STEPS.md](NEXT_STEPS.md) for milestones.
 
 ---
 
@@ -96,8 +97,9 @@ See [Getting Started](docs/00-getting-started/) for detailed instructions.
 
 ### 🔐 Security & TLS
 - **REALITY Protocol**: Anti-censorship TLS fingerprinting
-- **ECH (Encrypted Client Hello)**: SNI encryption
-- **uTLS Fingerprinting**: 27+ browser fingerprints (Chrome, Firefox, Safari, Edge)
+- **ECH (TCP client)**: `implemented_unverified` ([capability: `tls.ech.tcp`](docs/capabilities.md#capability-tls-ech-tcp))
+- **QUIC ECH**: `scaffold_stub` ([capability: `tls.ech.quic`](docs/capabilities.md#capability-tls-ech-quic))
+- **uTLS Fingerprinting**: `implemented_unverified` ([capability: `tls.utls`](docs/capabilities.md#capability-tls-utls))
 - **ACME Auto-Renewal**: Let's Encrypt/ZeroSSL with HTTP-01/DNS-01 challenges
 
 ### 🌐 Protocols (36 Total)
@@ -108,6 +110,11 @@ See [Getting Started](docs/00-getting-started/) for detailed instructions.
 | VMess, VLESS | Hysteria2, TUIC | QUIC, TCP, UDP |
 | Hysteria2, TUIC | WireGuard, SSH | REALITY, ECH |
 | WireGuard, TUN | Direct, Block | simple-obfs |
+
+TUN/redirect/tproxy are tracked via tri-state capabilities, not unconditional completion claims:
+[`tun.macos.tun2socks`](docs/capabilities.md#capability-tun-macos-tun2socks),
+[`inbound.redirect`](docs/capabilities.md#capability-inbound-redirect),
+[`inbound.tproxy`](docs/capabilities.md#capability-inbound-tproxy).
 
 ### 📊 Observability
 - **Prometheus Metrics**: Connection counts, latency histograms

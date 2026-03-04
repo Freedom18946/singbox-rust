@@ -160,4 +160,4 @@ crates/sb-core/src/endpoint/tailscale.rs (1108 行)
 
 - [TAILSCALE_RESEARCH.md](./TAILSCALE_RESEARCH.md) - 前期研究记录
 - [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md) - 功能对齐矩阵
-- [VERIFICATION_RECORD.md](../VERIFICATION_RECORD.md) - 验证记录
+- [VERIFICATION_RECORD.md](../reports/VERIFICATION_RECORD.md) - 验证记录

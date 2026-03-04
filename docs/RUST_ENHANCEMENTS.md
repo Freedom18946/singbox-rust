@@ -28,9 +28,10 @@
 ### TLS Stack
 | Feature | Status | Notes |
 | --- | --- | --- |
-| **REALITY** | ✅ Complete | Native implementation in `sb-tls` |
-| **ECH** | ✅ Complete | Encrypted Client Hello support |
-| **uTLS Fingerprinting** | ✅ 27+ fingerprints | Chrome, Firefox, Safari, Edge, Random |
+| **REALITY** | `implemented_verified` | Native implementation in `sb-tls` |
+| **ECH (TCP client)** | `implemented_unverified` | Capability: [`tls.ech.tcp`](capabilities.md#capability-tls-ech-tcp) |
+| **ECH (QUIC)** | `scaffold_stub` | Capability: [`tls.ech.quic`](capabilities.md#capability-tls-ech-quic) |
+| **uTLS Fingerprinting** | `implemented_unverified` | Capability: [`tls.utls`](capabilities.md#capability-tls-utls), rustls constraints apply |
 | **BadTLS Detection** | ✅ Passive analyzer | `TlsAnalyzer` for issue detection |
 | **JA3 Fingerprinting** | ✅ Complete | Inline MD5 implementation |
 

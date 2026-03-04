@@ -204,4 +204,17 @@
 
 ---
 
-*最后更新：2026-02-12（L14 Capstone 完成，新增 L5-L14 模式）*
+### 能力口径与宣称门禁模式（L19）
+
+| 模式 | 说明 |
+|------|------|
+| 能力四元字段 | `compile_state/runtime_state/verification_state/overall_state` 必须同时给出，避免“单状态”误导 |
+| overall 优先级折叠 | 优先命中 `stubbed/absent` 与 `unsupported/blocked`，命中即 `scaffold_stub`；仅 runtime=verified 且有集成或 e2e 证据时为 `implemented_verified` |
+| 证据最小基线 | 每个 capability 至少 1 条 `evidence{kind,path,line,note}`；缺证据应落入 `compile_only` 或 `no_evidence` |
+| 文档事实源单点 | `README/STATUS` 只引用 `docs/capabilities.md`，不再独立定义完成度事实 |
+| 高风险宣称必映射 | `high-risk claim` 必须绑定 capability id；未映射或映射到非 `implemented_verified` 由 CI claim guard 阻断 |
+| 209/209 口径 | 可保留，但必须附带 `includes accepted limitations` 并可追溯至 capabilities 报告 |
+
+---
+
+*最后更新：2026-03-04（新增 L19 能力口径与宣称门禁模式）*

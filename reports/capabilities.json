@@ -1,0 +1,219 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-03-04T14:04:43.395325Z",
+  "source_commit": "2792acd",
+  "profile": "docs-only",
+  "capabilities": [
+    {
+      "id": "project.acceptance.baseline",
+      "name": "Acceptance baseline closure accounting",
+      "compile_state": "supported",
+      "runtime_state": "verified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_verified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "agents-only/02-reference/GO_PARITY_MATRIX.md",
+          "line": 22,
+          "note": "Baseline closure uses accepted limitations accounting."
+        }
+      ]
+    },
+    {
+      "id": "tun.macos.tun2socks",
+      "name": "macOS tun2socks data-plane path",
+      "compile_state": "stubbed",
+      "runtime_state": "unsupported",
+      "verification_state": "compile_only",
+      "overall_state": "scaffold_stub",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "Cargo.toml",
+          "line": 110,
+          "note": "Workspace overrides tun2socks with local stub crate."
+        },
+        {
+          "kind": "code",
+          "path": "vendor/tun2socks/src/lib.rs",
+          "line": 14,
+          "note": "Stub returns Ok(()) immediately and does not forward traffic."
+        }
+      ]
+    },
+    {
+      "id": "inbound.redirect",
+      "name": "Redirect inbound wiring",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "verification_state": "no_evidence",
+      "overall_state": "scaffold_stub",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/07-reference/platform-io.md",
+          "line": 16,
+          "note": "Documented as code exists but not wired in this build."
+        },
+        {
+          "kind": "code",
+          "path": "app/src/inbound_starter.rs",
+          "line": 222,
+          "note": "Runtime warns redirect is not supported in this build."
+        }
+      ]
+    },
+    {
+      "id": "inbound.tproxy",
+      "name": "TProxy inbound wiring",
+      "compile_state": "gated_off",
+      "runtime_state": "unsupported",
+      "verification_state": "no_evidence",
+      "overall_state": "scaffold_stub",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/07-reference/platform-io.md",
+          "line": 17,
+          "note": "Documented as code exists but not wired in this build."
+        },
+        {
+          "kind": "code",
+          "path": "app/src/inbound_starter.rs",
+          "line": 222,
+          "note": "Runtime warns tproxy is not supported in this build."
+        }
+      ]
+    },
+    {
+      "id": "tls.utls",
+      "name": "uTLS-style fingerprinting",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_unverified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-tls/src/utls.rs",
+          "line": 605,
+          "note": "Unsupported suites are skipped; behavior is best-effort."
+        },
+        {
+          "kind": "doc",
+          "path": "crates/sb-tls/README.md",
+          "line": 139,
+          "note": "Documented as partial parity due to rustls limitations."
+        }
+      ]
+    },
+    {
+      "id": "tls.ech.tcp",
+      "name": "TLS (TCP) client-side ECH",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_unverified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-transport/src/tls.rs",
+          "line": 671,
+          "note": "Rustls ECH mode is wired for TLS client config path."
+        },
+        {
+          "kind": "doc",
+          "path": "crates/sb-tls/docs/ech_usage.md",
+          "line": 185,
+          "note": "Documented as client-side TLS integration only."
+        }
+      ]
+    },
+    {
+      "id": "tls.ech.quic",
+      "name": "QUIC ECH alignment",
+      "compile_state": "supported",
+      "runtime_state": "unsupported",
+      "verification_state": "no_evidence",
+      "overall_state": "scaffold_stub",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-transport/src/quic.rs",
+          "line": 231,
+          "note": "Current QUIC path is explicitly marked as simplified integration point."
+        },
+        {
+          "kind": "doc",
+          "path": "crates/sb-tls/docs/ech_usage.md",
+          "line": 186,
+          "note": "ECH usage doc marks QUIC ECH as pending work."
+        }
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "source_path": "README.md",
+      "line": 5,
+      "text": "> **Acceptance Baseline**: **209/209 closed** (includes accepted limitations) against upstream sing-box 1.12.14.",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    },
+    {
+      "source_path": "docs/STATUS.md",
+      "line": 3,
+      "text": "**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100% acceptance baseline (209/209 closed, includes accepted limitations)",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    },
+    {
+      "source_path": "docs/STATUS.md",
+      "line": 5,
+      "text": "**🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    },
+    {
+      "source_path": "docs/STATUS.md",
+      "line": 44,
+      "text": "- ✅ **Sprint 6** (2025-11): **100% PROTOCOL COVERAGE** - All 36 protocols complete, DERP mesh networking, Migration guide",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    },
+    {
+      "source_path": "docs/STATUS.md",
+      "line": 85,
+      "text": "To build with **full Go feature parity**, use the `parity` feature flag:",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    },
+    {
+      "source_path": "agents-only/02-reference/GO_PARITY_MATRIX.md",
+      "line": 22,
+      "text": "| **Current Parity** | **100% (209/209, acceptance baseline, includes accepted limitations)** |",
+      "risk_level": "medium",
+      "linked_capability_ids": [
+        "project.acceptance.baseline"
+      ]
+    }
+  ]
+}
