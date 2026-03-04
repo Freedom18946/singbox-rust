@@ -4,6 +4,7 @@
 #   ./check-boundaries.sh            # 严格模式（默认）：任何违规返回非零
 #   ./check-boundaries.sh --strict   # 严格模式（显式）
 #   ./check-boundaries.sh --report   # 报告模式：仅输出，不失败
+#   ./check-boundaries.sh --v7-only  # 仅执行迁移断言（V7）
 #
 # 覆盖违规类别：
 #   V1(Web) V2(TLS/QUIC) V3(协议实现) V4(sb-adapters 反向依赖) V5(subscribe)
@@ -11,18 +12,22 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="${BOUNDARY_PROJECT_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$PROJECT_ROOT"
 
 REPORT_ONLY=false
+RUN_V7_ONLY=false
 case "${1:-}" in
     ""|"--strict")
         ;;
     "--report")
         REPORT_ONLY=true
         ;;
+    "--v7-only")
+        RUN_V7_ONLY=true
+        ;;
     *)
-        echo "Usage: $0 [--strict|--report]" >&2
+        echo "Usage: $0 [--strict|--report|--v7-only]" >&2
         exit 2
         ;;
 esac
@@ -87,6 +92,9 @@ is_line_feature_gated() {
     done
     return 1
 }
+
+# ─── V1: sb-core Web 框架 ──────────────────────────────
+if ! $RUN_V7_ONLY; then
 
 # ─── V1: sb-core Web 框架 ──────────────────────────────
 echo "── V1: sb-core Web 框架依赖 ──"
@@ -494,10 +502,12 @@ else
     fail
 fi
 
+fi
+
 # ─── V7: L20 迁移追踪断言（防回流） ───────────────────────
 echo "── V7: L20 migration assertions ──"
 
-MIGRATION_ASSERT_FILE="agents-only/06-scripts/l20-migration-allowlist.txt"
+MIGRATION_ASSERT_FILE="${BOUNDARY_MIGRATION_ASSERT_FILE:-agents-only/06-scripts/l20-migration-allowlist.txt}"
 if [ ! -f "$MIGRATION_ASSERT_FILE" ]; then
     echo "  FAIL: missing migration assertion file: $MIGRATION_ASSERT_FILE"
     fail

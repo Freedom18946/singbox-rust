@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l20.3.2-wave1-v1|||L20.3.2 migration assertion allowlist version
+VERSION|l21.1-wave2-v1|||L21 wave#2 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -16,3 +16,11 @@ forbid|W1-03-no-tlsclient-call-dot|crates/sb-core/src/dns/dot.rs|TlsClient::from
 require|W1-01-core-direct-bridge|crates/sb-adapters/src/register.rs|build_core_direct_connector|Direct outbound must route through wave#1 bridge helper
 require|W1-02-trait-direct-tailscale|crates/sb-adapters/src/outbound/tailscale.rs|Arc<dyn CoreOutboundConnector>|Tailscale direct fallback must stay trait-based
 require|W1-03-dot-via-sb-transport|crates/sb-core/src/dns/dot.rs|TlsDialer::from_env|DoT path must use sb-transport TlsDialer
+
+forbid|W2-01-no-runtime-direct-placeholder|crates/sb-core/src/runtime/supervisor.rs|crate::outbound::direct_connector::DirectConnector::new\(\)|Runtime outbound manager must not fallback to sb-core direct placeholder per tag
+require|W2-01-runtime-connector-bridge|crates/sb-core/src/runtime/supervisor.rs|struct ManagerConnectorBridge|Runtime outbound manager must register bridge connector wrapper
+require|W2-01-runtime-use-bridge-connector|crates/sb-core/src/runtime/supervisor.rs|inner: connector.clone\(\)|Runtime outbound manager must carry assembled bridge connector into manager
+
+forbid|W2-02-no-core-tlsclient-diag|app/src/bin/diag.rs|use sb_core::transport::tls::TlsClient;|TLS diagnostics path must not use sb-core legacy TlsClient
+require|W2-02-diag-uses-sb-transport-tls|app/src/bin/diag.rs|use sb_transport::\{webpki_roots_config, DialError, Dialer as _, TlsDialer\};|TLS diagnostics must depend on sb-transport dialer stack
+require|W2-02-diag-sni-override|app/src/bin/diag.rs|sni_override: Some\(sni.clone\(\)\)|TLS diagnostics must preserve explicit SNI override semantics

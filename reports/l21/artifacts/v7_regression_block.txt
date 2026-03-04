@@ -1,0 +1,11 @@
+=== 依赖边界检查 (2026-03-05 02:04) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.1-wave2-v1
+  FAIL: [W2-01-no-runtime-direct-placeholder] forbidden pattern matched in crates/sb-core/src/runtime/supervisor.rs :: Runtime outbound manager must not fallback to sb-core direct placeholder per tag
+  FAIL: 1/14 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+tmp_root=/tmp/l21-v7-proof.Uxsgl1
+exit_code=1
