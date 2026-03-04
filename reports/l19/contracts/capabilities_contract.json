@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-03-04T15:53:02.149364+00:00",
+  "suite": "sb-api.capabilities_contract_suite",
+  "status": "PASS",
+  "exit_code": 0,
+  "command": "cargo test -p sb-api capabilities_contract_suite -- --nocapture",
+  "log_file": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l19/contracts/capabilities_contract.log"
+}
