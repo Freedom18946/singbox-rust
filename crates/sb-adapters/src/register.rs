@@ -2228,28 +2228,10 @@ fn build_direct_outbound(
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
     use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
-    use sb_core::outbound::DirectConnector;
     use std::net::SocketAddr;
     use tokio::net::UdpSocket;
 
-    // Create direct outbound instance with options
-    let direct = DirectConnector::with_options(
-        param.connect_timeout,
-        param.bind_interface.clone(),
-        param.routing_mark,
-        param.reuse_addr,
-        param.tcp_fast_open,
-        param.tcp_multi_path,
-    );
-    let direct_arc = Arc::new(direct);
-
-    // Wrapper connector that implements sb_core::adapter::OutboundConnector
-    // DirectConnector already implements AsyncOutboundConnector (sb_core::outbound::traits::OutboundConnector)
-    // AND sb_core::adapter::OutboundConnector.
-    // So we can use it directly if we cast it or wrap it.
-    // Since DirectConnector is in sb_core, and we are in sb_adapters, we can use it.
-    // However, the return type expects Arc<dyn OutboundConnector>.
-    // DirectConnector implements it.
+    let direct_arc = build_core_direct_connector(param);
 
     // UDP Factory implementation
     #[derive(Debug)]
@@ -2299,6 +2281,52 @@ fn build_direct_outbound(
     }
 
     Some((direct_arc, Some(Arc::new(DirectUdpFactory))))
+}
+
+#[derive(Clone, Debug)]
+struct CoreDirectConnector {
+    inner: crate::outbound::direct::DirectOutbound,
+    timeout: Option<std::time::Duration>,
+}
+
+#[async_trait::async_trait]
+impl OutboundConnector for CoreDirectConnector {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        use sb_core::net::Address;
+        use sb_core::pipeline::Outbound;
+
+        let fut = self.inner.connect(Address::Domain(host.to_string(), port));
+        if let Some(timeout) = self.timeout {
+            match tokio::time::timeout(timeout, fut).await {
+                Ok(res) => res,
+                Err(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("direct outbound timeout: {host}:{port}"),
+                )),
+            }
+        } else {
+            fut.await
+        }
+    }
+}
+
+fn build_core_direct_connector(param: &OutboundParam) -> Arc<dyn OutboundConnector> {
+    if param.bind_interface.is_some()
+        || param.routing_mark.is_some()
+        || param.reuse_addr.is_some()
+        || param.tcp_fast_open.is_some()
+        || param.tcp_multi_path.is_some()
+    {
+        warn!(
+            target: "sb_adapters::register",
+            "direct outbound bridge ignores bind/routing socket options during L20.3.1 wave#1"
+        );
+    }
+
+    Arc::new(CoreDirectConnector {
+        inner: crate::outbound::direct::DirectOutbound::new(),
+        timeout: param.connect_timeout,
+    })
 }
 
 fn build_block_outbound(
@@ -2507,16 +2535,7 @@ fn build_tailscale_outbound(
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
     use crate::outbound::tailscale::{TailscaleConfig, TailscaleConnector};
-    use sb_core::outbound::direct_connector::DirectConnector;
-
-    let direct = DirectConnector::with_options(
-        param.connect_timeout,
-        param.bind_interface.clone(),
-        param.routing_mark,
-        param.reuse_addr,
-        param.tcp_fast_open,
-        param.tcp_multi_path,
-    );
+    let direct = build_core_direct_connector(param);
 
     // NOTE: Tailscale-specific fields are defined in EndpointIR, not OutboundIR.
     // For now, use defaults with outbound name as tag.
@@ -2526,7 +2545,7 @@ fn build_tailscale_outbound(
         ..Default::default()
     };
 
-    let connector = TailscaleConnector::new(Arc::new(direct), cfg);
+    let connector = TailscaleConnector::new(direct, cfg);
     Some((Arc::new(connector), None))
 }
 
@@ -2536,23 +2555,12 @@ fn build_tailscale_outbound(
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::direct_connector::DirectConnector;
-
     warn!(
         target: "sb_adapters::tailscale",
         "tailscale outbound not built; falling back to direct connector"
     );
 
-    let direct = DirectConnector::with_options(
-        param.connect_timeout,
-        param.bind_interface.clone(),
-        param.routing_mark,
-        param.reuse_addr,
-        param.tcp_fast_open,
-        param.tcp_multi_path,
-    );
-
-    Some((Arc::new(direct), None))
+    Some((build_core_direct_connector(param), None))
 }
 
 #[cfg(feature = "adapter-hysteria")]

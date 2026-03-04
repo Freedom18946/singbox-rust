@@ -23,7 +23,7 @@ use std::time::Duration;
 use crate::outbound::prelude::*;
 use sb_core::{
     adapter::OutboundConnector as CoreOutboundConnector,
-    outbound::direct_connector::DirectConnector, services::tailscale::coordinator::Coordinator,
+    services::tailscale::coordinator::Coordinator,
 };
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
@@ -163,7 +163,7 @@ impl TailscaleConfig {
 #[derive(Debug)]
 pub struct TailscaleConnector {
     /// Fallback direct connector.
-    direct: Arc<DirectConnector>,
+    direct: Arc<dyn CoreOutboundConnector>,
     /// Tailscale configuration.
     config: TailscaleConfig,
     /// Detected connection mode.
@@ -193,7 +193,7 @@ impl Clone for TailscaleConnector {
 
 impl TailscaleConnector {
     /// Create a new TailscaleConnector.
-    pub fn new(direct: Arc<DirectConnector>, config: TailscaleConfig) -> Self {
+    pub fn new(direct: Arc<dyn CoreOutboundConnector>, config: TailscaleConfig) -> Self {
         let tag = config.tag.as_deref().unwrap_or("tailscale");
         let mode = config.mode();
 

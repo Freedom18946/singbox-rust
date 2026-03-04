@@ -1,10 +1,9 @@
 #![cfg(all(feature = "dns_dot", feature = "tls_rustls"))]
-use crate::transport::tls::TlsClient;
 use anyhow::Result;
+use sb_transport::{Dialer as _, TcpDialer, TlsDialer};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub async fn query_dot_once(
     addr: SocketAddr,
@@ -13,16 +12,21 @@ pub async fn query_dot_once(
     timeout_ms: u64,
 ) -> Result<(Vec<IpAddr>, Option<u32>)> {
     let req = crate::dns::udp::build_query(host, qtype)?;
-    let tcp =
-        tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(addr)).await??;
-    let tls = TlsClient::from_env();
-    let mut s = tls.connect(host.to_string(), tcp).await?;
+    let mut tcp = TcpDialer::default();
+    tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+    let tls = TlsDialer::from_env(tcp, sb_transport::webpki_roots_config());
+    let mut s = tokio::time::timeout(
+        Duration::from_millis(timeout_ms),
+        tls.connect(&addr.ip().to_string(), addr.port()),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("dot tls connect timeout"))??;
+
     // DoT: 2 bytes length prefix
     let mut buf = Vec::with_capacity(2 + req.len());
     buf.extend_from_slice(&(req.len() as u16).to_be_bytes());
     buf.extend_from_slice(&req);
     tokio::time::timeout(Duration::from_millis(timeout_ms), async {
-        use tokio::io::AsyncWriteExt;
         s.write_all(&buf).await?;
         s.flush().await?;
         Ok::<_, anyhow::Error>(())
