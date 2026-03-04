@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 00:43
-> **当前阶段**：L20 执行中（A1+A2+A3 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 00:56
+> **当前阶段**：L20 执行中（A1+A2+A3 + B1 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
@@ -26,7 +26,26 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1+A2+A3 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1+A2+A3 + B1 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.2.1 落地（2026-03-05 00:56）
+
+**状态**：✅ `L20.2.1` 完成
+
+**L20.2.1（ECH provider 决策外显化）**：
+1. `crates/sb-api/src/clash/handlers.rs`：`/capabilities` 新增 `tls_provider` 顶层字段。
+2. `tls_provider` 输出 `status/requested/effective/source/install/fallback_reason/evidence_capability_ids`。
+3. provider 决策来源于 `reports/capabilities.json` 的 `tls.ech.tcp/quic` runtime probe details，并执行一致性判定（`ok/mismatch/unavailable`）。
+4. 验证报告：`reports/l20/L20_2_1_ECH_PROVIDER_DECISION_EXPOSE.md`。
+
+**最小验证**：
+1. `cargo test -p sb-api capabilities_provider_tests -- --nocapture`
+2. `cargo test -p sb-api capabilities_contract_suite -- --nocapture`
+3. `cargo test -p sb-api test_get_capabilities -- --nocapture`
+4. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+5. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 

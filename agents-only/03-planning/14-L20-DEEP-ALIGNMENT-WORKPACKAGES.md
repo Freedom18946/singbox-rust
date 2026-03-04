@@ -1,7 +1,7 @@
 # L20 详细工作包规划：深水区能力实证与迁移收敛
 
-状态：🟡 执行中（A1+A2+A3 + C1 wave#1+C2+C3 已落地）
-更新：2026-03-05 00:43 CST
+状态：🟡 执行中（A1+A2+A3 + B1 + C1 wave#1+C2+C3 已落地）
+更新：2026-03-05 00:56 CST
 
 ## Context
 
@@ -183,6 +183,7 @@
 - ✅ `L20.1.1`：已落地 `scripts/test/tls_fingerprint_baseline.sh`，并产出 `reports/security/tls_fingerprint_baseline.json`（覆盖 `chrome/firefox/randomized` 三组）。
 - ✅ `L20.1.2`：已将 `tls.utls` 细化为 profile 子能力（`chrome/firefox/randomized`），并在 claim guard 中增加 profile 级硬链接校验，详见 `reports/l20/L20_1_2_UTLS_PROFILE_CAPABILITIES.md`。
 - ✅ `L20.1.3`：启动探针已输出 `tls.utls` 的 `requested_profile/effective_profile/fallback_reason`，并回填到 `reports/runtime/capability_probe.json` 与 `reports/capabilities.json`，详见 `reports/l20/L20_1_3_UTLS_EFFECTIVE_PROFILE_PROBE.md`。
+- ✅ `L20.2.1`：`SB_TLS_PROVIDER` 决策已外显到 `/capabilities`（`tls_provider` 字段）并增加一致性判定与测试，详见 `reports/l20/L20_2_1_ECH_PROVIDER_DECISION_EXPOSE.md`。
 - ✅ `L20.3.1`（wave#1）：已完成 3 项迁移子项（`direct` builder 收敛、`tailscale` direct 类型解耦、DoT 迁至 `sb-transport`），详见 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md` 的 `3A` 节。
 - ✅ `L20.3.2`：`check-boundaries.sh --strict` 已新增 V7 迁移追踪断言并启用版本化 allowlist（8 条断言），详见 `reports/l20/L20_3_2_STRICT_GATE_MIGRATION_ASSERTIONS.md`。
 - ✅ `L20.3.3`：迁移矩阵已回填 `MIG-01~MIG-06` 当前状态（`open/in_progress`）并对齐 wave#1 + V7 门禁证据，详见 `reports/l20/L20_3_3_MIGRATION_MATRIX_BACKFILL.md`。
