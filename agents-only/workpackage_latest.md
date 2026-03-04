@@ -1,11 +1,39 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 01:48
-> **当前阶段**：L20 收口完成（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1+D2+D3 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 02:08
+> **当前阶段**：L21 起步执行完成（wave#2 已落地：MIG-01/MIG-05 迁移推进 + strict gate allowlist 升级 + GUI negotiation 失败样例可复算）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=14 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#2 起步落地（2026-03-05 02:08）
+
+**状态**：✅ `MIG-01/MIG-05 wave#2` 完成；✅ strict gate allowlist 下一版完成；✅ GUI negotiation 失败样例 fixture 完成
+
+1. **迁移 wave#2（优先 MIG-01 / MIG-05）**：
+   - `crates/sb-core/src/runtime/supervisor.rs`：runtime manager 不再注册 `sb-core::DirectConnector` 占位，改为 bridge 实际 outbound connector（经 `ManagerConnectorBridge` 适配），避免回流到 core 直连实现。
+   - `app/src/bin/diag.rs`：TLS 诊断链路由 `sb_core::transport::tls::TlsClient` 迁移到 `sb_transport::{TcpDialer,TlsDialer}`（保留 `sni_override`）。
+   - `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`：新增 `3C`，回填 `W2-01/W2-02`。
+2. **strict gate allowlist 升级（V7 下一版）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 版本升级到 `l21.1-wave2-v1`，断言扩展到 14 条（新增 W2-01/W2-02 forbid/require）。
+   - `agents-only/06-scripts/check-boundaries.sh` 新增 `--v7-only` 与 root/allowlist 覆盖变量，支持回流阻断可复算证明。
+   - 回流阻断证据：`reports/l21/artifacts/v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期失败，`exit_code=1`）。
+3. **GUI negotiation gate 失败场景可复算样例**（静态，不跑 L18 运行流程）：
+   - 新增判定脚本：`scripts/l18/capability_negotiation_eval.py`（`gui_real_cert.sh` 已改为调用）。
+   - 新增 fixture 与静态校验：`scripts/l18/fixtures/capability_negotiation/*.json`、`scripts/l18/capability_negotiation_fixture_check.sh`。
+   - 失败样例覆盖：`required_status_not_ok`、`breaking_changes_non_empty`，结果产物：`reports/l21/artifacts/gui_capability_negotiation/*.result.json`。
+
+**最小验证**：
+1. `cargo check -p sb-core`
+2. `cargo check -p app --bin diag`
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (14 assertions)`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见证据）
+5. `bash -n scripts/l18/gui_real_cert.sh`
+6. `python3 -m py_compile scripts/l18/capability_negotiation_eval.py`
+7. `bash scripts/l18/capability_negotiation_fixture_check.sh`
 
 ---
 
