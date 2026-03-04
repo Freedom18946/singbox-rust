@@ -1,6 +1,6 @@
 # Capability Ledger
 
-This is the authoritative human-readable entry for capability states in Batch A.
+This is the authoritative human-readable entry for capability states.
 Machine source of truth: [`reports/capabilities.json`](../reports/capabilities.json) (schema: [`scripts/capabilities/schema.json`](../scripts/capabilities/schema.json)).
 
 ## Metadata Contract
@@ -12,6 +12,7 @@ Machine source of truth: [`reports/capabilities.json`](../reports/capabilities.j
 - `source_commit` (git sha)
 - `profile` (`docs-only` in Batch A)
 - `capabilities[]`
+- `runtime_probe` (optional, present when runtime probe report is available)
 - `claims[]`
 
 Generate command:
@@ -19,6 +20,37 @@ Generate command:
 ```bash
 python3 scripts/capabilities/generate.py --out reports/capabilities.json
 ```
+
+Optional runtime probe (Batch B):
+
+```bash
+SB_CAPABILITY_PROBE_ONLY=1 \
+SB_CAPABILITY_PROBE_OUT=reports/runtime/capability_probe.json \
+cargo run -q -p app --features parity --bin run -- \
+  -c examples/quick-start/01-minimal.json
+
+python3 scripts/capabilities/generate.py \
+  --out reports/capabilities.json \
+  --probe-report reports/runtime/capability_probe.json
+```
+
+Clash API contract endpoint (L19.5.1):
+
+```bash
+curl -s http://127.0.0.1:9090/capabilities | jq
+```
+
+Response contract includes:
+
+- `schema_version`
+- `compat_version`
+- `clash_api_compat_version`
+- `capability_matrix[]`
+
+Provider selection for startup probe/runtime:
+
+- `SB_TLS_PROVIDER=ring|aws-lc|auto` (default `auto` -> `ring`)
+- If `aws-lc` is requested without build feature `tls-provider-aws-lc`, startup falls back to `ring` and logs fallback reason.
 
 ## State Model
 
@@ -28,6 +60,7 @@ Capability fields:
 - `runtime_state`: `verified | unverified | unsupported | blocked`
 - `verification_state`: `e2e_verified | integration_verified | compile_only | no_evidence`
 - `overall_state`: `implemented_verified | implemented_unverified | scaffold_stub`
+- `runtime_probe` (optional): startup probe snapshot `{compile_state,runtime_state,requested,summary,details}`
 
 `overall_state` priority rules:
 
@@ -49,6 +82,9 @@ Minimum evidence rule:
 | [`inbound.redirect`](#capability-inbound-redirect) | `scaffold_stub` | `true` |
 | [`inbound.tproxy`](#capability-inbound-tproxy) | `scaffold_stub` | `true` |
 | [`tls.utls`](#capability-tls-utls) | `implemented_unverified` | `true` |
+| [`tls.utls.chrome`](#capability-tls-utls-chrome) | `implemented_unverified` | `true` |
+| [`tls.utls.firefox`](#capability-tls-utls-firefox) | `implemented_unverified` | `true` |
+| [`tls.utls.randomized`](#capability-tls-utls-randomized) | `implemented_unverified` | `true` |
 | [`tls.ech.tcp`](#capability-tls-ech-tcp) | `implemented_unverified` | `true` |
 | [`tls.ech.quic`](#capability-tls-ech-quic) | `scaffold_stub` | `true` |
 
@@ -68,7 +104,8 @@ Minimum evidence rule:
 - `runtime_state`: `unsupported`
 - `verification_state`: `compile_only`
 - `overall_state`: `scaffold_stub`
-- Evidence anchors: `Cargo.toml`, `vendor/tun2socks/src/lib.rs`
+- Evidence anchors: `crates/sb-adapters/Cargo.toml`, `vendor/tun2socks/src/lib.rs`
+- Build switch: `--features tun2socks-stub` (default parity path) or `--features tun2socks-real`
 
 ### <a id="capability-inbound-redirect"></a>`inbound.redirect`
 
@@ -93,6 +130,35 @@ Minimum evidence rule:
 - `verification_state`: `integration_verified`
 - `overall_state`: `implemented_unverified`
 - Evidence anchors: `crates/sb-tls/src/utls.rs`, `crates/sb-tls/README.md`
+- Sub-capabilities: `tls.utls.chrome`, `tls.utls.firefox`, `tls.utls.randomized`
+
+### <a id="capability-tls-utls-chrome"></a>`tls.utls.chrome`
+
+- `parent_capability_id`: `tls.utls`
+- `compile_state`: `supported`
+- `runtime_state`: `unverified`
+- `verification_state`: `integration_verified`
+- `overall_state`: `implemented_unverified`
+- Evidence anchors: `crates/sb-tls/src/utls.rs`, `reports/security/tls_fingerprint_baseline.json`
+
+### <a id="capability-tls-utls-firefox"></a>`tls.utls.firefox`
+
+- `parent_capability_id`: `tls.utls`
+- `compile_state`: `supported`
+- `runtime_state`: `unverified`
+- `verification_state`: `integration_verified`
+- `overall_state`: `implemented_unverified`
+- Evidence anchors: `crates/sb-tls/src/utls.rs`, `reports/security/tls_fingerprint_baseline.json`
+
+### <a id="capability-tls-utls-randomized"></a>`tls.utls.randomized`
+
+- `parent_capability_id`: `tls.utls`
+- `compile_state`: `supported`
+- `runtime_state`: `unverified`
+- `verification_state`: `integration_verified`
+- `overall_state`: `implemented_unverified`
+- Evidence anchors: `crates/sb-tls/src/utls.rs`, `reports/security/tls_fingerprint_baseline.json`
+- Current behavior note: Rust `randomized` maps to stable template; Go `randomized` is seed-driven randomized spec.
 
 ### <a id="capability-tls-ech-tcp"></a>`tls.ech.tcp`
 
@@ -108,7 +174,9 @@ Minimum evidence rule:
 - `runtime_state`: `unsupported`
 - `verification_state`: `no_evidence`
 - `overall_state`: `scaffold_stub`
-- Evidence anchors: `crates/sb-transport/src/quic.rs`, `crates/sb-tls/docs/ech_usage.md`
+- Evidence anchors: `crates/sb-config/src/validator/v2.rs`, `crates/sb-transport/src/quic.rs`, `crates/sb-tls/docs/ech_usage.md`
+- Guardrail: QUIC+ECH configs are rejected during validation with a deterministic error (no silent fallback).
+- Suggested path: use TCP-based TLS ECH outbounds (`vless`/`vmess`/`trojan` over `tcp+tls`).
 
 ## Claims Contract
 

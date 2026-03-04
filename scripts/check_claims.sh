@@ -56,6 +56,18 @@ def classify_risk(text: str) -> str | None:
     return None
 
 
+def expected_utls_profile_ids(text: str) -> list[str]:
+    lower = text.lower()
+    expected: list[str] = []
+    if re.search(r"\bchrome(?:\d+|_psk|_pq|_auto)?\b", lower):
+        expected.append("tls.utls.chrome")
+    if re.search(r"\bfirefox(?:\d+|_auto)?\b", lower):
+        expected.append("tls.utls.firefox")
+    if re.search(r"\brandom(?:ized|_chrome|_firefox)?\b", lower):
+        expected.append("tls.utls.randomized")
+    return expected
+
+
 def scan_claims() -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for rel in doc_files:
@@ -127,6 +139,15 @@ for claim in scanned_claims:
 
     if claim["risk_level"] != "high":
         continue
+
+    if re.search(r"\butls\b", str(claim["text"]), re.IGNORECASE) or re.search(
+        r"fingerprint", str(claim["text"]), re.IGNORECASE
+    ):
+        for expected_id in expected_utls_profile_ids(str(claim["text"])):
+            if expected_id not in linked_ids:
+                high_risk_errors.append(
+                    f"{claim['source_path']}:{claim['line']} missing profile-linked capability {expected_id}"
+                )
 
     for cap_id in linked_ids:
         overall_state = capabilities[cap_id].get("overall_state")

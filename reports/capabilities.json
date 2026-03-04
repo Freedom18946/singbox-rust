@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-03-04T14:04:43.395325Z",
-  "source_commit": "2792acd",
+  "generated_at": "2026-03-04T16:31:44.704512Z",
+  "source_commit": "5b21b3c",
   "profile": "docs-only",
   "capabilities": [
     {
@@ -32,17 +32,28 @@
       "evidence": [
         {
           "kind": "code",
-          "path": "Cargo.toml",
-          "line": 110,
-          "note": "Workspace overrides tun2socks with local stub crate."
+          "path": "crates/sb-adapters/Cargo.toml",
+          "line": 127,
+          "note": "macOS tun path defaults to stub tun2socks mode unless real mode is requested."
         },
         {
           "kind": "code",
           "path": "vendor/tun2socks/src/lib.rs",
-          "line": 14,
-          "note": "Stub returns Ok(()) immediately and does not forward traffic."
+          "line": 7,
+          "note": "Shim exposes stub/real mode; default mode is stub unless real feature is enabled."
         }
-      ]
+      ],
+      "runtime_probe": {
+        "compile_state": "stubbed",
+        "runtime_state": "unsupported",
+        "requested": false,
+        "summary": "tun2socks is compiled in stub mode.",
+        "details": {
+          "feature_tun2socks_real": "no",
+          "feature_tun2socks_stub": "yes",
+          "tun2socks_mode": "stub"
+        }
+      }
     },
     {
       "id": "inbound.redirect",
@@ -65,7 +76,14 @@
           "line": 222,
           "note": "Runtime warns redirect is not supported in this build."
         }
-      ]
+      ],
+      "runtime_probe": {
+        "compile_state": "gated_off",
+        "runtime_state": "unsupported",
+        "requested": false,
+        "summary": "redirect inbound runtime path is not wired in this build.",
+        "details": {}
+      }
     },
     {
       "id": "inbound.tproxy",
@@ -88,7 +106,14 @@
           "line": 222,
           "note": "Runtime warns tproxy is not supported in this build."
         }
-      ]
+      ],
+      "runtime_probe": {
+        "compile_state": "gated_off",
+        "runtime_state": "unsupported",
+        "requested": false,
+        "summary": "tproxy inbound runtime path is not wired in this build.",
+        "details": {}
+      }
     },
     {
       "id": "tls.utls",
@@ -111,6 +136,88 @@
           "line": 139,
           "note": "Documented as partial parity due to rustls limitations."
         }
+      ],
+      "runtime_probe": {
+        "compile_state": "supported",
+        "runtime_state": "unverified",
+        "requested": false,
+        "summary": "uTLS is compiled; no utls_fingerprint request detected in current config.",
+        "details": {
+          "feature_sb_tls": "yes",
+          "utls_request_count": "0"
+        }
+      }
+    },
+    {
+      "id": "tls.utls.chrome",
+      "parent_capability_id": "tls.utls",
+      "name": "uTLS chrome profile",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_unverified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-tls/src/utls.rs",
+          "line": 115,
+          "note": "Chrome profile aliases map to Chrome template in Rust implementation."
+        },
+        {
+          "kind": "report",
+          "path": "reports/security/tls_fingerprint_baseline.json",
+          "line": 7,
+          "note": "L20.1.1 baseline records Go vs Rust JA3/extension-order delta for chrome profile."
+        }
+      ]
+    },
+    {
+      "id": "tls.utls.firefox",
+      "parent_capability_id": "tls.utls",
+      "name": "uTLS firefox profile",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_unverified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-tls/src/utls.rs",
+          "line": 138,
+          "note": "Firefox aliases map to firefox_105 template in Rust implementation."
+        },
+        {
+          "kind": "report",
+          "path": "reports/security/tls_fingerprint_baseline.json",
+          "line": 140,
+          "note": "L20.1.1 baseline records Go vs Rust JA3/extension-order delta for firefox profile."
+        }
+      ]
+    },
+    {
+      "id": "tls.utls.randomized",
+      "parent_capability_id": "tls.utls",
+      "name": "uTLS randomized profile",
+      "compile_state": "supported",
+      "runtime_state": "unverified",
+      "verification_state": "integration_verified",
+      "overall_state": "implemented_unverified",
+      "accepted_limitation": true,
+      "evidence": [
+        {
+          "kind": "code",
+          "path": "crates/sb-tls/src/utls.rs",
+          "line": 12,
+          "note": "Randomized aliases currently map to stable chrome template in Rust implementation."
+        },
+        {
+          "kind": "report",
+          "path": "reports/security/tls_fingerprint_baseline.json",
+          "line": 275,
+          "note": "L20.1.1 baseline records deterministic randomized seed comparison for Go vs Rust."
+        }
       ]
     },
     {
@@ -125,8 +232,20 @@
         {
           "kind": "code",
           "path": "crates/sb-transport/src/tls.rs",
-          "line": 671,
+          "line": 673,
           "note": "Rustls ECH mode is wired for TLS client config path."
+        },
+        {
+          "kind": "code",
+          "path": "app/src/tls_provider.rs",
+          "line": 40,
+          "note": "TLS provider selection is centralized with deterministic fallback behavior."
+        },
+        {
+          "kind": "code",
+          "path": "app/src/run_engine.rs",
+          "line": 789,
+          "note": "Startup logs provider decision alongside ECH runtime probe status."
         },
         {
           "kind": "doc",
@@ -134,7 +253,21 @@
           "line": 185,
           "note": "Documented as client-side TLS integration only."
         }
-      ]
+      ],
+      "runtime_probe": {
+        "compile_state": "gated_off",
+        "runtime_state": "unsupported",
+        "requested": false,
+        "summary": "tls_ech feature is disabled in this build, ECH runtime is unavailable.",
+        "details": {
+          "ech_request_count": "0",
+          "feature_sb_tls": "yes",
+          "feature_tls_ech": "no",
+          "tls_provider": "ring",
+          "tls_provider_install": "installed",
+          "tls_provider_source": "default"
+        }
+      }
     },
     {
       "id": "tls.ech.quic",
@@ -147,6 +280,12 @@
       "evidence": [
         {
           "kind": "code",
+          "path": "crates/sb-config/src/validator/v2.rs",
+          "line": 1127,
+          "note": "Config validator hard-blocks QUIC+ECH to avoid silent fallback."
+        },
+        {
+          "kind": "code",
           "path": "crates/sb-transport/src/quic.rs",
           "line": 231,
           "note": "Current QUIC path is explicitly marked as simplified integration point."
@@ -157,7 +296,21 @@
           "line": 186,
           "note": "ECH usage doc marks QUIC ECH as pending work."
         }
-      ]
+      ],
+      "runtime_probe": {
+        "compile_state": "gated_off",
+        "runtime_state": "unsupported",
+        "requested": false,
+        "summary": "No QUIC + ECH request detected in current config.",
+        "details": {
+          "ech_request_count": "0",
+          "feature_tls_ech": "no",
+          "quic_requested": "no",
+          "tls_provider": "ring",
+          "tls_provider_install": "installed",
+          "tls_provider_source": "default"
+        }
+      }
     }
   ],
   "claims": [
@@ -215,5 +368,11 @@
         "project.acceptance.baseline"
       ]
     }
-  ]
+  ],
+  "runtime_probe": {
+    "source_path": "reports/runtime/capability_probe.json",
+    "generated_at": "2026-03-04T15:00:34Z",
+    "probe_mode": "startup-static",
+    "probe_count": 6
+  }
 }

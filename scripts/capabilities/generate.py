@@ -24,9 +24,16 @@ KNOWN_CAPABILITY_IDS = {
     "inbound.redirect",
     "inbound.tproxy",
     "tls.utls",
+    "tls.utls.chrome",
+    "tls.utls.firefox",
+    "tls.utls.randomized",
     "tls.ech.tcp",
     "tls.ech.quic",
 }
+
+DEFAULT_PROBE_REPORT_PATH = "reports/runtime/capability_probe.json"
+COMPILE_STATES = {"supported", "gated_off", "stubbed", "absent"}
+RUNTIME_STATES = {"verified", "unverified", "unsupported", "blocked"}
 
 HIGH_RISK_PATTERNS = [
     re.compile(r"production ready", re.IGNORECASE),
@@ -116,6 +123,12 @@ def map_claim_to_capabilities(text: str) -> list[str]:
 
     if re.search(r"\butls\b", lower) or "fingerprint" in lower:
         mapped.append("tls.utls")
+        if re.search(r"\bchrome(?:\d+|_psk|_pq|_auto)?\b", lower):
+            mapped.append("tls.utls.chrome")
+        if re.search(r"\bfirefox(?:\d+|_auto)?\b", lower):
+            mapped.append("tls.utls.firefox")
+        if re.search(r"\brandom(?:ized|_chrome|_firefox)?\b", lower):
+            mapped.append("tls.utls.randomized")
 
     if re.search(r"\bech\b", lower) and re.search(r"\bquic\b", lower):
         mapped.append("tls.ech.quic")
@@ -147,7 +160,66 @@ def git_short_sha(root: Path) -> str:
         return "unknown"
 
 
-def build_capabilities(root: Path) -> list[dict]:
+def _safe_compile_state(value: object) -> str:
+    if isinstance(value, str) and value in COMPILE_STATES:
+        return value
+    return "absent"
+
+
+def _safe_runtime_state(value: object) -> str:
+    if isinstance(value, str) and value in RUNTIME_STATES:
+        return value
+    return "unsupported"
+
+
+def _safe_probe_details(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, item in value.items():
+        if isinstance(key, str):
+            out[key] = str(item)
+    return out
+
+
+def load_runtime_probes(root: Path, probe_report: str) -> tuple[dict[str, dict], dict | None]:
+    probe_path = (root / probe_report).resolve()
+    if not probe_path.exists():
+        return {}, None
+
+    try:
+        payload = json.loads(probe_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"[capabilities] warning: failed to parse probe report {probe_report}: {exc}")
+        return {}, None
+
+    probe_map: dict[str, dict] = {}
+    for item in payload.get("probes", []):
+        if not isinstance(item, dict):
+            continue
+        cap_id = item.get("capability_id")
+        if not isinstance(cap_id, str):
+            continue
+        if cap_id not in KNOWN_CAPABILITY_IDS:
+            continue
+        probe_map[cap_id] = {
+            "compile_state": _safe_compile_state(item.get("compile_state")),
+            "runtime_state": _safe_runtime_state(item.get("runtime_state")),
+            "requested": bool(item.get("requested")),
+            "summary": str(item.get("summary", "")).strip(),
+            "details": _safe_probe_details(item.get("details")),
+        }
+
+    meta = {
+        "source_path": probe_report,
+        "generated_at": str(payload.get("generated_at", "")),
+        "probe_mode": str(payload.get("probe_mode", "")),
+        "probe_count": len(probe_map),
+    }
+    return probe_map, meta
+
+
+def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict]:
     def ev(kind: str, rel_path: str, needle: str, note: str) -> dict:
         line = locate_line(root / rel_path, needle)
         return {
@@ -186,15 +258,15 @@ def build_capabilities(root: Path) -> list[dict]:
             "evidence": [
                 ev(
                     "code",
-                    "Cargo.toml",
-                    "tun2socks = { path = \"vendor/tun2socks\" }",
-                    "Workspace overrides tun2socks with local stub crate.",
+                    "crates/sb-adapters/Cargo.toml",
+                    "tun_macos = [\"tun\", \"tun2socks-stub\"]",
+                    "macOS tun path defaults to stub tun2socks mode unless real mode is requested.",
                 ),
                 ev(
                     "code",
                     "vendor/tun2socks/src/lib.rs",
-                    "pub fn main_from_str",
-                    "Stub returns Ok(()) immediately and does not forward traffic.",
+                    "pub const BUILD_MODE",
+                    "Shim exposes stub/real mode; default mode is stub unless real feature is enabled.",
                 ),
             ],
         },
@@ -268,6 +340,78 @@ def build_capabilities(root: Path) -> list[dict]:
             ],
         },
         {
+            "id": "tls.utls.chrome",
+            "parent_capability_id": "tls.utls",
+            "name": "uTLS chrome profile",
+            "compile_state": "supported",
+            "runtime_state": "unverified",
+            "verification_state": "integration_verified",
+            "overall_state": "implemented_unverified",
+            "accepted_limitation": True,
+            "evidence": [
+                ev(
+                    "code",
+                    "crates/sb-tls/src/utls.rs",
+                    "\"chrome\"",
+                    "Chrome profile aliases map to Chrome template in Rust implementation.",
+                ),
+                ev(
+                    "report",
+                    "reports/security/tls_fingerprint_baseline.json",
+                    "\"profile\": \"chrome\"",
+                    "L20.1.1 baseline records Go vs Rust JA3/extension-order delta for chrome profile.",
+                ),
+            ],
+        },
+        {
+            "id": "tls.utls.firefox",
+            "parent_capability_id": "tls.utls",
+            "name": "uTLS firefox profile",
+            "compile_state": "supported",
+            "runtime_state": "unverified",
+            "verification_state": "integration_verified",
+            "overall_state": "implemented_unverified",
+            "accepted_limitation": True,
+            "evidence": [
+                ev(
+                    "code",
+                    "crates/sb-tls/src/utls.rs",
+                    "\"firefox\"",
+                    "Firefox aliases map to firefox_105 template in Rust implementation.",
+                ),
+                ev(
+                    "report",
+                    "reports/security/tls_fingerprint_baseline.json",
+                    "\"profile\": \"firefox\"",
+                    "L20.1.1 baseline records Go vs Rust JA3/extension-order delta for firefox profile.",
+                ),
+            ],
+        },
+        {
+            "id": "tls.utls.randomized",
+            "parent_capability_id": "tls.utls",
+            "name": "uTLS randomized profile",
+            "compile_state": "supported",
+            "runtime_state": "unverified",
+            "verification_state": "integration_verified",
+            "overall_state": "implemented_unverified",
+            "accepted_limitation": True,
+            "evidence": [
+                ev(
+                    "code",
+                    "crates/sb-tls/src/utls.rs",
+                    "Random",
+                    "Randomized aliases currently map to stable chrome template in Rust implementation.",
+                ),
+                ev(
+                    "report",
+                    "reports/security/tls_fingerprint_baseline.json",
+                    "\"profile\": \"randomized\"",
+                    "L20.1.1 baseline records deterministic randomized seed comparison for Go vs Rust.",
+                ),
+            ],
+        },
+        {
             "id": "tls.ech.tcp",
             "name": "TLS (TCP) client-side ECH",
             "compile_state": "supported",
@@ -281,6 +425,18 @@ def build_capabilities(root: Path) -> list[dict]:
                     "crates/sb-transport/src/tls.rs",
                     ".with_ech(ech_mode)",
                     "Rustls ECH mode is wired for TLS client config path.",
+                ),
+                ev(
+                    "code",
+                    "app/src/tls_provider.rs",
+                    "SB_TLS_PROVIDER",
+                    "TLS provider selection is centralized with deterministic fallback behavior.",
+                ),
+                ev(
+                    "code",
+                    "app/src/run_engine.rs",
+                    "tls provider decision",
+                    "Startup logs provider decision alongside ECH runtime probe status.",
                 ),
                 ev(
                     "doc",
@@ -299,6 +455,12 @@ def build_capabilities(root: Path) -> list[dict]:
             "overall_state": "scaffold_stub",
             "accepted_limitation": True,
             "evidence": [
+                ev(
+                    "code",
+                    "crates/sb-config/src/validator/v2.rs",
+                    "QUIC + ECH is not supported in the current Rust implementation",
+                    "Config validator hard-blocks QUIC+ECH to avoid silent fallback.",
+                ),
                 ev(
                     "code",
                     "crates/sb-transport/src/quic.rs",
@@ -321,6 +483,9 @@ def build_capabilities(root: Path) -> list[dict]:
             capability["runtime_state"],
             capability["verification_state"],
         )
+        probe = runtime_probes.get(capability["id"])
+        if probe:
+            capability["runtime_probe"] = probe
 
     return capabilities
 
@@ -362,6 +527,11 @@ def parse_args() -> argparse.Namespace:
         default="docs-only",
         help="Profile tag in report metadata",
     )
+    parser.add_argument(
+        "--probe-report",
+        default=DEFAULT_PROBE_REPORT_PATH,
+        help=f"Runtime probe report path (default: {DEFAULT_PROBE_REPORT_PATH})",
+    )
     return parser.parse_args()
 
 
@@ -369,15 +539,18 @@ def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[2]
     out_path = (root / args.out).resolve()
+    runtime_probes, runtime_probe_meta = load_runtime_probes(root, args.probe_report)
 
     payload = {
         "schema_version": "1.0.0",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source_commit": git_short_sha(root),
         "profile": args.profile,
-        "capabilities": build_capabilities(root),
+        "capabilities": build_capabilities(root, runtime_probes),
         "claims": extract_claims(root),
     }
+    if runtime_probe_meta:
+        payload["runtime_probe"] = runtime_probe_meta
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
