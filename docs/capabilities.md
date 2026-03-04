@@ -179,7 +179,7 @@ Minimum evidence rule:
 - `verification_state`: `no_evidence`
 - `overall_state`: `scaffold_stub`
 - Evidence anchors: `crates/sb-config/src/validator/v2.rs`, `crates/sb-transport/src/quic.rs`, `crates/sb-tls/docs/ech_usage.md`
-- Guardrail: QUIC+ECH configs are rejected during validation with a deterministic error (no silent fallback).
+- Guardrail: QUIC+ECH defaults to `experimental.quic_ech_mode=reject` (hard error); explicit `experimental` mode downgrades to warning for controlled interop tests.
 - Suggested path: use TCP-based TLS ECH outbounds (`vless`/`vmess`/`trojan` over `tcp+tls`).
 
 ## Claims Contract

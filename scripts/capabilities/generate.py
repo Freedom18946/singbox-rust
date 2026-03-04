@@ -459,7 +459,7 @@ def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict
                     "code",
                     "crates/sb-config/src/validator/v2.rs",
                     "QUIC + ECH is not supported in the current Rust implementation",
-                    "Config validator hard-blocks QUIC+ECH to avoid silent fallback.",
+                    "Config validator defaults to reject mode; explicit experimental mode allows QUIC+ECH with warning.",
                 ),
                 ev(
                     "code",

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-03-04T16:45:25.303167Z",
-  "source_commit": "5cb69bb",
+  "generated_at": "2026-03-04T17:09:12.839252Z",
+  "source_commit": "2d19315",
   "profile": "docs-only",
   "capabilities": [
     {
@@ -286,8 +286,8 @@
         {
           "kind": "code",
           "path": "crates/sb-config/src/validator/v2.rs",
-          "line": 1127,
-          "note": "Config validator hard-blocks QUIC+ECH to avoid silent fallback."
+          "line": 1171,
+          "note": "Config validator defaults to reject mode; explicit experimental mode allows QUIC+ECH with warning."
         },
         {
           "kind": "code",

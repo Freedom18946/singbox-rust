@@ -1006,7 +1006,91 @@ pub fn check_non_localhost_binding_warnings(doc: &Value) -> Vec<Value> {
 /// - ECH（encrypted_client_hello）配置（需要 feature flag）
 /// - REALITY TLS（已支持，信息通知）
 pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum QuicEchMode {
+        Reject,
+        Experimental,
+    }
+
+    fn ech_enabled(ech_val: &Value) -> bool {
+        match ech_val {
+            Value::Bool(b) => *b,
+            Value::Object(o) => o.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+            _ => false,
+        }
+    }
+
+    fn has_quic_token(value: Option<&Value>) -> bool {
+        match value {
+            Some(Value::String(s)) => s
+                .split(',')
+                .map(str::trim)
+                .any(|token| token.eq_ignore_ascii_case("quic")),
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|token| token.eq_ignore_ascii_case("quic")),
+            Some(Value::Object(map)) => map
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("quic")),
+            _ => false,
+        }
+    }
+
+    fn outbound_uses_quic(obj: &serde_json::Map<String, Value>) -> bool {
+        if obj.get("type").and_then(Value::as_str).is_some_and(|ty| {
+            ty.eq_ignore_ascii_case("tuic")
+                || ty.eq_ignore_ascii_case("hysteria")
+                || ty.eq_ignore_ascii_case("hysteria2")
+        }) {
+            return true;
+        }
+        if has_quic_token(obj.get("network")) || has_quic_token(obj.get("transport")) {
+            return true;
+        }
+        obj.get("udp_relay_mode")
+            .and_then(Value::as_str)
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("quic"))
+    }
+
+    fn read_quic_ech_mode(doc: &Value, issues: &mut Vec<Value>) -> QuicEchMode {
+        let Some(exp) = doc.get("experimental") else {
+            return QuicEchMode::Reject;
+        };
+        let Some(raw) = exp.get("quic_ech_mode") else {
+            return QuicEchMode::Reject;
+        };
+
+        let Some(mode) = raw.as_str() else {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                "/experimental/quic_ech_mode",
+                "experimental.quic_ech_mode must be a string: 'reject' or 'experimental'",
+                "set experimental.quic_ech_mode to 'reject' (default) or 'experimental'",
+            ));
+            return QuicEchMode::Reject;
+        };
+
+        match mode.trim().to_ascii_lowercase().as_str() {
+            "" | "reject" => QuicEchMode::Reject,
+            "experimental" => QuicEchMode::Experimental,
+            _ => {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::InvalidEnum,
+                    "/experimental/quic_ech_mode",
+                    "experimental.quic_ech_mode must be 'reject' or 'experimental'",
+                    "use 'reject' for production safety; use 'experimental' only for controlled tests",
+                ));
+                QuicEchMode::Reject
+            }
+        }
+    }
+
     let mut issues = Vec::new();
+    let quic_ech_mode = read_quic_ech_mode(doc, &mut issues);
 
     let outbounds = match doc.get("outbounds").and_then(|v| v.as_array()) {
         Some(arr) => arr,
@@ -1051,16 +1135,18 @@ pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
         }
 
         // Check ECH (encrypted_client_hello)
-        if let Some(ech_val) = obj.get("encrypted_client_hello").or_else(|| {
+        let ech_loc = if let Some(v) = obj.get("encrypted_client_hello") {
+            Some(("encrypted_client_hello", v))
+        } else if let Some(v) = obj.get("tls").and_then(|t| t.get("ech")) {
+            Some(("tls/ech", v))
+        } else {
             obj.get("tls")
-                .and_then(|t| t.get("ech"))
-                .or_else(|| obj.get("tls").and_then(|t| t.get("encrypted_client_hello")))
-        }) {
-            let ech_enabled = match ech_val {
-                Value::Bool(b) => *b,
-                Value::Object(o) => o.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                _ => false,
-            };
+                .and_then(|t| t.get("encrypted_client_hello"))
+                .map(|v| ("tls/encrypted_client_hello", v))
+        };
+
+        if let Some((ech_ptr_suffix, ech_val)) = ech_loc {
+            let ech_enabled = ech_enabled(ech_val);
             if ech_enabled {
                 issues.push(emit_issue(
                     "info",
@@ -1073,6 +1159,37 @@ pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
                     ),
                     "enable the 'tls_ech' feature flag at build time for ECH support",
                 ));
+
+                if outbound_uses_quic(obj) {
+                    match quic_ech_mode {
+                        QuicEchMode::Reject => {
+                            issues.push(emit_issue(
+                                "error",
+                                IssueCode::Conflict,
+                                &format!("/outbounds/{}/{}", i, ech_ptr_suffix),
+                                &format!(
+                                    "outbound '{}': QUIC + ECH is not supported in the current Rust implementation; \
+                                     configuration is rejected by default to avoid silent fallback",
+                                    outbound_tag
+                                ),
+                                "set experimental.quic_ech_mode='experimental' only for controlled interop tests, \
+                                 or use TCP-based TLS ECH outbounds",
+                            ));
+                        }
+                        QuicEchMode::Experimental => {
+                            issues.push(emit_issue(
+                                "warning",
+                                IssueCode::Conflict,
+                                &format!("/outbounds/{}/{}", i, ech_ptr_suffix),
+                                &format!(
+                                    "outbound '{}': QUIC + ECH is in experimental mode; runtime behavior may fail or change and should not be treated as production-ready",
+                                    outbound_tag
+                                ),
+                                "keep experimental scope small, capture handshake evidence, and prefer TCP+TLS ECH for production paths",
+                            ));
+                        }
+                    }
+                }
             }
         }
 
@@ -1124,7 +1241,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                 "/",
                 "schema load failed",
                 "internal",
-            )]
+            )];
         }
     };
     let mut issues = Vec::<Value>::new();
@@ -3891,19 +4008,15 @@ mod tests {
         let json = serde_json::json!({
             "schema_version": 2,
             "experimental": {
-                "feature_flag": true,
-                "nested": { "value": 42 }
+                "quic_ech_mode": "experimental"
             }
         });
 
         let ir = to_ir_v1(&json);
-        let _exp = ir
+        let exp = ir
             .experimental
             .expect("experimental block should be present");
-        // Note: The following assertions are commented out because ExperimentalIR
-        // is a struct, not a map. Access fields directly if needed.
-        // assert_eq!(exp["feature_flag"], serde_json::json!(true));
-        // assert_eq!(exp["nested"]["value"], serde_json::json!(42));
+        assert_eq!(exp.quic_ech_mode.as_deref(), Some("experimental"));
     }
 
     #[test]
@@ -4983,6 +5096,127 @@ mod tests {
     }
 
     #[test]
+    fn test_tls_quic_ech_reject_mode_emits_error() {
+        let doc = serde_json::json!({
+            "outbounds": [
+                {
+                    "type": "tuic",
+                    "tag": "quic-ech-out",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000000",
+                    "password": "secret",
+                    "tls": {
+                        "ech": { "enabled": true }
+                    }
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let blocked: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("error")
+                    && i["ptr"].as_str().is_some_and(|p| p.contains("/tls/ech"))
+            })
+            .collect();
+        assert!(
+            !blocked.is_empty(),
+            "QUIC + ECH should be hard-blocked, got: {:?}",
+            issues
+        );
+        let msg = blocked[0]["msg"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("QUIC + ECH") || msg.contains("QUIC"),
+            "error message should mention QUIC + ECH, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_tls_quic_ech_experimental_mode_emits_warning_not_error() {
+        let doc = serde_json::json!({
+            "experimental": {
+                "quic_ech_mode": "experimental"
+            },
+            "outbounds": [
+                {
+                    "type": "tuic",
+                    "tag": "quic-ech-out",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000000",
+                    "password": "secret",
+                    "tls": {
+                        "ech": { "enabled": true }
+                    }
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let warnings: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("warning")
+                    && i["ptr"].as_str().is_some_and(|p| p.contains("/tls/ech"))
+            })
+            .collect();
+        let errors: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("error")
+                    && i["ptr"].as_str().is_some_and(|p| p.contains("/tls/ech"))
+            })
+            .collect();
+
+        assert!(
+            !warnings.is_empty(),
+            "QUIC + ECH in experimental mode should emit warning, got: {:?}",
+            issues
+        );
+        assert!(
+            errors.is_empty(),
+            "QUIC + ECH in experimental mode should not emit hard error, got: {:?}",
+            issues
+        );
+    }
+
+    #[test]
+    fn test_tls_quic_ech_invalid_mode_emits_mode_error() {
+        let doc = serde_json::json!({
+            "experimental": {
+                "quic_ech_mode": "beta"
+            },
+            "outbounds": [
+                {
+                    "type": "tuic",
+                    "tag": "quic-ech-out",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000000",
+                    "password": "secret",
+                    "tls": {
+                        "ech": { "enabled": true }
+                    }
+                }
+            ]
+        });
+        let issues = check_tls_capabilities(&doc);
+        let mode_errors: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("error")
+                    && i["ptr"].as_str() == Some("/experimental/quic_ech_mode")
+            })
+            .collect();
+        assert!(
+            !mode_errors.is_empty(),
+            "invalid experimental.quic_ech_mode should emit explicit error, got: {:?}",
+            issues
+        );
+    }
+
+    #[test]
     fn test_tls_reality_emits_info() {
         let doc = serde_json::json!({
             "outbounds": [
@@ -5047,6 +5281,93 @@ mod tests {
         assert!(
             !tls_info.is_empty(),
             "validate_v2 should include TLS capability info from check_tls_capabilities"
+        );
+    }
+
+    #[test]
+    fn test_tls_quic_ech_integrated_in_validate_v2() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type": "tuic",
+                    "tag": "quic-ech-out",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000000",
+                    "password": "secret",
+                    "tls": {
+                        "ech": { "enabled": true }
+                    }
+                }
+            ]
+        });
+        let issues = validate_v2(&doc, true);
+        let blocked: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("error")
+                    && i["msg"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("QUIC + ECH") || m.contains("QUIC"))
+            })
+            .collect();
+        assert!(
+            !blocked.is_empty(),
+            "validate_v2 should include QUIC + ECH blocking error, got: {:?}",
+            issues
+        );
+    }
+
+    #[test]
+    fn test_tls_quic_ech_experimental_integrated_in_validate_v2() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "quic_ech_mode": "experimental"
+            },
+            "outbounds": [
+                {
+                    "type": "tuic",
+                    "tag": "quic-ech-out",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "00000000-0000-0000-0000-000000000000",
+                    "password": "secret",
+                    "tls": {
+                        "ech": { "enabled": true }
+                    }
+                }
+            ]
+        });
+        let issues = validate_v2(&doc, true);
+        let warned: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("warning")
+                    && i["msg"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("experimental mode"))
+            })
+            .collect();
+        let blocked: Vec<_> = issues
+            .iter()
+            .filter(|i| {
+                i["kind"].as_str() == Some("error")
+                    && i["msg"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("QUIC + ECH") || m.contains("QUIC"))
+            })
+            .collect();
+        assert!(
+            !warned.is_empty(),
+            "validate_v2 should include QUIC + ECH experimental warning, got: {:?}",
+            issues
+        );
+        assert!(
+            blocked.is_empty(),
+            "validate_v2 should not hard-block QUIC + ECH when experimental mode is set, got: {:?}",
+            issues
         );
     }
 

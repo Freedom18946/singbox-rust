@@ -207,6 +207,16 @@ singbox-rust generate ech-keypair
 - Server uses `private_key`
 - Clients use `config` (base64-encoded ECHConfigList)
 
+QUIC + ECH mode switch (L20.2.2):
+
+- Default: `experimental.quic_ech_mode: reject` (hard reject for QUIC+ECH config)
+- Experimental: `experimental.quic_ech_mode: experimental` (warning-only, for controlled interop testing)
+
+```yaml
+experimental:
+  quic_ech_mode: experimental
+```
+
 See [ECH Protocol Guide](../protocols/ech.md) for details.
 
 ---

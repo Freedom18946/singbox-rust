@@ -10,6 +10,11 @@ pub struct ExperimentalIR {
     pub v2ray_api: Option<V2RayApiIR>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug: Option<DebugIR>,
+    /// QUIC + ECH validation mode:
+    /// - `reject` (default): reject QUIC+ECH config to avoid silent fallback risks
+    /// - `experimental`: allow with warning for controlled interop experiments
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quic_ech_mode: Option<String>,
 }
 
 /// Cache file configuration.
