@@ -1,7 +1,7 @@
 # L20 详细工作包规划：深水区能力实证与迁移收敛
 
-状态：🟡 执行中（A1+A2+A3 + B1+B2 + C1 wave#1+C2+C3 已落地）
-更新：2026-03-05 01:09 CST
+状态：🟡 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 已落地）
+更新：2026-03-05 01:16 CST
 
 ## Context
 
@@ -185,6 +185,7 @@
 - ✅ `L20.1.3`：启动探针已输出 `tls.utls` 的 `requested_profile/effective_profile/fallback_reason`，并回填到 `reports/runtime/capability_probe.json` 与 `reports/capabilities.json`，详见 `reports/l20/L20_1_3_UTLS_EFFECTIVE_PROFILE_PROBE.md`。
 - ✅ `L20.2.1`：`SB_TLS_PROVIDER` 决策已外显到 `/capabilities`（`tls_provider` 字段）并增加一致性判定与测试，详见 `reports/l20/L20_2_1_ECH_PROVIDER_DECISION_EXPOSE.md`。
 - ✅ `L20.2.2`：QUIC+ECH 校验已升级为显式模式机（默认 `reject`，显式 `experimental` 警告放行，非法值显式报错），详见 `reports/l20/L20_2_2_QUIC_ECH_MODE_SWITCH.md`。
+- ✅ `L20.2.3`：最小互操作脚本已落地并产出 `tcp_ech`/`quic_ech(reject/experimental)` 三场景 PASS/FAIL 证据链，详见 `reports/l20/L20_2_3_ECH_INTEROP_MINIMAL.md`。
 - ✅ `L20.3.1`（wave#1）：已完成 3 项迁移子项（`direct` builder 收敛、`tailscale` direct 类型解耦、DoT 迁至 `sb-transport`），详见 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md` 的 `3A` 节。
 - ✅ `L20.3.2`：`check-boundaries.sh --strict` 已新增 V7 迁移追踪断言并启用版本化 allowlist（8 条断言），详见 `reports/l20/L20_3_2_STRICT_GATE_MIGRATION_ASSERTIONS.md`。
 - ✅ `L20.3.3`：迁移矩阵已回填 `MIG-01~MIG-06` 当前状态（`open/in_progress`）并对齐 wave#1 + V7 门禁证据，详见 `reports/l20/L20_3_3_MIGRATION_MATRIX_BACKFILL.md`。

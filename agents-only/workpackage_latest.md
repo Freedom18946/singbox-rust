@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 01:09
-> **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 01:16
+> **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
@@ -26,7 +26,28 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.2.3 落地（2026-03-05 01:16）
+
+**状态**：✅ `L20.2.3` 完成
+
+**L20.2.3（ECH 互操作最小证据链）**：
+1. 新增脚本：`scripts/test/ech_interop_minimal.sh`。
+2. 产物：`reports/security/ech_interop_minimal.json` + `reports/security/ech_interop_minimal_logs/`。
+3. 覆盖场景：
+   - `tcp_ech_pass`（PASS, error=0）
+   - `quic_ech_reject_fail`（FAIL 样例命中，error>0）
+   - `quic_ech_experimental_pass`（PASS, error=0, warning-only）
+4. 验证报告：`reports/l20/L20_2_3_ECH_INTEROP_MINIMAL.md`。
+
+**最小验证**：
+1. `scripts/test/ech_interop_minimal.sh`（`overall=PASS`，`case_count=3`）
+2. `python3 scripts/capabilities/generate.py --out reports/capabilities.json --probe-report reports/runtime/capability_probe.json`
+3. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+4. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 
