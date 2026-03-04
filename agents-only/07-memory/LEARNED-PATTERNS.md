@@ -30,8 +30,9 @@
 | 规则 | 详情 |
 |------|------|
 | sb-types 零大依赖 | 禁止 tokio/hyper/axum |
-| sb-core 无协议实现 | 协议只在 sb-adapters |
-| 控制面隔离 | sb-api 不能把 axum 带入 sb-core |
+| sb-core 内核合集治理 | 允许遗留协议/服务实现，但必须 feature-gated + 可审计 |
+| 协议归属默认 | 新增协议默认放 sb-adapters；例外需 ADR |
+| 控制面隔离 | sb-api 不直接依赖 sb-adapters；sb-core 的 web 依赖必须 optional |
 
 ---
 

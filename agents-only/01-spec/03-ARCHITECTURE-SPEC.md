@@ -1,6 +1,7 @@
 # 架构规范（Architecture Specification）
 
-> **整合自 singbox_archspec_v2**：定义 crate 边界、依赖方向和核心接口。
+> **整合自 singbox_archspec_v2**：定义 crate 边界、依赖方向和核心接口。  
+> **L19.3.1 决议生效**：`sb-core` 角色按“内核合集层（Kernel Aggregate）”执行，详见 `agents-only/04-decisions/ADR-L19.3.1-sb-core-role.md`。
 
 ---
 
@@ -32,18 +33,18 @@ sb-api / sb-metrics / sb-runtime
 | Ports traits、错误类型定义 | rustls/quinn/ws 库 |
 | serde, bytes, ipnet | 系统调用/文件 I/O crate |
 
-#### sb-core（引擎层）
+#### sb-core（内核合集层）
 | 允许 | 禁止 |
 |------|------|
-| 路由/策略/会话编排 | 具体协议实现（VMess/VLESS 等） |
-| 流量调度、DNS 缓存策略 | 平台服务（NTP/resolved/DERP） |
-| 通过 Ports 与外部交互 | Web 框架（axum/tonic/tower） |
-| | TLS/QUIC/WS 实现 |
+| 路由/策略/会话编排（核心职责） | 无门控新增 Web/TLS/QUIC 重依赖 |
+| 已存在协议/服务/传输模块（必须 feature-gated） | 未登记 owner 的重复实现长期保留 |
+| 通过 Ports 与外部交互 | 绕过 `check-boundaries.sh` 的依赖边界检查 |
+| 与 sb-adapters 协同迁移重叠实现 | 未经 ADR 擅自扩大对外职责 |
 
 #### sb-adapters（协议适配器层）
 | 允许 | 禁止 |
 |------|------|
-| 所有 inbound/outbound 协议实现 | 把 sb-core 当工具箱引用 |
+| 新增 inbound/outbound 协议实现默认归属 | 无 ADR 例外时新增 core/adapters 双实现 |
 | 协议解析、加密、握手、流控 | 承担控制面（HTTP API）职责 |
 | 通过 sb-transport/sb-tls 连接底层 | |
 
@@ -100,7 +101,7 @@ sb-api / sb-metrics / sb-runtime
 
 - **sb-api** 只通过 Ports 调用 sb-core
 - **sb-api** 不能直接调用 sb-adapters
-- Web 框架（axum/tonic）只存在于 sb-api
+- Web 框架优先放在 sb-api；`sb-core` 中仅允许在 `service_*` feature 下保留现有实现
 
 ---
 
@@ -195,7 +196,7 @@ sb-api / sb-metrics / sb-runtime
 singbox-rust/
 ├── app/                    # CLI 和组合根
 ├── crates/
-│   ├── sb-core/           # 核心引擎
+│   ├── sb-core/           # 内核合集层（Kernel Aggregate）
 │   │   ├── src/
 │   │   │   ├── router/    # 路由引擎
 │   │   │   ├── dns/       # DNS 系统

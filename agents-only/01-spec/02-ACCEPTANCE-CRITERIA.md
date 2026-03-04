@@ -87,9 +87,17 @@ cargo tree -p sb-api | grep "sb-adapters"
 
 | 条目 | 验收标准 |
 |------|---------|
-| 协议实现 | 全部在 `sb-adapters/` 下 |
-| 平台服务 | 全部在 `sb-platform/` 下 |
-| sb-core | 只包含路由/策略/调度/生命周期 |
+| 协议实现 | 新增协议默认在 `sb-adapters/`；`sb-core` 遗留实现必须 feature-gated 且在重叠清单有 owner |
+| 平台服务 | 平台能力在 `sb-platform/`；`sb-core` 仅允许保留编排/调用层逻辑 |
+| sb-core | 定位为内核合集层：路由/策略为核心，遗留协议/服务实现受边界门禁约束 |
+
+### 2.3 L19.3.1 决议一致性验收
+
+| 条目 | 验收标准 |
+|------|---------|
+| ADR 对齐 | 存在 `agents-only/04-decisions/ADR-L19.3.1-sb-core-role.md` 且状态为已批准 |
+| 宪法口径 | `03-ARCHITECTURE-SPEC` 与 `01-REQUIREMENTS-ANALYSIS` 不再声明“sb-core 纯引擎层禁入 TLS/QUIC/Web” |
+| 门禁口径 | `check-boundaries.sh` 可在当前决议口径下作为阻断门禁（exit 0/非 0） |
 
 ---
 

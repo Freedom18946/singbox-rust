@@ -1,6 +1,7 @@
 # 需求分析（Requirements Analysis）
 
-> **整体目标**：实现与 Go sing-box 1.12.14 的功能对等，同时满足 Rust 工程化的长期可维护性/可演进性/可测试性要求。
+> **整体目标**：实现与 Go sing-box 1.12.14 的功能对等，同时满足 Rust 工程化的长期可维护性/可演进性/可测试性要求。  
+> **L19.3.1 决议生效**：`sb-core` 按“内核合集层（Kernel Aggregate）”治理，详见 `agents-only/04-decisions/ADR-L19.3.1-sb-core-role.md`。
 
 ---
 
@@ -121,10 +122,11 @@ sb-api / sb-metrics / sb-runtime
   app (composition root)
 ```
 
-**禁止违规**：
-- sb-core 不能依赖 axum/tonic/tower/hyper/rustls/quinn
-- sb-types 不能依赖 tokio/网络库
-- sb-api 不能直接依赖 sb-adapters
+**治理规则**：
+- sb-core 可依赖 axum/tonic/hyper/rustls/quinn/reqwest，但必须 `optional = true` 且经 feature gate 启用。
+- sb-core 与 sb-adapters/sb-transport 的重叠实现必须进入迁移清单并有 owner。
+- sb-types 不能依赖 tokio/网络库。
+- sb-api 不能直接依赖 sb-adapters。
 
 ---
 
