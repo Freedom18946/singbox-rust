@@ -179,6 +179,24 @@ Generate fuzz corpus seeds.
 
 ## Other Tests
 
+### `tun_linux_e2e.sh`
+Linux-only TUN dataplane e2e profile for L19.4.1.
+
+```bash
+sudo ./scripts/test/tun_linux_e2e.sh
+```
+
+Features:
+- netns + veth + iptables forwarding topology
+- TUN device provisioning probe
+- MTU / UDP / DNS / route-loop guard / concurrent TCP scenarios
+- Evidence artifacts: JSON report + probe log + optional pcap
+
+Exit codes:
+- `0`: all scenarios passed
+- `1`: setup or scenario failure
+- `77`: skipped (non-Linux / missing root / missing dependencies)
+
 ### `mutants-smoke.sh`
 Mutation testing smoke suite.
 

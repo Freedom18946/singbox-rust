@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 23:20
+> **最后更新**：2026-03-04 23:35
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -30,7 +30,8 @@
   6. ✅ L19.3.1 已完成：`sb-core` 角色决议 ADR（路线 B：内核合集层）+ 宪法文档口径同步。
   7. ✅ L19.3.2 已完成：`check-boundaries.sh` strict 升级（feature owner tree + default 闭包 + reverse dep allowlist）。
   8. ✅ L19.3.3 已完成：重叠矩阵 + 第一波迁移 backlog（6 项，owner/target 完整）。
-  9. ▶️ 下一步：L19.4.1（Linux TUN 数据面 e2e profile：netns/veth/iptables）。
+  9. ✅ L19.4.1 已完成：`scripts/test/tun_linux_e2e.sh` + `reports/stability/templates/tun_linux_e2e_report.template.json`（Linux root 环境执行）。
+  10. ▶️ 下一步：L19.4.2（macOS TUN 长跑验证：10k 连接 + UDP + DNS 抖动）。
 
 ---
 

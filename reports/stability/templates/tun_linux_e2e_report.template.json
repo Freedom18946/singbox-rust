@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "YYYYMMDDTHHMMSSZ",
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "profile": "l19.4.1-linux-tun-e2e",
+  "overall": "PASS|FAIL|SKIP",
+  "reason": "human-readable summary",
+  "environment": {
+    "platform": "linux",
+    "uid": 0,
+    "concurrency": 40
+  },
+  "artifacts": {
+    "output_dir": "reports/stability/tun_linux_e2e/<run_id>",
+    "log_file": "reports/stability/tun_linux_e2e/<run_id>/tun_linux_e2e.log",
+    "probe_file": "reports/stability/tun_linux_e2e/<run_id>/tun_linux_e2e_probe.txt",
+    "pcap_file": "reports/stability/tun_linux_e2e/<run_id>/tun_linux_e2e.pcap"
+  },
+  "summary": {
+    "total": 7,
+    "pass": 7,
+    "fail": 0,
+    "skip": 0
+  },
+  "cases": [
+    {
+      "id": "service_boot",
+      "description": "start tcp/udp/dns server in namespace",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "tun_probe",
+      "description": "create/configure linux tun device",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "mtu",
+      "description": "DF ping with 1400-byte path MTU",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "udp",
+      "description": "udp echo roundtrip across netns/veth",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "dns",
+      "description": "udp dns query over namespace dataplane",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "route_loop_guard",
+      "description": "route loop guard (no TTL exceeded under steady traffic)",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    },
+    {
+      "id": "concurrent_tcp",
+      "description": "concurrent tcp echo sessions",
+      "status": "PASS|FAIL|SKIP",
+      "note": "details"
+    }
+  ]
+}
