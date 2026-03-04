@@ -1,10 +1,13 @@
 #!/bin/bash
 # check-boundaries.sh - 依赖边界检查（CI / pre-commit 使用）
 # 用法:
-#   ./check-boundaries.sh            # 严格模式：任何违规返回非零
+#   ./check-boundaries.sh            # 严格模式（默认）：任何违规返回非零
+#   ./check-boundaries.sh --strict   # 严格模式（显式）
 #   ./check-boundaries.sh --report   # 报告模式：仅输出，不失败
 #
-# 覆盖违规类别：V1(Web) V2(TLS/QUIC) V3(协议实现) V4(反向依赖) V5(subscribe)
+# 覆盖违规类别：
+#   V1(Web) V2(TLS/QUIC) V3(协议实现) V4(sb-adapters 反向依赖) V5(subscribe)
+#   V6(strict): default feature 闭包 + feature owner tree + workspace 反向依赖 allowlist
 
 set -euo pipefail
 
@@ -12,7 +15,17 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 REPORT_ONLY=false
-[ "${1:-}" = "--report" ] && REPORT_ONLY=true
+case "${1:-}" in
+    ""|"--strict")
+        ;;
+    "--report")
+        REPORT_ONLY=true
+        ;;
+    *)
+        echo "Usage: $0 [--strict|--report]" >&2
+        exit 2
+        ;;
+esac
 
 FAILED=0
 fail() { FAILED=$((FAILED + 1)); }
@@ -272,6 +285,213 @@ if grep -qE "tokio|hyper|axum|rustls|quinn" crates/sb-types/Cargo.toml 2>/dev/nu
     fail
 else
     echo "  PASS"
+fi
+
+# ─── V6: strict 模式（feature tree + default closure + reverse deps） ──────
+echo "── V6: strict feature tree / default closure / reverse deps ──"
+
+if python3 - <<'PY'
+import json
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+core_cargo = Path("crates/sb-core/Cargo.toml")
+data = tomllib.loads(core_cargo.read_text(encoding="utf-8"))
+deps = data.get("dependencies", {})
+features = data.get("features", {})
+default_features = features.get("default", [])
+
+FORBIDDEN = [
+    "axum",
+    "tonic",
+    "tower",
+    "hyper",
+    "rustls",
+    "quinn",
+    "reqwest",
+    "tokio-tungstenite",
+    "snow",
+]
+
+OWNER_POLICY = {
+    "axum": {"service_clash_api", "service_v2ray_api", "service_ssmapi"},
+    "tonic": {"service_v2ray_api"},
+    "tower": set(),
+    "hyper": {"out_naive", "service_derp"},
+    "rustls": {"tls_rustls"},
+    "quinn": {"out_quic", "dns_doq", "dns_doh3"},
+    "reqwest": {"dns_doh", "service_derp"},
+    "tokio-tungstenite": {"service_derp"},
+    "snow": {"dns_tailscale", "out_tailscale"},
+}
+
+# 这些依赖允许在 sb-core default feature 闭包里出现（当前决议口径）
+ALLOW_IN_DEFAULT = {"rustls", "quinn", "reqwest", "snow"}
+
+errors = []
+notes = []
+
+
+def dep_optional(dep_name: str):
+    v = deps.get(dep_name)
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return False
+    if isinstance(v, dict):
+        return bool(v.get("optional", False))
+    return False
+
+
+def compute_feature_closure(seed):
+    seen = set()
+    stack = list(seed)
+    while stack:
+        feat = stack.pop()
+        if feat in seen:
+            continue
+        seen.add(feat)
+        for item in features.get(feat, []):
+            if not isinstance(item, str):
+                continue
+            if item.startswith("dep:"):
+                continue
+            # 其他 crate feature（如 sb-platform/tun）不在本 crate 内展开
+            if "/" in item:
+                continue
+            if item in features:
+                stack.append(item)
+    return seen
+
+
+# 1) forbidden deps 必须 optional（若存在）
+for dep in FORBIDDEN:
+    opt = dep_optional(dep)
+    if opt is False:
+        errors.append(f"forbidden dep '{dep}' exists but is not optional")
+
+
+# 2) feature owner tree：dep:xxx 只能从批准的 owner feature 出现
+dep_owners = {}
+for feat, items in features.items():
+    for item in items:
+        if isinstance(item, str) and item.startswith("dep:"):
+            dep = item[4:]
+            dep_owners.setdefault(dep, set()).add(feat)
+
+for dep, allowed in OWNER_POLICY.items():
+    owners = dep_owners.get(dep, set())
+    if dep in deps and dep_optional(dep):
+        if not owners:
+            # optional 但没有任何 owner feature，通常是漂移或死配置
+            errors.append(f"optional dep '{dep}' has no owner feature (missing dep:{dep} mapping)")
+    if owners:
+        unknown = owners - allowed
+        if unknown:
+            errors.append(
+                f"dep '{dep}' is referenced by non-approved features: {sorted(unknown)} "
+                f"(allowed: {sorted(allowed)})"
+            )
+
+
+# 3) default feature 闭包：只允许 ALLOW_IN_DEFAULT 中的 forbidden deps 出现
+default_closure = compute_feature_closure(default_features)
+default_dep_sources = {}
+for feat in default_closure:
+    for item in features.get(feat, []):
+        if isinstance(item, str) and item.startswith("dep:"):
+            dep = item[4:]
+            default_dep_sources.setdefault(dep, set()).add(feat)
+
+for dep in sorted(default_dep_sources):
+    if dep in FORBIDDEN and dep not in ALLOW_IN_DEFAULT:
+        sources = sorted(default_dep_sources[dep])
+        errors.append(
+            f"default feature closure unexpectedly activates forbidden dep '{dep}' via features {sources}"
+        )
+
+notes.append(f"default features: {sorted(default_features)}")
+notes.append(f"default closure size: {len(default_closure)}")
+notes.append(
+    "default forbidden deps active: "
+    + str(sorted(dep for dep in default_dep_sources if dep in FORBIDDEN))
+)
+
+
+# 4) workspace 直接反向依赖 allowlist（reverse dependency）
+try:
+    meta = json.loads(
+        subprocess.check_output(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            text=True,
+        )
+    )
+except subprocess.CalledProcessError as exc:
+    errors.append(f"failed to run cargo metadata: {exc}")
+else:
+    workspace_ids = set(meta.get("workspace_members", []))
+    packages = meta.get("packages", [])
+
+    core_id = None
+    for p in packages:
+        if p.get("name") == "sb-core":
+            core_id = p.get("id")
+            break
+    if core_id is None:
+        errors.append("cannot locate sb-core package in cargo metadata")
+    else:
+        allowlist = {"app", "sb-api", "sb-adapters", "sb-benches", "xtests"}
+        optional_allowlist = {"sb-subscribe"}
+        actual = set()
+        optional_actual = set()
+        for p in packages:
+            if p.get("id") not in workspace_ids:
+                continue
+            if p.get("name") == "sb-core":
+                continue
+            has_optional = False
+            has_non_optional = False
+            for dep in p.get("dependencies", []):
+                if dep.get("name") == "sb-core":
+                    if dep.get("optional"):
+                        has_optional = True
+                    else:
+                        has_non_optional = True
+            if has_non_optional:
+                actual.add(p.get("name"))
+            elif has_optional:
+                optional_actual.add(p.get("name"))
+
+        unknown = actual - allowlist
+        if unknown:
+            errors.append(
+                f"workspace crates depend on sb-core but are not allowlisted: {sorted(unknown)}"
+            )
+        optional_unknown = optional_actual - optional_allowlist
+        if optional_unknown:
+            errors.append(
+                "workspace crates OPTIONAL-depend on sb-core but are not allowlisted: "
+                f"{sorted(optional_unknown)}"
+            )
+        notes.append(f"reverse deps (workspace direct): {sorted(actual)}")
+        notes.append(f"reverse deps (workspace optional): {sorted(optional_actual)}")
+
+
+if errors:
+    for e in errors:
+        print(f"  FAIL: {e}")
+    sys.exit(1)
+
+for n in notes:
+    print(f"  INFO: {n}")
+print("  PASS")
+PY
+then
+    :
+else
+    fail
 fi
 
 # ─── 汇总 ─────────────────────────────────────────────

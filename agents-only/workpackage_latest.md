@@ -1,6 +1,6 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 23:10
+> **最后更新**：2026-03-04 23:15
 > **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
@@ -28,7 +28,8 @@
   4. ✅ L19.2.3 已完成：TLS provider 单点决策（`SB_TLS_PROVIDER`）+ 启动确定性日志（provider/ECH 状态）。
   5. ✅ L19.2.4 已完成：QUIC+ECH 配置硬拒绝（校验阶段失败）+ 替代路径提示（TCP-TLS ECH）。
   6. ✅ L19.3.1 已完成：`sb-core` 角色决议 ADR（路线 B：内核合集层）+ 宪法文档口径同步。
-  7. ▶️ 下一步：L19.3.2（`check-boundaries.sh` strict 模式升级）。
+  7. ✅ L19.3.2 已完成：`check-boundaries.sh` strict 升级（feature owner tree + default 闭包 + reverse dep allowlist）。
+  8. ▶️ 下一步：L19.3.3（`sb-core` 与 `sb-adapters/sb-transport` 重叠清单 + 第一波迁移计划）。
 
 ---
 
