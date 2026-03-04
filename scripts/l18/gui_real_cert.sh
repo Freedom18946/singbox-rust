@@ -13,6 +13,8 @@ Usage:
     [--rust-build-enabled 0|1] [--rust-build-features FEATURES] \
     [--runtime-log-dir PATH] \
     [--automation-cmd PATH] [--timeout-sec N] [--report-json PATH] [--report-md PATH] \
+    [--capabilities-gate-enabled 0|1] \
+    [--go-capabilities-required 0|1] [--rust-capabilities-required 0|1] \
     [--sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1]
 
 Required steps per core:
@@ -53,6 +55,10 @@ ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
 ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
 REAL_PROXY_PROCESS_PATTERNS="${L18_REAL_PROXY_PROCESS_PATTERNS:-ClashX,Clash Verge,Surge,v2ray,xray,mihomo,clash-meta,NekoRay,Quantumult,Outline,AdGuard,sing-box}"
 REAL_PROXY_PORTS="${L18_REAL_PROXY_PORTS:-7890,7891,1080,10808}"
+CAPABILITIES_GATE_ENABLED="${L20_CAPABILITIES_GATE_ENABLED:-1}"
+CAPABILITIES_GATE_TIMEOUT_SEC="${L20_CAPABILITIES_GATE_TIMEOUT_SEC:-5}"
+GO_CAPABILITIES_REQUIRED="${L20_CAPABILITIES_GO_REQUIRED:-0}"
+RUST_CAPABILITIES_REQUIRED="${L20_CAPABILITIES_RUST_REQUIRED:-1}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -122,6 +128,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --timeout-sec)
       TIMEOUT_SEC="$2"
+      shift 2
+      ;;
+    --capabilities-gate-enabled)
+      CAPABILITIES_GATE_ENABLED="$2"
+      shift 2
+      ;;
+    --go-capabilities-required)
+      GO_CAPABILITIES_REQUIRED="$2"
+      shift 2
+      ;;
+    --rust-capabilities-required)
+      RUST_CAPABILITIES_REQUIRED="$2"
       shift 2
       ;;
     --report-json)
@@ -196,6 +214,22 @@ if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "0" && "$ALLOW_EXISTING_SYSTEM_PROXY" !=
 fi
 if [[ "$ALLOW_REAL_PROXY_COEXIST" != "0" && "$ALLOW_REAL_PROXY_COEXIST" != "1" ]]; then
   echo "--allow-real-proxy-coexist must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$CAPABILITIES_GATE_ENABLED" != "0" && "$CAPABILITIES_GATE_ENABLED" != "1" ]]; then
+  echo "--capabilities-gate-enabled must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$GO_CAPABILITIES_REQUIRED" != "0" && "$GO_CAPABILITIES_REQUIRED" != "1" ]]; then
+  echo "--go-capabilities-required must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$RUST_CAPABILITIES_REQUIRED" != "0" && "$RUST_CAPABILITIES_REQUIRED" != "1" ]]; then
+  echo "--rust-capabilities-required must be 0 or 1" >&2
+  exit 2
+fi
+if ! [[ "$CAPABILITIES_GATE_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || [[ "$CAPABILITIES_GATE_TIMEOUT_SEC" -lt 1 ]]; then
+  echo "L20_CAPABILITIES_GATE_TIMEOUT_SEC must be a positive integer" >&2
   exit 2
 fi
 
@@ -364,6 +398,140 @@ curl_code() {
   else
     curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "${api_url}${path}" || echo 000
   fi
+}
+
+check_capabilities_negotiation() {
+  local core="$1"
+  local api_url="$2"
+  local token="$3"
+  local required="$4"
+  local out_json="$5"
+
+  python3 - "$core" "$api_url" "$token" "$required" "$CAPABILITIES_GATE_TIMEOUT_SEC" "$out_json" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+core, api_url, token, required_raw, timeout_raw, out_json = sys.argv[1:]
+required = required_raw == "1"
+timeout = int(timeout_raw)
+api_url = api_url.rstrip("/")
+url = f"{api_url}/capabilities"
+
+result = {
+    "core": core,
+    "url": url,
+    "required": required,
+    "checked": False,
+    "pass": False,
+    "status": "unknown",
+    "http_status": None,
+    "contract_version": None,
+    "required_min_contract_version": None,
+    "required_status": None,
+    "breaking_changes_count": None,
+    "reason": "",
+}
+
+def parse_semver_triplet(raw: str):
+    parts = raw.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return None
+
+def write_and_exit(code: int):
+    with open(out_json, "w", encoding="utf-8") as fh:
+        json.dump(result, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    raise SystemExit(code)
+
+headers = {"Accept": "application/json"}
+if token:
+    headers["Authorization"] = f"Bearer {token}"
+
+request = urllib.request.Request(url, headers=headers, method="GET")
+try:
+    with urllib.request.urlopen(request, timeout=timeout) as resp:
+        result["http_status"] = resp.status
+        payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+except urllib.error.HTTPError as exc:
+    result["http_status"] = exc.code
+    result["reason"] = f"http_error:{exc.code}"
+    if required:
+        result["status"] = "blocked"
+        write_and_exit(1)
+    result["status"] = "optional-unavailable"
+    result["pass"] = True
+    write_and_exit(0)
+except Exception as exc:
+    result["reason"] = f"request_failed:{exc}"
+    if required:
+        result["status"] = "blocked"
+        write_and_exit(1)
+    result["status"] = "optional-unavailable"
+    result["pass"] = True
+    write_and_exit(0)
+
+if not isinstance(payload, dict):
+    result["reason"] = "invalid_payload:not_object"
+    if required:
+        result["status"] = "blocked"
+        write_and_exit(1)
+    result["status"] = "optional-invalid"
+    result["pass"] = True
+    write_and_exit(0)
+
+result["checked"] = True
+
+contract_version = payload.get("contract_version")
+required_by_gui = payload.get("required_by_gui")
+breaking_changes = payload.get("breaking_changes")
+
+if not isinstance(contract_version, str):
+    result["reason"] = "missing_contract_version"
+elif not isinstance(required_by_gui, dict):
+    result["reason"] = "missing_required_by_gui"
+elif not isinstance(breaking_changes, list):
+    result["reason"] = "missing_breaking_changes"
+else:
+    min_version = required_by_gui.get("min_contract_version")
+    required_status = required_by_gui.get("status")
+    result["contract_version"] = contract_version
+    result["required_min_contract_version"] = (
+        min_version if isinstance(min_version, str) else None
+    )
+    result["required_status"] = required_status if isinstance(required_status, str) else None
+    result["breaking_changes_count"] = len(breaking_changes)
+
+    actual_v = parse_semver_triplet(contract_version)
+    min_v = parse_semver_triplet(min_version) if isinstance(min_version, str) else None
+    if actual_v is None or min_v is None:
+        result["reason"] = "invalid_semver"
+    elif actual_v < min_v:
+        result["reason"] = "contract_version_below_required"
+    elif required_status != "ok":
+        result["reason"] = f"required_status_not_ok:{required_status}"
+    elif breaking_changes:
+        result["reason"] = f"breaking_changes_non_empty:{len(breaking_changes)}"
+    else:
+        result["status"] = "ok"
+        result["pass"] = True
+
+if result["pass"]:
+    write_and_exit(0)
+
+if required:
+    result["status"] = "blocked"
+    write_and_exit(1)
+
+result["status"] = "optional-invalid"
+result["pass"] = True
+write_and_exit(0)
+PY
 }
 
 wait_health_200() {
@@ -668,6 +836,8 @@ run_core() {
   local gui_log="${RUNTIME_LOG_DIR}/${core}.gui.log"
   local core_home="${SANDBOX_ROOT}/home/${core}"
   local core_tmp="${SANDBOX_ROOT}/tmp/${core}"
+  local capabilities_required="$RUST_CAPABILITIES_REQUIRED"
+  local negotiation_file="${SANDBOX_ROOT}/capabilities.negotiation.${core}.json"
   local start_cmd=()
 
   mkdir -p "$core_home" "$core_tmp"
@@ -701,6 +871,31 @@ run_core() {
   if ! kill -0 "$ACTIVE_KERNEL_PID" >/dev/null 2>&1; then
     append_all_step_failures "$core" "kernel_failed_to_start"
     return 1
+  fi
+
+  if [[ "$core" == "go" ]]; then
+    capabilities_required="$GO_CAPABILITIES_REQUIRED"
+  fi
+
+  if [[ "$CAPABILITIES_GATE_ENABLED" == "1" ]]; then
+    if ! check_capabilities_negotiation "$core" "$api_url" "$token" "$capabilities_required" "$negotiation_file"; then
+      local failure_reason
+      failure_reason="$(jq -r '.reason // "negotiation_failed"' "$negotiation_file" 2>/dev/null || echo "negotiation_failed")"
+      record_sandbox_note "capabilities_negotiation_${core}_failed:${failure_reason}"
+      append_all_step_failures "$core" "capabilities_negotiation_failed:${failure_reason}"
+      stop_pid "$ACTIVE_KERNEL_PID"
+      ACTIVE_KERNEL_PID=""
+      return 1
+    fi
+    local negotiation_status
+    negotiation_status="$(jq -r '.status // "unknown"' "$negotiation_file" 2>/dev/null || echo "unknown")"
+    local negotiation_reason
+    negotiation_reason="$(jq -r '.reason // ""' "$negotiation_file" 2>/dev/null || true)"
+    if [[ -n "$negotiation_reason" ]]; then
+      record_sandbox_note "capabilities_negotiation_${core}_${negotiation_status}:${negotiation_reason}"
+    else
+      record_sandbox_note "capabilities_negotiation_${core}_${negotiation_status}"
+    fi
   fi
 
   start_gui "$gui_exec" "$core_home" "$core_tmp" "$gui_log"
@@ -813,6 +1008,9 @@ run_postcheck
 
 export RESULTS_FILE REPORT_JSON REPORT_MD GUI_APP GUI_PROCESS_NAME GO_API_URL RUST_API_URL SANDBOX_ROOT SANDBOX_NOTES_FILE
 export SANDBOX_PRECHECK_PASS SANDBOX_POSTCHECK_PASS SYSTEM_PROXY_UNCHANGED SYSTEM_PROXY_BEFORE_ENABLED SYSTEM_PROXY_AFTER_ENABLED
+export CAPABILITIES_GATE_ENABLED
+export NEGOTIATION_GO_FILE="${SANDBOX_ROOT}/capabilities.negotiation.go.json"
+export NEGOTIATION_RUST_FILE="${SANDBOX_ROOT}/capabilities.negotiation.rust.json"
 python3 - <<'PY'
 import json
 import os
@@ -865,6 +1063,40 @@ sandbox_pass = sandbox_precheck and sandbox_postcheck and proxy_unchanged
 core_pass = cores["go"]["pass"] and cores["rust"]["pass"]
 overall_pass = core_pass and sandbox_pass
 
+def load_negotiation(path: str):
+    if not os.path.isfile(path):
+        return {
+            "checked": False,
+            "pass": False,
+            "status": "not-run",
+            "reason": "missing_negotiation_artifact",
+        }
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception as exc:
+        return {
+            "checked": False,
+            "pass": False,
+            "status": "invalid-artifact",
+            "reason": f"parse_failed:{exc}",
+        }
+    if not isinstance(payload, dict):
+        return {
+            "checked": False,
+            "pass": False,
+            "status": "invalid-artifact",
+            "reason": "artifact_not_object",
+        }
+    return payload
+
+negotiation_enabled = os.environ.get("CAPABILITIES_GATE_ENABLED", "0") == "1"
+negotiation = {
+    "enabled": negotiation_enabled,
+    "go": load_negotiation(os.environ["NEGOTIATION_GO_FILE"]),
+    "rust": load_negotiation(os.environ["NEGOTIATION_RUST_FILE"]),
+}
+
 payload = {
     "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     "gui": {
@@ -885,6 +1117,7 @@ payload = {
         "notes": sandbox_notes,
     },
     "required_steps": required_steps,
+    "capability_negotiation": negotiation,
     "cores": {
         "go": {
             "pass": cores["go"]["pass"],
@@ -913,6 +1146,26 @@ lines.append(f"- Sandbox Root: `{payload['sandbox']['root']}`")
 lines.append(f"- Sandbox: **{'PASS' if sandbox_pass else 'FAIL'}**")
 lines.append(f"- Overall: **{'PASS' if overall_pass else 'FAIL'}**")
 lines.append("")
+
+lines.append("## Capability Negotiation")
+lines.append("")
+lines.append(f"- Enabled: `{str(negotiation_enabled).lower()}`")
+lines.append("")
+lines.append("| Core | Required | Status | Pass | Contract | Min Required | Reason |")
+lines.append("|---|---|---|---|---|---|---|")
+for core in ("go", "rust"):
+    item = negotiation[core]
+    required = item.get("required")
+    required_cell = str(required).lower() if isinstance(required, bool) else "-"
+    status = item.get("status", "-")
+    passed = item.get("pass")
+    pass_cell = str(passed).lower() if isinstance(passed, bool) else "-"
+    contract = item.get("contract_version") or "-"
+    minimum = item.get("required_min_contract_version") or "-"
+    reason = item.get("reason") or "-"
+    lines.append(f"| `{core}` | `{required_cell}` | `{status}` | `{pass_cell}` | `{contract}` | `{minimum}` | `{reason}` |")
+lines.append("")
+
 if sandbox_notes:
     lines.append("## Sandbox Notes")
     lines.append("")
