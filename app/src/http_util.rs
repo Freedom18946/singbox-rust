@@ -49,7 +49,11 @@ pub fn write_503_json(
     body: &serde_json::Value,
 ) -> std::io::Result<()> {
     let b = serde_json::to_vec(body).unwrap_or_default();
-    write!(s, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", b.len())?;
+    write!(
+        s,
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        b.len()
+    )?;
     s.write_all(&b)
 }
 

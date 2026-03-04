@@ -30,8 +30,10 @@ use sb_tls::TlsConnector;
 fn ensure_rustls_crypto_provider() {
     static INSTALLED: OnceLock<()> = OnceLock::new();
     INSTALLED.get_or_init(|| {
-        // Prefer ring when multiple providers are present.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        // App startup should install provider explicitly. Keep this as fallback only.
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
     });
 }
 

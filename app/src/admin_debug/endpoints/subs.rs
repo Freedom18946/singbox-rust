@@ -1115,7 +1115,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 Ok(Ok(r)) => r,
                 Ok(Err(e)) => {
                     return respond_json_error(sock, 502, "fetch failed", Some(&e.to_string()))
-                        .await
+                        .await;
                 }
                 Err(_) => {
                     return respond_json_error(
@@ -1124,7 +1124,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         "fetch timeout",
                         Some("increase SB_ADMIN_FETCH_TIMEOUT_MS"),
                     )
-                    .await
+                    .await;
                 }
             };
 
@@ -1220,7 +1220,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     "invalid base64 encoding",
                     Some("provide valid base64 in ?inline parameter"),
                 )
-                .await
+                .await;
             }
         };
 
@@ -1325,7 +1325,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     "invalid base64 encoding",
                     Some("provide valid base64 in ?inline parameter"),
                 )
-                .await
+                .await;
             }
         };
 
@@ -1451,7 +1451,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         "invalid base64 encoding",
                         Some("provide valid base64 in ?inline parameter"),
                     )
-                    .await
+                    .await;
                 }
             };
 

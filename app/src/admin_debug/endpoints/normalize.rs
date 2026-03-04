@@ -39,7 +39,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     "invalid base64 encoding",
                     Some("provide valid base64 in ?inline parameter"),
                 )
-                .await
+                .await;
             }
         };
 

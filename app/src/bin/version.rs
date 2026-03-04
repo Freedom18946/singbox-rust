@@ -10,6 +10,13 @@ fn main() {
     if cfg!(feature = "tls-rustls") {
         feats.push("tls-rustls");
     }
+    if cfg!(feature = "tun2socks-real") {
+        feats.push("tun2socks-real");
+    } else if cfg!(feature = "tun2socks-stub") {
+        feats.push("tun2socks-stub");
+    } else {
+        feats.push("tun2socks-absent");
+    }
     let bi = buildinfo::current();
     let obj = json!({
         "name": env!("CARGO_PKG_NAME"),

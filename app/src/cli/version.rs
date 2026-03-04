@@ -86,6 +86,18 @@ pub fn collect_features() -> Vec<String> {
     #[cfg(feature = "subs_http")]
     features.push("subs_http".to_string());
 
+    features.push(tun2socks_mode_tag().to_string());
+
     features.sort();
     features
+}
+
+fn tun2socks_mode_tag() -> &'static str {
+    if cfg!(feature = "tun2socks-real") {
+        "tun2socks-real"
+    } else if cfg!(feature = "tun2socks-stub") {
+        "tun2socks-stub"
+    } else {
+        "tun2socks-absent"
+    }
 }

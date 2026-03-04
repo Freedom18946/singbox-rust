@@ -97,7 +97,10 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
         // Export each state as 0/1 gauge for this host
         for possible_state in &["closed", "open", "half_open"] {
             let value = i32::from(state == possible_state);
-            let _ = writeln!(buf, "sb_subs_breaker_state{{host_hash=\"{host_hash}\",state=\"{possible_state}\"}} {value}");
+            let _ = writeln!(
+                buf,
+                "sb_subs_breaker_state{{host_hash=\"{host_hash}\",state=\"{possible_state}\"}} {value}"
+            );
         }
     }
 

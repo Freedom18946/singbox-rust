@@ -6474,7 +6474,7 @@ dependencies = [
  "tor-rtcompat",
  "tracing",
  "tun",
- "tun2socks",
+ "tun2socks-shim",
  "url",
  "uuid",
  "webpki-roots 0.26.11",
@@ -9091,6 +9091,15 @@ dependencies = [
 [[package]]
 name = "tun2socks"
 version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3157a6c4bca34b33cc84121359aedf7d05de945d598d1815b8f95cf7fb29a7d9"
+
+[[package]]
+name = "tun2socks-shim"
+version = "0.1.10"
+dependencies = [
+ "tun2socks",
+]
 
 [[package]]
 name = "tungstenite"

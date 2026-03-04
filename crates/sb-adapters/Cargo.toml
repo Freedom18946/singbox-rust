@@ -19,7 +19,6 @@ serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net", "time", "fs"] }
 tracing = "0.1"
-tun2socks = { version = "0.1.10", optional = true }
 tun = { version = "0.8", optional = true, features = ["async"] }
 libc = "0.2"
 scopeguard = "1.2"
@@ -98,6 +97,10 @@ md-5 = "0.10.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "3.15", features = ["blocking"], optional = true }
 
+# macOS tun2socks shim (stub/real selectable)
+[target.'cfg(target_os = "macos")'.dependencies]
+tun2socks = { package = "tun2socks-shim", path = "../../vendor/tun2socks", optional = true, default-features = false }
+
 # Windows-only dependencies
 [target.'cfg(windows)'.dependencies]
 wintun = { version = "0.5", optional = true }
@@ -119,7 +122,9 @@ socks = []
 mixed = ["http", "socks"]
 tun = ["dep:sb-platform"]
 # macOS transparent proxy support via tun2socks
-tun_macos = ["tun", "dep:tun2socks"]
+tun2socks-stub = ["dep:tun2socks", "tun2socks/stub"]
+tun2socks-real = ["dep:tun2socks", "tun2socks/real"]
+tun_macos = ["tun", "tun2socks-stub"]
 # Linux TUN device support
 tun_linux = ["tun", "dep:tun"]
 # Windows TUN device support via wintun

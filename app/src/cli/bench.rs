@@ -399,9 +399,20 @@ async fn bench_io(
         let fixed = to_fixed_schema(&out);
         println!("{}", serde_json::to_string(&fixed)?);
     } else {
-        println!("total={} ok_2xx={} other={} time_ms={} rps={:.1} thrpt_MiBps={:.2} p50={} p90={} p99={} max={} min={}",
-            out.total, out.ok_2xx, out.other, out.elapsed_ms, out.rps, out.thrpt_mib_s,
-            out.p50_ms, out.p90_ms, out.p99_ms, out.max_ms, out.min_ms);
+        println!(
+            "total={} ok_2xx={} other={} time_ms={} rps={:.1} thrpt_MiBps={:.2} p50={} p90={} p99={} max={} min={}",
+            out.total,
+            out.ok_2xx,
+            out.other,
+            out.elapsed_ms,
+            out.rps,
+            out.thrpt_mib_s,
+            out.p50_ms,
+            out.p90_ms,
+            out.p99_ms,
+            out.max_ms,
+            out.min_ms
+        );
         if let Some(h) = &out.hist {
             eprintln!(
                 "# hist buckets(ms)={:?} counts={:?} cdf={:?}",
