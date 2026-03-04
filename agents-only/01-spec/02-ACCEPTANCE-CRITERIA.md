@@ -125,21 +125,75 @@ cargo test --test dns_outbound_integration # 15 tests
 
 ## 4. 性能验收（Performance Acceptance）
 
-### 4.1 基准测试
+### 4.1 统一测量契约（L19.4.3）
 
-| 场景 | 指标 | 验收标准 |
-|------|------|---------|
-| 进程匹配 (macOS) | 延迟 | < 1ms（Go 为 ~149ms） |
-| 路由决策 | 吞吐 | > 100K rules/sec |
-| DNS 缓存 | 命中率 | > 90% (typical) |
+性能验收不再使用“口号型阈值”，统一采用分层 + 可复算命令 + 固定产物路径。
 
-### 4.2 资源使用
-
-| 指标 | 验收标准 |
+| 条目 | 固定定义 |
 |------|---------|
-| 内存占用 | 启动 < 50MB |
-| 连接开销 | < 1KB/conn |
-| GC 暂停 | N/A (Rust) |
+| 分层 | `Baseline` / `Router+Clash API` / `Parity` |
+| 统一入口 | `bash scripts/test/bench/l19_perf_acceptance.sh --layer all` |
+| 百分位 | 统一输出 `P50/P95/P99`（毫秒） |
+| 冷热定义 | `cold` = round 1；`warm` = round 2..N（不足 2 轮时退化为 round 1） |
+| 平台范围 | `Darwin-arm64`（主） + `Linux-x86_64`（辅） |
+| 统一产物根目录 | `reports/performance/l19/<run_id>/` |
+
+统一指标定义：
+
+1. `latency_ms`: 请求级延迟 `P50/P95/P99`。
+2. `startup_ms`: 进程启动到就绪耗时（cold/warm 分开记录）。
+3. `rss_peak_kb`: 运行期峰值 RSS。
+4. `conn_rss_delta_bytes_per_conn`: 基于 `memory_comparison.json` 的连接规模 RSS 增量估算（100 / 1000 连接各一组）。
+
+### 4.2 Layer A：Baseline（最小基准层）
+
+| 维度 | 固定口径 |
+|------|---------|
+| 目的 | 仅测基础计算/协议路径，不引入 GUI 与 parity 全量特性干扰 |
+| 特性集 | `cargo bench -p sb-benches`（协议基准） |
+| 命令 | `bash scripts/test/bench/l19_perf_acceptance.sh --layer baseline` |
+| 关键产物 | `baseline_protocol_percentiles.json`、`baseline_bench_summary.csv` |
+
+通过条件：
+
+1. 产出 `baseline_protocol_percentiles.json`，且每个协议具备 `p50/p95/p99`。
+2. 产出 `baseline_bench_summary.csv`（无数据时允许 `PASS-ENV-LIMITED`，需写明原因）。
+
+### 4.3 Layer B：Router+Clash API（GUI 实用层）
+
+| 维度 | 固定口径 |
+|------|---------|
+| 目的 | 对齐 GUI 常用配置场景（非 parity 全特性） |
+| 特性集 | `acceptance`（由 `scripts/l18/perf_gate.sh` 构建） |
+| 命令 | `bash scripts/test/bench/l19_perf_acceptance.sh --layer router_api` |
+| 关键产物 | `router_api_perf_gate.json`、`router_api_latency_percentiles.json`、`router_api_memory_comparison.json` |
+
+通过条件：
+
+1. `router_api_perf_gate.json` 可解析，包含 `startup_ms`、`latency_p95_ms`、`rss_peak_kb`。
+2. `router_api_latency_percentiles.json` 输出 `cold/warm` 的 `P50/P95/P99`。
+3. `router_api_memory_comparison.json` 可计算 `conn_rss_delta_bytes_per_conn`。
+
+### 4.4 Layer C：Parity（全特性层）
+
+| 维度 | 固定口径 |
+|------|---------|
+| 目的 | 验证 parity 特性集下的性能回归边界 |
+| 特性集 | `parity`（由 `scripts/l18/perf_gate.sh` 构建） |
+| 命令 | `bash scripts/test/bench/l19_perf_acceptance.sh --layer parity` |
+| 关键产物 | `parity_perf_gate.json`、`parity_latency_percentiles.json`、`parity_memory_comparison.json` |
+
+通过条件（继承 perf gate）：
+
+1. `latency_p95` 回归 <= `+5%`（相对 Go 基线）。
+2. `rss_peak` 回归 <= `+10%`。
+3. `startup` 回归 <= `+10%`。
+
+### 4.5 复算与审计要求
+
+1. 任一层必须同时提交：执行命令、退出码、日志路径、JSON 产物路径。
+2. 若为 `PASS-ENV-LIMITED`，必须记录缺失依赖或环境限制（例如 Go 二进制缺失、权限不足）。
+3. 对外文档只允许引用 `reports/performance/l19/<run_id>/l19_perf_acceptance.json` 的数据，不允许手工抄写阈值结论。
 
 ---
 

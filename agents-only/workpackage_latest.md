@@ -32,7 +32,8 @@
   8. ✅ L19.3.3 已完成：重叠矩阵 + 第一波迁移 backlog（6 项，owner/target 完整）。
   9. ✅ L19.4.1 已完成：`scripts/test/tun_linux_e2e.sh` + `reports/stability/templates/tun_linux_e2e_report.template.json`（Linux root 环境执行）。
   10. ✅ L19.4.2 已完成：`scripts/test/tun_macos_longrun.sh` + `reports/stability/tun_macos_longrun.json`（本机冒烟已产出）。
-  11. ▶️ 下一步：L19.4.3（性能验收口径重写：分层 + 固定测量方法）。
+  11. ✅ L19.4.3 已完成：性能验收口径重写（Baseline / Router+Clash API / Parity 分层）+ 统一入口 `scripts/test/bench/l19_perf_acceptance.sh`。
+  12. ▶️ 下一步：L19.5.1（`/capabilities` 强契约端点：schema_version + compat_version + capability matrix）。
 
 ---
 

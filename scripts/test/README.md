@@ -75,6 +75,22 @@ Validates:
 
 Performance benchmarking suite.
 
+### `l19_perf_acceptance.sh`
+L19.4.3 unified performance acceptance entrypoint (layered contract).
+
+```bash
+./scripts/test/bench/l19_perf_acceptance.sh --layer all
+```
+
+Layers:
+- `baseline`: sb-benches baseline metrics (`P50/P95/P99`)
+- `router_api`: `scripts/l18/perf_gate.sh` with `L18_RUST_BUILD_FEATURES=acceptance`
+- `parity`: `scripts/l18/perf_gate.sh` with `L18_RUST_BUILD_FEATURES=parity`
+
+Outputs:
+- `reports/performance/l19/<run_id>/l19_perf_acceptance.json`
+- `reports/performance/l19/latest.json`
+
 ### `run.sh`
 Main benchmark runner.
 
