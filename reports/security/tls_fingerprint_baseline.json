@@ -1,0 +1,411 @@
+{
+  "generated_at": "2026-03-04T16:19:08Z",
+  "workpackage": "L20.1.1",
+  "method": "loopback_clienthello_capture",
+  "profiles": [
+    {
+      "profile": "chrome",
+      "go": {
+        "engine": "go",
+        "profile_requested": "chrome",
+        "profile_effective": "HelloChrome_Auto",
+        "record_len": 1721,
+        "extension_order_summary": [
+          "0x44cd",
+          "0x0012",
+          "0x0033",
+          "0x000a",
+          "0x000d",
+          "0x0023",
+          "0x0010",
+          "0x0017",
+          "0xff01",
+          "0x000b",
+          "0x002b",
+          "0x001b",
+          "0x0005",
+          "0xfe0d",
+          "0x0000",
+          "0x002d"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4865,
+          4866,
+          4867,
+          49195,
+          49199,
+          49196,
+          49200,
+          52393,
+          52392,
+          49171,
+          49172,
+          156,
+          157,
+          47,
+          53
+        ],
+        "extensions": [
+          17613,
+          18,
+          51,
+          10,
+          13,
+          35,
+          16,
+          23,
+          65281,
+          11,
+          43,
+          27,
+          5,
+          65037,
+          0,
+          45
+        ],
+        "supported_groups": [
+          4588,
+          29,
+          23,
+          24
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,17613-18-51-10-13-35-16-23-65281-11-43-27-5-65037-0-45,4588-29-23-24,0",
+        "ja3_hash": "914cd42b93edbfd00e980404670ea841"
+      },
+      "rust": {
+        "engine": "rust",
+        "profile_requested": "chrome",
+        "profile_effective": "chrome_110_template",
+        "record_len": 254,
+        "extension_order_summary": [
+          "0x000b",
+          "0x000a",
+          "0x0010",
+          "0x002b",
+          "0x0000",
+          "0x0005",
+          "0x002d",
+          "0x0023",
+          "0x000d",
+          "0x0017",
+          "0x0033"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4865,
+          4866,
+          4867,
+          49195,
+          49199,
+          49196,
+          49200,
+          255
+        ],
+        "extensions": [
+          11,
+          10,
+          16,
+          43,
+          0,
+          5,
+          45,
+          35,
+          13,
+          23,
+          51
+        ],
+        "supported_groups": [
+          29,
+          23,
+          24
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4865-4866-4867-49195-49199-49196-49200-255,11-10-16-43-0-5-45-35-13-23-51,29-23-24,0",
+        "ja3_hash": "316f06f8753d760a27380c89d50c8044"
+      },
+      "comparison": {
+        "ja3_hash_match": false,
+        "ja3_string_match": false,
+        "extension_order_match": false,
+        "cipher_suite_count_delta": -7
+      }
+    },
+    {
+      "profile": "firefox",
+      "go": {
+        "engine": "go",
+        "profile_requested": "firefox",
+        "profile_effective": "HelloFirefox_Auto",
+        "record_len": 659,
+        "extension_order_summary": [
+          "0x0000",
+          "0x0017",
+          "0xff01",
+          "0x000a",
+          "0x000b",
+          "0x0023",
+          "0x0010",
+          "0x0005",
+          "0x0022",
+          "0x0033",
+          "0x002b",
+          "0x000d",
+          "0x002d",
+          "0x001c",
+          "0xfe0d"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4865,
+          4867,
+          4866,
+          49195,
+          49199,
+          52393,
+          52392,
+          49196,
+          49200,
+          49162,
+          49161,
+          49171,
+          49172,
+          156,
+          157,
+          47,
+          53
+        ],
+        "extensions": [
+          0,
+          23,
+          65281,
+          10,
+          11,
+          35,
+          16,
+          5,
+          34,
+          51,
+          43,
+          13,
+          45,
+          28,
+          65037
+        ],
+        "supported_groups": [
+          29,
+          23,
+          24,
+          25,
+          256,
+          257
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-49161-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-34-51-43-13-45-28-65037,29-23-24-25-256-257,0",
+        "ja3_hash": "b5001237acdf006056b409cc433726b0"
+      },
+      "rust": {
+        "engine": "rust",
+        "profile_requested": "firefox",
+        "profile_effective": "firefox_105_template",
+        "record_len": 254,
+        "extension_order_summary": [
+          "0x0017",
+          "0x0000",
+          "0x0023",
+          "0x0010",
+          "0x000a",
+          "0x0005",
+          "0x002d",
+          "0x0033",
+          "0x000b",
+          "0x000d",
+          "0x002b"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4865,
+          4866,
+          4867,
+          49195,
+          49199,
+          49196,
+          49200,
+          255
+        ],
+        "extensions": [
+          23,
+          0,
+          35,
+          16,
+          10,
+          5,
+          45,
+          51,
+          11,
+          13,
+          43
+        ],
+        "supported_groups": [
+          29,
+          23,
+          24
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4865-4866-4867-49195-49199-49196-49200-255,23-0-35-16-10-5-45-51-11-13-43,29-23-24,0",
+        "ja3_hash": "671d4865db9e5fe79186ea7ba61dee51"
+      },
+      "comparison": {
+        "ja3_hash_match": false,
+        "ja3_string_match": false,
+        "extension_order_match": false,
+        "cipher_suite_count_delta": -9
+      }
+    },
+    {
+      "profile": "randomized",
+      "go": {
+        "engine": "go",
+        "profile_requested": "randomized",
+        "profile_effective": "HelloRandomized(seed:l20)",
+        "record_len": 517,
+        "extension_order_summary": [
+          "0x0015",
+          "0x0012",
+          "0x000a",
+          "0x0033",
+          "0x000d",
+          "0x0010",
+          "0x0005",
+          "0x002b",
+          "0x000b",
+          "0x0017",
+          "0x0023",
+          "0x002d",
+          "0x4469",
+          "0x0000"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4867,
+          4866,
+          4865,
+          49200,
+          60,
+          52392,
+          49195,
+          49199,
+          156,
+          157,
+          49162,
+          49161,
+          53,
+          49172,
+          10,
+          47
+        ],
+        "extensions": [
+          21,
+          18,
+          10,
+          51,
+          13,
+          16,
+          5,
+          43,
+          11,
+          23,
+          35,
+          45,
+          17513,
+          0
+        ],
+        "supported_groups": [
+          4588,
+          29,
+          23,
+          24,
+          25
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4867-4866-4865-49200-60-52392-49195-49199-156-157-49162-49161-53-49172-10-47,21-18-10-51-13-16-5-43-11-23-35-45-17513-0,4588-29-23-24-25,0",
+        "ja3_hash": "b4d8918eeefff559456034829c485abf"
+      },
+      "rust": {
+        "engine": "rust",
+        "profile_requested": "randomized",
+        "profile_effective": "chrome_110_template",
+        "record_len": 254,
+        "extension_order_summary": [
+          "0x0010",
+          "0x0033",
+          "0x002b",
+          "0x0005",
+          "0x0017",
+          "0x0023",
+          "0x000a",
+          "0x0000",
+          "0x000b",
+          "0x002d",
+          "0x000d"
+        ],
+        "version": 771,
+        "cipher_suites": [
+          4865,
+          4866,
+          4867,
+          49195,
+          49199,
+          49196,
+          49200,
+          255
+        ],
+        "extensions": [
+          16,
+          51,
+          43,
+          5,
+          23,
+          35,
+          10,
+          0,
+          11,
+          45,
+          13
+        ],
+        "supported_groups": [
+          29,
+          23,
+          24
+        ],
+        "ec_point_formats": [
+          0
+        ],
+        "ja3_string": "771,4865-4866-4867-49195-49199-49196-49200-255,16-51-43-5-23-35-10-0-11-45-13,29-23-24,0",
+        "ja3_hash": "18c2f02b8a0eb362175da18ad4f5bcd3"
+      },
+      "comparison": {
+        "ja3_hash_match": false,
+        "ja3_string_match": false,
+        "extension_order_match": false,
+        "cipher_suite_count_delta": -8
+      }
+    }
+  ],
+  "summary": {
+    "profile_count": 3,
+    "ja3_hash_match_count": 0,
+    "extension_order_match_count": 0
+  }
+}

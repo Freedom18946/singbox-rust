@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-04 23:59
-> **当前阶段**：L18 认证替换实施中（认证优先，性能零回归并行）
+> **最后更新**：2026-03-05 00:20
+> **当前阶段**：L20 执行中（A1 + C1 wave#1 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh` exit 0（V4a=24/25，2026-02-10）
@@ -26,7 +26,31 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 规划冻结（待执行），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1 + C1 wave#1 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.1.1 + L20.3.1 首批落地（2026-03-05 00:20）
+
+**状态**：✅ `L20.1.1` 完成；✅ `L20.3.1` wave#1 完成（3 项）
+
+**L20.1.1（uTLS 指纹观测基线）**：
+1. 新增脚本：`scripts/test/tls_fingerprint_baseline.sh`
+2. 基线产物：`reports/security/tls_fingerprint_baseline.json`
+3. 覆盖 profile：`chrome` / `firefox` / `randomized`
+4. 口径：loopback ClientHello 抓取 + JA3/扩展顺序摘要对比（Go vs Rust 同 profile）
+
+**L20.3.1（重叠迁移波次 #1）**：
+1. `direct`：`sb-adapters` 注册路径移除对 `sb_core::outbound::DirectConnector` 的直接依赖，改为 adapter 内 bridge 连接器。
+2. `tailscale`：`TailscaleConnector` 的 direct 依赖从具体 core 类型改为 `Arc<dyn sb_core::adapter::OutboundConnector>`，避免实现绑定回流。
+3. `DoT`：`sb-core` DoT 查询路径由 `crate::transport::tls::TlsClient` 迁至 `sb-transport::{TcpDialer,TlsDialer}`。
+4. 迁移台账回填：`agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（3A 节）
+
+**最小验证**：
+1. `cargo check -p sb-adapters`
+2. `cargo check -p sb-adapters --features "adapter-tailscale,legacy_tailscale_outbound"`
+3. `cargo check -p sb-core --features dns_dot,tls_rustls`
+4. `bash agents-only/06-scripts/check-boundaries.sh --strict`（PASS）
 
 ---
 

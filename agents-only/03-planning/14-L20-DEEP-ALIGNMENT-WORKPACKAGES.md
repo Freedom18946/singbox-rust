@@ -1,7 +1,7 @@
 # L20 详细工作包规划：深水区能力实证与迁移收敛
 
-状态：🆕 规划冻结（待执行）
-更新：2026-03-04 23:59 CST
+状态：🟡 执行中（A1 + C1 wave#1 已落地）
+更新：2026-03-05 00:20 CST
 
 ## Context
 
@@ -177,6 +177,11 @@
 1. A（uTLS 可测化）与 C（迁移第一波）并行起步。
 2. B 依赖 A2 的能力细分后推进。
 3. D 在 A/B/C 收敛后统一接线并收口。
+
+## 执行进展（2026-03-05）
+
+- ✅ `L20.1.1`：已落地 `scripts/test/tls_fingerprint_baseline.sh`，并产出 `reports/security/tls_fingerprint_baseline.json`（覆盖 `chrome/firefox/randomized` 三组）。
+- ✅ `L20.3.1`（wave#1）：已完成 3 项迁移子项（`direct` builder 收敛、`tailscale` direct 类型解耦、DoT 迁至 `sb-transport`），详见 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md` 的 `3A` 节。
 
 ## L20 完成定义（DoD）
 
