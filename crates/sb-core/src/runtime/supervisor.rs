@@ -1140,16 +1140,44 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> 
     // New inbound adapters should be registered via InboundManager.add_handler().
     // Legacy inbounds are started via bridge.inbounds directly, not through InboundManager.
 
-    // Register outbound tags with OutboundManager for lifecycle tracking (L2.9)
-    // The actual connectors remain in Bridge/OutboundRegistryHandle for connection routing.
-    // OutboundManager tracks tags + dependencies for startup ordering + default resolution.
-    for (name, _kind, _connector) in &bridge.outbounds {
-        // Use ensure_fallback_direct pattern: register a DirectConnector placeholder
-        // so OutboundManager knows this tag exists for dependency/default resolution.
+    #[derive(Clone, Debug)]
+    struct ManagerConnectorBridge {
+        inner: std::sync::Arc<dyn crate::adapter::OutboundConnector>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::outbound::traits::OutboundConnector for ManagerConnectorBridge {
+        async fn connect_tcp(
+            &self,
+            ctx: &crate::types::ConnCtx,
+        ) -> crate::error::SbResult<tokio::net::TcpStream> {
+            let host = ctx.dst.host.to_string();
+            self.inner
+                .connect(&host, ctx.dst.port)
+                .await
+                .map_err(crate::error::SbError::io)
+        }
+
+        async fn connect_udp(
+            &self,
+            _ctx: &crate::types::ConnCtx,
+        ) -> crate::error::SbResult<Box<dyn crate::outbound::traits::UdpTransport>> {
+            Err(crate::error::SbError::network(
+                crate::error::ErrorClass::Protocol,
+                "udp not supported by manager connector bridge".to_string(),
+            ))
+        }
+    }
+
+    // Register real bridge connectors into OutboundManager so startup/default
+    // resolution and runtime fetch paths stay aligned with assembled outbounds.
+    for (name, _kind, connector) in &bridge.outbounds {
         ctx.outbound_manager
             .add_connector(
                 name.clone(),
-                std::sync::Arc::new(crate::outbound::direct_connector::DirectConnector::new()),
+                std::sync::Arc::new(ManagerConnectorBridge {
+                    inner: connector.clone(),
+                }),
             )
             .await;
     }

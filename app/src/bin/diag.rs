@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
 use sb_core::log;
 use sb_core::transport::tcp::TcpDialer;
-use sb_core::transport::tls::TlsClient;
+use sb_transport::{webpki_roots_config, DialError, Dialer as _, TlsDialer};
 use serde_json::json;
+use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(name = "diag")]
@@ -64,25 +65,77 @@ fn main() {
             sni,
             timeout_ms,
         } => {
-            let c = TlsClient {
-                dialer: TcpDialer {
-                    connect_timeout: std::time::Duration::from_millis(timeout_ms),
-                    ..Default::default()
-                },
-                ..Default::default()
+            let (host, port) = match parse_host_port(&addr) {
+                Some(v) => v,
+                None => {
+                    let obj = json!({
+                        "tool":"tls",
+                        "addr": addr,
+                        "sni": sni,
+                        "ok": false,
+                        "error": "bad_addr",
+                        "class": "input",
+                        "alpn": serde_json::Value::Null,
+                    });
+                    let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
+                    println!("{}", out);
+                    return;
+                }
             };
-            let r = c.handshake(&sni, &addr);
+
+            let mut tcp = sb_transport::TcpDialer::default();
+            tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+            let tls = TlsDialer {
+                inner: tcp,
+                config: webpki_roots_config(),
+                sni_override: Some(sni.clone()),
+                alpn: None,
+            };
+            let started = Instant::now();
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| DialError::Other(format!("runtime_build_failed:{e}")))
+                .and_then(|rt| rt.block_on(async { tls.connect(&host, port).await }));
+            let elapsed_ms = started.elapsed().as_millis();
+
+            let (ok, error, class) = match result {
+                Ok(_) => (true, None, None),
+                Err(err) => {
+                    let (code, class) = classify_dial_error(&err);
+                    (false, Some(code), Some(class))
+                }
+            };
             let obj = json!({
                 "tool":"tls",
                 "addr": addr,
                 "sni": sni,
-                "ok": r.error.is_none(),
-                "error": r.error.as_ref().map(|e| e.code.as_str()),
-                "class": r.error.as_ref().map(|e| e.class),
-                "alpn": r.negotiated_alpn,
+                "elapsed_ms": elapsed_ms,
+                "ok": ok,
+                "error": error,
+                "class": class,
+                "alpn": serde_json::Value::Null,
             });
             let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
             println!("{}", out);
         }
+    }
+}
+
+fn parse_host_port(addr: &str) -> Option<(String, u16)> {
+    if let Ok(sock) = addr.parse::<std::net::SocketAddr>() {
+        return Some((sock.ip().to_string(), sock.port()));
+    }
+    let (host, port) = addr.rsplit_once(':')?;
+    let port = port.parse::<u16>().ok()?;
+    Some((host.to_string(), port))
+}
+
+fn classify_dial_error(err: &DialError) -> (&'static str, &'static str) {
+    match err {
+        DialError::Io(_) => ("io", "io"),
+        DialError::Tls(_) => ("tls", "tls"),
+        DialError::NotSupported => ("not_supported", "unsupported"),
+        DialError::Other(_) => ("other", "other"),
     }
 }
