@@ -173,6 +173,18 @@ async fn test_get_capabilities() -> anyhow::Result<()> {
         Some("1.0.0")
     );
     assert!(json.get("compat_version").is_some());
+    assert_eq!(
+        json.get("contract_version").and_then(|v| v.as_str()),
+        Some("2.0.0")
+    );
+    assert!(json
+        .get("required_by_gui")
+        .and_then(|v| v.as_object())
+        .is_some());
+    assert!(json
+        .get("breaking_changes")
+        .and_then(|v| v.as_array())
+        .is_some());
     assert!(json
         .get("tls_provider")
         .and_then(|v| v.as_object())

@@ -45,6 +45,9 @@ Response contract includes:
 - `schema_version`
 - `compat_version`
 - `clash_api_compat_version`
+- `contract_version` (`2.0.0`)
+- `required_by_gui` (`status/min_contract_version/min_clash_api_compat_version/required_top_level_fields/blockers?`)
+- `breaking_changes` (array, empty means no active breaking change gate)
 - `tls_provider` (`status/requested/effective/source/install/fallback_reason/evidence_capability_ids`)
 - `capability_matrix[]`
 

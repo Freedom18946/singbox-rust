@@ -83,6 +83,17 @@ fn require_key<'a>(
         .ok_or_else(|| anyhow::anyhow!("{label} missing key '{key}'"))
 }
 
+fn parse_semver_triplet(raw: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = raw.split('.');
+    let major = parts.next()?.parse::<u64>().ok()?;
+    let minor = parts.next()?.parse::<u64>().ok()?;
+    let patch = parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
 #[tokio::test]
 async fn capabilities_contract_suite() -> anyhow::Result<()> {
     let Some(server) = TestServer::start().await? else {
@@ -136,6 +147,9 @@ async fn capabilities_contract_suite() -> anyhow::Result<()> {
         "schema_version",
         "compat_version",
         "clash_api_compat_version",
+        "contract_version",
+        "required_by_gui",
+        "breaking_changes",
         "feature_flags",
         "source",
         "tls_provider",
@@ -194,6 +208,57 @@ async fn capabilities_contract_suite() -> anyhow::Result<()> {
         if !tls_provider.contains_key(key) {
             failures.push(format!("[capabilities] tls_provider missing key '{key}'"));
         }
+    }
+
+    let contract_version = cap_obj
+        .get("contract_version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("[capabilities] contract_version must be string"))?;
+    let required_by_gui = cap_obj
+        .get("required_by_gui")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow::anyhow!("[capabilities] required_by_gui must be object"))?;
+    for key in [
+        "status",
+        "min_contract_version",
+        "min_clash_api_compat_version",
+        "required_top_level_fields",
+    ] {
+        if !required_by_gui.contains_key(key) {
+            failures.push(format!(
+                "[capabilities] required_by_gui missing key '{key}'"
+            ));
+        }
+    }
+
+    let min_contract_version = required_by_gui
+        .get("min_contract_version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            anyhow::anyhow!("[capabilities] required_by_gui.min_contract_version must be string")
+        })?;
+    match (
+        parse_semver_triplet(contract_version),
+        parse_semver_triplet(min_contract_version),
+    ) {
+        (Some(actual), Some(required)) if actual >= required => {}
+        _ => failures.push(format!(
+            "[capabilities] contract_version {contract_version} does not satisfy required_by_gui.min_contract_version {min_contract_version}"
+        )),
+    }
+
+    let breaking_changes = cap_obj
+        .get("breaking_changes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("[capabilities] breaking_changes must be array"))?;
+    let required_status = required_by_gui
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if breaking_changes.is_empty() && required_status != "ok" {
+        failures.push(format!(
+            "[capabilities] required_by_gui.status must be 'ok' when breaking_changes is empty (got '{required_status}')"
+        ));
     }
 
     if failures.is_empty() {

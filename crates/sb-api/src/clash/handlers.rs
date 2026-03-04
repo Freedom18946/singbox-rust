@@ -39,6 +39,21 @@ const REJECT_PROXY_NAME: &str = "REJECT";
 const CAPABILITIES_ENDPOINT_SCHEMA_VERSION: &str = "1.0.0";
 const CAPABILITIES_ENDPOINT_COMPAT_VERSION: &str = "clash-api-capabilities.v1";
 const CLASH_API_COMPAT_VERSION: &str = "1.0.0";
+const CAPABILITIES_CONTRACT_VERSION: &str = "2.0.0";
+const CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION: &str = "2.0.0";
+const CAPABILITIES_REQUIRED_GUI_MIN_CLASH_API_COMPAT_VERSION: &str = "1.0.0";
+const CAPABILITIES_REQUIRED_GUI_FIELDS: [&str; 10] = [
+    "schema_version",
+    "compat_version",
+    "clash_api_compat_version",
+    "contract_version",
+    "required_by_gui",
+    "breaking_changes",
+    "feature_flags",
+    "source",
+    "tls_provider",
+    "capability_matrix",
+];
 
 #[derive(Debug, Deserialize)]
 struct CapabilitiesReport {
@@ -79,6 +94,9 @@ struct CapabilitiesEndpointPayload {
     schema_version: String,
     compat_version: String,
     clash_api_compat_version: String,
+    contract_version: String,
+    required_by_gui: CapabilitiesRequiredByGui,
+    breaking_changes: Vec<String>,
     generated_at: String,
     source: CapabilitiesSource,
     feature_flags: CapabilitiesFeatureFlags,
@@ -104,6 +122,16 @@ struct CapabilitiesSource {
 struct CapabilitiesFeatureFlags {
     clash_api: bool,
     v2ray_api: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CapabilitiesRequiredByGui {
+    status: String,
+    min_contract_version: String,
+    min_clash_api_compat_version: String,
+    required_top_level_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    blockers: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -310,6 +338,71 @@ fn derive_tls_provider(
     }
 }
 
+fn parse_semver_triplet(raw: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = raw.split('.');
+    let major = parts.next()?.parse::<u64>().ok()?;
+    let minor = parts.next()?.parse::<u64>().ok()?;
+    let patch = parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn version_satisfies(actual: &str, required: &str) -> bool {
+    match (parse_semver_triplet(actual), parse_semver_triplet(required)) {
+        (Some(actual_v), Some(required_v)) => actual_v >= required_v,
+        _ => false,
+    }
+}
+
+fn build_required_by_gui(
+    contract_version: &str,
+    breaking_changes: &[String],
+) -> CapabilitiesRequiredByGui {
+    let mut blockers = Vec::<String>::new();
+    if !version_satisfies(
+        contract_version,
+        CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION,
+    ) {
+        blockers.push(format!(
+            "contract_version {contract_version} is below required {}",
+            CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION
+        ));
+    }
+    if !version_satisfies(
+        CLASH_API_COMPAT_VERSION,
+        CAPABILITIES_REQUIRED_GUI_MIN_CLASH_API_COMPAT_VERSION,
+    ) {
+        blockers.push(format!(
+            "clash_api_compat_version {} is below required {}",
+            CLASH_API_COMPAT_VERSION, CAPABILITIES_REQUIRED_GUI_MIN_CLASH_API_COMPAT_VERSION
+        ));
+    }
+    if !breaking_changes.is_empty() {
+        blockers.push(format!(
+            "breaking_changes is non-empty ({})",
+            breaking_changes.len()
+        ));
+    }
+
+    CapabilitiesRequiredByGui {
+        status: if blockers.is_empty() {
+            "ok".to_string()
+        } else {
+            "blocked".to_string()
+        },
+        min_contract_version: CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION.to_string(),
+        min_clash_api_compat_version: CAPABILITIES_REQUIRED_GUI_MIN_CLASH_API_COMPAT_VERSION
+            .to_string(),
+        required_top_level_fields: CAPABILITIES_REQUIRED_GUI_FIELDS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
+        blockers,
+    }
+}
+
 #[cfg(test)]
 mod capabilities_provider_tests {
     use super::*;
@@ -414,6 +507,33 @@ mod capabilities_provider_tests {
 
         assert_eq!(provider.status, "mismatch");
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn version_satisfies_compares_semver_triplets() {
+        assert!(version_satisfies("2.0.0", "2.0.0"));
+        assert!(version_satisfies("2.1.0", "2.0.9"));
+        assert!(!version_satisfies("1.9.9", "2.0.0"));
+        assert!(!version_satisfies("2", "2.0.0"));
+    }
+
+    #[test]
+    fn build_required_by_gui_blocks_when_breaking_changes_present() {
+        let required =
+            build_required_by_gui("2.0.0", &[String::from("capabilities.v2.remove.foo")]);
+        assert_eq!(required.status, "blocked");
+        assert!(!required.blockers.is_empty());
+    }
+
+    #[test]
+    fn build_required_by_gui_is_ok_for_current_contract() {
+        let required = build_required_by_gui(CAPABILITIES_CONTRACT_VERSION, &[]);
+        assert_eq!(required.status, "ok");
+        assert_eq!(
+            required.min_contract_version,
+            CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION
+        );
+        assert!(required.blockers.is_empty());
     }
 }
 
@@ -1493,6 +1613,8 @@ pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoRespon
     let mut capability_matrix = Vec::<CapabilityMatrixEntry>::new();
     let mut errors = Vec::<String>::new();
     let mut tls_provider = CapabilitiesTlsProvider::unavailable(None);
+    let breaking_changes = Vec::<String>::new();
+    let required_by_gui = build_required_by_gui(CAPABILITIES_CONTRACT_VERSION, &breaking_changes);
 
     match load_capabilities_report() {
         Ok((path, report)) => {
@@ -1516,6 +1638,9 @@ pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoRespon
         schema_version: CAPABILITIES_ENDPOINT_SCHEMA_VERSION.to_string(),
         compat_version: CAPABILITIES_ENDPOINT_COMPAT_VERSION.to_string(),
         clash_api_compat_version: CLASH_API_COMPAT_VERSION.to_string(),
+        contract_version: CAPABILITIES_CONTRACT_VERSION.to_string(),
+        required_by_gui,
+        breaking_changes,
         generated_at: humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string(),
         source,
         feature_flags: CapabilitiesFeatureFlags {
