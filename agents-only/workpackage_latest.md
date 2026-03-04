@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 01:16
-> **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 已落地，保持与 L18 隔离并行）
+> **最后更新**：2026-03-05 01:32
+> **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1 已落地，保持与 L18 隔离并行）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=8 assertions，2026-03-05）
@@ -26,7 +26,27 @@
   3. Batch C：重叠迁移第一波 + strict gate 迁移追踪断言。
   4. Batch D：GUI 契约 v2 接线与 L20 capstone 报告。
 - **与 L18 关系**：继续保持隔离并行，不占认证端口，不触发 L18 运行器。
-- **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+- **当前阶段**：L20 执行中（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1 已完成），按 A/C 并行起步、B 后接、D 收口执行。
+
+---
+
+## 🆕 最新进展：L20.4.1 落地（2026-03-05 01:32）
+
+**状态**：✅ `L20.4.1` 完成
+
+**L20.4.1（`/capabilities` 契约 v2 协商字段）**：
+1. `crates/sb-api/src/clash/handlers.rs`：新增 `contract_version`、`required_by_gui`、`breaking_changes`。
+2. 新增协商逻辑：`required_by_gui.status=ok|blocked`，并基于 `contract_version >= min_contract_version` + `breaking_changes` 进行门禁判定。
+3. `crates/sb-api/tests/capabilities_contract.rs`：新增版本协商断言与 v2 字段 shape 校验。
+4. `crates/sb-api/tests/clash_http_e2e.rs`：新增 `contract_version/required_by_gui/breaking_changes` e2e 断言。
+5. 文档与报告：`docs/capabilities.md` + `reports/l20/L20_4_1_CAPABILITIES_CONTRACT_V2.md`。
+
+**最小验证**：
+1. `cargo test -p sb-api capabilities_provider_tests -- --nocapture`（含 negotiation 单测）
+2. `cargo test -p sb-api capabilities_contract_suite -- --nocapture`
+3. `cargo test -p sb-api test_get_capabilities -- --nocapture`
+4. `bash scripts/check_claims.sh`（`PASS (6 claims checked)`）
+5. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (8 assertions)`）
 
 ---
 
