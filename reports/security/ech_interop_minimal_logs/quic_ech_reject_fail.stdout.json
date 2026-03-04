@@ -1,0 +1,26 @@
+{
+  "ok": false,
+  "file": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T//l20-ech-interop-gE958d/quic_ech_reject_fail.json",
+  "issues": [
+    {
+      "level": "warning",
+      "ptr": "/outbounds/0/encrypted_client_hello",
+      "message": "outbound 'quic-ech-reject': Encrypted Client Hello (ECH) is behind the 'tls_ech' feature flag; without it, ECH configuration is silently ignored",
+      "code": "Deprecated",
+      "hint": "enable the 'tls_ech' feature flag at build time for ECH support"
+    },
+    {
+      "level": "error",
+      "ptr": "/outbounds/0/tls/ech",
+      "message": "outbound 'quic-ech-reject': QUIC + ECH is not supported in the current Rust implementation; configuration is rejected by default to avoid silent fallback",
+      "code": "Conflict",
+      "hint": "set experimental.quic_ech_mode='experimental' only for controlled interop tests, or use TCP-based TLS ECH outbounds"
+    }
+  ],
+  "summary": {
+    "deprecations": 1,
+    "errors": 1,
+    "total_issues": 2,
+    "warnings": 1
+  }
+}

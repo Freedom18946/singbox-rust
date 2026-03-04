@@ -195,6 +195,27 @@ Generate fuzz corpus seeds.
 
 ## Other Tests
 
+### `tls_fingerprint_baseline.sh`
+L20.1.1 Go-vs-Rust uTLS ClientHello fingerprint baseline.
+
+```bash
+./scripts/test/tls_fingerprint_baseline.sh
+```
+
+Outputs:
+- `reports/security/tls_fingerprint_baseline.json`
+
+### `ech_interop_minimal.sh`
+L20.2.3 minimal ECH interop suite (`tcp_ech` / `quic_ech_reject` / `quic_ech_experimental`).
+
+```bash
+./scripts/test/ech_interop_minimal.sh
+```
+
+Outputs:
+- `reports/security/ech_interop_minimal.json`
+- `reports/security/ech_interop_minimal_logs/*`
+
 ### `tun_linux_e2e.sh`
 Linux-only TUN dataplane e2e profile for L19.4.1.
 

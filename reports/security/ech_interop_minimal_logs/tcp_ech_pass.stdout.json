@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "file": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T//l20-ech-interop-gE958d/tcp_ech_pass.json",
+  "issues": [
+    {
+      "level": "warning",
+      "ptr": "/outbounds/0/encrypted_client_hello",
+      "message": "outbound 'ech-tcp-pass': Encrypted Client Hello (ECH) is behind the 'tls_ech' feature flag; without it, ECH configuration is silently ignored",
+      "code": "Deprecated",
+      "hint": "enable the 'tls_ech' feature flag at build time for ECH support"
+    }
+  ],
+  "summary": {
+    "deprecations": 1,
+    "errors": 0,
+    "total_issues": 1,
+    "warnings": 1
+  }
+}
