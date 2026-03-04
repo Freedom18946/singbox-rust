@@ -12,6 +12,11 @@
   - `ed13cdf` (`L19.4.3`) 性能验收口径重写 + 分层执行入口
   - `0429a3e` (`L19.5.1`) `GET /capabilities` 强契约端点 + HTTP 合同覆盖
   - `06725a2` (`L19.5.2`) GUI 固定请求集合同测试 + L19 收口报告
+- L20 已完成收口并回填证据链：
+  - `5171cc1` (`L20.4.1`) `/capabilities` 契约 v2 协商字段
+  - `c7d5607` (`L20.4.2`) GUI cert 接入 capability negotiation gate
+  - `a3bf16e` (`L20.4.3`) L20 capstone 报告与最终状态回填
+  - 对应报告：`reports/L20_DEEP_ALIGNMENT.md`
 - 推送分支：`origin/codex/l19-batch-a`
 
 ## 3. 逐点回复（第一次审议意见）
@@ -41,8 +46,14 @@
 - `bash scripts/ci/tasks/docs-links.sh` -> `PASS`
 - `bash scripts/l19/capabilities_contract.sh` -> `PASS`
 
-## 6. 残余风险与下一步建议（进入 L20）
+## 6. 残余风险与下一步建议（L20 收口后）
 
 1. `uTLS`：仍是“可用但未达到 Go uTLS 全指纹等价”的受控差距。
 2. `ECH/QUIC-ECH`：已硬护栏避免误导，但完整能力尚未开放。
 3. `sb-core` 重叠迁移：治理框架已就绪，需持续执行迁移 backlog 直到重复实现收敛。
+
+## 7. L20 回填状态
+
+- 当前状态：`L20` 已收口完成（A1+A2+A3 + B1+B2+B3 + C1 wave#1+C2+C3 + D1+D2+D3）。
+- 收口证据总入口：`reports/L20_DEEP_ALIGNMENT.md`。
+- 最新工作包状态页：`agents-only/workpackage_latest.md`。
