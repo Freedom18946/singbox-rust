@@ -45,6 +45,8 @@ struct CapabilitiesReport {
     schema_version: String,
     source_commit: Option<String>,
     profile: Option<String>,
+    #[serde(default)]
+    runtime_probe: Option<CapabilitiesReportProbeMeta>,
     capabilities: Vec<CapabilitiesReportEntry>,
 }
 
@@ -57,6 +59,19 @@ struct CapabilitiesReportEntry {
     verification_state: String,
     overall_state: String,
     accepted_limitation: bool,
+    #[serde(default)]
+    runtime_probe: Option<CapabilitiesReportRuntimeProbe>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapabilitiesReportRuntimeProbe {
+    #[serde(default)]
+    details: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapabilitiesReportProbeMeta {
+    generated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +82,7 @@ struct CapabilitiesEndpointPayload {
     generated_at: String,
     source: CapabilitiesSource,
     feature_flags: CapabilitiesFeatureFlags,
+    tls_provider: CapabilitiesTlsProvider,
     capability_matrix: Vec<CapabilityMatrixEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     errors: Option<Vec<String>>,
@@ -99,6 +115,30 @@ struct CapabilityMatrixEntry {
     verification_state: String,
     overall_state: String,
     accepted_limitation: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct CapabilitiesTlsProvider {
+    status: String,
+    requested: String,
+    effective: String,
+    source: String,
+    install: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fallback_reason: Option<String>,
+    evidence_capability_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    probe_generated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TlsProviderSnapshot {
+    capability_id: String,
+    requested: String,
+    effective: String,
+    source: String,
+    install: String,
+    fallback_reason: Option<String>,
 }
 
 // ===== Helper Functions =====
@@ -171,6 +211,210 @@ fn build_capability_matrix(entries: Vec<CapabilitiesReportEntry>) -> Vec<Capabil
         .collect::<Vec<_>>();
     rows.sort_by(|a, b| a.id.cmp(&b.id));
     rows
+}
+
+fn normalize_provider_detail(value: Option<&String>) -> Option<String> {
+    let v = value?.trim();
+    if v.is_empty() || v == "-" {
+        None
+    } else {
+        Some(v.to_string())
+    }
+}
+
+fn extract_tls_provider_snapshot(entry: &CapabilitiesReportEntry) -> Option<TlsProviderSnapshot> {
+    let details = &entry.runtime_probe.as_ref()?.details;
+    let requested = normalize_provider_detail(details.get("tls_provider_requested"))?;
+    let effective = normalize_provider_detail(details.get("tls_provider"))?;
+    let source = normalize_provider_detail(details.get("tls_provider_source"))?;
+    let install = normalize_provider_detail(details.get("tls_provider_install"))?;
+    let fallback_reason = normalize_provider_detail(details.get("tls_provider_fallback_reason"));
+
+    Some(TlsProviderSnapshot {
+        capability_id: entry.id.clone(),
+        requested,
+        effective,
+        source,
+        install,
+        fallback_reason,
+    })
+}
+
+impl CapabilitiesTlsProvider {
+    fn unavailable(probe_generated_at: Option<String>) -> Self {
+        Self {
+            status: "unavailable".to_string(),
+            requested: "-".to_string(),
+            effective: "-".to_string(),
+            source: "-".to_string(),
+            install: "-".to_string(),
+            fallback_reason: None,
+            evidence_capability_ids: Vec::new(),
+            probe_generated_at,
+        }
+    }
+}
+
+fn derive_tls_provider(
+    report: &CapabilitiesReport,
+    errors: &mut Vec<String>,
+) -> CapabilitiesTlsProvider {
+    let probe_generated_at = report
+        .runtime_probe
+        .as_ref()
+        .and_then(|meta| meta.generated_at.clone());
+    let mut snapshots = report
+        .capabilities
+        .iter()
+        .filter(|entry| entry.id == "tls.ech.tcp" || entry.id == "tls.ech.quic")
+        .filter_map(extract_tls_provider_snapshot)
+        .collect::<Vec<_>>();
+
+    if snapshots.is_empty() {
+        return CapabilitiesTlsProvider::unavailable(probe_generated_at);
+    }
+
+    snapshots.sort_by(|a, b| a.capability_id.cmp(&b.capability_id));
+    let base = snapshots[0].clone();
+    let consistent = snapshots.iter().all(|snap| {
+        snap.requested == base.requested
+            && snap.effective == base.effective
+            && snap.source == base.source
+            && snap.install == base.install
+            && snap.fallback_reason == base.fallback_reason
+    });
+
+    if !consistent {
+        errors.push(
+            "tls_provider mismatch between tls.ech.tcp and tls.ech.quic runtime_probe details"
+                .to_string(),
+        );
+    }
+
+    CapabilitiesTlsProvider {
+        status: if consistent {
+            "ok".to_string()
+        } else {
+            "mismatch".to_string()
+        },
+        requested: base.requested,
+        effective: base.effective,
+        source: base.source,
+        install: base.install,
+        fallback_reason: base.fallback_reason,
+        evidence_capability_ids: snapshots
+            .into_iter()
+            .map(|snap| snap.capability_id)
+            .collect(),
+        probe_generated_at,
+    }
+}
+
+#[cfg(test)]
+mod capabilities_provider_tests {
+    use super::*;
+
+    fn mk_entry(id: &str, details: &[(&str, &str)]) -> CapabilitiesReportEntry {
+        let mut map = BTreeMap::new();
+        for (k, v) in details {
+            map.insert((*k).to_string(), (*v).to_string());
+        }
+        CapabilitiesReportEntry {
+            id: id.to_string(),
+            name: id.to_string(),
+            compile_state: "supported".to_string(),
+            runtime_state: "unverified".to_string(),
+            verification_state: "integration_verified".to_string(),
+            overall_state: "implemented_unverified".to_string(),
+            accepted_limitation: true,
+            runtime_probe: Some(CapabilitiesReportRuntimeProbe { details: map }),
+        }
+    }
+
+    fn mk_report(entries: Vec<CapabilitiesReportEntry>) -> CapabilitiesReport {
+        CapabilitiesReport {
+            schema_version: "1.0.0".to_string(),
+            source_commit: Some("testsha".to_string()),
+            profile: Some("test".to_string()),
+            runtime_probe: Some(CapabilitiesReportProbeMeta {
+                generated_at: Some("2026-03-05T00:00:00Z".to_string()),
+            }),
+            capabilities: entries,
+        }
+    }
+
+    #[test]
+    fn derive_tls_provider_returns_ok_for_consistent_runtime_probe() {
+        let report = mk_report(vec![
+            mk_entry(
+                "tls.ech.tcp",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                    (
+                        "tls_provider_fallback_reason",
+                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
+                    ),
+                ],
+            ),
+            mk_entry(
+                "tls.ech.quic",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                    (
+                        "tls_provider_fallback_reason",
+                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
+                    ),
+                ],
+            ),
+        ]);
+        let mut errors = Vec::new();
+
+        let provider = derive_tls_provider(&report, &mut errors);
+
+        assert_eq!(provider.status, "ok");
+        assert_eq!(provider.requested, "aws-lc");
+        assert_eq!(provider.effective, "ring");
+        assert_eq!(provider.source, "env-fallback");
+        assert_eq!(provider.install, "installed");
+        assert_eq!(provider.evidence_capability_ids.len(), 2);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn derive_tls_provider_marks_mismatch_when_sources_diverge() {
+        let report = mk_report(vec![
+            mk_entry(
+                "tls.ech.tcp",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                ],
+            ),
+            mk_entry(
+                "tls.ech.quic",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "default"),
+                    ("tls_provider_install", "installed"),
+                ],
+            ),
+        ]);
+        let mut errors = Vec::new();
+
+        let provider = derive_tls_provider(&report, &mut errors);
+
+        assert_eq!(provider.status, "mismatch");
+        assert!(!errors.is_empty());
+    }
 }
 
 /// Infer proxy type from OutboundImpl
@@ -1248,14 +1492,16 @@ pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoRespon
     };
     let mut capability_matrix = Vec::<CapabilityMatrixEntry>::new();
     let mut errors = Vec::<String>::new();
+    let mut tls_provider = CapabilitiesTlsProvider::unavailable(None);
 
     match load_capabilities_report() {
         Ok((path, report)) => {
             source.status = "ok".to_string();
             source.path = path.display().to_string();
-            source.capabilities_schema_version = Some(report.schema_version);
-            source.source_commit = report.source_commit;
-            source.profile = report.profile;
+            source.capabilities_schema_version = Some(report.schema_version.clone());
+            source.source_commit = report.source_commit.clone();
+            source.profile = report.profile.clone();
+            tls_provider = derive_tls_provider(&report, &mut errors);
             capability_matrix = build_capability_matrix(report.capabilities);
         }
         Err(err) => {
@@ -1276,6 +1522,7 @@ pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoRespon
             clash_api: cfg!(feature = "clash-api"),
             v2ray_api: cfg!(feature = "v2ray-api"),
         },
+        tls_provider,
         capability_matrix,
         errors: if errors.is_empty() {
             None

@@ -45,6 +45,7 @@ Response contract includes:
 - `schema_version`
 - `compat_version`
 - `clash_api_compat_version`
+- `tls_provider` (`status/requested/effective/source/install/fallback_reason/evidence_capability_ids`)
 - `capability_matrix[]`
 
 Provider selection for startup probe/runtime:

@@ -138,6 +138,7 @@ async fn capabilities_contract_suite() -> anyhow::Result<()> {
         "clash_api_compat_version",
         "feature_flags",
         "source",
+        "tls_provider",
         "capability_matrix",
     ] {
         if require_key(cap_obj, key, "GET /capabilities").is_err() {
@@ -175,6 +176,23 @@ async fn capabilities_contract_suite() -> anyhow::Result<()> {
                     ));
                 }
             }
+        }
+    }
+
+    let tls_provider = cap_obj
+        .get("tls_provider")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow::anyhow!("[capabilities] tls_provider must be object"))?;
+    for key in [
+        "status",
+        "requested",
+        "effective",
+        "source",
+        "install",
+        "evidence_capability_ids",
+    ] {
+        if !tls_provider.contains_key(key) {
+            failures.push(format!("[capabilities] tls_provider missing key '{key}'"));
         }
     }
 

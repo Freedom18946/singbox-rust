@@ -174,6 +174,10 @@ async fn test_get_capabilities() -> anyhow::Result<()> {
     );
     assert!(json.get("compat_version").is_some());
     assert!(json
+        .get("tls_provider")
+        .and_then(|v| v.as_object())
+        .is_some());
+    assert!(json
         .get("capability_matrix")
         .and_then(|v| v.as_array())
         .is_some());
