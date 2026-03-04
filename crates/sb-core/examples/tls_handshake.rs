@@ -1,4 +1,4 @@
-use sb_core::transport::tls::TlsClient;
+use sb_transport::{webpki_roots_config, Dialer as _, TcpDialer, TlsDialer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
@@ -12,13 +12,19 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .unwrap_or(443);
     let addr = format!("{host}:{port}");
+    let tls = TlsDialer {
+        inner: TcpDialer::default(),
+        config: webpki_roots_config(),
+        sni_override: Some(host.clone()),
+        alpn: None,
+    };
 
     println!("Connecting to {addr}...");
-    let tcp = tokio::net::TcpStream::connect(&addr).await?;
-
-    let tls = TlsClient::from_env();
     println!("Starting TLS handshake with {}...", host);
-    let mut s = tls.connect(host.clone(), tcp).await?;
+    let mut s = tls
+        .connect(&host, port)
+        .await
+        .map_err(|err| anyhow::anyhow!("tls connect failed: {err}"))?;
 
     // 可选：发一个最小 HTTP/1.1 请求验证往返
     let req = format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");

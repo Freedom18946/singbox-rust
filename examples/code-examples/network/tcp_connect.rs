@@ -1,6 +1,5 @@
 use std::env;
-use sb_core::outbound::{DirectOutbound, OutboundContext, TargetAddr, TcpConnectRequest};
-use sb_core::transport::{ConnectOpts, SystemDialer};
+use sb_transport::{Dialer as _, TcpDialer};
 use tokio::time::Duration;
 
 #[tokio::main]
@@ -12,24 +11,14 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .unwrap_or(80);
 
-    // Create direct outbound with system dialer
-    let ctx = OutboundContext::<SystemDialer>::default();
-    let outbound = DirectOutbound::with_ctx(ctx);
-
-    // Configure connection options
-    let opts = ConnectOpts::default()
-        .timeout(Duration::from_secs(5))
-        .nodelay(true);
-
-    // Create connection request
-    let req = TcpConnectRequest {
-        target: TargetAddr::Domain(host.clone(), port),
-        tls: None,
-        opts,
+    // Create a transport dialer with a 5s timeout
+    let dialer = TcpDialer {
+        connect_timeout: Some(Duration::from_secs(5)),
+        ..Default::default()
     };
 
-    // Attempt connection - this will record dial metrics
-    let _stream = outbound.tcp_connect(req).await?;
+    // Attempt connection
+    let _stream = dialer.connect(&host, port).await?;
 
     println!("Successfully connected to {}:{}", host, port);
     Ok(())

@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use sb_core::log;
-use sb_core::transport::tcp::TcpDialer;
-use sb_transport::{webpki_roots_config, DialError, Dialer as _, TlsDialer};
+use sb_transport::{webpki_roots_config, DialError, Dialer as _, TcpDialer, TlsDialer};
 use serde_json::json;
 use std::time::{Duration, Instant};
 
@@ -44,18 +43,34 @@ fn main() {
     }
     match cli.cmd {
         Cmd::Tcp { addr, timeout_ms } => {
-            let dial = TcpDialer {
-                connect_timeout: std::time::Duration::from_millis(timeout_ms),
-                ..Default::default()
+            let started = Instant::now();
+            let result = match parse_host_port(&addr) {
+                Some((host, port)) => {
+                    let mut tcp = TcpDialer::default();
+                    tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| DialError::Other(format!("runtime_build_failed:{e}")))
+                        .and_then(|rt| rt.block_on(async { tcp.connect(&host, port).await }))
+                }
+                None => Err(DialError::Other("bad_addr".to_string())),
             };
-            let r = dial.dial(&addr);
+            let elapsed_ms = started.elapsed().as_millis();
+            let (ok, error, class) = match result {
+                Ok(_) => (true, None, None),
+                Err(err) => {
+                    let (code, class) = classify_dial_error(&err);
+                    (false, Some(code), Some(class))
+                }
+            };
             let obj = json!({
                 "tool":"tcp",
                 "addr": addr,
-                "elapsed_ms": r.elapsed_ms,
-                "ok": r.error.is_none(),
-                "error": r.error.as_ref().map(|e| e.code.as_str()),
-                "class": r.error.as_ref().map(|e| e.class),
+                "elapsed_ms": elapsed_ms,
+                "ok": ok,
+                "error": error,
+                "class": class,
             });
             let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
             println!("{}", out);
@@ -136,6 +151,7 @@ fn classify_dial_error(err: &DialError) -> (&'static str, &'static str) {
         DialError::Io(_) => ("io", "io"),
         DialError::Tls(_) => ("tls", "tls"),
         DialError::NotSupported => ("not_supported", "unsupported"),
+        DialError::Other(msg) if msg == "bad_addr" => ("bad_addr", "input"),
         DialError::Other(_) => ("other", "other"),
     }
 }
