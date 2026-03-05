@@ -723,25 +723,18 @@ pub(crate) async fn handle_conn(
     #[cfg(not(feature = "router"))]
     let rule: Option<String> = None;
     let out_name = d.outbound;
-    let mut outbound_tag = out_name.clone();
-    let ob = match bridge.find_outbound(&out_name) {
-        Some(connector) => Some(connector),
-        None => {
-            outbound_tag = "direct".to_string();
-            bridge.find_direct_fallback()
-        }
-    };
+    let outbound_tag = out_name.clone();
+    let ob = bridge.find_outbound(&out_name).ok_or_else(|| {
+        std::io::Error::other(
+            "no outbound connector available; direct fallback is disabled in SOCKS5 inbound route path",
+        )
+    })?;
 
     // 4) 连接上游并回放首包
-    let mut upstream = match ob {
-        Some(connector) => match connector.connect(&host, port).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                return Err(std::io::Error::other(e));
-            }
-        },
-        None => {
-            return Err(std::io::Error::other("no outbound connector available"));
+    let mut upstream = match ob.connect(&host, port).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            return Err(std::io::Error::other(e));
         }
     };
 

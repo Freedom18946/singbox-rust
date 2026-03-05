@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.40-wave43-v1|||L21 wave#43 migration assertion allowlist version
+VERSION|l21.41-wave44-v1|||L21 wave#44 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -159,3 +159,6 @@ require|W42-02-tools-default-direct-explicit-disabled|app/src/cli/tools.rs|direc
 forbid|W43-01-no-http-connect-inbound-direct-tag-fallback|crates/sb-core/src/inbound/http_connect.rs|outbound_tag = \"direct\"\.to_string\(\);|HTTP CONNECT inbound route path should not retag missing outbound to direct
 forbid|W43-02-no-http-connect-inbound-direct-fallback-call|crates/sb-core/src/inbound/http_connect.rs|br\.find_direct_fallback\(\)|HTTP CONNECT inbound route path should not fallback to direct connector
 require|W43-03-http-connect-inbound-explicit-no-fallback-msg|crates/sb-core/src/inbound/http_connect.rs|no outbound connector available; direct fallback is disabled in HTTP CONNECT inbound route path|HTTP CONNECT inbound route path should emit explicit no-fallback diagnostics
+forbid|W44-01-no-socks5-inbound-direct-tag-fallback|crates/sb-core/src/inbound/socks5.rs|outbound_tag = \"direct\"\.to_string\(\);|SOCKS5 inbound route path should not retag missing outbound to direct
+forbid|W44-02-no-socks5-inbound-direct-fallback-call|crates/sb-core/src/inbound/socks5.rs|bridge\.find_direct_fallback\(\)|SOCKS5 inbound route path should not fallback to direct connector
+require|W44-03-socks5-inbound-explicit-no-fallback-msg|crates/sb-core/src/inbound/socks5.rs|no outbound connector available; direct fallback is disabled in SOCKS5 inbound route path|SOCKS5 inbound route path should emit explicit no-fallback diagnostics

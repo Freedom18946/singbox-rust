@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:29) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.41-wave44-v1
+  FAIL: [W44-01-no-socks5-inbound-direct-tag-fallback] forbidden pattern matched in crates/sb-core/src/inbound/socks5.rs :: SOCKS5 inbound route path should not retag missing outbound to direct
+  FAIL: 1/126 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave44-v7-regress.mqCFh4
+[meta] injected_file=crates/sb-core/src/inbound/socks5.rs
+[meta] injected_pattern=outbound_tag = "direct".to_string();
+[meta] exit_code=1
