@@ -48,6 +48,45 @@ fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     Some(idx)
 }
 
+fn compat_router_index_from_default(default: &str) -> Arc<RouterIndex> {
+    use crate::router::decision_intern::intern_decision;
+    use std::collections::HashMap;
+
+    Arc::new(RouterIndex {
+        exact: HashMap::new(),
+        suffix: Vec::new(),
+        suffix_map: HashMap::new(),
+        port_rules: HashMap::new(),
+        port_ranges: Vec::new(),
+        transport_tcp: None,
+        transport_udp: None,
+        cidr4: Vec::new(),
+        cidr6: Vec::new(),
+        cidr4_buckets: vec![Vec::new(); 33],
+        cidr6_buckets: vec![Vec::new(); 129],
+        rules: Vec::new(),
+        geoip_rules: Vec::new(),
+        geosite_rules: Vec::new(),
+        wifi_ssid_rules: Default::default(),
+        wifi_bssid_rules: Default::default(),
+        rule_set_rules: Default::default(),
+        process_rules: Default::default(),
+        process_path_rules: Default::default(),
+        protocol_rules: Default::default(),
+        network_rules: Default::default(),
+        source_rules: Vec::new(),
+        dest_rules: Vec::new(),
+        user_agent_rules: Vec::new(),
+        #[cfg(feature = "router_keyword")]
+        keyword_rules: Vec::new(),
+        #[cfg(feature = "router_keyword")]
+        keyword_idx: None,
+        default: intern_decision(default),
+        gen: 1,
+        checksum: [0u8; 32],
+    })
+}
+
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
 pub struct RouterHandle {
     idx: Arc<RwLock<Arc<RouterIndex>>>,
@@ -533,14 +572,16 @@ impl RouterHandle {
     }
 
     /// 兼容旧 API：从 Router 构造 RouterHandle
-    pub fn new(_router: Router) -> Self {
-        // 忽略传入的 router，使用共享索引
-        Self::from_env()
+    pub fn new(router: Router) -> Self {
+        Self::from_index(compat_router_index_from_default(router.default.as_str()))
     }
 
-    /// 兼容旧 API：替换内部路由器（实际上是 no-op，因为使用共享索引）
-    pub fn replace(&self, _router: Router) {
-        // no-op：新架构使用共享索引，不支持运行时替换
+    /// 兼容旧 API：替换内部路由器默认出口
+    pub fn replace(&self, router: Router) {
+        let mut idx = self.idx.write().unwrap_or_else(|e| e.into_inner());
+        let mut next = (*compat_router_index_from_default(router.default.as_str())).clone();
+        next.gen = idx.gen + 1;
+        *idx = Arc::new(next);
     }
 
     /// Replace the router index (for hot reloading)
@@ -566,42 +607,7 @@ impl RouterHandle {
 
     /// Create a mock router handle for testing
     pub fn new_mock() -> Self {
-        use crate::router::RouterIndex;
-        use std::collections::HashMap;
-
-        let mock_index = Arc::new(RouterIndex {
-            exact: HashMap::new(),
-            suffix: Vec::new(),
-            suffix_map: HashMap::new(),
-            port_rules: HashMap::new(),
-            port_ranges: Vec::new(),
-            transport_tcp: None,
-            transport_udp: None,
-            cidr4: Vec::new(),
-            cidr6: Vec::new(),
-            cidr4_buckets: vec![Vec::new(); 33],
-            cidr6_buckets: vec![Vec::new(); 129],
-            rules: Vec::new(),
-            geoip_rules: Vec::new(),
-            geosite_rules: Vec::new(),
-            wifi_ssid_rules: Default::default(),
-            wifi_bssid_rules: Default::default(),
-            rule_set_rules: Default::default(),
-            process_rules: Default::default(),
-            process_path_rules: Default::default(),
-            protocol_rules: Default::default(),
-            network_rules: Default::default(),
-            source_rules: Vec::new(),
-            dest_rules: Vec::new(),
-            user_agent_rules: Vec::new(),
-            #[cfg(feature = "router_keyword")]
-            keyword_rules: Vec::new(),
-            #[cfg(feature = "router_keyword")]
-            keyword_idx: None,
-            default: "direct",
-            gen: 1,
-            checksum: [0u8; 32],
-        });
+        let mock_index = compat_router_index_from_default("direct");
 
         Self {
             idx: Arc::new(RwLock::new(mock_index)),
@@ -1639,34 +1645,76 @@ pub enum Rule<
 #[allow(dead_code)]
 pub struct Router {
     #[allow(dead_code)]
-    default: &'static str,
+    default: String,
+}
+
+pub trait IntoRouterDefault {
+    fn into_router_default(self) -> String;
+}
+
+impl IntoRouterDefault for String {
+    fn into_router_default(self) -> String {
+        self
+    }
+}
+
+impl IntoRouterDefault for &str {
+    fn into_router_default(self) -> String {
+        self.to_string()
+    }
+}
+
+impl IntoRouterDefault for &String {
+    fn into_router_default(self) -> String {
+        self.clone()
+    }
+}
+
+impl IntoRouterDefault for crate::outbound::OutboundKind {
+    fn into_router_default(self) -> String {
+        match self {
+            crate::outbound::OutboundKind::Direct => "direct",
+            crate::outbound::OutboundKind::Block => "block",
+            crate::outbound::OutboundKind::Socks => "socks",
+            crate::outbound::OutboundKind::Http => "http",
+            #[cfg(feature = "out_naive")]
+            crate::outbound::OutboundKind::Naive => "naive",
+            #[cfg(feature = "out_hysteria2")]
+            crate::outbound::OutboundKind::Hysteria2 => "hysteria2",
+        }
+        .to_string()
+    }
 }
 
 impl Default for Router {
     fn default() -> Self {
-        Self { default: "direct" }
+        Self {
+            default: "unresolved".to_string(),
+        }
     }
 }
 
 impl Router {
     /// Create a minimal router for testing
     pub fn new_minimal() -> Self {
-        Self { default: "direct" }
+        Self::default()
     }
 
     /// Make routing decision
     pub fn decide(&self, _ctx: &super::RouteCtx) -> super::RouteDecision {
         // Simplified implementation - return default decision
         super::RouteDecision {
-            target: self.default.to_string(),
+            target: self.default.clone(),
             matched_rule: None,
         }
     }
 
     /// 允许任意类型作为"默认出口"参数（例如 sb-config 的 OutboundKind::Direct）
-    /// 占位实现仅用于满足类型期望，行为上默认仍为 "direct"。
-    pub fn with_default<T>(_default: T) -> Self {
-        Self { default: "direct" }
+    /// 未显式指定时使用 `unresolved`，避免兼容层 silent direct fallback。
+    pub fn with_default<T: IntoRouterDefault>(default: T) -> Self {
+        Self {
+            default: default.into_router_default(),
+        }
     }
 
     /// 吞掉 sb-config 下发的规则列表；新架构实际路由由编译化索引承担

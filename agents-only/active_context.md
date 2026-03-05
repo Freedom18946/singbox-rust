@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#123**，聚焦 **router/mod 解析失败 fallback 去 silent direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#124**，聚焦 **router/engine 兼容 RouterHandle 不再吞掉 caller-supplied default**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -16,13 +16,28 @@
 
 - `L18` 是项目总阶段。
 - `L21 wave` 是当前执行层，用来持续推进 `MIG-02` 小步收口。
-- 测试/样例层 `default=direct` 已清零，当前转入真实路径 parse-failure fallback 收口。
+- 测试/样例层 `default=direct` 已清零，当前转入真实路径 parse-failure fallback 与兼容占位默认值收口。
 
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：`router/engine.rs` 兼容占位默认值、运行时 parse-failure fallback、桥接路径的显式 unsupported/unresolved。
-- 当前 V7 口径：`l21.120-wave123-v1`（306 assertions）。
+- 下一阶段重点：`router/engine.rs` 兼容 helper 的剩余审计、运行时 parse-failure fallback、桥接路径的显式 unsupported/unresolved。
+- 当前 V7 口径：`l21.121-wave124-v1`（308 assertions）。
+
+### 🆕 L21 wave#124 推进快照（2026-03-06 05:04）
+
+- 状态：完成（`crates/sb-core/src/router/engine.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/router/engine.rs`：兼容 `RouterHandle::new(router)` 不再忽略 caller-supplied default，`replace(router)` 不再是 no-op，`Router::default()` 默认值改为显式 `unresolved`
+  2. `crates/sb-core/tests/router_handle_compat.rs`：新增兼容层行为测试
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.121-wave124-v1`（308 assertions）
+  4. `wave124_v7_regression_block.txt`：注入兼容 helper/call-site 回流后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave124_wp1_app_tests_check.txt` PASS
+  - `wave124_wp1_sb_core_check.txt` PASS
+  - `wave124_router_handle_compat_check.txt` PASS
+  - `wave124_strict_gate.txt` PASS
+  - `wave124_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#123 推进快照（2026-03-06 04:47）
 

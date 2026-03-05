@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 04:47
-> **当前阶段**：L21 wave#123 推进完成（MIG-02 hardening：router/mod 解析失败 fallback 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 05:04
+> **当前阶段**：L21 wave#124 推进完成（MIG-02 hardening：router/engine 兼容 RouterHandle 不再吞掉 caller-supplied default + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=306 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=308 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -12,14 +12,34 @@
 ## 口径对齐（避免阶段混淆）
 
 1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
-2. 测试/样例层残留 `default=direct` 已清零；当前进入真实路径 parse-failure / 占位默认值收口阶段。
+2. 测试/样例层残留 `default=direct` 已清零；当前进入真实路径 parse-failure / 兼容占位默认值收口阶段。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
-- 下一阶段不再是测试字面量替换，而是检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- 近端候选集中在 `crates/sb-core/src/router/engine.rs` 的兼容占位默认值与 `app/sb-adapters` 的实际决策桥接路径。
+- 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
+- `crates/sb-core/src/router/engine.rs` 的兼容 `Router/RouterHandle` 已完成第一段收口；近端候选转向 `app/sb-adapters` 的实际决策桥接路径与剩余兼容 helper。
+
+## 🆕 最新进展：L21 wave#124 推进落地（2026-03-06 05:04）
+
+**状态**：✅ 完成一段（router/engine 兼容 RouterHandle 不再吞掉 caller-supplied default）；✅ strict gate allowlist 升级到 `l21.121-wave124-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-core/src/router/engine.rs`：新增 `compat_router_index_from_default(...)`，使兼容 `RouterHandle::new(router)` 不再忽略传入 `Router`，`replace(router)` 也不再是 no-op；兼容 `Router::default()` 从 silent direct fallback 收口为显式 `unresolved`，`Router::with_default(...)` 改为保留 caller-supplied default
+   - `crates/sb-core/tests/router_handle_compat.rs`：补充兼容层行为测试，覆盖 `with_default("socks5-out")`、`replace(...)` 与默认值收口
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.121-wave124-v1`，断言扩展到 `308` 条。
+   - `reports/l21/artifacts/wave124_v7_regression_block.txt`：在临时 root 将兼容 helper/call-site 回退后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave124_wp1_app_tests_check.txt` PASS
+   - `wave124_wp1_sb_core_check.txt` PASS
+   - `wave124_router_handle_compat_check.txt` PASS
+   - `wave124_strict_gate.txt` PASS
+   - `wave124_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
+   - 当前新增收口点：兼容 `RouterHandle::new/replace` 不再静默回退到共享 env 索引。
 
 ## 🆕 最新进展：L21 wave#123 推进落地（2026-03-06 04:47）
 

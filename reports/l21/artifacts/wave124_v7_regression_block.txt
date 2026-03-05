@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 05:04) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.121-wave124-v1
+  FAIL: [W124-01-compat-router-index-helper] required pattern missing in crates/sb-core/src/router/engine.rs :: compat router handle should build explicit index from caller default
+  FAIL: [W124-02-router-handle-new-uses-compat-default] required pattern missing in crates/sb-core/src/router/engine.rs :: RouterHandle::new should honor caller-supplied default
+  FAIL: 2/308 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp.30pt2gmE78

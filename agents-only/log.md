@@ -5248,4 +5248,36 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-03-06 05:04] Agent: Codex (GPT-5)
+
+**任务**: 推进 L21 wave#124，转入 MIG-02 真实路径兼容层收口，修复 `router/engine.rs` 中兼容 `RouterHandle` 吞掉 caller-supplied default 的 silent fallback。
+
+**变更**:
+- 更新 `crates/sb-core/src/router/engine.rs`
+  - 新增 `compat_router_index_from_default(...)`
+  - `RouterHandle::new(router)` 不再忽略传入 `Router`
+  - `RouterHandle::replace(router)` 不再是 no-op
+  - `Router::default()` 从 silent direct fallback 收口为显式 `unresolved`
+  - `Router::with_default(...)` 改为保留 caller-supplied default，并兼容 `crate::outbound::OutboundKind`
+- 新增 `crates/sb-core/tests/router_handle_compat.rs`
+  - 覆盖兼容默认值、`with_default("socks5-out")`、`replace(...)` 行为
+- 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+  - allowlist 升级到 `l21.121-wave124-v1`
+  - V7 assertions 扩展到 `308`
+- 更新 `agents-only/workpackage_latest.md`
+- 更新 `agents-only/active_context.md`
+- 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+
+**验证**:
+- `cargo check -p app --tests` PASS
+- `cargo check -p sb-core` PASS
+- `cargo check -p sb-core --test router_handle_compat` PASS
+- `bash agents-only/06-scripts/check-boundaries.sh --strict` PASS
+- `BOUNDARY_PROJECT_ROOT=<tmp> bash agents-only/06-scripts/check-boundaries.sh --v7-only` 负样例 PASS（预期失败，`exit_code=1`）
+- `bash -n scripts/l18/gui_real_cert.sh` PASS
+
+**结果**: 成功（`wave124` 已完成并进入兼容 helper / 桥接路径继续审计阶段）
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

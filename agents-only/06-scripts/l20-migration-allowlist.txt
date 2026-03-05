@@ -1,4 +1,4 @@
-VERSION|l21.120-wave123-v1|||L21 wave#123 migration assertion allowlist version
+VERSION|l21.121-wave124-v1|||L21 wave#124 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -342,3 +342,5 @@ forbid|W122-01-no-router-hot-reload-integration-default-direct-literal|crates/sb
 require|W122-02-router-hot-reload-integration-default-unresolved-literal|crates/sb-core/tests/router_hot_reload_integration.rs|default=unresolved|router-hot-reload-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W123-01-no-router-mod-parse-failure-default-direct-literal|crates/sb-core/src/router/mod.rs|default: "direct"|router mod parse-failure fallback should not keep silent direct default literal
 require|W123-02-router-mod-parse-failure-default-unresolved-literal|crates/sb-core/src/router/mod.rs|default: "unresolved"|router mod parse-failure fallback should use explicit unresolved default literal
+require|W124-01-compat-router-index-helper|crates/sb-core/src/router/engine.rs|fn compat_router_index_from_default\(default: &str\)|compat router handle should build explicit index from caller default
+require|W124-02-router-handle-new-uses-compat-default|crates/sb-core/src/router/engine.rs|Self::from_index\(compat_router_index_from_default\(router.default.as_str\(\)\)\)|RouterHandle::new should honor caller-supplied default
