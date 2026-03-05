@@ -354,7 +354,7 @@ fn test_parse_rules_with_query_type() {
         query_type:MX=reject
         query_type:TXT=direct
         query_type:CNAME=proxy
-        default=direct
+        default=unresolved
     "#;
 
     let rules = parse_rules(rules_text);
@@ -442,7 +442,7 @@ fn test_query_type_unknown_type_skipped() {
         query_type:A=direct
         query_type:UNKNOWN=proxy
         query_type:INVALID=reject
-        default=direct
+        default=unresolved
     "#;
 
     let rules = parse_rules(rules_text);
