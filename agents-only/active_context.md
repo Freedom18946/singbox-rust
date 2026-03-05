@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中（认证优先 + 性能零回归并行）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L17 ✅）
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 `wave#103`，聚焦 `L19.3.3 / MIG-02` 的 fallback hardening 与 V7 防回流固化
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 ，聚焦  的 fallback hardening 与 V7 防回流固化
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline），见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）
 **Remaining**: 0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation，不再追踪）
@@ -30,6 +30,50 @@
   2. 中风险：2~4 处样例文件，需要同步调整默认断言
   3. 高风险：`router_geosite_rules_integration.rs`、`router_hot_reload_integration.rs`，更可能牵动集成测试预期
 - 预期：若保持当前强验证模板，剩余波次保守估计仍在 `20+` 量级
+
+### 🆕 L21 wave#104 推进快照（2026-03-06 03:49）
+
+- 状态：（wave#104 已完成 router_override 测试样例中的基础默认从  调整为 ，去除示例中的 silent direct fallback 字面量 + V7 断言升级）
+- 本轮落地：
+  1. ：router_override 测试样例中的基础默认从  调整为 ，去除示例中的 silent direct fallback 字面量。
+  2.  升级到 （268 assertions），新增 W104-01~W104-02。
+  3. 回流阻断证据：（将  注入回  后  失败，）。
+- 最小验证：
+  - ：PASS（）
+  - ：PASS（）
+  - === 依赖边界检查 (2026-03-06 03:50) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.101-wave104-v1
+  PASS (268 assertions)
+
+════════════════════════
+全部检查通过 (0 违规)：PASS（）
+  - ：PASS（）
 
 ### 🆕 L21 wave#103 推进快照（2026-03-06 03:42）
 

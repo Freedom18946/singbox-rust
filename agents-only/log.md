@@ -5,6 +5,34 @@
 ---
 
 ## 日志格式
+### [2026-03-06 03:49] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router_override 测试样例基础默认去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 
+    - 将  基础默认从  调整为 ，去除 router_override 测试样例中的 silent direct fallback 字面量
+  - 更新 
+    - 版本升级 
+    - 新增 （禁止该测试样例保留  + 要求 ）
+- 证据与验证产物：
+  - （ PASS）
+  - （ PASS）
+  - （ PASS，）
+  - （注入回流样例后  预期 FAIL，）
+  - （ PASS）
+- 文档同步：
+  - 更新 
+  - 更新 
+  - 更新 
+  - 更新 
+
+**结果**: 成功（wave#104 目标已落地并形成可复算证据链）
+**备注**:
+- 当前统一显式 unresolved 标记。
+
+---
+
 
 ```markdown
 ### [YYYY-MM-DD HH:MM] Agent: [Agent Name/ID]
@@ -22,6 +50,34 @@
 ---
 
 ## 日志记录
+### [2026-03-06 03:49] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router_override 测试样例基础默认去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 
+    - 将  基础默认从  调整为 ，去除 router_override 测试样例中的 silent direct fallback 字面量
+  - 更新 
+    - 版本升级 
+    - 新增 （禁止该测试样例保留  + 要求 ）
+- 证据与验证产物：
+  - （ PASS）
+  - （ PASS）
+  - （ PASS，）
+  - （注入回流样例后  预期 FAIL，）
+  - （ PASS）
+- 文档同步：
+  - 更新 
+  - 更新 
+  - 更新 
+  - 更新 
+
+**结果**: 成功（wave#104 目标已落地并形成可复算证据链）
+**备注**:
+- 当前统一显式 unresolved 标记。
+
+---
+
 
 ### [2026-03-06 03:42] Agent: Codex (GPT-5)
 

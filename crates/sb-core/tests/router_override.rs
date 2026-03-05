@@ -4,7 +4,7 @@ use sb_core::router::{decide_http, RouterHandle};
 #[tokio::test]
 async fn override_exact_suffix_and_defaults() {
     // 覆盖：exact & suffix & tcp 默认
-    std::env::set_var("SB_ROUTER_RULES", "default=direct");
+    std::env::set_var("SB_ROUTER_RULES", "default=unresolved");
     std::env::set_var("SB_ROUTER_OVERRIDE",
         "exact:api.example.com=proxy; suffix:.example.com=reject; transport:tcp=proxy; transport:udp=proxy; default=reject");
     // exact 胜出

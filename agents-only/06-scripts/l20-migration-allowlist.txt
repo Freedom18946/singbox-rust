@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.100-wave103-v1|||L21 wave#103 migration assertion allowlist version
+VERSION|l21.101-wave104-v1|||L21 wave#104 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -302,3 +302,5 @@ forbid|W102-01-no-router-rules-file-default-direct-literal|crates/sb-core/tests/
 require|W102-02-router-rules-file-default-unresolved-literal|crates/sb-core/tests/router_rules_file.rs|default=unresolved|router rules file test sample should use explicit unresolved default literal
 forbid|W103-01-no-router-summary-default-direct-literal|crates/sb-core/tests/router_summary.rs|default=direct|router summary test sample should not keep silent direct default literal
 require|W103-02-router-summary-default-unresolved-literal|crates/sb-core/tests/router_summary.rs|default=unresolved|router summary test sample should use explicit unresolved default literal
+forbid|W104-01-router-override-default-direct-literal|crates/sb-core/tests/router_override.rs|default=direct|router override test sample should not keep silent direct default literal
+require|W104-02-router-override-default-unresolved-literal|crates/sb-core/tests/router_override.rs|default=unresolved|router override test sample should use explicit unresolved default literal
