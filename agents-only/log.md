@@ -5280,4 +5280,32 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-03-06 05:11] Agent: Codex (GPT-5)
+
+**任务**: 推进 L21 wave#125，收口 `socks5-udp` 真实运行路径中 proxy upstream 失败后的 legacy direct fallback。
+
+**变更**:
+- 更新 `crates/sb-adapters/src/inbound/socks/udp.rs`
+  - 删除 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` legacy 开关
+  - `ProxyOutcome::NeedFallback` 改为显式告警并丢包，不再 direct fallback
+  - 新增源码自检测试，锁定旧 env 开关不得回流且必须保留新告警口径
+- 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+  - allowlist 升级到 `l21.122-wave125-v1`
+  - V7 assertions 扩展到 `310`
+- 更新 `agents-only/workpackage_latest.md`
+- 更新 `agents-only/active_context.md`
+- 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+
+**验证**:
+- `cargo check -p app --tests` PASS
+- `cargo check -p sb-core` PASS
+- `cargo check -p sb-adapters --tests` PASS
+- `bash agents-only/06-scripts/check-boundaries.sh --strict` PASS
+- `BOUNDARY_PROJECT_ROOT=<tmp> bash agents-only/06-scripts/check-boundaries.sh --v7-only` 负样例 PASS（预期失败，`exit_code=1`）
+- `bash -n scripts/l18/gui_real_cert.sh` PASS
+
+**结果**: 成功（`wave125` 已完成；SOCKS5 UDP proxy upstream 失败路径不再 silently fallback 到 direct）
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

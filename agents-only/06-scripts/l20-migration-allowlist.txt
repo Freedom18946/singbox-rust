@@ -1,4 +1,4 @@
-VERSION|l21.121-wave124-v1|||L21 wave#124 migration assertion allowlist version
+VERSION|l21.122-wave125-v1|||L21 wave#125 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -344,3 +344,5 @@ forbid|W123-01-no-router-mod-parse-failure-default-direct-literal|crates/sb-core
 require|W123-02-router-mod-parse-failure-default-unresolved-literal|crates/sb-core/src/router/mod.rs|default: "unresolved"|router mod parse-failure fallback should use explicit unresolved default literal
 require|W124-01-compat-router-index-helper|crates/sb-core/src/router/engine.rs|fn compat_router_index_from_default\(default: &str\)|compat router handle should build explicit index from caller default
 require|W124-02-router-handle-new-uses-compat-default|crates/sb-core/src/router/engine.rs|Self::from_index\(compat_router_index_from_default\(router.default.as_str\(\)\)\)|RouterHandle::new should honor caller-supplied default
+forbid|W125-01-no-socks-udp-proxy-fallback-direct-switch|crates/sb-adapters/src/inbound/socks/udp.rs|SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT|socks5-udp proxy path should not keep legacy direct fallback env switch
+require|W125-02-socks-udp-proxy-fallback-blocked-warning|crates/sb-adapters/src/inbound/socks/udp.rs|proxy upstream fallback to direct is disabled; packet dropped|socks5-udp proxy fallback should fail explicitly instead of silently using direct

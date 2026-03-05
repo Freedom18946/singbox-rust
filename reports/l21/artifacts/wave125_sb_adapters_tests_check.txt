@@ -1,0 +1,23 @@
+    Checking tokio-rustls v0.26.4
+    Checking axum v0.7.9
+    Checking boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)
+    Checking sb-metrics v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics)
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Checking sb-platform v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-platform)
+    Checking quinn v0.11.9
+    Checking quick-error v1.2.3
+    Checking bit-vec v0.8.0
+    Checking hyper-rustls v0.27.7
+    Checking sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
+    Checking reqwest v0.12.28
+    Checking bit-set v0.8.0
+    Checking rusty-fork v0.3.1
+    Checking rand_xorshift v0.4.0
+    Checking unarray v0.1.4
+    Checking criterion v0.5.1
+    Checking sb-test-utils v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-test-utils)
+    Checking proptest v1.9.0
+    Checking tonic v0.12.3
+    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+    Checking sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 18.09s

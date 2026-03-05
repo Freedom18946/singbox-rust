@@ -68,13 +68,6 @@ fn upstream_timeout_ms() -> u64 {
         .unwrap_or(800)
 }
 
-fn proxy_fallback_direct() -> bool {
-    std::env::var("SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(true)
-}
-
 fn socks_udp_enabled() -> bool {
     env::var("SB_SOCKS_UDP_ENABLE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -315,7 +308,6 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
 }
 
 async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result<()> {
-    let _fallback_direct = proxy_fallback_direct();
     let _upstream_timeout = upstream_timeout_ms();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
@@ -976,7 +968,6 @@ pub async fn serve_udp_datagrams(
     inbound_tag: Option<String>,
     stats: Option<Arc<StatsManager>>,
 ) -> Result<()> {
-    let fallback_direct = proxy_fallback_direct();
     let upstream_timeout = upstream_timeout_ms();
     let ttl = timeout.or_else(nat_ttl_from_env);
     let map = NAT_MAP
@@ -1266,9 +1257,13 @@ pub async fn serve_udp_datagrams(
                     continue;
                 }
                 ProxyOutcome::NeedFallback => {
-                    if !fallback_direct {
-                        continue;
-                    }
+                    tracing::warn!(
+                        "socks5-udp: proxy upstream fallback to direct is disabled; packet dropped; use explicit direct routing or adapter bridge/supervisor path"
+                    );
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("socks_udp_error_total", "class" => "proxy_fallback_blocked")
+                        .increment(1);
+                    continue;
                 }
             }
         }
@@ -1441,3 +1436,13 @@ pub async fn serve_udp_datagrams(
 
 // 删除无用的本地 ttl()/scan_interval()，避免与变量名碰撞
 // Remove useless local ttl()/scan_interval() to avoid variable name collision
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn socks_udp_source_no_legacy_direct_fallback_switch() {
+        let source = include_str!("udp.rs");
+        assert!(!source.contains(concat!("SB_SOCKS_UDP_PROXY_", "FALLBACK_DIRECT")));
+        assert!(source.contains("proxy upstream fallback to direct is disabled"));
+    }
+}

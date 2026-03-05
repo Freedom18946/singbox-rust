@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 05:11) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.122-wave125-v1
+  FAIL: [W125-01-no-socks-udp-proxy-fallback-direct-switch] forbidden pattern matched in crates/sb-adapters/src/inbound/socks/udp.rs :: socks5-udp proxy path should not keep legacy direct fallback env switch
+  FAIL: [W125-02-socks-udp-proxy-fallback-blocked-warning] required pattern missing in crates/sb-adapters/src/inbound/socks/udp.rs :: socks5-udp proxy fallback should fail explicitly instead of silently using direct
+  FAIL: 2/310 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp.sNUGA35Vag

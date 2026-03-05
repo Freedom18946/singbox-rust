@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#124**，聚焦 **router/engine 兼容 RouterHandle 不再吞掉 caller-supplied default**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#125**，聚焦 **socks5-udp proxy NeedFallback 不再 direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：`router/engine.rs` 兼容 helper 的剩余审计、运行时 parse-failure fallback、桥接路径的显式 unsupported/unresolved。
-- 当前 V7 口径：`l21.121-wave124-v1`（308 assertions）。
+- 下一阶段重点：剩余 `app/sb-adapters` 决策桥接路径审计、`router/engine.rs` 兼容 helper 余项、运行时 parse-failure fallback。
+- 当前 V7 口径：`l21.122-wave125-v1`（310 assertions）。
+
+### 🆕 L21 wave#125 推进快照（2026-03-06 05:11）
+
+- 状态：完成（`crates/sb-adapters/src/inbound/socks/udp.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/socks/udp.rs`：移除 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` legacy 开关，`ProxyOutcome::NeedFallback` 改为显式告警并丢包，不再 direct fallback
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.122-wave125-v1`（310 assertions）
+  3. `wave125_v7_regression_block.txt`：注回旧 env 开关并篡改显式丢包提示后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave125_wp1_app_tests_check.txt` PASS
+  - `wave125_wp1_sb_core_check.txt` PASS
+  - `wave125_sb_adapters_tests_check.txt` PASS
+  - `wave125_strict_gate.txt` PASS
+  - `wave125_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#124 推进快照（2026-03-06 05:04）
 
