@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 19:21] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：在 bootstrap selector/urltest 成员转换路径移除 core Hysteria2 concrete 构建，并升级 strict gate 防回流断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/bootstrap.rs`
+    - `to_adapter_connector(OutboundImpl::Hysteria2)` 不再构建 `sb_core::outbound::hysteria2::Hysteria2Outbound`
+    - 改为显式 `warn + None`，并提示迁移到 adapter bridge/supervisor 路径
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.13-wave16-v1`
+    - 新增 `W16-01~W16-02`（禁用 bootstrap 路径 core Hysteria2 concrete + 要求显式迁移提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave16_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave16_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave16_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (65 assertions)`）
+  - `reports/l21/artifacts/wave16_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave16_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#16）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3Q wave#16，回填 MIG-03 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#16 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#16 目标已落地并形成可复算证据链）
+**备注**:
+- MIG-03 仍为 `in_progress`：后续可继续推进 app/bootstrap 中其它 core concrete（SOCKS/HTTP）收敛。
+
+---
+
 ### [2026-03-05 19:14] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：完成 MIG-06 回流阻断收口，并更新 strict gate 断言版本与证据链。

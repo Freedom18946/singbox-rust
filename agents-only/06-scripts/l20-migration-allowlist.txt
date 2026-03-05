@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.12-wave15-v1|||L21 wave#15 migration assertion allowlist version
+VERSION|l21.13-wave16-v1|||L21 wave#16 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -86,3 +86,6 @@ forbid|W15-01-no-selector-outbound-concrete|crates/sb-adapters/src/outbound/sele
 forbid|W15-02-no-urltest-outbound-concrete|crates/sb-adapters/src/outbound/urltest.rs|struct UrlTestOutbound|sb-adapters urltest path should not reintroduce concrete UrlTestOutbound wrapper
 require|W15-03-selector-builder-uses-core-group|crates/sb-adapters/src/outbound/selector.rs|SelectorGroup::new_manual|selector builder should use core SelectorGroup implementation
 require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use core SelectorGroup implementation
+
+forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/bootstrap.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
+require|W16-02-bootstrap-hy2-explicit-disabled-msg|app/src/bootstrap.rs|Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Hysteria2 path should emit explicit migration guidance

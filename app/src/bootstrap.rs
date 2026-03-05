@@ -640,11 +640,11 @@ fn to_adapter_connector(
                 .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
         }
         sb_core::outbound::OutboundImpl::Trojan(_cfg) => None,
-        sb_core::outbound::OutboundImpl::Hysteria2(cfg) => {
-            use sb_core::outbound::hysteria2::Hysteria2Outbound;
-            Hysteria2Outbound::new(cfg.clone())
-                .ok()
-                .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
+        sb_core::outbound::OutboundImpl::Hysteria2(_cfg) => {
+            tracing::warn!(
+                "Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
         }
         // Not supported
         _ => None,

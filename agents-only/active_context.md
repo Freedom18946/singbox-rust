@@ -88,6 +88,20 @@
   - `reports/l21/artifacts/wave15_v7_regression_block.txt`
   - `reports/l21/artifacts/wave15_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#16 推进快照（2026-03-05 19:21）
+
+- 状态：`MIG-03 in_progress`（wave#16 完成 bootstrap selector/urltest 路径去 core Hysteria2 concrete）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector(OutboundImpl::Hysteria2)` 不再构建 core `Hysteria2Outbound`，改为显式 `warn + None` 迁移提示。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.13-wave16-v1`（65 assertions），新增 W16-01/W16-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave16_v7_regression_block.txt`（注入 `sb_core::outbound::hysteria2::Hysteria2Outbound` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave16_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave16_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave16_strict_gate.txt`
+  - `reports/l21/artifacts/wave16_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave16_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
