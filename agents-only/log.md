@@ -23,6 +23,31 @@
 
 ## 日志记录
 
+### [2026-03-05 19:14] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：完成 MIG-06 回流阻断收口，并更新 strict gate 断言版本与证据链。
+**变更**:
+- 代码与门禁：
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.12-wave15-v1`
+    - 新增 `W15-01~W15-04`（禁止 `SelectorOutbound/UrlTestOutbound` concrete 回流，要求 builder 继续使用 core `SelectorGroup`）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave15_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave15_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (63 assertions)`）
+  - `reports/l21/artifacts/wave15_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave15_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#15）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3P wave#15，并将 MIG-06 更新为 closed）
+  - 更新 `agents-only/active_context.md`（新增 wave#15 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#15 完成 MIG-06 收口，形成可复算门禁证据）
+**备注**:
+- MIG-02/03/04 仍为 `in_progress`，后续波次可继续沿 app/runtime 路径推进去 core concrete 收敛。
+
+---
+
 ### [2026-03-05 19:11] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 `app --tests` 剩余 dead_code 告警并完成门禁复验。

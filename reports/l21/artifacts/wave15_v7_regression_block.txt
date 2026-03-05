@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 19:14) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.12-wave15-v1
+  FAIL: [W15-01-no-selector-outbound-concrete] forbidden pattern matched in crates/sb-adapters/src/outbound/selector.rs :: sb-adapters selector path should not reintroduce concrete SelectorOutbound wrapper
+  FAIL: 1/63 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave15-v7-regress.S93zoc
+[meta] injected_file=crates/sb-adapters/src/outbound/selector.rs
+[meta] injected_pattern=struct SelectorOutbound
+[meta] exit_code=1

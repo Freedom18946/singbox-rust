@@ -1,11 +1,38 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 19:11
-> **当前阶段**：L21 wave#14 推进完成（MIG-06 in_progress：测试告警收敛 + 门禁复验）
+> **最后更新**：2026-03-05 19:14
+> **当前阶段**：L21 wave#15 推进完成（MIG-06 closed：selector 回流阻断收口 + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=59 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=63 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#15 推进落地（2026-03-05 19:14）
+
+**状态**：✅ `MIG-06 wave#15` 收口完成（`in_progress -> closed`）；✅ strict gate allowlist 升级到 `l21.12-wave15-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#15（优先 MIG-06 回流阻断收口）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt`：
+     - 版本升级到 `l21.12-wave15-v1`。
+     - 新增 W15-01~W15-04：
+       - 禁止 `crates/sb-adapters/src/outbound/{selector,urltest}.rs` 回流 `SelectorOutbound/UrlTestOutbound` concrete。
+       - 强制 selector/urltest builder 继续使用 core `SelectorGroup::{new_manual,new_urltest}`。
+2. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave15_wp1_app_tests_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave15_strict_gate.txt`，`V7 PASS (63 assertions)`）。
+3. **回流阻断证据**：
+   - `reports/l21/artifacts/wave15_v7_regression_block.txt`：
+     - 在临时 root 注入 `struct SelectorOutbound` 后，`--v7-only` 预期 FAIL，`exit_code=1`。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave15_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave15_wp1_app_tests_check.txt`）
+2. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave15_strict_gate.txt`）
+3. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave15_v7_regression_block.txt`）
+4. `bash -n scripts/l18/gui_real_cert.sh`（`wave15_gui_static_syntax_check.txt`）
 
 ---
 

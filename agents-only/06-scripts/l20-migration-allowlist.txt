@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.11-wave12-v1|||L21 wave#12 migration assertion allowlist version
+VERSION|l21.12-wave15-v1|||L21 wave#15 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -81,3 +81,8 @@ require|W11-03-demo-serve-http-entry|examples/code-examples/proxy/http_inbound_d
 forbid|W12-01-no-legacy-selector-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::selector::SelectorOutbound|selector UDP tests should not depend on removed selector adapter concrete type
 forbid|W12-02-no-legacy-urltest-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::urltest::UrlTestOutbound|urltest UDP tests should not depend on removed urltest adapter concrete type
 require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_core::outbound::selector_group::SelectorGroup;|selector UDP tests should use unified SelectorGroup implementation
+
+forbid|W15-01-no-selector-outbound-concrete|crates/sb-adapters/src/outbound/selector.rs|struct SelectorOutbound|sb-adapters selector path should not reintroduce concrete SelectorOutbound wrapper
+forbid|W15-02-no-urltest-outbound-concrete|crates/sb-adapters/src/outbound/urltest.rs|struct UrlTestOutbound|sb-adapters urltest path should not reintroduce concrete UrlTestOutbound wrapper
+require|W15-03-selector-builder-uses-core-group|crates/sb-adapters/src/outbound/selector.rs|SelectorGroup::new_manual|selector builder should use core SelectorGroup implementation
+require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use core SelectorGroup implementation
