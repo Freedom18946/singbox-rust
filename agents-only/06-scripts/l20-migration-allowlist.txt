@@ -1,4 +1,4 @@
-VERSION|l21.110-wave113-v1|||L21 wave#113 migration assertion allowlist version
+VERSION|l21.111-wave114-v1|||L21 wave#114 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -322,3 +322,5 @@ forbid|W112-01-no-router-process-rules-integration-default-direct-literal|crates
 require|W112-02-router-process-rules-integration-default-unresolved-literal|crates/sb-core/tests/router_process_rules_integration.rs|default=unresolved|router-process-rules-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W113-01-no-router-rules-include-cycle-default-direct-literal|crates/sb-core/tests/router_rules_include_cycle.rs|default=direct|router-rules-include-cycle 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W113-02-router-rules-include-cycle-default-unresolved-literal|crates/sb-core/tests/router_rules_include_cycle.rs|default=unresolved|router-rules-include-cycle 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W114-01-no-router-udp-rules-default-direct-literal|crates/sb-core/tests/router_udp_rules.rs|default=direct|router-udp-rules 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W114-02-router-udp-rules-default-unresolved-literal|crates/sb-core/tests/router_udp_rules.rs|default=unresolved|router-udp-rules 测试样例 default 去 silent direct fallback should use explicit unresolved default literal

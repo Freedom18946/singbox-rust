@@ -30,7 +30,7 @@ fn router_udp_rules_env_parsing() {
     std::env::set_var("SB_ROUTER_UDP", "1");
     std::env::set_var(
         "SB_ROUTER_UDP_RULES",
-        "exact:foo.bar=proxy,suffix:.example.com=reject,default=direct",
+        "exact:foo.bar=proxy,suffix:.example.com=reject,default=unresolved",
     );
     // Instruct RouterHandle::new_for_tests to snapshot env for this test
     std::env::set_var("SB_TEST_USE_ENV", "1");
@@ -49,7 +49,7 @@ fn router_udp_rules_env_parsing() {
         host: "unknown.tld".into(),
         port: 53,
     };
-    assert_eq!(h.decide_udp(&z), "direct");
+    assert_eq!(h.decide_udp(&z), "unresolved");
     // Cleanup to not affect other tests
     std::env::remove_var("SB_ROUTER_UDP");
     std::env::remove_var("SB_ROUTER_UDP_RULES");
