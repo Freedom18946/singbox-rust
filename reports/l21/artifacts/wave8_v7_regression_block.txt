@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 13:13) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.7-wave8-v1
+  FAIL: [W8-01-no-switchboard-hy2-concrete] forbidden pattern matched in crates/sb-core/src/runtime/switchboard.rs :: switchboard should not construct core concrete Hysteria2 connector
+  FAIL: 1/46 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave8-v7-regress.3qFpKV
+[meta] injected_file=crates/sb-core/src/runtime/switchboard.rs
+[meta] injected_pattern=outbound::hysteria2::Hysteria2Outbound
+[meta] exit_code=1
