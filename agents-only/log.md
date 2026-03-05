@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 23:08] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 socks5-udp proxy 决策路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/socks/udp.rs`
+    - `RDecision::Proxy(_)` 分支删除 “fallback to direct” 路径
+    - 改为显式 unsupported 告警 + 丢弃包
+    - 新增 `socks_udp_error_total{class=\"proxy_unsupported\"}` 指标
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.51-wave54-v1`
+    - 新增 `W54-01~W54-03`（禁止 socks5-udp proxy direct fallback + 要求显式 no-fallback 提示与指标）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave54_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave54_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave54_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (152 assertions)`）
+  - `reports/l21/artifacts/wave54_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave54_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#54）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BC wave#54，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#54 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#54 目标已落地并形成可复算证据链）
+**备注**:
+- socks5-udp 在 proxy 决策场景不再隐式回退 direct，现为显式 unsupported + 丢包。
+
+---
+
 ### [2026-03-05 23:03] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 router explain 路径 proxy inference fallback 并升级 strict gate 断言。

@@ -335,8 +335,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 continue;
             }
         };
-        // 规则引擎（Reject），Proxy 暂不支持，回落 Direct
-        // Rule engine (Reject), Proxy not supported yet, fallback to Direct
+        // 规则引擎（Reject），Proxy 暂不支持，显式丢弃（禁止 direct fallback）
+        // Rule engine (Reject), Proxy not supported yet, drop explicitly (no direct fallback)
         let mut rule: Option<String> = None;
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
@@ -367,9 +367,12 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 continue;
             }
             if matches!(d, RDecision::Proxy(_)) {
-                // 目前不支持上游 UDP 代理，回落 Direct（不破坏）
-                // Upstream UDP proxy not supported yet, fallback to Direct (non-breaking)
-                tracing::warn!("socks5-udp: proxy decision ignored; fallback to direct");
+                tracing::warn!(
+                    "socks5-udp: proxy decision is unsupported; direct fallback is disabled; packet dropped"
+                );
+                #[cfg(feature = "metrics")]
+                counter!("socks_udp_error_total", "class"=>"proxy_unsupported").increment(1);
+                continue;
             }
         }
         // 解析目标地址

@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-05 23:08) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.51-wave54-v1
+  FAIL: [W54-01-no-socks-udp-proxy-direct-fallback-msg] forbidden pattern matched in crates/sb-adapters/src/inbound/socks/udp.rs :: socks5-udp proxy decision path should not fallback to direct
+  FAIL: [W54-02-socks-udp-proxy-explicit-disabled-msg] required pattern missing in crates/sb-adapters/src/inbound/socks/udp.rs :: socks5-udp proxy decision path should emit explicit no-fallback diagnostics
+  FAIL: 2/152 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave54-v7-regress.xII9cr
+[meta] injected_file=crates/sb-adapters/src/inbound/socks/udp.rs
+[meta] injected_pattern=proxy decision ignored; fallback to direct
+[meta] exit_code=1

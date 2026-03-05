@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.50-wave53-v1|||L21 wave#53 migration assertion allowlist version
+VERSION|l21.51-wave54-v1|||L21 wave#54 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -185,3 +185,6 @@ forbid|W52-01-no-router-explain-derive-default-fallback|crates/sb-core/src/route
 require|W52-02-router-explain-derive-unresolved-fallback|crates/sb-core/src/router/explain.rs|unwrap_or\(\"unresolved\"\)|router explain derive_outbound should use explicit unresolved marker when outbound cannot be derived
 forbid|W53-01-no-router-explain-proxy-inference-fallback|crates/sb-core/src/router/explain.rs|reason\.contains\(\"proxy\"\)|router explain extraction should not infer proxy outbound implicitly from reason text
 require|W53-02-router-explain-explicit-unresolved-return|crates/sb-core/src/router/explain.rs|\"unresolved\"\.to_string\(\)|router explain extraction should return explicit unresolved marker when reason cannot derive outbound
+forbid|W54-01-no-socks-udp-proxy-direct-fallback-msg|crates/sb-adapters/src/inbound/socks/udp.rs|proxy decision ignored; fallback to direct|socks5-udp proxy decision path should not fallback to direct
+require|W54-02-socks-udp-proxy-explicit-disabled-msg|crates/sb-adapters/src/inbound/socks/udp.rs|socks5-udp: proxy decision is unsupported; direct fallback is disabled; packet dropped|socks5-udp proxy decision path should emit explicit no-fallback diagnostics
+require|W54-03-socks-udp-proxy-unsupported-metric|crates/sb-adapters/src/inbound/socks/udp.rs|\"class\"=>\"proxy_unsupported\"|socks5-udp proxy decision path should increment explicit unsupported metric

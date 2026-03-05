@@ -622,6 +622,20 @@
   - `reports/l21/artifacts/wave53_v7_regression_block.txt`
   - `reports/l21/artifacts/wave53_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#54 推进快照（2026-03-05 23:08）
+
+- 状态：`MIG-02 hardening`（wave#54 完成 socks5-udp proxy 决策分支去 direct fallback）
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/socks/udp.rs`：`RDecision::Proxy(_)` 分支不再“fallback to direct”，改为显式 unsupported 告警并丢弃包（新增 `proxy_unsupported` 指标）。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.51-wave54-v1`（152 assertions），新增 W54-01/W54-02/W54-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave54_v7_regression_block.txt`（注入 `proxy decision ignored; fallback to direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave54_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave54_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave54_strict_gate.txt`
+  - `reports/l21/artifacts/wave54_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave54_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
