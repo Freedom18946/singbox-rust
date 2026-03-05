@@ -14,6 +14,41 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 04:17] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：router_process_rules_integration 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/tests/router_process_rules_integration.rs`
+    - 将 process 规则解析样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.109-wave112-v1`
+    - 新增 `W112-01/W112-02`
+- 证据与验证产物：
+  - `wave112_wp1_app_tests_check.txt`（PASS）
+  - `wave112_wp1_sb_core_check.txt`（PASS）
+  - `wave112_strict_gate.txt`（PASS）
+  - `wave112_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave112_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#112 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.109-wave112-v1`（284 assertions）。
+
+### [YYYY-MM-DD HH:MM] Agent: [Agent Name/ID]
+
+**任务**: [描述具体任务]
+**变更**:
+- [文件路径] - [具体变更内容]
+**结果**: [成功/失败 + 输出摘要]
+**备注**: [可选，风险/后续建议]
+
+## 日志记录
 ### [2026-03-06 04:15] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。

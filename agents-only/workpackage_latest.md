@@ -1,25 +1,42 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 04:15
-> **当前阶段**：L21 wave#111 推进完成（MIG-02 hardening：router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback + strict gate 升级）
-> **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 （2026-02-24）为准
-> **Remaining**：0（ Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=282 assertions，2026-03-06）
+> **最后更新**：2026-03-06 04:17
+> **当前阶段**：L21 wave#112 推进完成（MIG-02 hardening：router_process_rules_integration 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
+> **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=284 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
 
 ## 口径对齐（避免阶段混淆）
 
-1. 项目总阶段仍记为 ；当前实际执行是 。
-2. 当前工作不是补 parity 缺口，而是在清理  / silent direct fallback。
+1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
+2. 当前工作不是补 parity 缺口，而是在清理 `default=direct` / silent direct fallback。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
-- 当前尚余  个测试文件、 处 。
+- 当前尚余 `10` 个测试文件、`32` 处 `default=direct`。
 - 继续按“一波一文件”推进，优先低风险样例，再处理高风险集成测试。
-- 后段主要风险集中在  与 。
+- 后段主要风险集中在 `router_geosite_rules_integration.rs` 与 `router_hot_reload_integration.rs`。
+
+## 🆕 最新进展：L21 wave#112 推进落地（2026-03-06 04:17）
+
+**状态**：✅ 完成一段（router_process_rules_integration 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.109-wave112-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-core/tests/router_process_rules_integration.rs`：将 process 规则解析样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.109-wave112-v1`，断言扩展到 `284` 条。
+   - `reports/l21/artifacts/wave112_v7_regression_block.txt`：注入回流样例后 `--v7-only` 失败，`exit_code=1`。
+3. 验证：
+   - `wave112_wp1_app_tests_check.txt` PASS
+   - `wave112_wp1_sb_core_check.txt` PASS
+   - `wave112_strict_gate.txt` PASS
+   - `wave112_gui_static_syntax_check.txt` PASS
+4. 剩余规模：
+   - `crates/sb-core/tests` 尚余 `10` 个测试文件、`32` 处 `default=direct`。
 
 ## 🆕 最新进展：L21 wave#111 推进落地（2026-03-06 04:15）
 

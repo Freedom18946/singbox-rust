@@ -268,7 +268,7 @@ fn test_process_rule_parsing() {
         process_path:/usr/bin/chrome=reject
         process_path_regex:.*/Chrome\.app=proxy:chrome
         process_name:curl,port:80=direct
-        default=direct
+        default=unresolved
     "#;
 
     let rules = parse_rules(rules_text);

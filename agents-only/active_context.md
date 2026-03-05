@@ -8,21 +8,34 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#111**，聚焦 **router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#112**，聚焦 **router_process_rules_integration 测试样例 default 去 silent direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
-**Remaining**: 0（ 已标记为 Accepted Limitation）
+**Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
 ### 口径说明（2026-03-06 对齐）
 
--  是项目总阶段。
--  是当前执行层，用来持续推进  小步收口。
-- 当前重点是清理残留  / silent direct fallback，并把约束写进 。
+- `L18` 是项目总阶段。
+- `L21 wave` 是当前执行层，用来持续推进 `MIG-02` 小步收口。
+- 当前重点是清理残留 `default=direct` / silent direct fallback，并把约束写进 `V7`。
 
 ### 下一阶段预估（实时）
 
-- 尚余  个文件、 处 。
+- 尚余 `10` 个文件、`32` 处 `default=direct`。
 - 继续按“一波一文件”推进；高风险文件留到后段集中处理。
-- 当前 V7 口径：（282 assertions）。
+- 当前 V7 口径：`l21.109-wave112-v1`（284 assertions）。
+
+### 🆕 L21 wave#112 推进快照（2026-03-06 04:17）
+
+- 状态：完成（`crates/sb-core/tests/router_process_rules_integration.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/tests/router_process_rules_integration.rs`：router_process_rules_integration 测试样例 default 去 silent direct fallback
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.109-wave112-v1`（284 assertions）
+  3. `wave112_v7_regression_block.txt`：注入回流样例后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave112_wp1_app_tests_check.txt` PASS
+  - `wave112_wp1_sb_core_check.txt` PASS
+  - `wave112_strict_gate.txt` PASS
+  - `wave112_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#111 推进快照（2026-03-06 04:15）
 

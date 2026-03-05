@@ -1,4 +1,4 @@
-VERSION|l21.108-wave111-v1|||L21 wave#111 migration assertion allowlist version
+VERSION|l21.109-wave112-v1|||L21 wave#112 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -318,3 +318,5 @@ forbid|W110-01-no-router-priority-default-direct-literal|crates/sb-core/tests/ro
 require|W110-02-router-priority-default-unresolved-literal|crates/sb-core/tests/router_priority.rs|default=unresolved|router-priority 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W111-01-no-router-inbound-outbound-tag-matching-default-direct-literal|crates/sb-core/tests/router_inbound_outbound_tag_matching.rs|default=direct|router-inbound-outbound-tag-matching 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W111-02-router-inbound-outbound-tag-matching-default-unresolved-literal|crates/sb-core/tests/router_inbound_outbound_tag_matching.rs|default=unresolved|router-inbound-outbound-tag-matching 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W112-01-no-router-process-rules-integration-default-direct-literal|crates/sb-core/tests/router_process_rules_integration.rs|default=direct|router-process-rules-integration 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W112-02-router-process-rules-integration-default-unresolved-literal|crates/sb-core/tests/router_process_rules_integration.rs|default=unresolved|router-process-rules-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
