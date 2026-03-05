@@ -1,11 +1,36 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 02:36
-> **当前阶段**：L21 wave#3 收口完成（聚焦 MIG-01/MIG-05：真实代码迁移 + strict gate allowlist 升级 + 回流阻断证据）
+> **最后更新**：2026-03-05 12:20
+> **当前阶段**：L21 wave#4 收口完成（MIG-01/MIG-05 closed：runtime/switchboard 回流清理 + strict gate 升级 + 阻断证据）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=20 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=29 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#4 收口落地（2026-03-05 12:20）
+
+**状态**：✅ `MIG-01/MIG-05 wave#4` 完成并收口；✅ strict gate allowlist 升级到 `l21.3-wave4-v1`；✅ 回流阻断负样例证据更新
+
+1. **迁移 wave#4（收口 MIG-01 / MIG-05）**：
+   - `crates/sb-core/src/runtime/switchboard.rs`：移除默认 direct connector 注入；`get_connector` 不再对 unknown/direct 进行 fallback，缺失时输出 `requested + available` 诊断并返回 `None`。
+   - `crates/sb-core/src/outbound/manager.rs`：`resolve_default` 不再自动注入 `DirectConnector`；无可用 connector 时返回显式错误（含 `requested/available`）。
+   - `app/src/bootstrap.rs`：移除 `ensure_fallback_direct()` 调用，避免 bootstrap 路径注入 core direct fallback。
+   - `app/src/run_engine.rs`：transport plan 日志 target 由 `sb_core::transport` 统一为 `sb_transport`。
+2. **strict gate allowlist 升级（V7 wave#4）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.3-wave4-v1`，断言扩展到 29 条（新增 W4-01~W4-09 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave4_v7_regression_block.txt`（在临时 root 注入 `target: "sb_core::transport"` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过。
+
+**最小验证**：
+1. `cargo check -p sb-core`
+2. `cargo check -p app`
+3. `cargo check -p sb-api`
+4. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (29 assertions)`）
+5. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave4_v7_regression_block.txt`）
+6. `bash -n scripts/l18/gui_real_cert.sh`
 
 ---
 
