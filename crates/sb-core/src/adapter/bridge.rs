@@ -195,7 +195,7 @@ fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
         .as_ref()
         .or(cfg.route.final_outbound.as_ref())
         .map(|s| s.as_str())
-        .unwrap_or("direct");
+        .unwrap_or("unresolved");
     rules.push(format!("default={final_rule}"));
 
     rules.join("\n")

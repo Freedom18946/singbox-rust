@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:26) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.79-wave82-v1
+  FAIL: [W82-01-no-adapter-bridge-final-rule-default-direct-literal] forbidden pattern matched in crates/sb-core/src/adapter/bridge.rs :: adapter bridge final rule should not use silent direct fallback
+  FAIL: [W82-02-adapter-bridge-final-rule-default-unresolved-literal] required pattern missing in crates/sb-core/src/adapter/bridge.rs :: adapter bridge final rule should use explicit unresolved marker
+  FAIL: 2/224 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave82-v7-regress.gG8MmU
+[meta] injected_file=crates/sb-core/src/adapter/bridge.rs
+[meta] injected_pattern=unwrap_or("direct")
+[meta] exit_code=1
