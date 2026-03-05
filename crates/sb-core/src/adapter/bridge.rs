@@ -102,7 +102,7 @@ fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
             .clone()
             .or_else(|| cfg.route.default.clone())
             .or_else(|| cfg.route.final_outbound.clone())
-            .unwrap_or_else(|| "direct".to_string())
+            .unwrap_or_else(|| "unresolved".to_string())
     }
 
     let mut rules = Vec::new();

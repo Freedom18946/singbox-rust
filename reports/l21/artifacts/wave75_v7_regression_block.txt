@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 00:56) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.72-wave75-v1
+  FAIL: [W75-01-no-adapter-bridge-router-rules-text-direct-default] forbidden pattern matched in crates/sb-core/src/adapter/bridge.rs :: adapter bridge router rules text builder should not use silent direct default fallback
+  FAIL: [W75-02-adapter-bridge-router-rules-text-unresolved-default] required pattern missing in crates/sb-core/src/adapter/bridge.rs :: adapter bridge router rules text builder should use explicit unresolved marker instead of silent direct fallback
+  FAIL: 2/210 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave75-v7-regress.80uUG7
+[meta] injected_file=crates/sb-core/src/adapter/bridge.rs
+[meta] injected_pattern="direct".to_string()
+[meta] exit_code=1

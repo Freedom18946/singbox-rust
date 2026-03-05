@@ -14,6 +14,19 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#75 推进快照（2026-03-06 00:56）
+
+- 状态：`MIG-02 hardening`（wave#75 已完成 adapter bridge router rules text 去 silent direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/bridge.rs`：`ir_to_router_rules_text` 的 `rule_outbound` 默认值从 `direct` 调整为 `unresolved`，去除 silent direct fallback 字面量。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.72-wave75-v1`（210 assertions），新增 W75-01~W75-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave75_v7_regression_block.txt`（将 `\"unresolved\".to_string()` 注入回 `\"direct\".to_string()` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave75_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave75_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (210 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave75_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#74 推进快照（2026-03-06 00:47）
 
 - 状态：`MIG-02 hardening`（wave#74 已完成 socks5-udp enhanced proxy decision 去 direct fallback + V7 断言升级）
