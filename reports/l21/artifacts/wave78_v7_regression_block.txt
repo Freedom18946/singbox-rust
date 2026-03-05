@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:07) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.75-wave78-v1
+  FAIL: [W78-01-no-router-analyze-fix-default-direct-literal] forbidden pattern matched in crates/sb-core/src/router/analyze_fix.rs :: router analyze_fix merge portrange fallback decision should not default silently to direct
+  FAIL: [W78-02-router-analyze-fix-default-unresolved-literal] required pattern missing in crates/sb-core/src/router/analyze_fix.rs :: router analyze_fix merge portrange fallback decision should use explicit unresolved marker
+  FAIL: 2/216 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave78-v7-regress.1jjjH5
+[meta] injected_file=crates/sb-core/src/router/analyze_fix.rs
+[meta] injected_pattern="direct".into()
+[meta] exit_code=1

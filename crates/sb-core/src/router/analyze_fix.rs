@@ -38,7 +38,7 @@ pub fn build_portrange_merge_patch(
                     let dec = if let Some(open) = s.rfind('[') {
                         s[open + 1..s.len().saturating_sub(1)].to_string()
                     } else {
-                        "direct".into()
+                        "unresolved".into()
                     };
                     edits.push(((a1, a2, dec.clone()), (c1, c2, dec.clone())));
                     let _ = writeln!(
