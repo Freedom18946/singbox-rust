@@ -8,7 +8,7 @@ async fn udp_cache_key_does_not_pollute_http_path() {
     let rules = r#"
     transport:tcp=reject
     transport:udp=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     let h = RouterHandle::from_env();
