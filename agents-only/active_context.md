@@ -14,8 +14,20 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
-### 🆕 L21 wave#97 推进快照（2026-03-06 03:14）
+### 🆕 L21 wave#98 推进快照（2026-03-06 03:17）
 
+- 状态：`MIG-02 hardening`（wave#98 已完成 router_rules_index 测试样例 default 去 silent direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/tests/router_rules_index.rs`：多处测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，并将无匹配默认断言更新为 `unresolved`，去除示例中的 silent direct fallback 字面量。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.95-wave98-v1`（256 assertions），新增 W98-01~W98-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave98_v7_regression_block.txt`（将 `default=unresolved` 注入回 `default=direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave98_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave98_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (256 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave98_gui_static_syntax_check.txt`）
+
+### 🆕 L21 wave#97 推进快照（2026-03-06 03:14）
 - 状态：`MIG-02 hardening`（wave#97 已完成 router_rules_include 测试样例 default 去 silent direct fallback + V7 断言升级）
 - 本轮落地：
   1. `crates/sb-core/tests/router_rules_include.rs`：测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。

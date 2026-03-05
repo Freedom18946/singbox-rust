@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 03:18) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.95-wave98-v1
+  FAIL: [W98-01-no-router-rules-index-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_index.rs :: router rules index test samples should not keep silent direct default literal
+  FAIL: 1/256 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave98-v7-regress.FqHnC1
+[meta] injected_file=crates/sb-core/tests/router_rules_index.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

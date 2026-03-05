@@ -1,11 +1,37 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 03:14
-> **当前阶段**：L21 wave#97 推进完成（MIG-02 hardening：router_rules_include 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 03:17
+> **当前阶段**：L21 wave#98 推进完成（MIG-02 hardening：router_rules_index 测试样例 default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=254 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=256 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#98 推进落地（2026-03-06 03:17）
+
+**状态**：✅ `MIG-02 wave#98` 完成一段（router_rules_index 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.95-wave98-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#98（MIG-02 hardening，router_rules_index 测试样例路径）**：
+   - `crates/sb-core/tests/router_rules_index.rs`：
+     - 多处测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，并将无匹配默认断言更新为 `unresolved`，去除示例中的 silent direct fallback 字面量。
+2. **strict gate allowlist 升级（V7 wave#98）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.95-wave98-v1`，断言扩展到 256 条（新增 W98-01/W98-02）。
+   - 回流阻断证据：`reports/l21/artifacts/wave98_v7_regression_block.txt`（在临时 root 将 `default=unresolved` 注入回 `default=direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave98_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave98_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave98_strict_gate.txt`，`V7 PASS (256 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave98_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave98_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave98_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave98_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave98_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave98_gui_static_syntax_check.txt`）
 
 ---
 

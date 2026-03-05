@@ -12,7 +12,7 @@ fn rules_index_priority_and_limits() {
     cidr4:10.0.0.0/8=direct
     cidr4:10.0.0.0/16=proxy
     cidr6:fd00::/8=direct
-    default=direct
+    default=unresolved
     "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build");
     assert_eq!(
@@ -46,7 +46,7 @@ fn rules_index_ipv6_cidr_match() {
     // 验收：cidr6 规则必须正确解析（不能被 ':' 误切分）
     let rules = r#"
     cidr6:2001:db8::/32=proxy
-    default=direct
+    default=unresolved
     "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build");
     use std::net::Ipv6Addr;
@@ -103,7 +103,7 @@ fn rules_index_dup_suffix_first_wins() {
 fn rules_index_dup_default_last_wins() {
     // 重复 default：last-wins（第二条覆盖第一条）
     let rules = r#"
-    default=direct
+    default=unresolved
     default=proxy
     suffix:.test=reject
     "#;
@@ -118,7 +118,7 @@ fn suffix_map_exact_tail_hit_and_weird_suffix_fallback() {
     suffix:.example.com=proxy
     # 不规则后缀（非标签边界），旧 ends_with 兜底仍然应生效
     suffix:mple.com=reject
-    default=direct
+    default=unresolved
     "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build");
     // 精确尾段：应走 suffix_map 命中 "example.com" -> proxy
@@ -134,7 +134,7 @@ fn suffix_map_exact_tail_hit_and_weird_suffix_fallback() {
     // 无匹配：走默认
     assert_eq!(
         router_index_decide_exact_suffix(&idx, "no.match").unwrap_or(idx.default),
-        "direct"
+        "unresolved"
     );
 }
 
@@ -167,7 +167,7 @@ fn rules_index_idna_punycode_normalization() {
     // 使用 Unicode 域名，规则给 punycode；host 通过 normalize_host 转成 punycode 后应命中
     let rules = r#"
     suffix:.xn--bcher-kva.example=proxy
-    default=direct
+    default=unresolved
     "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build");
     let unicode_host = "www.BÜCHER.example"; // 注意大小写与 Umlaut
