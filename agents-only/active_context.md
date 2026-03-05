@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中（认证优先 + 性能零回归并行）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L17 ✅）
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 `wave#108`，聚焦 `L19.3.3 / MIG-02` 的 fallback hardening 与 V7 防回流固化
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 `wave#109`，聚焦 `L19.3.3 / MIG-02` 的 fallback hardening 与 V7 防回流固化
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline），见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）
 **Remaining**: 0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation，不再追踪）
@@ -30,6 +30,19 @@
   2. 中风险：2~4 处样例文件，需要同步调整默认断言
   3. 高风险：`router_geosite_rules_integration.rs`、`router_hot_reload_integration.rs`，更可能牵动集成测试预期
 - 预期：若保持当前强验证模板，剩余波次保守估计仍在 `20+` 量级
+
+### 🆕 L21 wave#109 推进快照（2026-03-06 03:54)
+
+- 状态：`MIG-02 hardening`（wave#109 已完成 router_domain_regex_matching 测试样例 default 去 silent direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/tests/router_domain_regex_matching.rs`：router_domain_regex_matching 两处测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.106-wave109-v1`（278 assertions），新增 W109-01~W109-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave109_v7_regression_block.txt`（将 `default=unresolved` 注入回 `default=direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave109_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave109_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (278 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave109_gui_static_syntax_check.txt`）
 
 ### 🆕 L21 wave#108 推进快照（2026-03-06 03:54)
 
