@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.81-wave84-v1|||L21 wave#84 migration assertion allowlist version
+VERSION|l21.82-wave85-v1|||L21 wave#85 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -264,3 +264,5 @@ forbid|W83-01-no-bootstrap-router-rules-text-rule-outbound-direct-default|app/sr
 require|W83-02-bootstrap-router-rules-text-rule-outbound-unresolved-default|app/src/bootstrap.rs|unwrap_or\(\"unresolved\"\)|bootstrap router rules text rule_outbound should use explicit unresolved marker
 forbid|W84-01-no-env-dump-udp-proxy-mode-direct-default|app/src/env_dump.rs|\"direct\"\.to_string\(\)|env dump should not silently default SB_UDP_PROXY_MODE to direct
 require|W84-02-env-dump-udp-proxy-mode-unresolved-default|app/src/env_dump.rs|\"unresolved\"\.to_string\(\)|env dump should emit explicit unresolved marker for SB_UDP_PROXY_MODE default
+forbid|W85-01-no-router-mod-default-direct-literal|crates/sb-core/src/router/mod.rs|default: default\.unwrap_or\(\"direct\"\),|router mod builder should not silently fallback default decision to direct
+require|W85-02-router-mod-default-unresolved-literal|crates/sb-core/src/router/mod.rs|default: default\.unwrap_or\(\"unresolved\"\),|router mod builder should use explicit unresolved marker for default decision

@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-06 01:42] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router mod default 默认决策路径 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/router/mod.rs`
+    - 构建 `RouterIndex` 时 `default` 的默认决策由 `direct` 调整为 `unresolved`（两处）
+    - 去除 router mod default 默认决策中的 silent direct fallback 字面量
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.82-wave85-v1`
+    - 新增 `W85-01~W85-02`（禁止 router mod default direct 字面量 + 要求 unresolved 标记）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave85_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave85_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave85_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (230 assertions)`）
+  - `reports/l21/artifacts/wave85_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave85_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#85）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3CH wave#85，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#85 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#85 目标已落地并形成可复算证据链）
+**备注**:
+- router mod default 默认决策不再 silent fallback 到 direct，当前统一显式 unresolved 标记。
+
+---
+
 ### [2026-03-06 01:39] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 env_dump udp_proxy_mode 默认决策路径 silent direct fallback 并升级 strict gate 断言。

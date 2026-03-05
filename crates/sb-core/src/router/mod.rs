@@ -1054,7 +1054,7 @@ pub fn router_build_index_from_str(
         keyword_rules,
         #[cfg(feature = "router_keyword")]
         keyword_idx: None,
-        default: default.unwrap_or("direct"),
+        default: default.unwrap_or("unresolved"),
         gen: 0,
         checksum,
         rules: vec![],
@@ -1088,7 +1088,7 @@ pub fn router_build_index_from_str(
         keyword_rules,
         #[cfg(feature = "router_keyword")]
         keyword_idx: None,
-        default: default.unwrap_or("direct"),
+        default: default.unwrap_or("unresolved"),
         gen: 0,
         checksum,
         rules: vec![],
