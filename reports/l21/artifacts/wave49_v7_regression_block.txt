@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:47) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.46-wave49-v1
+  FAIL: [W49-02-no-socks5-udp-direct-fallback-comment] forbidden pattern matched in crates/sb-core/src/inbound/socks5.rs :: SOCKS5 inbound UDP path should not document NAT direct fallback path
+  FAIL: 1/139 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave49-v7-regress.ZWp8EP
+[meta] injected_file=crates/sb-core/src/inbound/socks5.rs
+[meta] injected_pattern=// Direct UDP via NAT entry per (client, dst)
+[meta] exit_code=1

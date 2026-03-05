@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 21:47] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 SOCKS5 inbound UDP 路径 direct/NAT fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/inbound/socks5.rs`
+    - 移除 UDP NAT 直连 fallback 执行路径
+    - 缺失 UDP session 时改为显式 no-fallback 迁移提示
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.46-wave49-v1`
+    - 新增 `W49-01~W49-03`（禁止 SOCKS5 UDP NAT/direct fallback + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave49_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave49_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave49_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (139 assertions)`）
+  - `reports/l21/artifacts/wave49_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave49_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#49）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AX wave#49，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#49 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#49 目标已落地并形成可复算证据链）
+**备注**:
+- SOCKS5 inbound UDP 在缺失 UDP session 场景下不再回退 NAT 直连，已改为显式 no-fallback 诊断。
+
+---
+
 ### [2026-03-05 21:43] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 Bridge direct fallback helper 并升级 strict gate 断言。

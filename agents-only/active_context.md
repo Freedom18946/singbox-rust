@@ -551,6 +551,20 @@
   - `reports/l21/artifacts/wave48_v7_regression_block.txt`
   - `reports/l21/artifacts/wave48_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#49 推进快照（2026-03-05 21:47）
+
+- 状态：`MIG-02 hardening`（wave#49 完成 SOCKS5 inbound UDP 分支去 direct/NAT fallback）
+- 本轮落地：
+  1. `crates/sb-core/src/inbound/socks5.rs`：移除 UDP NAT 直连 fallback 执行路径；缺失 UDP session 时改为显式 no-fallback 警告：`socks5-udp: outbound '{}' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.46-wave49-v1`（139 assertions），新增 W49-01/W49-02/W49-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave49_v7_regression_block.txt`（注入 `Direct UDP via NAT entry per (client, dst)` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave49_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave49_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave49_strict_gate.txt`
+  - `reports/l21/artifacts/wave49_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave49_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

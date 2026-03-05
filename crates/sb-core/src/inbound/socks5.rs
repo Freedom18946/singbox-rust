@@ -126,31 +126,6 @@ pub(crate) async fn handle_conn(
         resp.extend_from_slice(&relay_addr.port().to_be_bytes());
         cli.write_all(&resp).await?;
 
-        // NAT map for direct UDP fallback (TTL 60s, capacity 1024)
-        let nat_ttl = std::time::Duration::from_secs(
-            std::env::var("SOCKS_UDP_NAT_TTL_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(60),
-        );
-        let nat_cap = std::env::var("SOCKS_UDP_NAT_CAP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1024);
-        let nat = crate::net::udp_nat::NatMap::new(nat_ttl, nat_cap);
-        // Evictor task
-        let nat_ev = nat.clone();
-        tokio::spawn(async move { nat_ev.run_evictor(std::time::Duration::from_secs(5)).await });
-        // Best-effort gauge updater for UDP sessions (does not include TCP)
-        let nat_metric = nat.clone();
-        tokio::spawn(async move {
-            loop {
-                let len = nat_metric.len() as u64;
-                crate::metrics::inbound::set_active_connections("socks", len);
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        });
-
         // Spawn UDP relay loop
         let eng_owned = eng.clone();
         let br_owned = bridge.clone();
@@ -165,6 +140,8 @@ pub(crate) async fn handle_conn(
             let mut last_traffic: Option<Arc<dyn TrafficRecorder>> = None;
             // Conntrack wiring (per UDP associate session)
             let mut conntrack_meta: Option<crate::net::datagram::UdpConntrackMeta> = None;
+            // One-shot warning to avoid log spam when UDP fallback is disabled.
+            let mut udp_no_fallback_reported = false;
             loop {
                 let recv_res = if let Some(meta) = &conntrack_meta {
                     tokio::select! {
@@ -434,102 +411,12 @@ pub(crate) async fn handle_conn(
                             }
                         }
                     } else {
-                        // Direct UDP via NAT entry per (client, dst)
-                        use crate::net::udp_nat::{NatKey, TargetAddr as Tgt};
-                        let dst = if let Ok(ip) = dst_host.parse::<std::net::IpAddr>() {
-                            Tgt::Ip(std::net::SocketAddr::from((ip, dst_port)))
-                        } else {
-                            Tgt::Domain(dst_host.clone(), dst_port)
-                        };
-                        let c = client_ep.unwrap_or(src);
-                        let key = NatKey { client: c, dst };
-
-                        let (upstream, newly) = nat
-                            .get_or_insert_with_async(key.clone(), || {
-                                let host = dst_host.clone();
-                                async move {
-                                    let sock = UdpSocket::bind("0.0.0.0:0")
-                                        .await
-                                        .map_err(std::io::Error::other)
-                                        .unwrap();
-                                    // Resolve
-                                    let mut it = tokio::net::lookup_host((host.as_str(), dst_port))
-                                        .await
-                                        .ok()
-                                        .into_iter()
-                                        .flatten();
-                                    let addr = it.next().unwrap_or_else(|| {
-                                        std::net::SocketAddr::from(([0, 0, 0, 0], dst_port))
-                                    });
-                                    sock.connect(addr).await.ok();
-                                    Arc::new(sock)
-                                }
-                            })
-                            .await;
-
-                        if newly {
-                            // Spawn read-back loop
-                            let relay_c = relay.clone();
-                            let client_c = c;
-                            let upstream_c = upstream.clone();
-                            let traffic_c = conntrack_meta
-                                .as_ref()
-                                .map(|m| m.traffic.clone())
-                                .or_else(|| traffic.clone());
-                            let cancel_c = conntrack_meta.as_ref().map(|m| m.cancel.clone());
-                            tokio::spawn(async move {
-                                let mut rbuf = vec![0u8; 64 * 1024];
-                                loop {
-                                    let recv_res = if let Some(cancel) = &cancel_c {
-                                        tokio::select! {
-                                            _ = cancel.cancelled() => break,
-                                            r = upstream_c.recv(&mut rbuf) => r,
-                                        }
-                                    } else {
-                                        upstream_c.recv(&mut rbuf).await
-                                    };
-                                    let Ok(m) = recv_res else {
-                                        break;
-                                    };
-                                    // Use connected peer as source
-                                    if let Ok(peer) = upstream_c.peer_addr() {
-                                        let mut pkt = Vec::with_capacity(m + 10);
-                                        pkt.extend_from_slice(&[0x00, 0x00, 0x00]);
-                                        match peer.ip() {
-                                            std::net::IpAddr::V4(v4) => {
-                                                pkt.push(0x01);
-                                                pkt.extend_from_slice(&v4.octets());
-                                            }
-                                            std::net::IpAddr::V6(v6) => {
-                                                pkt.push(0x04);
-                                                pkt.extend_from_slice(&v6.octets());
-                                            }
-                                        }
-                                        pkt.extend_from_slice(&peer.port().to_be_bytes());
-                                        pkt.extend_from_slice(&rbuf[..m]);
-                                        if relay_c.send_to(&pkt, client_c).await.is_ok() {
-                                            if let Some(ref recorder) = traffic_c {
-                                                recorder.record_down(m as u64);
-                                                recorder.record_down_packet(1);
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-
-                            // Update NAT size metric (best-effort)
-                            #[cfg(feature = "metrics")]
-                            sb_metrics::socks::set_udp_nat_size(nat.len());
-                        }
-
-                        if upstream.send(payload).await.is_ok() {
-                            if let Some(meta) = &conntrack_meta {
-                                meta.traffic.record_up(payload.len() as u64);
-                                meta.traffic.record_up_packet(1);
-                            } else if let Some(ref recorder) = traffic {
-                                recorder.record_up(payload.len() as u64);
-                                recorder.record_up_packet(1);
-                            }
+                        if !udp_no_fallback_reported {
+                            tracing::warn!(
+                                "socks5-udp: outbound '{}' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path",
+                                out_name
+                            );
+                            udp_no_fallback_reported = true;
                         }
                     }
                 } else {
