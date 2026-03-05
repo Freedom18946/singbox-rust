@@ -17,7 +17,7 @@ fn geoip_cidr_match_ipv4() {
     // Set up a test provider that returns country codes
     // set_global_provider(Arc::new(TestGeoProvider));
 
-    // let rules = "geoip:US=reject\ndefault=direct";
+    // let rules = "geoip:US=reject\ndefault=unresolved";
     // let d = router::decide_udp_with_rules("10.1.2.3", true, rules);
     // The provider returns "US" for 10.1.2.3, which matches geoip:US=reject
     // assert_eq!(d, "reject");

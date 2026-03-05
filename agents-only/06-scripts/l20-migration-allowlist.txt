@@ -1,4 +1,4 @@
-VERSION|l21.116-wave119-v1|||L21 wave#119 migration assertion allowlist version
+VERSION|l21.117-wave120-v1|||L21 wave#120 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -334,3 +334,5 @@ forbid|W118-01-no-router-hot-reload-integration-complete-default-direct-literal|
 require|W118-02-router-hot-reload-integration-complete-default-unresolved-literal|crates/sb-core/tests/router_hot_reload_integration_complete.rs|default=unresolved|router-hot-reload-integration-complete 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W119-01-no-router-cidr4-default-direct-literal|crates/sb-core/tests/router_cidr4.rs|default=direct|router-cidr4 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W119-02-router-cidr4-default-unresolved-literal|crates/sb-core/tests/router_cidr4.rs|default=unresolved|router-cidr4 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W120-01-no-geoip-rules-default-direct-literal|crates/sb-core/tests/geoip_rules.rs|default=direct|geoip-rules 注释样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W120-02-geoip-rules-default-unresolved-literal|crates/sb-core/tests/geoip_rules.rs|default=unresolved|geoip-rules 注释样例 default 去 silent direct fallback should use explicit unresolved default literal

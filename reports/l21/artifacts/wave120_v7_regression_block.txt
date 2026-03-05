@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 04:40) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.117-wave120-v1
+  FAIL: [W120-01-no-geoip-rules-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/geoip_rules.rs :: geoip-rules 注释样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W120-02-geoip-rules-default-unresolved-literal] required pattern missing in crates/sb-core/tests/geoip_rules.rs :: geoip-rules 注释样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 2/300 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp2a_p2z6a
