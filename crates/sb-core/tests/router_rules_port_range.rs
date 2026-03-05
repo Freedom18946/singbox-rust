@@ -6,7 +6,7 @@ fn http_port_range_matches_first_wins() {
     let rules = r#"
     portrange:1000-2000=proxy
     portrange:1500-1600=reject
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
 
@@ -20,5 +20,5 @@ fn http_port_range_matches_first_wins() {
     assert_eq!(decision.target, "proxy");
     // 区间外 -> 默认
     let decision = decide_http("no.match:2020");
-    assert_eq!(decision.target, "direct");
+    assert_eq!(decision.target, "unresolved");
 }

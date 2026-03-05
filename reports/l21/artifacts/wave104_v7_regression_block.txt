@@ -1,15 +1,17 @@
-=== 依赖边界检查 (2026-03-06 03:50) ===
+=== 依赖边界检查 (2026-03-06 03:52) ===
 
 ── V7: L20 migration assertions ──
   INFO: assertion version: l21.101-wave104-v1
   FAIL: [W104-01-router-override-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_override.rs :: router override test sample should not keep silent direct default literal
   FAIL: [W104-02-router-override-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_override.rs :: router override test sample should use explicit unresolved default literal
-  FAIL: 2/268 migration assertions failed
+  FAIL: [W104-01-no-router-override-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_override.rs :: router_override 测试样例基础默认去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W104-02-router-override-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_override.rs :: router_override 测试样例基础默认去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 4/274 migration assertions failed
 
 ════════════════════════
 发现 1 类违规
 
-[meta] temp_root=/tmp/l21-wave104-v7-regress.CePb12
+[meta] temp_root=/tmp/l21-wave104-v7-regress.id91cv6z
 [meta] injected_file=crates/sb-core/tests/router_override.rs
 [meta] injected_pattern=default=direct
 [meta] exit_code=1

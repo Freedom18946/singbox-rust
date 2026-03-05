@@ -1,4 +1,4 @@
-=== 依赖边界检查 (2026-03-06 03:50) ===
+=== 依赖边界检查 (2026-03-06 03:52) ===
 
 ── V1: sb-core Web 框架依赖 ──
   PASS
@@ -26,7 +26,7 @@
   PASS
 ── V7: L20 migration assertions ──
   INFO: assertion version: l21.101-wave104-v1
-  PASS (268 assertions)
+  PASS (274 assertions)
 
 ════════════════════════
 全部检查通过 (0 违规)

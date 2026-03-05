@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.102-wave105-v1|||L21 wave#105 migration assertion allowlist version
+VERSION|l21.101-wave104-v1|||L21 wave#104 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -306,3 +306,7 @@ forbid|W104-01-router-override-default-direct-literal|crates/sb-core/tests/route
 require|W104-02-router-override-default-unresolved-literal|crates/sb-core/tests/router_override.rs|default=unresolved|router override test sample should use explicit unresolved default literal
 forbid|W105-01-router-select-ctx-meta-default-direct-literal|crates/sb-core/tests/router_select_ctx_meta.rs|default=direct|router select_ctx_meta test sample should not keep silent direct default literal
 require|W105-02-router-select-ctx-meta-default-unresolved-literal|crates/sb-core/tests/router_select_ctx_meta.rs|default=unresolved|router select_ctx_meta test sample should use explicit unresolved default literal
+forbid|W106-01-router-rules-port-range-default-direct-literal|crates/sb-core/tests/router_rules_port_range.rs|default=direct|router rules port_range test sample should not keep silent direct default literal
+require|W106-02-router-rules-port-range-default-unresolved-literal|crates/sb-core/tests/router_rules_port_range.rs|default=unresolved|router rules port_range test sample should use explicit unresolved default literal
+forbid|W104-01-no-router-override-default-direct-literal|crates/sb-core/tests/router_override.rs|default=direct|router_override 测试样例基础默认去 silent direct fallback should not keep silent direct default literal
+require|W104-02-router-override-default-unresolved-literal|crates/sb-core/tests/router_override.rs|default=unresolved|router_override 测试样例基础默认去 silent direct fallback should use explicit unresolved default literal

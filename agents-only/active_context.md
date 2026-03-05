@@ -31,6 +31,19 @@
   3. 高风险：`router_geosite_rules_integration.rs`、`router_hot_reload_integration.rs`，更可能牵动集成测试预期
 - 预期：若保持当前强验证模板，剩余波次保守估计仍在 `20+` 量级
 
+### 🆕 L21 wave#104 推进快照（2026-03-06 03:52)
+
+- 状态：`MIG-02 hardening`（wave#104 已完成 router_override 测试样例基础默认去 silent direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/tests/router_override.rs`：router_override 测试样例中的基础默认从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.101-wave104-v1`（268 assertions），新增 W104-01~W104-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave104_v7_regression_block.txt`（将 `default=unresolved` 注入回 `default=direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave104_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave104_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (268 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave104_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#105 推进快照（2026-03-06 03:50）
 
 - 状态：（wave#105 已完成 router_select_ctx_meta 测试样例中的 fallback 从  调整为 ，并将 final 分支断言更新为 ，去除示例中的 silent direct fallback 字面量 + V7 断言升级）
