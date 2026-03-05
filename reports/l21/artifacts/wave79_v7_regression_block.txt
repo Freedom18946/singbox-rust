@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:10) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.76-wave79-v1
+  FAIL: [W79-01-no-subscribe-parse-singbox-default-decision-literal] forbidden pattern matched in crates/sb-subscribe/src/parse_singbox.rs :: sb-subscribe parse_singbox rule mapping should not use silent default decision literal
+  FAIL: [W79-02-subscribe-parse-singbox-unresolved-decision-literal] required pattern missing in crates/sb-subscribe/src/parse_singbox.rs :: sb-subscribe parse_singbox rule mapping should use explicit unresolved decision marker
+  FAIL: 2/218 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave79-v7-regress.LpbC1p
+[meta] injected_file=crates/sb-subscribe/src/parse_singbox.rs
+[meta] injected_pattern=unwrap_or("default")
+[meta] exit_code=1

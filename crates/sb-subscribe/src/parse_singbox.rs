@@ -26,7 +26,7 @@ fn map_rule(v: &serde_json::Value, use_keyword: bool, out: &mut Vec<String>) {
     let decision = v
         .get("outbound")
         .and_then(|x| x.as_str())
-        .unwrap_or("default")
+        .unwrap_or("unresolved")
         .to_lowercase();
     if let Some(list) = v.get("domain").and_then(|x| x.as_array()) {
         for d in list {

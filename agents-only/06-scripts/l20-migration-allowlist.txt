@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.75-wave78-v1|||L21 wave#78 migration assertion allowlist version
+VERSION|l21.76-wave79-v1|||L21 wave#79 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -252,3 +252,5 @@ forbid|W77-01-no-conntrack-inbound-tcp-direct-outbound-tag-default|crates/sb-cor
 require|W77-02-conntrack-inbound-tcp-unresolved-outbound-tag-default|crates/sb-core/src/conntrack/inbound_tcp.rs|\"unresolved\"\.to_string\(\)|conntrack inbound tcp should mark missing outbound tag as unresolved explicitly
 forbid|W78-01-no-router-analyze-fix-default-direct-literal|crates/sb-core/src/router/analyze_fix.rs|\"direct\"\.into\(\)|router analyze_fix merge portrange fallback decision should not default silently to direct
 require|W78-02-router-analyze-fix-default-unresolved-literal|crates/sb-core/src/router/analyze_fix.rs|\"unresolved\"\.into\(\)|router analyze_fix merge portrange fallback decision should use explicit unresolved marker
+forbid|W79-01-no-subscribe-parse-singbox-default-decision-literal|crates/sb-subscribe/src/parse_singbox.rs|unwrap_or\(\"default\"\)|sb-subscribe parse_singbox rule mapping should not use silent default decision literal
+require|W79-02-subscribe-parse-singbox-unresolved-decision-literal|crates/sb-subscribe/src/parse_singbox.rs|unwrap_or\(\"unresolved\"\)|sb-subscribe parse_singbox rule mapping should use explicit unresolved decision marker
