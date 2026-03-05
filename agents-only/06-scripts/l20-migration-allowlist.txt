@@ -1,4 +1,4 @@
-VERSION|l21.111-wave114-v1|||L21 wave#114 migration assertion allowlist version
+VERSION|l21.112-wave115-v1|||L21 wave#115 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -324,3 +324,5 @@ forbid|W113-01-no-router-rules-include-cycle-default-direct-literal|crates/sb-co
 require|W113-02-router-rules-include-cycle-default-unresolved-literal|crates/sb-core/tests/router_rules_include_cycle.rs|default=unresolved|router-rules-include-cycle 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W114-01-no-router-udp-rules-default-direct-literal|crates/sb-core/tests/router_udp_rules.rs|default=direct|router-udp-rules 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W114-02-router-udp-rules-default-unresolved-literal|crates/sb-core/tests/router_udp_rules.rs|default=unresolved|router-udp-rules 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W115-01-no-router-rules-port-transport-default-direct-literal|crates/sb-core/tests/router_rules_port_transport.rs|default=direct|router-rules-port-transport 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W115-02-router-rules-port-transport-default-unresolved-literal|crates/sb-core/tests/router_rules_port_transport.rs|default=unresolved|router-rules-port-transport 测试样例 default 去 silent direct fallback should use explicit unresolved default literal

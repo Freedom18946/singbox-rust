@@ -15,7 +15,7 @@ fn http_port_rule_applies_when_host_not_matched() {
     let _serial = serial_guard();
     let rules = r#"
     port:443=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     // host 无匹配，端口 443 命中 -> proxy
@@ -28,7 +28,7 @@ fn http_transport_tcp_as_fallback() {
     let _serial = serial_guard();
     let rules = r#"
     transport:tcp=reject
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     let decision = decide_http("no.match");
@@ -40,7 +40,7 @@ async fn udp_transport_udp_as_fallback() {
     let _serial = serial_guard();
     let rules = r#"
     transport:udp=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     let h = RouterHandle::from_env();

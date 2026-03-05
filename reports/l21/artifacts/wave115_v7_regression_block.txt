@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 04:19) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.112-wave115-v1
+  FAIL: [W115-01-no-router-rules-port-transport-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_port_transport.rs :: router-rules-port-transport 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W115-02-router-rules-port-transport-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_port_transport.rs :: router-rules-port-transport 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 2/290 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp4wnx8hm1
