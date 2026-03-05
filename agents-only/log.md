@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 21:08] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 tools connect named-outbound 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/cli/tools.rs`
+    - `connect_tcp` 的 `outbound=Some(name)` 路径移除 `.or_else(|| bridge.find_direct_fallback())`
+    - 改为显式报错 `requested outbound not found; direct fallback is disabled`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.38-wave41-v1`
+    - 新增 `W41-01~W41-02`（禁止 tools named-outbound legacy fallback 路径 + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave41_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave41_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave41_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (118 assertions)`）
+  - `reports/l21/artifacts/wave41_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave41_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#41）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AP wave#41，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#41 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#41 目标已落地并形成可复算证据链）
+**备注**:
+- 在 `tools connect --outbound <name>` 场景下，已不再允许“找不到指定 outbound 时自动回退 direct”。
+
+---
+
 ### [2026-03-05 20:58] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 core bridge 的 Direct 分支 fallback helper 并升级 strict gate 断言。

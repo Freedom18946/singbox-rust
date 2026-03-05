@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.37-wave40-v1|||L21 wave#40 migration assertion allowlist version
+VERSION|l21.38-wave41-v1|||L21 wave#41 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -152,3 +152,5 @@ require|W39-02-core-bridge-block-noscaffold-explicit-disabled|crates/sb-core/src
 forbid|W40-01-no-core-bridge-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Direct => direct_connector_fallback\(\)|core bridge Direct outbound should not use direct fallback helper
 require|W40-02-core-bridge-direct-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Direct outbound is disabled; use adapter::bridge::build_bridge|core bridge Direct outbound should emit explicit migration guidance
 forbid|W40-03-no-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|fn direct_connector_fallback\(\)|core bridge direct fallback helper should be removed after full fallback cleanup
+forbid|W41-01-no-tools-named-outbound-legacy-fallback-msg|app/src/cli/tools.rs|outbound not found and no direct fallback|tools connect named outbound path should not use legacy fallback message
+require|W41-02-tools-named-outbound-explicit-disabled|app/src/cli/tools.rs|requested outbound not found; direct fallback is disabled|tools connect named outbound path should emit explicit no-fallback diagnostics

@@ -33,7 +33,7 @@ pub enum ToolsCmd {
         /// Network type (tcp)
         #[arg(short = 'n', long = "network", value_enum, default_value_t = Net::Tcp)]
         network: Net,
-        /// Use named outbound (fallback to direct when absent)
+        /// Use named outbound
         #[arg(long = "outbound")]
         outbound: Option<String>,
     },
@@ -176,8 +176,7 @@ async fn connect_tcp(
     let connector = if let Some(name) = outbound {
         bridge
             .get_member(&name)
-            .or_else(|| bridge.find_direct_fallback())
-            .context("outbound not found and no direct fallback")?
+            .context("requested outbound not found; direct fallback is disabled")?
     } else {
         bridge
             .find_direct_fallback()

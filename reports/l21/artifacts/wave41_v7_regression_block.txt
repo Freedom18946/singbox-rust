@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:09) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.38-wave41-v1
+  FAIL: [W41-01-no-tools-named-outbound-legacy-fallback-msg] forbidden pattern matched in app/src/cli/tools.rs :: tools connect named outbound path should not use legacy fallback message
+  FAIL: 1/118 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave41-v7-regress.zzQjkA
+[meta] injected_file=app/src/cli/tools.rs
+[meta] injected_pattern=outbound not found and no direct fallback
+[meta] exit_code=1
