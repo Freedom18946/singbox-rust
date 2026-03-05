@@ -641,7 +641,9 @@ impl Bridge {
                     // For now, fall back to direct
                     direct_connector_fallback()
                 }
-                sb_config::ir::OutboundType::Shadowsocks => direct_connector_fallback(),
+                sb_config::ir::OutboundType::Shadowsocks => unsupported_outbound_connector(
+                    "core bridge Shadowsocks outbound is disabled; use adapter::bridge::build_bridge",
+                ),
                 sb_config::ir::OutboundType::UrlTest => direct_connector_fallback(),
                 sb_config::ir::OutboundType::Shadowtls => {
                     // Adapter-provided in sb-adapters; core bridge falls back to direct
