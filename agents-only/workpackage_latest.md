@@ -1,39 +1,157 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 03:54
-> **当前阶段**：L21 wave#108 推进完成（MIG-02 hardening：router_cache 测试样例 default 去 silent direct fallback + strict gate 升级）
-> **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
-> **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=276 assertions，2026-03-06）
+> **最后更新**：2026-03-06 04:14
+> **当前阶段**：L21 wave#110 推进完成（MIG-02 hardening：router_priority 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 （2026-02-24）为准
+> **Remaining**：0（ Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
+> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=280 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
 
 ## 口径对齐（避免阶段混淆）
 
-1. **项目总阶段**：仍按长期主线记为 `L18 认证替换实施中`。这描述的是项目大盘，不等于当前每一轮提交的执行编号。
-2. **当前执行阶段**：当前实际在跑的是 `L21` 连续 wave，聚焦 `L19.3.3 / MIG-02` 的迁移硬化与防回流。
-3. **当前工作的性质**：不是补 parity 缺口；`Parity=100%`、`Remaining=0` 已成立。现在做的是“清理历史 silent fallback / direct 默认值，并用 V7 门禁把结果固化”。
+1. 项目总阶段仍记为 ；当前实际执行是 。
+2. 当前工作不是补 parity 缺口，而是在清理  / silent direct fallback。
+3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
-## 下一阶段评估（wave100+）
+## 下一阶段评估（实时）
 
-**剩余规模（按 2026-03-06 03:24 盘点）**：
-- `crates/sb-core/tests` 内仍有 `23` 个测试文件、`50` 处 `default=direct` 待收口。
-- 当前最适合继续按“一波一文件”推进；这样最稳，回滚成本最低，证据链也最清晰。
+- 当前尚余  个测试文件、 处 。
+- 继续按“一波一文件”推进，优先低风险样例，再处理高风险集成测试。
+- 后段主要风险集中在  与 。
 
-**优先级分层**：
-1. **低风险快收口**：单文件 1 处或极少量样例，预期继续保持当前 wave 节奏。
-   - 候选：`router_rules_portset.rs`、`router_cache_transport.rs`、`router_process_rules_integration.rs`、`router_select_ctx_meta.rs`、`router_rules_file.rs`、`router_override.rs`、`router_summary.rs`、`router_explain.rs`、`router_inbound_outbound_tag_matching.rs`、`router_rules_port_range.rs`、`router_udp_rules.rs`
-2. **中风险成组清理**：单文件 2~4 处样例，通常需要同步调整少量默认断言。
-   - 候选：`router_cache.rs`、`router_domain_regex_matching.rs`、`router_query_type_matching.rs`、`router_ipversion_matching.rs`、`router_rules_include_cycle.rs`、`router_hot_reload_integration_complete.rs`、`router_cidr4.rs`、`router_rules_port_transport.rs`、`router_priority.rs`
-3. **高风险大文件**：同一文件多处样例、集成测试语义更重，适合放到后段集中处理。
-   - 候选：`router_geosite_rules_integration.rs`（6 处）、`router_hot_reload_integration.rs`（10 处）
+## 🆕 最新进展：L21 wave#110 推进落地（2026-03-06 04:14）
 
-**预期管理**：
-1. 如果继续坚持“每波一文件 + 五项必跑 + 回流负样例”的节奏，保守预期还需要约 `20+` 波次才能把这批测试样例清完。
-2. 前半段推进会比较稳定，因为大多是样例字面量替换；后半段会变慢，因为 `geosite/hot_reload` 类文件更容易牵动断言语义。
-3. 真正的阻塞条件不是改字符串本身，而是某些测试是否把 `direct` 当作行为预期而不是示例默认值。一旦遇到这种情况，需要先改断言口径，再决定是否拆成独立波次。
-4. 在当前口径下，`V7 assertions` 会继续线性增长；每一波都会新增 2 条防回流断言，直到这批剩余样例清零。
+**状态**：✅ 完成一段（router_priority 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 ；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - ：将测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+2. V7 升级：
+   -  升级到 ，断言扩展到  条。
+   - ：注入回流样例后  失败，。
+3. 验证：
+   -  PASS
+   -  PASS
+   -  PASS
+   -  PASS
+4. 剩余规模：
+   -  尚余  个测试文件、 处 。
+
+## 🆕 最新进展：L21 wave#108 推进落地（2026-03-06 03:54）
+
+**状态**：✅  完成一段（router_cache 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 ；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#108（MIG-02 hardening，router_cache 测试样例 default 去 silent direct fallback 路径）**：
+   - ：
+     - router_cache 测试样例 default 去 silent direct fallback。
+2. **strict gate allowlist 升级（V7 wave#108）**：
+   -  升级到 ，断言扩展到 276 条（新增 W108-01/W108-02）。
+   - 回流阻断证据：（在临时 root 将  注入回  后， 预期失败，）。
+3. **门禁与编译复验**：
+   - ：PASS（）。
+   - ：PASS（）。
+   - === 依赖边界检查 (2026-03-06 03:54) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.105-wave108-v1
+  PASS (288 assertions)
+
+════════════════════════
+全部检查通过 (0 违规)：PASS（，）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - ：语法通过（）。
+
+**最小验证**：
+1. （）
+2. （）
+3. === 依赖边界检查 (2026-03-06 03:55) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.105-wave108-v1
+  FAIL: [W110-01-no-router-priority-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_priority.rs :: router_priority 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: 1/290 migration assertions failed
+
+════════════════════════
+发现 1 类违规（）
+4. （预期 FAIL，见 ）
+5. （）
+
+---
+
+## 🆕 最新进展：L21 wave#110 推进落地（2026-03-06 03:55)
+
+**状态**：✅ `MIG-02 wave#110` 完成一段（router_priority 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.107-wave110-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#110（MIG-02 hardening，router_priority 测试样例 default 去 silent direct fallback 路径）**：
+   - `crates/sb-core/tests/router_priority.rs`：
+     - 将三处测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+2. **strict gate allowlist 升级（V7 wave#110）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.107-wave110-v1`，断言扩展到 280 条（新增 W110-01/W110-02）。
+   - 回流阻断证据：`reports/l21/artifacts/wave110_v7_regression_block.txt`（在临时 root 将 `default=unresolved` 注入回 `default=direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave110_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave110_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave110_strict_gate.txt`，`V7 PASS (280 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave110_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave110_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave110_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave110_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave110_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave110_gui_static_syntax_check.txt`）
+
+---
 
 ## 🆕 最新进展：L21 wave#109 推进落地（2026-03-06 03:54)
 

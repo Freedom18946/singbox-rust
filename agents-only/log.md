@@ -5,135 +5,97 @@
 ---
 
 ## 日志格式
-### [2026-03-06 03:53] Agent: Codex (GPT-5)
-
-**任务**: 继续推进 wave：清理 router_explain 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
-**变更**:
-- 代码与门禁：
-  - 更新 
-    - 将测试样例中的 fallback 从  调整为 ，去除 router_explain 测试样例中的 silent direct fallback 字面量
-  - 更新 
-    - 版本升级 
-    - 新增 （禁止该测试样例保留  + 要求 ）
-- 证据与验证产物：
-  - （ PASS）
-  - （ PASS）
-  - （ PASS，）
-  - （注入回流样例后  预期 FAIL，）
-  - （ PASS）
-- 文档同步：
-  - 更新 
-  - 更新 
-  - 更新 
-  - 更新 
-
-**结果**: 成功（wave#107 目标已落地并形成可复算证据链）
-**备注**:
-- 当前统一显式 unresolved 标记。
-
----
-
-### [2026-03-06 03:51] Agent: Codex (GPT-5)
-
-**任务**: 继续推进 wave：清理 router_rules_port_range 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
-**变更**:
-- 代码与门禁：
-  - 更新 
-    - 将测试样例中的 fallback 从  调整为 ，并将区间外默认断言更新为 ，去除 router_rules_port_range 测试样例中的 silent direct fallback 字面量
-  - 更新 
-    - 版本升级 
-    - 新增 （禁止该测试样例保留  + 要求 ）
-- 证据与验证产物：
-  - （ PASS）
-  - （ PASS）
-  - （ PASS，）
-  - （注入回流样例后  预期 FAIL，）
-  - （ PASS）
-- 文档同步：
-  - 更新 
-  - 更新 
-  - 更新 
-  - 更新 
-
-**结果**: 成功（wave#106 目标已落地并形成可复算证据链）
-**备注**:
-- 当前统一显式 unresolved 标记。
-
----
-
-### [2026-03-06 03:50] Agent: Codex (GPT-5)
-
-**任务**: 继续推进 wave：清理 router_select_ctx_meta 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
-**变更**:
-- 代码与门禁：
-  - 更新 
-    - 将测试样例中的 fallback 从  调整为 ，并将 final 分支断言更新为 ，去除 router_select_ctx_meta 测试样例中的 silent direct fallback 字面量
-  - 更新 
-    - 版本升级 
-    - 新增 （禁止该测试样例保留  + 要求 ）
-- 证据与验证产物：
-  - （ PASS）
-  - （ PASS）
-  - （ PASS，）
-  - （注入回流样例后  预期 FAIL，）
-  - （ PASS）
-- 文档同步：
-  - 更新 
-  - 更新 
-  - 更新 
-  - 更新 
-
-**结果**: 成功（wave#105 目标已落地并形成可复算证据链）
-**备注**:
-- 当前统一显式 unresolved 标记。
-
----
-
-### [2026-03-06 03:49] Agent: Codex (GPT-5)
-
-**任务**: 继续推进 wave：清理 router_override 测试样例基础默认去 silent direct fallback 并升级 strict gate 断言。
-**变更**:
-- 代码与门禁：
-  - 更新 
-    - 将  基础默认从  调整为 ，去除 router_override 测试样例中的 silent direct fallback 字面量
-  - 更新 
-    - 版本升级 
-    - 新增 （禁止该测试样例保留  + 要求 ）
-- 证据与验证产物：
-  - （ PASS）
-  - （ PASS）
-  - （ PASS，）
-  - （注入回流样例后  预期 FAIL，）
-  - （ PASS）
-- 文档同步：
-  - 更新 
-  - 更新 
-  - 更新 
-  - 更新 
-
-**结果**: 成功（wave#104 目标已落地并形成可复算证据链）
-**备注**:
-- 当前统一显式 unresolved 标记。
-
----
-
-
-```markdown
 ### [YYYY-MM-DD HH:MM] Agent: [Agent Name/ID]
 
-**任务**: [简述执行的任务]
+**任务**: [描述具体任务]
 **变更**:
-- [文件/目录变更列表]
-
-**结果**: [成功/失败/部分完成]
-**备注**: [任何重要信息]
-
----
-```
-
----
+- [文件路径] - [具体变更内容]
+**结果**: [成功/失败 + 输出摘要]
+**备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 04:14] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：router_priority 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 
+    - 将测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+  - 更新 
+    - 版本升级到 
+    - 新增 
+- 证据与验证产物：
+  - （PASS）
+  - （PASS）
+  - （PASS）
+  - （注入回流样例后  预期 FAIL，）
+  - （PASS）
+- 文档同步：
+  - 更新 
+  - 更新 
+  - 更新 
+  - 更新 
+
+**结果**: 成功（wave#110 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 （280 assertions）。
+
+### [2026-03-06 03:54] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router_cache 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 
+    - 将两处测试样例中的 fallback 从  调整为 ，去除 router_cache 测试样例中的 silent direct fallback 字面量
+  - 更新 
+    - 版本升级 
+    - 新增 （禁止该测试样例保留  + 要求 ）
+- 证据与验证产物：
+  - （ PASS）
+  - （ PASS）
+  - （ PASS，）
+  - （注入回流样例后  预期 FAIL，）
+  - （ PASS）
+- 文档同步：
+  - 更新 
+  - 更新 
+  - 更新 
+  - 更新 
+
+**结果**: 成功（wave#108 目标已落地并形成可复算证据链）
+**备注**:
+- 当前统一显式 unresolved 标记。
+
+---
+
+
+### [2026-03-06 03:55] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router_priority 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/tests/router_priority.rs`
+    - 将三处测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.107-wave110-v1`
+    - 新增 `W110-01~W110-02`（禁止该测试样例保留 `default=direct` + 要求 `default=unresolved`）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave110_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave110_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave110_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (280 assertions)`）
+  - `reports/l21/artifacts/wave110_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave110_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#110 目标已落地并形成可复算证据链）
+**备注**:
+- 当前统一显式 unresolved 标记。
+
+---
 
 ### [2026-03-06 03:54] Agent: Codex (GPT-5)
 
