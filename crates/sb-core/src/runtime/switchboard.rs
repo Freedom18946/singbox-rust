@@ -485,54 +485,9 @@ impl SwitchboardBuilder {
             }
 
             OutboundType::Hysteria2 => {
-                #[cfg(feature = "out_hysteria2")]
-                {
-                    use crate::outbound::types::OutboundTcp as _; // Trait import for .connect()
-                    if let Some(cfg) = hysteria2_from_ir(ir)? {
-                        #[derive(Debug, Clone)]
-                        struct Hy2Connector {
-                            inner: std::sync::Arc<crate::outbound::hysteria2::Hysteria2Outbound>,
-                        }
-                        #[async_trait::async_trait]
-                        impl OutboundConnector for Hy2Connector {
-                            async fn dial(
-                                &self,
-                                target: Target,
-                                _opts: DialOpts,
-                            ) -> AdapterResult<BoxedStream> {
-                                if target.kind != TransportKind::Tcp {
-                                    return Err(AdapterError::UnsupportedProtocol(
-                                        "Hysteria2 UDP not implemented in switchboard".into(),
-                                    ));
-                                }
-                                let hp =
-                                    crate::outbound::types::HostPort::new(target.host, target.port);
-                                let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
-                                Ok(Box::new(s))
-                            }
-                            fn name(&self) -> &'static str {
-                                "hysteria2"
-                            }
-                        }
-                        let inner = crate::outbound::hysteria2::Hysteria2Outbound::new(cfg)
-                            .map_err(AdapterError::Other)?;
-                        let inner = std::sync::Arc::new(inner);
-                        let conn = Hy2Connector {
-                            inner: inner.clone(),
-                        };
-                        self.switchboard
-                            .register(ir.name.clone().unwrap_or_else(|| "hysteria2".into()), conn)
-                            .map_err(|e| AdapterError::Other(e.into()))?;
-                        if let Some(ref name) = ir.name {
-                            let _ = self
-                                .switchboard
-                                .register_udp_factory(name.clone(), inner.clone());
-                        }
-                        return Ok(());
-                    }
-                }
                 return Err(AdapterError::UnsupportedProtocol(
-                    "Hysteria2 outbound not enabled or invalid config".to_string(),
+                    "Hysteria2 outbound in switchboard is disabled; use adapter bridge/supervisor path"
+                        .to_string(),
                 ));
             }
 
@@ -569,7 +524,7 @@ impl Default for SwitchboardBuilder {
 // IR -> Config mapping helpers (for reuse and contract tests)
 // -----------------------------------------------------------------------------
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "out_hysteria2", test))]
 fn hysteria2_from_ir(
     ir: &sb_config::ir::OutboundIR,
 ) -> AdapterResult<Option<crate::outbound::hysteria2::Hysteria2Config>> {
