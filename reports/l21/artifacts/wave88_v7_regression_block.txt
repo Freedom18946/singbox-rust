@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:50) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.85-wave88-v1
+  FAIL: [W88-01-no-validator-v2-outbound-type-unknown-direct-fallback] forbidden pattern matched in crates/sb-config/src/validator/v2.rs :: validator v2 outbound type parser should not silently fallback unknown type to direct
+  FAIL: [W88-02-validator-v2-outbound-type-unknown-block-fallback] required pattern missing in crates/sb-config/src/validator/v2.rs :: validator v2 outbound type parser should fallback unknown type to explicit block
+  FAIL: 2/236 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave88-v7-regress.BQxsDd
+[meta] injected_file=crates/sb-config/src/validator/v2.rs
+[meta] injected_pattern=_ => crate::ir::OutboundType::Direct,
+[meta] exit_code=1

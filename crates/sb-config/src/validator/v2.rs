@@ -2101,7 +2101,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "hysteria" => crate::ir::OutboundType::Hysteria,
                 "wireguard" => crate::ir::OutboundType::Wireguard,
                 "tailscale" => crate::ir::OutboundType::Tailscale,
-                _ => crate::ir::OutboundType::Direct,
+                _ => crate::ir::OutboundType::Block,
             };
             let mut ob = crate::ir::OutboundIR {
                 ty,
