@@ -752,7 +752,7 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
     if let Some(default) = &config.route.default {
         rules.push(format!("default={default}"));
     } else {
-        rules.push("default=direct".to_string());
+        rules.push("default=unresolved".to_string());
     }
 
     rules.join("\n")
