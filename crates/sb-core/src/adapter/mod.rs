@@ -673,8 +673,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Ssh => {
-                    // Fallback to direct in this adapter path
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge SSH outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 _ => unsupported_outbound_connector(
                     "core bridge outbound type is disabled; use adapter::bridge::build_bridge",
