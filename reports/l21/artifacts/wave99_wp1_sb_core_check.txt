@@ -1,0 +1,5 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 4.10s

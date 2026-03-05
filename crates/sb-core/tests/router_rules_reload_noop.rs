@@ -11,7 +11,7 @@ async fn hot_reload_noop_does_not_bump_generation() {
     {
         let mut f = fs::File::create(&main_path).unwrap();
         writeln!(f, "suffix:.noop=proxy").unwrap();
-        writeln!(f, "default=direct").unwrap();
+        writeln!(f, "default=unresolved").unwrap();
     }
     std::env::set_var("SB_ROUTER_RULES_FILE", &main_path);
     std::env::set_var("SB_ROUTER_RULES_HOT_RELOAD_MS", "80");
@@ -23,7 +23,7 @@ async fn hot_reload_noop_does_not_bump_generation() {
     {
         let mut f = fs::File::create(&main_path).unwrap();
         writeln!(f, "suffix:.noop=proxy").unwrap();
-        writeln!(f, "default=direct").unwrap();
+        writeln!(f, "default=unresolved").unwrap();
     }
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let gen2 = { shared_index().read().unwrap().gen };

@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 03:20) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.96-wave99-v1
+  FAIL: [W99-01-no-router-rules-reload-noop-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_reload_noop.rs :: router rules reload noop test sample should not keep silent direct default literal
+  FAIL: 1/258 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave99-v7-regress.NPYNJ1
+[meta] injected_file=crates/sb-core/tests/router_rules_reload_noop.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1
