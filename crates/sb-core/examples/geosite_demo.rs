@@ -72,7 +72,7 @@ geosite:ads=reject
 geosite:social=direct
 geosite:streaming=proxy
 # Fallback
-default=direct
+default=unresolved
 "#;
 
     let router_index = router_build_index_from_str(rules, 1000)?;

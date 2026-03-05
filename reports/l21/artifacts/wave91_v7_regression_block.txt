@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 02:03) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.88-wave91-v1
+  FAIL: [W91-01-no-geosite-demo-default-direct-literal] forbidden pattern matched in crates/sb-core/examples/geosite_demo.rs :: geosite demo should not keep silent direct default literal
+  FAIL: [W91-02-geosite-demo-default-unresolved-literal] required pattern missing in crates/sb-core/examples/geosite_demo.rs :: geosite demo should use explicit unresolved default literal
+  FAIL: 2/242 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave91-v7-regress.9MTTyQ
+[meta] injected_file=crates/sb-core/examples/geosite_demo.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

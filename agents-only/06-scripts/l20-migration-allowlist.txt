@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.87-wave90-v1|||L21 wave#90 migration assertion allowlist version
+VERSION|l21.88-wave91-v1|||L21 wave#91 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -276,3 +276,5 @@ forbid|W89-01-no-router-hot-reload-validation-default-direct-literal|crates/sb-c
 require|W89-02-router-hot-reload-validation-default-unresolved-literal|crates/sb-core/src/router/hot_reload.rs|default=unresolved|router hot_reload validation sample should use explicit unresolved default literal
 forbid|W90-01-no-dsl-sample-default-direct-literal|app/examples/dsl.sample.txt|default=direct|dsl sample should not keep silent direct default literal
 require|W90-02-dsl-sample-default-unresolved-literal|app/examples/dsl.sample.txt|default=unresolved|dsl sample should use explicit unresolved default literal
+forbid|W91-01-no-geosite-demo-default-direct-literal|crates/sb-core/examples/geosite_demo.rs|default=direct|geosite demo should not keep silent direct default literal
+require|W91-02-geosite-demo-default-unresolved-literal|crates/sb-core/examples/geosite_demo.rs|default=unresolved|geosite demo should use explicit unresolved default literal

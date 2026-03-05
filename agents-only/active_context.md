@@ -14,6 +14,19 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#91 推进快照（2026-03-06 02:03）
+
+- 状态：`MIG-02 hardening`（wave#91 已完成 geosite demo default 去 silent direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/examples/geosite_demo.rs`：GeoSite 示例规则中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.88-wave91-v1`（242 assertions），新增 W91-01~W91-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave91_v7_regression_block.txt`（将 `default=unresolved` 注入回 `default=direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave91_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave91_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (242 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave91_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#90 推进快照（2026-03-06 01:58）
 
 - 状态：`MIG-02 hardening`（wave#90 已完成 dsl sample default 去 silent direct fallback + V7 断言升级）
