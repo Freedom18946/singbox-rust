@@ -32,7 +32,7 @@ pub fn print_once_if_enabled() {
             ),
             (
                 "SB_UDP_PROXY_MODE",
-                std::env::var("SB_UDP_PROXY_MODE").unwrap_or_else(|_| "direct".to_string()),
+                std::env::var("SB_UDP_PROXY_MODE").unwrap_or_else(|_| "unresolved".to_string()),
             ),
             // Code uses SB_UDP_PROXY_ADDR; include both for clarity
             (
