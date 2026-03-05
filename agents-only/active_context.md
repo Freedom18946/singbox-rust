@@ -537,6 +537,20 @@
   - `reports/l21/artifacts/wave47_v7_regression_block.txt`
   - `reports/l21/artifacts/wave47_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#48 推进快照（2026-03-05 21:43）
+
+- 状态：`MIG-02 hardening`（wave#48 完成 Bridge fallback helper 清理）
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/mod.rs`：删除 `Bridge::find_direct_fallback()` helper（已无调用），阻断 direct fallback helper 回流。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.45-wave48-v1`（136 assertions），新增 W48-01。
+  3. 回流阻断证据：`reports/l21/artifacts/wave48_v7_regression_block.txt`（注入 `pub fn find_direct_fallback(&self) -> Option<Arc<dyn OutboundConnector>> {` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave48_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave48_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave48_strict_gate.txt`
+  - `reports/l21/artifacts/wave48_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave48_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

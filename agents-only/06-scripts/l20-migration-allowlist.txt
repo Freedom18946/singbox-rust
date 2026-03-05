@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.44-wave47-v1|||L21 wave#47 migration assertion allowlist version
+VERSION|l21.45-wave48-v1|||L21 wave#48 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -171,3 +171,4 @@ forbid|W46-02-no-tools-udp-direct-fallback-socket|app/src/cli/tools.rs|let targe
 require|W46-03-tools-udp-explicit-no-fallback-msg|app/src/cli/tools.rs|udp outbound factory not found; direct UDP fallback is disabled|tools connect udp should emit explicit no-fallback diagnostics
 forbid|W47-01-no-v2ray-test-route-direct-default|crates/sb-api/src/v2ray/services.rs|routing_ctx\.outbound_tag = \"direct\"\.to_string\(\);|v2ray test_route should not auto-fill direct outbound as fallback
 require|W47-02-v2ray-test-route-explicit-no-fallback-msg|crates/sb-api/src/v2ray/services.rs|routing outbound_tag is empty; implicit direct fallback is disabled; provide outbound_tag explicitly|v2ray test_route should emit explicit no-fallback diagnostics for empty outbound_tag
+forbid|W48-01-no-bridge-find-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|pub fn find_direct_fallback\(&self\)|Bridge direct fallback helper should be removed after direct fallback cleanup

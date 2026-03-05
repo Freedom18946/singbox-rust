@@ -787,15 +787,6 @@ impl Bridge {
         self.udp_factories.get(name).cloned()
     }
 
-    /// Finds the first outbound connector with kind "direct" as a fallback.
-    ///
-    /// This is used when no specific outbound is found and a safe default is needed.
-    pub fn find_direct_fallback(&self) -> Option<Arc<dyn OutboundConnector>> {
-        self.outbounds
-            .iter()
-            .find_map(|(_n, k, ob)| (k == "direct").then(|| Arc::clone(ob)))
-    }
-
     /// Returns a snapshot of all outbound (name, kind) pairs.
     ///
     /// Useful for health checks and visualization.
