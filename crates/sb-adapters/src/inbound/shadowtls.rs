@@ -21,7 +21,6 @@ use sb_core::outbound::{
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 use std::io;
 use std::net::SocketAddr;
@@ -172,7 +171,6 @@ where
         rule = r;
     }
 
-    let proxy = default_proxy();
     let opts = ConnectOpts::default();
     let (mut upstream, outbound_tag) = match decision {
         RDecision::Direct => (
@@ -207,41 +205,28 @@ where
                             }
                         }
                     } else {
-                        let stream = fallback_connect(proxy, &host, port, &opts).await?;
-                        let tag = match proxy {
-                            ProxyChoice::Direct => "direct",
-                            ProxyChoice::Http(_) => "http",
-                            ProxyChoice::Socks5(_) => "socks5",
-                        };
-                        (stream, Some(tag.to_string()))
+                        return Err(anyhow!(
+                            "shadowtls: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+                            name
+                        ));
                     }
                 } else {
-                    let stream = fallback_connect(proxy, &host, port, &opts).await?;
-                    let tag = match proxy {
-                        ProxyChoice::Direct => "direct",
-                        ProxyChoice::Http(_) => "http",
-                        ProxyChoice::Socks5(_) => "socks5",
-                    };
-                    (stream, Some(tag.to_string()))
+                    return Err(anyhow!(
+                        "shadowtls: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                        name
+                    ));
                 }
             } else {
-                let stream = fallback_connect(proxy, &host, port, &opts).await?;
-                let tag = match proxy {
-                    ProxyChoice::Direct => "direct",
-                    ProxyChoice::Http(_) => "http",
-                    ProxyChoice::Socks5(_) => "socks5",
-                };
-                (stream, Some(tag.to_string()))
+                return Err(anyhow!(
+                    "shadowtls: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path",
+                    name
+                ));
             }
         }
         RDecision::Proxy(None) => {
-            let stream = fallback_connect(proxy, &host, port, &opts).await?;
-            let tag = match proxy {
-                ProxyChoice::Direct => "direct",
-                ProxyChoice::Http(_) => "http",
-                ProxyChoice::Socks5(_) => "socks5",
-            };
-            (stream, Some(tag.to_string()))
+            return Err(anyhow!(
+                "shadowtls: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+            ));
         }
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("shadowtls: rejected by rules"))
@@ -290,23 +275,6 @@ where
         }
     }
     Ok(())
-}
-
-async fn fallback_connect(
-    proxy: &ProxyChoice,
-    host: &str,
-    port: u16,
-    opts: &ConnectOpts,
-) -> Result<tokio::net::TcpStream> {
-    match proxy {
-        ProxyChoice::Direct => Ok(direct_connect_hostport(host, port, opts).await?),
-        ProxyChoice::Http(addr) => {
-            Ok(http_proxy_connect_through_proxy(addr, host, port, opts).await?)
-        }
-        ProxyChoice::Socks5(addr) => {
-            Ok(socks5_connect_through_socks5(addr, host, port, opts).await?)
-        }
-    }
 }
 
 #[derive(Debug)]
