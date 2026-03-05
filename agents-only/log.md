@@ -23,6 +23,29 @@
 
 ## 日志记录
 
+### [2026-03-06 03:24] Agent: Codex (GPT-5)
+
+**任务**: 对齐 agents-only 阶段口径并补充下一阶段 wave 评估，减少 L18/L21/L19.3.3 信息混淆。
+**变更**:
+- 文档对齐：
+  - 更新 `agents-only/workpackage_latest.md`
+    - 新增“口径对齐（避免阶段混淆）”
+    - 新增“下一阶段评估（wave100+）”，写明剩余 `23` 个文件、`50` 处 `default=direct`、优先级分层与保守预期
+  - 更新 `agents-only/active_context.md`
+    - 将“当前阶段”拆分为“总阶段”和“当前执行焦点”
+    - 新增口径说明与 wave100+ 预估
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+    - 新增 L18/L19.3.3/L21 的关系说明
+    - 新增“3B.1 下一阶段（wave100+）评估与预期”
+  - 更新 `agents-only/log.md`
+    - 记录本次对齐动作
+
+**结果**: 成功（阶段口径已显式拆分，下一阶段规模/节奏/风险已补充）
+**备注**:
+- 本次未修改代码与门禁，仅更新协作文档，目标是降低“总阶段 vs 执行波次”混淆成本。
+
+---
+
 ### [2026-03-06 03:21] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 router_rules_reload_noop 测试样例 default 路径 silent direct fallback 并升级 strict gate 断言。

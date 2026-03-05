@@ -7,12 +7,29 @@
 
 ## 🔗 战略链接
 
-**当前阶段**: **L18 认证替换实施中（认证优先 + 性能零回归并行）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L17 ✅）
+**当前阶段（总阶段）**: **L18 认证替换实施中（认证优先 + 性能零回归并行）**（L1 ✅, L2 ✅, L5-L11 ✅, L12-L17 ✅）
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 `wave#99`，聚焦 `L19.3.3 / MIG-02` 的 fallback hardening 与 V7 防回流固化
 **注**：历史 L3.1~L3.5 为服务补全/连接增强编号，现归并到 L2/M2.4；L3 仅指质量里程碑（M3.1~M3.3）。
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline），见 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）
 **Remaining**: 0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation，不再追踪）
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
+
+### 口径说明（2026-03-06 对齐）
+
+- `L18` 是项目总阶段，不代表当前每次提交都在做 L18 编号事项。
+- `L21 wave` 是当前实际执行层，用来持续推进 `MIG-02` 小步收口。
+- 当前工作重点不是补功能缺口，而是清理残留 `default=direct` / silent direct fallback，并把约束写进 `V7`。
+
+### 下一阶段预估（wave100+）
+
+- 盘点口径：`crates/sb-core/tests` 尚余 `23` 个文件、`50` 处 `default=direct`。
+- 推进策略：继续按“一波一文件”优先，先低风险、后高风险。
+- 风险分布：
+  1. 低风险：单处样例文件，可直接替换为 `default=unresolved`
+  2. 中风险：2~4 处样例文件，需要同步调整默认断言
+  3. 高风险：`router_geosite_rules_integration.rs`、`router_hot_reload_integration.rs`，更可能牵动集成测试预期
+- 预期：若保持当前强验证模板，剩余波次保守估计仍在 `20+` 量级
 
 ### 🆕 L21 wave#99 推进快照（2026-03-06 03:21）
 

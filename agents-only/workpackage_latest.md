@@ -9,6 +9,32 @@
 
 ---
 
+## 口径对齐（避免阶段混淆）
+
+1. **项目总阶段**：仍按长期主线记为 `L18 认证替换实施中`。这描述的是项目大盘，不等于当前每一轮提交的执行编号。
+2. **当前执行阶段**：当前实际在跑的是 `L21` 连续 wave，聚焦 `L19.3.3 / MIG-02` 的迁移硬化与防回流。
+3. **当前工作的性质**：不是补 parity 缺口；`Parity=100%`、`Remaining=0` 已成立。现在做的是“清理历史 silent fallback / direct 默认值，并用 V7 门禁把结果固化”。
+
+## 下一阶段评估（wave100+）
+
+**剩余规模（按 2026-03-06 03:24 盘点）**：
+- `crates/sb-core/tests` 内仍有 `23` 个测试文件、`50` 处 `default=direct` 待收口。
+- 当前最适合继续按“一波一文件”推进；这样最稳，回滚成本最低，证据链也最清晰。
+
+**优先级分层**：
+1. **低风险快收口**：单文件 1 处或极少量样例，预期继续保持当前 wave 节奏。
+   - 候选：`router_rules_portset.rs`、`router_cache_transport.rs`、`router_process_rules_integration.rs`、`router_select_ctx_meta.rs`、`router_rules_file.rs`、`router_override.rs`、`router_summary.rs`、`router_explain.rs`、`router_inbound_outbound_tag_matching.rs`、`router_rules_port_range.rs`、`router_udp_rules.rs`
+2. **中风险成组清理**：单文件 2~4 处样例，通常需要同步调整少量默认断言。
+   - 候选：`router_cache.rs`、`router_domain_regex_matching.rs`、`router_query_type_matching.rs`、`router_ipversion_matching.rs`、`router_rules_include_cycle.rs`、`router_hot_reload_integration_complete.rs`、`router_cidr4.rs`、`router_rules_port_transport.rs`、`router_priority.rs`
+3. **高风险大文件**：同一文件多处样例、集成测试语义更重，适合放到后段集中处理。
+   - 候选：`router_geosite_rules_integration.rs`（6 处）、`router_hot_reload_integration.rs`（10 处）
+
+**预期管理**：
+1. 如果继续坚持“每波一文件 + 五项必跑 + 回流负样例”的节奏，保守预期还需要约 `20+` 波次才能把这批测试样例清完。
+2. 前半段推进会比较稳定，因为大多是样例字面量替换；后半段会变慢，因为 `geosite/hot_reload` 类文件更容易牵动断言语义。
+3. 真正的阻塞条件不是改字符串本身，而是某些测试是否把 `direct` 当作行为预期而不是示例默认值。一旦遇到这种情况，需要先改断言口径，再决定是否拆成独立波次。
+4. 在当前口径下，`V7 assertions` 会继续线性增长；每一波都会新增 2 条防回流断言，直到这批剩余样例清零。
+
 ## 🆕 最新进展：L21 wave#99 推进落地（2026-03-06 03:21）
 
 **状态**：✅ `MIG-02 wave#99` 完成一段（router_rules_reload_noop 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.96-wave99-v1`；✅ 回流阻断负样例证据更新
