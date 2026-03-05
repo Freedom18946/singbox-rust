@@ -565,6 +565,21 @@
   - `reports/l21/artifacts/wave49_v7_regression_block.txt`
   - `reports/l21/artifacts/wave49_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#50 推进快照（2026-03-05 21:53）
+
+- 状态：`MIG-02 hardening`（wave#50 完成 HTTP CONNECT/SOCKS5 no-router 默认 outbound 去 direct hardcode）
+- 本轮落地：
+  1. `crates/sb-core/src/inbound/http_connect.rs`：no-router stub `Engine::decide` 从硬编码 `direct` 改为 `resolve_default_outbound_tag()`。
+  2. `crates/sb-core/src/inbound/socks5.rs`：no-router stub `Engine::decide` 从硬编码 `direct` 改为 `resolve_default_outbound_tag()`。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.47-wave50-v1`（143 assertions），新增 W50-01/W50-02/W50-03/W50-04。
+  4. 回流阻断证据：`reports/l21/artifacts/wave50_v7_regression_block.txt`（注入 `outbound: "direct".to_string(),` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave50_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave50_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave50_strict_gate.txt`
+  - `reports/l21/artifacts/wave50_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave50_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

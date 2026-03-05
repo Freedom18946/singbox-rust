@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 21:53] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 HTTP CONNECT/SOCKS5 no-router 默认 outbound 的 direct hardcode 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/inbound/http_connect.rs`
+    - no-router stub `Engine::decide` 从 `outbound: "direct".to_string()` 改为 `resolve_default_outbound_tag()`
+  - 更新 `crates/sb-core/src/inbound/socks5.rs`
+    - no-router stub `Engine::decide` 从 `outbound: "direct".to_string()` 改为 `resolve_default_outbound_tag()`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.47-wave50-v1`
+    - 新增 `W50-01~W50-04`（禁止 no-router direct hardcode + 要求显式配置优先选择器）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave50_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave50_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave50_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (143 assertions)`）
+  - `reports/l21/artifacts/wave50_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave50_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#50）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AY wave#50，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#50 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#50 目标已落地并形成可复算证据链）
+**备注**:
+- no-router stub 路径不再默认 `direct`，改为优先使用配置中的具名 outbound；无候选时由后续 no-fallback 逻辑显式失败。
+
+---
+
 ### [2026-03-05 21:47] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 SOCKS5 inbound UDP 路径 direct/NAT fallback 并升级 strict gate 断言。

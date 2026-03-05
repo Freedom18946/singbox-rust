@@ -36,9 +36,17 @@ impl Engine {
         Self { cfg }
     }
 
+    fn resolve_default_outbound_tag(&self) -> String {
+        self.cfg
+            .outbounds
+            .iter()
+            .find_map(|ob| ob.name.clone())
+            .unwrap_or_default()
+    }
+
     fn decide(&self, _input: &Input, _fake_ip: bool) -> Decision {
         Decision {
-            outbound: "direct".to_string(),
+            outbound: self.resolve_default_outbound_tag(),
         }
     }
 }

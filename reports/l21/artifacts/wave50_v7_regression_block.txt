@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-05 21:53) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.47-wave50-v1
+  FAIL: [W50-01-no-http-connect-stub-direct-default] forbidden pattern matched in crates/sb-core/src/inbound/http_connect.rs :: HTTP CONNECT no-router stub decision should not hardcode direct default outbound
+  FAIL: [W50-03-http-connect-stub-explicit-default-selector] required pattern missing in crates/sb-core/src/inbound/http_connect.rs :: HTTP CONNECT no-router stub should select outbound from config instead of direct fallback
+  FAIL: 2/143 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave50-v7-regress.jzz5J8
+[meta] injected_file=crates/sb-core/src/inbound/http_connect.rs
+[meta] injected_pattern=outbound: "direct".to_string(),
+[meta] exit_code=1

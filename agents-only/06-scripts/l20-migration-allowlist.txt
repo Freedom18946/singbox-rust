@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.46-wave49-v1|||L21 wave#49 migration assertion allowlist version
+VERSION|l21.47-wave50-v1|||L21 wave#50 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -175,3 +175,7 @@ forbid|W48-01-no-bridge-find-direct-fallback-helper|crates/sb-core/src/adapter/m
 forbid|W49-01-no-socks5-udp-nat-direct-fallback|crates/sb-core/src/inbound/socks5.rs|crate::net::udp_nat::NatMap::new|SOCKS5 inbound UDP path should not keep NAT-based direct fallback
 forbid|W49-02-no-socks5-udp-direct-fallback-comment|crates/sb-core/src/inbound/socks5.rs|Direct UDP via NAT entry per \(client, dst\)|SOCKS5 inbound UDP path should not document NAT direct fallback path
 require|W49-03-socks5-udp-explicit-no-fallback-msg|crates/sb-core/src/inbound/socks5.rs|socks5-udp: outbound '.*' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path|SOCKS5 inbound UDP path should emit explicit no-fallback diagnostics
+forbid|W50-01-no-http-connect-stub-direct-default|crates/sb-core/src/inbound/http_connect.rs|outbound: \"direct\"\.to_string\(\),|HTTP CONNECT no-router stub decision should not hardcode direct default outbound
+forbid|W50-02-no-socks5-stub-direct-default|crates/sb-core/src/inbound/socks5.rs|outbound: \"direct\"\.to_string\(\),|SOCKS5 no-router stub decision should not hardcode direct default outbound
+require|W50-03-http-connect-stub-explicit-default-selector|crates/sb-core/src/inbound/http_connect.rs|outbound: self\.resolve_default_outbound_tag\(\),|HTTP CONNECT no-router stub should select outbound from config instead of direct fallback
+require|W50-04-socks5-stub-explicit-default-selector|crates/sb-core/src/inbound/socks5.rs|outbound: self\.resolve_default_outbound_tag\(\),|SOCKS5 no-router stub should select outbound from config instead of direct fallback

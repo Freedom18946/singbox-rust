@@ -1,11 +1,38 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 21:47
-> **当前阶段**：L21 wave#49 推进完成（MIG-02 hardening：socks5 udp 去 direct fallback + strict gate 升级）
+> **最后更新**：2026-03-05 21:53
+> **当前阶段**：L21 wave#50 推进完成（MIG-02 hardening：no-router 默认 outbound 去 direct hardcode + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=139 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=143 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#50 推进落地（2026-03-05 21:53）
+
+**状态**：✅ `MIG-02 wave#50` 完成一段（HTTP CONNECT/SOCKS5 no-router 默认 outbound 去 direct hardcode）；✅ strict gate allowlist 升级到 `l21.47-wave50-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#50（MIG-02 hardening，no-router 路径）**：
+   - `crates/sb-core/src/inbound/http_connect.rs` 与 `crates/sb-core/src/inbound/socks5.rs`：
+     - no-router stub `Engine::decide()` 不再硬编码 `outbound: "direct".to_string()`。
+     - 改为 `resolve_default_outbound_tag()`：优先从配置中选择首个具名 outbound，缺失时返回空字符串并由后续 no-fallback 诊断显式失败。
+2. **strict gate allowlist 升级（V7 wave#50）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.47-wave50-v1`，断言扩展到 143 条（新增 W50-01/W50-02/W50-03/W50-04）。
+   - 回流阻断证据：`reports/l21/artifacts/wave50_v7_regression_block.txt`（在临时 root 注入 `outbound: "direct".to_string(),` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave50_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave50_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave50_strict_gate.txt`，`V7 PASS (143 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave50_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave50_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave50_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave50_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave50_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave50_gui_static_syntax_check.txt`）
 
 ---
 
