@@ -1,0 +1,50 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling num-traits v0.2.19
+    Checking clap_builder v4.5.53
+   Compiling core-foundation-sys v0.8.7
+   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+   Compiling portable-atomic v1.13.0
+   Compiling enum-as-inner v0.6.1
+    Checking tracing-serde v0.2.0
+    Checking unicode-width v0.2.2
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling iana-time-zone v0.1.64
+    Checking linked-hash-map v0.5.6
+    Checking console v0.15.11
+    Checking lru-cache v0.1.2
+    Checking tracing-subscriber v0.3.22
+    Checking hickory-proto v0.24.4
+    Checking reqwest v0.12.28
+    Checking roff v0.2.2
+    Checking number_prefix v0.4.0
+    Checking rcgen v0.12.1
+    Checking arc-swap v1.8.0
+    Checking clap v4.5.53
+    Checking clap_complete v4.5.64
+   Compiling chrono v0.4.42
+    Checking clap_mangen v0.2.31
+   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
+    Checking indicatif v0.17.11
+    Checking hickory-resolver v0.24.4
+warning: function `supported_kinds` is never used
+  --> app/src/analyze/registry.rs:63:8
+   |
+63 | pub fn supported_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `supported_async_kinds` is never used
+  --> app/src/analyze/registry.rs:98:8
+   |
+98 | pub fn supported_async_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `app` (bin "app") generated 2 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1m 32s

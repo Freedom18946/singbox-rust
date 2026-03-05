@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.2-wave3-v1|||L21 wave#3 migration assertion allowlist version
+VERSION|l21.3-wave4-v1|||L21 wave#4 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -31,3 +31,15 @@ forbid|W3-03-no-core-direct-test-import-integration|crates/sb-adapters/tests/tun
 forbid|W3-04-no-core-tcpdialer-diag|app/src/bin/diag.rs|use sb_core::transport::tcp::TcpDialer;|TCP diagnostics path must not use sb-core TcpDialer
 require|W3-01-services-reuse-direct-manager|crates/sb-api/src/v2ray/services.rs|\.get\(\"direct\"\)|V2Ray add_outbound must reuse manager-registered direct connector
 require|W3-04-diag-uses-sb-transport-tcp|app/src/bin/diag.rs|use sb_transport::\{webpki_roots_config, DialError, Dialer as _, TcpDialer, TlsDialer\};|TCP diagnostics must use sb-transport TcpDialer
+
+forbid|W4-01-no-switchboard-default-direct-fallback|crates/sb-core/src/runtime/switchboard.rs|set_default\(direct\)|Switchboard must not auto-install direct as default fallback
+forbid|W4-02-no-switchboard-unknown-fallback|crates/sb-core/src/runtime/switchboard.rs|attempting fallback|Unknown switchboard connector must not fall back implicitly
+require|W4-03-switchboard-explicit-miss-diagnostics|crates/sb-core/src/runtime/switchboard.rs|Outbound connector not found; no fallback connector is applied|Switchboard missing connector path must provide explicit diagnostics
+
+forbid|W4-04-no-outbound-manager-fallback-direct|crates/sb-core/src/outbound/manager.rs|ensure_fallback_direct|Outbound manager must not inject direct fallback connector
+forbid|W4-05-no-outbound-manager-fallback-source|crates/sb-core/src/outbound/manager.rs|source = \"fallback\"|Default outbound resolution must not report fallback source
+require|W4-06-resolve-default-explicit-error|crates/sb-core/src/outbound/manager.rs|no outbound connectors available; cannot resolve default outbound|Default resolution must fail explicitly when connector set is empty
+forbid|W4-07-no-bootstrap-fallback-direct-call|app/src/bootstrap.rs|ensure_fallback_direct|Bootstrap must not request direct fallback injection from outbound manager
+
+forbid|W4-08-no-run-engine-core-transport-target|app/src/run_engine.rs|target: \"sb_core::transport\"|run_engine transport planning logs must not use sb_core::transport target label
+require|W4-09-run-engine-sb-transport-target|app/src/run_engine.rs|target: \"sb_transport\"|run_engine transport planning logs should align to sb_transport ownership

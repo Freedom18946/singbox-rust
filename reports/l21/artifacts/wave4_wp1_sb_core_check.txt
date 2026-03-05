@@ -1,0 +1,30 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.148
+    Checking tower v0.5.2
+    Checking axum-core v0.4.5
+    Checking tower v0.4.13
+    Checking tower-http v0.6.8
+    Checking serde v1.0.228
+    Checking uuid v1.19.0
+    Checking axum v0.7.9
+    Checking chrono v0.4.42
+    Checking sb-metrics v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics)
+    Checking serde_urlencoded v0.7.1
+    Checking serde_yaml v0.9.34+deprecated
+    Checking url v2.5.7
+    Checking maxminddb v0.27.1
+    Checking sb-types v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-types)
+    Checking reqwest v0.12.28
+    Checking sb-config v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-config)
+    Checking sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
+    Checking tonic v0.12.3
+    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+    Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1m 13s
