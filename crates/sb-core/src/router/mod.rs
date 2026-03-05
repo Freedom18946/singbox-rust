@@ -2711,7 +2711,7 @@ pub fn router_index_decide_keyword_static(
 ) -> Option<&'static str> {
     if let Some(k) = &idx.keyword_idx {
         if let Some(i) = k.find_idx(host_norm) {
-            let dec = k.decs.get(i).map(|s| s.as_str()).unwrap_or("default");
+            let dec = k.decs.get(i).map(|s| s.as_str()).unwrap_or("unresolved");
             return Some(crate::router::decision_intern::intern_decision(dec));
         }
     }
