@@ -33,9 +33,17 @@ async fn main() -> Result<()> {
         .with_context(|| format!("load config: {}", &args.config))?;
     let ir = sb_config::present::to_ir(&cfg).context("config -> IR")?;
 
-    // Build switchboard and find outbound
-    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir)
-        .context("build switchboard")?;
+    // Register adapters before bridge assembly.
+    app::util::register_adapters_once();
+
+    // Build adapter-aware bridge and find outbound.
+    #[cfg(feature = "router")]
+    let bridge = {
+        let engine = sb_core::routing::engine::Engine::new(&ir);
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
+    };
+    #[cfg(not(feature = "router"))]
+    let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
     if args.print_transport {
         #[cfg(feature = "v2ray_transport")]
@@ -60,22 +68,22 @@ async fn main() -> Result<()> {
         }
     }
 
-    let connector = sb
-        .get_connector(&args.outbound)
+    let connector = bridge
+        .get_member(&args.outbound)
         .ok_or_else(|| anyhow::anyhow!("outbound not found: {}", args.outbound))?;
 
     // Parse target host:port
     let (host, port) = parse_hostport(&args.target)?;
-    let target = sb_core::runtime::switchboard::Target::tcp(host.clone(), port);
-    let opts = sb_core::runtime::switchboard::DialOpts::default()
-        .with_connect_timeout(Duration::from_secs(args.timeout));
 
     // Dial and send a basic HTTP GET to validate end-to-end
     let started = Instant::now();
-    let mut stream = connector
-        .dial(target, opts)
-        .await
-        .context("dial outbound")?;
+    let mut stream = tokio::time::timeout(
+        Duration::from_secs(args.timeout),
+        connector.connect(&host, port),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("connect timeout after {}s", args.timeout))?
+    .context("dial outbound")?;
     let connected_ms = started.elapsed().as_millis() as u64;
 
     // Write a GET request
