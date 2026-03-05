@@ -1,11 +1,34 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 12:40
-> **当前阶段**：L21 wave#5 起步完成（MIG-02 in_progress：app probe 路径去 switchboard 重叠 + strict gate 升级）
+> **最后更新**：2026-03-05 13:05
+> **当前阶段**：L21 wave#6 推进完成（MIG-02 in_progress：app/tools/tests 去 switchboard concrete 依赖 + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=32 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=42 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#6 推进落地（2026-03-05 13:05）
+
+**状态**：✅ `MIG-02 wave#6` 完成一段（app/tests 路径去重叠）；✅ strict gate allowlist 升级到 `l21.5-wave6-v1`；✅ 回流阻断负样例证据更新
+
+1. **迁移 wave#6（优先 app/tests 路径）**：
+   - `app/tests/http_connect_inbound.rs`、`app/tests/socks_end2end.rs`、`app/tests/socks_via_selector.rs`、`app/tests/upstream_auth.rs`、`app/tests/upstream_socks_http.rs`：
+     - 去除 `SwitchboardBuilder::from_config_ir` 依赖。
+     - 统一改为 `OutboundSwitchboard::new()`，避免测试路径触发 core concrete SOCKS/HTTP connector 构建。
+   - 编译验证升级到 `cargo check -p app --tests`，确保测试目标也通过编译。
+2. **strict gate allowlist 升级（V7 wave#6）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.5-wave6-v1`，断言扩展到 42 条（新增 W6-01~W6-10 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave6_v7_regression_block.txt`（在临时 root 注入 `SwitchboardBuilder::from_config_ir` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过。
+
+**最小验证**：
+1. `cargo check -p app --tests`
+2. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (42 assertions)`）
+3. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave6_v7_regression_block.txt`）
+4. `bash -n scripts/l18/gui_real_cert.sh`
 
 ---
 
