@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 23:52] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 shadowsocks inbound proxy decision 路径 implicit fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/shadowsocks.rs`
+    - `RDecision::Proxy(Some)` 在 pool endpoint 不可选、pool 不存在、registry 不可用三类场景不再 fallback 默认代理
+    - `RDecision::Proxy(None)` 改为显式 unsupported + no-fallback 提示
+    - 清理旧 fallback 分支执行路径，统一显式迁移提示
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.59-wave62-v1`
+    - 新增 `W62-01~W62-03`（禁止 shadowsocks Proxy(None) 默认代理回退 + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave62_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave62_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave62_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (176 assertions)`）
+  - `reports/l21/artifacts/wave62_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave62_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#62）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BK wave#62，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#62 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#62 目标已落地并形成可复算证据链）
+**备注**:
+- shadowsocks inbound 在 proxy 决策路径不再使用隐式 fallback，当前统一显式 no-fallback 诊断。
+
+---
+
 ### [2026-03-05 23:43] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 tproxy inbound proxy decision 路径 implicit fallback 并升级 strict gate 断言。

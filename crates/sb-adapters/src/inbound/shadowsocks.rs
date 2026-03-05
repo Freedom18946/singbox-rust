@@ -27,7 +27,6 @@ use sb_core::outbound::{
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 
 use std::collections::HashMap;
@@ -1323,7 +1322,6 @@ where
         rule = r;
     }
 
-    let proxy = default_proxy();
     let opts = ConnectOpts::default();
     // Match by reference so we can still use `decision` later (conntrack/chain computation).
     let (mut upstream, outbound_tag) = match &decision {
@@ -1361,71 +1359,29 @@ where
                             }
                         }
                     } else {
-                        match proxy {
-                            ProxyChoice::Direct => {
-                                let s = direct_connect_hostport(&host, port, &opts).await?;
-                                (s, Some("direct".to_string()))
-                            }
-                            ProxyChoice::Http(addr) => {
-                                let s = http_proxy_connect_through_proxy(addr, &host, port, &opts)
-                                    .await?;
-                                (s, Some("http".to_string()))
-                            }
-                            ProxyChoice::Socks5(addr) => {
-                                let s =
-                                    socks5_connect_through_socks5(addr, &host, port, &opts).await?;
-                                (s, Some("socks5".to_string()))
-                            }
-                        }
+                        return Err(anyhow!(
+                            "ss: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+                            name
+                        ));
                     }
                 } else {
-                    match proxy {
-                        ProxyChoice::Direct => {
-                            let s = direct_connect_hostport(&host, port, &opts).await?;
-                            (s, Some("direct".to_string()))
-                        }
-                        ProxyChoice::Http(addr) => {
-                            let s =
-                                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
-                            (s, Some("http".to_string()))
-                        }
-                        ProxyChoice::Socks5(addr) => {
-                            let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
-                            (s, Some("socks5".to_string()))
-                        }
-                    }
+                    return Err(anyhow!(
+                        "ss: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                        name
+                    ));
                 }
             } else {
-                match proxy {
-                    ProxyChoice::Direct => {
-                        let s = direct_connect_hostport(&host, port, &opts).await?;
-                        (s, Some("direct".to_string()))
-                    }
-                    ProxyChoice::Http(addr) => {
-                        let s = http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
-                        (s, Some("http".to_string()))
-                    }
-                    ProxyChoice::Socks5(addr) => {
-                        let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
-                        (s, Some("socks5".to_string()))
-                    }
-                }
+                return Err(anyhow!(
+                    "ss: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path",
+                    name
+                ));
             }
         }
-        RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => {
-                let s = direct_connect_hostport(&host, port, &opts).await?;
-                (s, Some("direct".to_string()))
-            }
-            ProxyChoice::Http(addr) => {
-                let s = http_proxy_connect_through_proxy(addr, &host, port, &opts).await?;
-                (s, Some("http".to_string()))
-            }
-            ProxyChoice::Socks5(addr) => {
-                let s = socks5_connect_through_socks5(addr, &host, port, &opts).await?;
-                (s, Some("socks5".to_string()))
-            }
-        },
+        RDecision::Proxy(None) => {
+            return Err(anyhow!(
+                "ss: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+            ));
+        }
         RDecision::Reject => return Err(anyhow!("ss: rejected by rules")),
         // Handle other variants (Hijack, Sniff, Resolve) as direct for now
         _ => {
