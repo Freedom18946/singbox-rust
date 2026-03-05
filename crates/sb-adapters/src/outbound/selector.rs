@@ -1,109 +1,8 @@
-use std::io;
 use std::sync::Arc;
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{registry, OutboundConnector, OutboundParam, UdpOutboundFactory};
 use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
-use tokio::net::TcpStream;
-
-#[derive(Clone)]
-pub struct SelectorOutbound {
-    inner: Arc<SelectorGroup>,
-}
-
-impl SelectorOutbound {
-    pub fn new(inner: Arc<SelectorGroup>) -> Self {
-        Self { inner }
-    }
-}
-
-impl std::fmt::Debug for SelectorOutbound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SelectorOutbound")
-            .field("name", &self.inner.name)
-            .finish()
-    }
-}
-
-#[async_trait::async_trait]
-impl OutboundConnector for SelectorOutbound {
-    async fn connect(&self, host: &str, port: u16) -> io::Result<TcpStream> {
-        self.inner.connect(host, port).await
-    }
-
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        self.inner.as_any()
-    }
-
-    fn as_group(&self) -> Option<&dyn sb_core::adapter::OutboundGroup> {
-        self.inner.as_group()
-    }
-}
-
-impl UdpOutboundFactory for SelectorOutbound {
-    fn open_session(
-        &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = std::io::Result<Arc<dyn sb_core::adapter::UdpOutboundSession>>,
-                > + Send,
-        >,
-    > {
-        let group = self.inner.clone();
-        Box::pin(async move {
-            let member = group.select_best().await.ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("no available proxy in selector {}", group.name),
-                )
-            })?;
-
-            // Track active connection
-            member
-                .health
-                .active_connections
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-            let factory = member.udp_factory.clone().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    format!("proxy {} does not support UDP", member.tag),
-                )
-            });
-
-            match factory {
-                Ok(f) => {
-                    let result = f.open_session().await;
-                    // We should probably wrap the session to track health/metrics on send/recv,
-                    // but for now we just return it.
-                    // Ideally we should decrement active_connections when session is dropped.
-                    // But UdpOutboundSession doesn't have a drop hook that we can easily hook into
-                    // without wrapping.
-                    // For now, we decrement immediately? No, that's wrong.
-                    // We decrement when we return? No.
-                    // We leave it incremented? That leaks connections count.
-                    // We should wrap the session.
-
-                    // But for MVP, let's just decrement it immediately to avoid leak,
-                    // accepting that "active connections" metric won't reflect UDP sessions duration.
-                    member
-                        .health
-                        .active_connections
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    result
-                }
-                Err(e) => {
-                    member
-                        .health
-                        .active_connections
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    Err(e)
-                }
-            }
-        })
-    }
-}
 
 type OutboundBuilderResult = Option<(
     Arc<dyn OutboundConnector>,
@@ -135,8 +34,13 @@ pub fn build_selector_outbound(
     let default = ir.default_member.clone();
     let cache_file = ctx.context.cache_file.clone();
     let urltest_history = ctx.context.urltest_history.clone();
-    let group = SelectorGroup::new_manual(name, members, default, cache_file, urltest_history);
-    let outbound = Arc::new(SelectorOutbound::new(Arc::new(group)));
+    let group = Arc::new(SelectorGroup::new_manual(
+        name,
+        members,
+        default,
+        cache_file,
+        urltest_history,
+    ));
 
-    Some((outbound.clone(), Some(outbound)))
+    Some((group.clone(), Some(group)))
 }

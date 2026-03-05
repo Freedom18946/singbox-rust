@@ -482,6 +482,25 @@ impl SelectorGroup {
             .map(|m| (m.tag.clone(), m.health.is_healthy(), m.health.get_rtt_ms()))
             .collect()
     }
+
+    // Best-effort non-blocking selection for UDP factory path.
+    fn select_best_for_udp(&self) -> Option<ProxyMember> {
+        match self.mode {
+            SelectMode::Manual => {
+                let selected = self
+                    .selected
+                    .try_read()
+                    .ok()
+                    .and_then(|v| v.clone())
+                    .or_else(|| self.default_member.clone())?;
+                self.members.iter().find(|m| m.tag == selected).cloned()
+            }
+            SelectMode::UrlTest => self.select_by_latency().cloned(),
+            SelectMode::RoundRobin => self.select_round_robin().cloned(),
+            SelectMode::LeastConnections => self.select_least_connections().cloned(),
+            SelectMode::Random => self.select_random().cloned(),
+        }
+    }
 }
 
 impl std::fmt::Debug for SelectorGroup {
@@ -604,6 +623,59 @@ impl crate::adapter::OutboundGroup for SelectorGroup {
         tag: &'a str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>> {
         Box::pin(self.select_by_name(tag))
+    }
+}
+
+impl UdpOutboundFactory for SelectorGroup {
+    fn open_session(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = std::io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
+                > + Send,
+        >,
+    > {
+        let name = self.name.clone();
+        let selected_member = self.select_best_for_udp();
+        Box::pin(async move {
+            let member = selected_member.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("no available proxy in selector {}", name),
+                )
+            })?;
+
+            member
+                .health
+                .active_connections
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            let factory = member.udp_factory.clone().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    format!("proxy {} does not support UDP", member.tag),
+                )
+            });
+
+            match factory {
+                Ok(f) => {
+                    let result = f.open_session().await;
+                    member
+                        .health
+                        .active_connections
+                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    result
+                }
+                Err(e) => {
+                    member
+                        .health
+                        .active_connections
+                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    Err(e)
+                }
+            }
+        })
     }
 }
 

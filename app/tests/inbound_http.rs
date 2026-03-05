@@ -1,8 +1,12 @@
 #![allow(clippy::while_let_loop, clippy::field_reassign_with_default)]
-use sb_core::adapter::InboundService;
-use std::net::TcpListener;
+use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+use sb_config::ir::Credentials;
+use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+use sb_core::router::{Router, RouterHandle};
+use std::net::{SocketAddr, TcpListener};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
 
 fn is_perm(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::PermissionDenied
@@ -36,6 +40,37 @@ fn spawn_backend_echo() -> std::net::SocketAddr {
     addr
 }
 
+async fn start_http_inbound(
+    listen: SocketAddr,
+    users: Option<Vec<Credentials>>,
+) -> mpsc::Sender<()> {
+    let mut map = std::collections::HashMap::new();
+    map.insert("direct".to_string(), OutboundImpl::Direct);
+    let registry = OutboundRegistry::new(map);
+    let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
+    let router = Arc::new(RouterHandle::new(Router::with_default("direct")));
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let cfg = HttpProxyConfig {
+        tag: None,
+        listen,
+        router,
+        outbounds,
+        tls: None,
+        users,
+        set_system_proxy: false,
+        allow_private_network: true,
+        stats: None,
+    };
+
+    tokio::spawn(async move {
+        let _ = serve_http(cfg, stop_rx, Some(ready_tx)).await;
+    });
+    ready_rx.await.expect("http inbound ready signal");
+    stop_tx
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn http_connect_no_auth() {
     let backend = spawn_backend_echo();
@@ -56,11 +91,7 @@ async fn http_connect_no_auth() {
 
     // start HTTP CONNECT inbound without auth
     let addr = format!("127.0.0.1:{}", inbound_port).parse().unwrap();
-    thread::spawn(move || {
-        let inbound = sb_core::inbound::http::HttpInboundService::new(addr);
-        let _ = inbound.serve();
-    });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let stop_tx = start_http_inbound(addr, None).await;
 
     // client: send CONNECT then data and expect echo
     let mut s = match tokio::net::TcpStream::connect(("127.0.0.1", inbound_port)).await {
@@ -92,6 +123,7 @@ async fn http_connect_no_auth() {
     let mut buf = vec![0u8; msg.len()];
     s.read_exact(&mut buf).await.unwrap();
     assert_eq!(&buf, msg);
+    let _ = stop_tx.send(()).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -114,17 +146,16 @@ async fn http_connect_basic_auth() {
 
     // start HTTP CONNECT inbound with auth
     let addr = format!("127.0.0.1:{}", inbound_port).parse().unwrap();
-    let user = "u".to_string();
-    let pass = "p".to_string();
-    thread::spawn(move || {
-        let mut cfg = sb_core::inbound::http::HttpConfig::default();
-        cfg.auth_enabled = true;
-        cfg.username = Some(user);
-        cfg.password = Some(pass);
-        let inbound = sb_core::inbound::http::HttpInboundService::with_config(addr, cfg);
-        let _ = inbound.serve();
-    });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let stop_tx = start_http_inbound(
+        addr,
+        Some(vec![Credentials {
+            username: Some("u".to_string()),
+            password: Some("p".to_string()),
+            username_env: None,
+            password_env: None,
+        }]),
+    )
+    .await;
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     // 1) without auth should get 407
@@ -180,10 +211,11 @@ async fn http_connect_basic_auth() {
     let mut buf = vec![0u8; msg.len()];
     s2.read_exact(&mut buf).await.unwrap();
     assert_eq!(&buf, msg);
+    let _ = stop_tx.send(()).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn http_connect_sniff_prefers_host_header() {
+async fn http_connect_uses_connect_target() {
     let backend = spawn_backend_echo();
 
     // choose inbound port
@@ -200,19 +232,12 @@ async fn http_connect_sniff_prefers_host_header() {
     let inbound_port = probe.local_addr().unwrap().port();
     drop(probe);
 
-    // start HTTP CONNECT inbound with sniff enabled
+    // start HTTP CONNECT inbound
     let addr = format!("127.0.0.1:{}", inbound_port).parse().unwrap();
-    let sniff_enabled = true;
-    thread::spawn(move || {
-        let mut cfg = sb_core::inbound::http::HttpConfig::default();
-        cfg.sniff_enabled = sniff_enabled;
-        let inbound = sb_core::inbound::http::HttpInboundService::with_config(addr, cfg);
-        let _ = inbound.serve();
-    });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let stop_tx = start_http_inbound(addr, None).await;
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    // Send CONNECT to an unreachable host:port, but with Host header of backend (should succeed)
+    // CONNECT target should be used regardless of Host header value.
     let mut s = match tokio::net::TcpStream::connect(("127.0.0.1", inbound_port)).await {
         Ok(s) => s,
         Err(e) => {
@@ -224,7 +249,7 @@ async fn http_connect_sniff_prefers_host_header() {
         }
     };
     let req = format!(
-        "CONNECT invalid.invalid:65535 HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+        "CONNECT {}:{} HTTP/1.1\r\nHost: invalid.invalid:65535\r\n\r\n",
         backend.ip(),
         backend.port()
     );
@@ -233,4 +258,5 @@ async fn http_connect_sniff_prefers_host_header() {
     let n = s.read(&mut head).await.unwrap();
     let status = std::str::from_utf8(&head[..n]).unwrap();
     assert!(status.contains("200"), "status: {}", status);
+    let _ = stop_tx.send(()).await;
 }

@@ -14,6 +14,19 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#10 推进快照（2026-03-05 17:43）
+
+- 状态：`MIG-04 in_progress`（wave#10 已完成 app/tests inbound_http 去 core HTTP concrete + V7 断言升级）
+- 本轮落地：
+  1. `app/tests/inbound_http.rs` 迁移到 `sb_adapters::inbound::http::{serve_http,HttpProxyConfig}`，移除 `sb_core::inbound::http::{HttpInboundService,HttpConfig}` 依赖。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.9-wave10-v1`（53 assertions），新增 W10-01~W10-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave10_v7_regression_block.txt`（注入 `sb_core::inbound::http::HttpInboundService` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p sb-core`：PASS（`wave10_wp1_sb_core_check.txt`）
+  - `cargo check -p app --test inbound_http`：PASS（`wave10_wp1_app_inbound_http_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (53 assertions)`）
+  - `cargo check -p app --tests`：当前 FAIL（`app/tests/selector_udp_test.rs` unresolved import/type inference，见 `wave10_wp1_app_tests_check.txt`）
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

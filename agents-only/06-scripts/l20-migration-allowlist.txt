@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.8-wave9-v1|||L21 wave#9 migration assertion allowlist version
+VERSION|l21.9-wave10-v1|||L21 wave#10 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -69,3 +69,7 @@ forbid|W9-01-no-core-http-inbound-bridge-impl|crates/sb-core/src/adapter/mod.rs|
 forbid|W9-02-no-core-mixed-inbound-bridge-impl|crates/sb-core/src/adapter/mod.rs|inbound::mixed::MixedInbound|core bridge should not instantiate core Mixed inbound implementation
 require|W9-03-http-inbound-explicit-unsupported|crates/sb-core/src/adapter/mod.rs|core bridge HTTP inbound is disabled|core bridge HTTP inbound path should fail with explicit migration guidance
 require|W9-04-mixed-inbound-explicit-unsupported|crates/sb-core/src/adapter/mod.rs|core bridge mixed inbound is disabled|core bridge Mixed inbound path should fail with explicit migration guidance
+
+forbid|W10-01-no-core-http-inbound-test-concrete|app/tests/inbound_http.rs|sb_core::inbound::http::|inbound_http tests should not instantiate core HTTP inbound concrete implementation
+require|W10-02-inbound-http-test-uses-adapter-http|app/tests/inbound_http.rs|use sb_adapters::inbound::http::\{serve_http, HttpProxyConfig\};|inbound_http tests should use sb-adapters HTTP inbound implementation
+require|W10-03-inbound-http-test-uses-shutdown-channel|app/tests/inbound_http.rs|let \(stop_tx, stop_rx\) = mpsc::channel\(1\);|inbound_http tests should use explicit stop channel for adapter inbound lifecycle

@@ -23,6 +23,38 @@
 
 ## 日志记录
 
+### [2026-03-05 17:43] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求从 wave#10 继续推进：完成 MIG-04 在 app/tests 路径的去 core HTTP inbound concrete 收敛，并同步 strict gate 与状态总线文档。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/tests/inbound_http.rs`
+    - 迁移到 `sb_adapters::inbound::http::{serve_http, HttpProxyConfig}`
+    - 移除 `sb_core::inbound::http::{HttpInboundService, HttpConfig}` 依赖
+    - 增加 `start_http_inbound(...)` 统一 ready/stop 生命周期
+    - 第三个用例改为 `http_connect_uses_connect_target`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.9-wave10-v1`
+    - 新增 `W10-01~W10-03` 迁移追踪断言（V7 断言总数 53）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave10_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave10_wp1_app_inbound_http_check.txt`（`cargo check -p app --test inbound_http` PASS）
+  - `reports/l21/artifacts/wave10_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (53 assertions)`）
+  - `reports/l21/artifacts/wave10_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave10_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+  - `reports/l21/artifacts/wave10_wp1_app_tests_check.txt`（`cargo check -p app --tests` FAIL，失败点在 `app/tests/selector_udp_test.rs`：`SelectorOutbound/UrlTestOutbound` unresolved import + 类型推导错误）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#10）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3K wave#10，回填 MIG-04 状态依据）
+  - 更新 `agents-only/active_context.md`（新增 wave#10 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#10 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 `cargo check -p app --tests` 失败来源于工作区既有 selector/urltest 相关改动，不属于 wave#10 改动面。
+
+---
+
 ### [2026-03-04 18:14] Agent: Codex (GPT-5)
 
 **任务**: 按最新接续口径执行 L18 收口：确认修复、重跑 nightly 短路验证、发车 nightly 24h，并回填 agents 状态总线。
