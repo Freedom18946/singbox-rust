@@ -634,6 +634,12 @@ fn to_adapter_connector(
         sb_core::outbound::OutboundImpl::Direct => {
             Some(Arc::new(BootstrapDirectAdapterConnector::new()))
         }
+        sb_core::outbound::OutboundImpl::Block => {
+            tracing::warn!(
+                "Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
         sb_core::outbound::OutboundImpl::Socks5(_cfg) => {
             tracing::warn!(
                 "SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
@@ -673,6 +679,19 @@ fn to_adapter_connector(
         sb_core::outbound::OutboundImpl::Hysteria2(_cfg) => {
             tracing::warn!(
                 "Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
+        #[cfg(feature = "out_naive")]
+        sb_core::outbound::OutboundImpl::Naive(_cfg) => {
+            tracing::warn!(
+                "Naive selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
+        sb_core::outbound::OutboundImpl::Connector(_conn) => {
+            tracing::warn!(
+                "Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
             );
             None
         }

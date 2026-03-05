@@ -1,11 +1,39 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 20:01
-> **当前阶段**：L21 wave#24 推进完成（MIG-02 hardening：bootstrap fallback 去静默回退 + strict gate 升级）
+> **最后更新**：2026-03-05 20:04
+> **当前阶段**：L21 wave#25 推进完成（MIG-02 hardening：bootstrap Block/Connector 路径显式化 + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=81 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=83 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#25 推进落地（2026-03-05 20:04）
+
+**状态**：✅ `MIG-02 wave#25` 完成一段（bootstrap selector/urltest 已知变体路径显式化）；✅ strict gate allowlist 升级到 `l21.22-wave25-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#25（MIG-02 hardening，bootstrap 路径）**：
+   - `app/src/bootstrap.rs`（`to_adapter_connector`）：
+     - 新增 `OutboundImpl::Block` 显式分支（`warn + None`）。
+     - 新增 `OutboundImpl::Connector` 显式分支（`warn + None`）。
+     - 新增 `#[cfg(feature = "out_naive")] OutboundImpl::Naive` 显式分支（`warn + None`）。
+2. **strict gate allowlist 升级（V7 wave#25）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.22-wave25-v1`，断言扩展到 83 条（新增 W25-01/W25-02 require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave25_v7_regression_block.txt`（在临时 root 注入 `other => None` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave25_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave25_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave25_strict_gate.txt`，`V7 PASS (83 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave25_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave25_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave25_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave25_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave25_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave25_gui_static_syntax_check.txt`）
 
 ---
 

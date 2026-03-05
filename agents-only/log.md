@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 20:04] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：将 bootstrap selector/urltest 已知分支显式化（Block/Connector/Naive），并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/bootstrap.rs`
+    - `to_adapter_connector` 新增 `OutboundImpl::Block` 显式 `warn + None`
+    - 新增 `OutboundImpl::Connector` 显式 `warn + None`
+    - 新增 `#[cfg(feature = "out_naive")] OutboundImpl::Naive` 显式 `warn + None`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.22-wave25-v1`
+    - 新增 `W25-01~W25-02`（要求 Block/Connector 显式禁用提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave25_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave25_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave25_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (83 assertions)`）
+  - `reports/l21/artifacts/wave25_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave25_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#25）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3Z wave#25，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#25 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#25 目标已落地并形成可复算证据链）
+**备注**:
+- to_adapter_connector 的显式分支覆盖进一步提升；fallback 仅保留未知/未建模变体兜底。
+
+---
+
 ### [2026-03-05 20:01] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：将 bootstrap selector/urltest connector fallback 从静默回退升级为显式告警，并升级 strict gate 防回流断言。

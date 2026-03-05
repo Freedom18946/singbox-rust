@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.21-wave24-v1|||L21 wave#24 migration assertion allowlist version
+VERSION|l21.22-wave25-v1|||L21 wave#25 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -113,3 +113,6 @@ require|W23-02-bootstrap-trojan-explicit-disabled-msg|app/src/bootstrap.rs|Troja
 
 forbid|W24-01-no-bootstrap-silent-fallback-none|app/src/bootstrap.rs|other => None|bootstrap selector/urltest connector path should not use silent fallback none
 require|W24-02-bootstrap-fallback-explicit-disabled-msg|app/src/bootstrap.rs|unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap fallback path should emit explicit migration guidance
+
+require|W25-01-bootstrap-block-explicit-disabled-msg|app/src/bootstrap.rs|Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Block path should emit explicit migration guidance
+require|W25-02-bootstrap-nested-connector-explicit-disabled-msg|app/src/bootstrap.rs|Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap nested connector path should emit explicit migration guidance

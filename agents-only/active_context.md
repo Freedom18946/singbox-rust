@@ -214,6 +214,20 @@
   - `reports/l21/artifacts/wave24_v7_regression_block.txt`
   - `reports/l21/artifacts/wave24_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#25 推进快照（2026-03-05 20:04）
+
+- 状态：`MIG-02 hardening`（wave#25 完成 bootstrap selector/urltest 已知分支显式化）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector` 新增 `Block`、`Connector`、`Naive(feature-gated)` 显式 `warn + None` 分支，收敛 fallback 命中面。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.22-wave25-v1`（83 assertions），新增 W25-01/W25-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave25_v7_regression_block.txt`（注入 `other => None` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave25_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave25_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave25_strict_gate.txt`
+  - `reports/l21/artifacts/wave25_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave25_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
