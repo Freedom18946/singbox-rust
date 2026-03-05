@@ -1,11 +1,32 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 12:20
-> **当前阶段**：L21 wave#4 收口完成（MIG-01/MIG-05 closed：runtime/switchboard 回流清理 + strict gate 升级 + 阻断证据）
+> **最后更新**：2026-03-05 12:40
+> **当前阶段**：L21 wave#5 起步完成（MIG-02 in_progress：app probe 路径去 switchboard 重叠 + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=29 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=32 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#5 起步落地（2026-03-05 12:40）
+
+**状态**：✅ `MIG-02 wave#5` 起步完成（`open -> in_progress`）；✅ strict gate allowlist 升级到 `l21.4-wave5-v1`；✅ 回流阻断负样例证据更新
+
+1. **迁移 wave#5（优先 app/tool 路径）**：
+   - `app/src/bin/probe-outbound.rs`：不再走 `runtime::switchboard::SwitchboardBuilder` 路径；改为 `adapter::bridge::build_bridge + get_member`。
+   - 连接流程保持原语义：仍支持 `--print-transport`，保留超时控制（`timeout + connect timeout message`）与响应输出结构。
+2. **strict gate allowlist 升级（V7 wave#5）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.4-wave5-v1`，断言扩展到 32 条（新增 W5-01/W5-02/W5-03 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave5_v7_regression_block.txt`（在临时 root 注入 `SwitchboardBuilder::from_config_ir` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过。
+
+**最小验证**：
+1. `cargo check -p app`
+2. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (32 assertions)`）
+3. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave5_v7_regression_block.txt`）
+4. `bash -n scripts/l18/gui_real_cert.sh`
 
 ---
 
