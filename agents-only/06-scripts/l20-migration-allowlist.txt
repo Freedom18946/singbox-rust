@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.31-wave34-v1|||L21 wave#34 migration assertion allowlist version
+VERSION|l21.32-wave35-v1|||L21 wave#35 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -139,3 +139,5 @@ forbid|W33-01-no-core-bridge-hysteria2-direct-fallback|crates/sb-core/src/adapte
 require|W33-02-core-bridge-hysteria2-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Hysteria2 outbound is disabled; use adapter::bridge::build_bridge|core bridge Hysteria2 outbound should emit explicit migration guidance
 forbid|W34-01-no-core-bridge-tuic-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Tuic => \{[[:space:]]*direct_connector_fallback\(\)|core bridge TUIC outbound should not fallback to direct
 require|W34-02-core-bridge-tuic-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge TUIC outbound is disabled; use adapter::bridge::build_bridge|core bridge TUIC outbound should emit explicit migration guidance
+forbid|W35-01-no-core-bridge-vmess-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Vmess => \{[[:space:]]*direct_connector_fallback\(\)|core bridge VMess outbound should not fallback to direct
+require|W35-02-core-bridge-vmess-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge VMess outbound is disabled; use adapter::bridge::build_bridge|core bridge VMess outbound should emit explicit migration guidance

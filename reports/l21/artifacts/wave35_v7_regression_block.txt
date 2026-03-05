@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:43) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.32-wave35-v1
+  FAIL: [W35-01-no-core-bridge-vmess-direct-fallback] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge VMess outbound should not fallback to direct
+  FAIL: 1/105 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave35-v7-regress.LizLwQ
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=sb_config::ir::OutboundType::Vmess => { direct_connector_fallback()
+[meta] exit_code=1

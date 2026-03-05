@@ -354,6 +354,20 @@
   - `reports/l21/artifacts/wave34_v7_regression_block.txt`
   - `reports/l21/artifacts/wave34_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#35 推进快照（2026-03-05 20:42）
+
+- 状态：`MIG-02 hardening`（wave#35 完成 core bridge VMess 分支去 direct fallback）
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/mod.rs`：`Bridge::new_from_config` 的 `OutboundType::Vmess` 由 `direct_connector_fallback()` 改为 `unsupported_outbound_connector(...)`，避免 VMess 分支静默降级到 direct。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.32-wave35-v1`（105 assertions），新增 W35-01/W35-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave35_v7_regression_block.txt`（注入 `sb_config::ir::OutboundType::Vmess => { direct_connector_fallback()` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave35_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave35_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave35_strict_gate.txt`
+  - `reports/l21/artifacts/wave35_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave35_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

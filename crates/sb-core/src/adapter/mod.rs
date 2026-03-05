@@ -663,8 +663,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Vmess => {
-                    // VMess connector not wired in adapter bridge yet; fall back to direct
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge VMess outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Trojan => {
                     // Trojan connector not wired in adapter bridge; fall back to direct
