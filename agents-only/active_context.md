@@ -130,6 +130,20 @@
   - `reports/l21/artifacts/wave18_v7_regression_block.txt`
   - `reports/l21/artifacts/wave18_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#19 推进快照（2026-03-05 19:32）
+
+- 状态：`MIG-02 in_progress`（wave#19 完成 bootstrap selector/urltest 路径去 core TUIC concrete）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector(OutboundImpl::Tuic)` 不再构建 core `outbound::tuic::TuicOutbound`，改为显式 `warn + None` 迁移提示。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.16-wave19-v1`（71 assertions），新增 W19-01/W19-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave19_v7_regression_block.txt`（注入 `outbound::tuic::TuicOutbound` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave19_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave19_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave19_strict_gate.txt`
+  - `reports/l21/artifacts/wave19_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave19_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

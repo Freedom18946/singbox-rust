@@ -631,11 +631,11 @@ fn to_adapter_connector(
                 .ok()
                 .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
         }
-        sb_core::outbound::OutboundImpl::Tuic(cfg) => {
-            use sb_core::outbound::tuic::TuicOutbound;
-            TuicOutbound::new(cfg.clone())
-                .ok()
-                .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
+        sb_core::outbound::OutboundImpl::Tuic(_cfg) => {
+            tracing::warn!(
+                "TUIC selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
         }
         sb_core::outbound::OutboundImpl::Trojan(_cfg) => None,
         sb_core::outbound::OutboundImpl::Hysteria2(_cfg) => {
