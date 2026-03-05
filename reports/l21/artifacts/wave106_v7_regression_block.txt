@@ -1,0 +1,17 @@
+=== 依赖边界检查 (2026-03-06 03:53) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.103-wave106-v1
+  FAIL: [W106-01-router-rules-port-range-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_port_range.rs :: router rules port_range test sample should not keep silent direct default literal
+  FAIL: [W106-02-router-rules-port-range-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_port_range.rs :: router rules port_range test sample should use explicit unresolved default literal
+  FAIL: [W106-01-no-router-rules-port-range-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_port_range.rs :: router_rules_port_range 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W106-02-router-rules-port-range-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_port_range.rs :: router_rules_port_range 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 4/278 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave106-v7-regress.dCIEnE
+[meta] injected_file=crates/sb-core/tests/router_rules_port_range.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

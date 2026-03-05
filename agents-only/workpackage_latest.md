@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 03:52
-> **当前阶段**：L21 wave#105 推进完成（MIG-02 hardening：router_select_ctx_meta 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 03:53
+> **当前阶段**：L21 wave#106 推进完成（MIG-02 hardening：router_rules_port_range 测试样例 default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=270 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=272 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -34,6 +34,32 @@
 2. 前半段推进会比较稳定，因为大多是样例字面量替换；后半段会变慢，因为 `geosite/hot_reload` 类文件更容易牵动断言语义。
 3. 真正的阻塞条件不是改字符串本身，而是某些测试是否把 `direct` 当作行为预期而不是示例默认值。一旦遇到这种情况，需要先改断言口径，再决定是否拆成独立波次。
 4. 在当前口径下，`V7 assertions` 会继续线性增长；每一波都会新增 2 条防回流断言，直到这批剩余样例清零。
+
+## 🆕 最新进展：L21 wave#106 推进落地（2026-03-06 03:53)
+
+**状态**：✅ `MIG-02 wave#106` 完成一段（router_rules_port_range 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.103-wave106-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#106（MIG-02 hardening，router_rules_port_range 测试样例 default 去 silent direct fallback 路径）**：
+   - `crates/sb-core/tests/router_rules_port_range.rs`：
+     - 将测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，并将区间外默认断言更新为 `unresolved`，去除示例中的 silent direct fallback 字面量。
+2. **strict gate allowlist 升级（V7 wave#106）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.103-wave106-v1`，断言扩展到 272 条（新增 W106-01/W106-02）。
+   - 回流阻断证据：`reports/l21/artifacts/wave106_v7_regression_block.txt`（在临时 root 将 `default=unresolved` 注入回 `default=direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave106_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave106_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave106_strict_gate.txt`，`V7 PASS (272 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave106_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave106_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave106_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave106_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave106_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave106_gui_static_syntax_check.txt`）
+
+---
 
 ## 🆕 最新进展：L21 wave#105 推进落地（2026-03-06 03:52)
 
