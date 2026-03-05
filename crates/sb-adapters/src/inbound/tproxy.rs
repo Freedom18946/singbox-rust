@@ -13,7 +13,6 @@ use sb_core::outbound::{
 use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::services::v2ray_api::StatsManager;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::fd::FromRawFd;
@@ -106,7 +105,6 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
     let (host, port) = (orig.ip().to_string(), orig.port());
     let mut decision = RDecision::Direct;
     let mut rule: Option<String> = None;
-    let proxy = default_proxy();
 
     if let Some(eng) = rules_global::global() {
         let mut domain_opt = None;
@@ -168,68 +166,29 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
                             }
                         }
                     } else {
-                        match proxy {
-                            ProxyChoice::Direct => {
-                                outbound_tag = Some("direct".to_string());
-                                direct_connect_hostport(&host, port, &opts).await?
-                            }
-                            ProxyChoice::Http(addr) => {
-                                outbound_tag = Some("http".to_string());
-                                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
-                            }
-                            ProxyChoice::Socks5(addr) => {
-                                outbound_tag = Some("socks5".to_string());
-                                socks5_connect_through_socks5(addr, &host, port, &opts).await?
-                            }
-                        }
+                        return Err(anyhow!(
+                            "tproxy: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+                            name
+                        ));
                     }
                 } else {
-                    match proxy {
-                        ProxyChoice::Direct => {
-                            outbound_tag = Some("direct".to_string());
-                            direct_connect_hostport(&host, port, &opts).await?
-                        }
-                        ProxyChoice::Http(addr) => {
-                            outbound_tag = Some("http".to_string());
-                            http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
-                        }
-                        ProxyChoice::Socks5(addr) => {
-                            outbound_tag = Some("socks5".to_string());
-                            socks5_connect_through_socks5(addr, &host, port, &opts).await?
-                        }
-                    }
+                    return Err(anyhow!(
+                        "tproxy: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                        name
+                    ));
                 }
             } else {
-                match proxy {
-                    ProxyChoice::Direct => {
-                        outbound_tag = Some("direct".to_string());
-                        direct_connect_hostport(&host, port, &opts).await?
-                    }
-                    ProxyChoice::Http(addr) => {
-                        outbound_tag = Some("http".to_string());
-                        http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
-                    }
-                    ProxyChoice::Socks5(addr) => {
-                        outbound_tag = Some("socks5".to_string());
-                        socks5_connect_through_socks5(addr, &host, port, &opts).await?
-                    }
-                }
+                return Err(anyhow!(
+                    "tproxy: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path",
+                    name
+                ));
             }
         }
-        RDecision::Proxy(None) => match proxy {
-            ProxyChoice::Direct => {
-                outbound_tag = Some("direct".to_string());
-                direct_connect_hostport(&host, port, &opts).await?
-            }
-            ProxyChoice::Http(addr) => {
-                outbound_tag = Some("http".to_string());
-                http_proxy_connect_through_proxy(addr, &host, port, &opts).await?
-            }
-            ProxyChoice::Socks5(addr) => {
-                outbound_tag = Some("socks5".to_string());
-                socks5_connect_through_socks5(addr, &host, port, &opts).await?
-            }
-        },
+        RDecision::Proxy(None) => {
+            return Err(anyhow!(
+                "tproxy: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+            ));
+        }
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("tproxy: rejected by rules"))
         }
