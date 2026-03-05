@@ -478,68 +478,10 @@ impl SwitchboardBuilder {
             }
 
             OutboundType::Socks => {
-                #[cfg(feature = "scaffold")]
-                {
-                    // Minimal SOCKS5 upstream connector using scaffold implementation
-                    use crate::adapter::OutboundConnector as AdapterConnector;
-
-                    #[derive(Debug, Clone)]
-                    struct SocksConnector {
-                        inner: std::sync::Arc<crate::outbound::socks_upstream::SocksUp>,
-                    }
-
-                    #[async_trait::async_trait]
-                    impl OutboundConnector for SocksConnector {
-                        async fn dial(
-                            &self,
-                            target: Target,
-                            _opts: DialOpts,
-                        ) -> AdapterResult<BoxedStream> {
-                            if target.kind != TransportKind::Tcp {
-                                return Err(AdapterError::UnsupportedProtocol(
-                                    "SOCKS upstream does not support UDP (use UDP associate path)"
-                                        .into(),
-                                ));
-                            }
-                            let s = self
-                                .inner
-                                .connect(&target.host, target.port)
-                                .await
-                                .map_err(AdapterError::Io)?;
-                            Ok(Box::new(s))
-                        }
-                        fn name(&self) -> &'static str {
-                            "socks"
-                        }
-                    }
-
-                    let (user, pass) = ir
-                        .credentials
-                        .as_ref()
-                        .map(|c| (c.username.clone(), c.password.clone()))
-                        .unwrap_or((None, None));
-                    let server = ir
-                        .server
-                        .clone()
-                        .ok_or(AdapterError::InvalidConfig("socks.server is required"))?;
-                    let port = ir
-                        .port
-                        .ok_or(AdapterError::InvalidConfig("socks.port is required"))?;
-                    let up =
-                        crate::outbound::socks_upstream::SocksUp::new(server, port, user, pass);
-                    let conn = SocksConnector {
-                        inner: std::sync::Arc::new(up),
-                    };
-                    self.switchboard
-                        .register(name.to_string(), conn)
-                        .map_err(|e| AdapterError::Other(e.into()))?;
-                }
-                #[cfg(not(feature = "scaffold"))]
-                {
-                    return Err(AdapterError::UnsupportedProtocol(
-                        "SOCKS outbound requires scaffold feature".into(),
-                    ));
-                }
+                return Err(AdapterError::UnsupportedProtocol(
+                    "SOCKS outbound in switchboard is disabled; use adapter bridge/supervisor path"
+                        .to_string(),
+                ));
             }
 
             OutboundType::Hysteria2 => {
