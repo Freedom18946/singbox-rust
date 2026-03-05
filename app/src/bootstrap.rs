@@ -676,8 +676,13 @@ fn to_adapter_connector(
             );
             None
         }
-        // Not supported
-        _ => None,
+        other => {
+            tracing::warn!(
+                outbound_variant = ?other,
+                "unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
     }
 }
 

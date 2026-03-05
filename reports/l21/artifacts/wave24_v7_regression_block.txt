@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:01) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.21-wave24-v1
+  FAIL: [W24-01-no-bootstrap-silent-fallback-none] forbidden pattern matched in app/src/bootstrap.rs :: bootstrap selector/urltest connector path should not use silent fallback none
+  FAIL: 1/81 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave24-v7-regress.ErjwCD
+[meta] injected_file=app/src/bootstrap.rs
+[meta] injected_pattern=other => None
+[meta] exit_code=1

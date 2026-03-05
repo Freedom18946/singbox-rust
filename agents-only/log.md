@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 20:01] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：将 bootstrap selector/urltest connector fallback 从静默回退升级为显式告警，并升级 strict gate 防回流断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/bootstrap.rs`
+    - `to_adapter_connector` 末尾 fallback 从 `_ => None` 调整为 `other => warn + None`
+    - 补充统一提示：`unsupported selector/urltest member ... disabled; use adapter bridge/supervisor path`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.21-wave24-v1`
+    - 新增 `W24-01~W24-02`（禁止静默 fallback + 要求显式迁移提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave24_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave24_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave24_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (81 assertions)`）
+  - `reports/l21/artifacts/wave24_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave24_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#24）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3Y wave#24，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#24 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#24 目标已落地并形成可复算证据链）
+**备注**:
+- bootstrap selector/urltest 路径已消除末尾静默回退，未知成员类型会显式记录迁移告警。
+
+---
+
 ### [2026-03-05 19:45] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：补齐 bootstrap selector/urltest 的 Trojan 成员路径显式禁用提示，并升级 strict gate 防回流断言。
