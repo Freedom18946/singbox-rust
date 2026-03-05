@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 03:55) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.105-wave108-v1
+  FAIL: [W109-01-no-router-domain-regex-matching-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_domain_regex_matching.rs :: router_domain_regex_matching 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W109-02-router-domain-regex-matching-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_domain_regex_matching.rs :: router_domain_regex_matching 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 2/288 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave109-v7-regress.nt6grm3b
+[meta] injected_file=crates/sb-core/tests/router_domain_regex_matching.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

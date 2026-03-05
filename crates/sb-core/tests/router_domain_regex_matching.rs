@@ -499,7 +499,7 @@ fn test_parse_rules_with_regex() {
 regex:^.*\.google\.com$=proxy
 regex:^api-\d+\.example\.com$=direct
 exact:test.com=proxy
-default=direct
+default=unresolved
 "#;
 
     let rules = parse_rules(rules_text);
@@ -536,7 +536,7 @@ fn test_invalid_regex_pattern_skipped() {
     let rules_text = r#"
 regex:^(invalid=proxy
 exact:test.com=direct
-default=direct
+default=unresolved
 "#;
 
     let rules = parse_rules(rules_text);
