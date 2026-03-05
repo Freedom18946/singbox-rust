@@ -9,7 +9,7 @@ fn select_ctx_and_record_with_meta_labels() {
 exact:api.example.com=proxy
 suffix:example.com=direct
 cidr4:10.0.0.0/8=proxy
-default=direct
+default=unresolved
 "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build index");
     let handle = RouterHandle::from_index(idx);
