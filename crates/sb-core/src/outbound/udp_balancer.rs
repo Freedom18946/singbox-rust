@@ -58,12 +58,13 @@ async fn send_socks5_via_upstream(
 
 #[cfg(not(feature = "scaffold"))]
 async fn send_socks5_via_upstream(
-    payload: &[u8],
-    dst: &SocketAddr,
+    _payload: &[u8],
+    _dst: &SocketAddr,
     _upstream: SocketAddr,
 ) -> anyhow::Result<usize> {
-    // Fallback to direct when scaffold feature is not enabled
-    send_direct(payload, dst).await
+    Err(anyhow::anyhow!(
+        "UDP SOCKS5 balancer path is disabled without scaffold; direct fallback is disabled"
+    ))
 }
 
 /// Public: choose a backend according to weights and send one datagram.
@@ -101,8 +102,9 @@ pub async fn send_balanced(
                 #[cfg(feature = "metrics")]
                 metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"no_upstream")
                     .increment(1);
-                // Fallback direct to not break userspace
-                return send_direct(payload, &dst_sa).await;
+                return Err(anyhow::anyhow!(
+                    "no SOCKS5 upstream available in UDP balancer path; direct fallback is disabled"
+                ));
             }
         }
     } else {

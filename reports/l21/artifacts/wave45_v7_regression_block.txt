@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:32) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.42-wave45-v1
+  FAIL: [W45-01-no-udp-balancer-noscaffold-direct-fallback] forbidden pattern matched in crates/sb-core/src/outbound/udp_balancer.rs :: UDP balancer SOCKS5 path should not fallback to direct in no-scaffold mode
+  FAIL: 1/130 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave45-v7-regress.HunUCQ
+[meta] injected_file=crates/sb-core/src/outbound/udp_balancer.rs
+[meta] injected_pattern=// Fallback to direct when scaffold feature is not enabled
+[meta] exit_code=1

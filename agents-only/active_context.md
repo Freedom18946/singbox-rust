@@ -494,6 +494,21 @@
   - `reports/l21/artifacts/wave44_v7_regression_block.txt`
   - `reports/l21/artifacts/wave44_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#45 推进快照（2026-03-05 21:32）
+
+- 状态：`MIG-02 hardening`（wave#45 完成 UDP balancer 分支去 direct fallback）
+- 本轮落地：
+  1. `crates/sb-core/src/outbound/udp_balancer.rs`：`send_socks5_via_upstream` 在 no-scaffold 路径不再 fallback 到 direct，改为显式失败并返回 `UDP SOCKS5 balancer path is disabled without scaffold; direct fallback is disabled`。
+  2. `crates/sb-core/src/outbound/udp_balancer.rs`：缺失 SOCKS5 upstream 时不再 fallback 到 direct，改为显式失败并返回 `no SOCKS5 upstream available in UDP balancer path; direct fallback is disabled`。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.42-wave45-v1`（130 assertions），新增 W45-01/W45-02/W45-03/W45-04。
+  4. 回流阻断证据：`reports/l21/artifacts/wave45_v7_regression_block.txt`（注入 `Fallback to direct when scaffold feature is not enabled` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave45_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave45_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave45_strict_gate.txt`
+  - `reports/l21/artifacts/wave45_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave45_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

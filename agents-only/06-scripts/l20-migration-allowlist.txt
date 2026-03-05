@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.41-wave44-v1|||L21 wave#44 migration assertion allowlist version
+VERSION|l21.42-wave45-v1|||L21 wave#45 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -162,3 +162,7 @@ require|W43-03-http-connect-inbound-explicit-no-fallback-msg|crates/sb-core/src/
 forbid|W44-01-no-socks5-inbound-direct-tag-fallback|crates/sb-core/src/inbound/socks5.rs|outbound_tag = \"direct\"\.to_string\(\);|SOCKS5 inbound route path should not retag missing outbound to direct
 forbid|W44-02-no-socks5-inbound-direct-fallback-call|crates/sb-core/src/inbound/socks5.rs|bridge\.find_direct_fallback\(\)|SOCKS5 inbound route path should not fallback to direct connector
 require|W44-03-socks5-inbound-explicit-no-fallback-msg|crates/sb-core/src/inbound/socks5.rs|no outbound connector available; direct fallback is disabled in SOCKS5 inbound route path|SOCKS5 inbound route path should emit explicit no-fallback diagnostics
+forbid|W45-01-no-udp-balancer-noscaffold-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback to direct when scaffold feature is not enabled|UDP balancer SOCKS5 path should not fallback to direct in no-scaffold mode
+forbid|W45-02-no-udp-balancer-no-upstream-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback direct to not break userspace|UDP balancer should not fallback to direct when SOCKS5 upstream is missing
+require|W45-03-udp-balancer-noscaffold-explicit-disabled|crates/sb-core/src/outbound/udp_balancer.rs|UDP SOCKS5 balancer path is disabled without scaffold; direct fallback is disabled|UDP balancer no-scaffold path should emit explicit no-fallback diagnostics
+require|W45-04-udp-balancer-no-upstream-explicit-disabled|crates/sb-core/src/outbound/udp_balancer.rs|no SOCKS5 upstream available in UDP balancer path; direct fallback is disabled|UDP balancer no-upstream path should emit explicit no-fallback diagnostics

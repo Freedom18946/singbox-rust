@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 21:32] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 UDP balancer 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/outbound/udp_balancer.rs`
+    - `#[cfg(not(feature = "scaffold"))] send_socks5_via_upstream` 不再 fallback 到 direct
+    - 缺失 SOCKS5 upstream 时不再 fallback 到 direct
+    - 统一改为显式 no-fallback 失败并给出迁移提示
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.42-wave45-v1`
+    - 新增 `W45-01~W45-04`（禁止 UDP balancer no-scaffold/no-upstream direct fallback + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave45_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave45_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave45_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (130 assertions)`）
+  - `reports/l21/artifacts/wave45_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave45_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#45）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AT wave#45，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#45 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#45 目标已落地并形成可复算证据链）
+**备注**:
+- UDP balancer 的 no-scaffold 与 no-upstream 场景已不再“保底直连”，改为显式失败诊断。
+
+---
+
 ### [2026-03-05 21:29] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 SOCKS5 inbound route 的 direct fallback 路径并升级 strict gate 断言。
