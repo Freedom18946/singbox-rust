@@ -286,7 +286,7 @@ fn outbound_scaffold_socks_and_http_connect() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
-    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));
     // 客户端通过 HTTP CONNECT 入站访问 echo（将经由 Selector 选择 A 或 B）

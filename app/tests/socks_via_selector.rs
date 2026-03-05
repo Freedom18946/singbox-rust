@@ -132,7 +132,7 @@ fn end2end_via_selector() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
-    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, sb).start();
     std::thread::sleep(Duration::from_millis(100));
     let out = socks_client_echo(socks_addr, echo_addr, b"hello selector");

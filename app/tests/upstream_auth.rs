@@ -198,7 +198,7 @@ fn upstream_http_basic_auth_sent() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
-    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));
     // CONNECT via inbound → upstream with Proxy-Authorization
