@@ -7,10 +7,10 @@ async fn decision_cache_invalidate_on_generation_change() {
     // 开启缓存
     std::env::set_var("SB_ROUTER_DECISION_CACHE", "1");
     std::env::set_var("SB_ROUTER_DECISION_CACHE_CAP", "16");
-    // 初始规则：suffix .test -> direct；默认 direct
+    // 初始规则：suffix .test -> direct；默认 unresolved
     let rules1 = r#"
     suffix:.test=direct
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules1);
     // 构建索引并创建 RouterHandle（触发 shared_index 初始化）
@@ -22,7 +22,7 @@ async fn decision_cache_invalidate_on_generation_change() {
     // 模拟热切换到新索引：.test -> proxy，并将 generation +1
     let rules2 = r#"
     suffix:.test=proxy
-    default=direct
+    default=unresolved
     "#;
     let new_idx = router_build_index_from_str(rules2, 8192).expect("build rules2");
     let shared = shared_index();

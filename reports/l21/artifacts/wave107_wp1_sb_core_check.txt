@@ -1,3 +1,2 @@
-    Blocking waiting for file lock on build directory
     Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
-    Finished `dev` profile [optimized + debuginfo] target(s) in 4.16s
+    Finished `dev` profile [optimized + debuginfo] target(s) in 2.26s

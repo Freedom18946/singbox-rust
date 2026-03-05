@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.104-wave107-v1|||L21 wave#107 migration assertion allowlist version
+VERSION|l21.105-wave108-v1|||L21 wave#108 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -318,3 +318,5 @@ forbid|W107-01-router-explain-default-direct-literal|crates/sb-core/tests/router
 require|W107-02-router-explain-default-unresolved-literal|crates/sb-core/tests/router_explain.rs|default=unresolved|router explain test sample should use explicit unresolved default literal
 forbid|W107-01-no-router-explain-default-direct-literal|crates/sb-core/tests/router_explain.rs|default=direct|router_explain 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W107-02-router-explain-default-unresolved-literal|crates/sb-core/tests/router_explain.rs|default=unresolved|router_explain 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W108-01-no-router-cache-default-direct-literal|crates/sb-core/tests/router_cache.rs|default=direct|router_cache 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W108-02-router-cache-default-unresolved-literal|crates/sb-core/tests/router_cache.rs|default=unresolved|router_cache 测试样例 default 去 silent direct fallback should use explicit unresolved default literal

@@ -1,5 +1,5 @@
     Blocking waiting for file lock on build directory
-    Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
     Checking sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
     Checking app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
 warning: variable does not need to be mutable
@@ -29,4 +29,4 @@ warning: variable does not need to be mutable
     |         help: remove this `mut`
 
 warning: `sb-adapters` (lib) generated 3 warnings (run `cargo fix --lib -p sb-adapters` to apply 3 suggestions)
-    Finished `dev` profile [optimized + debuginfo] target(s) in 7.38s
+    Finished `dev` profile [optimized + debuginfo] target(s) in 8.98s
