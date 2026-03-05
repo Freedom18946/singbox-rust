@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 04:41) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.119-wave122-v1
+  FAIL: [W122-01-no-router-hot-reload-integration-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_hot_reload_integration.rs :: router-hot-reload-integration 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W122-02-router-hot-reload-integration-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_hot_reload_integration.rs :: router-hot-reload-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 2/304 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmpg6htqpd1

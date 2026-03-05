@@ -16,7 +16,7 @@ async fn test_hot_reload_basic_functionality() {
     let rule_file = temp_dir.path().join("rules.txt");
 
     // Create initial rule set
-    let initial_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=direct";
+    let initial_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=unresolved";
     fs::write(&rule_file, initial_rules).await.unwrap();
 
     // Create hot reload manager
@@ -61,7 +61,7 @@ async fn test_hot_reload_validation_failure() {
     let rule_file = temp_dir.path().join("rules.txt");
 
     // Create initial valid rule set
-    let initial_rules = "exact:example.com=direct\ndefault=direct";
+    let initial_rules = "exact:example.com=direct\ndefault=unresolved";
     fs::write(&rule_file, initial_rules).await.unwrap();
 
     let config = HotReloadConfig {
@@ -103,7 +103,7 @@ async fn test_hot_reload_multiple_files() {
     let rule_file2 = temp_dir.path().join("rules2.txt");
 
     // Create initial rule sets
-    fs::write(&rule_file1, "exact:example.com=direct\ndefault=direct")
+    fs::write(&rule_file1, "exact:example.com=direct\ndefault=unresolved")
         .await
         .unwrap();
     fs::write(&rule_file2, "exact:test.com=proxy\ndefault=proxy")
@@ -135,7 +135,7 @@ async fn test_hot_reload_multiple_files() {
     assert!(gen_after_first > initial_gen);
 
     // Update second file
-    fs::write(&rule_file2, "exact:test.com=direct\ndefault=direct")
+    fs::write(&rule_file2, "exact:test.com=direct\ndefault=unresolved")
         .await
         .unwrap();
     sleep(Duration::from_millis(300)).await;
@@ -151,7 +151,7 @@ async fn test_hot_reload_event_monitoring() {
     let temp_dir = TempDir::new().unwrap();
     let rule_file = temp_dir.path().join("rules.txt");
 
-    fs::write(&rule_file, "exact:example.com=direct\ndefault=direct")
+    fs::write(&rule_file, "exact:example.com=direct\ndefault=unresolved")
         .await
         .unwrap();
 
@@ -220,7 +220,7 @@ async fn test_hot_reload_disabled() {
     let temp_dir = TempDir::new().unwrap();
     let rule_file = temp_dir.path().join("rules.txt");
 
-    fs::write(&rule_file, "exact:example.com=direct\ndefault=direct")
+    fs::write(&rule_file, "exact:example.com=direct\ndefault=unresolved")
         .await
         .unwrap();
 
@@ -257,7 +257,7 @@ async fn test_hot_reload_disabled() {
 #[tokio::test]
 async fn test_rule_set_validation() {
     // Test valid rule set
-    let valid_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=direct";
+    let valid_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=unresolved";
     let result = HotReloadManager::validate_rule_set(valid_rules, 1000).await;
     assert!(result.is_ok(), "Valid rule set should pass validation");
 
@@ -275,7 +275,7 @@ async fn test_rule_set_validation() {
     for i in 0..1001 {
         large_rules.push_str(&format!("exact:example{}.com=direct\n", i));
     }
-    large_rules.push_str("default=direct");
+    large_rules.push_str("default=unresolved");
 
     let result = HotReloadManager::validate_rule_set(&large_rules, 1000).await;
     assert!(
@@ -290,7 +290,7 @@ async fn test_hot_reload_service_continuity() {
     let rule_file = temp_dir.path().join("rules.txt");
 
     // Create initial rule set
-    fs::write(&rule_file, "exact:example.com=direct\ndefault=direct")
+    fs::write(&rule_file, "exact:example.com=direct\ndefault=unresolved")
         .await
         .unwrap();
 
@@ -324,7 +324,7 @@ async fn test_hot_reload_service_continuity() {
 
     // Perform multiple hot reloads during service operation
     for i in 0..5 {
-        let rules = format!("exact:example.com=proxy{}\ndefault=direct", i);
+        let rules = format!("exact:example.com=proxy{}\ndefault=unresolved", i);
         fs::write(&rule_file, rules).await.unwrap();
         sleep(Duration::from_millis(100)).await;
     }
