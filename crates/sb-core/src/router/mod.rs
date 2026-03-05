@@ -2088,7 +2088,7 @@ pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],
@@ -2102,7 +2102,7 @@ pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>
 
 // ===== 共享快照（给 RouterHandle / decide_http 复用）=====
 static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
-    // 同步阶段：尽力按 ENV 构造一份索引；失败就用空配置 direct
+    // 同步阶段：尽力按 ENV 构造一份索引；失败则显式 unresolved，避免 silent direct fallback
     let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -2147,7 +2147,7 @@ static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],
@@ -2216,7 +2216,7 @@ fn refresh_shared_index_from_env_if_needed() {
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],
@@ -2755,7 +2755,7 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],
@@ -2841,7 +2841,7 @@ pub fn decide_udp_with_rules_and_ips_v46(
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],
@@ -2912,7 +2912,7 @@ pub fn decide_udp_with_rules_and_ips(
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
             keyword_idx: None,
-            default: "direct",
+            default: "unresolved",
             gen: 0,
             checksum: [0; 32],
             rules: vec![],

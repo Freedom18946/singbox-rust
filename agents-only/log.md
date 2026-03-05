@@ -14,6 +14,43 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 04:47] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：router/mod 解析失败 fallback 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/router/mod.rs`
+    - 将 `router_build_index_from_str(...)` 失败后的 6 处空索引默认值从 `default: "direct"` 调整为 `default: "unresolved"`，并把同步快照注释改为显式 unresolved 口径；补充无效规则 helper fallback 测试
+  - 更新 `crates/sb-core/tests/router_rules_index.rs`
+    - 补充无效规则 helper fallback 应返回 `unresolved` 的最小测试
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.120-wave123-v1`
+    - 新增 `W123-01/W123-02`
+- 证据与验证产物：
+  - `wave123_wp1_app_tests_check.txt`（PASS）
+  - `wave123_wp1_sb_core_check.txt`（PASS）
+  - `wave123_strict_gate.txt`（PASS）
+  - `wave123_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave123_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#123 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.120-wave123-v1`（306 assertions）。
+
+### [YYYY-MM-DD HH:MM] Agent: [Agent Name/ID]
+
+**任务**: [描述具体任务]
+**变更**:
+- [文件路径] - [具体变更内容]
+**结果**: [成功/失败 + 输出摘要]
+**备注**: [可选，风险/后续建议]
+
+## 日志记录
 ### [2026-03-06 04:41] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：router_hot_reload_integration 测试样例 default 去 silent direct fallback 并升级 strict gate 断言。

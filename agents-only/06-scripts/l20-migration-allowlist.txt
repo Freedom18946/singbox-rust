@@ -1,4 +1,4 @@
-VERSION|l21.119-wave122-v1|||L21 wave#122 migration assertion allowlist version
+VERSION|l21.120-wave123-v1|||L21 wave#123 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -340,3 +340,5 @@ forbid|W121-01-no-router-geosite-rules-integration-default-direct-literal|crates
 require|W121-02-router-geosite-rules-integration-default-unresolved-literal|crates/sb-core/tests/router_geosite_rules_integration.rs|default=unresolved|router-geosite-rules-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W122-01-no-router-hot-reload-integration-default-direct-literal|crates/sb-core/tests/router_hot_reload_integration.rs|default=direct|router-hot-reload-integration 测试样例 default 去 silent direct fallback should not keep silent direct default literal
 require|W122-02-router-hot-reload-integration-default-unresolved-literal|crates/sb-core/tests/router_hot_reload_integration.rs|default=unresolved|router-hot-reload-integration 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+forbid|W123-01-no-router-mod-parse-failure-default-direct-literal|crates/sb-core/src/router/mod.rs|default: "direct"|router mod parse-failure fallback should not keep silent direct default literal
+require|W123-02-router-mod-parse-failure-default-unresolved-literal|crates/sb-core/src/router/mod.rs|default: "unresolved"|router mod parse-failure fallback should use explicit unresolved default literal

@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 04:41
-> **当前阶段**：L21 wave#122 推进完成（MIG-02 hardening：router_hot_reload_integration 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 04:47
+> **当前阶段**：L21 wave#123 推进完成（MIG-02 hardening：router/mod 解析失败 fallback 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=304 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=306 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -12,14 +12,31 @@
 ## 口径对齐（避免阶段混淆）
 
 1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
-2. 当前工作不是补 parity 缺口，而是在清理 `default=direct` / silent direct fallback。
+2. 测试/样例层残留 `default=direct` 已清零；当前进入真实路径 parse-failure / 占位默认值收口阶段。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
-- 当前尚余 `0` 个测试文件、`0` 处 `default=direct`。
-- 继续按“一波一文件”推进，优先低风险样例，再处理高风险集成测试。
-- 后段主要风险集中在 `router_geosite_rules_integration.rs` 与 `router_hot_reload_integration.rs`。
+- `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
+- 下一阶段不再是测试字面量替换，而是检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
+- 近端候选集中在 `crates/sb-core/src/router/engine.rs` 的兼容占位默认值与 `app/sb-adapters` 的实际决策桥接路径。
+
+## 🆕 最新进展：L21 wave#123 推进落地（2026-03-06 04:47）
+
+**状态**：✅ 完成一段（router/mod 解析失败 fallback 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.120-wave123-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-core/src/router/mod.rs`：将 `router_build_index_from_str(...)` 失败后的 6 处空索引默认值从 `default: "direct"` 调整为 `default: "unresolved"`，并把同步快照注释改为显式 unresolved 口径；补充无效规则 helper fallback 测试
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.120-wave123-v1`，断言扩展到 `306` 条。
+   - `reports/l21/artifacts/wave123_v7_regression_block.txt`：在临时 root 将 `default: "unresolved"` 注回 `default: "direct"` 后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave123_wp1_app_tests_check.txt` PASS
+   - `wave123_wp1_sb_core_check.txt` PASS
+   - `wave123_strict_gate.txt` PASS
+   - `wave123_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 
 ## 🆕 最新进展：L21 wave#122 推进落地（2026-03-06 04:41）
 

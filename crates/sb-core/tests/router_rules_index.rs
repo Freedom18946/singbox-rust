@@ -42,6 +42,16 @@ fn rules_index_overflow_counting() {
 }
 
 #[test]
+fn rules_index_invalid_parse_falls_back_to_unresolved_in_helpers() {
+    let invalid_rules = "let bad-name=1";
+    assert!(router_build_index_from_str(invalid_rules, 1024).is_err());
+    assert_eq!(
+        sb_core::router::decide_udp_with_rules("no.match.example", true, invalid_rules),
+        "unresolved"
+    );
+}
+
+#[test]
 fn rules_index_ipv6_cidr_match() {
     // 验收：cidr6 规则必须正确解析（不能被 ':' 误切分）
     let rules = r#"

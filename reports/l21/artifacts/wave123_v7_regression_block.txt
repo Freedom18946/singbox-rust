@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 04:46) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.120-wave123-v1
+  FAIL: [W123-01-no-router-mod-parse-failure-default-direct-literal] forbidden pattern matched in crates/sb-core/src/router/mod.rs :: router mod parse-failure fallback should not keep silent direct default literal
+  FAIL: [W123-02-router-mod-parse-failure-default-unresolved-literal] required pattern missing in crates/sb-core/src/router/mod.rs :: router mod parse-failure fallback should use explicit unresolved default literal
+  FAIL: 2/306 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp.PR4QQ21lAz
