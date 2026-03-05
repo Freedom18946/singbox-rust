@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 23:29) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.54-wave57-v1
+  FAIL: [W57-01-no-vless-fallback-connect-helper] forbidden pattern matched in crates/sb-adapters/src/inbound/vless.rs :: vless inbound should not keep implicit fallback connect helper in proxy decision path
+  FAIL: 1/161 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave57-v7-regress.koOnOy
+[meta] injected_file=crates/sb-adapters/src/inbound/vless.rs
+[meta] injected_pattern=fallback_connect(
+[meta] exit_code=1
