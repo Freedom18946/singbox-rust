@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:35) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.30-wave33-v1
+  FAIL: [W33-01-no-core-bridge-hysteria2-direct-fallback] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge Hysteria2 outbound should not fallback to direct
+  FAIL: 1/101 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave33-v7-regress.AWM9SM
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=sb_config::ir::OutboundType::Hysteria2 => { direct_connector_fallback()
+[meta] exit_code=1

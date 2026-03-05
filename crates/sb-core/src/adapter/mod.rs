@@ -653,8 +653,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Hysteria2 => {
-                    // Adapter-provided in sb-adapters; core bridge falls back to direct
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge Hysteria2 outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Tuic => {
                     // TUIC handled by sb-adapters; core bridge falls back to direct
