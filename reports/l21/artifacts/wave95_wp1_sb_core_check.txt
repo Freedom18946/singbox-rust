@@ -1,0 +1,2 @@
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 3.04s

@@ -11,7 +11,7 @@ fn suffix_strict_only_uses_label_tail_map() {
     suffix:.example.com=proxy
     # "非标签边界"的 weird 后缀
     suffix:mple.com=reject
-    default=direct
+    default=unresolved
     "#;
     let idx = router_build_index_from_str(rules, 8192).expect("build");
     let h1 = normalize_host("api.example.com");
@@ -23,7 +23,7 @@ fn suffix_strict_only_uses_label_tail_map() {
     let h2 = normalize_host("yample.com");
     assert_eq!(
         router_index_decide_exact_suffix(&idx, &h2).unwrap_or(idx.default),
-        "direct"
+        "unresolved"
     );
     // 关闭严格模式以不影响其他测试
     std::env::remove_var("SB_ROUTER_SUFFIX_STRICT");
