@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.10-wave11-v1|||L21 wave#11 migration assertion allowlist version
+VERSION|l21.11-wave12-v1|||L21 wave#12 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -77,3 +77,7 @@ require|W10-03-inbound-http-test-uses-shutdown-channel|app/tests/inbound_http.rs
 forbid|W11-01-no-core-http-inbound-demo-concrete|examples/code-examples/proxy/http_inbound_demo.rs|singbox_rust::inbound::http::|http inbound demo should not use core inbound concrete implementation
 require|W11-02-demo-uses-adapter-http|examples/code-examples/proxy/http_inbound_demo.rs|use sb_adapters::inbound::http::\{serve_http, HttpProxyConfig\};|http inbound demo should use sb-adapters HTTP inbound implementation
 require|W11-03-demo-serve-http-entry|examples/code-examples/proxy/http_inbound_demo.rs|serve_http\(cfg, stop_rx, None\)\.await\?|http inbound demo should start via serve_http entrypoint
+
+forbid|W12-01-no-legacy-selector-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::selector::SelectorOutbound|selector UDP tests should not depend on removed selector adapter concrete type
+forbid|W12-02-no-legacy-urltest-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::urltest::UrlTestOutbound|urltest UDP tests should not depend on removed urltest adapter concrete type
+require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_core::outbound::selector_group::SelectorGroup;|selector UDP tests should use unified SelectorGroup implementation

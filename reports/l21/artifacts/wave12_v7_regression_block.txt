@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 19:06) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.11-wave12-v1
+  FAIL: [W12-01-no-legacy-selector-outbound-type] forbidden pattern matched in app/tests/selector_udp_test.rs :: selector UDP tests should not depend on removed selector adapter concrete type
+  FAIL: 1/59 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave12-v7-regress.helPLe
+[meta] injected_file=app/tests/selector_udp_test.rs
+[meta] injected_pattern=sb_adapters::outbound::selector::SelectorOutbound
+[meta] exit_code=1

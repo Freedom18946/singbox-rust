@@ -1,11 +1,35 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 17:55
-> **当前阶段**：L21 wave#11 推进完成（MIG-04 in_progress：examples 路径去 core HTTP concrete + strict gate 升级）
+> **最后更新**：2026-03-05 19:06
+> **当前阶段**：L21 wave#12 推进完成（MIG-06 in_progress：selector UDP 测试路径架构对齐 + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=56 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=59 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#12 推进落地（2026-03-05 19:06）
+
+**状态**：✅ `MIG-06 wave#12` 完成一段（selector UDP 测试路径架构对齐）；✅ strict gate allowlist 升级到 `l21.11-wave12-v1`；✅ 回流阻断负样例证据更新
+
+1. **迁移 wave#12（优先 selector/urltest 测试路径）**：
+   - `app/tests/selector_udp_test.rs`：
+     - 去除已删除的 `sb_adapters::outbound::{selector::SelectorOutbound,urltest::UrlTestOutbound}` 类型依赖。
+     - 统一改为直接使用 `sb_core::outbound::selector_group::SelectorGroup`（其已实现 `OutboundConnector + UdpOutboundFactory`）。
+     - 结果：恢复 `cargo check -p app --tests` 编译通过（仅保留 warning，无 error）。
+2. **strict gate allowlist 升级（V7 wave#12）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.11-wave12-v1`，断言扩展到 59 条（新增 W12-01~W12-03 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave12_v7_regression_block.txt`（在临时 root 注入 `sb_adapters::outbound::selector::SelectorOutbound` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`wave12_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --test selector_udp_test`（`reports/l21/artifacts/wave12_wp1_selector_udp_check.txt`）
+2. `cargo check -p app --tests`（`reports/l21/artifacts/wave12_wp1_app_tests_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (59 assertions)`，见 `reports/l21/artifacts/wave12_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave12_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`reports/l21/artifacts/wave12_gui_static_syntax_check.txt`）
 
 ---
 

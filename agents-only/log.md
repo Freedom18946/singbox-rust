@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 19:06] Agent: Codex (GPT-5)
+
+**任务**: 按用户要求继续推进 wave：修复 selector UDP 测试路径与当前统一 SelectorGroup 架构的 API 偏差，恢复 `app --tests` 编译，并升级 strict gate 防回流断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/tests/selector_udp_test.rs`
+    - 移除 `sb_adapters::outbound::selector::SelectorOutbound` 与 `sb_adapters::outbound::urltest::UrlTestOutbound` 依赖
+    - 统一改为直接使用 `sb_core::outbound::selector_group::SelectorGroup` 的 `UdpOutboundFactory` 能力
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.11-wave12-v1`
+    - 新增 `W12-01~W12-03` 迁移追踪断言（V7 断言总数 59）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave12_wp1_selector_udp_check.txt`（`cargo check -p app --test selector_udp_test` PASS）
+  - `reports/l21/artifacts/wave12_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave12_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (59 assertions)`）
+  - `reports/l21/artifacts/wave12_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave12_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#12）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3M wave#12，并将 MIG-06 更新为 in_progress）
+  - 更新 `agents-only/active_context.md`（新增 wave#12 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#12 目标已落地并形成可复算证据链）
+**备注**:
+- 本波次未改动 selector 生产实现语义，聚焦测试路径和回流阻断门禁；MIG-06 生产职责收敛待后续波次。
+
+---
+
 ### [2026-03-05 17:55] Agent: Codex (GPT-5)
 
 **任务**: 按用户指令继续推进 wave：完成 MIG-04 在 examples 路径的去 core HTTP inbound concrete 收敛，并升级 strict gate 断言与证据链。

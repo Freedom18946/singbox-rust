@@ -40,6 +40,19 @@
   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (56 assertions)`）
   - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave11_gui_static_syntax_check.txt`）
 
+### 🆕 L21 wave#12 推进快照（2026-03-05 19:06）
+
+- 状态：`MIG-06 in_progress`（wave#12 已完成 selector UDP 测试路径与统一 SelectorGroup 架构对齐 + V7 断言升级）
+- 本轮落地：
+  1. `app/tests/selector_udp_test.rs` 移除 `SelectorOutbound/UrlTestOutbound` 旧 concrete 依赖，统一改为 `SelectorGroup`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.11-wave12-v1`（59 assertions），新增 W12-01~W12-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave12_v7_regression_block.txt`（注入 `sb_adapters::outbound::selector::SelectorOutbound` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --test selector_udp_test`：PASS（`wave12_wp1_selector_udp_check.txt`）
+  - `cargo check -p app --tests`：PASS（`wave12_wp1_app_tests_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (59 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave12_gui_static_syntax_check.txt`）
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

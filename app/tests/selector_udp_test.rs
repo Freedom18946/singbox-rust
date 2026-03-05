@@ -148,9 +148,6 @@ async fn test_selector_udp_support() {
     // SelectorGroup exposes `select_by_name`.
     // But I don't have access to SelectorGroup instance here, it's inside the adapter.
 
-    // I can construct SelectorOutbound manually?
-    // Yes, SelectorOutbound is public in sb-adapters.
-    use sb_adapters::outbound::selector::SelectorOutbound;
     use sb_core::outbound::selector_group::SelectorGroup;
 
     // Re-create members with UDP factories
@@ -179,10 +176,9 @@ async fn test_selector_udp_support() {
         None,
     );
     let group = Arc::new(group);
-    let outbound = SelectorOutbound::new(group.clone());
 
     // Test proxy1
-    let session = outbound
+    let session = group
         .open_session()
         .await
         .expect("failed to open session");
@@ -196,7 +192,7 @@ async fn test_selector_udp_support() {
         .expect("failed to select proxy2");
 
     // Test proxy2
-    let session = outbound
+    let session = group
         .open_session()
         .await
         .expect("failed to open session");
@@ -210,7 +206,6 @@ async fn test_urltest_udp_support() {
     let member1_tag = "fast".to_string();
     let member2_tag = "slow".to_string();
 
-    use sb_adapters::outbound::urltest::UrlTestOutbound;
     use sb_core::outbound::selector_group::{SelectorGroup, UrlTestOptions};
 
     let members = vec![
@@ -247,10 +242,9 @@ async fn test_urltest_udp_support() {
         },
     );
     let group = Arc::new(group);
-    let outbound = UrlTestOutbound::new(group.clone());
 
     // Should select fast
-    let session = outbound
+    let session = group
         .open_session()
         .await
         .expect("failed to open session");
