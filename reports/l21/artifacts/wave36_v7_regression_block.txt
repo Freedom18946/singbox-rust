@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:46) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.33-wave36-v1
+  FAIL: [W36-01-no-core-bridge-trojan-direct-fallback] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge Trojan outbound should not fallback to direct
+  FAIL: 1/107 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave36-v7-regress.VNFJqb
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=sb_config::ir::OutboundType::Trojan => { direct_connector_fallback()
+[meta] exit_code=1
