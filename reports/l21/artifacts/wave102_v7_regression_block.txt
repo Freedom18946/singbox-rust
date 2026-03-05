@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 03:38) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.99-wave102-v1
+  FAIL: [W102-01-no-router-rules-file-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_file.rs :: router rules file test sample should not keep silent direct default literal
+  FAIL: [W102-02-router-rules-file-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_file.rs :: router rules file test sample should use explicit unresolved default literal
+  FAIL: 2/264 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave102-v7-regress.au7SQJ
+[meta] injected_file=crates/sb-core/tests/router_rules_file.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1
