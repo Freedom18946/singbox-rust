@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 02:01) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.87-wave90-v1
+  FAIL: [W90-01-no-dsl-sample-default-direct-literal] forbidden pattern matched in app/examples/dsl.sample.txt :: dsl sample should not keep silent direct default literal
+  FAIL: [W90-02-dsl-sample-default-unresolved-literal] required pattern missing in app/examples/dsl.sample.txt :: dsl sample should use explicit unresolved default literal
+  FAIL: 2/240 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave90-v7-regress.cKDlwJ
+[meta] injected_file=app/examples/dsl.sample.txt
+[meta] injected_pattern=default=direct
+[meta] exit_code=1
