@@ -100,7 +100,7 @@ pub(crate) fn register_inbound(
     .with_host(host_for_display)
     .with_inbound_type(inbound_type.to_string())
     .with_inbound_tag(inbound_tag.unwrap_or_else(|| inbound_type.to_string()))
-    .with_outbound_tag(outbound_tag.unwrap_or_else(|| "direct".to_string()))
+    .with_outbound_tag(outbound_tag.unwrap_or_else(|| "unresolved".to_string()))
     .with_chains(chains);
 
     if let Some(rule) = rule {

@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:03) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.74-wave77-v1
+  FAIL: [W77-01-no-conntrack-inbound-tcp-direct-outbound-tag-default] forbidden pattern matched in crates/sb-core/src/conntrack/inbound_tcp.rs :: conntrack inbound tcp should not silently fallback outbound tag to direct
+  FAIL: [W77-02-conntrack-inbound-tcp-unresolved-outbound-tag-default] required pattern missing in crates/sb-core/src/conntrack/inbound_tcp.rs :: conntrack inbound tcp should mark missing outbound tag as unresolved explicitly
+  FAIL: 2/214 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave77-v7-regress.Q6cAnE
+[meta] injected_file=crates/sb-core/src/conntrack/inbound_tcp.rs
+[meta] injected_pattern="direct".to_string()
+[meta] exit_code=1
