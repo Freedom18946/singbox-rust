@@ -1,11 +1,38 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 00:33
-> **当前阶段**：L21 wave#71 推进完成（MIG-02 hardening：router rules silent default literal 去显式 unresolved 标记 + strict gate 升级）
+> **最后更新**：2026-03-06 00:38
+> **当前阶段**：L21 wave#72 推进完成（MIG-02 hardening：socks5-udp unsupported decision 去 direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=198 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=201 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#72 推进落地（2026-03-06 00:38）
+
+**状态**：✅ `MIG-02 wave#72` 完成一段（socks5-udp unsupported decision 去 direct fallback）；✅ strict gate allowlist 升级到 `l21.69-wave72-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#72（MIG-02 hardening，inbound socks5-udp unsupported decision 路径）**：
+   - `crates/sb-adapters/src/inbound/socks/udp.rs`：
+     - `RDecision::Hijack/Sniff/Resolve/HijackDns` 分支不再“按 direct 处理”。
+     - 改为显式告警：`unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped`，并记录 `class=unsupported_no_fallback` 指标后丢包。
+2. **strict gate allowlist 升级（V7 wave#72）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.69-wave72-v1`，断言扩展到 201 条（新增 W72-01/W72-02/W72-03）。
+   - 回流阻断证据：`reports/l21/artifacts/wave72_v7_regression_block.txt`（在临时 root 注入 `Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave72_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave72_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave72_strict_gate.txt`，`V7 PASS (201 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave72_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave72_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave72_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave72_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave72_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave72_gui_static_syntax_check.txt`）
 
 ---
 

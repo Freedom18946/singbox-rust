@@ -1166,12 +1166,17 @@ pub async fn serve_udp_datagrams(
                 RDecision::Direct => {
                     _decision_label = "direct".to_string();
                 }
-                // Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
+                // Sniff/Resolve/Hijack not yet supported in UDP handlers.
                 RDecision::Hijack { .. }
                 | RDecision::Sniff
                 | RDecision::Resolve
                 | RDecision::HijackDns => {
-                    _decision_label = "direct".to_string();
+                    tracing::warn!(
+                        "socks5-udp: unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped"
+                    );
+                    #[cfg(feature = "metrics")]
+                    counter!("socks_udp_error_total", "class"=>"unsupported_no_fallback").increment(1);
+                    continue;
                 }
             }
         } else {

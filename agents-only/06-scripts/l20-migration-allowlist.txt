@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.68-wave71-v1|||L21 wave#71 migration assertion allowlist version
+VERSION|l21.69-wave72-v1|||L21 wave#72 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -234,3 +234,6 @@ forbid|W70-02-no-router-runtime-default-proxy-fn|crates/sb-core/src/router/runti
 forbid|W71-01-no-router-rules-default-rule-type-literal|crates/sb-core/src/router/rules.rs|unwrap_or\(\"default\"\)|router rules should not use silent \"default\" literal fallback for rule_type
 forbid|W71-02-no-router-rules-and-mode-literal|crates/sb-core/src/router/rules.rs|unwrap_or\(\"and\"\)|router rules should not use silent \"and\" literal fallback for mode
 require|W71-03-router-rules-unresolved-literal|crates/sb-core/src/router/rules.rs|unwrap_or\(\"unresolved\"\)|router rules should use explicit unresolved marker before fallback matching
+forbid|W72-01-no-socks-udp-unsupported-treat-as-direct-comment|crates/sb-adapters/src/inbound/socks/udp.rs|Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct|socks5-udp unsupported decisions should not be treated as direct
+require|W72-02-socks-udp-unsupported-no-fallback-msg|crates/sb-adapters/src/inbound/socks/udp.rs|unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped|socks5-udp unsupported decision path should emit explicit no-fallback diagnostics
+require|W72-03-socks-udp-unsupported-no-fallback-metric|crates/sb-adapters/src/inbound/socks/udp.rs|class\"=>\"unsupported_no_fallback|socks5-udp unsupported decision path should record unsupported_no_fallback metric class
