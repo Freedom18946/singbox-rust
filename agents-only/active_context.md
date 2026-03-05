@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#110**，聚焦 **router_priority 测试样例 default 去 silent direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#111**，聚焦 **router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（ 已标记为 Accepted Limitation）
 
@@ -22,7 +22,20 @@
 
 - 尚余  个文件、 处 。
 - 继续按“一波一文件”推进；高风险文件留到后段集中处理。
-- 当前 V7 口径：（280 assertions）。
+- 当前 V7 口径：（282 assertions）。
+
+### 🆕 L21 wave#111 推进快照（2026-03-06 04:15）
+
+- 状态：完成（ 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. ：router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback
+  2.  升级到 （282 assertions）
+  3. ：注入回流样例后  失败，
+- 最小验证：
+  -  PASS
+  -  PASS
+  -  PASS
+  -  PASS
 
 ### 🆕 L21 wave#110 推进快照（2026-03-06 04:14）
 

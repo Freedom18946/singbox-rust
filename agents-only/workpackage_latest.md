@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 04:14
-> **当前阶段**：L21 wave#110 推进完成（MIG-02 hardening：router_priority 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 04:15
+> **当前阶段**：L21 wave#111 推进完成（MIG-02 hardening：router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 （2026-02-24）为准
 > **Remaining**：0（ Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=280 assertions，2026-03-06）
+> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=282 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -20,6 +20,23 @@
 - 当前尚余  个测试文件、 处 。
 - 继续按“一波一文件”推进，优先低风险样例，再处理高风险集成测试。
 - 后段主要风险集中在  与 。
+
+## 🆕 最新进展：L21 wave#111 推进落地（2026-03-06 04:15）
+
+**状态**：✅ 完成一段（router_inbound_outbound_tag_matching 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 ；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - ：将解析样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量
+2. V7 升级：
+   -  升级到 ，断言扩展到  条。
+   - ：注入回流样例后  失败，。
+3. 验证：
+   -  PASS
+   -  PASS
+   -  PASS
+   -  PASS
+4. 剩余规模：
+   -  尚余  个测试文件、 处 。
 
 ## 🆕 最新进展：L21 wave#110 推进落地（2026-03-06 04:14）
 

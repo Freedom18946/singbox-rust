@@ -384,7 +384,7 @@ fn test_parse_rules_with_inbound_outbound() {
 inbound:http=proxy
 outbound:direct=reject
 exact:google.com=proxy
-default=direct
+default=unresolved
 "#;
 
     let rules = parse_rules(rules_text);
