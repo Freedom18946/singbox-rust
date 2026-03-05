@@ -8,7 +8,7 @@ async fn explain_reports_reason_paths() {
     suffix:.example.com=direct
     port:443=reject
     transport:udp=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     // HTTP exact

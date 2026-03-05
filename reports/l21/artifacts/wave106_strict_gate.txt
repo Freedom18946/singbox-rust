@@ -25,8 +25,8 @@
   INFO: reverse deps (workspace optional): ['sb-subscribe']
   PASS
 ── V7: L20 migration assertions ──
-  INFO: assertion version: l21.102-wave105-v1
-  PASS (276 assertions)
+  INFO: assertion version: l21.104-wave107-v1
+  PASS (280 assertions)
 
 ════════════════════════
 全部检查通过 (0 违规)

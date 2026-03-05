@@ -28,3 +28,4 @@ warning: variable does not need to be mutable
     |         help: remove this `mut`
 
 warning: `sb-adapters` (lib) generated 3 warnings (run `cargo fix --lib -p sb-adapters` to apply 3 suggestions)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 6.43s

@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-03-06 03:53
-> **当前阶段**：L21 wave#106 推进完成（MIG-02 hardening：router_rules_port_range 测试样例 default 去 silent direct fallback + strict gate 升级）
+> **当前阶段**：L21 wave#107 推进完成（MIG-02 hardening：router_explain 测试样例 default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=272 assertions，2026-03-06）
+> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=274 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
