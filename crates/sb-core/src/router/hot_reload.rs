@@ -520,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rule_set_validation() {
-        let valid_content = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=direct";
+        let valid_content = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=unresolved";
         let result = HotReloadManager::validate_rule_set(valid_content, 1000).await;
         assert!(result.is_ok());
 

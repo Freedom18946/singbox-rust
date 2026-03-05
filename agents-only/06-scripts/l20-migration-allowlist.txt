@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.85-wave88-v1|||L21 wave#88 migration assertion allowlist version
+VERSION|l21.86-wave89-v1|||L21 wave#89 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -272,3 +272,5 @@ forbid|W87-01-no-validator-v2-outbound-type-default-direct-literal|crates/sb-con
 require|W87-02-validator-v2-outbound-type-default-unresolved-literal|crates/sb-config/src/validator/v2.rs|unwrap_or\(\"unresolved\"\)|validator v2 outbound type parser should use explicit unresolved default literal
 forbid|W88-01-no-validator-v2-outbound-type-unknown-direct-fallback|crates/sb-config/src/validator/v2.rs|_ => crate::ir::OutboundType::Direct,|validator v2 outbound type parser should not silently fallback unknown type to direct
 require|W88-02-validator-v2-outbound-type-unknown-block-fallback|crates/sb-config/src/validator/v2.rs|_ => crate::ir::OutboundType::Block,|validator v2 outbound type parser should fallback unknown type to explicit block
+forbid|W89-01-no-router-hot-reload-validation-default-direct-literal|crates/sb-core/src/router/hot_reload.rs|default=direct|router hot_reload validation sample should not keep silent direct default literal
+require|W89-02-router-hot-reload-validation-default-unresolved-literal|crates/sb-core/src/router/hot_reload.rs|default=unresolved|router hot_reload validation sample should use explicit unresolved default literal

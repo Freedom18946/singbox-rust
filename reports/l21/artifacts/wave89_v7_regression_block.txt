@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:55) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.86-wave89-v1
+  FAIL: [W89-01-no-router-hot-reload-validation-default-direct-literal] forbidden pattern matched in crates/sb-core/src/router/hot_reload.rs :: router hot_reload validation sample should not keep silent direct default literal
+  FAIL: [W89-02-router-hot-reload-validation-default-unresolved-literal] required pattern missing in crates/sb-core/src/router/hot_reload.rs :: router hot_reload validation sample should use explicit unresolved default literal
+  FAIL: 2/238 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave89-v7-regress.S30F0f
+[meta] injected_file=crates/sb-core/src/router/hot_reload.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1
