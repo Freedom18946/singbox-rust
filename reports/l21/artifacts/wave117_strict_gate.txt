@@ -1,0 +1,32 @@
+=== 依赖边界检查 (2026-03-06 04:20) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.114-wave117-v1
+  PASS (294 assertions)
+
+════════════════════════
+全部检查通过 (0 违规)

@@ -230,7 +230,7 @@ fn test_parse_rules_with_ipversion() {
         ipversion:ipv6=direct
         ipversion:4=reject
         ipversion:6=proxy
-        default=direct
+        default=unresolved
     "#;
 
     let rules = parse_rules(rules_text);
@@ -301,7 +301,7 @@ fn test_ipversion_unknown_version_skipped() {
         ipversion:ipv4=direct
         ipversion:ipv5=proxy
         ipversion:invalid=reject
-        default=direct
+        default=unresolved
     "#;
 
     let rules = parse_rules(rules_text);
