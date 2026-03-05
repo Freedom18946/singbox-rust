@@ -26,7 +26,7 @@ default=unresolved
         ..Default::default()
     });
     assert_eq!(rule.as_deref(), Some("suffix"));
-    assert!(matches!(target, RouteTarget::Named(ref t) if t == "direct"));
+    assert!(matches!(target, RouteTarget::Named(ref t) if t == "unresolved"));
 
     let ip: std::net::IpAddr = "10.1.2.3".parse().unwrap();
     let (target, rule) = handle.select_ctx_and_record_with_meta(RouteCtx {

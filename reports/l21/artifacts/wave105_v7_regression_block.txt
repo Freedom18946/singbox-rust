@@ -1,15 +1,17 @@
-=== 依赖边界检查 (2026-03-06 03:51) ===
+=== 依赖边界检查 (2026-03-06 03:53) ===
 
 ── V7: L20 migration assertions ──
   INFO: assertion version: l21.102-wave105-v1
   FAIL: [W105-01-router-select-ctx-meta-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_select_ctx_meta.rs :: router select_ctx_meta test sample should not keep silent direct default literal
   FAIL: [W105-02-router-select-ctx-meta-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_select_ctx_meta.rs :: router select_ctx_meta test sample should use explicit unresolved default literal
-  FAIL: 2/270 migration assertions failed
+  FAIL: [W105-01-no-router-select-ctx-meta-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_select_ctx_meta.rs :: router_select_ctx_meta 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W105-02-router-select-ctx-meta-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_select_ctx_meta.rs :: router_select_ctx_meta 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 4/276 migration assertions failed
 
 ════════════════════════
 发现 1 类违规
 
-[meta] temp_root=/tmp/l21-wave105-v7-regress.25tXEd
+[meta] temp_root=/tmp/l21-wave105-v7-regress.6bzxepu4
 [meta] injected_file=crates/sb-core/tests/router_select_ctx_meta.rs
 [meta] injected_pattern=default=direct
 [meta] exit_code=1
