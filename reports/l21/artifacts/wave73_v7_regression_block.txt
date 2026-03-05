@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 00:43) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.70-wave73-v1
+  FAIL: [W73-01-no-socks-udp-enhanced-unsupported-treat-as-direct-comment] forbidden pattern matched in crates/sb-adapters/src/inbound/socks/udp_enhanced.rs :: socks5-udp enhanced unsupported decisions should not be treated as direct
+  FAIL: 1/204 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave73-v7-regress.cFAw4B
+[meta] injected_file=crates/sb-adapters/src/inbound/socks/udp_enhanced.rs
+[meta] injected_pattern=Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct
+[meta] exit_code=1
