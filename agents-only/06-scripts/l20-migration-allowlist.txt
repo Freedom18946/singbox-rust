@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.66-wave69-v1|||L21 wave#69 migration assertion allowlist version
+VERSION|l21.67-wave70-v1|||L21 wave#70 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -229,3 +229,5 @@ forbid|W68-01-no-socks-unsupported-decision-direct-fallback-comment|crates/sb-ad
 require|W68-02-socks-unsupported-decision-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/socks/mod.rs|unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|socks5 inbound unsupported decision branch should fail explicitly without direct fallback
 forbid|W69-01-no-anytls-unsupported-decision-direct-fallback-comment|crates/sb-adapters/src/inbound/anytls.rs|Not directly handled by AnyTLS inbound; fall back to direct|anytls inbound unsupported decision branch should not fallback to direct
 require|W69-02-anytls-unsupported-decision-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/anytls.rs|unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|anytls inbound unsupported decision branch should fail explicitly without direct fallback
+forbid|W70-01-no-router-runtime-global-proxy-singleton|crates/sb-core/src/router/runtime.rs|static GLOBAL_PROXY:|router runtime should not retain global default proxy singleton fallback state
+forbid|W70-02-no-router-runtime-default-proxy-fn|crates/sb-core/src/router/runtime.rs|pub fn default_proxy\(\)|router runtime should not expose default_proxy fallback accessor

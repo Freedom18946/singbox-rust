@@ -1,6 +1,3 @@
-use once_cell::sync::OnceCell;
-use std::sync::Arc;
-
 #[derive(Debug, Clone)]
 pub enum ProxyChoice {
     Direct,
@@ -17,8 +14,6 @@ impl ProxyChoice {
         }
     }
 }
-
-static GLOBAL_PROXY: OnceCell<Arc<ProxyChoice>> = OnceCell::new();
 
 /// 从环境变量解析默认代理（内部解析函数，供测试使用）
 pub fn parse_proxy_from_env() -> ProxyChoice {
@@ -44,19 +39,4 @@ pub fn parse_proxy_from_env() -> ProxyChoice {
         }
     }
     choice
-}
-
-/// 从环境变量解析默认代理：
-// - SB_ROUTER_DEFAULT_PROXY="direct" | "http://host:port" | "socks5://host:port"
-// - 或 SB_ROUTER_DEFAULT_PROXY_KIND="http|socks5|direct" + SB_ROUTER_DEFAULT_PROXY_ADDR="host:port"
-pub fn init_default_proxy_from_env() {
-    let choice = parse_proxy_from_env();
-    let _ = GLOBAL_PROXY.set(Arc::new(choice));
-}
-
-pub fn default_proxy() -> &'static ProxyChoice {
-    GLOBAL_PROXY
-        .get()
-        .map(|x| x.as_ref())
-        .unwrap_or(&ProxyChoice::Direct)
 }
