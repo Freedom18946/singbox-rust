@@ -17,7 +17,7 @@ async fn test_hot_reload_complete_functionality() {
     let rule_file = temp_dir.path().join("test_rules.txt");
 
     // Initial rule set
-    let initial_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=direct";
+    let initial_rules = "exact:example.com=direct\nsuffix:google.com=proxy\ndefault=unresolved";
     fs::write(&rule_file, initial_rules).await.unwrap();
 
     // Create hot reload configuration
@@ -77,7 +77,7 @@ async fn test_hot_reload_complete_functionality() {
     sleep(Duration::from_millis(500)).await;
 
     // Test 2: Validation success
-    let valid_rules = "exact:test.com=direct\nsuffix:proxy.com=proxy\ncidr4:192.168.1.0/24=direct\ndefault=direct";
+    let valid_rules = "exact:test.com=direct\nsuffix:proxy.com=proxy\ncidr4:192.168.1.0/24=direct\ndefault=unresolved";
     fs::write(&rule_file, valid_rules).await.unwrap();
 
     // Wait for processing
