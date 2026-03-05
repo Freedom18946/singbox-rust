@@ -14,6 +14,20 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#65 推进快照（2026-03-06 00:09）
+
+- 状态：`MIG-02 hardening`（wave#65 已完成 socks5 inbound proxy decision 去 implicit fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/socks/mod.rs`：`RDecision::Proxy(Some)` 在 endpoint/pool/registry 不可用时不再 fallback 到 default proxy/direct，改为显式 no-fallback 诊断 + `REP=0x01`；`RDecision::Proxy(None)` 改为显式 unsupported + `REP=0x01`。
+  2. 健康检查路径不再 override 决策到 direct，改为 `direct fallback is disabled (socks5 inbound)` 告警。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.62-wave65-v1`（185 assertions），新增 W65-01~W65-03。
+  4. 回流阻断证据：`reports/l21/artifacts/wave65_v7_regression_block.txt`（注入 `RDecision::Proxy(None) => match proxy` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave65_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave65_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (185 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave65_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#64 推进快照（2026-03-06 00:06）
 
 - 状态：`MIG-02 hardening`（wave#64 已完成 http inbound proxy decision 去 implicit fallback + V7 断言升级）

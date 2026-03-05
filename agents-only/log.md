@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-06 00:09] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 socks5 inbound proxy decision 路径 implicit fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/socks/mod.rs`
+    - `RDecision::Proxy(Some)` 在 pool endpoint 不可选、pool 不存在、registry 不可用三类场景不再 fallback 到 default proxy/direct
+    - `RDecision::Proxy(None)` 改为显式 unsupported + no-fallback 提示，并返回 SOCKS `REP=0x01`
+    - 健康检查路径不再 override 到 direct，仅保留 `direct fallback is disabled (socks5 inbound)` 告警
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.62-wave65-v1`
+    - 新增 `W65-01~W65-03`（禁止 socks5 Proxy(None) 默认代理回退 + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave65_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave65_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave65_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (185 assertions)`）
+  - `reports/l21/artifacts/wave65_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave65_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#65）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BN wave#65，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#65 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#65 目标已落地并形成可复算证据链）
+**备注**:
+- socks5 inbound 在 proxy 决策路径不再使用隐式 fallback，当前统一显式 no-fallback 诊断。
+
+---
+
 ### [2026-03-06 00:06] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 http inbound proxy decision 路径 implicit fallback 并升级 strict gate 断言。

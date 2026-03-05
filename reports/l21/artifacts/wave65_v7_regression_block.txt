@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 00:09) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.62-wave65-v1
+  FAIL: [W65-01-no-socks-proxy-none-default-fallback] forbidden pattern matched in crates/sb-adapters/src/inbound/socks/mod.rs :: socks5 inbound should not route Proxy(None) through default proxy fallback
+  FAIL: 1/185 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave65-v7-regress.A6CefG
+[meta] injected_file=crates/sb-adapters/src/inbound/socks/mod.rs
+[meta] injected_pattern=RDecision::Proxy(None) => match proxy
+[meta] exit_code=1
