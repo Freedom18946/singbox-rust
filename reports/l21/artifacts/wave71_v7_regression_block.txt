@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 00:33) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.68-wave71-v1
+  FAIL: [W71-01-no-router-rules-default-rule-type-literal] forbidden pattern matched in crates/sb-core/src/router/rules.rs :: router rules should not use silent \"default\" literal fallback for rule_type
+  FAIL: 1/198 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave71-v7-regress.qbMY67
+[meta] injected_file=crates/sb-core/src/router/rules.rs
+[meta] injected_pattern=unwrap_or("default")
+[meta] exit_code=1

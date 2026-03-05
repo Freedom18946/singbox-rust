@@ -150,12 +150,12 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
     type Error = String;
 
     fn try_from(ir: &sb_config::ir::RuleIR) -> Result<Self, Self::Error> {
-        let rule_type = match ir.rule_type.as_deref().unwrap_or("default") {
+        let rule_type = match ir.rule_type.as_deref().unwrap_or("unresolved") {
             "logical" => RuleType::Logical,
             _ => RuleType::Default,
         };
 
-        let mode = match ir.mode.as_deref().unwrap_or("and") {
+        let mode = match ir.mode.as_deref().unwrap_or("unresolved") {
             "or" => LogicalMode::Or,
             _ => LogicalMode::And,
         };

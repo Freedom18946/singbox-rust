@@ -14,6 +14,20 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#71 推进快照（2026-03-06 00:33）
+
+- 状态：`MIG-02 hardening`（wave#71 已完成 router rules silent default literal 去显式 unresolved 标记 + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-core/src/router/rules.rs`：`rule_type` 路径由 `unwrap_or("default")` 改为 `unwrap_or("unresolved")`；`mode` 路径由 `unwrap_or("and")` 改为 `unwrap_or("unresolved")`。
+  2. 保持现有 match 回退语义不变，同时移除 silent 默认字面量。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.68-wave71-v1`（198 assertions），新增 W71-01~W71-03。
+  4. 回流阻断证据：`reports/l21/artifacts/wave71_v7_regression_block.txt`（注入 `unwrap_or("default")` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave71_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave71_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (198 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave71_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#70 推进快照（2026-03-06 00:29）
 
 - 状态：`MIG-02 hardening`（wave#70 已完成 router runtime global default-proxy fallback 状态移除 + V7 断言升级）
