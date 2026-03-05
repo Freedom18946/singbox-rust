@@ -219,9 +219,6 @@ async fn connect_udp(
     cfg: &sb_config::Config,
     outbound: Option<String>,
 ) -> Result<()> {
-    use tokio::net::UdpSocket;
-    use tokio::time::{timeout, Duration};
-
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
 
     // Try to use an outbound UDP factory when available
@@ -288,59 +285,7 @@ async fn connect_udp(
         return Ok(());
     }
 
-    // Fallback: direct UDP
-    let target = format!("{host}:{port}");
-    let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.context("bind udp")?);
-    sock.connect(&target).await.context("connect udp")?;
-
-    // stdin -> udp
-    let s1 = sock.clone();
-    let a = tokio::spawn(async move {
-        let mut stdin = tokio::io::stdin();
-        let mut buf = [0u8; 8192];
-        loop {
-            match tokio::io::AsyncReadExt::read(&mut stdin, &mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    if s1.send(&buf[..n]).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    // udp -> stdout
-    let s2 = sock.clone();
-    let b = tokio::spawn(async move {
-        let mut stdout = tokio::io::stdout();
-        let mut buf = [0u8; 8192];
-        loop {
-            // add a small idle timeout to allow exit on no traffic
-            match timeout(Duration::from_millis(500), s2.recv(&mut buf)).await {
-                Ok(Ok(n)) => {
-                    if n == 0 {
-                        break;
-                    }
-                    if tokio::io::AsyncWriteExt::write_all(&mut stdout, &buf[..n])
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                Ok(Err(_)) => break,
-                Err(_) => {
-                    // idle, continue; allow CTRL-D on stdin task to finish
-                }
-            }
-        }
-        let _ = tokio::io::AsyncWriteExt::flush(&mut stdout).await;
-    });
-
-    let _ = tokio::join!(a, b);
-    Ok(())
+    anyhow::bail!("udp outbound factory not found; direct UDP fallback is disabled");
 }
 
 async fn fetch(url: String, output: Option<PathBuf>) -> Result<()> {

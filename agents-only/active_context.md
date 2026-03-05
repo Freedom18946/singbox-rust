@@ -509,6 +509,20 @@
   - `reports/l21/artifacts/wave45_v7_regression_block.txt`
   - `reports/l21/artifacts/wave45_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#46 推进快照（2026-03-05 21:37）
+
+- 状态：`MIG-02 hardening`（wave#46 完成 tools connect udp 分支去 direct fallback）
+- 本轮落地：
+  1. `app/src/cli/tools.rs`：`connect_udp` 在缺失 UDP factory 时不再 fallback 到 direct UDP socket，改为显式失败并返回 `udp outbound factory not found; direct UDP fallback is disabled`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.43-wave46-v1`（133 assertions），新增 W46-01/W46-02/W46-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave46_v7_regression_block.txt`（注入 `Fallback: direct UDP` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave46_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave46_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave46_strict_gate.txt`
+  - `reports/l21/artifacts/wave46_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave46_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

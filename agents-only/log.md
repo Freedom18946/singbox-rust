@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 21:37] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 tools connect udp 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/cli/tools.rs`
+    - `connect_udp` 在缺失 UDP factory 时不再 fallback 到 direct UDP socket
+    - 改为显式失败并返回 `udp outbound factory not found; direct UDP fallback is disabled`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.43-wave46-v1`
+    - 新增 `W46-01~W46-03`（禁止 tools udp direct fallback + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave46_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave46_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave46_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (133 assertions)`）
+  - `reports/l21/artifacts/wave46_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave46_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#46）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AU wave#46，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#46 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#46 目标已落地并形成可复算证据链）
+**备注**:
+- `tools connect udp` 在无工厂场景下不再“保底直连”，与 TCP 路径口径保持一致为显式 no-fallback 失败。
+
+---
+
 ### [2026-03-05 21:32] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 UDP balancer 路径 direct fallback 并升级 strict gate 断言。
