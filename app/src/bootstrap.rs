@@ -619,11 +619,11 @@ fn to_adapter_connector(
             );
             None
         }
-        sb_core::outbound::OutboundImpl::Vless(cfg) => {
-            use sb_core::outbound::vless::VlessOutbound;
-            VlessOutbound::new(cfg.clone())
-                .ok()
-                .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
+        sb_core::outbound::OutboundImpl::Vless(_cfg) => {
+            tracing::warn!(
+                "VLESS selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
         }
         sb_core::outbound::OutboundImpl::Vmess(_cfg) => {
             tracing::warn!(
