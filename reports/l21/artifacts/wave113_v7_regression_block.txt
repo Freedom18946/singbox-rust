@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 04:18) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.110-wave113-v1
+  FAIL: [W113-01-no-router-rules-include-cycle-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_include_cycle.rs :: router-rules-include-cycle 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+  FAIL: [W113-02-router-rules-include-cycle-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_include_cycle.rs :: router-rules-include-cycle 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
+  FAIL: 2/286 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmphn_sn73q

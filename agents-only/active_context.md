@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#112**，聚焦 **router_process_rules_integration 测试样例 default 去 silent direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#113**，聚焦 **router_rules_include_cycle 测试样例 default 去 silent direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -20,9 +20,22 @@
 
 ### 下一阶段预估（实时）
 
-- 尚余 `10` 个文件、`32` 处 `default=direct`。
+- 尚余 `9` 个文件、`30` 处 `default=direct`。
 - 继续按“一波一文件”推进；高风险文件留到后段集中处理。
-- 当前 V7 口径：`l21.109-wave112-v1`（284 assertions）。
+- 当前 V7 口径：`l21.110-wave113-v1`（286 assertions）。
+
+### 🆕 L21 wave#113 推进快照（2026-03-06 04:18）
+
+- 状态：完成（`crates/sb-core/tests/router_rules_include_cycle.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/tests/router_rules_include_cycle.rs`：router_rules_include_cycle 测试样例 default 去 silent direct fallback
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.110-wave113-v1`（286 assertions）
+  3. `wave113_v7_regression_block.txt`：注入回流样例后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave113_wp1_app_tests_check.txt` PASS
+  - `wave113_wp1_sb_core_check.txt` PASS
+  - `wave113_strict_gate.txt` PASS
+  - `wave113_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#112 推进快照（2026-03-06 04:17）
 
