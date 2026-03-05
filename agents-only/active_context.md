@@ -53,6 +53,17 @@
   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (59 assertions)`）
   - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave12_gui_static_syntax_check.txt`）
 
+### 🆕 L21 wave#13 推进快照（2026-03-05 19:09）
+
+- 状态：`MIG-06 in_progress`（wave#13 完成测试编译稳定性清理，门禁持续全绿）
+- 本轮落地：
+  1. `app/tests/protocol_chain_e2e.rs` 清理默认特性下无效告警：移除未使用顶层 `Arc`，并对 `is_constrained_dial_error_str` 添加 feature 条件编译。
+  2. 复验通过：`cargo check -p app --tests`、`check-boundaries --strict`、`bash -n scripts/l18/gui_real_cert.sh`。
+- 产物：
+  - `reports/l21/artifacts/wave13_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave13_strict_gate.txt`
+  - `reports/l21/artifacts/wave13_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

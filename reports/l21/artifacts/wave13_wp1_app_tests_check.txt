@@ -1,0 +1,17 @@
+   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
+warning: function `supported_kinds` is never used
+  --> app/src/analyze/registry.rs:63:8
+   |
+63 | pub fn supported_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `supported_async_kinds` is never used
+  --> app/src/analyze/registry.rs:98:8
+   |
+98 | pub fn supported_async_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `app` (bin "app" test) generated 2 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 5.19s

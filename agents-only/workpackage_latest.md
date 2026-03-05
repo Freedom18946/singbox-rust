@@ -1,11 +1,32 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 19:06
-> **当前阶段**：L21 wave#12 推进完成（MIG-06 in_progress：selector UDP 测试路径架构对齐 + strict gate 升级）
+> **最后更新**：2026-03-05 19:09
+> **当前阶段**：L21 wave#13 推进完成（MIG-06 in_progress：测试编译稳定性清理 + 门禁复验）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=59 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#13 推进落地（2026-03-05 19:09）
+
+**状态**：✅ `MIG-06 wave#13` 完成一段（测试编译稳定性清理）；✅ `app --tests`/strict gate 复验通过（不升级 allowlist 版本）
+
+1. **推进 wave#13（优先测试稳定性）**：
+   - `app/tests/protocol_chain_e2e.rs`：
+     - 移除顶层未使用 `std::sync::Arc` 导入（保持局部作用域导入）。
+     - `is_constrained_dial_error_str` 改为 `#[cfg(any(feature = "shadowsocks", feature = "vmess"))]`，避免默认特性下 dead_code 警告。
+2. **门禁与编译复验（沿用 wave#12 allowlist）**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave13_wp1_app_tests_check.txt`，仅剩 `app/src/analyze/registry.rs` 两处既有 warning）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave13_strict_gate.txt`，`V7 PASS (59 assertions)`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave13_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave13_wp1_app_tests_check.txt`）
+2. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave13_strict_gate.txt`）
+3. `bash -n scripts/l18/gui_real_cert.sh`（`wave13_gui_static_syntax_check.txt`）
 
 ---
 

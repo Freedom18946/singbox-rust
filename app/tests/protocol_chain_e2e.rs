@@ -12,12 +12,12 @@
 mod common;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
+#[cfg(any(feature = "shadowsocks", feature = "vmess"))]
 fn is_constrained_dial_error_str(s: &str) -> bool {
     let s = s.to_ascii_lowercase();
 
