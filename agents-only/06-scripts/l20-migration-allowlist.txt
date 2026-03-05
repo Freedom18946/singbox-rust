@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.35-wave38-v1|||L21 wave#38 migration assertion allowlist version
+VERSION|l21.36-wave39-v1|||L21 wave#39 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -147,3 +147,5 @@ forbid|W37-01-no-core-bridge-ssh-direct-fallback|crates/sb-core/src/adapter/mod.
 require|W37-02-core-bridge-ssh-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge SSH outbound is disabled; use adapter::bridge::build_bridge|core bridge SSH outbound should emit explicit migration guidance
 forbid|W38-01-no-core-bridge-selector-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Selector => \{[[:space:]]*direct_connector_fallback\(\)|core bridge Selector outbound should not fallback to direct
 require|W38-02-core-bridge-selector-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Selector outbound is disabled; use adapter::bridge::build_bridge|core bridge Selector outbound should emit explicit migration guidance
+forbid|W39-01-no-core-bridge-block-direct-fallback-noscaffold|crates/sb-core/src/adapter/mod.rs|Fall back to direct connector when scaffold is not available|core bridge Block outbound should not fallback to direct in no-scaffold mode
+require|W39-02-core-bridge-block-noscaffold-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Block outbound is disabled without scaffold; use adapter::bridge::build_bridge|core bridge Block no-scaffold path should emit explicit migration guidance

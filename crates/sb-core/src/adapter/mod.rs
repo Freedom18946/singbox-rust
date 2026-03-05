@@ -616,9 +616,9 @@ impl Bridge {
                     }
                     #[cfg(not(feature = "scaffold"))]
                     {
-                        // Fall back to direct connector when scaffold is not available
-                        use crate::outbound::direct_connector::DirectConnector;
-                        Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                        unsupported_outbound_connector(
+                            "core bridge Block outbound is disabled without scaffold; use adapter::bridge::build_bridge",
+                        )
                     }
                 }
                 sb_config::ir::OutboundType::Http => {

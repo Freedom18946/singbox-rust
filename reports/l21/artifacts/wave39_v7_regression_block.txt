@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:55) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.36-wave39-v1
+  FAIL: [W39-01-no-core-bridge-block-direct-fallback-noscaffold] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge Block outbound should not fallback to direct in no-scaffold mode
+  FAIL: 1/113 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave39-v7-regress.W1cJbY
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=Fall back to direct connector when scaffold is not available
+[meta] exit_code=1
