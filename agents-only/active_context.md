@@ -14,6 +14,20 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#67 推进快照（2026-03-06 00:17）
+
+- 状态：`MIG-02 hardening`（wave#67 已完成 http inbound unsupported decision 去 direct fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/http.rs`：`RDecision::Hijack/Sniff/Resolve/HijackDns` 分支不再 direct fallback，改为显式 unsupported + no-fallback 错误。
+  2. 收口 http inbound 在 unsupported decision 下的 direct 回退路径，统一显式迁移提示。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.64-wave67-v1`（189 assertions），新增 W67-01~W67-02。
+  4. 回流阻断证据：`reports/l21/artifacts/wave67_v7_regression_block.txt`（注入 `Not directly handled by HTTP inbound; fall back to direct` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave67_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave67_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (189 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave67_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#66 推进快照（2026-03-06 00:13）
 
 - 状态：`MIG-02 hardening`（wave#66 已完成 router keyword static default 去 silent fallback + V7 断言升级）

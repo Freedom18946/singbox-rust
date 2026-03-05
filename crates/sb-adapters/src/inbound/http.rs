@@ -530,10 +530,9 @@ where
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            // Not directly handled by HTTP inbound; fall back to direct
-            outbound_tag = Some("direct".to_string());
-            let s = direct_connect_hostport(host, port, &opts).await?;
-            Box::new(s)
+            return Err(anyhow!(
+                "http inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
+            ));
         }
     };
     // Respond 200, then tunnel forwarding
