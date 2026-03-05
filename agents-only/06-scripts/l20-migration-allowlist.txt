@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.27-wave30-v1|||L21 wave#30 migration assertion allowlist version
+VERSION|l21.28-wave31-v1|||L21 wave#31 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -131,3 +131,5 @@ forbid|W29-01-no-core-bridge-vless-direct-fallback|crates/sb-core/src/adapter/mo
 require|W29-02-core-bridge-vless-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge VLESS outbound is disabled; use adapter::bridge::build_bridge|core bridge VLESS outbound should emit explicit migration guidance
 forbid|W30-01-no-core-bridge-shadowsocks-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Shadowsocks => direct_connector_fallback\(\)|core bridge Shadowsocks outbound should not fallback to direct
 require|W30-02-core-bridge-shadowsocks-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Shadowsocks outbound is disabled; use adapter::bridge::build_bridge|core bridge Shadowsocks outbound should emit explicit migration guidance
+forbid|W31-01-no-core-bridge-urltest-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::UrlTest => direct_connector_fallback\(\)|core bridge URLTest outbound should not fallback to direct
+require|W31-02-core-bridge-urltest-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge URLTest outbound is disabled; use adapter::bridge::build_bridge|core bridge URLTest outbound should emit explicit migration guidance

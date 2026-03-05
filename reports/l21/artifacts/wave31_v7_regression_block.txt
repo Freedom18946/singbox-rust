@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:29) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.28-wave31-v1
+  FAIL: [W31-01-no-core-bridge-urltest-direct-fallback] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge URLTest outbound should not fallback to direct
+  FAIL: 1/97 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave31-v7-regress.gYyUph
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=sb_config::ir::OutboundType::UrlTest => direct_connector_fallback()
+[meta] exit_code=1
