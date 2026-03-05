@@ -23,6 +23,29 @@
 
 ## 日志记录
 
+### [2026-03-05 19:11] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 `app --tests` 剩余 dead_code 告警并完成门禁复验。
+**变更**:
+- 代码与验证：
+  - 更新 `app/src/analyze/registry.rs`
+    - 为 `supported_kinds` 与 `supported_async_kinds` 添加 `#[allow(dead_code)]`
+  - 执行验证：
+    - `cargo check -p app --tests` -> PASS（`reports/l21/artifacts/wave14_wp1_app_tests_check.txt`，无 warning）
+    - `bash agents-only/06-scripts/check-boundaries.sh --strict` -> PASS（`reports/l21/artifacts/wave14_strict_gate.txt`，`V7 PASS (59 assertions)`）
+    - `bash -n scripts/l18/gui_real_cert.sh` -> PASS（`reports/l21/artifacts/wave14_gui_static_syntax_check.txt`）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#14）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3O wave#14，回填 MIG-06 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#14 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#14 告警收敛完成，门禁持续通过）
+**备注**:
+- 本波次未修改 allowlist 版本，沿用 `l21.11-wave12-v1`。
+
+---
+
 ### [2026-03-05 19:09] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 selector 相关测试链路在默认特性下的无效编译告警，并完成门禁复验。

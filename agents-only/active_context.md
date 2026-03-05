@@ -64,6 +64,17 @@
   - `reports/l21/artifacts/wave13_strict_gate.txt`
   - `reports/l21/artifacts/wave13_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#14 推进快照（2026-03-05 19:11）
+
+- 状态：`MIG-06 in_progress`（wave#14 完成测试告警收敛，门禁持续全绿）
+- 本轮落地：
+  1. `app/src/analyze/registry.rs`：为 `supported_kinds/supported_async_kinds` 增加 `#[allow(dead_code)]`，清理 `app --tests` 既有 dead_code 告警。
+  2. 复验通过：`cargo check -p app --tests`、`check-boundaries --strict`、`bash -n scripts/l18/gui_real_cert.sh`。
+- 产物：
+  - `reports/l21/artifacts/wave14_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave14_strict_gate.txt`
+  - `reports/l21/artifacts/wave14_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
