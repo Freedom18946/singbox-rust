@@ -666,7 +666,9 @@ impl Bridge {
                     // Fallback to direct in this adapter path
                     direct_connector_fallback()
                 }
-                _ => direct_connector_fallback(),
+                _ => unsupported_outbound_connector(
+                    "core bridge outbound type is disabled; use adapter::bridge::build_bridge",
+                ),
             };
 
             bridge.add_outbound(name, kind, connector);

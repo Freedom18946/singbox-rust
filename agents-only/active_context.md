@@ -256,6 +256,20 @@
   - `reports/l21/artifacts/wave27_v7_regression_block.txt`
   - `reports/l21/artifacts/wave27_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#28 推进快照（2026-03-05 20:17）
+
+- 状态：`MIG-02 hardening`（wave#28 完成 core bridge outbound fallback 去静默 direct 回退）
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/mod.rs`：`Bridge::new_from_config` 兜底分支由 `_ => direct_connector_fallback()` 调整为 `unsupported_outbound_connector(...)`，未知类型不再静默降级为 direct。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.25-wave28-v1`（91 assertions），新增 W28-01/W28-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave28_v7_regression_block.txt`（注入 `_ => direct_connector_fallback()` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave28_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave28_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave28_strict_gate.txt`
+  - `reports/l21/artifacts/wave28_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave28_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

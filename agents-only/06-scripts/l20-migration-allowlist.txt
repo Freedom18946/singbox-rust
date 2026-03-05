@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.24-wave27-v1|||L21 wave#27 migration assertion allowlist version
+VERSION|l21.25-wave28-v1|||L21 wave#28 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -124,3 +124,6 @@ forbid|W27-01-no-core-bridge-httpup-concrete|crates/sb-core/src/adapter/mod.rs|o
 forbid|W27-02-no-core-bridge-socksup-concrete|crates/sb-core/src/adapter/mod.rs|outbound::socks_upstream::SocksUp|core bridge should not construct core SOCKS upstream concrete
 require|W27-03-core-bridge-http-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge HTTP outbound is disabled; use adapter::bridge::build_bridge|core bridge HTTP outbound should emit explicit migration guidance
 require|W27-04-core-bridge-socks-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge SOCKS outbound is disabled; use adapter::bridge::build_bridge|core bridge SOCKS outbound should emit explicit migration guidance
+
+forbid|W28-01-no-core-bridge-silent-direct-fallback|crates/sb-core/src/adapter/mod.rs|_ => direct_connector_fallback\(\)|core bridge should not silently fallback unknown outbound type to direct
+require|W28-02-core-bridge-fallback-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge outbound type is disabled; use adapter::bridge::build_bridge|core bridge fallback should emit explicit migration guidance
