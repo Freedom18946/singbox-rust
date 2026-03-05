@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 13:32) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.8-wave9-v1
+  FAIL: [W9-02-no-core-mixed-inbound-bridge-impl] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge should not instantiate core Mixed inbound implementation
+  FAIL: 1/50 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave9-v7-regress.foatqz
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=inbound::mixed::MixedInbound
+[meta] exit_code=1
