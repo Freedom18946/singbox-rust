@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.56-wave59-v1|||L21 wave#59 migration assertion allowlist version
+VERSION|l21.57-wave60-v1|||L21 wave#60 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -203,3 +203,6 @@ require|W58-03-anytls-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src
 forbid|W59-01-no-shadowtls-fallback-connect-helper|crates/sb-adapters/src/inbound/shadowtls.rs|fallback_connect\(|shadowtls inbound should not keep implicit fallback connect helper in proxy decision path
 require|W59-02-shadowtls-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/shadowtls.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|shadowtls named proxy decision path should emit explicit no-fallback migration diagnostics
 require|W59-03-shadowtls-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/shadowtls.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|shadowtls proxy decision without outbound tag should fail explicitly instead of fallback
+forbid|W60-01-no-redirect-proxy-none-default-fallback|crates/sb-adapters/src/inbound/redirect.rs|RDecision::Proxy\(None\) => match proxy|redirect inbound should not route Proxy(None) through default proxy fallback
+require|W60-02-redirect-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/redirect.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|redirect named proxy decision path should emit explicit no-fallback migration diagnostics
+require|W60-03-redirect-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/redirect.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|redirect proxy decision without outbound tag should fail explicitly instead of fallback
