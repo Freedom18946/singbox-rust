@@ -51,10 +51,10 @@ impl DnsResolve for FakeResolverTimeout {
 #[tokio::test]
 async fn resolver_route_hits_cidr_then_returns_decision() {
     let _serial = serial_guard();
-    // 规则：11.0.0.0/8 → proxy，默认 direct
+    // 规则：11.0.0.0/8 → proxy，默认 unresolved
     let rules = r#"
     cidr4:11.0.0.0/8=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     std::env::set_var("SB_ROUTER_DNS", "1");
@@ -68,12 +68,12 @@ async fn resolver_timeout_or_error_falls_back_to_default() {
     let _serial = serial_guard();
     let rules = r#"
     suffix:example.com=proxy
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     std::env::set_var("SB_ROUTER_DNS", "1");
     let h = RouterHandle::from_env().with_resolver(Arc::new(FakeResolverTimeout));
     // host 不匹配任何 suffix，解析又失败，应回退默认
     let d = h.decide_udp_async("nomatch.invalid").await;
-    assert_eq!(d, "direct");
+    assert_eq!(d, "unresolved");
 }
