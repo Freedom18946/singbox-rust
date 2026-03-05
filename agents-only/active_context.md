@@ -523,6 +523,20 @@
   - `reports/l21/artifacts/wave46_v7_regression_block.txt`
   - `reports/l21/artifacts/wave46_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#47 推进快照（2026-03-05 21:40）
+
+- 状态：`MIG-02 hardening`（wave#47 完成 v2ray test_route 分支去 direct fallback）
+- 本轮落地：
+  1. `crates/sb-api/src/v2ray/services.rs`：`test_route` 在 `outbound_tag` 为空时不再回填 `direct`，改为显式失败并返回 `routing outbound_tag is empty; implicit direct fallback is disabled; provide outbound_tag explicitly`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.44-wave47-v1`（135 assertions），新增 W47-01/W47-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave47_v7_regression_block.txt`（注入 `routing_ctx.outbound_tag = "direct".to_string();` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave47_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave47_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave47_strict_gate.txt`
+  - `reports/l21/artifacts/wave47_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave47_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

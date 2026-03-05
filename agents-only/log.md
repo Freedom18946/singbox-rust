@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 21:40] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 v2ray test_route 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-api/src/v2ray/services.rs`
+    - `test_route` 在 `outbound_tag` 为空时不再默认回填 `direct`
+    - 改为显式 `failed_precondition` 并返回 no-fallback 迁移提示
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.44-wave47-v1`
+    - 新增 `W47-01~W47-02`（禁止 v2ray test_route direct 默认回填 + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave47_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave47_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave47_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (135 assertions)`）
+  - `reports/l21/artifacts/wave47_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave47_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#47）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AV wave#47，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#47 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#47 目标已落地并形成可复算证据链）
+**备注**:
+- `v2ray test_route` 的空 outbound_tag 现在需要显式输入，不再隐式回退 direct。
+
+---
+
 ### [2026-03-05 21:37] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 tools connect udp 路径 direct fallback 并升级 strict gate 断言。

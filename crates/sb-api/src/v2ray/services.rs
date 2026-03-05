@@ -453,11 +453,10 @@ impl RoutingService for RouterServiceImpl {
 
         let mut routing_ctx = req.routing_context.unwrap_or_default();
 
-        // Production implementation: Set outbound based on routing context
-        // In production, this would query the actual router
-        // For now, provide a sensible default
         if routing_ctx.outbound_tag.is_empty() {
-            routing_ctx.outbound_tag = "direct".to_string();
+            return Err(Status::failed_precondition(
+                "routing outbound_tag is empty; implicit direct fallback is disabled; provide outbound_tag explicitly",
+            ));
         }
 
         if req.publish_result {
