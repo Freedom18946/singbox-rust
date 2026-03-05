@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.5-wave6-v1|||L21 wave#6 migration assertion allowlist version
+VERSION|l21.6-wave7-v1|||L21 wave#7 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -58,3 +58,6 @@ require|W6-07-use-empty-switchboard-socks-e2e-test|app/tests/socks_end2end.rs|Ou
 require|W6-08-use-empty-switchboard-socks-selector-test|app/tests/socks_via_selector.rs|OutboundSwitchboard::new\(\)|socks_via_selector test should use empty switchboard
 require|W6-09-use-empty-switchboard-upstream-auth-test|app/tests/upstream_auth.rs|OutboundSwitchboard::new\(\)|upstream_auth test should use empty switchboard
 require|W6-10-use-empty-switchboard-upstream-socks-http-test|app/tests/upstream_socks_http.rs|OutboundSwitchboard::new\(\)|upstream_socks_http test should use empty switchboard
+
+forbid|W7-01-no-switchboard-socksup-concrete|crates/sb-core/src/runtime/switchboard.rs|socks_upstream::SocksUp|switchboard should not construct core concrete SOCKS upstream connector
+require|W7-02-switchboard-socks-explicit-unsupported|crates/sb-core/src/runtime/switchboard.rs|SOCKS outbound in switchboard is disabled; use adapter bridge/supervisor path|switchboard SOCKS path should fail with explicit migration guidance

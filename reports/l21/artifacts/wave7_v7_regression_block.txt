@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 13:08) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.6-wave7-v1
+  FAIL: [W7-01-no-switchboard-socksup-concrete] forbidden pattern matched in crates/sb-core/src/runtime/switchboard.rs :: switchboard should not construct core concrete SOCKS upstream connector
+  FAIL: 1/44 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave7-v7-regress.0qCCTk
+[meta] injected_file=crates/sb-core/src/runtime/switchboard.rs
+[meta] injected_pattern=socks_upstream::SocksUp
+[meta] exit_code=1

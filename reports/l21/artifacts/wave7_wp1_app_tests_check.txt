@@ -1,0 +1,40 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Checking sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+    Checking app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
+warning: unused import: `std::sync::Arc`
+  --> app/tests/protocol_chain_e2e.rs:15:5
+   |
+15 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_constrained_dial_error_str` is never used
+  --> app/tests/protocol_chain_e2e.rs:21:4
+   |
+21 | fn is_constrained_dial_error_str(s: &str) -> bool {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `supported_kinds` is never used
+  --> app/src/analyze/registry.rs:63:8
+   |
+63 | pub fn supported_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `supported_async_kinds` is never used
+  --> app/src/analyze/registry.rs:98:8
+   |
+98 | pub fn supported_async_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `app` (test "protocol_chain_e2e") generated 2 warnings (run `cargo fix --test "protocol_chain_e2e" -p app` to apply 1 suggestion)
+warning: `app` (bin "app" test) generated 2 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 17.43s
