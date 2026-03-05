@@ -817,7 +817,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         .map_err(|e| anyhow!("outbound {}", e))?;
 
     // Resolve default outbound in context (L2.9)
-    ctx.outbound_manager.ensure_fallback_direct().await;
+    // Note: this bootstrap path does not auto-inject fallback connectors.
     let default_tag = cfg_ir.route.final_outbound.as_deref()
         .or(cfg_ir.route.default.as_deref());
     if let Some(tag) = default_tag {

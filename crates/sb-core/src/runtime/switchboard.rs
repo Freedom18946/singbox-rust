@@ -224,19 +224,29 @@ impl OutboundSwitchboard {
         Ok(())
     }
 
-    /// Get a connector by name, falling back to default if not found
+    /// Get a connector by name.
+    ///
+    /// No implicit fallback is performed for unknown names.
     pub fn get_connector(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
         if let Some(connector) = self.registry.get(name) {
             return Some(connector.clone());
         }
 
-        if name == "direct" || name == "default" {
+        if name == "default" {
             return self.default_connector.clone();
         }
 
-        // Log warning for unknown connector
-        warn!("Unknown outbound connector '{}', attempting fallback", name);
-        self.default_connector.clone()
+        let mut available = self.list_connectors();
+        if self.default_connector.is_some() {
+            available.push("default".to_string());
+            available.sort();
+        }
+        warn!(
+            requested = %name,
+            available = ?available,
+            "Outbound connector not found; no fallback connector is applied"
+        );
+        None
     }
 
     /// Register a UDP factory for an outbound by name
@@ -304,15 +314,6 @@ impl SwitchboardBuilder {
     /// Build outbound connectors from configuration IR
     pub fn from_config_ir(ir: &sb_config::ir::ConfigIR) -> SbResult<OutboundSwitchboard> {
         let mut builder = Self::new();
-
-        // Add direct connector as default
-        {
-            let direct = DirectConnector;
-            builder
-                .switchboard
-                .set_default(direct)
-                .context("Failed to set direct connector as default")?;
-        }
 
         // Register outbound connectors from IR
         for outbound_ir in &ir.outbounds {
@@ -751,37 +752,5 @@ impl OutboundConnector for DegradedConnector {
 
     fn name(&self) -> &'static str {
         "degraded"
-    }
-}
-
-/// A simple direct connector that establishes direct connections to targets
-#[derive(Debug, Clone, Default)]
-struct DirectConnector;
-
-#[async_trait::async_trait]
-impl OutboundConnector for DirectConnector {
-    async fn dial(&self, target: Target, opts: DialOpts) -> AdapterResult<BoxedStream> {
-        use tokio::net::TcpStream;
-        use tokio::time::timeout;
-
-        let addr = format!("{}:{}", target.host, target.port);
-
-        let stream = match target.kind {
-            TransportKind::Tcp => timeout(opts.connect_timeout, TcpStream::connect(&addr))
-                .await
-                .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
-                .map_err(AdapterError::Io)?,
-            TransportKind::Udp => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    "DirectConnector does not support UDP".to_string(),
-                ));
-            }
-        };
-
-        Ok(Box::new(stream))
-    }
-
-    fn name(&self) -> &'static str {
-        "direct"
     }
 }

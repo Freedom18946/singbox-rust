@@ -412,8 +412,11 @@ impl OutboundManager {
         validate_and_sort(&all_tags, &deps)
     }
 
-    /// Resolve default outbound (Go parity: explicit tag → first → "direct" fallback).
-    /// 解析默认出站（Go 对等：显式标签 → 第一个 → "direct" 后备）。
+    /// Resolve default outbound (explicit tag → first registered).
+    /// 解析默认出站（显式标签 → 第一个已注册项）。
+    ///
+    /// Returns a diagnostic error if no connector can be selected.
+    /// 若无法选择任何连接器，返回可诊断错误。
     pub async fn resolve_default(&self, config_tag: Option<&str>) -> Result<String, String> {
         // 1. Explicit tag from config (route.final / route.default)
         if let Some(tag) = config_tag {
@@ -443,34 +446,13 @@ impl OutboundManager {
             );
             return Ok(first.clone());
         }
-        // 3. Fallback: create "direct"
-        self.ensure_fallback_direct().await;
-        self.set_default(Some("direct".to_string())).await;
-        info!(
-            target: "sb_core::outbound",
-            default = "direct",
-            source = "fallback",
-            "default outbound resolved"
-        );
-        Ok("direct".to_string())
-    }
-
-    /// Ensure a fallback "direct" outbound exists.
-    /// 确保存在后备 "direct" 出站。
-    pub async fn ensure_fallback_direct(&self) {
-        use crate::outbound::DirectConnector;
-
-        let has_direct = {
-            let adapters = self.adapters.read().await;
-            let legacy = self.legacy_connectors.read().await;
-            adapters.contains_key("direct") || legacy.contains_key("direct")
-        };
-
-        if !has_direct {
-            debug!("outbound: adding fallback direct connector");
-            let direct = Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>;
-            self.add_connector("direct".to_string(), direct).await;
-        }
+        // 3. No fallback injection: fail with explicit diagnostics.
+        let mut available = self.list_tags().await;
+        available.sort();
+        Err(format!(
+            "no outbound connectors available; cannot resolve default outbound (requested={:?}, available={:?})",
+            config_tag, available
+        ))
     }
 }
 
@@ -732,15 +714,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_default_fallback_direct() {
+    async fn test_resolve_default_without_connectors_is_error() {
         let manager = OutboundManager::new();
-        // No outbounds registered at all
-
         let result = manager.resolve_default(None).await;
-        assert_eq!(result.unwrap(), "direct");
-        assert_eq!(manager.get_default().await, Some("direct".to_string()));
-        // Should have auto-created the direct connector
-        assert!(manager.contains("direct").await);
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(err.contains("no outbound connectors available"));
+        assert!(manager.get_default().await.is_none());
     }
 
     #[tokio::test]

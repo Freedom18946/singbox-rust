@@ -1197,7 +1197,7 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> 
         return Err(anyhow::anyhow!("outbound {}", cycle_err));
     }
 
-    // Resolve default outbound (Go parity: route.final → first → "direct")
+    // Resolve default outbound (route.final/default → first registered → explicit error)
     let route_opts = ctx.network.route_options();
     let default_tag = route_opts
         .final_outbound

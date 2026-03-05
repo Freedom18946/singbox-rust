@@ -865,7 +865,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             .unwrap_or_default();
         if want_transport_info {
             info!(
-                target: "sb_core::transport",
+                target: "sb_transport",
                 outbound = %name,
                 kind = %kind,
                 chain = %chain.join(","),
@@ -875,7 +875,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             );
         } else {
             tracing::debug!(
-                target: "sb_core::transport",
+                target: "sb_transport",
                 outbound = %name,
                 kind = %kind,
                 chain = %chain.join(","),
