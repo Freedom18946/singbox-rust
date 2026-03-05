@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 02:12) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.91-wave94-v1
+  FAIL: [W94-01-no-router-rules-decide-with-meta-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_decide_with_meta.rs :: router rules decide_with_meta test sample should not keep silent direct default literal
+  FAIL: [W94-02-router-rules-decide-with-meta-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_decide_with_meta.rs :: router rules decide_with_meta test sample should use explicit unresolved default literal
+  FAIL: 2/248 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave94-v7-regress.kWCLqZ
+[meta] injected_file=crates/sb-core/tests/router_rules_decide_with_meta.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

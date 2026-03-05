@@ -7,7 +7,7 @@ fn decide_with_meta_labels_buckets() {
 exact:example.com=direct
 suffix:example.org=proxy
 keyword:test=proxy
-default=direct
+default=unresolved
 "#,
     );
     let eng = Engine::build(rules);

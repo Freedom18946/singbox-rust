@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.90-wave93-v1|||L21 wave#93 migration assertion allowlist version
+VERSION|l21.91-wave94-v1|||L21 wave#94 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -282,3 +282,5 @@ forbid|W92-01-no-process-routing-demo-default-direct-literal|crates/sb-core/exam
 require|W92-02-process-routing-demo-default-unresolved-literal|crates/sb-core/examples/process_routing_demo.rs|default=unresolved|process routing demo should use explicit unresolved default literal
 forbid|W93-01-no-rule-hot-reload-demo-default-direct-literal|crates/sb-core/examples/rule_hot_reload_demo.rs|default=direct|rule hot reload demo should not keep silent direct default literal
 require|W93-02-rule-hot-reload-demo-default-unresolved-literal|crates/sb-core/examples/rule_hot_reload_demo.rs|default=unresolved|rule hot reload demo should use explicit unresolved default literal
+forbid|W94-01-no-router-rules-decide-with-meta-default-direct-literal|crates/sb-core/tests/router_rules_decide_with_meta.rs|default=direct|router rules decide_with_meta test sample should not keep silent direct default literal
+require|W94-02-router-rules-decide-with-meta-default-unresolved-literal|crates/sb-core/tests/router_rules_decide_with_meta.rs|default=unresolved|router rules decide_with_meta test sample should use explicit unresolved default literal
