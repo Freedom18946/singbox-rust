@@ -101,8 +101,12 @@ fn calc_rule_id(r: &ExplainResult) -> String {
 }
 
 fn derive_outbound(r: &ExplainResult) -> String {
-    // 简化：优先从 reason 提取 "kind:name"，否则 "default"
-    r.reason.split(':').nth(1).unwrap_or("default").to_string()
+    // 简化：优先从 reason 提取 "kind:name"，否则显式 unresolved
+    r.reason
+        .split(':')
+        .nth(1)
+        .unwrap_or("unresolved")
+        .to_string()
 }
 
 /// Extract outbound name from reason string

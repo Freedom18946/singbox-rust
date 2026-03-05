@@ -23,6 +23,34 @@
 
 ## 日志记录
 
+### [2026-03-05 22:00] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 router explain 路径 silent default fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/router/explain.rs`
+    - `derive_outbound` 从 `unwrap_or(\"default\")` 改为 `unwrap_or(\"unresolved\")`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.49-wave52-v1`
+    - 新增 `W52-01~W52-02`（禁止 derive_outbound silent default fallback + 要求 unresolved 显式标记）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave52_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave52_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave52_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (147 assertions)`）
+  - `reports/l21/artifacts/wave52_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave52_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#52）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BA wave#52，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#52 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#52 目标已落地并形成可复算证据链）
+**备注**:
+- router explain 的 `derive_outbound` 已不再使用 silent `default`，改为显式 `unresolved`。
+
+---
+
 ### [2026-03-05 21:57] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 router explain 路径 direct 默认推断并升级 strict gate 断言。

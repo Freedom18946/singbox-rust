@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-05 22:00) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.49-wave52-v1
+  FAIL: [W52-01-no-router-explain-derive-default-fallback] forbidden pattern matched in crates/sb-core/src/router/explain.rs :: router explain derive_outbound should not use silent default fallback marker
+  FAIL: [W52-02-router-explain-derive-unresolved-fallback] required pattern missing in crates/sb-core/src/router/explain.rs :: router explain derive_outbound should use explicit unresolved marker when outbound cannot be derived
+  FAIL: 2/147 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave52-v7-regress.URZmIO
+[meta] injected_file=crates/sb-core/src/router/explain.rs
+[meta] injected_pattern=unwrap_or("default")
+[meta] exit_code=1
