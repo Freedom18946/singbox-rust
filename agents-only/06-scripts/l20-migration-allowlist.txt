@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.54-wave57-v1|||L21 wave#57 migration assertion allowlist version
+VERSION|l21.55-wave58-v1|||L21 wave#58 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -197,3 +197,6 @@ require|W56-03-vmess-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/
 forbid|W57-01-no-vless-fallback-connect-helper|crates/sb-adapters/src/inbound/vless.rs|fallback_connect\(|vless inbound should not keep implicit fallback connect helper in proxy decision path
 require|W57-02-vless-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/vless.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|vless named proxy decision path should emit explicit no-fallback migration diagnostics
 require|W57-03-vless-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/vless.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|vless proxy decision without outbound tag should fail explicitly instead of fallback
+forbid|W58-01-no-anytls-fallback-connect-helper|crates/sb-adapters/src/inbound/anytls.rs|fallback_connect\(|anytls inbound should not keep implicit fallback connect helper in proxy decision path
+require|W58-02-anytls-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/anytls.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|anytls named proxy decision path should emit explicit no-fallback migration diagnostics
+require|W58-03-anytls-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/anytls.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|anytls proxy decision without outbound tag should fail explicitly instead of fallback

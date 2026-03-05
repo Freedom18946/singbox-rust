@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 23:32) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.55-wave58-v1
+  FAIL: [W58-01-no-anytls-fallback-connect-helper] forbidden pattern matched in crates/sb-adapters/src/inbound/anytls.rs :: anytls inbound should not keep implicit fallback connect helper in proxy decision path
+  FAIL: 1/164 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave58-v7-regress.E7tnCX
+[meta] injected_file=crates/sb-adapters/src/inbound/anytls.rs
+[meta] injected_pattern=fallback_connect(
+[meta] exit_code=1

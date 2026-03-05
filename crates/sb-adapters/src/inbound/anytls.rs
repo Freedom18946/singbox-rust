@@ -25,7 +25,6 @@ use sb_core::outbound::{
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -480,7 +479,6 @@ async fn connect_via_router(
         rule = r;
     }
 
-    let proxy = default_proxy();
     let opts = ConnectOpts::default();
     let target = format!("{}:{}", dest.host, dest.port);
 
@@ -517,41 +515,28 @@ async fn connect_via_router(
                             }
                         }
                     } else {
-                        let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
-                        let tag = match proxy {
-                            ProxyChoice::Direct => "direct",
-                            ProxyChoice::Http(_) => "http",
-                            ProxyChoice::Socks5(_) => "socks5",
-                        };
-                        (s, Some(tag.to_string()))
+                        return Err(anyhow!(
+                            "anytls: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+                            name
+                        ));
                     }
                 } else {
-                    let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
-                    let tag = match proxy {
-                        ProxyChoice::Direct => "direct",
-                        ProxyChoice::Http(_) => "http",
-                        ProxyChoice::Socks5(_) => "socks5",
-                    };
-                    (s, Some(tag.to_string()))
+                    return Err(anyhow!(
+                        "anytls: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                        name
+                    ));
                 }
             } else {
-                let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
-                let tag = match proxy {
-                    ProxyChoice::Direct => "direct",
-                    ProxyChoice::Http(_) => "http",
-                    ProxyChoice::Socks5(_) => "socks5",
-                };
-                (s, Some(tag.to_string()))
+                return Err(anyhow!(
+                    "anytls: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path",
+                    name
+                ));
             }
         }
         RDecision::Proxy(None) => {
-            let s = fallback_connect(proxy, &dest.host, dest.port, &opts).await?;
-            let tag = match proxy {
-                ProxyChoice::Direct => "direct",
-                ProxyChoice::Http(_) => "http",
-                ProxyChoice::Socks5(_) => "socks5",
-            };
-            (s, Some(tag.to_string()))
+            return Err(anyhow!(
+                "anytls: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+            ));
         }
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("destination rejected by router"))
@@ -566,20 +551,6 @@ async fn connect_via_router(
     };
 
     Ok((stream, outbound_tag, decision, rule))
-}
-
-async fn fallback_connect(
-    proxy: &ProxyChoice,
-    host: &str,
-    port: u16,
-    opts: &ConnectOpts,
-) -> Result<TcpStream> {
-    let stream = match proxy {
-        ProxyChoice::Direct => direct_connect_hostport(host, port, opts).await?,
-        ProxyChoice::Http(addr) => http_proxy_connect_through_proxy(addr, host, port, opts).await?,
-        ProxyChoice::Socks5(addr) => socks5_connect_through_socks5(addr, host, port, opts).await?,
-    };
-    Ok(stream)
 }
 
 fn build_padding_factory(param: &InboundParam) -> Result<Arc<PaddingFactory>> {

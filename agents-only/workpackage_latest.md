@@ -1,11 +1,39 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 23:29
-> **当前阶段**：L21 wave#57 推进完成（MIG-02 hardening：vless inbound proxy decision 去 implicit fallback + strict gate 升级）
+> **最后更新**：2026-03-05 23:32
+> **当前阶段**：L21 wave#58 推进完成（MIG-02 hardening：anytls inbound proxy decision 去 implicit fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=161 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=164 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#58 推进落地（2026-03-05 23:32）
+
+**状态**：✅ `MIG-02 wave#58` 完成一段（anytls inbound proxy decision 路径去 implicit fallback）；✅ strict gate allowlist 升级到 `l21.55-wave58-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#58（MIG-02 hardening，inbound AnyTLS 路径）**：
+   - `crates/sb-adapters/src/inbound/anytls.rs`：
+     - `RDecision::Proxy(Some(name))` 在 pool 不可选 / 不存在 / registry 不可用时，不再 fallback 连接默认代理。
+     - `RDecision::Proxy(None)` 不再隐式 fallback，改为显式 unsupported + no-fallback 诊断。
+     - 删除 `fallback_connect` helper，阻断 anytls inbound 隐式 fallback 回流。
+2. **strict gate allowlist 升级（V7 wave#58）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.55-wave58-v1`，断言扩展到 164 条（新增 W58-01/W58-02/W58-03）。
+   - 回流阻断证据：`reports/l21/artifacts/wave58_v7_regression_block.txt`（在临时 root 注入 `fallback_connect(` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave58_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave58_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave58_strict_gate.txt`，`V7 PASS (164 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave58_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave58_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave58_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave58_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave58_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave58_gui_static_syntax_check.txt`）
 
 ---
 
