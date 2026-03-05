@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.93-wave96-v1|||L21 wave#96 migration assertion allowlist version
+VERSION|l21.94-wave97-v1|||L21 wave#97 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -288,3 +288,5 @@ forbid|W95-01-no-router-suffix-strict-default-direct-literal|crates/sb-core/test
 require|W95-02-router-suffix-strict-default-unresolved-literal|crates/sb-core/tests/router_suffix_strict.rs|default=unresolved|router suffix strict test sample should use explicit unresolved default literal
 forbid|W96-01-no-router-resolver-async-default-direct-literal|crates/sb-core/tests/router_resolver_async.rs|default=direct|router resolver async test sample should not keep silent direct default literal
 require|W96-02-router-resolver-async-default-unresolved-literal|crates/sb-core/tests/router_resolver_async.rs|default=unresolved|router resolver async test sample should use explicit unresolved default literal
+forbid|W97-01-no-router-rules-include-default-direct-literal|crates/sb-core/tests/router_rules_include.rs|default=direct|router rules include test sample should not keep silent direct default literal
+require|W97-02-router-rules-include-default-unresolved-literal|crates/sb-core/tests/router_rules_include.rs|default=unresolved|router rules include test sample should use explicit unresolved default literal

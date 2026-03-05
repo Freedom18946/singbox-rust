@@ -16,7 +16,7 @@ async fn include_is_expanded_in_hot_reload() {
     {
         let mut f = fs::File::create(&main_path).unwrap();
         writeln!(f, "include inc.rules").unwrap();
-        writeln!(f, "default=direct").unwrap();
+        writeln!(f, "default=unresolved").unwrap();
     }
 
     std::env::set_var("SB_ROUTER_RULES_FILE", &main_path);
