@@ -2079,7 +2079,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
     }
     if let Some(outs) = doc.get("outbounds").and_then(|v| v.as_array()) {
         for o in outs {
-            let ty = match o.get("type").and_then(|v| v.as_str()).unwrap_or("direct") {
+            let ty = match o.get("type").and_then(|v| v.as_str()).unwrap_or("unresolved") {
                 "direct" => crate::ir::OutboundType::Direct,
                 "http" => crate::ir::OutboundType::Http,
                 "socks" => crate::ir::OutboundType::Socks,
