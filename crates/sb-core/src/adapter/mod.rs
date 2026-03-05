@@ -464,50 +464,26 @@ impl Bridge {
                             as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Http => {
-                        // Create HTTP CONNECT inbound service (optionally with Basic auth)
-                        use crate::inbound::http::{HttpConfig, HttpInboundService};
-
-                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
-
-                        let mut cfg = HttpConfig::default();
-                        if let Some(creds) = &inbound.basic_auth {
-                            // Enable basic auth if username/password both present
-                            let user = creds
-                                .username
-                                .clone()
-                                .or_else(|| creds.username_env.clone());
-                            let pass = creds
-                                .password
-                                .clone()
-                                .or_else(|| creds.password_env.clone());
-                            if user.is_some() && pass.is_some() {
-                                cfg.auth_enabled = true;
-                                cfg.username = user;
-                                cfg.password = pass;
-                            }
-                        }
-                        cfg.sniff_enabled = inbound.sniff;
-
-                        Arc::new(HttpInboundService::with_config(addr, cfg))
-                            as Arc<dyn InboundService>
+                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
+                            "http",
+                            "core bridge HTTP inbound is disabled",
+                            Some(
+                                "Use adapter::bridge::build_bridge (sb-adapters HTTP inbound) instead"
+                                    .to_string(),
+                            ),
+                        );
+                        Arc::new(msg) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Mixed => {
-                        use crate::inbound::mixed::MixedInbound;
-
-                        let mut srv = MixedInbound::new(inbound.listen.clone(), inbound.port);
-                        if let Some(creds) = &inbound.basic_auth {
-                            let user = creds
-                                .username
-                                .clone()
-                                .or_else(|| creds.username_env.clone());
-                            let pass = creds
-                                .password
-                                .clone()
-                                .or_else(|| creds.password_env.clone());
-                            srv = srv.with_basic_auth(user, pass);
-                        }
-                        srv = srv.with_sniff(inbound.sniff);
-                        Arc::new(srv) as Arc<dyn InboundService>
+                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
+                            "mixed",
+                            "core bridge mixed inbound is disabled",
+                            Some(
+                                "Use adapter::bridge::build_bridge (sb-adapters mixed inbound) instead"
+                                    .to_string(),
+                            ),
+                        );
+                        Arc::new(msg) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Tun => {
                         // TUN inbound service
