@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.97-wave100-v1|||L21 wave#100 migration assertion allowlist version
+VERSION|l21.98-wave101-v1|||L21 wave#101 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -296,3 +296,5 @@ forbid|W99-01-no-router-rules-reload-noop-default-direct-literal|crates/sb-core/
 require|W99-02-router-rules-reload-noop-default-unresolved-literal|crates/sb-core/tests/router_rules_reload_noop.rs|default=unresolved|router rules reload noop test sample should use explicit unresolved default literal
 forbid|W100-01-no-router-cache-transport-default-direct-literal|crates/sb-core/tests/router_cache_transport.rs|default=direct|router cache transport test sample should not keep silent direct default literal
 require|W100-02-router-cache-transport-default-unresolved-literal|crates/sb-core/tests/router_cache_transport.rs|default=unresolved|router cache transport test sample should use explicit unresolved default literal
+forbid|W101-01-no-router-rules-portset-default-direct-literal|crates/sb-core/tests/router_rules_portset.rs|default=direct|router rules portset test sample should not keep silent direct default literal
+require|W101-02-router-rules-portset-default-unresolved-literal|crates/sb-core/tests/router_rules_portset.rs|default=unresolved|router rules portset test sample should use explicit unresolved default literal

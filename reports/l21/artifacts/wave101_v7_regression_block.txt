@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 03:35) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.98-wave101-v1
+  FAIL: [W101-01-no-router-rules-portset-default-direct-literal] forbidden pattern matched in crates/sb-core/tests/router_rules_portset.rs :: router rules portset test sample should not keep silent direct default literal
+  FAIL: [W101-02-router-rules-portset-default-unresolved-literal] required pattern missing in crates/sb-core/tests/router_rules_portset.rs :: router rules portset test sample should use explicit unresolved default literal
+  FAIL: 2/262 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave101-v7-regress.RszOAm
+[meta] injected_file=crates/sb-core/tests/router_rules_portset.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

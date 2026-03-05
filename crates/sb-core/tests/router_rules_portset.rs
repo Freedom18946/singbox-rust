@@ -8,7 +8,7 @@ fn http_portset_first_wins_and_valid() {
     let rules = r#"
     portset:80,443,8443=proxy
     port:443=reject   # 已被 portset 初始化时占位，first-wins -> 不生效
-    default=direct
+    default=unresolved
     "#;
     std::env::set_var("SB_ROUTER_RULES", rules);
     // 80、443、8443 都应命中 proxy
@@ -19,5 +19,5 @@ fn http_portset_first_wins_and_valid() {
     }
     // 81 不在集合 -> default
     let decision = decide_http("no.match:81");
-    assert_eq!(decision.target, "direct");
+    assert_eq!(decision.target, "unresolved");
 }
