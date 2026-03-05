@@ -172,6 +172,20 @@
   - `reports/l21/artifacts/wave21_v7_regression_block.txt`
   - `reports/l21/artifacts/wave21_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#22 推进快照（2026-03-05 19:43）
+
+- 状态：`MIG-01 hardening`（wave#22 完成 bootstrap selector/urltest 路径去 core direct concrete）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector(OutboundImpl::Direct)` 不再构建 core `direct_connector::DirectConnector`，改为本地 `BootstrapDirectAdapterConnector` 并委托 `sb_adapters::outbound::direct::DirectOutbound`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.19-wave22-v1`（77 assertions），新增 W22-01/W22-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave22_v7_regression_block.txt`（注入 `direct_connector::DirectConnector` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave22_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave22_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave22_strict_gate.txt`
+  - `reports/l21/artifacts/wave22_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave22_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

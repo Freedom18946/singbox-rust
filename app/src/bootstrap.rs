@@ -26,6 +26,32 @@ const DEFAULT_URLTEST_INTERVAL_MS: u64 = 180_000;
 const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
 
+#[cfg(feature = "router")]
+#[derive(Clone, Copy, Debug, Default)]
+struct BootstrapDirectAdapterConnector {
+    inner: sb_adapters::outbound::direct::DirectOutbound,
+}
+
+#[cfg(feature = "router")]
+impl BootstrapDirectAdapterConnector {
+    fn new() -> Self {
+        Self {
+            inner: sb_adapters::outbound::direct::DirectOutbound::new(),
+        }
+    }
+}
+
+#[cfg(feature = "router")]
+#[async_trait::async_trait]
+impl AdapterConnector for BootstrapDirectAdapterConnector {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        use sb_core::pipeline::Outbound as _;
+        self.inner
+            .connect(sb_core::net::Address::Domain(host.to_string(), port))
+            .await
+    }
+}
+
 fn parse_alpn_tokens(src: &str) -> Vec<String> {
     src.split(',')
         .flat_map(|part| part.split_whitespace())
@@ -604,9 +630,10 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
 fn to_adapter_connector(
     imp: &sb_core::outbound::OutboundImpl,
 ) -> Option<Arc<dyn AdapterConnector>> {
-    use sb_core::outbound::direct_connector::DirectConnector;
     match imp {
-        sb_core::outbound::OutboundImpl::Direct => Some(Arc::new(DirectConnector::new())),
+        sb_core::outbound::OutboundImpl::Direct => {
+            Some(Arc::new(BootstrapDirectAdapterConnector::new()))
+        }
         sb_core::outbound::OutboundImpl::Socks5(_cfg) => {
             tracing::warn!(
                 "SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"

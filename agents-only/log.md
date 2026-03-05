@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 19:43] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：在 bootstrap selector/urltest 成员转换路径移除 core direct concrete 构建，并升级 strict gate 防回流断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/bootstrap.rs`
+    - 新增本地 `BootstrapDirectAdapterConnector`，内部委托 `sb_adapters::outbound::direct::DirectOutbound`
+    - `to_adapter_connector(OutboundImpl::Direct)` 不再构建 `direct_connector::DirectConnector`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.19-wave22-v1`
+    - 新增 `W22-01~W22-02`（禁用 bootstrap 路径 core direct concrete + 要求使用 adapter wrapper）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave22_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave22_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave22_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (77 assertions)`）
+  - `reports/l21/artifacts/wave22_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave22_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#22）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3W wave#22，回填 MIG-01 收敛进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#22 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#22 目标已落地并形成可复算证据链）
+**备注**:
+- bootstrap selector/urltest 成员转换路径已收敛：Direct/SOCKS/HTTP/Hysteria2/TUIC/VMess/VLESS 均不再构造 core concrete（Direct 已转 adapter wrapper，其余为显式禁用提示）。
+
+---
+
 ### [2026-03-05 19:39] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：在 bootstrap selector/urltest 成员转换路径移除 core VLESS concrete 构建，并升级 strict gate 防回流断言。

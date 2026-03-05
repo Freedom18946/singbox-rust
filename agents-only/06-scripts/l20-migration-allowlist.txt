@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.18-wave21-v1|||L21 wave#21 migration assertion allowlist version
+VERSION|l21.19-wave22-v1|||L21 wave#22 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -104,3 +104,6 @@ require|W20-02-bootstrap-vmess-explicit-disabled-msg|app/src/bootstrap.rs|VMess 
 
 forbid|W21-01-no-bootstrap-vless-core-concrete|app/src/bootstrap.rs|outbound::vless::VlessOutbound|bootstrap selector/urltest connector path should not construct core VLESS concrete
 require|W21-02-bootstrap-vless-explicit-disabled-msg|app/src/bootstrap.rs|VLESS selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap VLESS path should emit explicit migration guidance
+
+forbid|W22-01-no-bootstrap-direct-core-concrete|app/src/bootstrap.rs|direct_connector::DirectConnector|bootstrap selector/urltest connector path should not construct core direct concrete
+require|W22-02-bootstrap-direct-uses-adapter-wrapper|app/src/bootstrap.rs|BootstrapDirectAdapterConnector::new|bootstrap direct path should route through adapter direct wrapper
