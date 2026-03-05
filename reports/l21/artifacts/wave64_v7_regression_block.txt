@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 00:04) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.61-wave64-v1
+  FAIL: [W64-01-no-http-proxy-none-default-fallback] forbidden pattern matched in crates/sb-adapters/src/inbound/http.rs :: http inbound should not route Proxy(None) through default proxy fallback
+  FAIL: 1/182 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave64-v7-regress.vy4aOM
+[meta] injected_file=crates/sb-adapters/src/inbound/http.rs
+[meta] injected_pattern=RDecision::Proxy(None) => match proxy
+[meta] exit_code=1

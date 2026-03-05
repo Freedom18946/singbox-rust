@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.60-wave63-v1|||L21 wave#63 migration assertion allowlist version
+VERSION|l21.61-wave64-v1|||L21 wave#64 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -215,3 +215,6 @@ require|W62-03-ss-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inb
 forbid|W63-01-no-trojan-proxy-none-default-fallback|crates/sb-adapters/src/inbound/trojan.rs|RDecision::Proxy\(None\) => match proxy|trojan inbound should not route Proxy(None) through default proxy fallback
 require|W63-02-trojan-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/trojan.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|trojan named proxy decision path should emit explicit no-fallback migration diagnostics
 require|W63-03-trojan-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/trojan.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|trojan proxy decision without outbound tag should fail explicitly instead of fallback
+forbid|W64-01-no-http-proxy-none-default-fallback|crates/sb-adapters/src/inbound/http.rs|RDecision::Proxy\(None\) => match proxy|http inbound should not route Proxy(None) through default proxy fallback
+require|W64-02-http-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/http.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|http inbound named proxy decision path should emit explicit no-fallback migration diagnostics
+require|W64-03-http-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/http.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|http inbound proxy decision without outbound tag should fail explicitly instead of fallback

@@ -77,7 +77,6 @@ use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelecto
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
 use sb_core::router::rules::Decision as RDecision;
-use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::router::{RouteCtx, Transport};
 use sb_core::services::v2ray_api::StatsManager;
 
@@ -393,8 +392,6 @@ where
     }
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
 
-    let proxy = default_proxy();
-
     // Routing via cfg.router (from config IR) with minimal matched rule metadata.
     // 路由统一走 cfg.router（来自配置 IR），并携带最小命中规则标识。
     let route_ctx = RouteCtx {
@@ -416,16 +413,10 @@ where
     metrics::counter!("router_route_total",
         "inbound"=>"http",
         "decision"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" },
-        "proxy_kind"=>proxy.label()
+        "proxy_kind"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(Some(_))=>"named", RDecision::Proxy(None)=>"unnamed", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }
     ).increment(1);
 
-    // Health check fallback logic
-    let fallback_enabled = std::env::var("SB_PROXY_HEALTH_FALLBACK_DIRECT")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-
-    if fallback_enabled && matches!(decision, RDecision::Proxy(_)) {
+    if matches!(decision, RDecision::Proxy(_)) {
         if let Some(st) = ob_health::global_status() {
             if !st.is_up() {
                 tracing::warn!(
@@ -510,94 +501,28 @@ where
                                     }
                                 }
                             } else {
-                                // Pool empty or all endpoints down - fallback to direct or error
-                                match fallback_enabled {
-                                    true => {
-                                        #[cfg(feature = "metrics")]
-                                        metrics::counter!(
-                                            "router_route_fallback_total",
-                                            "from" => "proxy",
-                                            "to" => "direct",
-                                            "reason" => "pool_empty"
-                                        )
-                                        .increment(1);
-                                        outbound_tag = Some("direct".to_string());
-                                        let s = direct_connect_hostport(host, port, &opts).await?;
-                                        Box::new(s)
-                                    }
-                                    false => {
-                                        return Err(anyhow!(
-                                            "proxy pool '{}' has no available endpoints",
-                                            name
-                                        ));
-                                    }
-                                }
+                                return Err(anyhow!(
+                                    "http inbound: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+                                    name
+                                ));
                             }
                         } else {
-                            // Pool not found - fallback to default proxy or direct
-                            match proxy {
-                                ProxyChoice::Direct => {
-                                    outbound_tag = Some("direct".to_string());
-                                    let s = direct_connect_hostport(host, port, &opts).await?;
-                                    Box::new(s)
-                                }
-                                ProxyChoice::Http(addr) => {
-                                    outbound_tag = Some("http".to_string());
-                                    let s =
-                                        http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                            .await?;
-                                    Box::new(s)
-                                }
-                                ProxyChoice::Socks5(addr) => {
-                                    outbound_tag = Some("socks5".to_string());
-                                    let s = socks5_connect_through_socks5(addr, host, port, &opts)
-                                        .await?;
-                                    Box::new(s)
-                                }
-                            }
+                            return Err(anyhow!(
+                                "http inbound: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                                name
+                            ));
                         }
                     } else {
-                        // No proxy pool registry - fallback to default proxy
-                        match proxy {
-                            ProxyChoice::Direct => {
-                                outbound_tag = Some("direct".to_string());
-                                let s = direct_connect_hostport(host, port, &opts).await?;
-                                Box::new(s)
-                            }
-                            ProxyChoice::Http(addr) => {
-                                outbound_tag = Some("http".to_string());
-                                let s = http_proxy_connect_through_proxy(addr, host, port, &opts)
-                                    .await?;
-                                Box::new(s)
-                            }
-                            ProxyChoice::Socks5(addr) => {
-                                outbound_tag = Some("socks5".to_string());
-                                let s =
-                                    socks5_connect_through_socks5(addr, host, port, &opts).await?;
-                                Box::new(s)
-                            }
-                        }
+                        return Err(anyhow!(
+                            "http inbound: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path",
+                            name
+                        ));
                     }
                 }
             } else {
-                // Default proxy (no named pool)
-                match proxy {
-                    ProxyChoice::Direct => {
-                        outbound_tag = Some("direct".to_string());
-                        let s = direct_connect_hostport(host, port, &opts).await?;
-                        Box::new(s)
-                    }
-                    ProxyChoice::Http(addr) => {
-                        outbound_tag = Some("http".to_string());
-                        let s = http_proxy_connect_through_proxy(addr, host, port, &opts).await?;
-                        Box::new(s)
-                    }
-                    ProxyChoice::Socks5(addr) => {
-                        outbound_tag = Some("socks5".to_string());
-                        let s = socks5_connect_through_socks5(addr, host, port, &opts).await?;
-                        Box::new(s)
-                    }
-                }
+                return Err(anyhow!(
+                    "http inbound: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+                ));
             }
         }
         RDecision::Reject | RDecision::RejectDrop => {
