@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 23:25) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.53-wave56-v1
+  FAIL: [W56-01-no-vmess-fallback-connect-helper] forbidden pattern matched in crates/sb-adapters/src/inbound/vmess.rs :: vmess inbound should not keep implicit fallback connect helper in proxy decision path
+  FAIL: 1/158 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave56-v7-regress.R49jg9
+[meta] injected_file=crates/sb-adapters/src/inbound/vmess.rs
+[meta] injected_pattern=fallback_connect(
+[meta] exit_code=1

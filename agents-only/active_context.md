@@ -14,6 +14,20 @@
 **Tests**: L17 快跑复验最新结果（2026-02-24 13:21，本机时区）为 `PASS_STRICT`（历史基线）；L18 起 `gui_smoke/canary` 为必过阻断，`docker` 在本机模式默认非阻断（`--require-docker 0`）。
 **Interop-lab cases**: 83 total (72 strict, 10 env_limited, 1 smoke)；`cargo test -p interop-lab` 27 passed
 
+### 🆕 L21 wave#56 推进快照（2026-03-05 23:26）
+
+- 状态：`MIG-02 hardening`（wave#56 已完成 vmess inbound proxy decision 去 implicit fallback + V7 断言升级）
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/vmess.rs`：`RDecision::Proxy(Some)` 在 endpoint/pool/registry 不可用时不再 fallback 默认代理，改为显式 no-fallback 错误；`RDecision::Proxy(None)` 改为显式 unsupported。
+  2. 删除 `fallback_connect` helper，阻断 vmess inbound 隐式 fallback 回流面。
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.53-wave56-v1`（158 assertions），新增 W56-01~W56-03。
+  4. 回流阻断证据：`reports/l21/artifacts/wave56_v7_regression_block.txt`（注入 `fallback_connect(` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p app --tests`：PASS（`wave56_wp1_app_tests_check.txt`）
+  - `cargo check -p sb-core`：PASS（`wave56_wp1_sb_core_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (158 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave56_gui_static_syntax_check.txt`）
+
 ### 🆕 L21 wave#10 推进快照（2026-03-05 17:43）
 
 - 状态：`MIG-04 in_progress`（wave#10 已完成 app/tests inbound_http 去 core HTTP concrete + V7 断言升级）
