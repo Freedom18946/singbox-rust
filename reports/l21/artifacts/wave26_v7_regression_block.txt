@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:10) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.23-wave26-v1
+  FAIL: [W26-01-no-switchboard-httpup-concrete] forbidden pattern matched in crates/sb-core/src/runtime/switchboard.rs :: switchboard should not construct core HTTP upstream concrete
+  FAIL: 1/85 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave26-v7-regress.QV1NNK
+[meta] injected_file=crates/sb-core/src/runtime/switchboard.rs
+[meta] injected_pattern=outbound::http_upstream::HttpUp
+[meta] exit_code=1

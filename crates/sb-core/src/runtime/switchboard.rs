@@ -415,66 +415,10 @@ impl SwitchboardBuilder {
             }
 
             OutboundType::Http => {
-                #[cfg(feature = "scaffold")]
-                {
-                    // Minimal HTTP upstream connector using scaffold implementation
-                    use crate::adapter::OutboundConnector as AdapterConnector;
-
-                    #[derive(Debug, Clone)]
-                    struct HttpConnector {
-                        inner: std::sync::Arc<crate::outbound::http_upstream::HttpUp>,
-                    }
-
-                    #[async_trait::async_trait]
-                    impl OutboundConnector for HttpConnector {
-                        async fn dial(
-                            &self,
-                            target: Target,
-                            _opts: DialOpts,
-                        ) -> AdapterResult<BoxedStream> {
-                            if target.kind != TransportKind::Tcp {
-                                return Err(AdapterError::UnsupportedProtocol(
-                                    "HTTP upstream does not support UDP".into(),
-                                ));
-                            }
-                            let s = self
-                                .inner
-                                .connect(&target.host, target.port)
-                                .await
-                                .map_err(AdapterError::Io)?;
-                            Ok(Box::new(s))
-                        }
-                        fn name(&self) -> &'static str {
-                            "http"
-                        }
-                    }
-
-                    let (user, pass) = ir
-                        .credentials
-                        .as_ref()
-                        .map(|c| (c.username.clone(), c.password.clone()))
-                        .unwrap_or((None, None));
-                    let server = ir
-                        .server
-                        .clone()
-                        .ok_or(AdapterError::InvalidConfig("http.server is required"))?;
-                    let port = ir
-                        .port
-                        .ok_or(AdapterError::InvalidConfig("http.port is required"))?;
-                    let up = crate::outbound::http_upstream::HttpUp::new(server, port, user, pass);
-                    let conn = HttpConnector {
-                        inner: std::sync::Arc::new(up),
-                    };
-                    self.switchboard
-                        .register(name.to_string(), conn)
-                        .map_err(|e| AdapterError::Other(e.into()))?;
-                }
-                #[cfg(not(feature = "scaffold"))]
-                {
-                    return Err(AdapterError::UnsupportedProtocol(
-                        "HTTP outbound requires scaffold feature".into(),
-                    ));
-                }
+                return Err(AdapterError::UnsupportedProtocol(
+                    "HTTP outbound in switchboard is disabled; use adapter bridge/supervisor path"
+                        .to_string(),
+                ));
             }
 
             OutboundType::Socks => {
