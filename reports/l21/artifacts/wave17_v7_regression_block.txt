@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 19:25) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.14-wave17-v1
+  FAIL: [W17-01-no-bootstrap-socks-core-concrete] forbidden pattern matched in app/src/bootstrap.rs :: bootstrap selector/urltest connector path should not construct core SOCKS concrete
+  FAIL: 1/67 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave17-v7-regress.crQUer
+[meta] injected_file=app/src/bootstrap.rs
+[meta] injected_pattern=socks_upstream::SocksUp
+[meta] exit_code=1

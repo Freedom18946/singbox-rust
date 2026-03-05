@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.13-wave16-v1|||L21 wave#16 migration assertion allowlist version
+VERSION|l21.14-wave17-v1|||L21 wave#17 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -89,3 +89,6 @@ require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/u
 
 forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/bootstrap.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
 require|W16-02-bootstrap-hy2-explicit-disabled-msg|app/src/bootstrap.rs|Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Hysteria2 path should emit explicit migration guidance
+
+forbid|W17-01-no-bootstrap-socks-core-concrete|app/src/bootstrap.rs|socks_upstream::SocksUp|bootstrap selector/urltest connector path should not construct core SOCKS concrete
+require|W17-02-bootstrap-socks-explicit-disabled-msg|app/src/bootstrap.rs|SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap SOCKS5 path should emit explicit migration guidance

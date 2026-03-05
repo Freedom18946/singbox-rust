@@ -604,17 +604,15 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
 fn to_adapter_connector(
     imp: &sb_core::outbound::OutboundImpl,
 ) -> Option<Arc<dyn AdapterConnector>> {
-    use sb_core::outbound::{
-        direct_connector::DirectConnector, http_upstream::HttpUp, socks_upstream::SocksUp,
-    };
+    use sb_core::outbound::{direct_connector::DirectConnector, http_upstream::HttpUp};
     match imp {
         sb_core::outbound::OutboundImpl::Direct => Some(Arc::new(DirectConnector::new())),
-        sb_core::outbound::OutboundImpl::Socks5(cfg) => Some(Arc::new(SocksUp::new(
-            cfg.proxy_addr.ip().to_string(),
-            cfg.proxy_addr.port(),
-            cfg.username.clone(),
-            cfg.password.clone(),
-        ))),
+        sb_core::outbound::OutboundImpl::Socks5(_cfg) => {
+            tracing::warn!(
+                "SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
         sb_core::outbound::OutboundImpl::HttpProxy(cfg) => Some(Arc::new(HttpUp::new(
             cfg.proxy_addr.ip().to_string(),
             cfg.proxy_addr.port(),
