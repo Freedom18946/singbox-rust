@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.59-wave62-v1|||L21 wave#62 migration assertion allowlist version
+VERSION|l21.60-wave63-v1|||L21 wave#63 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -212,3 +212,6 @@ require|W61-03-tproxy-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src
 forbid|W62-01-no-ss-proxy-none-default-fallback|crates/sb-adapters/src/inbound/shadowsocks.rs|RDecision::Proxy\(None\) => match proxy|shadowsocks inbound should not route Proxy(None) through default proxy fallback
 require|W62-02-ss-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/shadowsocks.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|shadowsocks named proxy decision path should emit explicit no-fallback migration diagnostics
 require|W62-03-ss-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/shadowsocks.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|shadowsocks proxy decision without outbound tag should fail explicitly instead of fallback
+forbid|W63-01-no-trojan-proxy-none-default-fallback|crates/sb-adapters/src/inbound/trojan.rs|RDecision::Proxy\(None\) => match proxy|trojan inbound should not route Proxy(None) through default proxy fallback
+require|W63-02-trojan-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/trojan.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|trojan named proxy decision path should emit explicit no-fallback migration diagnostics
+require|W63-03-trojan-proxy-none-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/trojan.rs|proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing|trojan proxy decision without outbound tag should fail explicitly instead of fallback
