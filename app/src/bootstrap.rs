@@ -664,7 +664,12 @@ fn to_adapter_connector(
             );
             None
         }
-        sb_core::outbound::OutboundImpl::Trojan(_cfg) => None,
+        sb_core::outbound::OutboundImpl::Trojan(_cfg) => {
+            tracing::warn!(
+                "Trojan selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
+        }
         sb_core::outbound::OutboundImpl::Hysteria2(_cfg) => {
             tracing::warn!(
                 "Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"

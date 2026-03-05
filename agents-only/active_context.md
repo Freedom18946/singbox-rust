@@ -186,6 +186,20 @@
   - `reports/l21/artifacts/wave22_v7_regression_block.txt`
   - `reports/l21/artifacts/wave22_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#23 推进快照（2026-03-05 19:45）
+
+- 状态：`MIG-02 hardening`（wave#23 完成 bootstrap selector/urltest Trojan 路径显式禁用提示补全）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector(OutboundImpl::Trojan)` 从静默 `None` 改为显式 `warn + None`，提示迁移到 adapter bridge/supervisor 路径。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.20-wave23-v1`（79 assertions），新增 W23-01/W23-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave23_v7_regression_block.txt`（注入 `outbound::trojan::TrojanOutbound` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave23_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave23_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave23_strict_gate.txt`
+  - `reports/l21/artifacts/wave23_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave23_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
