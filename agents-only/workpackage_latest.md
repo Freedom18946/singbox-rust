@@ -1,11 +1,35 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-05 13:10
-> **当前阶段**：L21 wave#7 推进完成（MIG-02 in_progress：runtime/switchboard 去 core SOCKS concrete + strict gate 升级）
+> **最后更新**：2026-03-05 13:15
+> **当前阶段**：L21 wave#8 推进完成（MIG-03 in_progress：runtime/switchboard 去 core Hysteria2 concrete + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=44 assertions，2026-03-05）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=46 assertions，2026-03-05）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#8 推进落地（2026-03-05 13:15）
+
+**状态**：✅ `MIG-03 wave#8` 完成一段（runtime/switchboard 去 core Hysteria2 concrete）；✅ strict gate allowlist 升级到 `l21.7-wave8-v1`；✅ 回流阻断负样例证据更新
+
+1. **迁移 wave#8（优先 runtime/switchboard 路径）**：
+   - `crates/sb-core/src/runtime/switchboard.rs`：
+     - `OutboundType::Hysteria2` 不再构建 `outbound::hysteria2::Hysteria2Outbound`。
+     - 改为显式 `UnsupportedProtocol("...use adapter bridge/supervisor path")`，由 `from_config_ir` 统一降级为 `DegradedConnector`。
+   - 附带清理：`hysteria2_from_ir` 改为 `#[cfg(all(feature = "out_hysteria2", test))]`，避免非测试构建噪声 warning。
+2. **strict gate allowlist 升级（V7 wave#8）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.7-wave8-v1`，断言扩展到 46 条（新增 W8-01/W8-02 forbid/require）。
+   - 回流阻断证据：`reports/l21/artifacts/wave8_v7_regression_block.txt`（在临时 root 注入 `outbound::hysteria2::Hysteria2Outbound` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过。
+
+**最小验证**：
+1. `cargo check -p sb-core`
+2. `cargo check -p app --tests`
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`V7 PASS (46 assertions)`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave8_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`
 
 ---
 
