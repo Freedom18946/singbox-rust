@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-06 00:20] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 socks5 inbound unsupported decision 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/socks/mod.rs`
+    - `RDecision::Hijack/Sniff/Resolve/HijackDns` 分支不再 direct fallback
+    - 改为显式告警 + SOCKS `REP=0x01`：`unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.65-wave68-v1`
+    - 新增 `W68-01~W68-02`（禁止 socks5 unsupported decision 回退 direct + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave68_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave68_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave68_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (191 assertions)`）
+  - `reports/l21/artifacts/wave68_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave68_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#68）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BQ wave#68，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#68 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#68 目标已落地并形成可复算证据链）
+**备注**:
+- socks5 inbound 在 unsupported routing decision 分支不再使用 direct fallback，当前统一显式 no-fallback 诊断。
+
+---
+
 ### [2026-03-06 00:17] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 http inbound unsupported decision 路径 direct fallback 并升级 strict gate 断言。

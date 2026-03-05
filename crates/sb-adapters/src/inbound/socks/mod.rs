@@ -785,18 +785,11 @@ where
             return Err(io::Error::other("socks: rejected by rules"));
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            // Not handled by SOCKS inbound directly; fall back to direct
-            outbound_tag = Some("direct".to_string());
-            match &endpoint {
-                Endpoint::Domain(host, port) => {
-                    let s = direct_connect_hostport(host, *port, &opts).await?;
-                    Box::new(s)
-                }
-                Endpoint::Ip(sa) => {
-                    let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
-                    Box::new(s)
-                }
-            }
+            tracing::warn!(
+                "socks5 inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
+            );
+            reply(cli, 0x01, None).await?; // General failure
+            return Ok(());
         }
     };
 

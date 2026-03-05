@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.64-wave67-v1|||L21 wave#67 migration assertion allowlist version
+VERSION|l21.65-wave68-v1|||L21 wave#68 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -225,3 +225,5 @@ forbid|W66-01-no-router-keyword-static-default-fallback|crates/sb-core/src/route
 require|W66-02-router-keyword-static-unresolved-label|crates/sb-core/src/router/mod.rs|unwrap_or\(\"unresolved\"\)|router keyword static decide should use explicit unresolved label
 forbid|W67-01-no-http-unsupported-decision-direct-fallback-comment|crates/sb-adapters/src/inbound/http.rs|Not directly handled by HTTP inbound; fall back to direct|http inbound unsupported decision branch should not fallback to direct
 require|W67-02-http-unsupported-decision-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/http.rs|unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|http inbound unsupported decision branch should fail explicitly without direct fallback
+forbid|W68-01-no-socks-unsupported-decision-direct-fallback-comment|crates/sb-adapters/src/inbound/socks/mod.rs|Not handled by SOCKS inbound directly; fall back to direct|socks5 inbound unsupported decision branch should not fallback to direct
+require|W68-02-socks-unsupported-decision-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/socks/mod.rs|unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|socks5 inbound unsupported decision branch should fail explicitly without direct fallback
