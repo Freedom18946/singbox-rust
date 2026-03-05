@@ -29,7 +29,7 @@ exact:example.com=direct
 suffix:google.com=proxy
 cidr4:192.168.1.0/24=direct
 port:443=proxy
-default=direct
+default=unresolved
 "#;
 
     fs::write(&rule_file, initial_rules).await?;
@@ -151,7 +151,7 @@ cidr4:10.0.0.0/8=direct
 port:22=direct
 port:80=proxy
 port:443=proxy
-default=direct
+default=unresolved
 "#;
 
     fs::write(&rule_file, final_rules).await?;

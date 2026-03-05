@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 02:09) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.90-wave93-v1
+  FAIL: [W93-01-no-rule-hot-reload-demo-default-direct-literal] forbidden pattern matched in crates/sb-core/examples/rule_hot_reload_demo.rs :: rule hot reload demo should not keep silent direct default literal
+  FAIL: [W93-02-rule-hot-reload-demo-default-unresolved-literal] required pattern missing in crates/sb-core/examples/rule_hot_reload_demo.rs :: rule hot reload demo should use explicit unresolved default literal
+  FAIL: 2/246 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave93-v7-regress.JL7hce
+[meta] injected_file=crates/sb-core/examples/rule_hot_reload_demo.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

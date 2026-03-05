@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.89-wave92-v1|||L21 wave#92 migration assertion allowlist version
+VERSION|l21.90-wave93-v1|||L21 wave#93 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -280,3 +280,5 @@ forbid|W91-01-no-geosite-demo-default-direct-literal|crates/sb-core/examples/geo
 require|W91-02-geosite-demo-default-unresolved-literal|crates/sb-core/examples/geosite_demo.rs|default=unresolved|geosite demo should use explicit unresolved default literal
 forbid|W92-01-no-process-routing-demo-default-direct-literal|crates/sb-core/examples/process_routing_demo.rs|default=direct|process routing demo should not keep silent direct default literal
 require|W92-02-process-routing-demo-default-unresolved-literal|crates/sb-core/examples/process_routing_demo.rs|default=unresolved|process routing demo should use explicit unresolved default literal
+forbid|W93-01-no-rule-hot-reload-demo-default-direct-literal|crates/sb-core/examples/rule_hot_reload_demo.rs|default=direct|rule hot reload demo should not keep silent direct default literal
+require|W93-02-rule-hot-reload-demo-default-unresolved-literal|crates/sb-core/examples/rule_hot_reload_demo.rs|default=unresolved|rule hot reload demo should use explicit unresolved default literal
