@@ -316,3 +316,5 @@ forbid|W106-01-no-router-rules-port-range-default-direct-literal|crates/sb-core/
 require|W106-02-router-rules-port-range-default-unresolved-literal|crates/sb-core/tests/router_rules_port_range.rs|default=unresolved|router_rules_port_range 测试样例 default 去 silent direct fallback should use explicit unresolved default literal
 forbid|W107-01-router-explain-default-direct-literal|crates/sb-core/tests/router_explain.rs|default=direct|router explain test sample should not keep silent direct default literal
 require|W107-02-router-explain-default-unresolved-literal|crates/sb-core/tests/router_explain.rs|default=unresolved|router explain test sample should use explicit unresolved default literal
+forbid|W107-01-no-router-explain-default-direct-literal|crates/sb-core/tests/router_explain.rs|default=direct|router_explain 测试样例 default 去 silent direct fallback should not keep silent direct default literal
+require|W107-02-router-explain-default-unresolved-literal|crates/sb-core/tests/router_explain.rs|default=unresolved|router_explain 测试样例 default 去 silent direct fallback should use explicit unresolved default literal

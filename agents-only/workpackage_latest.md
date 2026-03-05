@@ -4,7 +4,7 @@
 > **当前阶段**：L21 wave#107 推进完成（MIG-02 hardening：router_explain 测试样例 default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅  exit 0（V4a=23/25 + V7=274 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=274 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -34,6 +34,120 @@
 2. 前半段推进会比较稳定，因为大多是样例字面量替换；后半段会变慢，因为 `geosite/hot_reload` 类文件更容易牵动断言语义。
 3. 真正的阻塞条件不是改字符串本身，而是某些测试是否把 `direct` 当作行为预期而不是示例默认值。一旦遇到这种情况，需要先改断言口径，再决定是否拆成独立波次。
 4. 在当前口径下，`V7 assertions` 会继续线性增长；每一波都会新增 2 条防回流断言，直到这批剩余样例清零。
+
+## 🆕 最新进展：L21 wave#107 推进落地（2026-03-06 03:53）
+
+**状态**：✅  完成一段（router_explain 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 ；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#107（MIG-02 hardening，router_explain 测试样例 default 去 silent direct fallback 路径）**：
+   - ：
+     - router_explain 测试样例 default 去 silent direct fallback。
+2. **strict gate allowlist 升级（V7 wave#107）**：
+   -  升级到 ，断言扩展到 274 条（新增 W107-01/W107-02）。
+   - 回流阻断证据：（在临时 root 将  注入回  后， 预期失败，）。
+3. **门禁与编译复验**：
+   - ：PASS（）。
+   - ：PASS（）。
+   - === 依赖边界检查 (2026-03-06 03:53) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.104-wave107-v1
+  PASS (280 assertions)
+
+════════════════════════
+全部检查通过 (0 违规)：PASS（，）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - ：语法通过（）。
+
+**最小验证**：
+1. （）
+2. （）
+3. === 依赖边界检查 (2026-03-06 03:53) ===
+
+── V1: sb-core Web 框架依赖 ──
+  PASS
+── V2: sb-core TLS/QUIC 依赖 ──
+  PASS
+── V3: sb-core 协议实现代码 ──
+  PASS (all protocol modules are feature-gated)
+── V4: sb-adapters → sb-core 反向依赖 ──
+  V4a (outbound/register): 23 处 use sb_core (threshold: 25)
+  V4b (inbound/service/endpoint): 188 处 use sb_core (INFO only)
+  Total: 211 处
+  PASS (V4a within threshold)
+── V5: sb-subscribe → sb-core 越界 ──
+  PASS (sb-core is optional or absent)
+── Cargo.toml: sb-core 非可选禁止依赖 ──
+  PASS
+── sb-types 纯净性 ──
+  PASS
+── V6: strict feature tree / default closure / reverse deps ──
+  INFO: default features: ['dns_dhcp', 'dns_doh', 'dns_doq', 'dns_dot', 'dns_resolved', 'dns_tailscale', 'dns_udp', 'in_direct', 'in_http', 'in_mixed', 'in_socks', 'in_tun', 'out_http', 'out_socks', 'tls_rustls']
+  INFO: default closure size: 16
+  INFO: default forbidden deps active: ['quinn', 'reqwest', 'rustls', 'snow']
+  INFO: reverse deps (workspace direct): ['app', 'sb-adapters', 'sb-api', 'sb-benches', 'xtests']
+  INFO: reverse deps (workspace optional): ['sb-subscribe']
+  PASS
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.104-wave107-v1
+  PASS (282 assertions)
+
+════════════════════════
+全部检查通过 (0 违规)（）
+4. （预期 FAIL，见 ）
+5. （）
+
+---
+
+## 🆕 最新进展：L21 wave#107 推进落地（2026-03-06 03:53)
+
+**状态**：✅ `MIG-02 wave#107` 完成一段（router_explain 测试样例 default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.104-wave107-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#107（MIG-02 hardening，router_explain 测试样例 default 去 silent direct fallback 路径）**：
+   - `crates/sb-core/tests/router_explain.rs`：
+     - 将测试样例中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+2. **strict gate allowlist 升级（V7 wave#107）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.104-wave107-v1`，断言扩展到 274 条（新增 W107-01/W107-02）。
+   - 回流阻断证据：`reports/l21/artifacts/wave107_v7_regression_block.txt`（在临时 root 将 `default=unresolved` 注入回 `default=direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave107_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave107_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave107_strict_gate.txt`，`V7 PASS (274 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave107_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave107_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave107_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave107_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave107_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave107_gui_static_syntax_check.txt`）
+
+---
 
 ## 🆕 最新进展：L21 wave#106 推进落地（2026-03-06 03:53)
 
