@@ -280,11 +280,22 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                             continue;
                         }
                         Err(e) => {
-                            tracing::warn!("UDP proxy send failed: {}", e);
-                            // fall through to direct when allowed
+                            tracing::warn!(
+                                "socks5-udp(enhanced): proxy send failed; direct fallback is disabled; packet dropped: {}",
+                                e
+                            );
+                            #[cfg(feature = "metrics")]
+                            counter!("socks_udp_error_total", "class" => "proxy_no_fallback").increment(1);
+                            continue;
                         }
                     }
                 }
+                tracing::warn!(
+                    "socks5-udp(enhanced): proxy decision requires SOCKS5 upstream; direct fallback is disabled; packet dropped"
+                );
+                #[cfg(feature = "metrics")]
+                counter!("socks_udp_error_total", "class" => "proxy_no_fallback").increment(1);
+                continue;
             }
             RDecision::Direct => {}
             RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {

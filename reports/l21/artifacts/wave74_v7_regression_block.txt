@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-06 00:47) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.71-wave74-v1
+  FAIL: [W74-01-no-socks-udp-enhanced-proxy-fallthrough-comment] forbidden pattern matched in crates/sb-adapters/src/inbound/socks/udp_enhanced.rs :: socks5-udp enhanced proxy decision path should not fall through to direct
+  FAIL: 1/208 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave74-v7-regress.Sz2x0N
+[meta] injected_file=crates/sb-adapters/src/inbound/socks/udp_enhanced.rs
+[meta] injected_pattern=fall through to direct when allowed
+[meta] exit_code=1

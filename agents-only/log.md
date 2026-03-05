@@ -23,6 +23,37 @@
 
 ## 日志记录
 
+### [2026-03-06 00:47] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 socks5-udp enhanced proxy decision 路径 direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/socks/udp_enhanced.rs`
+    - `RDecision::Proxy(_)` 分支不再 direct fall-through
+    - `sendto_via_socks5` 失败改为显式 no-fallback 告警并丢包：`proxy send failed; direct fallback is disabled; packet dropped`
+    - 缺失 SOCKS5 upstream 场景改为显式 no-fallback 告警并丢包：`proxy decision requires SOCKS5 upstream; direct fallback is disabled; packet dropped`
+    - 新增指标分类 `class=\"proxy_no_fallback\"`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.71-wave74-v1`
+    - 新增 `W74-01~W74-04`（禁止 enhanced proxy direct fall-through + 要求显式 no-fallback 提示/指标）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave74_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave74_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave74_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (208 assertions)`）
+  - `reports/l21/artifacts/wave74_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave74_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#74）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BW wave#74，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#74 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#74 目标已落地并形成可复算证据链）
+**备注**:
+- socks5-udp enhanced proxy decision 路径不再 direct 回退，当前统一显式 no-fallback 丢包语义。
+
+---
+
 ### [2026-03-06 00:43] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 socks5-udp enhanced unsupported decision 路径 direct fallback 并升级 strict gate 断言。

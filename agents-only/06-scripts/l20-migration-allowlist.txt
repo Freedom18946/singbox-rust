@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.70-wave73-v1|||L21 wave#73 migration assertion allowlist version
+VERSION|l21.71-wave74-v1|||L21 wave#74 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -240,3 +240,7 @@ require|W72-03-socks-udp-unsupported-no-fallback-metric|crates/sb-adapters/src/i
 forbid|W73-01-no-socks-udp-enhanced-unsupported-treat-as-direct-comment|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|Sniff/Resolve/Hijack not yet supported in UDP handlers - treat as direct|socks5-udp enhanced unsupported decisions should not be treated as direct
 require|W73-02-socks-udp-enhanced-unsupported-no-fallback-msg|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|socks5-udp\(enhanced\): unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped|socks5-udp enhanced unsupported decision path should emit explicit no-fallback diagnostics
 require|W73-03-socks-udp-enhanced-unsupported-no-fallback-metric|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|class\" => \"unsupported_no_fallback|socks5-udp enhanced unsupported decision path should record unsupported_no_fallback metric class
+forbid|W74-01-no-socks-udp-enhanced-proxy-fallthrough-comment|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|fall through to direct when allowed|socks5-udp enhanced proxy decision path should not fall through to direct
+require|W74-02-socks-udp-enhanced-proxy-requires-upstream-msg|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|proxy decision requires SOCKS5 upstream; direct fallback is disabled; packet dropped|socks5-udp enhanced proxy decision without upstream should fail explicitly without direct fallback
+require|W74-03-socks-udp-enhanced-proxy-send-failed-msg|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|proxy send failed; direct fallback is disabled; packet dropped|socks5-udp enhanced proxy send failure should fail explicitly without direct fallback
+require|W74-04-socks-udp-enhanced-proxy-no-fallback-metric|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|class\" => \"proxy_no_fallback|socks5-udp enhanced proxy decision path should record proxy_no_fallback metric class
