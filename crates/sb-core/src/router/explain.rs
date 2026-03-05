@@ -106,7 +106,7 @@ fn derive_outbound(r: &ExplainResult) -> String {
 }
 
 /// Extract outbound name from reason string
-/// Handles formats like "proxy:outbound_name" or fallback to "direct"
+/// Handles formats like "proxy:outbound_name" or explicit unresolved marker.
 fn extract_outbound_from_reason(reason: &str) -> String {
     if let Some(colon_pos) = reason.find(':') {
         let after_colon = &reason[colon_pos + 1..];
@@ -115,11 +115,11 @@ fn extract_outbound_from_reason(reason: &str) -> String {
         }
     }
 
-    // Default fallback
+    // Default unresolved marker
     if reason.contains("proxy") {
         "proxy".to_string()
     } else {
-        "direct".to_string()
+        "unresolved".to_string()
     }
 }
 

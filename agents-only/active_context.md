@@ -580,6 +580,20 @@
   - `reports/l21/artifacts/wave50_v7_regression_block.txt`
   - `reports/l21/artifacts/wave50_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#51 推进快照（2026-03-05 21:57）
+
+- 状态：`MIG-02 hardening`（wave#51 完成 router explain 分支去 direct 默认推断）
+- 本轮落地：
+  1. `crates/sb-core/src/router/explain.rs`：`extract_outbound_from_reason` 在无法从 reason 解析 outbound 时，不再默认返回 `direct`，改为显式 `unresolved`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.48-wave51-v1`（145 assertions），新增 W51-01/W51-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave51_v7_regression_block.txt`（注入 `"direct".to_string()` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave51_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave51_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave51_strict_gate.txt`
+  - `reports/l21/artifacts/wave51_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave51_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

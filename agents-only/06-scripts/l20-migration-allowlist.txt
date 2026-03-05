@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.47-wave50-v1|||L21 wave#50 migration assertion allowlist version
+VERSION|l21.48-wave51-v1|||L21 wave#51 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -179,3 +179,5 @@ forbid|W50-01-no-http-connect-stub-direct-default|crates/sb-core/src/inbound/htt
 forbid|W50-02-no-socks5-stub-direct-default|crates/sb-core/src/inbound/socks5.rs|outbound: \"direct\"\.to_string\(\),|SOCKS5 no-router stub decision should not hardcode direct default outbound
 require|W50-03-http-connect-stub-explicit-default-selector|crates/sb-core/src/inbound/http_connect.rs|outbound: self\.resolve_default_outbound_tag\(\),|HTTP CONNECT no-router stub should select outbound from config instead of direct fallback
 require|W50-04-socks5-stub-explicit-default-selector|crates/sb-core/src/inbound/socks5.rs|outbound: self\.resolve_default_outbound_tag\(\),|SOCKS5 no-router stub should select outbound from config instead of direct fallback
+forbid|W51-01-no-router-explain-direct-default|crates/sb-core/src/router/explain.rs|\"direct\"\.to_string\(\)|router explain extraction should not default unresolved outbound to direct
+require|W51-02-router-explain-unresolved-default|crates/sb-core/src/router/explain.rs|\"unresolved\"\.to_string\(\)|router explain extraction should emit explicit unresolved marker when outbound cannot be derived
