@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.36-wave39-v1|||L21 wave#39 migration assertion allowlist version
+VERSION|l21.37-wave40-v1|||L21 wave#40 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -149,3 +149,6 @@ forbid|W38-01-no-core-bridge-selector-direct-fallback|crates/sb-core/src/adapter
 require|W38-02-core-bridge-selector-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Selector outbound is disabled; use adapter::bridge::build_bridge|core bridge Selector outbound should emit explicit migration guidance
 forbid|W39-01-no-core-bridge-block-direct-fallback-noscaffold|crates/sb-core/src/adapter/mod.rs|Fall back to direct connector when scaffold is not available|core bridge Block outbound should not fallback to direct in no-scaffold mode
 require|W39-02-core-bridge-block-noscaffold-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Block outbound is disabled without scaffold; use adapter::bridge::build_bridge|core bridge Block no-scaffold path should emit explicit migration guidance
+forbid|W40-01-no-core-bridge-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Direct => direct_connector_fallback\(\)|core bridge Direct outbound should not use direct fallback helper
+require|W40-02-core-bridge-direct-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Direct outbound is disabled; use adapter::bridge::build_bridge|core bridge Direct outbound should emit explicit migration guidance
+forbid|W40-03-no-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|fn direct_connector_fallback\(\)|core bridge direct fallback helper should be removed after full fallback cleanup

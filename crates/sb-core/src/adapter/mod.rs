@@ -37,12 +37,6 @@ fn parse_socket_addr(listen: &str, port: u16) -> anyhow::Result<std::net::Socket
         .map_err(|e| anyhow::anyhow!("Invalid inbound address: {e}"))
 }
 
-/// Helper to create a direct connector fallback
-fn direct_connector_fallback() -> Arc<dyn OutboundConnector> {
-    use crate::outbound::direct_connector::DirectConnector;
-    Arc::new(DirectConnector::new())
-}
-
 #[derive(Debug, Clone)]
 struct UnsupportedOutboundConnector {
     reason: Arc<str>,
@@ -607,7 +601,9 @@ impl Bridge {
             let kind = outbound.ty_str().to_string();
 
             let connector = match outbound.ty {
-                sb_config::ir::OutboundType::Direct => direct_connector_fallback(),
+                sb_config::ir::OutboundType::Direct => unsupported_outbound_connector(
+                    "core bridge Direct outbound is disabled; use adapter::bridge::build_bridge",
+                ),
                 sb_config::ir::OutboundType::Block => {
                     #[cfg(feature = "scaffold")]
                     {

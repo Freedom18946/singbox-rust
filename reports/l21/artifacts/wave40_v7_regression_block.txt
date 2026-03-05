@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:59) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.37-wave40-v1
+  FAIL: [W40-03-no-direct-fallback-helper] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge direct fallback helper should be removed after full fallback cleanup
+  FAIL: 1/116 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave40-v7-regress.NitM4m
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=fn direct_connector_fallback()
+[meta] exit_code=1
