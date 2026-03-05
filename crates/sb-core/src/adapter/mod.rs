@@ -658,8 +658,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Tuic => {
-                    // TUIC handled by sb-adapters; core bridge falls back to direct
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge TUIC outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Vmess => {
                     // VMess connector not wired in adapter bridge yet; fall back to direct

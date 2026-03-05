@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:38) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.31-wave34-v1
+  FAIL: [W34-01-no-core-bridge-tuic-direct-fallback] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge TUIC outbound should not fallback to direct
+  FAIL: 1/103 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave34-v7-regress.wGZTuE
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=sb_config::ir::OutboundType::Tuic => { direct_connector_fallback()
+[meta] exit_code=1
