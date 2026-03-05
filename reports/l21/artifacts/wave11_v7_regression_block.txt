@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 17:54) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.10-wave11-v1
+  FAIL: [W11-01-no-core-http-inbound-demo-concrete] forbidden pattern matched in examples/code-examples/proxy/http_inbound_demo.rs :: http inbound demo should not use core inbound concrete implementation
+  FAIL: 1/56 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave11-v7-regress.sjtwYp
+[meta] injected_file=examples/code-examples/proxy/http_inbound_demo.rs
+[meta] injected_pattern=singbox_rust::inbound::http::{HttpInbound, DirectConnector}
+[meta] exit_code=1

@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 17:55] Agent: Codex (GPT-5)
+
+**任务**: 按用户指令继续推进 wave：完成 MIG-04 在 examples 路径的去 core HTTP inbound concrete 收敛，并升级 strict gate 断言与证据链。
+**变更**:
+- 代码与门禁：
+  - 更新 `examples/code-examples/proxy/http_inbound_demo.rs`
+    - 移除 `singbox_rust::inbound::http::{HttpInbound, DirectConnector}` 依赖
+    - 迁移到 `sb_adapters::inbound::http::{serve_http, HttpProxyConfig}` + `RouterHandle/OutboundRegistryHandle`
+    - 入口改为 `serve_http(cfg, stop_rx, None).await?`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.10-wave11-v1`
+    - 新增 `W11-01~W11-03` 迁移追踪断言（V7 断言总数 56）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave11_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave11_wp1_app_inbound_http_check.txt`（`cargo check -p app --test inbound_http` PASS）
+  - `reports/l21/artifacts/wave11_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (56 assertions)`）
+  - `reports/l21/artifacts/wave11_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave11_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#11）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3L wave#11，回填 MIG-04 状态依据）
+  - 更新 `agents-only/active_context.md`（新增 wave#11 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#11 目标已落地并形成可复算证据链）
+**备注**:
+- `cargo check -p app --tests` 的既有失败（`selector_udp_test` unresolved import/type inference）未在本波次触达，仍保持原状。
+
+---
+
 ### [2026-03-05 17:43] Agent: Codex (GPT-5)
 
 **任务**: 按用户要求从 wave#10 继续推进：完成 MIG-04 在 app/tests 路径的去 core HTTP inbound concrete 收敛，并同步 strict gate 与状态总线文档。

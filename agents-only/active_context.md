@@ -27,6 +27,19 @@
   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (53 assertions)`）
   - `cargo check -p app --tests`：当前 FAIL（`app/tests/selector_udp_test.rs` unresolved import/type inference，见 `wave10_wp1_app_tests_check.txt`）
 
+### 🆕 L21 wave#11 推进快照（2026-03-05 17:55）
+
+- 状态：`MIG-04 in_progress`（wave#11 已完成 examples 路径去 core HTTP inbound concrete + V7 断言升级）
+- 本轮落地：
+  1. `examples/code-examples/proxy/http_inbound_demo.rs` 迁移到 `sb_adapters::inbound::http::{serve_http,HttpProxyConfig}`，移除 `singbox_rust::inbound::http::{HttpInbound,DirectConnector}` 依赖。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.10-wave11-v1`（56 assertions），新增 W11-01~W11-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave11_v7_regression_block.txt`（注入 `singbox_rust::inbound::http::{HttpInbound, DirectConnector}` 后 `--v7-only` 失败，`exit_code=1`）。
+- 最小验证：
+  - `cargo check -p sb-core`：PASS（`wave11_wp1_sb_core_check.txt`）
+  - `cargo check -p app --test inbound_http`：PASS（`wave11_wp1_app_inbound_http_check.txt`）
+  - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`V7 PASS (56 assertions)`）
+  - `bash -n scripts/l18/gui_real_cert.sh`：PASS（`wave11_gui_static_syntax_check.txt`）
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中
