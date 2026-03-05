@@ -711,7 +711,7 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
     let mut rules = Vec::new();
 
     for rule in &config.route.rules {
-        let outbound = rule.outbound.as_deref().unwrap_or("direct");
+        let outbound = rule.outbound.as_deref().unwrap_or("unresolved");
 
         for domain in &rule.domain {
             rules.push(format!("exact:{domain}={outbound}"));

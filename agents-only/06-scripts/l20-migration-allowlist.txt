@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.79-wave82-v1|||L21 wave#82 migration assertion allowlist version
+VERSION|l21.80-wave83-v1|||L21 wave#83 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -260,3 +260,5 @@ forbid|W81-01-no-router-builder-default-direct-literal|crates/sb-core/src/router
 require|W81-02-router-builder-default-unresolved-literal|crates/sb-core/src/router/builder.rs|unwrap_or\(\"unresolved\"\)|router builder should use explicit unresolved marker for default decision
 forbid|W82-01-no-adapter-bridge-final-rule-default-direct-literal|crates/sb-core/src/adapter/bridge.rs|unwrap_or\(\"direct\"\)|adapter bridge final rule should not use silent direct fallback
 require|W82-02-adapter-bridge-final-rule-default-unresolved-literal|crates/sb-core/src/adapter/bridge.rs|unwrap_or\(\"unresolved\"\)|adapter bridge final rule should use explicit unresolved marker
+forbid|W83-01-no-bootstrap-router-rules-text-rule-outbound-direct-default|app/src/bootstrap.rs|unwrap_or\(\"direct\"\)|bootstrap router rules text rule_outbound should not use silent direct fallback
+require|W83-02-bootstrap-router-rules-text-rule-outbound-unresolved-default|app/src/bootstrap.rs|unwrap_or\(\"unresolved\"\)|bootstrap router rules text rule_outbound should use explicit unresolved marker
