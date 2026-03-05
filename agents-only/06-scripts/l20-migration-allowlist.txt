@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.16-wave19-v1|||L21 wave#19 migration assertion allowlist version
+VERSION|l21.17-wave20-v1|||L21 wave#20 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -98,3 +98,6 @@ require|W18-02-bootstrap-http-explicit-disabled-msg|app/src/bootstrap.rs|HTTP pr
 
 forbid|W19-01-no-bootstrap-tuic-core-concrete|app/src/bootstrap.rs|outbound::tuic::TuicOutbound|bootstrap selector/urltest connector path should not construct core TUIC concrete
 require|W19-02-bootstrap-tuic-explicit-disabled-msg|app/src/bootstrap.rs|TUIC selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap TUIC path should emit explicit migration guidance
+
+forbid|W20-01-no-bootstrap-vmess-core-concrete|app/src/bootstrap.rs|outbound::vmess::VmessOutbound|bootstrap selector/urltest connector path should not construct core VMess concrete
+require|W20-02-bootstrap-vmess-explicit-disabled-msg|app/src/bootstrap.rs|VMess selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap VMess path should emit explicit migration guidance

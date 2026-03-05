@@ -144,6 +144,20 @@
   - `reports/l21/artifacts/wave19_v7_regression_block.txt`
   - `reports/l21/artifacts/wave19_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#20 推进快照（2026-03-05 19:36）
+
+- 状态：`MIG-02 in_progress`（wave#20 完成 bootstrap selector/urltest 路径去 core VMess concrete）
+- 本轮落地：
+  1. `app/src/bootstrap.rs`：`to_adapter_connector(OutboundImpl::Vmess)` 不再构建 core `outbound::vmess::VmessOutbound`，改为显式 `warn + None` 迁移提示。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.17-wave20-v1`（73 assertions），新增 W20-01/W20-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave20_v7_regression_block.txt`（注入 `outbound::vmess::VmessOutbound` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave20_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave20_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave20_strict_gate.txt`
+  - `reports/l21/artifacts/wave20_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave20_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

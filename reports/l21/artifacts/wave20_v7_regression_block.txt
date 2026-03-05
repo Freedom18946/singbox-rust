@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 19:36) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.17-wave20-v1
+  FAIL: [W20-01-no-bootstrap-vmess-core-concrete] forbidden pattern matched in app/src/bootstrap.rs :: bootstrap selector/urltest connector path should not construct core VMess concrete
+  FAIL: 1/73 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave20-v7-regress.t0hCIl
+[meta] injected_file=app/src/bootstrap.rs
+[meta] injected_pattern=outbound::vmess::VmessOutbound
+[meta] exit_code=1

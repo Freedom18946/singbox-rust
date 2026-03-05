@@ -625,11 +625,11 @@ fn to_adapter_connector(
                 .ok()
                 .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
         }
-        sb_core::outbound::OutboundImpl::Vmess(cfg) => {
-            use sb_core::outbound::vmess::VmessOutbound;
-            VmessOutbound::new(cfg.clone())
-                .ok()
-                .map(|o| Arc::new(o) as Arc<dyn AdapterConnector>)
+        sb_core::outbound::OutboundImpl::Vmess(_cfg) => {
+            tracing::warn!(
+                "VMess selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
+            );
+            None
         }
         sb_core::outbound::OutboundImpl::Tuic(_cfg) => {
             tracing::warn!(
