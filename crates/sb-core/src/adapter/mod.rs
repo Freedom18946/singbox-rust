@@ -632,8 +632,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Vless => {
-                    // VLESS handled by sb-adapters; core bridge falls back to direct
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge VLESS outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Selector => {
                     // Selector outbound would be implemented here
