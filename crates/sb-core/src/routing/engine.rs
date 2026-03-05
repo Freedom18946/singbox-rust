@@ -762,7 +762,7 @@ impl<'a> Engine<'a> {
             .default
             .clone()
             .or_else(|| self.cfg.route.final_outbound.clone())
-            .unwrap_or_else(|| "direct".into())
+            .unwrap_or_else(|| "unresolved".into())
     }
 
     pub fn decide(&self, inp: &Input, want_trace: bool) -> Decide {

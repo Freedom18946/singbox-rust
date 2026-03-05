@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.72-wave75-v1|||L21 wave#75 migration assertion allowlist version
+VERSION|l21.73-wave76-v1|||L21 wave#76 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -246,3 +246,5 @@ require|W74-03-socks-udp-enhanced-proxy-send-failed-msg|crates/sb-adapters/src/i
 require|W74-04-socks-udp-enhanced-proxy-no-fallback-metric|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|class\" => \"proxy_no_fallback|socks5-udp enhanced proxy decision path should record proxy_no_fallback metric class
 forbid|W75-01-no-adapter-bridge-router-rules-text-direct-default|crates/sb-core/src/adapter/bridge.rs|\"direct\"\.to_string\(\)|adapter bridge router rules text builder should not use silent direct default fallback
 require|W75-02-adapter-bridge-router-rules-text-unresolved-default|crates/sb-core/src/adapter/bridge.rs|\"unresolved\"\.to_string\(\)|adapter bridge router rules text builder should use explicit unresolved marker instead of silent direct fallback
+forbid|W76-01-no-routing-engine-default-outbound-direct-literal|crates/sb-core/src/routing/engine.rs|unwrap_or_else\([^)]*\"direct\"\.into\(\)\)|routing engine default_outbound should not use silent direct literal fallback
+require|W76-02-routing-engine-default-outbound-unresolved-literal|crates/sb-core/src/routing/engine.rs|unwrap_or_else\([^)]*\"unresolved\"\.into\(\)\)|routing engine default_outbound should use explicit unresolved marker instead of silent direct fallback

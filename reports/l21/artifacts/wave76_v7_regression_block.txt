@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:00) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.73-wave76-v1
+  FAIL: [W76-01-no-routing-engine-default-outbound-direct-literal] forbidden pattern matched in crates/sb-core/src/routing/engine.rs :: routing engine default_outbound should not use silent direct literal fallback
+  FAIL: [W76-02-routing-engine-default-outbound-unresolved-literal] required pattern missing in crates/sb-core/src/routing/engine.rs :: routing engine default_outbound should use explicit unresolved marker instead of silent direct fallback
+  FAIL: 2/212 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave76-v7-regress.z2KyLC
+[meta] injected_file=crates/sb-core/src/routing/engine.rs
+[meta] injected_pattern="direct".into()
+[meta] exit_code=1
