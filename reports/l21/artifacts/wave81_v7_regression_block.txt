@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:23) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.78-wave81-v1
+  FAIL: [W81-01-no-router-builder-default-direct-literal] forbidden pattern matched in crates/sb-core/src/router/builder.rs :: router builder should not use silent direct fallback for default decision
+  FAIL: [W81-02-router-builder-default-unresolved-literal] required pattern missing in crates/sb-core/src/router/builder.rs :: router builder should use explicit unresolved marker for default decision
+  FAIL: 2/222 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave81-v7-regress.r07kMA
+[meta] injected_file=crates/sb-core/src/router/builder.rs
+[meta] injected_pattern=unwrap_or("direct")
+[meta] exit_code=1

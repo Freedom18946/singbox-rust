@@ -90,7 +90,7 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
         .default
         .as_deref()
         .or(cfg.route.final_outbound.as_deref())
-        .unwrap_or("direct");
+        .unwrap_or("unresolved");
     let default = decision_intern::intern_decision(default_dec);
 
     // Calc checksum (simplified, using Default for now as we don't have text representation)
