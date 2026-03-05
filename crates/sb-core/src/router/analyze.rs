@@ -292,7 +292,7 @@ pub fn analyze_rules(view: &Value) -> Vec<AnalyzeIssue> {
         let to = r
             .get("to")
             .and_then(|v| v.as_str())
-            .unwrap_or("direct")
+            .unwrap_or("unresolved")
             .to_string();
         if let Some(host) = r
             .get("when")

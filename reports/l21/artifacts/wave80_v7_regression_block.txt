@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 01:19) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.77-wave80-v1
+  FAIL: [W80-01-no-router-analyze-rules-default-direct-literal] forbidden pattern matched in crates/sb-core/src/router/analyze.rs :: router analyze_rules should not use silent direct fallback for missing rule outbound
+  FAIL: [W80-02-router-analyze-rules-default-unresolved-literal] required pattern missing in crates/sb-core/src/router/analyze.rs :: router analyze_rules should use explicit unresolved marker for missing rule outbound
+  FAIL: 2/220 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave80-v7-regress.4NejuW
+[meta] injected_file=crates/sb-core/src/router/analyze.rs
+[meta] injected_pattern=unwrap_or("direct")
+[meta] exit_code=1
