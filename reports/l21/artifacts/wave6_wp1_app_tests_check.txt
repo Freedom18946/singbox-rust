@@ -1,0 +1,183 @@
+   Compiling libc v0.2.178
+    Checking scopeguard v1.2.0
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+   Compiling zerocopy v0.8.31
+   Compiling zerocopy-derive v0.8.31
+    Checking bitflags v2.10.0
+   Compiling dunce v1.0.5
+    Checking lock_api v0.4.14
+   Compiling fs_extra v1.3.0
+   Compiling aws-lc-rs v1.15.2
+    Checking parking_lot v0.12.5
+   Compiling rustls v0.23.35
+    Checking tokio v1.48.0
+    Checking security-framework v3.5.1
+    Checking core-foundation v0.9.4
+    Checking security-framework v2.11.1
+    Checking prometheus v0.14.0
+   Compiling smoltcp v0.11.0
+    Checking either v1.15.0
+    Checking rustls-native-certs v0.7.3
+    Checking notify v6.1.1
+    Checking parking_lot v0.11.2
+    Checking dashmap v5.5.3
+    Checking dashmap v6.1.0
+   Compiling jobserver v0.1.34
+   Compiling errno v0.3.14
+   Compiling rustix v1.1.3
+   Compiling cc v1.2.51
+   Compiling getrandom v0.3.4
+   Compiling clang-sys v1.8.1
+   Compiling nix v0.30.1
+   Compiling cmake v0.1.57
+   Compiling tempfile v3.24.0
+   Compiling ring v0.17.14
+   Compiling aws-lc-sys v0.35.0
+   Compiling prost-build v0.13.5
+    Checking tokio-util v0.7.17
+    Checking serde_json v1.0.148
+    Checking h2 v0.4.12
+    Checking tower v0.5.2
+   Compiling bindgen v0.72.1
+    Checking tracing-serde v0.2.0
+    Checking url v2.5.7
+   Compiling tonic-build v0.12.3
+    Checking tracing-subscriber v0.3.22
+    Checking axum v0.7.9
+   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+    Checking ppv-lite86 v0.2.21
+    Checking chrono v0.4.42
+    Checking rand_chacha v0.3.1
+    Checking rand v0.8.5
+    Checking rand_chacha v0.9.0
+    Checking rand v0.9.2
+    Checking tungstenite v0.24.0
+    Checking fastbloom v0.14.0
+    Checking hyper v1.8.1
+    Checking tower v0.4.13
+    Checking uuid v1.19.0
+    Checking hyper v0.14.32
+    Checking tokio-stream v0.1.17
+   Compiling blake3 v1.8.2
+    Checking tokio-tungstenite v0.24.0
+    Checking hyper-util v0.1.19
+    Checking yamux v0.13.8
+    Checking ahash v0.8.12
+    Checking sb-metrics v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics)
+    Checking sb-types v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-types)
+    Checking tower-http v0.6.8
+    Checking hyper-timeout v0.5.2
+    Checking serde_urlencoded v0.7.1
+    Checking serde_yaml v0.9.34+deprecated
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Checking tonic v0.12.3
+    Checking normalize-line-endings v0.3.0
+   Compiling rayon-core v1.13.0
+    Checking maxminddb v0.27.1
+   Compiling libproc v0.14.11
+    Checking sled v0.34.7
+    Checking sb-config v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-config)
+    Checking metrics v0.24.3
+    Checking half v2.7.1
+    Checking sb-common v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-common)
+    Checking boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)
+    Checking rcgen v0.13.2
+   Compiling generator v0.8.8
+    Checking crossbeam-deque v0.8.6
+    Checking wait-timeout v0.2.1
+    Checking winnow v0.7.14
+    Checking ciborium-io v0.2.2
+    Checking notify-types v2.0.0
+    Checking predicates-core v1.0.9
+    Checking ciborium-ll v0.2.2
+    Checking notify v8.2.0
+    Checking hickory-proto v0.24.4
+    Checking rcgen v0.14.6
+    Checking serde_spanned v1.0.4
+    Checking toml_datetime v0.7.5+spec-1.1.0
+    Checking itertools v0.10.5
+    Checking snapbox-macros v0.4.0
+    Checking float-cmp v0.10.0
+    Checking os_pipe v1.2.3
+    Checking content_inspector v0.2.4
+   Compiling assert_cmd v2.1.1
+    Checking termtree v0.5.1
+    Checking similar v2.7.0
+    Checking toml_writer v1.0.6+spec-1.1.0
+    Checking difflib v0.4.0
+    Checking cast v0.3.0
+    Checking md5 v0.8.0
+    Checking predicates v3.1.3
+    Checking toml_parser v1.0.6+spec-1.1.0
+    Checking snapbox v0.6.23
+    Checking criterion-plot v0.5.0
+    Checking toml_edit v0.23.10+spec-1.0.0
+    Checking predicates-tree v1.0.12
+    Checking rayon v1.11.0
+    Checking tun v0.8.5
+   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
+    Checking hickory-resolver v0.24.4
+    Checking ciborium v0.2.2
+    Checking rcgen v0.12.1
+    Checking sb-platform v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-platform)
+    Checking tinytemplate v1.2.1
+    Checking humantime-serde v1.1.1
+    Checking rustls-native-certs v0.8.3
+    Checking bstr v1.12.1
+    Checking md-5 v0.10.6
+   Compiling automod v1.0.15
+   Compiling serial_test_derive v2.0.0
+    Checking is-terminal v0.4.17
+    Checking anes v0.1.6
+    Checking shlex v1.3.0
+    Checking oorandom v11.1.5
+    Checking scoped-tls v1.0.1
+    Checking loom v0.7.2
+    Checking criterion v0.5.1
+    Checking serial_test v2.0.0
+    Checking sb-admin-contract v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-admin-contract)
+    Checking trycmd v0.15.11
+    Checking rustls-webpki v0.103.8
+    Checking tokio-rustls v0.26.4
+    Checking rustls-platform-verifier v0.6.2
+    Checking quinn-proto v0.11.13
+    Checking hyper-rustls v0.27.7
+    Checking sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
+    Checking anytls-rs v0.5.4 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/vendor/anytls-rs)
+    Checking reqwest v0.12.28
+    Checking quinn v0.11.9
+    Checking sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+warning: unused import: `std::sync::Arc`
+  --> app/tests/protocol_chain_e2e.rs:15:5
+   |
+15 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_constrained_dial_error_str` is never used
+  --> app/tests/protocol_chain_e2e.rs:21:4
+   |
+21 | fn is_constrained_dial_error_str(s: &str) -> bool {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `app` (test "protocol_chain_e2e") generated 2 warnings (run `cargo fix --test "protocol_chain_e2e" -p app` to apply 1 suggestion)
+warning: function `supported_kinds` is never used
+  --> app/src/analyze/registry.rs:63:8
+   |
+63 | pub fn supported_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `supported_async_kinds` is never used
+  --> app/src/analyze/registry.rs:98:8
+   |
+98 | pub fn supported_async_kinds() -> Vec<&'static str> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `app` (bin "app" test) generated 2 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 54.11s

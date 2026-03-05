@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.4-wave5-v1|||L21 wave#5 migration assertion allowlist version
+VERSION|l21.5-wave6-v1|||L21 wave#6 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -47,3 +47,14 @@ require|W4-09-run-engine-sb-transport-target|app/src/run_engine.rs|target: \"sb_
 forbid|W5-01-no-probe-switchboard-builder|app/src/bin/probe-outbound.rs|SwitchboardBuilder::from_config_ir|probe-outbound must avoid runtime switchboard fallback path
 require|W5-02-probe-uses-adapter-bridge|app/src/bin/probe-outbound.rs|sb_core::adapter::bridge::build_bridge|probe-outbound must resolve outbounds through adapter bridge
 require|W5-03-probe-register-adapters|app/src/bin/probe-outbound.rs|app::util::register_adapters_once|probe-outbound must register adapters before bridge assembly
+
+forbid|W6-01-no-switchboard-builder-http-connect-test|app/tests/http_connect_inbound.rs|SwitchboardBuilder::from_config_ir|http_connect_inbound test should avoid switchboard concrete builder path
+forbid|W6-02-no-switchboard-builder-socks-e2e-test|app/tests/socks_end2end.rs|SwitchboardBuilder::from_config_ir|socks_end2end test should avoid switchboard concrete builder path
+forbid|W6-03-no-switchboard-builder-socks-selector-test|app/tests/socks_via_selector.rs|SwitchboardBuilder::from_config_ir|socks_via_selector test should avoid switchboard concrete builder path
+forbid|W6-04-no-switchboard-builder-upstream-auth-test|app/tests/upstream_auth.rs|SwitchboardBuilder::from_config_ir|upstream_auth test should avoid switchboard concrete builder path
+forbid|W6-05-no-switchboard-builder-upstream-socks-http-test|app/tests/upstream_socks_http.rs|SwitchboardBuilder::from_config_ir|upstream_socks_http test should avoid switchboard concrete builder path
+require|W6-06-use-empty-switchboard-http-connect-test|app/tests/http_connect_inbound.rs|OutboundSwitchboard::new\(\)|http_connect_inbound test should use empty switchboard
+require|W6-07-use-empty-switchboard-socks-e2e-test|app/tests/socks_end2end.rs|OutboundSwitchboard::new\(\)|socks_end2end test should use empty switchboard
+require|W6-08-use-empty-switchboard-socks-selector-test|app/tests/socks_via_selector.rs|OutboundSwitchboard::new\(\)|socks_via_selector test should use empty switchboard
+require|W6-09-use-empty-switchboard-upstream-auth-test|app/tests/upstream_auth.rs|OutboundSwitchboard::new\(\)|upstream_auth test should use empty switchboard
+require|W6-10-use-empty-switchboard-upstream-socks-http-test|app/tests/upstream_socks_http.rs|OutboundSwitchboard::new\(\)|upstream_socks_http test should use empty switchboard
