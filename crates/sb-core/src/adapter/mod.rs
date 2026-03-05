@@ -43,6 +43,33 @@ fn direct_connector_fallback() -> Arc<dyn OutboundConnector> {
     Arc::new(DirectConnector::new())
 }
 
+#[derive(Debug, Clone)]
+struct UnsupportedOutboundConnector {
+    reason: Arc<str>,
+}
+
+impl UnsupportedOutboundConnector {
+    fn new(reason: impl Into<Arc<str>>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl OutboundConnector for UnsupportedOutboundConnector {
+    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            self.reason.to_string(),
+        ))
+    }
+}
+
+fn unsupported_outbound_connector(reason: impl Into<Arc<str>>) -> Arc<dyn OutboundConnector> {
+    Arc::new(UnsupportedOutboundConnector::new(reason))
+}
+
 /// Inbound service trait for protocol handlers (socks5/http/tun).
 /// 协议处理程序（socks5/http/tun）的入站服务 trait。
 ///
@@ -595,44 +622,14 @@ impl Bridge {
                     }
                 }
                 sb_config::ir::OutboundType::Http => {
-                    // HTTP upstream connector (scaffold implementation)
-                    #[cfg(feature = "scaffold")]
-                    {
-                        use crate::outbound::http_upstream::HttpUp;
-                        let (user, pass) = outbound
-                            .credentials
-                            .as_ref()
-                            .map(|c| (c.username.clone(), c.password.clone()))
-                            .unwrap_or((None, None));
-                        let server = outbound.server.clone().unwrap_or_default();
-                        let port = outbound.port.unwrap_or(8080);
-                        Arc::new(HttpUp::new(server, port, user, pass))
-                            as Arc<dyn OutboundConnector>
-                    }
-                    #[cfg(not(feature = "scaffold"))]
-                    {
-                        direct_connector_fallback()
-                    }
+                    unsupported_outbound_connector(
+                        "core bridge HTTP outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Socks => {
-                    // SOCKS5 upstream connector (scaffold implementation)
-                    #[cfg(feature = "scaffold")]
-                    {
-                        use crate::outbound::socks_upstream::SocksUp;
-                        let (user, pass) = outbound
-                            .credentials
-                            .as_ref()
-                            .map(|c| (c.username.clone(), c.password.clone()))
-                            .unwrap_or((None, None));
-                        let server = outbound.server.clone().unwrap_or_default();
-                        let port = outbound.port.unwrap_or(1080);
-                        Arc::new(SocksUp::new(server, port, user, pass))
-                            as Arc<dyn OutboundConnector>
-                    }
-                    #[cfg(not(feature = "scaffold"))]
-                    {
-                        direct_connector_fallback()
-                    }
+                    unsupported_outbound_connector(
+                        "core bridge SOCKS outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Vless => {
                     // VLESS handled by sb-adapters; core bridge falls back to direct

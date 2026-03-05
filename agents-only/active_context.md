@@ -242,6 +242,20 @@
   - `reports/l21/artifacts/wave26_v7_regression_block.txt`
   - `reports/l21/artifacts/wave26_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#27 推进快照（2026-03-05 20:14）
+
+- 状态：`MIG-02 hardening`（wave#27 完成 core bridge HTTP/SOCKS 路径去 core concrete）
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/mod.rs`：`Bridge::new_from_config` 的 `OutboundType::Http/Socks` 不再构建 `outbound::http_upstream::HttpUp`/`outbound::socks_upstream::SocksUp`，统一改为 `UnsupportedOutboundConnector` 并提示迁移到 `adapter::bridge::build_bridge`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.24-wave27-v1`（89 assertions），新增 W27-01~W27-04。
+  3. 回流阻断证据：`reports/l21/artifacts/wave27_v7_regression_block.txt`（注入 `outbound::socks_upstream::SocksUp` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave27_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave27_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave27_strict_gate.txt`
+  - `reports/l21/artifacts/wave27_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave27_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

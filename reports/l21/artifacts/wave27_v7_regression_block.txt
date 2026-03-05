@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 20:14) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.24-wave27-v1
+  FAIL: [W27-02-no-core-bridge-socksup-concrete] forbidden pattern matched in crates/sb-core/src/adapter/mod.rs :: core bridge should not construct core SOCKS upstream concrete
+  FAIL: 1/89 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave27-v7-regress.EXOWqy
+[meta] injected_file=crates/sb-core/src/adapter/mod.rs
+[meta] injected_pattern=outbound::socks_upstream::SocksUp
+[meta] exit_code=1
