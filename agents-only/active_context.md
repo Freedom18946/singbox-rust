@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#120**，聚焦 **geoip_rules 注释样例 default 去 silent direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#121**，聚焦 **router_geosite_rules_integration 测试样例 default 去 silent direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -20,9 +20,22 @@
 
 ### 下一阶段预估（实时）
 
-- 尚余 `2` 个文件、`16` 处 `default=direct`。
+- 尚余 `1` 个文件、`10` 处 `default=direct`。
 - 继续按“一波一文件”推进；高风险文件留到后段集中处理。
-- 当前 V7 口径：`l21.117-wave120-v1`（300 assertions）。
+- 当前 V7 口径：`l21.118-wave121-v1`（302 assertions）。
+
+### 🆕 L21 wave#121 推进快照（2026-03-06 04:41）
+
+- 状态：完成（`crates/sb-core/tests/router_geosite_rules_integration.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/tests/router_geosite_rules_integration.rs`：router_geosite_rules_integration 测试样例 default 去 silent direct fallback
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.118-wave121-v1`（302 assertions）
+  3. `wave121_v7_regression_block.txt`：注入回流样例后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave121_wp1_app_tests_check.txt` PASS
+  - `wave121_wp1_sb_core_check.txt` PASS
+  - `wave121_strict_gate.txt` PASS
+  - `wave121_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#120 推进快照（2026-03-06 04:40）
 

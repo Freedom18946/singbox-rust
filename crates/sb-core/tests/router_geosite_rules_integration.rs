@@ -10,7 +10,7 @@ use tempfile::NamedTempFile;
 #[ignore] // Requires protobuf format GeoSite database file
 fn test_geosite_rules_parsing() {
     // Test GeoSite rule parsing in router build
-    let rules = "geosite:google=proxy\ngeosite:ads=reject\ndefault=direct";
+    let rules = "geosite:google=proxy\ngeosite:ads=reject\ndefault=unresolved";
 
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
 
@@ -122,7 +122,7 @@ fn test_geosite_rules_decision_priority() {
 #[ignore] // Requires protobuf format GeoSite database file
 fn test_geosite_rules_case_insensitive() {
     // Test case insensitive GeoSite category parsing
-    let rules = "geosite:GOOGLE=proxy\ngeosite:Ads=reject\ndefault=direct";
+    let rules = "geosite:GOOGLE=proxy\ngeosite:Ads=reject\ndefault=unresolved";
 
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
 
@@ -152,7 +152,7 @@ fn test_geosite_rules_invalid_patterns() {
 #[ignore] // Requires protobuf format GeoSite database file
 fn test_geosite_rules_with_illegal_chars() {
     // Test GeoSite patterns with illegal characters are rejected
-    let rules = "geosite:goo gle=proxy\ndefault=direct";
+    let rules = "geosite:goo gle=proxy\ndefault=unresolved";
 
     let result = router_build_index_from_str(rules, 1000);
     assert!(result.is_err());
@@ -171,7 +171,7 @@ fn test_geosite_rules_metrics_integration() {
         GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
 
     // Build router index with GeoSite rules
-    let rules = "geosite:google=proxy\ndefault=direct";
+    let rules = "geosite:google=proxy\ndefault=unresolved";
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
 
     // Verify metrics would be recorded (we can't easily test actual metrics in unit tests)
@@ -189,7 +189,7 @@ fn test_geosite_rules_metrics_integration() {
 #[ignore] // Requires protobuf format GeoSite database file
 fn test_geosite_rules_multiple_categories() {
     // Test multiple GeoSite categories for the same decision
-    let rules = "geosite:google=proxy\ngeosite:youtube=proxy\ngeosite:ads=reject\ndefault=direct";
+    let rules = "geosite:google=proxy\ngeosite:youtube=proxy\ngeosite:ads=reject\ndefault=unresolved";
 
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
 
@@ -219,7 +219,7 @@ suffix:.test.com=proxy
 geosite:google=proxy
 geosite:ads=reject
 port:443=secure
-default=direct
+default=unresolved
 "#;
 
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
@@ -229,5 +229,5 @@ default=direct
     assert_eq!(idx.suffix.len(), 1);
     assert_eq!(idx.geosite_rules.len(), 2);
     assert_eq!(idx.port_rules.len(), 1);
-    assert_eq!(idx.default, "direct");
+    assert_eq!(idx.default, "unresolved");
 }
