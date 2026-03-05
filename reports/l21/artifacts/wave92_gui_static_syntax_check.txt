@@ -1,0 +1,1 @@
+PASS: bash -n scripts/l18/gui_real_cert.sh

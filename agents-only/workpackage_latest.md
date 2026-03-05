@@ -1,11 +1,37 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 02:03
-> **当前阶段**：L21 wave#91 推进完成（MIG-02 hardening：geosite demo default 去 silent direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 02:06
+> **当前阶段**：L21 wave#92 推进完成（MIG-02 hardening：process routing demo default 去 silent direct fallback + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=242 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=244 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
+
+---
+
+## 🆕 最新进展：L21 wave#92 推进落地（2026-03-06 02:06）
+
+**状态**：✅ `MIG-02 wave#92` 完成一段（process routing demo default 去 silent direct fallback）；✅ strict gate allowlist 升级到 `l21.89-wave92-v1`；✅ 回流阻断负样例证据更新
+
+1. **推进 wave#92（MIG-02 hardening，process routing demo 路径）**：
+   - `crates/sb-core/examples/process_routing_demo.rs`：
+     - process routing 示例规则中的 fallback 从 `default=direct` 调整为 `default=unresolved`，去除示例中的 silent direct fallback 字面量。
+2. **strict gate allowlist 升级（V7 wave#92）**：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.89-wave92-v1`，断言扩展到 244 条（新增 W92-01/W92-02）。
+   - 回流阻断证据：`reports/l21/artifacts/wave92_v7_regression_block.txt`（在临时 root 将 `default=unresolved` 注入回 `default=direct` 后，`--v7-only` 预期失败，`exit_code=1`）。
+3. **门禁与编译复验**：
+   - `cargo check -p app --tests`：PASS（`reports/l21/artifacts/wave92_wp1_app_tests_check.txt`）。
+   - `cargo check -p sb-core`：PASS（`reports/l21/artifacts/wave92_wp1_sb_core_check.txt`）。
+   - `bash agents-only/06-scripts/check-boundaries.sh --strict`：PASS（`reports/l21/artifacts/wave92_strict_gate.txt`，`V7 PASS (244 assertions)`）。
+4. **L18 隔离下静态回归**（不跑运行流程）：
+   - `bash -n scripts/l18/gui_real_cert.sh`：语法通过（`reports/l21/artifacts/wave92_gui_static_syntax_check.txt`）。
+
+**最小验证**：
+1. `cargo check -p app --tests`（`wave92_wp1_app_tests_check.txt`）
+2. `cargo check -p sb-core`（`wave92_wp1_sb_core_check.txt`）
+3. `bash agents-only/06-scripts/check-boundaries.sh --strict`（`wave92_strict_gate.txt`）
+4. `BOUNDARY_PROJECT_ROOT=<tmp> ... bash agents-only/06-scripts/check-boundaries.sh --v7-only`（预期 FAIL，见 `wave92_v7_regression_block.txt`）
+5. `bash -n scripts/l18/gui_real_cert.sh`（`wave92_gui_static_syntax_check.txt`）
 
 ---
 

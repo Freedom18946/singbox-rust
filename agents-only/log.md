@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-06 02:06] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 process routing demo default 路径 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/examples/process_routing_demo.rs`
+    - process routing 示例规则中的 fallback 从 `default=direct` 调整为 `default=unresolved`
+    - 去除 process routing demo 中 silent direct fallback 字面量
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.89-wave92-v1`
+    - 新增 `W92-01~W92-02`（禁止 process routing demo 保留 `default=direct` + 要求 `default=unresolved`）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave92_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave92_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave92_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (244 assertions)`）
+  - `reports/l21/artifacts/wave92_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave92_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#92）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3CO wave#92，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#92 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#92 目标已落地并形成可复算证据链）
+**备注**:
+- process routing demo fallback 默认规则不再 silent fallback 到 direct，当前统一显式 unresolved 标记。
+
+---
+
 ### [2026-03-06 02:03] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 geosite demo default 路径 silent direct fallback 并升级 strict gate 断言。

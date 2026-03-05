@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-06 02:06) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.89-wave92-v1
+  FAIL: [W92-01-no-process-routing-demo-default-direct-literal] forbidden pattern matched in crates/sb-core/examples/process_routing_demo.rs :: process routing demo should not keep silent direct default literal
+  FAIL: [W92-02-process-routing-demo-default-unresolved-literal] required pattern missing in crates/sb-core/examples/process_routing_demo.rs :: process routing demo should use explicit unresolved default literal
+  FAIL: 2/244 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave92-v7-regress.EDdaxM
+[meta] injected_file=crates/sb-core/examples/process_routing_demo.rs
+[meta] injected_pattern=default=direct
+[meta] exit_code=1

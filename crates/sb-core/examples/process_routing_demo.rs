@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port:443,transport:tcp=proxy:https_proxy
         
         # Default fallback
-        default=direct
+        default=unresolved
     "#;
 
     let parsed_rules = parse_rules(rules_text);
