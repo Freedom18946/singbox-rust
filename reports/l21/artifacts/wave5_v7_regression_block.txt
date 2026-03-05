@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 12:38) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.4-wave5-v1
+  FAIL: [W5-01-no-probe-switchboard-builder] forbidden pattern matched in app/src/bin/probe-outbound.rs :: probe-outbound must avoid runtime switchboard fallback path
+  FAIL: 1/32 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave5-v7-regress.tYvso6
+[meta] injected_file=app/src/bin/probe-outbound.rs
+[meta] injected_pattern=SwitchboardBuilder::from_config_ir
+[meta] exit_code=1

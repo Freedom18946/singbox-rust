@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.3-wave4-v1|||L21 wave#4 migration assertion allowlist version
+VERSION|l21.4-wave5-v1|||L21 wave#5 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -43,3 +43,7 @@ forbid|W4-07-no-bootstrap-fallback-direct-call|app/src/bootstrap.rs|ensure_fallb
 
 forbid|W4-08-no-run-engine-core-transport-target|app/src/run_engine.rs|target: \"sb_core::transport\"|run_engine transport planning logs must not use sb_core::transport target label
 require|W4-09-run-engine-sb-transport-target|app/src/run_engine.rs|target: \"sb_transport\"|run_engine transport planning logs should align to sb_transport ownership
+
+forbid|W5-01-no-probe-switchboard-builder|app/src/bin/probe-outbound.rs|SwitchboardBuilder::from_config_ir|probe-outbound must avoid runtime switchboard fallback path
+require|W5-02-probe-uses-adapter-bridge|app/src/bin/probe-outbound.rs|sb_core::adapter::bridge::build_bridge|probe-outbound must resolve outbounds through adapter bridge
+require|W5-03-probe-register-adapters|app/src/bin/probe-outbound.rs|app::util::register_adapters_once|probe-outbound must register adapters before bridge assembly
