@@ -119,12 +119,8 @@ fn extract_outbound_from_reason(reason: &str) -> String {
         }
     }
 
-    // Default unresolved marker
-    if reason.contains("proxy") {
-        "proxy".to_string()
-    } else {
-        "unresolved".to_string()
-    }
+    // Default unresolved marker (no implicit outbound inference).
+    "unresolved".to_string()
 }
 
 impl ExplainTrace {

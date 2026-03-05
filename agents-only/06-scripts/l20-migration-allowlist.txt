@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.49-wave52-v1|||L21 wave#52 migration assertion allowlist version
+VERSION|l21.50-wave53-v1|||L21 wave#53 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -183,3 +183,5 @@ forbid|W51-01-no-router-explain-direct-default|crates/sb-core/src/router/explain
 require|W51-02-router-explain-unresolved-default|crates/sb-core/src/router/explain.rs|\"unresolved\"\.to_string\(\)|router explain extraction should emit explicit unresolved marker when outbound cannot be derived
 forbid|W52-01-no-router-explain-derive-default-fallback|crates/sb-core/src/router/explain.rs|unwrap_or\(\"default\"\)|router explain derive_outbound should not use silent default fallback marker
 require|W52-02-router-explain-derive-unresolved-fallback|crates/sb-core/src/router/explain.rs|unwrap_or\(\"unresolved\"\)|router explain derive_outbound should use explicit unresolved marker when outbound cannot be derived
+forbid|W53-01-no-router-explain-proxy-inference-fallback|crates/sb-core/src/router/explain.rs|reason\.contains\(\"proxy\"\)|router explain extraction should not infer proxy outbound implicitly from reason text
+require|W53-02-router-explain-explicit-unresolved-return|crates/sb-core/src/router/explain.rs|\"unresolved\"\.to_string\(\)|router explain extraction should return explicit unresolved marker when reason cannot derive outbound

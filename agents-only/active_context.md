@@ -608,6 +608,20 @@
   - `reports/l21/artifacts/wave52_v7_regression_block.txt`
   - `reports/l21/artifacts/wave52_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#53 推进快照（2026-03-05 23:03）
+
+- 状态：`MIG-02 hardening`（wave#53 完成 router explain 分支去 proxy inference fallback）
+- 本轮落地：
+  1. `crates/sb-core/src/router/explain.rs`：`extract_outbound_from_reason` 删除 `reason.contains("proxy") => "proxy"` 隐式推断，无法解析时统一返回 `unresolved`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.50-wave53-v1`（149 assertions），新增 W53-01/W53-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave53_v7_regression_block.txt`（注入 `if reason.contains("proxy") {` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave53_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave53_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave53_strict_gate.txt`
+  - `reports/l21/artifacts/wave53_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave53_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

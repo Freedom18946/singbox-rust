@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 23:03) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.50-wave53-v1
+  FAIL: [W53-01-no-router-explain-proxy-inference-fallback] forbidden pattern matched in crates/sb-core/src/router/explain.rs :: router explain extraction should not infer proxy outbound implicitly from reason text
+  FAIL: 1/149 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave53-v7-regress.JAcc2m
+[meta] injected_file=crates/sb-core/src/router/explain.rs
+[meta] injected_pattern=if reason.contains("proxy") {
+[meta] exit_code=1
