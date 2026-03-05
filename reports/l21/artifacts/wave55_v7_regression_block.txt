@@ -1,0 +1,15 @@
+=== 依赖边界检查 (2026-03-05 23:12) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.52-wave55-v1
+  FAIL: [W55-01-no-http-inbound-health-direct-fallback-msg] forbidden pattern matched in crates/sb-adapters/src/inbound/http.rs :: http inbound health check path should not fallback to direct
+  FAIL: [W55-03-http-inbound-health-explicit-disabled-msg] required pattern missing in crates/sb-adapters/src/inbound/http.rs :: http inbound health check path should emit explicit no-fallback diagnostics
+  FAIL: 2/155 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave55-v7-regress.uVYPhB
+[meta] injected_file=crates/sb-adapters/src/inbound/http.rs
+[meta] injected_pattern=proxy unhealthy; fallback to direct (http inbound)
+[meta] exit_code=1

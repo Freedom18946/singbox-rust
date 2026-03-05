@@ -23,6 +23,36 @@
 
 ## 日志记录
 
+### [2026-03-05 23:12] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 http inbound health fallback 路径 direct override 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/http.rs`
+    - 健康检查路径不再将 `RDecision::Proxy` 覆盖为 `RDecision::Direct`
+    - 改为显式 no-fallback 告警 `proxy unhealthy; direct fallback is disabled (http inbound)`
+    - `router_route_fallback_total` 指标目的地从 `direct` 调整为 `blocked`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.52-wave55-v1`
+    - 新增 `W55-01~W55-03`（禁止 http inbound health direct fallback + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave55_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave55_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave55_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (155 assertions)`）
+  - `reports/l21/artifacts/wave55_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave55_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#55）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3BD wave#55，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#55 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#55 目标已落地并形成可复算证据链）
+**备注**:
+- http inbound 健康检查路径已不再把 proxy 决策强制改写为 direct。
+
+---
+
 ### [2026-03-05 23:08] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 socks5-udp proxy 决策路径 direct fallback 并升级 strict gate 断言。

@@ -408,7 +408,7 @@ where
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
     let rule: Option<String> = meta.rule;
-    let mut decision: RDecision = meta.decision;
+    let decision: RDecision = meta.decision;
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
@@ -428,17 +428,17 @@ where
     if fallback_enabled && matches!(decision, RDecision::Proxy(_)) {
         if let Some(st) = ob_health::global_status() {
             if !st.is_up() {
-                tracing::warn!("router: proxy unhealthy; fallback to direct (http inbound)");
+                tracing::warn!(
+                    "router: proxy unhealthy; direct fallback is disabled (http inbound)"
+                );
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "router_route_fallback_total",
                     "from" => "proxy",
-                    "to" => "direct",
+                    "to" => "blocked",
                     "inbound" => "http"
                 )
                 .increment(1);
-                // Override routing result to Direct
-                decision = RDecision::Direct;
             }
         }
     }

@@ -636,6 +636,20 @@
   - `reports/l21/artifacts/wave54_v7_regression_block.txt`
   - `reports/l21/artifacts/wave54_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#55 推进快照（2026-03-05 23:12）
+
+- 状态：`MIG-02 hardening`（wave#55 完成 http inbound health fallback 分支去 direct override）
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/http.rs`：健康检查路径在 proxy 不健康时不再覆盖 `decision = RDecision::Direct`，改为显式 no-fallback 告警 `proxy unhealthy; direct fallback is disabled (http inbound)`，并将 fallback 指标目的地改为 `blocked`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.52-wave55-v1`（155 assertions），新增 W55-01/W55-02/W55-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave55_v7_regression_block.txt`（注入 `proxy unhealthy; fallback to direct (http inbound)` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave55_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave55_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave55_strict_gate.txt`
+  - `reports/l21/artifacts/wave55_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave55_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

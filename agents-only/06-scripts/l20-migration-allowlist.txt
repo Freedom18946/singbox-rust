@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.51-wave54-v1|||L21 wave#54 migration assertion allowlist version
+VERSION|l21.52-wave55-v1|||L21 wave#55 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -188,3 +188,6 @@ require|W53-02-router-explain-explicit-unresolved-return|crates/sb-core/src/rout
 forbid|W54-01-no-socks-udp-proxy-direct-fallback-msg|crates/sb-adapters/src/inbound/socks/udp.rs|proxy decision ignored; fallback to direct|socks5-udp proxy decision path should not fallback to direct
 require|W54-02-socks-udp-proxy-explicit-disabled-msg|crates/sb-adapters/src/inbound/socks/udp.rs|socks5-udp: proxy decision is unsupported; direct fallback is disabled; packet dropped|socks5-udp proxy decision path should emit explicit no-fallback diagnostics
 require|W54-03-socks-udp-proxy-unsupported-metric|crates/sb-adapters/src/inbound/socks/udp.rs|\"class\"=>\"proxy_unsupported\"|socks5-udp proxy decision path should increment explicit unsupported metric
+forbid|W55-01-no-http-inbound-health-direct-fallback-msg|crates/sb-adapters/src/inbound/http.rs|proxy unhealthy; fallback to direct \(http inbound\)|http inbound health check path should not fallback to direct
+forbid|W55-02-no-http-inbound-health-direct-override|crates/sb-adapters/src/inbound/http.rs|decision = RDecision::Direct;|http inbound health check path should not override routing decision to direct
+require|W55-03-http-inbound-health-explicit-disabled-msg|crates/sb-adapters/src/inbound/http.rs|proxy unhealthy; direct fallback is disabled \(http inbound\)|http inbound health check path should emit explicit no-fallback diagnostics
