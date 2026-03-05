@@ -637,9 +637,9 @@ impl Bridge {
                     )
                 }
                 sb_config::ir::OutboundType::Selector => {
-                    // Selector outbound would be implemented here
-                    // For now, fall back to direct
-                    direct_connector_fallback()
+                    unsupported_outbound_connector(
+                        "core bridge Selector outbound is disabled; use adapter::bridge::build_bridge",
+                    )
                 }
                 sb_config::ir::OutboundType::Shadowsocks => unsupported_outbound_connector(
                     "core bridge Shadowsocks outbound is disabled; use adapter::bridge::build_bridge",

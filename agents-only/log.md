@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 20:51] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 core bridge 的 Selector direct fallback 分支并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/adapter/mod.rs`
+    - `Bridge::new_from_config` 的 `OutboundType::Selector` 从 `direct_connector_fallback()` 改为 `unsupported_outbound_connector(...)`
+    - Selector 分支不再静默降级到 direct
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.35-wave38-v1`
+    - 新增 `W38-01~W38-02`（禁止 Selector 分支 direct fallback + 要求显式迁移提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave38_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave38_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave38_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (111 assertions)`）
+  - `reports/l21/artifacts/wave38_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave38_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#38）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AM wave#38，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#38 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#38 目标已落地并形成可复算证据链）
+**备注**:
+- core bridge 主要协议分支的 direct fallback 清理已继续收口，Selector 路径现与其它协议路径一致为显式 unsupported + 迁移提示。
+
+---
+
 ### [2026-03-05 20:48] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 core bridge 的 SSH direct fallback 分支并升级 strict gate 断言。
