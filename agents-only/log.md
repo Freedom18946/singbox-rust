@@ -23,6 +23,35 @@
 
 ## 日志记录
 
+### [2026-03-05 21:21] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：清理 HTTP CONNECT inbound route 的 direct fallback 路径并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/inbound/http_connect.rs`
+    - 缺失 outbound 时不再 `outbound_tag = \"direct\"` 且不再调用 `find_direct_fallback()`
+    - 改为显式失败并返回 `no outbound connector available; direct fallback is disabled in HTTP CONNECT inbound route path`
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级 `l21.40-wave43-v1`
+    - 新增 `W43-01~W43-03`（禁止 HTTP CONNECT route direct fallback + 要求显式 no-fallback 提示）
+- 证据与验证产物：
+  - `reports/l21/artifacts/wave43_wp1_app_tests_check.txt`（`cargo check -p app --tests` PASS）
+  - `reports/l21/artifacts/wave43_wp1_sb_core_check.txt`（`cargo check -p sb-core` PASS）
+  - `reports/l21/artifacts/wave43_strict_gate.txt`（`check-boundaries --strict` PASS，`V7 PASS (123 assertions)`）
+  - `reports/l21/artifacts/wave43_v7_regression_block.txt`（注入回流样例后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `reports/l21/artifacts/wave43_gui_static_syntax_check.txt`（`bash -n scripts/l18/gui_real_cert.sh` PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`（新增 wave#43）
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`（新增 3AR wave#43，回填 MIG-02 进展）
+  - 更新 `agents-only/active_context.md`（新增 wave#43 快照）
+  - 更新 `agents-only/log.md`（新增本条）
+
+**结果**: 成功（wave#43 目标已落地并形成可复算证据链）
+**备注**:
+- 在 HTTP CONNECT inbound route 中，缺失 outbound 的处理已从 direct 回退切换为显式失败诊断。
+
+---
+
 ### [2026-03-05 21:12] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：清理 tools connect 默认 outbound 路径 implicit direct fallback 并升级 strict gate 断言。

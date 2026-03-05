@@ -305,13 +305,10 @@ pub(crate) async fn handle(
     #[cfg(not(feature = "router"))]
     let rule: Option<String> = None;
     let out_name = d.outbound;
-    let mut outbound_tag = out_name.clone();
+    let outbound_tag = out_name.clone();
     let ob = match br.find_outbound(&out_name) {
         Some(connector) => Some(connector),
-        None => {
-            outbound_tag = "direct".to_string();
-            br.find_direct_fallback()
-        }
+        None => None,
     };
 
     // 5) 建立上游连接（异步）
@@ -329,7 +326,9 @@ pub(crate) async fn handle(
             let _ = cli
                 .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
                 .await;
-            return Err(std::io::Error::other("no outbound connector available"));
+            return Err(std::io::Error::other(
+                "no outbound connector available; direct fallback is disabled in HTTP CONNECT inbound route path",
+            ));
         }
     };
 

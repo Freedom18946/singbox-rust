@@ -466,6 +466,20 @@
   - `reports/l21/artifacts/wave42_v7_regression_block.txt`
   - `reports/l21/artifacts/wave42_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#43 推进快照（2026-03-05 21:21）
+
+- 状态：`MIG-02 hardening`（wave#43 完成 HTTP CONNECT inbound route 分支去 direct fallback）
+- 本轮落地：
+  1. `crates/sb-core/src/inbound/http_connect.rs`：缺失 outbound 时不再设置 `outbound_tag=\"direct\"` 并回退 `find_direct_fallback()`，改为显式失败并返回 `no outbound connector available; direct fallback is disabled in HTTP CONNECT inbound route path`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.40-wave43-v1`（123 assertions），新增 W43-01/W43-02/W43-03。
+  3. 回流阻断证据：`reports/l21/artifacts/wave43_v7_regression_block.txt`（注入 `outbound_tag = "direct".to_string();` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave43_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave43_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave43_strict_gate.txt`
+  - `reports/l21/artifacts/wave43_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave43_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

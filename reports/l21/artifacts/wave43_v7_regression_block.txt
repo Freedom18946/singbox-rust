@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:22) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.40-wave43-v1
+  FAIL: [W43-01-no-http-connect-inbound-direct-tag-fallback] forbidden pattern matched in crates/sb-core/src/inbound/http_connect.rs :: HTTP CONNECT inbound route path should not retag missing outbound to direct
+  FAIL: 1/123 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave43-v7-regress.scCYuJ
+[meta] injected_file=crates/sb-core/src/inbound/http_connect.rs
+[meta] injected_pattern=outbound_tag = "direct".to_string();
+[meta] exit_code=1
