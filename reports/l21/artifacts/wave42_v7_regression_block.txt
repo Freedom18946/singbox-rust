@@ -1,0 +1,14 @@
+=== 依赖边界检查 (2026-03-05 21:12) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.39-wave42-v1
+  FAIL: [W42-01-no-tools-implicit-direct-fallback] forbidden pattern matched in app/src/cli/tools.rs :: tools connect default outbound path should not use implicit direct fallback
+  FAIL: 1/120 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+[meta] temp_root=/tmp/l21-wave42-v7-regress.577KjO
+[meta] injected_file=app/src/cli/tools.rs
+[meta] injected_pattern=.find_direct_fallback()
+[meta] exit_code=1

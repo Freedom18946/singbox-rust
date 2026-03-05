@@ -179,9 +179,8 @@ async fn connect_tcp(
             .context("requested outbound not found; direct fallback is disabled")?
     } else {
         bridge
-            .find_direct_fallback()
-            .or_else(|| bridge.get_member("direct"))
-            .context("no direct outbound found")?
+            .get_member("direct")
+            .context("direct outbound not found; implicit direct fallback is disabled")?
     };
 
     // Dial

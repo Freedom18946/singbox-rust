@@ -452,6 +452,20 @@
   - `reports/l21/artifacts/wave41_v7_regression_block.txt`
   - `reports/l21/artifacts/wave41_gui_static_syntax_check.txt`
 
+### 🆕 L21 wave#42 推进快照（2026-03-05 21:12）
+
+- 状态：`MIG-02 hardening`（wave#42 完成 tools connect default-outbound 分支去 implicit direct fallback）
+- 本轮落地：
+  1. `app/src/cli/tools.rs`：`connect_tcp` 在 `outbound=None` 路径去掉 `find_direct_fallback()`，改为仅查找显式 `direct` 并在缺失时报告 `direct outbound not found; implicit direct fallback is disabled`。
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.39-wave42-v1`（120 assertions），新增 W42-01/W42-02。
+  3. 回流阻断证据：`reports/l21/artifacts/wave42_v7_regression_block.txt`（注入 `.find_direct_fallback()` 后 `--v7-only` 失败，`exit_code=1`）。
+- 产物：
+  - `reports/l21/artifacts/wave42_wp1_app_tests_check.txt`
+  - `reports/l21/artifacts/wave42_wp1_sb_core_check.txt`
+  - `reports/l21/artifacts/wave42_strict_gate.txt`
+  - `reports/l21/artifacts/wave42_v7_regression_block.txt`
+  - `reports/l21/artifacts/wave42_gui_static_syntax_check.txt`
+
 ### 🚨 P0 最高优先级（2026-03-04 18:14）
 
 - **状态**：✅ 短路收口已全绿；`nightly 24h` 已重新发车并运行中

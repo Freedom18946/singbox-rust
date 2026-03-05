@@ -5,7 +5,7 @@
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
 
-VERSION|l21.38-wave41-v1|||L21 wave#41 migration assertion allowlist version
+VERSION|l21.39-wave42-v1|||L21 wave#42 migration assertion allowlist version
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
 forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
@@ -154,3 +154,5 @@ require|W40-02-core-bridge-direct-explicit-disabled|crates/sb-core/src/adapter/m
 forbid|W40-03-no-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|fn direct_connector_fallback\(\)|core bridge direct fallback helper should be removed after full fallback cleanup
 forbid|W41-01-no-tools-named-outbound-legacy-fallback-msg|app/src/cli/tools.rs|outbound not found and no direct fallback|tools connect named outbound path should not use legacy fallback message
 require|W41-02-tools-named-outbound-explicit-disabled|app/src/cli/tools.rs|requested outbound not found; direct fallback is disabled|tools connect named outbound path should emit explicit no-fallback diagnostics
+forbid|W42-01-no-tools-implicit-direct-fallback|app/src/cli/tools.rs|\.find_direct_fallback\(\)|tools connect default outbound path should not use implicit direct fallback
+require|W42-02-tools-default-direct-explicit-disabled|app/src/cli/tools.rs|direct outbound not found; implicit direct fallback is disabled|tools connect default outbound path should emit explicit no-fallback diagnostics
