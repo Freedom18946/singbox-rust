@@ -766,10 +766,7 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
 pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::router::RouterIndex>> {
     let cfg_ir = sb_config::present::to_ir(cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
     let text = ir_to_router_rules_text(&cfg_ir);
-    let max_rules = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100_000usize);
+    let max_rules = parse_env_usize("SB_ROUTER_RULES_MAX", 100_000);
     let idx = router_build_index_from_str(&text, max_rules)
         .map_err(|e| anyhow!("router index build failed: {e}"))?;
     Ok(idx)
@@ -1272,6 +1269,23 @@ fn normalize_addr(addr: &str) -> Option<String> {
     }
     // Fallback
     Some("system".to_string())
+}
+
+fn parse_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
+            );
+            default
+        }
+    }
 }
 
 #[cfg(all(test, feature = "router"))]

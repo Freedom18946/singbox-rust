@@ -1,4 +1,4 @@
-VERSION|l21.174-wave177-v1|||L21 wave#177 migration assertion allowlist version
+VERSION|l21.175-wave178-v1|||L21 wave#178 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -462,3 +462,7 @@ require|W177-05-engine-dns-timeout-helper|crates/sb-core/src/router/engine.rs|ro
 require|W177-06-engine-dns-timeout-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '.*' is invalid; silent parse fallback is disabled; fix the config explicitly|engine dns timeout env should emit explicit diagnostics
 require|W177-07-engine-geoip-enabled-helper|crates/sb-core/src/router/engine.rs|geoip_enabled_from_env\(\)|engine geoip enabled should parse through explicit helper
 require|W177-08-engine-geoip-enabled-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_GEOIP_ENABLE' value '.*' is not a recognized boolean; silent parse fallback is disabled|engine geoip enabled env should emit explicit diagnostics
+
+forbid|W178-01-no-bootstrap-rules-max-silent-parse|app/src/bootstrap.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)\.unwrap_or\(100_000|bootstrap SB_ROUTER_RULES_MAX must not silently swallow parse failures
+require|W178-02-bootstrap-rules-max-helper|app/src/bootstrap.rs|parse_env_usize\("SB_ROUTER_RULES_MAX"|bootstrap rules max should use explicit parse helper
+require|W178-03-bootstrap-rules-max-explicit-warn|app/src/bootstrap.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bootstrap rules max env should emit explicit diagnostics
