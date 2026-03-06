@@ -57,6 +57,56 @@ fn parse_geoip_ttl_env(value: Option<&str>) -> Result<std::time::Duration, Arc<s
     }
 }
 
+#[cfg(feature = "router_cache_lru_demo")]
+fn parse_decision_cache_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "router env 'SB_ROUTER_DECISION_CACHE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+#[cfg(feature = "router_cache_lru_demo")]
+fn decision_cache_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_DECISION_CACHE").ok();
+    match parse_decision_cache_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
+#[cfg(feature = "router_cache_lru_demo")]
+fn parse_decision_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_DECISION_CACHE_CAP' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(1024),
+    }
+}
+
+#[cfg(feature = "router_cache_lru_demo")]
+fn decision_cache_cap_from_env() -> usize {
+    let raw = std::env::var("SB_ROUTER_DECISION_CACHE_CAP").ok();
+    match parse_decision_cache_cap_env(raw.as_deref()) {
+        Ok(cap) => cap,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 1024");
+            1024
+        }
+    }
+}
+
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
         return None;
@@ -204,14 +254,8 @@ impl RouterHandle {
         // 可选缓存开关
         #[cfg(feature = "router_cache_lru_demo")]
         let cache = {
-            let use_cache = std::env::var("SB_ROUTER_DECISION_CACHE")
-                .ok()
-                .map(|v| v == "1")
-                .unwrap_or(false);
-            let cap = std::env::var("SB_ROUTER_DECISION_CACHE_CAP")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(1024);
+            let use_cache = decision_cache_from_env();
+            let cap = decision_cache_cap_from_env();
             if use_cache {
                 Some(Mutex::new((
                     0u64,
@@ -2077,6 +2121,29 @@ mod geoip_migration_tests {
             .expect_err("invalid geoip ttl env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_GEOIP_TTL"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+}
+
+#[cfg(all(test, feature = "router_cache_lru_demo"))]
+mod decision_cache_migration_tests {
+    use super::{parse_decision_cache_env, parse_decision_cache_cap_env};
+
+    #[test]
+    fn invalid_decision_cache_env_reports_explicitly() {
+        let err = parse_decision_cache_env(Some("on"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_DECISION_CACHE"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_decision_cache_cap_env_reports_explicitly() {
+        let err = parse_decision_cache_cap_env(Some("big"))
+            .expect_err("invalid cache cap env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_DECISION_CACHE_CAP"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

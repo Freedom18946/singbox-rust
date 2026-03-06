@@ -1,0 +1,23 @@
+wave165: harden SB_ROUTER_DECISION_CACHE + SB_ROUTER_DECISION_CACHE_CAP env parsing
+====================================================================================
+
+Target: crates/sb-core/src/router/engine.rs
+Change: Both env vars behind feature "router_cache_lru_demo" now use explicit helpers.
+  - SB_ROUTER_DECISION_CACHE: boolean, was v == "1" only, now recognizes true/false/0/1
+  - SB_ROUTER_DECISION_CACHE_CAP: numeric, was .parse().ok(), now emits explicit warning
+
+Helpers added:
+  - parse_decision_cache_env / decision_cache_from_env
+  - parse_decision_cache_cap_env / decision_cache_cap_from_env
+
+Tests added (feature-gated router_cache_lru_demo):
+  - invalid_decision_cache_env_reports_explicitly
+  - invalid_decision_cache_cap_env_reports_explicitly
+
+Allowlist: l21.162-wave165-v1 (392 assertions)
+
+Verification:
+  - cargo check -p sb-core: PASS
+  - cargo check -p app --tests: PASS
+  - check-boundaries.sh --strict: PASS (392 assertions)
+  - negative regression: FAIL as expected (v7_exit=1)

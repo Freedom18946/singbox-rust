@@ -1,4 +1,4 @@
-VERSION|l21.161-wave164-v1|||L21 wave#164 migration assertion allowlist version
+VERSION|l21.162-wave165-v1|||L21 wave#165 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -424,3 +424,7 @@ require|W163-01-router-suffix-trie-env-parse-helper|crates/sb-core/src/router/mo
 require|W163-02-router-suffix-trie-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_TRIE' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-trie env unrecognized boolean should emit explicit diagnostics instead of silent ignore
 require|W164-01-rule-coverage-env-parse-helper|crates/sb-core/src/router/coverage.rs|if rule_coverage_from_env\(\)|rule coverage env should parse through explicit helper instead of inline silent boolean ignore
 require|W164-02-rule-coverage-env-invalid-explicit-warn|crates/sb-core/src/router/coverage.rs|router env 'SB_RULE_COVERAGE' value '.*' is not a recognized boolean; silent parse fallback is disabled|rule coverage env unrecognized boolean should emit explicit diagnostics instead of silent ignore
+require|W165-01-decision-cache-env-parse-helper|crates/sb-core/src/router/engine.rs|let use_cache = decision_cache_from_env\(\);|decision cache env should parse through explicit helper instead of silent boolean ignore
+require|W165-02-decision-cache-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DECISION_CACHE' value '.*' is not a recognized boolean; silent parse fallback is disabled|decision cache env unrecognized boolean should emit explicit diagnostics instead of silent ignore
+require|W165-03-decision-cache-cap-env-parse-helper|crates/sb-core/src/router/engine.rs|let cap = decision_cache_cap_from_env\(\);|decision cache cap env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+require|W165-04-decision-cache-cap-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DECISION_CACHE_CAP' value '.*' is invalid; silent parse fallback is disabled|decision cache cap env invalid value should emit explicit diagnostics instead of silent ignore
