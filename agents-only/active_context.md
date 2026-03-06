@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#152**，聚焦 **adapter register vmess outbound server socket parse 不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#153**，聚焦 **adapter register vless outbound server socket parse 不再 silently collapse**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.149-wave152-v1`（364 assertions）。
+- 当前 V7 口径：`l21.150-wave153-v1`（366 assertions）。
+
+### 🆕 L21 wave#153 推进快照（2026-03-06 19:06）
+
+- 状态：完成（`crates/sb-adapters/src/register.rs` 已完成 `vless` outbound server socket parse 收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/register.rs`：`build_vless_outbound(...)` 切到 `parse_required_outbound_socket_addr(...)`，不再静默吞掉 invalid `server:port`，改为显式 invalid-config connector
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.150-wave153-v1`（366 assertions）
+  3. `wave153_v7_regression_block.txt`：恢复旧 `parse::<SocketAddr>().ok()?` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave153_wp1_app_tests_check.txt` PASS
+  - `wave153_wp1_sb_core_check.txt` PASS
+  - `wave153_sb_adapters_register_tests_check.txt` PASS
+  - `wave153_strict_gate.txt` PASS
+  - `wave153_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#152 推进快照（2026-03-06 18:58）
 

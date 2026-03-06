@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 18:30) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.150-wave153-v1
+  FAIL: [W153-01-register-vless-server-addr-parse-helper] required pattern missing in crates/sb-adapters/src/register.rs :: vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
+  FAIL: 1/366 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave153-v7.pMlDDS

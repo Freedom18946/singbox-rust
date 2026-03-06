@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 18:58
-> **当前阶段**：L21 wave#152 推进完成（MIG-02 hardening：adapter register vmess outbound server socket parse 不再 silently collapse + strict gate 升级）
+> **最后更新**：2026-03-06 19:06
+> **当前阶段**：L21 wave#153 推进完成（MIG-02 hardening：adapter register vless outbound server socket parse 不再 silently collapse + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=364 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=366 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -20,6 +20,26 @@
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
 - `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs`、`crates/sb-adapters/src/inbound/hysteria2.rs`、`crates/sb-adapters/src/inbound/tuic.rs`、`app/src/inbound_starter.rs`、`crates/sb-adapters/src/inbound/tun/mod.rs`、`crates/sb-core/src/adapter/bridge.rs`、`crates/sb-adapters/src/register.rs` 已完成一段真实路径收口；近端候选转向其余真实配置路径 parse-failure / 兼容占位默认值审计。
+
+## 🆕 最新进展：L21 wave#153 推进落地（2026-03-06 19:06）
+
+**状态**：✅ 完成一段（adapter register `vless` outbound server socket parse 不再 silently collapse）；✅ strict gate allowlist 升级到 `l21.150-wave153-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-adapters/src/register.rs`：`build_vless_outbound(...)` 切到 `parse_required_outbound_socket_addr(...)`，不再把 invalid `server:port` 静默折叠成 builder `None`，改为显式 invalid-config connector
+   - 新增最小单元测试，锁定 vless server helper 的显式报错口径
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.150-wave153-v1`，断言扩展到 `366` 条。
+   - `reports/l21/artifacts/wave153_v7_regression_block.txt`：在临时 root 将 vless server 解析注回旧 `parse::<SocketAddr>().ok()?` 后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave153_wp1_app_tests_check.txt` PASS
+   - `wave153_wp1_sb_core_check.txt` PASS
+   - `wave153_sb_adapters_register_tests_check.txt` PASS（定向 `sb-adapters` 单测编译）
+   - `wave153_strict_gate.txt` PASS
+   - `wave153_v7_regression_block.txt` PASS（负样例按预期 FAIL，`exit_code=1`）
+   - `wave153_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - 当前新增收口点：adapter register 的 `vless` outbound server socket parse 不再 silently collapse。
 
 ## 🆕 最新进展：L21 wave#152 推进落地（2026-03-06 18:58）
 

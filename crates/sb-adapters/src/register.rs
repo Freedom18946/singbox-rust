@@ -1099,8 +1099,14 @@ fn build_vless_outbound(
         }
     };
 
-    // Parse server to SocketAddr
-    let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
+    let server_addr = match parse_required_outbound_socket_addr("vless", outbound_name, server, port)
+    {
+        Ok(server_addr) => server_addr,
+        Err(reason) => {
+            warn!("{reason}");
+            return invalid_config_outbound("vless", reason);
+        }
+    };
 
     // Map flow control
     let flow = match ir.flow.as_deref() {
@@ -3219,6 +3225,15 @@ mod migration_tests {
             .expect_err("invalid socket addr should be rejected");
         let msg = err.to_string();
         assert!(msg.contains("vmess outbound server 'example.com:443' is invalid"));
+        assert!(msg.contains("silent socket address parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_vless_outbound_server_reports_protocol() {
+        let err = parse_required_outbound_socket_addr("vless", "edge-vless", "example.com", 443)
+            .expect_err("invalid socket addr should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vless outbound server 'example.com:443' is invalid"));
         assert!(msg.contains("silent socket address parse fallback is disabled"));
     }
 

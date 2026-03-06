@@ -1,4 +1,4 @@
-VERSION|l21.149-wave152-v1|||L21 wave#152 migration assertion allowlist version
+VERSION|l21.150-wave153-v1|||L21 wave#153 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -400,3 +400,5 @@ require|W151-01-geoip-ttl-env-parse-helper|crates/sb-core/src/router/engine.rs|l
 require|W151-02-geoip-ttl-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|geoip env 'SB_GEOIP_TTL' value '.*' is invalid; silent parse fallback is disabled|geoip ttl env invalid value should emit explicit diagnostics instead of silent ignore
 require|W152-01-register-vmess-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vmess\", outbound_name, server, port\)|vmess outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
 require|W152-02-register-vmess-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid server socket address through explicit invalid-config connector
+require|W153-01-register-vless-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vless\", outbound_name, server, port\)|vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
+require|W153-02-register-vless-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid server socket address through explicit invalid-config connector
