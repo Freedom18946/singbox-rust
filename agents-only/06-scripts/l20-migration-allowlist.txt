@@ -1,4 +1,4 @@
-VERSION|l21.188-wave191-v1|||L21 wave#191 migration assertion allowlist version
+VERSION|l21.189-wave192-v1|||L21 wave#192 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -524,3 +524,6 @@ require|W190-02-cli-prefetch-explicit-warn|app/src/cli/prefetch/mod.rs|env '.*' 
 require|W191-01-bench-par-helper|app/src/bin/sb-bench.rs|bench_env_usize\("SB_BENCH_PAR"|bench par should use explicit parse helper
 require|W191-02-bench-payload-helper|app/src/bin/sb-bench.rs|bench_env_usize\("SB_BENCH_PAYLOAD"|bench payload should use explicit parse helper
 require|W191-03-bench-explicit-warn|app/src/bin/sb-bench.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bench env should emit explicit diagnostics
+
+require|W192-01-explaind-pprof-max-sec-warn|app/src/bin/sb-explaind.rs|env 'SB_PPROF_MAX_SEC' value '.*' is not a valid u64; silent parse fallback is disabled|explaind pprof max sec should emit explicit diagnostics
+require|W192-02-explaind-pprof-freq-warn|app/src/bin/sb-explaind.rs|env 'SB_PPROF_FREQ' value '.*' is not a valid i32; silent parse fallback is disabled|explaind pprof freq should emit explicit diagnostics

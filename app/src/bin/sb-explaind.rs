@@ -72,10 +72,16 @@ async fn handle(
                 }
             }
         }
-        let max_sec = std::env::var("SB_PPROF_MAX_SEC")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(30);
+        let max_sec = match std::env::var("SB_PPROF_MAX_SEC") {
+            Ok(raw) => {
+                let t = raw.trim();
+                match t.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(e) => { tracing::warn!("env 'SB_PPROF_MAX_SEC' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}"); 30 }
+                }
+            }
+            Err(_) => 30,
+        };
         if req_sec > max_sec {
             return Ok(http_util::text(
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -86,10 +92,16 @@ async fn handle(
             ));
         }
         let sec = req_sec.min(max_sec).max(1);
-        let freq = std::env::var("SB_PPROF_FREQ")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-            .unwrap_or(100);
+        let freq = match std::env::var("SB_PPROF_FREQ") {
+            Ok(raw) => {
+                let t = raw.trim();
+                match t.parse::<i32>() {
+                    Ok(v) => v,
+                    Err(e) => { tracing::warn!("env 'SB_PPROF_FREQ' value '{t}' is not a valid i32; silent parse fallback is disabled; using default 100: {e}"); 100 }
+                }
+            }
+            Err(_) => 100,
+        };
         #[cfg(feature = "pprof")]
         {
             return match collect_pprof(sec, freq).await {

@@ -1,0 +1,5 @@
+wave192 negative regression test
+Date: 2026-03-06T14:41:57Z
+Reverted SB_PPROF_MAX_SEC/FREQ to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (2 assertions failed: W192-01, W192-02)
+exit_code=1
