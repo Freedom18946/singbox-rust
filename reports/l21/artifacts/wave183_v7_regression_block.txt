@@ -1,0 +1,5 @@
+wave183 negative regression test
+Date: 2026-03-06T14:06:56Z
+Reverted SB_SUBS_CACHE_CAP/TTL_MS/BYTES to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (4 assertions failed: W183-01..W183-04)
+exit_code=1 (script found violations)

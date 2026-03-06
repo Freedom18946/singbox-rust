@@ -342,23 +342,44 @@ static LRU: OnceCell<Mutex<Lru>> = OnceCell::new();
 
 pub fn global() -> &'static Mutex<Lru> {
     LRU.get_or_init(|| {
-        let cap_items = std::env::var("SB_SUBS_CACHE_CAP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(64);
+        let cap_items = parse_cache_env_usize("SB_SUBS_CACHE_CAP", 64);
 
-        let ttl_ms = std::env::var("SB_SUBS_CACHE_TTL_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(30_000);
+        let ttl_ms = parse_cache_env_u64("SB_SUBS_CACHE_TTL_MS", 30_000);
 
-        let cap_bytes = std::env::var("SB_SUBS_CACHE_BYTES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(10 * 1024 * 1024); // 10MB default
+        let cap_bytes = parse_cache_env_usize("SB_SUBS_CACHE_BYTES", 10 * 1024 * 1024);
 
         Mutex::new(Lru::with_byte_limit(cap_items, ttl_ms, cap_bytes))
     })
+}
+
+fn parse_cache_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
+}
+
+fn parse_cache_env_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
 }
 
 #[cfg(test)]
