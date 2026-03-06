@@ -38,15 +38,43 @@ impl<D: Dialer + Clone> LimitedDialer<D> {
     /// Create with configuration from environment variables
     /// 使用环境变量中的配置创建
     pub fn from_env(inner: D) -> Self {
-        let max = std::env::var("SB_DIAL_MAX_CONCURRENCY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(128);
-        let q = std::env::var("SB_DIAL_QUEUE_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5000);
+        let max = dial_env_usize("SB_DIAL_MAX_CONCURRENCY", 128);
+        let q = dial_env_u64("SB_DIAL_QUEUE_MS", 5000);
         Self::new(inner, max, q)
+    }
+}
+
+fn dial_env_usize(name: &str, default: usize) -> usize {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid usize; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn dial_env_u64(name: &str, default: u64) -> u64 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u64; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
     }
 }
 

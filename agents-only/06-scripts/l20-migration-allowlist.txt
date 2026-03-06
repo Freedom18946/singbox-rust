@@ -1,4 +1,4 @@
-VERSION|l21.199-wave195-v1|||L21 wave#195 migration assertion allowlist version
+VERSION|l21.203-wave196-v1|||L21 wave#196 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -553,3 +553,8 @@ require|W195-06-cb-env-u32-helper|crates/sb-transport/src/circuit_breaker.rs|fn 
 require|W195-07-cb-env-u64-helper|crates/sb-transport/src/circuit_breaker.rs|fn cb_env_u64\(name: &str, default: u64\)|circuit breaker should use explicit u64 parse helper
 require|W195-08-cb-env-bool-helper|crates/sb-transport/src/circuit_breaker.rs|fn cb_env_bool\(name: &str, default: bool\)|circuit breaker should use explicit bool parse helper
 require|W195-09-cb-explicit-warn|crates/sb-transport/src/circuit_breaker.rs|silent parse fallback is disabled, using default|circuit breaker env should emit explicit diagnostics
+
+forbid|W196-01-no-dial-max-silent|crates/sb-transport/src/pool/limit.rs|env::var\("SB_DIAL_MAX_CONCURRENCY"\)\.ok\(\)\.and_then|dial max concurrency must not silently swallow parse failures
+forbid|W196-02-no-dial-queue-silent|crates/sb-transport/src/pool/limit.rs|env::var\("SB_DIAL_QUEUE_MS"\)\.ok\(\)\.and_then|dial queue ms must not silently swallow parse failures
+require|W196-03-dial-env-usize-helper|crates/sb-transport/src/pool/limit.rs|fn dial_env_usize\(name: &str, default: usize\)|dial limit should use explicit usize parse helper
+require|W196-04-dial-explicit-warn|crates/sb-transport/src/pool/limit.rs|silent parse fallback is disabled, using default|dial limit env should emit explicit diagnostics
