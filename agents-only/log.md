@@ -14,6 +14,34 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 16:33] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：tuic inbound route-target kind 去 silent direct 标记并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/tuic.rs`
+    - 新增 `decision_from_route_target(...)`，使 `OutboundKind::Socks/Http/Naive/Hysteria2` 等 kind 路由目标不再默默标记为 `Decision::Direct`，统一改为显式 `Decision::Proxy(Some(<kind>))`
+    - 补充最小单元测试，覆盖 proxy kind、direct/block、以及 named proxy 三类 route target 映射
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.128-wave131-v1`
+    - 新增 `W131-01/W131-02`
+- 证据与验证产物：
+  - `wave131_wp1_app_tests_check.txt`（PASS）
+  - `wave131_wp1_sb_core_check.txt`（PASS）
+  - `wave131_tuic_route_target_tests_check.txt`（PASS）
+  - `wave131_strict_gate.txt`（PASS）
+  - `wave131_v7_regression_block.txt`（注入旧 `_ => Decision::Direct` 回流后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave131_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#131 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.128-wave131-v1`（322 assertions）。
+
 ### [2026-03-06 16:28] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：hysteria2 inbound route-target kind 去 silent direct 标记并升级 strict gate 断言。

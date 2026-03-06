@@ -410,12 +410,7 @@ async fn handle_udp_relay(
         OutRouteTarget::Kind(OutboundKind::Block) => Some("block"),
         _ => None,
     };
-    let decision = match &route {
-        OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
-        OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
-        OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
-        _ => sb_core::router::rules::Decision::Direct,
-    };
+    let decision = decision_from_route_target(&route);
     let traffic = cfg
         .stats
         .as_ref()
@@ -569,12 +564,7 @@ async fn connect_via_router(
         OutRouteTarget::Kind(OutboundKind::Block) => Some("block".to_string()),
         _ => None,
     };
-    let decision = match &target {
-        OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
-        OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
-        OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
-        _ => sb_core::router::rules::Decision::Direct,
-    };
+    let decision = decision_from_route_target(&target);
     let endpoint = match host.parse::<IpAddr>() {
         Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
         Err(_) => OutEndpoint::Domain(host.to_string(), port),
@@ -613,6 +603,17 @@ fn allow_udp_route(route: &OutRouteTarget) -> Result<()> {
             "udp route {:?} not supported in tuic inbound",
             route
         )),
+    }
+}
+
+fn decision_from_route_target(target: &OutRouteTarget) -> sb_core::router::rules::Decision {
+    match target {
+        OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+        OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
+        OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
+        OutRouteTarget::Kind(kind) => {
+            sb_core::router::rules::Decision::Proxy(Some(format!("{kind:?}").to_ascii_lowercase()))
+        }
     }
 }
 
@@ -791,6 +792,38 @@ mod tests {
         assert_eq!(AddressType::try_from(0x03).unwrap(), AddressType::Domain);
         assert_eq!(AddressType::try_from(0x04).unwrap(), AddressType::IPv6);
         assert!(AddressType::try_from(0xFF).is_err());
+    }
+
+    #[test]
+    fn route_target_kind_proxy_decision_is_not_direct() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Socks)),
+            sb_core::router::rules::Decision::Proxy(Some("socks".to_string()))
+        );
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Http)),
+            sb_core::router::rules::Decision::Proxy(Some("http".to_string()))
+        );
+    }
+
+    #[test]
+    fn route_target_direct_and_block_keep_explicit_decisions() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Direct)),
+            sb_core::router::rules::Decision::Direct
+        );
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Block)),
+            sb_core::router::rules::Decision::Reject
+        );
+    }
+
+    #[test]
+    fn route_target_named_proxy_keeps_name() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Named("pool-a".to_string())),
+            sb_core::router::rules::Decision::Proxy(Some("pool-a".to_string()))
+        );
     }
 
     #[cfg(feature = "router")]

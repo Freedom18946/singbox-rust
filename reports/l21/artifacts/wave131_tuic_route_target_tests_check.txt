@@ -1,0 +1,154 @@
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+    Finished `test` profile [optimized + debuginfo] target(s) in 44.12s
+     Running unittests src/lib.rs (target/debug/deps/sb_adapters-e1913edf240c32a2)
+
+running 1 test
+test inbound::tuic::tests::route_target_kind_proxy_decision_is_not_direct ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.00s
+
+     Running tests/adapter_registry_smoke.rs (target/debug/deps/adapter_registry_smoke-b16a680d97a0a5f8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/dns_integration.rs (target/debug/deps/dns_integration-33e5576220c62905)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e2e_proxy_flow.rs (target/debug/deps/e2e_proxy_flow-35e6d474343cfbe7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/http_connect.rs (target/debug/deps/http_connect-7420f3733ae6e89f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/http_tls.rs (target/debug/deps/http_tls-85ec1ebfe857cd14)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hysteria2_smoke.rs (target/debug/deps/hysteria2_smoke-0d4fda50abb9e23e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rate_limiting_validation.rs (target/debug/deps/rate_limiting_validation-046a7b2add912e89)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running tests/retry_backoff.rs (target/debug/deps/retry_backoff-9a1de55bbcf0661f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/shadowsocks_integration.rs (target/debug/deps/shadowsocks_integration-3e8b4efa0213e96c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/shadowtls_smoke.rs (target/debug/deps/shadowtls_smoke-0a5dd8d27cfc0118)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_connect.rs (target/debug/deps/socks_connect-6d7ed240020c0635)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_props.rs (target/debug/deps/socks_props-6e11823dec662b67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp.rs (target/debug/deps/socks_udp-bf8d7939dc024b41)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp_e2e.rs (target/debug/deps/socks_udp_e2e-58cf1e377df00b77)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp_e2e_balancer.rs (target/debug/deps/socks_udp_e2e_balancer-4c983ae610dee2c3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp_e2e_full.rs (target/debug/deps/socks_udp_e2e_full-e5902736af77f64e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp_e2e_proxy.rs (target/debug/deps/socks_udp_e2e_proxy-5df7a9eb17866426)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/socks_udp_parse.rs (target/debug/deps/socks_udp_parse-eef83fa238679ac1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/trojan_integration.rs (target/debug/deps/trojan_integration-37fa06b152ea0df4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tuic_integration.rs (target/debug/deps/tuic_integration-0935be958ff345a2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tun_process_integration.rs (target/debug/deps/tun_process_integration-7e5451f32cb3afdd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/udp_parse_neg.rs (target/debug/deps/udp_parse_neg-d2a5543bf08ae0fb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vless_integration.rs (target/debug/deps/vless_integration-4014cf76d83abb00)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vmess_unit.rs (target/debug/deps/vmess_unit-94aa5802d4e1d996)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
