@@ -112,19 +112,9 @@ impl TuicConnector {
             }
         }
 
-        let max_retries: u32 = std::env::var("SB_TUIC_MAX_RETRIES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(3)
-            .min(8);
-        let base_ms: u64 = std::env::var("SB_TUIC_BACKOFF_MS_BASE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(200);
-        let cap_ms: u64 = std::env::var("SB_TUIC_BACKOFF_MS_MAX")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(2_000);
+        let max_retries: u32 = tuic_env_u32("SB_TUIC_MAX_RETRIES", 3).min(8);
+        let base_ms: u64 = tuic_env_u64("SB_TUIC_BACKOFF_MS_BASE", 200);
+        let cap_ms: u64 = tuic_env_u64("SB_TUIC_BACKOFF_MS_MAX", 2_000);
 
         let mut attempt: u32 = 0;
         loop {
@@ -497,6 +487,40 @@ impl OutboundConnector for TuicConnector {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+fn tuic_env_u32(name: &str, default: u32) -> u32 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u32>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u32; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn tuic_env_u64(name: &str, default: u64) -> u64 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u64; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

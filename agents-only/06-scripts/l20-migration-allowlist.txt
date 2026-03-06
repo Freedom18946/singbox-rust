@@ -1,4 +1,4 @@
-VERSION|l21.203-wave196-v1|||L21 wave#196 migration assertion allowlist version
+VERSION|l21.208-wave197-v1|||L21 wave#197 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -558,3 +558,9 @@ forbid|W196-01-no-dial-max-silent|crates/sb-transport/src/pool/limit.rs|env::var
 forbid|W196-02-no-dial-queue-silent|crates/sb-transport/src/pool/limit.rs|env::var\("SB_DIAL_QUEUE_MS"\)\.ok\(\)\.and_then|dial queue ms must not silently swallow parse failures
 require|W196-03-dial-env-usize-helper|crates/sb-transport/src/pool/limit.rs|fn dial_env_usize\(name: &str, default: usize\)|dial limit should use explicit usize parse helper
 require|W196-04-dial-explicit-warn|crates/sb-transport/src/pool/limit.rs|silent parse fallback is disabled, using default|dial limit env should emit explicit diagnostics
+
+forbid|W197-01-no-tuic-retries-silent|crates/sb-adapters/src/outbound/tuic.rs|env::var\("SB_TUIC_MAX_RETRIES"\)\.ok\(\)\.and_then|tuic max retries must not silently swallow parse failures
+forbid|W197-02-no-tuic-base-ms-silent|crates/sb-adapters/src/outbound/tuic.rs|env::var\("SB_TUIC_BACKOFF_MS_BASE"\)\.ok\(\)\.and_then|tuic backoff base must not silently swallow parse failures
+forbid|W197-03-no-tuic-cap-ms-silent|crates/sb-adapters/src/outbound/tuic.rs|env::var\("SB_TUIC_BACKOFF_MS_MAX"\)\.ok\(\)\.and_then|tuic backoff cap must not silently swallow parse failures
+require|W197-04-tuic-env-u32-helper|crates/sb-adapters/src/outbound/tuic.rs|fn tuic_env_u32\(name: &str, default: u32\)|tuic should use explicit u32 parse helper
+require|W197-05-tuic-explicit-warn|crates/sb-adapters/src/outbound/tuic.rs|silent parse fallback is disabled, using default|tuic env should emit explicit diagnostics
