@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 18:21) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.147-wave150-v1
+  FAIL: [W150-01-geoip-cache-env-parse-helper] required pattern missing in crates/sb-core/src/router/engine.rs :: geoip cache env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+  FAIL: [W150-02-geoip-cache-env-invalid-explicit-warn] required pattern missing in crates/sb-core/src/router/engine.rs :: geoip cache env invalid value should emit explicit diagnostics instead of silent ignore
+  FAIL: 2/360 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave150-v7.EF7WdB

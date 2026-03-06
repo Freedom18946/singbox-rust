@@ -31,6 +31,19 @@ fn parse_udp_rules_index(raw: &str) -> Result<Arc<RouterIndex>, Arc<str>> {
     })
 }
 
+#[cfg(feature = "geoip_mmdb")]
+fn parse_geoip_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| {
+            format!(
+                "geoip env 'SB_GEOIP_CACHE' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(8192),
+    }
+}
+
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
         return None;
@@ -1983,10 +1996,14 @@ impl RouterHandle {
         self.geoip = None;
         self.geoip_source = None;
         if let Ok(path) = std::env::var("SB_GEOIP_MMDB") {
-            let cap = std::env::var("SB_GEOIP_CACHE")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(8192);
+            let cap_env = std::env::var("SB_GEOIP_CACHE").ok();
+            let cap = match parse_geoip_cache_cap_env(cap_env.as_deref()) {
+                Ok(cap) => cap,
+                Err(reason) => {
+                    warn!("{reason}; using default 8192");
+                    8192
+                }
+            };
             let ttl = std::env::var("SB_GEOIP_TTL")
                 .ok()
                 .and_then(|v| humantime::parse_duration(&v).ok())
@@ -2021,6 +2038,20 @@ mod migration_tests {
             .expect_err("invalid udp rules env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_UDP_RULES"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+}
+
+#[cfg(all(test, feature = "geoip_mmdb"))]
+mod geoip_migration_tests {
+    use super::parse_geoip_cache_cap_env;
+
+    #[test]
+    fn invalid_geoip_cache_env_reports_explicitly() {
+        let err = parse_geoip_cache_cap_env(Some("bad-cache"))
+            .expect_err("invalid geoip cache env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_GEOIP_CACHE"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
