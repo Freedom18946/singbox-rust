@@ -14,6 +14,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 17:29] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：adapter bridge inbound udp_timeout 配置解析去 silent ignore 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/adapter/bridge.rs`
+    - 新增 `parse_optional_inbound_duration(...)`
+    - `to_inbound_param(...)` 不再静默吞掉 invalid `udp_timeout`，改为显式报错
+    - `build_bridge(...)` / `build_bridge(no-router)` 统一拒绝构建无效 inbound adapter
+    - 补充最小单元测试，锁定 helper 与参数转换报错口径
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.137-wave140-v1`
+    - 新增 `W140-01/W140-02`
+- 证据与验证产物：
+  - `wave140_wp1_app_tests_check.txt`（PASS）
+  - `wave140_wp1_sb_core_check.txt`（PASS）
+  - `wave140_sb_core_bridge_tests_check.txt`（PASS）
+  - `wave140_strict_gate.txt`（PASS）
+  - `wave140_v7_regression_block.txt`（移除 helper 调用后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave140_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#140 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.137-wave140-v1`（340 assertions）。
+
 ### [2026-03-06 17:23] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：vmess inbound uuid 配置解析去 silent collapse 并升级 strict gate 断言。

@@ -1,0 +1,40 @@
+   Compiling scopeguard v1.2.0
+   Compiling criterion v0.5.1
+   Compiling smoltcp v0.11.0
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling lock_api v0.4.14
+   Compiling parking_lot v0.12.5
+   Compiling parking_lot v0.11.2
+   Compiling dashmap v6.1.0
+   Compiling dashmap v5.5.3
+   Compiling sled v0.34.7
+   Compiling tokio v1.48.0
+   Compiling prometheus v0.14.0
+   Compiling yamux v0.13.8
+   Compiling boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)
+   Compiling tokio-util v0.7.17
+   Compiling tower v0.5.2
+   Compiling tokio-rustls v0.26.4
+   Compiling tokio-stream v0.1.17
+   Compiling tokio-tungstenite v0.24.0
+   Compiling axum v0.7.9
+   Compiling h2 v0.4.12
+   Compiling h2 v0.3.27
+   Compiling tower v0.4.13
+   Compiling tower-http v0.6.8
+   Compiling sb-common v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-common)
+   Compiling sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
+   Compiling hyper v1.8.1
+   Compiling hyper v0.14.32
+   Compiling hyper-util v0.1.19
+   Compiling hyper-timeout v0.5.2
+   Compiling tonic v0.12.3
+   Compiling sb-metrics v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics)
+   Compiling hyper-rustls v0.27.7
+   Compiling sb-test-utils v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-test-utils)
+   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+   Compiling reqwest v0.12.28
+   Compiling quinn v0.11.9
+   Compiling sb-platform v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-platform)
+    Finished `test` profile [optimized + debuginfo] target(s) in 1m 09s
+  Executable unittests src/lib.rs (target/debug/deps/sb_core-2160ae7f7c5830bf)

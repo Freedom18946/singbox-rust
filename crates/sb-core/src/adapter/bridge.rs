@@ -11,7 +11,7 @@ use crate::adapter::{
     UdpOutboundFactory,
 };
 use crate::context::Context;
-use crate::endpoint::{endpoint_registry, EndpointContext};
+use crate::endpoint::{EndpointContext, endpoint_registry};
 #[allow(unused_imports)]
 use crate::outbound::selector::Selector;
 #[allow(unused_imports)]
@@ -19,7 +19,7 @@ use crate::outbound::selector_group::{ProxyMember, SelectorGroup};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
 use crate::router::RouterHandle;
-use crate::service::{service_registry, ServiceContext};
+use crate::service::{ServiceContext, service_registry};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType};
@@ -201,8 +201,25 @@ fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
     rules.join("\n")
 }
 
+fn parse_optional_inbound_duration(
+    protocol: &str,
+    listen: &str,
+    field: &str,
+    value: Option<&str>,
+) -> anyhow::Result<Option<std::time::Duration>> {
+    value
+        .map(|raw| {
+            humantime::parse_duration(raw).map_err(|err| {
+                anyhow::anyhow!(
+                    "{protocol} inbound {field} '{raw}' is invalid for listen '{listen}'; silent duration fallback is disabled; fix the config explicitly: {err}"
+                )
+            })
+        })
+        .transpose()
+}
+
 /// Converts inbound IR to adapter parameter.
-fn to_inbound_param(ib: &InboundIR) -> InboundParam {
+fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
     let users_anytls = ib.users_anytls.as_ref().map(|users| {
         users
             .iter()
@@ -267,7 +284,15 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         .as_ref()
         .map(|t| serde_json::to_string(t).unwrap_or_else(|_| "{}".to_string()));
 
-    InboundParam {
+    let listen = format!("{}:{}", ib.listen, ib.port);
+    let udp_timeout = parse_optional_inbound_duration(
+        ib.ty.ty_str(),
+        &listen,
+        "udp_timeout",
+        ib.udp_timeout.as_deref(),
+    )?;
+
+    Ok(InboundParam {
         kind: ib.ty.ty_str().to_string(),
         tag: ib.tag.clone(),
         listen: ib.listen.clone(),
@@ -312,15 +337,12 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         users_vless,
         users_vmess,
         users_shadowsocks,
-        udp_timeout: ib
-            .udp_timeout
-            .as_ref()
-            .and_then(|s| humantime::parse_duration(s).ok()),
+        udp_timeout,
         domain_strategy: ib.domain_strategy.clone(),
         set_system_proxy: ib.set_system_proxy,
         allow_private_network: ib.allow_private_network,
         ssh_host_key_path: ib.ssh_host_key_path.clone(),
-    }
+    })
 }
 
 /// Extracts credentials (username, password) from outbound parameter.
@@ -631,7 +653,19 @@ pub fn build_bridge<'a>(
     let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
 
     for ib in &cfg.inbounds {
-        let p = to_inbound_param(ib);
+        let p = match to_inbound_param(ib) {
+            Ok(p) => p,
+            Err(err) => {
+                tracing::warn!(
+                    target: "sb_core::adapter",
+                    inbound = %ib.ty.ty_str(),
+                    listen = %format!("{}:{}", ib.listen, ib.port),
+                    error = %err,
+                    "invalid inbound config; refusing to build adapter"
+                );
+                continue;
+            }
+        };
         let adapter_ctx = registry::AdapterInboundContext {
             engine: engine.clone(),
             bridge: Arc::new(br.clone()),
@@ -728,7 +762,19 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
 
     // Step 3: Inbounds (without engine)
     for ib in &cfg.inbounds {
-        let p = to_inbound_param(ib);
+        let p = match to_inbound_param(ib) {
+            Ok(p) => p,
+            Err(err) => {
+                tracing::warn!(
+                    target: "sb_core::adapter",
+                    inbound = %ib.ty.ty_str(),
+                    listen = %format!("{}:{}", ib.listen, ib.port),
+                    error = %err,
+                    "invalid inbound config; refusing to build adapter"
+                );
+                continue;
+            }
+        };
         let adapter_ctx = registry::AdapterInboundContext {
             bridge: Arc::new(br.clone()),
             outbounds: outbound_handle.clone(),
@@ -789,4 +835,37 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
     }
 
     br
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_optional_inbound_duration, to_inbound_param};
+    use sb_config::ir::{InboundIR, InboundType};
+
+    #[test]
+    fn invalid_inbound_duration_is_rejected_explicitly() {
+        let err =
+            parse_optional_inbound_duration("mixed", "127.0.0.1:1080", "udp_timeout", Some("bad"))
+                .expect_err("invalid duration should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("mixed inbound udp_timeout 'bad' is invalid"));
+        assert!(msg.contains("silent duration fallback is disabled"));
+    }
+
+    #[test]
+    fn to_inbound_param_rejects_invalid_udp_timeout() {
+        let ib = InboundIR {
+            ty: InboundType::Mixed,
+            listen: "127.0.0.1".to_string(),
+            port: 1080,
+            udp_timeout: Some("bad".to_string()),
+            ..InboundIR::default()
+        };
+
+        let err = to_inbound_param(&ib).expect_err("invalid duration should be rejected");
+        assert!(
+            err.to_string()
+                .contains("mixed inbound udp_timeout 'bad' is invalid")
+        );
+    }
 }
