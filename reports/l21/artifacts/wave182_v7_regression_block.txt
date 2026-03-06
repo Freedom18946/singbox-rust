@@ -1,0 +1,5 @@
+wave182 negative regression test
+Date: 2026-03-06T14:03:53Z
+Reverted SB_PREFETCH_CAP/WORKERS/RETRIES to old .and_then(|s| s.parse().ok()) pattern
+Result: FAIL (4 assertions failed: W182-02..W182-05)
+exit_code=1 (script found violations)

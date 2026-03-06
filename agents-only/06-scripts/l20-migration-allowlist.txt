@@ -1,4 +1,4 @@
-VERSION|l21.178-wave181-v1|||L21 wave#181 migration assertion allowlist version
+VERSION|l21.179-wave182-v1|||L21 wave#182 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -475,3 +475,9 @@ require|W180-02-panic-log-max-explicit-warn|app/src/panic.rs|env 'SB_PANIC_LOG_M
 
 forbid|W181-01-no-dns-cache-ttl-silent-parse|app/src/run_engine.rs|\.and_then\(\|s\| s\.parse\(\)\.ok\(\)\)\.unwrap_or\(30\)|run_engine DNS_CACHE_TTL must not silently swallow parse failures
 require|W181-02-dns-cache-ttl-explicit-warn|app/src/run_engine.rs|env 'DNS_CACHE_TTL' value '.*' is not a valid u64; silent parse fallback is disabled|dns cache ttl env should emit explicit diagnostics
+
+forbid|W182-01-no-prefetch-cap-silent-parse|app/src/admin_debug/prefetch.rs|\.and_then\(\|s\| s\.parse\(\)\.ok\(\)\)\.unwrap_or\(128\)|prefetch SB_PREFETCH_CAP must not silently swallow parse failures
+require|W182-02-prefetch-cap-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_usize\("SB_PREFETCH_CAP"|prefetch cap should use explicit parse helper
+require|W182-03-prefetch-workers-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_usize\("SB_PREFETCH_WORKERS"|prefetch workers should use explicit parse helper
+require|W182-04-prefetch-retries-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_u8\("SB_PREFETCH_RETRIES"|prefetch retries should use explicit u8 parse helper
+require|W182-05-prefetch-explicit-warn|app/src/admin_debug/prefetch.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|prefetch env should emit explicit diagnostics

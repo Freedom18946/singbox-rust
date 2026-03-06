@@ -44,15 +44,9 @@ fn observe_depth(depth: u64) {
 impl Prefetcher {
     pub fn global() -> &'static Self {
         GLOBAL.get_or_init(|| {
-            let cap = std::env::var("SB_PREFETCH_CAP")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(128);
+            let cap = parse_prefetch_env_usize("SB_PREFETCH_CAP", 128);
             let (tx, rx) = mpsc::channel::<PrefetchJob>(cap);
-            let n = std::env::var("SB_PREFETCH_WORKERS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(2);
+            let n = parse_prefetch_env_usize("SB_PREFETCH_WORKERS", 2);
 
             // Create shared receiver using Arc
             let rx = std::sync::Arc::new(tokio::sync::Mutex::new(rx));
@@ -115,10 +109,7 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
 
         let start = std::time::Instant::now();
         let mut ok = false;
-        let mut left = std::env::var("SB_PREFETCH_RETRIES")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(2);
+        let mut left = parse_prefetch_env_usize("SB_PREFETCH_RETRIES", 2);
         loop {
             match do_prefetch(&job).await {
                 Ok(()) => {
@@ -194,10 +185,7 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
             .unwrap_or_default()
             .as_millis() as u64
             + 60_000,
-        tries: std::env::var("SB_PREFETCH_RETRIES")
-            .ok()
-            .and_then(|s| s.parse::<u8>().ok())
-            .unwrap_or(3),
+        tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
     };
     Prefetcher::global().enqueue(job)
 }
@@ -222,6 +210,36 @@ async fn prefetch_once(
     #[cfg(not(feature = "subs_http"))]
     {
         anyhow::bail!("subs_http feature disabled");
+    }
+}
+
+fn parse_prefetch_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
+}
+
+fn parse_prefetch_env_u8(key: &str, default: u8) -> u8 {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<u8>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u8; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
     }
 }
 
