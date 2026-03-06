@@ -2696,16 +2696,12 @@ fn build_tailscale_outbound(
 
 #[cfg(not(feature = "adapter-tailscale"))]
 fn build_tailscale_outbound(
-    param: &OutboundParam,
+    _param: &OutboundParam,
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    warn!(
-        target: "sb_adapters::tailscale",
-        "tailscale outbound not built; falling back to direct connector"
-    );
-
-    Some((build_core_direct_connector(param), None))
+    stub_outbound("tailscale");
+    None
 }
 
 #[cfg(feature = "adapter-hysteria")]

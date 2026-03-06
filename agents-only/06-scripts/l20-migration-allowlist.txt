@@ -1,4 +1,4 @@
-VERSION|l21.214-wave198-v1|||L21 wave#198 migration assertion allowlist version
+VERSION|l21.217-wave199-v1|||L21 wave#199 — MIG-02 formal closure
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -571,3 +571,7 @@ require|W198-03-http-sticky-explicit-warn|crates/sb-adapters/src/inbound/http.rs
 forbid|W198-04-no-socks-sticky-ttl-silent|crates/sb-adapters/src/inbound/socks/mod.rs|env::var\("SB_PROXY_STICKY_TTL_MS"\)\.ok\(\)\.and_then|socks sticky ttl must not silently swallow parse failures
 forbid|W198-05-no-socks-sticky-cap-silent|crates/sb-adapters/src/inbound/socks/mod.rs|env::var\("SB_PROXY_STICKY_CAP"\)\.ok\(\)\.and_then|socks sticky cap must not silently swallow parse failures
 require|W198-06-socks-sticky-explicit-warn|crates/sb-adapters/src/inbound/socks/mod.rs|silent parse fallback is disabled, using default|socks sticky env should emit explicit diagnostics
+
+forbid|W199-01-no-tailscale-direct-fallback|crates/sb-adapters/src/register.rs|falling back to direct connector|tailscale disabled stub must not fall back to direct connector
+forbid|W199-02-no-tailscale-build-core-direct|crates/sb-adapters/src/register.rs|build_core_direct_connector.*tailscale|tailscale disabled stub must not construct core direct connector
+require|W199-03-tailscale-stub-returns-none|crates/sb-adapters/src/register.rs|stub_outbound\("tailscale"\)|tailscale disabled stub should use standard stub_outbound pattern
