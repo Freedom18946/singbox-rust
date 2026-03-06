@@ -1,0 +1,2 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.31s
+  Executable unittests src/lib.rs (target/debug/deps/sb_adapters-3bd8f5119656f32b)

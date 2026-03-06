@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#134**，聚焦 **vless inbound fallback 配置解析不再 silently ignore**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#135**，聚焦 **tun inbound unsupported decision 不再 silently fallback 到 direct**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余运行时 parse-failure fallback 与兼容占位默认值审计。
-- 当前 V7 口径：`l21.131-wave134-v1`（328 assertions）。
+- 当前 V7 口径：`l21.132-wave135-v1`（330 assertions）。
+
+### 🆕 L21 wave#135 推进快照（2026-03-06 17:06）
+
+- 状态：完成（`crates/sb-adapters/src/inbound/tun/mod.rs` 已完成 unsupported decision 收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/tun/mod.rs`：新增 `route_target_from_decision(...)`，使 tun inbound runtime connect path 与辅助 TCP packet path 不再把 unsupported decision 静默回落到 `direct`，改为显式 `Unsupported` 错误并给迁移提示
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.132-wave135-v1`（330 assertions）
+  3. `wave135_v7_regression_block.txt`：篡改 helper call 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave135_wp1_app_tests_check.txt` PASS
+  - `wave135_wp1_sb_core_check.txt` PASS
+  - `wave135_tun_inbound_tests_check.txt` PASS
+  - `wave135_strict_gate.txt` PASS
+  - `wave135_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#134 推进快照（2026-03-06 16:53）
 

@@ -39,6 +39,23 @@ static TCP_PROBE_FAIL: AtomicU64 = AtomicU64::new(0);
 static SNI_OK: AtomicU64 = AtomicU64::new(0);
 static SNI_FAIL: AtomicU64 = AtomicU64::new(0);
 
+fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, String)> {
+    match decision {
+        Decision::Direct => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
+        Decision::Reject | Decision::RejectDrop => {
+            Ok((RouteTarget::Kind(OutboundKind::Block), "block".to_string()))
+        }
+        Decision::Proxy(Some(tag)) => Ok((RouteTarget::Named(tag.clone()), tag.clone())),
+        unsupported => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!(
+                "tun: routing action '{}' is unsupported in inbound connect path; implicit direct fallback is disabled; provide explicit direct/block/proxy routing",
+                unsupported.as_str()
+            ),
+        )),
+    }
+}
+
 #[deprecated(
     since = "0.1.0",
     note = "metrics collection interface; kept for compatibility"
@@ -507,23 +524,18 @@ impl TunInbound {
                                                 ..Default::default()
                                             };
                                             let decision = self.router.decide(&route_ctx);
-                                            let (selected_target, outbound_tag) = match decision {
-                                                Decision::Direct => (
-                                                    RouteTarget::Kind(OutboundKind::Direct),
-                                                    "direct".to_string(),
-                                                ),
-                                                Decision::Reject | Decision::RejectDrop => (
-                                                    RouteTarget::Kind(OutboundKind::Block),
-                                                    "block".to_string(),
-                                                ),
-                                                Decision::Proxy(Some(tag)) => {
-                                                    (RouteTarget::Named(tag.clone()), tag)
-                                                }
-                                                _ => (
-                                                    RouteTarget::Kind(OutboundKind::Direct),
-                                                    "direct".to_string(),
-                                                ),
-                                            };
+                                            let (selected_target, outbound_tag) =
+                                                match route_target_from_decision(&decision) {
+                                                    Ok(route) => route,
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            "TUN: unsupported routing action for {}: {}",
+                                                            host_str,
+                                                            e
+                                                        );
+                                                        continue;
+                                                    }
+                                                };
                                             let traffic = self.stats.as_ref().and_then(|stats| {
                                                 stats.traffic_recorder(
                                                     self.inbound_tag.as_deref(),
@@ -884,12 +896,7 @@ impl TunInbound {
         };
 
         let decision = self.router.decide(&route_ctx);
-        let selected_target = match decision {
-            Decision::Direct => RouteTarget::Kind(OutboundKind::Direct),
-            Decision::Reject | Decision::RejectDrop => RouteTarget::Kind(OutboundKind::Block),
-            Decision::Proxy(Some(tag)) => RouteTarget::Named(tag),
-            _ => RouteTarget::Kind(OutboundKind::Direct),
-        };
+        let (selected_target, _outbound_tag) = route_target_from_decision(&decision)?;
 
         debug!(
             "TCP packet: {}:{} -> {}:{} (tuple={:?}) via {:?}",
@@ -1606,6 +1613,24 @@ mod tests {
         assert!(!cfg.dry_run);
         assert_eq!(cfg.user_tag.as_deref(), Some("alice"));
         assert_eq!(cfg.timeout_ms, 8000);
+    }
+
+    #[test]
+    fn unsupported_tun_routing_action_is_rejected_explicitly() {
+        let err = route_target_from_decision(&Decision::Sniff)
+            .expect_err("unsupported tun routing action should be rejected");
+        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+        let msg = err.to_string();
+        assert!(msg.contains("routing action 'sniff' is unsupported"));
+        assert!(msg.contains("implicit direct fallback is disabled"));
+    }
+
+    #[test]
+    fn tun_named_proxy_decision_preserves_tag() {
+        let (target, tag) = route_target_from_decision(&Decision::Proxy(Some("proxy-a".into())))
+            .expect("named proxy should be preserved");
+        assert_eq!(target, RouteTarget::Named("proxy-a".into()));
+        assert_eq!(tag, "proxy-a");
     }
 }
 

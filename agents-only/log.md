@@ -14,6 +14,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 17:06] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：tun inbound unsupported decision 去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/inbound/tun/mod.rs`
+    - 新增 `route_target_from_decision(...)`
+    - tun inbound runtime connect path 与辅助 TCP packet path 不再把 unsupported decision 静默回落到 `direct`
+    - 改为显式 `Unsupported` 错误并给迁移提示
+    - 补充最小单元测试，锁定 unsupported decision 显式报错与 named proxy tag 保留
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.132-wave135-v1`
+    - 新增 `W135-01/W135-02`
+- 证据与验证产物：
+  - `wave135_wp1_app_tests_check.txt`（PASS）
+  - `wave135_wp1_sb_core_check.txt`（PASS）
+  - `wave135_tun_inbound_tests_check.txt`（PASS）
+  - `wave135_strict_gate.txt`（PASS）
+  - `wave135_v7_regression_block.txt`（篡改 helper call 后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave135_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#135 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.132-wave135-v1`（330 assertions）。
+
 ### [2026-03-06 16:53] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：vless inbound fallback 配置解析去 silent ignore 并升级 strict gate 断言。

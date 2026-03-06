@@ -1,4 +1,4 @@
-VERSION|l21.131-wave134-v1|||L21 wave#134 migration assertion allowlist version
+VERSION|l21.132-wave135-v1|||L21 wave#135 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -364,3 +364,5 @@ require|W133-01-vmess-fallback-parse-helper|app/src/inbound_starter.rs|parse_opt
 require|W133-02-vmess-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|vmess inbound: invalid fallback config; refusing to start|vmess inbound starter should reject invalid fallback config explicitly
 require|W134-01-vless-fallback-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_fallback_addr\(\"vless\", \"127\.0\.0\.1:80\", Some\(\"bad\"\)\)|vless inbound fallback helper should stay covered by explicit unit test
 require|W134-02-vless-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|vless inbound: invalid fallback config; refusing to start|vless inbound starter should reject invalid fallback config explicitly
+forbid|W135-01-no-tun-unsupported-decision-direct-fallback|crates/sb-adapters/src/inbound/tun/mod.rs|unsupported => Ok\(\(RouteTarget::Kind\(OutboundKind::Direct\), \"direct\"\.to_string\(\)\)\)|tun inbound should not silently map unsupported routing actions to direct
+require|W135-02-tun-decision-helper-explicit-unsupported|crates/sb-adapters/src/inbound/tun/mod.rs|route_target_from_decision\(&decision\)|tun inbound should route decisions through explicit helper instead of fallback-to-direct
