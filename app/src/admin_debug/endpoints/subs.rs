@@ -54,18 +54,34 @@ static RPS_LAST_TICK: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(feature = "subs_http")]
 fn parse_env_usize(key: &str, def: usize) -> usize {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(def)
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return def,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {def}: {err}");
+            def
+        }
+    }
 }
 
 #[cfg(feature = "subs_http")]
 fn parse_env_u64(key: &str, def: u64) -> u64 {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(def)
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return def,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {def}: {err}");
+            def
+        }
+    }
 }
 
 #[cfg(feature = "subs_http")]

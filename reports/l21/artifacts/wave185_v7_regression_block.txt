@@ -1,0 +1,5 @@
+wave185 negative regression test
+Date: 2026-03-06T14:11:09Z
+Reverted subs parse_env_usize/parse_env_u64 to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (2 assertions failed: W185-02, W185-03)
+exit_code=1 (script found violations)
