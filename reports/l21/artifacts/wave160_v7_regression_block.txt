@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 20:23) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.157-wave160-v1
+  FAIL: [W160-02-router-include-depth-env-invalid-explicit-warn] required pattern missing in crates/sb-core/src/router/mod.rs :: router include depth env invalid value should emit explicit diagnostics instead of silent ignore
+  FAIL: 1/380 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave160-v7.qXvaDb

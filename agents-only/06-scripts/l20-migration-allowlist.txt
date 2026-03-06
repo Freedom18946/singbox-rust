@@ -1,4 +1,4 @@
-VERSION|l21.156-wave159-v1|||L21 wave#159 migration assertion allowlist version
+VERSION|l21.157-wave160-v1|||L21 wave#160 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -414,3 +414,5 @@ require|W158-01-router-backoff-max-ms-env-parse-helper|crates/sb-core/src/router
 require|W158-02-router-backoff-max-ms-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_BACKOFF_MAX_MS' value '.*' is invalid; silent parse fallback is disabled|router backoff max env invalid value should emit explicit diagnostics instead of silent ignore
 require|W159-01-router-max-depth-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_depth = router_rules_max_depth_from_env\(\);|router max depth env should parse through explicit helper instead of v\.parse::<usize>\(\)\.ok\(\)
 require|W159-02-router-max-depth-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_MAX_DEPTH' value '.*' is invalid; silent parse fallback is disabled|router max depth env invalid value should emit explicit diagnostics instead of silent ignore
+require|W160-01-router-include-depth-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_depth = router_rules_include_depth_from_env\(\);|router include depth env should parse through explicit helper instead of v\.parse::<usize>\(\)\.ok\(\)
+require|W160-02-router-include-depth-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_INCLUDE_DEPTH' value '.*' is invalid; silent parse fallback is disabled|router include depth env invalid value should emit explicit diagnostics instead of silent ignore

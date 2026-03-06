@@ -1725,10 +1725,7 @@ fn read_rules_with_includes<'a>(
     visited: &'a mut HashSet<PathBuf>,
 ) -> Pin<Box<dyn Future<Output = Result<String, std::io::Error>> + Send + 'a>> {
     Box::pin(async move {
-        let max_depth = std::env::var("SB_ROUTER_RULES_INCLUDE_DEPTH")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(4);
+        let max_depth = router_rules_include_depth_from_env();
         if depth > max_depth {
             return Ok(String::new());
         }
@@ -2222,6 +2219,29 @@ fn router_rules_max_depth_from_env() -> usize {
         Err(reason) => {
             tracing::warn!("{reason}; using default 3");
             3
+        }
+    }
+}
+
+fn parse_router_rules_include_depth_env(value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_RULES_INCLUDE_DEPTH' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(4),
+    }
+}
+
+fn router_rules_include_depth_from_env() -> usize {
+    let raw = std::env::var("SB_ROUTER_RULES_INCLUDE_DEPTH").ok();
+    match parse_router_rules_include_depth_env(raw.as_deref()) {
+        Ok(include_depth) => include_depth,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 4");
+            4
         }
     }
 }
@@ -3034,7 +3054,8 @@ pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot
 mod migration_tests {
     use super::{
         parse_router_rules_backoff_max_ms_env, parse_router_rules_hot_reload_ms_env,
-        parse_router_rules_jitter_ms_env, parse_router_rules_max_depth_env,
+        parse_router_rules_include_depth_env, parse_router_rules_jitter_ms_env,
+        parse_router_rules_max_depth_env,
         parse_router_rules_max_env,
     };
 
@@ -3080,6 +3101,15 @@ mod migration_tests {
             .expect_err("invalid max depth env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_MAX_DEPTH"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_rules_include_depth_env_reports_explicitly() {
+        let err = parse_router_rules_include_depth_env(Some("bad-include-depth"))
+            .expect_err("invalid include depth env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_INCLUDE_DEPTH"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
