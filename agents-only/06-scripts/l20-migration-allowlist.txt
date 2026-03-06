@@ -1,4 +1,4 @@
-VERSION|l21.183-wave186-v1|||L21 wave#186 migration assertion allowlist version
+VERSION|l21.184-wave187-v1|||L21 wave#187 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -501,3 +501,8 @@ require|W186-01-fs-scan-redirects-helper|app/src/cli/fs_scan.rs|parse_fs_scan_en
 require|W186-02-fs-scan-timeout-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_u64\("SB_SUBS_TIMEOUT_MS"|fs_scan timeout should use explicit parse helper
 require|W186-03-fs-scan-bytes-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_u64\("SB_SUBS_MAX_BYTES"|fs_scan max_bytes should use explicit parse helper
 require|W186-04-fs-scan-explicit-warn|app/src/cli/fs_scan.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|fs_scan env should emit explicit diagnostics
+
+forbid|W187-01-no-reloadable-silent-parse|app/src/admin_debug/reloadable.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)|reloadable EnvConfig must not silently swallow parse failures
+require|W187-02-reloadable-env-cfg-usize|app/src/admin_debug/reloadable.rs|env_cfg_usize\("SB_SUBS_MAX_REDIRECTS"|reloadable redirects should use explicit parse helper
+require|W187-03-reloadable-env-cfg-u64|app/src/admin_debug/reloadable.rs|env_cfg_u64\("SB_SUBS_TIMEOUT_MS"|reloadable timeout should use explicit parse helper
+require|W187-04-reloadable-explicit-warn|app/src/admin_debug/reloadable.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|reloadable env should emit explicit diagnostics

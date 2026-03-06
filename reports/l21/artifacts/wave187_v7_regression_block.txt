@@ -1,0 +1,5 @@
+wave187 negative regression test
+Date: 2026-03-06T14:17:01Z
+Reverted reloadable EnvConfig to old .and_then(|v| v.parse().ok()) pattern (11 env vars)
+Result: FAIL (4 assertions failed: W187-01..W187-04)
+exit_code=1 (script found violations)

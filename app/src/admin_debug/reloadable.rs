@@ -93,64 +93,53 @@ impl EnvConfig {
             .map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
 
         Self {
-            max_redirects: std::env::var("SB_SUBS_MAX_REDIRECTS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(3),
-
-            timeout_ms: std::env::var("SB_SUBS_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(4000),
-
-            max_bytes: std::env::var("SB_SUBS_MAX_BYTES")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(512 * 1024),
-
+            max_redirects: env_cfg_usize("SB_SUBS_MAX_REDIRECTS", 3),
+            timeout_ms: env_cfg_u64("SB_SUBS_TIMEOUT_MS", 4000),
+            max_bytes: env_cfg_u64("SB_SUBS_MAX_BYTES", 512 * 1024),
             mime_allow,
             mime_deny,
-
-            max_concurrency: std::env::var("SB_SUBS_MAX_CONCURRENCY")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(8),
-
-            rps: std::env::var("SB_SUBS_RPS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(4),
-
-            cache_capacity: std::env::var("SB_SUBS_CACHE_CAP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(64),
-
-            cache_ttl_ms: std::env::var("SB_SUBS_CACHE_TTL_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30_000),
-
-            breaker_window_ms: std::env::var("SB_SUBS_BR_WIN_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30_000),
-
-            breaker_open_ms: std::env::var("SB_SUBS_BR_OPEN_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(15_000),
-
-            breaker_failures: std::env::var("SB_SUBS_BR_FAILS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5),
-
-            breaker_ratio: std::env::var("SB_SUBS_BR_RATIO")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.5),
+            max_concurrency: env_cfg_usize("SB_SUBS_MAX_CONCURRENCY", 8),
+            rps: env_cfg_u32("SB_SUBS_RPS", 4),
+            cache_capacity: env_cfg_usize("SB_SUBS_CACHE_CAP", 64),
+            cache_ttl_ms: env_cfg_u64("SB_SUBS_CACHE_TTL_MS", 30_000),
+            breaker_window_ms: env_cfg_u64("SB_SUBS_BR_WIN_MS", 30_000),
+            breaker_open_ms: env_cfg_u64("SB_SUBS_BR_OPEN_MS", 15_000),
+            breaker_failures: env_cfg_u32("SB_SUBS_BR_FAILS", 5),
+            breaker_ratio: env_cfg_f32("SB_SUBS_BR_RATIO", 0.5),
         }
+    }
+}
+
+fn env_cfg_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<usize>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn env_cfg_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<u64>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn env_cfg_u32(key: &str, default: u32) -> u32 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<u32>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn env_cfg_f32(key: &str, default: f32) -> f32 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<f32>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid f32; silent parse fallback is disabled; using default {default}: {e}"); default }
     }
 }
 
