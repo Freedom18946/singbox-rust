@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 17:16) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.134-wave137-v1
+  FAIL: [W137-02-mixed-invalid-duration-explicit-reject] required pattern missing in app/src/inbound_starter.rs :: mixed inbound starter should reject invalid duration config explicitly
+  FAIL: 1/334 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave137-v7.Wra2G5

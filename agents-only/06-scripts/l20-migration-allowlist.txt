@@ -1,4 +1,4 @@
-VERSION|l21.133-wave136-v1|||L21 wave#136 migration assertion allowlist version
+VERSION|l21.134-wave137-v1|||L21 wave#137 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -368,3 +368,5 @@ forbid|W135-01-no-tun-unsupported-decision-direct-fallback|crates/sb-adapters/sr
 require|W135-02-tun-decision-helper-explicit-unsupported|crates/sb-adapters/src/inbound/tun/mod.rs|route_target_from_decision\(&decision\)|tun inbound should route decisions through explicit helper instead of fallback-to-direct
 require|W136-01-socks-duration-parse-helper|app/src/inbound_starter.rs|let udp_timeout = match parse_optional_inbound_duration\(|socks inbound starter should parse udp_timeout through explicit helper instead of silent ignore
 require|W136-02-socks-invalid-duration-explicit-reject|app/src/inbound_starter.rs|socks inbound: invalid duration config; refusing to start|socks inbound starter should reject invalid duration config explicitly
+require|W137-01-mixed-duration-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_duration\(\"mixed\",|mixed inbound starter should parse udp_timeout through explicit helper instead of silent ignore
+require|W137-02-mixed-invalid-duration-explicit-reject|app/src/inbound_starter.rs|mixed inbound: invalid duration config; refusing to start|mixed inbound starter should reject invalid duration config explicitly

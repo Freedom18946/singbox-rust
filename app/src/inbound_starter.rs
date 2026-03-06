@@ -25,21 +25,21 @@ use tracing::warn;
 use sb_core::router::RouterHandle;
 
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+use sb_adapters::inbound::http::{HttpProxyConfig, serve_http};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
+use sb_adapters::inbound::mixed::{MixedInboundConfig, serve_mixed};
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
+use sb_adapters::inbound::socks::{SocksInboundConfig, serve_socks};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig, TrojanUser};
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser, serve as serve_trojan};
 #[cfg(all(feature = "tun", feature = "adapters"))]
 use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
+use sb_adapters::inbound::vless::{VlessInboundConfig, serve as serve_vless};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
+use sb_adapters::inbound::vmess::{VmessInboundConfig, serve as serve_vmess};
 
 pub enum InboundStop {
     Channel(mpsc::Sender<()>),
@@ -447,10 +447,22 @@ fn start_mixed_inbound(
         |addr| {
             use sb_adapters::inbound::socks::DomainStrategy;
 
-            let udp_timeout = ib
-                .udp_timeout
-                .as_deref()
-                .and_then(|s| humantime::parse_duration(s).ok());
+            let udp_timeout = match parse_optional_inbound_duration(
+                "mixed",
+                &listen_str,
+                "udp_timeout",
+                ib.udp_timeout.as_deref(),
+            ) {
+                Ok(udp_timeout) => udp_timeout,
+                Err(e) => {
+                    warn!(
+                        addr=%listen_str,
+                        error=%e,
+                        "mixed inbound: invalid duration config; refusing to start"
+                    );
+                    return None;
+                }
+            };
             let domain_strategy =
                 ib.domain_strategy
                     .as_deref()
@@ -864,18 +876,20 @@ mod tests {
     fn invalid_optional_fallback_reports_requested_protocol() {
         let err = parse_optional_inbound_fallback_addr("vmess", "127.0.0.1:80", Some("bad"))
             .expect_err("invalid fallback should be rejected");
-        assert!(err
-            .to_string()
-            .contains("vmess inbound fallback 'bad' is invalid"));
+        assert!(
+            err.to_string()
+                .contains("vmess inbound fallback 'bad' is invalid")
+        );
     }
 
     #[test]
     fn invalid_optional_fallback_reports_vless_protocol() {
         let err = parse_optional_inbound_fallback_addr("vless", "127.0.0.1:80", Some("bad"))
             .expect_err("invalid fallback should be rejected");
-        assert!(err
-            .to_string()
-            .contains("vless inbound fallback 'bad' is invalid"));
+        assert!(
+            err.to_string()
+                .contains("vless inbound fallback 'bad' is invalid")
+        );
     }
 
     #[test]
@@ -886,5 +900,16 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("socks inbound udp_timeout 'bad' is invalid"));
         assert!(msg.contains("silent duration fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_duration_reports_mixed_protocol() {
+        let err =
+            parse_optional_inbound_duration("mixed", "127.0.0.1:1080", "udp_timeout", Some("bad"))
+                .expect_err("invalid duration should be rejected");
+        assert!(
+            err.to_string()
+                .contains("mixed inbound udp_timeout 'bad' is invalid")
+        );
     }
 }
