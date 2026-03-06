@@ -14,6 +14,25 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-07 01:00] Agent: Claude Opus 4.6
+
+**任务**: L21 wave#200-202 — MIG-02 最终关闭（inbound handler + tailscale 隐式直连回退消除）
+**变更**:
+- `crates/sb-adapters/src/inbound/trojan.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/vless.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/vmess.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/shadowsocks.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/shadowtls.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/anytls.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/redirect.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/tproxy.rs` - rules_global None → return Err (wave200)
+- `crates/sb-adapters/src/inbound/socks/udp_enhanced.rs` - rules_global None → Reject (wave201)
+- `crates/sb-adapters/src/inbound/tun_macos.rs` - process_router None → return Err (wave201)
+- `crates/sb-adapters/src/outbound/tailscale.rs` - WireGuard/Socks5/Managed modes: 移除 self.direct.connect 回退 → return Err (wave202)
+- `agents-only/06-scripts/l20-migration-allowlist.txt` - V7 升级到 l21.250-wave202-v1 (541 assertions)
+**结果**: 成功 — MIG-02 最终关闭，两轮独立全量审计确认生产源码零隐式直连回退
+**备注**: wave199 只修了 register.rs feature-stub；本轮审计发现 11 处遗漏（8 个 inbound handler + udp_enhanced + tun_macos + tailscale 3 模式），全部修复
+
 ### [2026-03-07 00:15] Agent: Claude Opus 4.6
 
 **任务**: L21 wave#199 — MIG-02 正式关闭（tailscale disabled-stub direct fallback 消除）

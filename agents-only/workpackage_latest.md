@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-03-07
-> **当前阶段**：L21 wave#199 完成 — **MIG-02 正式关闭**（全部运行路径无隐式直连回退，517 V7 assertions）
+> **当前阶段**：L21 wave#202 完成 — **MIG-02 正式关闭（最终审计通过）**（全部运行路径无隐式直连回退，541 V7 assertions）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=517 assertions，2026-03-07）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=541 assertions，2026-03-07）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -12,21 +12,22 @@
 ## 口径对齐（避免阶段混淆）
 
 1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
-2. **MIG-02 正式关闭**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
+2. **MIG-02 正式关闭（最终审计通过）**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
-- **MIG-02 已关闭**（wave#1-199, 517 assertions）。
+- **MIG-02 已关闭**（wave#1-202, 541 assertions）。
 - 下一阶段可转向 MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 的具体迁移，或其他 codebase hardening。
 
-## 🆕 最新进展：L21 wave#199 — MIG-02 正式关闭（2026-03-07）
+## 🆕 最新进展：L21 wave#200-202 — MIG-02 最终关闭（2026-03-07）
 
-**状态**：✅ tailscale feature-disabled stub 最后一处隐式直连回退已修复；V7 升级到 `l21.217-wave199-v1`（517 assertions）
+**状态**：✅ 两轮独立全量审计通过，生产源码零隐式直连回退；V7 升级到 `l21.250-wave202-v1`（541 assertions）
 
-1. 修复：`crates/sb-adapters/src/register.rs` `#[cfg(not(feature = "adapter-tailscale"))]` — 从 `build_core_direct_connector` 改为 `stub_outbound("tailscale") + None`
-2. 全运行路径审计通过：switchboard / manager / bridge / router / inbound / feature-disabled stubs 全部只有显式失败
-3. MIG-02 关闭范围：wave#1-199, 199 波, 517 V7 assertions
+1. Wave 200: 8 个 inbound handler（trojan/vless/vmess/ss/shadowtls/anytls/redirect/tproxy）— `rules_global::global()` 为 None 时从 `RDecision::Direct` 默认值改为 `return Err`
+2. Wave 201: `socks/udp_enhanced.rs` — router None 时返回 Reject 而非 Direct；`tun_macos.rs` — `process_router` None 时 `return Err`
+3. Wave 202: `outbound/tailscale.rs` — WireGuard/Socks5/Managed 三个模式移除 `self.direct.connect` 回退，改为 `return Err`（仅 Direct 模式保留，合法）
+4. MIG-02 关闭范围：wave#1-202, 202 波, 541 V7 assertions
 
 ## 🆕 最新进展：L21 wave#193-198 推进落地（2026-03-06 23:30）
 
