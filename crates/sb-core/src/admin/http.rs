@@ -48,29 +48,68 @@ struct Limits {
     max_rps_per_ip: usize,
 }
 
-fn env_usize(key: &str) -> Option<usize> {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+fn parse_admin_env_usize(key: &str, value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| -> Arc<str> {
+            format!(
+                "admin env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Err("not set".into()),
+    }
 }
-fn env_u64(key: &str) -> Option<u64> {
-    std::env::var(key).ok().and_then(|v| v.parse::<u64>().ok())
+
+fn parse_admin_env_u64(key: &str, value: Option<&str>) -> Result<u64, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<u64>().map_err(|err| -> Arc<str> {
+            format!(
+                "admin env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Err("not set".into()),
+    }
+}
+
+fn env_usize(key: &str, default: usize) -> usize {
+    let raw = std::env::var(key).ok();
+    match parse_admin_env_usize(key, raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) if raw.is_some() => {
+            tracing::warn!("{reason}; using default {default}");
+            default
+        }
+        _ => default,
+    }
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
+    let raw = std::env::var(key).ok();
+    match parse_admin_env_u64(key, raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) if raw.is_some() => {
+            tracing::warn!("{reason}; using default {default}");
+            default
+        }
+        _ => default,
+    }
 }
 
 fn limits() -> Limits {
     Limits {
-        max_header_bytes: env_usize("SB_ADMIN_MAX_HEADER_BYTES").unwrap_or(64 * 1024),
-        max_body_bytes: env_usize("SB_ADMIN_MAX_BODY_BYTES").unwrap_or(2 * 1024 * 1024),
+        max_header_bytes: env_usize("SB_ADMIN_MAX_HEADER_BYTES", 64 * 1024),
+        max_body_bytes: env_usize("SB_ADMIN_MAX_BODY_BYTES", 2 * 1024 * 1024),
         first_byte_timeout: Duration::from_millis(
-            env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS").unwrap_or(1500),
+            env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", 1500),
         ),
         first_line_timeout: Duration::from_millis(
-            env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS").unwrap_or(3000),
+            env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", 3000),
         ),
-        read_timeout: Duration::from_millis(env_u64("SB_ADMIN_READ_TIMEOUT_MS").unwrap_or(4000)),
-        write_timeout: Duration::from_millis(env_u64("SB_ADMIN_WRITE_TIMEOUT_MS").unwrap_or(4000)),
-        max_conn_per_ip: env_usize("SB_ADMIN_MAX_CONN_PER_IP").unwrap_or(8),
-        max_rps_per_ip: env_usize("SB_ADMIN_MAX_RPS_PER_IP").unwrap_or(16),
+        read_timeout: Duration::from_millis(env_u64("SB_ADMIN_READ_TIMEOUT_MS", 4000)),
+        write_timeout: Duration::from_millis(env_u64("SB_ADMIN_WRITE_TIMEOUT_MS", 4000)),
+        max_conn_per_ip: env_usize("SB_ADMIN_MAX_CONN_PER_IP", 8),
+        max_rps_per_ip: env_usize("SB_ADMIN_MAX_RPS_PER_IP", 16),
     }
 }
 
@@ -899,4 +938,27 @@ pub fn spawn_admin(
         }
     });
     Ok(h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_admin_env_u64, parse_admin_env_usize};
+
+    #[test]
+    fn invalid_admin_env_usize_reports_explicitly() {
+        let err = parse_admin_env_usize("SB_ADMIN_MAX_HEADER_BYTES", Some("big"))
+            .expect_err("invalid admin env usize should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ADMIN_MAX_HEADER_BYTES"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_admin_env_u64_reports_explicitly() {
+        let err = parse_admin_env_u64("SB_ADMIN_READ_TIMEOUT_MS", Some("slow"))
+            .expect_err("invalid admin env u64 should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ADMIN_READ_TIMEOUT_MS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
 }

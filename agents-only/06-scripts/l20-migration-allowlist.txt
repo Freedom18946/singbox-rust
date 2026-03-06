@@ -1,4 +1,4 @@
-VERSION|l21.169-wave172-v1|||L21 wave#172 migration assertion allowlist version
+VERSION|l21.170-wave173-v1|||L21 wave#173 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -445,3 +445,6 @@ require|W171-01-log-redact-env-parse-helper|crates/sb-core/src/log/mod.rs|log_re
 require|W171-02-log-redact-env-invalid-explicit-warn|crates/sb-core/src/log/mod.rs|log env 'LOG_REDACT' value '.*' is not a recognized boolean; silent parse fallback is disabled|log redact env unrecognized boolean should emit explicit diagnostics
 require|W172-01-naive-allow-insecure-env-parse-helper|crates/sb-core/src/outbound/naive_h2.rs|naive_allow_insecure_from_env\(\)|naive allow insecure env should parse through explicit helper instead of inline silent boolean ignore
 require|W172-02-naive-allow-insecure-env-invalid-explicit-warn|crates/sb-core/src/outbound/naive_h2.rs|naive env 'SB_NAIVE_ALLOW_INSECURE' value '.*' is not a recognized boolean; silent parse fallback is disabled|naive allow insecure env unrecognized boolean should emit explicit diagnostics
+require|W173-01-admin-env-parse-helper-usize|crates/sb-core/src/admin/http.rs|parse_admin_env_usize|admin env usize helper should use explicit parse with diagnostic instead of v\.parse\(\)\.ok\(\)
+require|W173-02-admin-env-parse-helper-u64|crates/sb-core/src/admin/http.rs|parse_admin_env_u64|admin env u64 helper should use explicit parse with diagnostic instead of v\.parse\(\)\.ok\(\)
+require|W173-03-admin-env-invalid-explicit-warn|crates/sb-core/src/admin/http.rs|silent parse fallback is disabled; fix the config explicitly|admin env invalid value should emit explicit diagnostics instead of silent ignore
