@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#146**，聚焦 **adapter register dns outbound server IP 配置解析不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#147**，聚焦 **adapter register shadowsocks outbound invalid connector config 不再 silently collapse**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.143-wave146-v1`（352 assertions）。
+- 当前 V7 口径：`l21.144-wave147-v1`（354 assertions）。
+
+### 🆕 L21 wave#147 推进快照（2026-03-06 18:16）
+
+- 状态：完成（`crates/sb-adapters/src/register.rs` 已完成 shadowsocks outbound invalid connector config 收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/register.rs`：新增 `invalid_outbound_config_reason(...)`，`build_shadowsocks_outbound(...)` 不再静默吞掉 `ShadowsocksConnector::new(cfg)` 失败，改为显式 invalid-config connector
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.144-wave147-v1`（354 assertions）
+  3. `wave147_v7_regression_block.txt`：恢复旧 `.ok()?` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave147_wp1_app_tests_check.txt` PASS
+  - `wave147_wp1_sb_core_check.txt` PASS
+  - `wave147_sb_adapters_register_tests_check.txt` PASS
+  - `wave147_strict_gate.txt` PASS
+  - `wave147_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#146 推进快照（2026-03-06 18:07）
 

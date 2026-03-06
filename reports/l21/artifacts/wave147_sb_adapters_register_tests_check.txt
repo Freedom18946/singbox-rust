@@ -1,0 +1,5 @@
+   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+    Finished `test` profile [optimized + debuginfo] target(s) in 50.00s
+  Executable unittests src/lib.rs (target/debug/deps/sb_adapters-94776bf678ee3630)

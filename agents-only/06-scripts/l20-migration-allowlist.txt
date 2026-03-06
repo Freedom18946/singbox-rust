@@ -1,4 +1,4 @@
-VERSION|l21.143-wave146-v1|||L21 wave#146 migration assertion allowlist version
+VERSION|l21.144-wave147-v1|||L21 wave#147 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -388,3 +388,5 @@ require|W145-01-register-tuic-uuid-parse-helper|crates/sb-adapters/src/register.
 require|W145-02-register-tuic-invalid-uuid-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"tuic\", reason\)|tuic outbound builder should surface invalid uuid through explicit invalid-config connector
 require|W146-01-register-dns-server-ip-parse-helper|crates/sb-adapters/src/register.rs|let server = match parse_required_outbound_ip_addr\(|dns outbound builder should parse server ip through explicit helper instead of parse\(\)\.ok\(\)
 require|W146-02-register-dns-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"dns\", reason\)|dns outbound builder should surface invalid server ip through explicit invalid-config connector
+require|W147-01-register-shadowsocks-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocks\", outbound_name, &err\)|shadowsocks outbound builder should format invalid config through explicit helper instead of swallowing connector errors
+require|W147-02-register-shadowsocks-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocks\", reason\)|shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector

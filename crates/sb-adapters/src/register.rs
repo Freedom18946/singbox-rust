@@ -157,6 +157,17 @@ fn invalid_config_outbound(
     ))
 }
 
+fn invalid_outbound_config_reason(
+    protocol: &'static str,
+    outbound: &str,
+    detail: impl std::fmt::Display,
+) -> Arc<str> {
+    format!(
+        "{protocol} outbound config is invalid for outbound '{outbound}'; silent builder failure is disabled; fix the config explicitly: {detail}"
+    )
+    .into()
+}
+
 fn parse_required_outbound_uuid(
     protocol: &'static str,
     outbound: &str,
@@ -795,6 +806,7 @@ fn build_shadowsocks_outbound(
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
+    let outbound_name = ir.name.as_deref().unwrap_or("shadowsocks");
 
     // Map method string (default to AES-256-GCM)
     let method = ir
@@ -815,7 +827,14 @@ fn build_shadowsocks_outbound(
     };
 
     // Create adapter connector
-    let connector = ShadowsocksConnector::new(cfg).ok()?;
+    let connector = match ShadowsocksConnector::new(cfg) {
+        Ok(connector) => connector,
+        Err(err) => {
+            let reason = invalid_outbound_config_reason("shadowsocks", outbound_name, &err);
+            warn!("{reason}");
+            return invalid_config_outbound("shadowsocks", reason);
+        }
+    };
     let connector_arc = Arc::new(connector);
 
     let bridge = AdapterIoBridge {
@@ -3121,7 +3140,9 @@ mod tests {
 
 #[cfg(test)]
 mod migration_tests {
-    use super::{parse_required_outbound_ip_addr, parse_required_outbound_uuid};
+    use super::{
+        invalid_outbound_config_reason, parse_required_outbound_ip_addr, parse_required_outbound_uuid,
+    };
 
     #[test]
     fn invalid_outbound_uuid_is_rejected_explicitly() {
@@ -3160,6 +3181,15 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("dns outbound server 'bad-ip' is invalid"));
         assert!(msg.contains("silent ip parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_shadowsocks_outbound_config_reports_protocol() {
+        let msg =
+            invalid_outbound_config_reason("shadowsocks", "edge-ss", "unsupported cipher")
+                .to_string();
+        assert!(msg.contains("shadowsocks outbound config is invalid"));
+        assert!(msg.contains("silent builder failure is disabled"));
     }
 }
 
