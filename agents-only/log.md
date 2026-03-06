@@ -14,6 +14,18 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-07 00:15] Agent: Claude Opus 4.6
+
+**任务**: L21 wave#199 — MIG-02 正式关闭（tailscale disabled-stub direct fallback 消除）
+**变更**:
+- `crates/sb-adapters/src/register.rs` - tailscale disabled stub 从隐式 direct fallback (`build_core_direct_connector`) 改为标准 `stub_outbound("tailscale"); None` 模式
+- `agents-only/06-scripts/l20-migration-allowlist.txt` - V7 升级到 l21.217-wave199-v1 (517 assertions)，新增 W199 forbid/require 3 条
+- `agents-only/active_context.md` - MIG-02 关闭声明 + 运行时路径审计表
+- `agents-only/workpackage_latest.md` - wave199 MIG-02 closure section
+- `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md` - wave199 条目
+**结果**: 成功 — MIG-02 全面关闭，全项目无隐式直连回退路径
+**备注**: 通过 runtime-path 全量审计（grep "direct"/DirectConnector::new/fallback.*direct）确认唯一残留为 tailscale disabled stub，修复后 MIG-02 所有子项完成
+
 ### [2026-03-06 23:30] Agent: Claude Opus 4.6
 
 **任务**: L21 wave#193-198 推进（sb-core/sb-transport/sb-adapters 层 env-var silent fallback 扫尾收口）

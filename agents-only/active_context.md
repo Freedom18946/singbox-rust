@@ -8,21 +8,37 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#198**，**MIG-02 env-var silent parse fallback 全项目收口完成（真·零残留）**
+**当前执行焦点（短周期）**: **L21 wave#199 完成，MIG-02 正式关闭**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
-### 口径说明（2026-03-06 对齐）
+### 口径说明（2026-03-07 对齐）
 
 - `L18` 是项目总阶段。
-- `L21 wave` 是当前执行层，MIG-02 env-var silent parse fallback 已全面收口。
-- 测试/样例层 `default=direct` 已清零。
+- `L21 wave#199` 完成 MIG-02 最后一处隐式直连回退修复（tailscale disabled stub）。
+- **MIG-02 正式关闭**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
 
 ### 下一阶段预估（实时）
 
-- `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- **MIG-02 env-var silent parse fallback 正式关闭**：生产源码零残留（剩余 3 处为 JSON/config 字段解析 + test 文件，非 env-var scope）。
-- 当前 V7 口径：`l21.214-wave198-v1`（514 assertions）。
+- **MIG-02 已关闭**（wave#1-199, 517 assertions）。
+- 下一阶段可转向 MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 的具体迁移，或其他 codebase hardening。
+- 当前 V7 口径：`l21.217-wave199-v1`（517 assertions）。
+
+### 🆕 MIG-02 正式关闭（2026-03-07, wave#199）
+
+**关闭标志**：全部运行路径审计通过，无隐式直连回退。
+
+| 运行路径 | 保护措施 | 关闭波次 |
+|----------|----------|---------|
+| Switchboard.get_connector() | 找不到 → None + warn | W4 |
+| OutboundManager.resolve_default() | 无 connector → Err | W4 |
+| Bridge IR → router rules | 缺省 → "unresolved" | W123 |
+| Bootstrap | 无 ensure_fallback_direct | W4 |
+| Inbound socks/ss/hy2 NeedFallback | 告警+丢包 | W125-126 |
+| HTTP/Mixed inbound bridge | 显式 disabled | W9 |
+| Selector/URLTest bootstrap | Hy2/SOCKS/HTTP/TUIC disabled msg | W16-19 |
+| Feature-disabled stubs (tailscale) | stub_outbound + None | **W199** |
+| Env-var silent parse fallback | 514+ assertions, 零残留 | W123-198 |
 
 ### 🆕 L21 wave#193-198 推进快照（2026-03-06 23:30）
 
