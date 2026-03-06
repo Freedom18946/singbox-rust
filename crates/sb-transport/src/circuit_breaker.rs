@@ -87,36 +87,21 @@ impl Default for CircuitBreakerConfig {
 impl CircuitBreakerConfig {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
-        let failure_threshold = std::env::var("SB_CB_FAILS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5);
+        let failure_threshold = cb_env_u32("SB_CB_FAILS", 5);
 
-        let window_duration_ms = std::env::var("SB_CB_WINDOW_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(30_000);
+        let window_duration_ms = cb_env_u64("SB_CB_WINDOW_MS", 30_000);
 
-        let half_open_max_calls = std::env::var("SB_CB_HALFOPEN_MAX")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1);
+        let half_open_max_calls = cb_env_u32("SB_CB_HALFOPEN_MAX", 1);
 
         // Open timeout is calculated as 2x window duration by default
-        let open_timeout_ms = std::env::var("SB_CB_OPEN_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(window_duration_ms * 2);
+        let open_timeout_ms = cb_env_u64("SB_CB_OPEN_TIMEOUT_MS", window_duration_ms * 2);
 
         debug!(
             "Circuit breaker config: failures={}, window_ms={}, half_open_max={}, open_timeout_ms={}",
             failure_threshold, window_duration_ms, half_open_max_calls, open_timeout_ms
         );
 
-        let count_timeouts = std::env::var("SB_CB_COUNT_TIMEOUTS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(true);
+        let count_timeouts = cb_env_bool("SB_CB_COUNT_TIMEOUTS", true);
 
         Self {
             failure_threshold,
@@ -124,6 +109,58 @@ impl CircuitBreakerConfig {
             half_open_max_requests: half_open_max_calls,
             recovery_timeout: Duration::from_millis(open_timeout_ms),
             count_timeouts,
+        }
+    }
+}
+
+fn cb_env_u32(name: &str, default: u32) -> u32 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u32>() {
+        Ok(v) => v,
+        Err(err) => {
+            warn!(
+                "env '{name}' value '{raw}' is not a valid u32; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn cb_env_u64(name: &str, default: u64) -> u64 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            warn!(
+                "env '{name}' value '{raw}' is not a valid u64; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn cb_env_bool(name: &str, default: bool) -> bool {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" => true,
+        "0" | "false" | "no" | "" => false,
+        _ => {
+            warn!(
+                "env '{name}' value '{raw}' is not a valid bool; \
+                 silent parse fallback is disabled, using default {default}"
+            );
+            default
         }
     }
 }
