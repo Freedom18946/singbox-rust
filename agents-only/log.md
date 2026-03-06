@@ -14,6 +14,27 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 22:15] Agent: Claude Opus 4.6
+
+**任务**: L21 wave#178-190 批量推进（app 层 env-var silent fallback 收口）
+**变更**:
+- `app/src/bootstrap.rs` - SB_ROUTER_RULES_MAX: parse_env_usize helper (wave178)
+- `app/src/logging.rs` - SB_LOG_SAMPLE: explicit u32 parse with warn (wave179)
+- `app/src/panic.rs` - SB_PANIC_LOG_MAX: explicit usize parse with warn (wave180)
+- `app/src/run_engine.rs` - DNS_CACHE_TTL: explicit u64 parse with warn (wave181)
+- `app/src/admin_debug/prefetch.rs` - SB_PREFETCH_CAP/WORKERS/RETRIES: parse_prefetch_env_usize/u8 (wave182)
+- `app/src/admin_debug/cache.rs` - SB_SUBS_CACHE_CAP/TTL_MS/BYTES: parse_cache_env_usize/u64 (wave183)
+- `app/src/admin_debug/breaker.rs` - SB_SUBS_BR_WIN_MS/OPEN_MS/FAILS/RATIO: parse_breaker_env_u64/usize/f64 (wave184)
+- `app/src/admin_debug/endpoints/subs.rs` - parse_env_usize/parse_env_u64 generic helpers hardened (wave185)
+- `app/src/cli/fs_scan.rs` - SB_SUBS_MAX_REDIRECTS/TIMEOUT_MS/MAX_BYTES: parse_fs_scan_env_usize/u64 (wave186)
+- `app/src/admin_debug/reloadable.rs` - 11 vars: env_cfg_usize/u64/u32/f32 (wave187)
+- `app/src/admin_debug/middleware/rate_limit.rs` - SB_ADMIN_RATE_LIMIT_MAX/WINDOW_SEC/BURST: rl_env_u32/u64/opt_u32 (wave188)
+- `app/src/admin_debug/http_server.rs` - SB_ADMIN_MAX_HEADER/BODY_BYTES/FIRSTLINE/READ_TIMEOUT_MS: admin_env_usize/u64 (wave189)
+- `app/src/cli/prefetch/mod.rs` - SB_PREFETCH_CAP: cli_prefetch_env_usize (wave190)
+- `agents-only/06-scripts/l20-migration-allowlist.txt` - V7 升级到 l21.187-wave190-v1 (471 assertions)
+**结果**: 成功 — 13 波连续完成，所有 PASS（cargo check + boundaries --strict + 负样例回归）
+**备注**: app 层 env-var silent fallback 大面积收口完成，剩余候选为 bin/ 工具类（sb-bench/sb-explaind）
+
 ### [2026-03-06 19:56] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：router include depth env parse-failure 去 silent collapse 并升级 strict gate 断言。

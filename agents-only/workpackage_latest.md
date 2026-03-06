@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 19:56
-> **当前阶段**：L21 wave#160 推进完成（MIG-02 hardening：router include depth env parse-failure 不再 silently collapse + strict gate 升级）
+> **最后更新**：2026-03-06 22:15
+> **当前阶段**：L21 wave#190 推进完成（MIG-02 hardening：app 层 env-var silent fallback 13 波收口）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=380 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=471 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -19,7 +19,27 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs`、`crates/sb-adapters/src/inbound/hysteria2.rs`、`crates/sb-adapters/src/inbound/tuic.rs`、`app/src/inbound_starter.rs`、`crates/sb-adapters/src/inbound/tun/mod.rs`、`crates/sb-core/src/adapter/bridge.rs`、`crates/sb-adapters/src/register.rs` 已完成一段真实路径收口；近端候选转向其余真实配置路径 parse-failure / 兼容占位默认值审计。
+- app 层 env-var silent fallback 已大面积收口（wave178-190），剩余候选为 bin/ 工具类（sb-bench、sb-explaind 等）。
+
+## 🆕 最新进展：L21 wave#178-190 批量推进落地（2026-03-06 22:15）
+
+**状态**：✅ 13 波完成，app 层 env-var silent fallback 全域收口；V7 allowlist 升级到 `l21.187-wave190-v1`（471 assertions）
+
+1. 本轮覆盖（13 波 / ~40 个 env vars）：
+   - `app/src/bootstrap.rs`: SB_ROUTER_RULES_MAX — parse_env_usize helper (wave178)
+   - `app/src/logging.rs`: SB_LOG_SAMPLE — explicit u32 parse with warn (wave179)
+   - `app/src/panic.rs`: SB_PANIC_LOG_MAX — explicit usize parse with warn (wave180)
+   - `app/src/run_engine.rs`: DNS_CACHE_TTL — explicit u64 parse with warn (wave181)
+   - `app/src/admin_debug/prefetch.rs`: SB_PREFETCH_CAP/WORKERS/RETRIES — parse_prefetch_env_usize/u8 (wave182)
+   - `app/src/admin_debug/cache.rs`: SB_SUBS_CACHE_CAP/TTL_MS/BYTES — parse_cache_env_usize/u64 (wave183)
+   - `app/src/admin_debug/breaker.rs`: SB_SUBS_BR_WIN_MS/OPEN_MS/FAILS/RATIO — parse_breaker_env_u64/usize/f64 (wave184)
+   - `app/src/admin_debug/endpoints/subs.rs`: parse_env_usize/parse_env_u64 generic helpers (wave185)
+   - `app/src/cli/fs_scan.rs`: SB_SUBS_MAX_REDIRECTS/TIMEOUT_MS/MAX_BYTES — parse_fs_scan_env_usize/u64 (wave186)
+   - `app/src/admin_debug/reloadable.rs`: 11 vars — env_cfg_usize/u64/u32/f32 (wave187)
+   - `app/src/admin_debug/middleware/rate_limit.rs`: SB_ADMIN_RATE_LIMIT_MAX/WINDOW_SEC/BURST — rl_env_u32/u64/opt_u32 (wave188)
+   - `app/src/admin_debug/http_server.rs`: SB_ADMIN_MAX_HEADER/BODY_BYTES/FIRSTLINE/READ_TIMEOUT_MS — admin_env_usize/u64 (wave189)
+   - `app/src/cli/prefetch/mod.rs`: SB_PREFETCH_CAP — cli_prefetch_env_usize (wave190)
+2. 验证：所有波均通过 `cargo check -p app --tests` + `check-boundaries.sh --strict` + 负样例回归
 
 ## 🆕 最新进展：L21 wave#160 推进落地（2026-03-06 19:56）
 

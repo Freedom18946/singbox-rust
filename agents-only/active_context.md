@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#177**，聚焦 **sb-core 全域 env parse-failure silent fallback 收口**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#190**，聚焦 **app 层 env parse-failure silent fallback 收口**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,28 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- sb-core env-var silent fallback 大面积已清完，剩余候选为 dns/fakeip.rs 的 IR 字段 parse（非 env var，可能 out of scope）。
-- 当前 V7 口径：`l21.174-wave177-v1`（426 assertions）。
+- sb-core env-var silent fallback 大面积已清完，app 层已进入收口。
+- 当前 V7 口径：`l21.187-wave190-v1`（471 assertions）。
+
+### 🆕 L21 wave#178-190 批量推进快照（2026-03-06 22:15）
+
+- 状态：13 波连续完成（wave178-190），app 层 env-var silent fallback 全域扫描并收口。
+- 本轮覆盖：
+  - **bootstrap.rs**: SB_ROUTER_RULES_MAX (wave178)
+  - **logging.rs**: SB_LOG_SAMPLE (wave179)
+  - **panic.rs**: SB_PANIC_LOG_MAX (wave180)
+  - **run_engine.rs**: DNS_CACHE_TTL (wave181)
+  - **admin_debug/prefetch.rs**: SB_PREFETCH_CAP/WORKERS/RETRIES (wave182)
+  - **admin_debug/cache.rs**: SB_SUBS_CACHE_CAP/TTL_MS/BYTES (wave183)
+  - **admin_debug/breaker.rs**: SB_SUBS_BR_WIN_MS/OPEN_MS/FAILS/RATIO (wave184)
+  - **admin_debug/endpoints/subs.rs**: parse_env_usize/parse_env_u64 helpers (wave185)
+  - **cli/fs_scan.rs**: SB_SUBS_MAX_REDIRECTS/TIMEOUT_MS/MAX_BYTES (wave186)
+  - **admin_debug/reloadable.rs**: 11 env vars in EnvConfig::from_env() (wave187)
+  - **admin_debug/middleware/rate_limit.rs**: SB_ADMIN_RATE_LIMIT_MAX/WINDOW_SEC/BURST (wave188)
+  - **admin_debug/http_server.rs**: SB_ADMIN_MAX_HEADER/BODY_BYTES/FIRSTLINE/READ_TIMEOUT_MS (wave189)
+  - **cli/prefetch/mod.rs**: SB_PREFETCH_CAP (wave190)
+- V7 断言：426 → 471（+45 新断言）
+- origin/main HEAD: `ac4fc8d`
 
 ### 🆕 L21 wave#161-177 批量推进快照（2026-03-06 21:20）
 
