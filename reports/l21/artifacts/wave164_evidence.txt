@@ -1,0 +1,20 @@
+wave164: harden SB_RULE_COVERAGE env parsing
+=============================================
+
+Target: crates/sb-core/src/router/coverage.rs
+Change: SB_RULE_COVERAGE no longer silently ignores unrecognized boolean values.
+        Feature-gated behind rule_coverage.
+
+Helpers added:
+  - parse_rule_coverage_env(value: Option<&str>) -> Result<bool, Arc<str>>
+  - rule_coverage_from_env() -> bool
+
+Test: invalid_rule_coverage_env_reports_explicitly (needs --features rule_coverage)
+Allowlist: l21.161-wave164-v1 (388 assertions)
+
+Verification:
+  - cargo check -p sb-core: PASS
+  - cargo check -p app --tests: PASS
+  - check-boundaries.sh --strict: PASS (388 assertions)
+  - negative regression: FAIL as expected (v7_exit=1)
+  - specific test (--features rule_coverage): PASS

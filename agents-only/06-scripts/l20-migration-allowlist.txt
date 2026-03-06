@@ -1,4 +1,4 @@
-VERSION|l21.160-wave163-v1|||L21 wave#163 migration assertion allowlist version
+VERSION|l21.161-wave164-v1|||L21 wave#164 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -422,3 +422,5 @@ require|W162-01-router-suffix-strict-env-parse-helper|crates/sb-core/src/router/
 require|W162-02-router-suffix-strict-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_STRICT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-strict env unrecognized boolean should emit explicit diagnostics instead of silent ignore
 require|W163-01-router-suffix-trie-env-parse-helper|crates/sb-core/src/router/mod.rs|if router_suffix_trie_from_env\(\)|router suffix-trie env should parse through explicit helper instead of inline silent boolean ignore
 require|W163-02-router-suffix-trie-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_TRIE' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-trie env unrecognized boolean should emit explicit diagnostics instead of silent ignore
+require|W164-01-rule-coverage-env-parse-helper|crates/sb-core/src/router/coverage.rs|if rule_coverage_from_env\(\)|rule coverage env should parse through explicit helper instead of inline silent boolean ignore
+require|W164-02-rule-coverage-env-invalid-explicit-warn|crates/sb-core/src/router/coverage.rs|router env 'SB_RULE_COVERAGE' value '.*' is not a recognized boolean; silent parse fallback is disabled|rule coverage env unrecognized boolean should emit explicit diagnostics instead of silent ignore
