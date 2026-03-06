@@ -1,4 +1,4 @@
-VERSION|l21.184-wave187-v1|||L21 wave#187 migration assertion allowlist version
+VERSION|l21.185-wave188-v1|||L21 wave#188 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -506,3 +506,8 @@ forbid|W187-01-no-reloadable-silent-parse|app/src/admin_debug/reloadable.rs|\.an
 require|W187-02-reloadable-env-cfg-usize|app/src/admin_debug/reloadable.rs|env_cfg_usize\("SB_SUBS_MAX_REDIRECTS"|reloadable redirects should use explicit parse helper
 require|W187-03-reloadable-env-cfg-u64|app/src/admin_debug/reloadable.rs|env_cfg_u64\("SB_SUBS_TIMEOUT_MS"|reloadable timeout should use explicit parse helper
 require|W187-04-reloadable-explicit-warn|app/src/admin_debug/reloadable.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|reloadable env should emit explicit diagnostics
+
+require|W188-01-rate-limit-max-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_u32\("SB_ADMIN_RATE_LIMIT_MAX"|rate limit max should use explicit parse helper
+require|W188-02-rate-limit-window-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_u64\("SB_ADMIN_RATE_LIMIT_WINDOW_SEC"|rate limit window should use explicit parse helper
+require|W188-03-rate-limit-burst-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_opt_u32\("SB_ADMIN_RATE_LIMIT_BURST"|rate limit burst should use explicit parse helper
+require|W188-04-rate-limit-explicit-warn|app/src/admin_debug/middleware/rate_limit.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|rate limit env should emit explicit diagnostics

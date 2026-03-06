@@ -224,15 +224,9 @@ pub fn from_env() -> Option<RateLimitMiddleware> {
         return None;
     }
 
-    let max_requests = std::env::var("SB_ADMIN_RATE_LIMIT_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
+    let max_requests = rl_env_u32("SB_ADMIN_RATE_LIMIT_MAX", 60);
 
-    let window_secs = std::env::var("SB_ADMIN_RATE_LIMIT_WINDOW_SEC")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
+    let window_secs = rl_env_u64("SB_ADMIN_RATE_LIMIT_WINDOW_SEC", 60);
 
     let strategy = match std::env::var("SB_ADMIN_RATE_LIMIT_STRATEGY")
         .ok()
@@ -243,9 +237,7 @@ pub fn from_env() -> Option<RateLimitMiddleware> {
         _ => RateLimitStrategy::ByPath,
     };
 
-    let burst = std::env::var("SB_ADMIN_RATE_LIMIT_BURST")
-        .ok()
-        .and_then(|v| v.parse().ok());
+    let burst = rl_env_opt_u32("SB_ADMIN_RATE_LIMIT_BURST");
 
     let mut config = RateLimitConfig::new(max_requests, window_secs).with_strategy(strategy);
 
@@ -254,6 +246,31 @@ pub fn from_env() -> Option<RateLimitMiddleware> {
     }
 
     Some(RateLimitMiddleware::new(config))
+}
+
+fn rl_env_u32(key: &str, default: u32) -> u32 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<u32>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn rl_env_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<u64>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn rl_env_opt_u32(key: &str) -> Option<u32> {
+    let raw = std::env::var(key).ok()?;
+    let t = raw.trim();
+    match t.parse::<u32>() {
+        Ok(v) => Some(v),
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; ignoring: {e}"); None }
+    }
 }
 
 #[cfg(test)]

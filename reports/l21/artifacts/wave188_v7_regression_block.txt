@@ -1,0 +1,5 @@
+wave188 negative regression test
+Date: 2026-03-06T14:21:59Z
+Reverted SB_ADMIN_RATE_LIMIT_MAX/WINDOW_SEC/BURST to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (4 assertions failed: W188-01..W188-04)
+exit_code=1 (script found violations)
