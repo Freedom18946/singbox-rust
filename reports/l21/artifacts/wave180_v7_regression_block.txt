@@ -1,0 +1,5 @@
+wave180 negative regression test
+Date: 2026-03-06T13:58:44Z
+Reverted SB_PANIC_LOG_MAX parse to old .and_then(|v| v.parse::<usize>().ok()) pattern
+Result: FAIL (W180-02-panic-log-max-explicit-warn required pattern missing)
+exit_code=1 (script found violations)

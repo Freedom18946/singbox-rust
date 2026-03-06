@@ -67,10 +67,19 @@ pub fn install() {
 
                 match std::fs::write(&file, body) {
                     Ok(()) => {
-                        let max_keep = std::env::var("SB_PANIC_LOG_MAX")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                            .unwrap_or(10);
+                        let max_keep = match std::env::var("SB_PANIC_LOG_MAX") {
+                            Ok(raw) => {
+                                let t = raw.trim();
+                                match t.parse::<usize>() {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        eprintln!("env 'SB_PANIC_LOG_MAX' value '{t}' is not a valid usize; silent parse fallback is disabled; using default 10: {e}");
+                                        10
+                                    }
+                                }
+                            }
+                            Err(_) => 10,
+                        };
                         if max_keep > 0 {
                             if let Ok(read_dir) = std::fs::read_dir(dir) {
                                 let mut entries: Vec<_> = read_dir
