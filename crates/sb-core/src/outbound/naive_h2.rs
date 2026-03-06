@@ -100,9 +100,7 @@ impl OutboundTcp for NaiveH2Outbound {
         // Configure HTTP/2 ALPN
         client_config.alpn_protocols = vec![b"h2".to_vec()];
 
-        if self.config.skip_cert_verify
-            && std::env::var("SB_NAIVE_ALLOW_INSECURE").ok() == Some("1".to_string())
-        {
+        if self.config.skip_cert_verify && naive_allow_insecure_from_env() {
             tracing::warn!("Naive H2: insecure mode enabled, certificate verification disabled");
         }
 
@@ -199,5 +197,42 @@ pub struct NaiveH2Config;
 impl NaiveH2Config {
     pub fn new() -> Self {
         Self
+    }
+}
+
+fn parse_naive_allow_insecure_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "naive env 'SB_NAIVE_ALLOW_INSECURE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn naive_allow_insecure_from_env() -> bool {
+    let raw = std::env::var("SB_NAIVE_ALLOW_INSECURE").ok();
+    match parse_naive_allow_insecure_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_naive_allow_insecure_env;
+
+    #[test]
+    fn invalid_naive_allow_insecure_env_reports_explicitly() {
+        let err = parse_naive_allow_insecure_env(Some("on"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_NAIVE_ALLOW_INSECURE"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
