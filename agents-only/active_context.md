@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#160**，聚焦 **router include depth env parse-failure 不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#177**，聚焦 **sb-core 全域 env parse-failure silent fallback 收口**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,29 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.157-wave160-v1`（380 assertions）。
+- sb-core env-var silent fallback 大面积已清完，剩余候选为 dns/fakeip.rs 的 IR 字段 parse（非 env var，可能 out of scope）。
+- 当前 V7 口径：`l21.174-wave177-v1`（426 assertions）。
+
+### 🆕 L21 wave#161-177 批量推进快照（2026-03-06 21:20）
+
+- 状态：17 波连续完成（wave161-177），sb-core env-var silent fallback 全域扫描并收口。
+- 本轮覆盖：
+  - **router/mod.rs**: SB_ROUTER_RULES_REQUIRE_DEFAULT, SB_ROUTER_SUFFIX_STRICT, SB_ROUTER_SUFFIX_TRIE (wave161-163)
+  - **router/coverage.rs**: SB_RULE_COVERAGE (wave164)
+  - **router/engine.rs**: SB_ROUTER_DECISION_CACHE, SB_ROUTER_DECISION_CACHE_CAP, SB_ROUTER_DECIDE_BUDGET_MS, SB_ROUTER_DNS, SB_ROUTER_DNS_TIMEOUT_MS, SB_GEOIP_ENABLE (wave165, 177)
+  - **router/keyword.rs**: SB_ROUTER_KEYWORD_AC_MIN (wave166)
+  - **router/preview.rs**: 去重 SB_ROUTER_RULES_MAX（改用共享 helper）(wave167)
+  - **router/dns_integration.rs**: SB_ROUTER_DNS, SB_ROUTER_DNS_TIMEOUT_MS (wave168)
+  - **router/explain_index.rs**: SB_EXPLAIN_REBUILD_MS (wave169)
+  - **runtime/supervisor.rs**: SB_RUNTIME_DIFF (wave170)
+  - **log/mod.rs**: LOG_REDACT (wave171)
+  - **outbound/naive_h2.rs**: SB_NAIVE_ALLOW_INSECURE (wave172)
+  - **admin/http.rs**: SB_ADMIN_MAX_HEADER_BYTES 等 8 个 admin env (wave173)
+  - **dns/config_builder.rs**: env_u64/env_u8/env_bool 3 个通用 helper (wave174)
+  - **health/mod.rs**: HEALTH_INTERVAL_MS (wave175)
+  - **net/rate_limit.rs + tcp_rate_limit.rs**: SB_UDP_OUTBOUND_BPS/PPS_MAX, SB_INBOUND_RATE_LIMIT_* (wave176)
+- V7 断言：380 → 426（+46 新断言）
+- origin/main HEAD: `1e2aa79`
 
 ### 🆕 L21 wave#160 推进快照（2026-03-06 19:56）
 
