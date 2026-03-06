@@ -10,11 +10,7 @@ use super::dsl_plus::expand_dsl_plus;
 
 /// 从 DSL 文本构建 RouterIndex；失败返回 Err 字符串
 pub fn build_index_from_rules(text: &str) -> Result<Arc<RouterIndex>, String> {
-    // 采用环境变量或默认上限
-    let max = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(8192);
+    let max = super::router_rules_max_from_env();
     match router_build_index_from_str(text, max) {
         Ok(idx) => Ok(idx),
         Err(e) => Err(format!("{:?}", e)),

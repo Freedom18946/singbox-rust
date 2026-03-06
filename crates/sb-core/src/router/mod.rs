@@ -2135,7 +2135,7 @@ fn parse_router_rules_max_env(value: Option<&str>) -> Result<usize, Arc<str>> {
     }
 }
 
-fn router_rules_max_from_env() -> usize {
+pub(crate) fn router_rules_max_from_env() -> usize {
     let raw = std::env::var("SB_ROUTER_RULES_MAX").ok();
     match parse_router_rules_max_env(raw.as_deref()) {
         Ok(max_rules) => max_rules,

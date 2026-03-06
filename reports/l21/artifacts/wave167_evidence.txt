@@ -1,0 +1,14 @@
+wave167: deduplicate SB_ROUTER_RULES_MAX in preview.rs
+======================================================
+
+Target: crates/sb-core/src/router/preview.rs + crates/sb-core/src/router/mod.rs
+Change: preview.rs no longer has its own inline .parse().ok() for SB_ROUTER_RULES_MAX.
+        Instead, it calls super::router_rules_max_from_env() (promoted to pub(crate)).
+
+Allowlist: l21.164-wave167-v1 (396 assertions)
+
+Verification:
+  - cargo check -p sb-core: PASS
+  - cargo check -p app --tests: PASS
+  - check-boundaries.sh --strict: PASS (396 assertions)
+  - negative regression: 2 assertions caught (forbid + require), v7_exit=1
