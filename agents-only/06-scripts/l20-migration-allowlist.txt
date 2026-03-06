@@ -1,4 +1,4 @@
-VERSION|l21.125-wave128-v1|||L21 wave#128 migration assertion allowlist version
+VERSION|l21.126-wave129-v1|||L21 wave#129 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -352,3 +352,5 @@ forbid|W127-01-no-json-bridge-missing-outbound-direct-default|crates/sb-core/src
 require|W127-02-json-bridge-missing-outbound-unresolved-marker|crates/sb-core/src/router/json_bridge.rs|Decision::Proxy\(Some\(\"unresolved\"\.to_string\(\)\)\)|router json bridge should mark missing outbound as unresolved
 forbid|W128-01-no-rule-action-route-options-direct-default|crates/sb-core/src/router/rules.rs|RuleAction::RouteOptions => Decision::Direct|router rule action conversion should not default route-options to direct
 require|W128-02-rule-action-uses-outbound-or-unresolved-helper|crates/sb-core/src/router/rules.rs|from_outbound_or_unresolved\(outbound\.as_deref\(\)\)|router rule action conversion should preserve explicit outbound or emit unresolved marker
+forbid|W129-01-no-naive-kind-route-direct-decision-fallback|crates/sb-adapters/src/inbound/naive.rs|_ => Decision::Direct|naive inbound should not silently mark non-direct route kinds as direct
+require|W129-02-naive-route-target-decision-helper|crates/sb-adapters/src/inbound/naive.rs|decision_from_route_target\(&target\)|naive inbound should map route targets through explicit decision helper

@@ -262,12 +262,7 @@ async fn handle_stream(
         ..Default::default()
     };
     let (target, rule) = cfg.router.select_ctx_and_record_with_meta(ctx);
-    let decision = match &target {
-        OutRouteTarget::Named(name) => Decision::Proxy(Some(name.clone())),
-        OutRouteTarget::Kind(OutboundKind::Direct) => Decision::Direct,
-        OutRouteTarget::Kind(OutboundKind::Block) => Decision::Reject,
-        _ => Decision::Direct,
-    };
+    let decision = decision_from_route_target(&target);
     let outbound_tag = match &target {
         OutRouteTarget::Named(name) => Some(name.clone()),
         OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
@@ -341,6 +336,17 @@ fn parse_target(target: &str) -> Result<(String, u16)> {
         .parse::<u16>()
         .map_err(|_| anyhow!("Invalid port: {}", port_str))?;
     Ok((host.to_string(), port))
+}
+
+fn decision_from_route_target(target: &OutRouteTarget) -> Decision {
+    match target {
+        OutRouteTarget::Named(name) => Decision::Proxy(Some(name.clone())),
+        OutRouteTarget::Kind(OutboundKind::Direct) => Decision::Direct,
+        OutRouteTarget::Kind(OutboundKind::Block) => Decision::Reject,
+        OutRouteTarget::Kind(kind) => {
+            Decision::Proxy(Some(format!("{kind:?}").to_ascii_lowercase()))
+        }
+    }
 }
 
 /// Relay data between HTTP/2 stream and TCP stream
@@ -563,5 +569,37 @@ mod tests {
 
         assert!(parse_target("invalid").is_err());
         assert!(parse_target("example.com:99999").is_err());
+    }
+
+    #[test]
+    fn route_target_kind_proxy_decision_is_not_direct() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Socks)),
+            Decision::Proxy(Some("socks".to_string()))
+        );
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Http)),
+            Decision::Proxy(Some("http".to_string()))
+        );
+    }
+
+    #[test]
+    fn route_target_direct_and_block_keep_explicit_decisions() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Direct)),
+            Decision::Direct
+        );
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Block)),
+            Decision::Reject
+        );
+    }
+
+    #[test]
+    fn route_target_named_proxy_keeps_name() {
+        assert_eq!(
+            decision_from_route_target(&OutRouteTarget::Named("pool-a".to_string())),
+            Decision::Proxy(Some("pool-a".to_string()))
+        );
     }
 }

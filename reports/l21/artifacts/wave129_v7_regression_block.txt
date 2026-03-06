@@ -1,0 +1,14 @@
+pyenv: cannot rehash: /Users/bob/.pyenv/shims isn't writable
+=== 依赖边界检查 (2026-03-06 16:12) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.126-wave129-v1
+  FAIL: [W129-01-no-naive-kind-route-direct-decision-fallback] forbidden pattern matched in crates/sb-adapters/src/inbound/naive.rs :: naive inbound should not silently mark non-direct route kinds as direct
+  FAIL: [W129-02-naive-route-target-decision-helper] required pattern missing in crates/sb-adapters/src/inbound/naive.rs :: naive inbound should map route targets through explicit decision helper
+  FAIL: 2/318 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave129-v7.2VbUrD
