@@ -432,24 +432,27 @@ async fn handle_conn_impl(
 
     // Step 7: Router decision
     // 步骤 7: 路由决策
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(target_host.as_str()),
-            ip: None,
-            transport_udp: false,
-            port: Some(target_port),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let (d, r) = eng.decide_with_meta(&ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("vless: rejected by rules"));
+    let (decision, rule) = match rules_global::global() {
+        Some(eng) => {
+            let ctx = RouteCtx {
+                domain: Some(target_host.as_str()),
+                ip: None,
+                transport_udp: false,
+                port: Some(target_port),
+                network: Some("tcp"),
+                ..Default::default()
+            };
+            let (d, r) = eng.decide_with_meta(&ctx);
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("vless: rejected by rules"));
+            }
+            (d, r)
         }
-        decision = d;
-        rule = r;
-    }
+        None => {
+            tracing::warn!("vless: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("vless: router engine not initialized, implicit direct fallback is disabled"));
+        }
+    };
 
     // Step 8: Connect to upstream
     // 步骤 8: 连接上游

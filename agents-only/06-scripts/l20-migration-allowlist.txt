@@ -1,4 +1,4 @@
-VERSION|l21.217-wave199-v1|||L21 wave#199 — MIG-02 formal closure
+VERSION|l21.250-wave202-v1|||L21 wave#200-202 — MIG-02 inbound handler + tailscale direct fallback closure
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -575,3 +575,33 @@ require|W198-06-socks-sticky-explicit-warn|crates/sb-adapters/src/inbound/socks/
 forbid|W199-01-no-tailscale-direct-fallback|crates/sb-adapters/src/register.rs|falling back to direct connector|tailscale disabled stub must not fall back to direct connector
 forbid|W199-02-no-tailscale-build-core-direct|crates/sb-adapters/src/register.rs|build_core_direct_connector.*tailscale|tailscale disabled stub must not construct core direct connector
 require|W199-03-tailscale-stub-returns-none|crates/sb-adapters/src/register.rs|stub_outbound\("tailscale"\)|tailscale disabled stub should use standard stub_outbound pattern
+
+# --- Wave 200: 8 inbound handlers — rules_global Direct default elimination ---
+forbid|W200-01-no-trojan-direct-default|crates/sb-adapters/src/inbound/trojan.rs|let mut decision = RDecision::Direct|trojan inbound must not default to Direct when router missing
+forbid|W200-02-no-vless-direct-default|crates/sb-adapters/src/inbound/vless.rs|let mut decision = RDecision::Direct|vless inbound must not default to Direct when router missing
+forbid|W200-03-no-vmess-direct-default|crates/sb-adapters/src/inbound/vmess.rs|let mut decision = RDecision::Direct|vmess inbound must not default to Direct when router missing
+forbid|W200-04-no-shadowsocks-direct-default|crates/sb-adapters/src/inbound/shadowsocks.rs|let mut decision = RDecision::Direct|shadowsocks inbound must not default to Direct when router missing
+forbid|W200-05-no-shadowtls-direct-default|crates/sb-adapters/src/inbound/shadowtls.rs|let mut decision = RDecision::Direct|shadowtls inbound must not default to Direct when router missing
+forbid|W200-06-no-anytls-direct-default|crates/sb-adapters/src/inbound/anytls.rs|let mut decision = RDecision::Direct|anytls inbound must not default to Direct when router missing
+forbid|W200-07-no-redirect-direct-default|crates/sb-adapters/src/inbound/redirect.rs|let mut decision = RDecision::Direct|redirect inbound must not default to Direct when router missing
+forbid|W200-08-no-tproxy-direct-default|crates/sb-adapters/src/inbound/tproxy.rs|let mut decision = RDecision::Direct|tproxy inbound must not default to Direct when router missing
+require|W200-09-trojan-explicit-disabled|crates/sb-adapters/src/inbound/trojan.rs|implicit direct fallback is disabled|trojan must explicitly refuse when router missing
+require|W200-10-vless-explicit-disabled|crates/sb-adapters/src/inbound/vless.rs|implicit direct fallback is disabled|vless must explicitly refuse when router missing
+require|W200-11-vmess-explicit-disabled|crates/sb-adapters/src/inbound/vmess.rs|implicit direct fallback is disabled|vmess must explicitly refuse when router missing
+require|W200-12-shadowsocks-explicit-disabled|crates/sb-adapters/src/inbound/shadowsocks.rs|implicit direct fallback is disabled|ss must explicitly refuse when router missing
+require|W200-13-shadowtls-explicit-disabled|crates/sb-adapters/src/inbound/shadowtls.rs|implicit direct fallback is disabled|shadowtls must explicitly refuse when router missing
+require|W200-14-anytls-explicit-disabled|crates/sb-adapters/src/inbound/anytls.rs|implicit direct fallback is disabled|anytls must explicitly refuse when router missing
+require|W200-15-redirect-explicit-disabled|crates/sb-adapters/src/inbound/redirect.rs|implicit direct fallback is disabled|redirect must explicitly refuse when router missing
+require|W200-16-tproxy-explicit-disabled|crates/sb-adapters/src/inbound/tproxy.rs|implicit direct fallback is disabled|tproxy must explicitly refuse when router missing
+
+# --- Wave 201: udp_enhanced + tun_macos Direct fallback elimination ---
+forbid|W201-01-no-udp-enhanced-direct-fallback|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|RDecision::Direct, None\)|udp_enhanced must not return Direct when router missing
+require|W201-02-udp-enhanced-explicit-disabled|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|implicit direct fallback is disabled|udp_enhanced must warn when router missing
+forbid|W201-03-no-tun-macos-direct-string|crates/sb-adapters/src/inbound/tun_macos.rs|"Direct"\.to_string\(\)|tun_macos must not use Direct string as default decision message
+require|W201-04-tun-macos-explicit-disabled|crates/sb-adapters/src/inbound/tun_macos.rs|implicit direct fallback is disabled|tun_macos must explicitly refuse when router missing
+
+# --- Wave 202: tailscale WireGuard direct fallback elimination ---
+forbid|W202-01-no-tailscale-falling-back-to-direct|crates/sb-adapters/src/outbound/tailscale.rs|falling back to direct|tailscale must not fall back to direct on WireGuard mismatch
+require|W202-02-tailscale-wg-explicit-disabled|crates/sb-adapters/src/outbound/tailscale.rs|implicit direct fallback is disabled|tailscale WireGuard must explicitly refuse direct fallback
+require|W202-03-tailscale-socks5-no-fallback|crates/sb-adapters/src/outbound/tailscale.rs|Socks5 mode connect failed|tailscale socks5 mode must fail explicitly
+require|W202-04-tailscale-managed-no-fallback|crates/sb-adapters/src/outbound/tailscale.rs|Managed mode connect failed|tailscale managed mode must fail explicitly

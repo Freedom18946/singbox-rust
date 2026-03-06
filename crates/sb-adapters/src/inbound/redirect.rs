@@ -77,40 +77,42 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
     info!(%peer, ?orig, "redirect: original destination");
 
     let (host, port) = (orig.ip().to_string(), orig.port());
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-
-    if let Some(eng) = rules_global::global() {
-        let mut domain_opt = None;
-        if let Some(name) = sb_core::dns::fakeip::to_domain(&orig.ip()) {
-            domain_opt = Some(name);
+    let (decision, rule) = match rules_global::global() {
+        Some(eng) => {
+            let mut domain_opt = None;
+            if let Some(name) = sb_core::dns::fakeip::to_domain(&orig.ip()) {
+                domain_opt = Some(name);
+            }
+            let ctx = RouteCtx {
+                domain: domain_opt,
+                ip: if domain_opt.is_some() {
+                    None
+                } else {
+                    Some(orig.ip())
+                },
+                transport_udp: false,
+                port: Some(port),
+                process_name: None,
+                process_path: None,
+            };
+            let (d, r) = eng.decide_with_meta(&ctx);
+            #[cfg(feature = "metrics")]
+            {
+                metrics::counter!(
+                    "router_decide_total",
+                    "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }
+                ).increment(1);
+            }
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("redirect: rejected by rules"));
+            }
+            (d, r)
         }
-        let ctx = RouteCtx {
-            domain: domain_opt,
-            ip: if domain_opt.is_some() {
-                None
-            } else {
-                Some(orig.ip())
-            },
-            transport_udp: false,
-            port: Some(port),
-            process_name: None,
-            process_path: None,
-        };
-        let (d, r) = eng.decide_with_meta(&ctx);
-        #[cfg(feature = "metrics")]
-        {
-            metrics::counter!(
-                "router_decide_total",
-                "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }
-            ).increment(1);
+        None => {
+            tracing::warn!("redirect: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("redirect: router engine not initialized, implicit direct fallback is disabled"));
         }
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("redirect: rejected by rules"));
-        }
-        decision = d;
-        rule = r;
-    }
+    };
 
     let opts = ConnectOpts::default();
     let mut outbound_tag: Option<String> = None;

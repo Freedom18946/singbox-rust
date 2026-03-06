@@ -1302,25 +1302,28 @@ where
 
     // Step 3: router decision
     // 步骤 3：路由决策
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(&host),
-            ip: None,
-            transport_udp: false,
-            port: Some(port),
-            inbound_tag: cfg.tag.as_deref().or(Some("shadowsocks")),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let (d, r) = eng.decide_with_meta(&ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("ss: rejected by rules"));
+    let (decision, rule) = match rules_global::global() {
+        Some(eng) => {
+            let ctx = RouteCtx {
+                domain: Some(&host),
+                ip: None,
+                transport_udp: false,
+                port: Some(port),
+                inbound_tag: cfg.tag.as_deref().or(Some("shadowsocks")),
+                network: Some("tcp"),
+                ..Default::default()
+            };
+            let (d, r) = eng.decide_with_meta(&ctx);
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("ss: rejected by rules"));
+            }
+            (d, r)
         }
-        decision = d;
-        rule = r;
-    }
+        None => {
+            tracing::warn!("shadowsocks: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("ss: router engine not initialized, implicit direct fallback is disabled"));
+        }
+    };
 
     let opts = ConnectOpts::default();
     // Match by reference so we can still use `decision` later (conntrack/chain computation).

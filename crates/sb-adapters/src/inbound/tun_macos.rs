@@ -268,12 +268,10 @@ async fn handle_connect(
                 .await;
             (ctx, format!("{decision:?}"), decision, rule)
         }
-        None => (
-            ctx,
-            "Direct".to_string(),
-            sb_core::router::rules::Decision::Direct,
-            None,
-        ),
+        None => {
+            tracing::warn!("tun: router engine not initialized; implicit direct fallback is disabled");
+            return Err(io::Error::other("tun: router engine not initialized, implicit direct fallback is disabled"));
+        }
     };
 
     let maybe_process = if let Some(matcher) = bridge.process_matcher.as_ref() {

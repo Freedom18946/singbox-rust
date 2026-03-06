@@ -525,17 +525,17 @@ impl CoreOutboundConnector for TailscaleConnector {
                             "Connecting via WireGuard"
                         );
                         // WireGuard doesn't return TcpStream, this needs adapter
-                        // For now, fall through to direct
-                        warn!("WireGuard stream type mismatch, falling back to direct");
+                        warn!("WireGuard stream type mismatch; implicit direct fallback is disabled");
+                        return Err(io::Error::other("tailscale: WireGuard stream type mismatch, implicit direct fallback is disabled"));
                     }
                 }
-                // Fallback when WireGuard not available
+                // Try tailnet address resolution
                 if let Some(addrs) = tailnet_addrs.as_ref() {
                     if let Some(stream) = Self::connect_first(addrs, port).await {
                         return stream;
                     }
                 }
-                self.direct.connect(host, port).await
+                Err(io::Error::other("tailscale: WireGuard mode connect failed, no fallback available"))
             }
 
             TailscaleMode::Socks5 => {
@@ -565,7 +565,7 @@ impl CoreOutboundConnector for TailscaleConnector {
                         return stream;
                     }
                 }
-                self.direct.connect(host, port).await
+                Err(io::Error::other("tailscale: Socks5 mode connect failed, no fallback available"))
             }
 
             TailscaleMode::Direct => {
@@ -593,7 +593,7 @@ impl CoreOutboundConnector for TailscaleConnector {
                         return stream;
                     }
                 }
-                self.direct.connect(host, port).await
+                Err(io::Error::other("tailscale: Managed mode connect failed, no fallback available"))
             }
         }
     }

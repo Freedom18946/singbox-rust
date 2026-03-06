@@ -458,26 +458,29 @@ async fn connect_via_router(
     dest: &SocksDestination,
     ctx: &ConnectionCtx,
 ) -> Result<(TcpStream, Option<String>, RDecision, Option<String>)> {
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-    if let Some(engine) = rules_global::global() {
-        let route_ctx = RouteCtx {
-            domain: Some(dest.host.as_str()),
-            ip: None,
-            transport_udp: false,
-            port: Some(dest.port),
-            inbound_tag: Some(ANYTLS_INBOUND_TAG),
-            auth_user: ctx.user.as_deref(),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let (d, r) = engine.decide_with_meta(&route_ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("destination rejected by router"));
+    let (decision, rule) = match rules_global::global() {
+        Some(engine) => {
+            let route_ctx = RouteCtx {
+                domain: Some(dest.host.as_str()),
+                ip: None,
+                transport_udp: false,
+                port: Some(dest.port),
+                inbound_tag: Some(ANYTLS_INBOUND_TAG),
+                auth_user: ctx.user.as_deref(),
+                network: Some("tcp"),
+                ..Default::default()
+            };
+            let (d, r) = engine.decide_with_meta(&route_ctx);
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("destination rejected by router"));
+            }
+            (d, r)
         }
-        decision = d;
-        rule = r;
-    }
+        None => {
+            tracing::warn!("anytls: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("anytls: router engine not initialized, implicit direct fallback is disabled"));
+        }
+    };
 
     let opts = ConnectOpts::default();
     let target = format!("{}:{}", dest.host, dest.port);

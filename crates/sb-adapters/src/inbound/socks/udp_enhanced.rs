@@ -180,7 +180,8 @@ fn apply_routing_rules(target: &TargetAddr) -> (RDecision, Option<String>) {
 
         engine.decide_with_meta(&ctx)
     } else {
-        (RDecision::Direct, None)
+        tracing::warn!("socks5-udp-enhanced: router engine not initialized; implicit direct fallback is disabled, dropping packet");
+        (RDecision::Reject, None)
     }
 }
 

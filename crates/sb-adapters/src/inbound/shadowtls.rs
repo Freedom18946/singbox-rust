@@ -152,24 +152,27 @@ where
     debug!(%peer, host=%host, port=%port, "shadowtls: parsed target");
 
     // Router decision with updated RouteCtx (Sprint 19 Phase 1.1)
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(host.as_str()),
-            ip: None,
-            transport_udp: false,
-            port: Some(port),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let (d, r) = eng.decide_with_meta(&ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("shadowtls: rejected by rules"));
+    let (decision, rule) = match rules_global::global() {
+        Some(eng) => {
+            let ctx = RouteCtx {
+                domain: Some(host.as_str()),
+                ip: None,
+                transport_udp: false,
+                port: Some(port),
+                network: Some("tcp"),
+                ..Default::default()
+            };
+            let (d, r) = eng.decide_with_meta(&ctx);
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("shadowtls: rejected by rules"));
+            }
+            (d, r)
         }
-        decision = d;
-        rule = r;
-    }
+        None => {
+            tracing::warn!("shadowtls: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("shadowtls: router engine not initialized, implicit direct fallback is disabled"));
+        }
+    };
 
     let opts = ConnectOpts::default();
     let (mut upstream, outbound_tag) = match decision {
