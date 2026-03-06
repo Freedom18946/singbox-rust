@@ -22,6 +22,15 @@ use crate::router::{
 type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
 static UDP_RULES_CACHE: Lazy<RwLock<UdpRulesCacheEntry>> = Lazy::new(|| RwLock::new(None));
 
+fn parse_udp_rules_index(raw: &str) -> Result<Arc<RouterIndex>, Arc<str>> {
+    super::router_build_index_from_str(raw, 8192).map_err(|err| {
+        format!(
+            "router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+        )
+        .into()
+    })
+}
+
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
         return None;
@@ -42,7 +51,13 @@ fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
         }
     }
 
-    let idx = super::router_build_index_from_str(&raw, 8192).ok()?;
+    let idx = match parse_udp_rules_index(&raw) {
+        Ok(idx) => idx,
+        Err(reason) => {
+            warn!("{reason}");
+            return None;
+        }
+    };
     let mut w = UDP_RULES_CACHE.write().unwrap_or_else(|e| e.into_inner());
     *w = Some((raw, idx.clone()));
     Some(idx)
@@ -1993,5 +2008,19 @@ impl RouterHandle {
     /// Get a snapshot of the current RouterIndex (for read-only analysis/explain)
     pub fn index_snapshot(&self) -> Arc<RouterIndex> {
         self.idx.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::parse_udp_rules_index;
+
+    #[test]
+    fn invalid_udp_rules_env_reports_explicitly() {
+        let err = parse_udp_rules_index("let bad-name=1")
+            .expect_err("invalid udp rules env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_UDP_RULES"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

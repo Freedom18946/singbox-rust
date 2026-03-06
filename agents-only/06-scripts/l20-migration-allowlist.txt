@@ -1,4 +1,4 @@
-VERSION|l21.145-wave148-v1|||L21 wave#148 migration assertion allowlist version
+VERSION|l21.146-wave149-v1|||L21 wave#149 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -392,3 +392,5 @@ require|W147-01-register-shadowsocks-invalid-config-helper|crates/sb-adapters/sr
 require|W147-02-register-shadowsocks-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocks\", reason\)|shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector
 require|W148-01-register-shadowsocksr-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocksr\", outbound_name, &err\)|shadowsocksr outbound builder should format invalid config through explicit helper instead of swallowing TryFrom errors
 require|W148-02-register-shadowsocksr-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocksr\", reason\)|shadowsocksr outbound builder should surface invalid TryFrom config through explicit invalid-config connector
+require|W149-01-router-udp-env-parse-helper|crates/sb-core/src/router/engine.rs|let idx = match parse_udp_rules_index\(&raw\)|router udp env rules should parse through explicit helper instead of router_build_index_from_str\(\)\.ok\(\)
+require|W149-02-router-udp-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled|router udp env invalid rules should emit explicit diagnostics instead of silent ignore

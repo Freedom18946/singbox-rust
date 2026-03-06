@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#148**，聚焦 **adapter register legacy shadowsocksr outbound invalid TryFrom config 不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#149**，聚焦 **router udp env rules parse-failure 不再 silently collapse**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.145-wave148-v1`（356 assertions）。
+- 当前 V7 口径：`l21.146-wave149-v1`（358 assertions）。
+
+### 🆕 L21 wave#149 推进快照（2026-03-06 18:33）
+
+- 状态：完成（`crates/sb-core/src/router/engine.rs` 已完成 router `SB_ROUTER_UDP_RULES` parse-failure 收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/router/engine.rs`：新增 `parse_udp_rules_index(...)`，`udp_rules_index_from_env()` 不再静默吞掉 invalid `SB_ROUTER_UDP_RULES`，改为显式告警后拒绝加载该 env rules 索引
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.146-wave149-v1`（358 assertions）
+  3. `wave149_v7_regression_block.txt`：恢复旧 `.ok()?` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave149_wp1_app_tests_check.txt` PASS
+  - `wave149_wp1_sb_core_check.txt` PASS
+  - `wave149_sb_core_router_tests_check.txt` PASS
+  - `wave149_strict_gate.txt` PASS
+  - `wave149_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#148 推进快照（2026-03-06 18:23）
 
