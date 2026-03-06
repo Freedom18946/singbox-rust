@@ -361,28 +361,61 @@ static BREAKER: OnceCell<Mutex<HostBreaker>> = OnceCell::new();
 
 pub fn global() -> &'static Mutex<HostBreaker> {
     BREAKER.get_or_init(|| {
-        let window_ms = std::env::var("SB_SUBS_BR_WIN_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(30_000);
+        let window_ms = parse_breaker_env_u64("SB_SUBS_BR_WIN_MS", 30_000);
 
-        let open_ms = std::env::var("SB_SUBS_BR_OPEN_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(15_000);
+        let open_ms = parse_breaker_env_u64("SB_SUBS_BR_OPEN_MS", 15_000);
 
-        let threshold = std::env::var("SB_SUBS_BR_FAILS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5);
+        let threshold = parse_breaker_env_usize("SB_SUBS_BR_FAILS", 5);
 
-        let ratio = std::env::var("SB_SUBS_BR_RATIO")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.5);
+        let ratio = parse_breaker_env_f64("SB_SUBS_BR_RATIO", 0.5);
 
         Mutex::new(HostBreaker::new(window_ms, open_ms, threshold, ratio))
     })
+}
+
+fn parse_breaker_env_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
+}
+
+fn parse_breaker_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
+}
+
+fn parse_breaker_env_f64(key: &str, default: f64) -> f64 {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<f64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid f64; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
 }
 
 #[cfg(test)]

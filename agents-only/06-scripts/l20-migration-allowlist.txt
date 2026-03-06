@@ -1,4 +1,4 @@
-VERSION|l21.180-wave183-v1|||L21 wave#183 migration assertion allowlist version
+VERSION|l21.181-wave184-v1|||L21 wave#184 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -486,3 +486,9 @@ require|W183-01-cache-cap-helper|app/src/admin_debug/cache.rs|parse_cache_env_us
 require|W183-02-cache-ttl-helper|app/src/admin_debug/cache.rs|parse_cache_env_u64\("SB_SUBS_CACHE_TTL_MS"|cache ttl should use explicit parse helper
 require|W183-03-cache-bytes-helper|app/src/admin_debug/cache.rs|parse_cache_env_usize\("SB_SUBS_CACHE_BYTES"|cache bytes should use explicit parse helper
 require|W183-04-cache-explicit-warn|app/src/admin_debug/cache.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|cache env should emit explicit diagnostics
+
+require|W184-01-breaker-win-ms-helper|app/src/admin_debug/breaker.rs|parse_breaker_env_u64\("SB_SUBS_BR_WIN_MS"|breaker window ms should use explicit parse helper
+require|W184-02-breaker-open-ms-helper|app/src/admin_debug/breaker.rs|parse_breaker_env_u64\("SB_SUBS_BR_OPEN_MS"|breaker open ms should use explicit parse helper
+require|W184-03-breaker-fails-helper|app/src/admin_debug/breaker.rs|parse_breaker_env_usize\("SB_SUBS_BR_FAILS"|breaker fails should use explicit parse helper
+require|W184-04-breaker-ratio-helper|app/src/admin_debug/breaker.rs|parse_breaker_env_f64\("SB_SUBS_BR_RATIO"|breaker ratio should use explicit parse helper
+require|W184-05-breaker-explicit-warn|app/src/admin_debug/breaker.rs|env '.*' value '.*' is not a valid .64; silent parse fallback is disabled|breaker env should emit explicit diagnostics

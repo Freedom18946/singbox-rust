@@ -1,0 +1,5 @@
+wave184 negative regression test
+Date: 2026-03-06T14:09:06Z
+Reverted SB_SUBS_BR_WIN_MS/OPEN_MS/FAILS/RATIO to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (5 assertions failed: W184-01..W184-05)
+exit_code=1 (script found violations)
