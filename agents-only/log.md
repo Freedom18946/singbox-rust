@@ -14,6 +14,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 19:49] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：router max depth env parse-failure 去 silent collapse 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/router/mod.rs`
+    - 新增 `parse_router_rules_max_depth_env(...)` 与 `router_rules_max_depth_from_env()`
+    - rules prepass 路径不再把 invalid `SB_ROUTER_RULES_MAX_DEPTH` 静默折叠成默认值
+    - invalid env value 改为显式告警后回退到默认 `3`
+    - 补充最小单元测试，锁定 helper 报错口径
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.156-wave159-v1`
+    - 新增 `W159-01/W159-02`
+- 证据与验证产物：
+  - `wave159_wp1_app_tests_check.txt`（PASS）
+  - `wave159_wp1_sb_core_check.txt`（PASS）
+  - `wave159_sb_core_router_tests_check.txt`（PASS）
+  - `wave159_strict_gate.txt`（PASS）
+  - `wave159_v7_regression_block.txt`（恢复旧 `v.parse::<usize>().ok()` 回流后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave159_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#159 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.156-wave159-v1`（378 assertions）。
+
 ### [2026-03-06 19:42] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：router backoff max env parse-failure 去 silent collapse 并升级 strict gate 断言。
