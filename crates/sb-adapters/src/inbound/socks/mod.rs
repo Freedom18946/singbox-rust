@@ -569,7 +569,9 @@ where
     if matches!(decision, RDecision::Proxy(_)) {
         if let Some(st) = ob_health::global_status() {
             if !st.is_up() {
-                tracing::warn!("router: proxy unhealthy; direct fallback is disabled (socks5 inbound)");
+                tracing::warn!(
+                    "router: proxy unhealthy; direct fallback is disabled (socks5 inbound)"
+                );
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "router_route_fallback_total",
@@ -687,14 +689,8 @@ where
                 outbound_tag = Some(name.clone());
                 // Named proxy pool selection
                 let sel = SELECTOR.get_or_init(|| {
-                    let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(10_000);
-                    let cap = std::env::var("SB_PROXY_STICKY_CAP")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(4096);
+                    let ttl = socks_sticky_env_u64("SB_PROXY_STICKY_TTL_MS", 10_000);
+                    let cap = socks_sticky_env_usize("SB_PROXY_STICKY_CAP", 4096);
                     PoolSelector::new_with_capacity(cap, std::time::Duration::from_millis(ttl))
                 });
                 let _health = MultiHealthView;
@@ -1099,6 +1095,40 @@ impl InboundService for SocksInboundAdapter {
         let mut guard = self.stop_tx.lock().unwrap();
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
+        }
+    }
+}
+
+fn socks_sticky_env_u64(name: &str, default: u64) -> u64 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u64; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn socks_sticky_env_usize(name: &str, default: usize) -> usize {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid usize; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
         }
     }
 }

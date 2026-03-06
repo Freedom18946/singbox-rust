@@ -461,14 +461,8 @@ where
                 } else {
                     // Named proxy pool selection
                     let sel = SELECTOR.get_or_init(|| {
-                        let _ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
-                            .ok()
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(10_000);
-                        let _cap = std::env::var("SB_PROXY_STICKY_CAP")
-                            .ok()
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(4096);
+                        let _ttl = sticky_env_u64("SB_PROXY_STICKY_TTL_MS", 10_000);
+                        let _cap = sticky_env_usize("SB_PROXY_STICKY_CAP", 4096);
                         PoolSelector::new("http_proxy".to_string(), "default".to_string())
                     });
                     let _health = MultiHealthView;
@@ -875,4 +869,38 @@ async fn respond_502(cli: &mut TcpStream) -> Result<()> {
     cli.write_all(resp.as_bytes()).await?;
     cli.write_all(body).await?;
     Ok(())
+}
+
+fn sticky_env_u64(name: &str, default: u64) -> u64 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u64; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn sticky_env_usize(name: &str, default: usize) -> usize {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid usize; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
 }

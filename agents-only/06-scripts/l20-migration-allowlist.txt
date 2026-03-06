@@ -1,4 +1,4 @@
-VERSION|l21.208-wave197-v1|||L21 wave#197 migration assertion allowlist version
+VERSION|l21.214-wave198-v1|||L21 wave#198 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -564,3 +564,10 @@ forbid|W197-02-no-tuic-base-ms-silent|crates/sb-adapters/src/outbound/tuic.rs|en
 forbid|W197-03-no-tuic-cap-ms-silent|crates/sb-adapters/src/outbound/tuic.rs|env::var\("SB_TUIC_BACKOFF_MS_MAX"\)\.ok\(\)\.and_then|tuic backoff cap must not silently swallow parse failures
 require|W197-04-tuic-env-u32-helper|crates/sb-adapters/src/outbound/tuic.rs|fn tuic_env_u32\(name: &str, default: u32\)|tuic should use explicit u32 parse helper
 require|W197-05-tuic-explicit-warn|crates/sb-adapters/src/outbound/tuic.rs|silent parse fallback is disabled, using default|tuic env should emit explicit diagnostics
+
+forbid|W198-01-no-http-sticky-ttl-silent|crates/sb-adapters/src/inbound/http.rs|env::var\("SB_PROXY_STICKY_TTL_MS"\)\.ok\(\)\.and_then|http sticky ttl must not silently swallow parse failures
+forbid|W198-02-no-http-sticky-cap-silent|crates/sb-adapters/src/inbound/http.rs|env::var\("SB_PROXY_STICKY_CAP"\)\.ok\(\)\.and_then|http sticky cap must not silently swallow parse failures
+require|W198-03-http-sticky-explicit-warn|crates/sb-adapters/src/inbound/http.rs|silent parse fallback is disabled, using default|http sticky env should emit explicit diagnostics
+forbid|W198-04-no-socks-sticky-ttl-silent|crates/sb-adapters/src/inbound/socks/mod.rs|env::var\("SB_PROXY_STICKY_TTL_MS"\)\.ok\(\)\.and_then|socks sticky ttl must not silently swallow parse failures
+forbid|W198-05-no-socks-sticky-cap-silent|crates/sb-adapters/src/inbound/socks/mod.rs|env::var\("SB_PROXY_STICKY_CAP"\)\.ok\(\)\.and_then|socks sticky cap must not silently swallow parse failures
+require|W198-06-socks-sticky-explicit-warn|crates/sb-adapters/src/inbound/socks/mod.rs|silent parse fallback is disabled, using default|socks sticky env should emit explicit diagnostics
