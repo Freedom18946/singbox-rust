@@ -1,4 +1,4 @@
-VERSION|l21.164-wave167-v1|||L21 wave#167 migration assertion allowlist version
+VERSION|l21.165-wave168-v1|||L21 wave#168 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -432,3 +432,7 @@ require|W166-01-keyword-ac-min-env-parse-helper|crates/sb-core/src/router/keywor
 require|W166-02-keyword-ac-min-env-invalid-explicit-warn|crates/sb-core/src/router/keyword.rs|router env 'SB_ROUTER_KEYWORD_AC_MIN' value '.*' is invalid; silent parse fallback is disabled|keyword ac min env invalid value should emit explicit diagnostics instead of silent ignore
 forbid|W167-01-no-preview-inline-rules-max-parse|crates/sb-core/src/router/preview.rs|SB_ROUTER_RULES_MAX.*\.parse.*\.ok\(\)|preview should not duplicate inline SB_ROUTER_RULES_MAX parse with silent fallback
 require|W167-02-preview-uses-shared-rules-max-helper|crates/sb-core/src/router/preview.rs|router_rules_max_from_env\(\)|preview should reuse shared router_rules_max_from_env helper instead of inline parse
+require|W168-01-dns-integration-enabled-env-parse-helper|crates/sb-core/src/router/dns_integration.rs|router_dns_from_env\(\)|dns integration enabled env should parse through explicit helper instead of silent boolean ignore
+require|W168-02-dns-integration-enabled-env-invalid-explicit-warn|crates/sb-core/src/router/dns_integration.rs|router env 'SB_ROUTER_DNS' value '.*' is not a recognized boolean; silent parse fallback is disabled|dns integration enabled env unrecognized boolean should emit explicit diagnostics
+require|W168-03-dns-integration-timeout-env-parse-helper|crates/sb-core/src/router/dns_integration.rs|router_dns_timeout_ms_from_env\(\)|dns integration timeout env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+require|W168-04-dns-integration-timeout-env-invalid-explicit-warn|crates/sb-core/src/router/dns_integration.rs|router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '.*' is invalid; silent parse fallback is disabled|dns integration timeout env invalid value should emit explicit diagnostics

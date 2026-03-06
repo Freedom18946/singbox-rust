@@ -22,16 +22,56 @@ pub struct DnsIntegrationConfig {
 impl Default for DnsIntegrationConfig {
     fn default() -> Self {
         Self {
-            enabled: std::env::var("SB_ROUTER_DNS")
-                .ok()
-                .map(|v| v == "1")
-                .unwrap_or(false),
-            timeout_ms: std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5000),
+            enabled: router_dns_from_env(),
+            timeout_ms: router_dns_timeout_ms_from_env(),
             enhanced_metrics: true,
             resolver_name: "default".to_string(),
+        }
+    }
+}
+
+fn parse_router_dns_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "router env 'SB_ROUTER_DNS' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn router_dns_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_DNS").ok();
+    match parse_router_dns_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
+fn parse_router_dns_timeout_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<u64>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(5000),
+    }
+}
+
+fn router_dns_timeout_ms_from_env() -> u64 {
+    let raw = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS").ok();
+    match parse_router_dns_timeout_ms_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 5000");
+            5000
         }
     }
 }
@@ -187,5 +227,23 @@ mod tests {
         } else {
             assert!(validate_dns_integration(&router).is_ok());
         }
+    }
+
+    #[test]
+    fn invalid_router_dns_env_reports_explicitly() {
+        let err = super::parse_router_dns_env(Some("on"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_DNS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_dns_timeout_ms_env_reports_explicitly() {
+        let err = super::parse_router_dns_timeout_ms_env(Some("bad-ms"))
+            .expect_err("invalid timeout env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_DNS_TIMEOUT_MS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

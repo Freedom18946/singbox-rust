@@ -1,0 +1,15 @@
+wave168: harden SB_ROUTER_DNS + SB_ROUTER_DNS_TIMEOUT_MS env parsing
+=====================================================================
+
+Target: crates/sb-core/src/router/dns_integration.rs
+Change: Both env vars now use explicit helpers.
+  - SB_ROUTER_DNS: boolean, was v == "1" only
+  - SB_ROUTER_DNS_TIMEOUT_MS: numeric, was .parse().ok()
+
+Helpers: parse_router_dns_env, router_dns_from_env,
+         parse_router_dns_timeout_ms_env, router_dns_timeout_ms_from_env
+
+Tests: invalid_router_dns_env_reports_explicitly,
+       invalid_router_dns_timeout_ms_env_reports_explicitly
+
+Allowlist: l21.165-wave168-v1 (400 assertions)
