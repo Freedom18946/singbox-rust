@@ -1024,8 +1024,15 @@ fn build_vless_outbound(
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
-    let uuid_str = ir.uuid.as_ref()?;
-    let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
+    let outbound_name = ir.name.as_deref().unwrap_or("vless");
+    let uuid = match parse_required_outbound_uuid("vless", outbound_name, ir.uuid.as_ref()) {
+        Ok(Some(uuid)) => uuid,
+        Ok(None) => return None,
+        Err(reason) => {
+            warn!("{reason}");
+            return invalid_config_outbound("vless", reason);
+        }
+    };
 
     // Parse server to SocketAddr
     let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
@@ -2977,16 +2984,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_outbound_uuid_is_rejected_explicitly() {
-        let err =
-            parse_required_outbound_uuid("vmess", "edge-vmess", Some(&"bad-uuid".to_string()))
-                .expect_err("invalid uuid should be rejected");
-        let msg = err.to_string();
-        assert!(msg.contains("vmess outbound uuid 'bad-uuid' is invalid"));
-        assert!(msg.contains("silent uuid parse fallback is disabled"));
-    }
-
-    #[test]
     #[cfg(feature = "adapter-hysteria2")]
     fn test_hysteria2_inbound_fields() {
         // Create a test InboundIR for Hysteria2
@@ -3086,6 +3083,31 @@ mod tests {
             udp_factory.is_none(),
             "ShadowTLS should not provide UDP factory"
         );
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::parse_required_outbound_uuid;
+
+    #[test]
+    fn invalid_outbound_uuid_is_rejected_explicitly() {
+        let err =
+            parse_required_outbound_uuid("vmess", "edge-vmess", Some(&"bad-uuid".to_string()))
+                .expect_err("invalid uuid should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound uuid 'bad-uuid' is invalid"));
+        assert!(msg.contains("silent uuid parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_vless_outbound_uuid_reports_protocol() {
+        let err =
+            parse_required_outbound_uuid("vless", "edge-vless", Some(&"bad-uuid".to_string()))
+                .expect_err("invalid uuid should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vless outbound uuid 'bad-uuid' is invalid"));
+        assert!(msg.contains("silent uuid parse fallback is disabled"));
     }
 }
 
