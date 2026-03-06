@@ -1,4 +1,4 @@
-VERSION|l21.173-wave176-v1|||L21 wave#176 migration assertion allowlist version
+VERSION|l21.174-wave177-v1|||L21 wave#177 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -454,3 +454,11 @@ require|W174-03-dns-config-env-bool-explicit-warn|crates/sb-core/src/dns/config_
 require|W175-01-health-interval-ms-explicit-warn|crates/sb-core/src/health/mod.rs|health env 'HEALTH_INTERVAL_MS' value '.*' is invalid; silent parse fallback is disabled|health interval ms env should emit explicit diagnostics instead of silent ignore
 require|W176-01-udp-rate-limit-explicit-warn|crates/sb-core/src/net/rate_limit.rs|rate-limit env '.*' value '.*' is invalid; silent parse fallback is disabled|udp rate-limit env should emit explicit diagnostics instead of v\.parse\(\)\.ok\(\)
 require|W176-02-tcp-rate-limit-explicit-warn|crates/sb-core/src/net/tcp_rate_limit.rs|tcp-rate-limit env '.*' value '.*' is invalid; silent parse fallback is disabled|tcp rate-limit env should emit explicit diagnostics instead of v\.parse\(\)\.ok\(\)
+require|W177-01-engine-budget-ms-helper|crates/sb-core/src/router/engine.rs|decide_budget_ms_from_env\(\)|engine budget ms should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+require|W177-02-engine-budget-ms-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DECIDE_BUDGET_MS' value '.*' is invalid; silent parse fallback is disabled|engine budget ms env should emit explicit diagnostics
+require|W177-03-engine-dns-enabled-helper|crates/sb-core/src/router/engine.rs|router_dns_enabled_from_env\(\)|engine dns enabled should parse through explicit helper
+require|W177-04-engine-dns-enabled-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DNS' value '.*' is not a recognized boolean; silent parse fallback is disabled|engine dns enabled env should emit explicit diagnostics
+require|W177-05-engine-dns-timeout-helper|crates/sb-core/src/router/engine.rs|router_dns_timeout_ms_from_env\(\)|engine dns timeout should parse through explicit helper
+require|W177-06-engine-dns-timeout-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '.*' is invalid; silent parse fallback is disabled; fix the config explicitly|engine dns timeout env should emit explicit diagnostics
+require|W177-07-engine-geoip-enabled-helper|crates/sb-core/src/router/engine.rs|geoip_enabled_from_env\(\)|engine geoip enabled should parse through explicit helper
+require|W177-08-engine-geoip-enabled-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_GEOIP_ENABLE' value '.*' is not a recognized boolean; silent parse fallback is disabled|engine geoip enabled env should emit explicit diagnostics

@@ -107,6 +107,66 @@ fn decision_cache_cap_from_env() -> usize {
     }
 }
 
+fn decide_budget_ms_from_env() -> u64 {
+    match std::env::var("SB_ROUTER_DECIDE_BUDGET_MS").ok() {
+        Some(raw) => match raw.parse::<u64>() {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::warn!(
+                    "router env 'SB_ROUTER_DECIDE_BUDGET_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default 100"
+                );
+                100
+            }
+        },
+        None => 100,
+    }
+}
+
+fn router_dns_enabled_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_DNS").ok();
+    match raw.as_deref() {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => true,
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => false,
+        Some(raw) => {
+            tracing::warn!(
+                "router env 'SB_ROUTER_DNS' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'; using default false"
+            );
+            false
+        }
+        None => false,
+    }
+}
+
+fn router_dns_timeout_ms_from_env() -> u64 {
+    match std::env::var("SB_ROUTER_DNS_TIMEOUT_MS").ok() {
+        Some(raw) => match raw.parse::<u64>() {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::warn!(
+                    "router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default 300"
+                );
+                300
+            }
+        },
+        None => 300,
+    }
+}
+
+fn geoip_enabled_from_env() -> bool {
+    let raw = std::env::var("SB_GEOIP_ENABLE").ok();
+    match raw.as_deref() {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => true,
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => false,
+        Some(raw) => {
+            tracing::warn!(
+                "router env 'SB_GEOIP_ENABLE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'; using default false"
+            );
+            false
+        }
+        None => false,
+    }
+}
+
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
         return None;
@@ -944,10 +1004,7 @@ impl RouterHandle {
 
         let started = Instant::now();
         // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
-        let _budget_ms = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(100);
+        let _budget_ms = decide_budget_ms_from_env();
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
@@ -1023,15 +1080,9 @@ impl RouterHandle {
 
         // 3) DNS -> IP -> IP rules (only when enabled, and only for real domains).
         let try_dns = fake_domain_norm.is_none()
-            && std::env::var("SB_ROUTER_DNS")
-                .ok()
-                .map(|v| v == "1")
-                .unwrap_or(false);
+            && router_dns_enabled_from_env();
         if try_dns {
-            let timeout_ms = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(300);
+            let timeout_ms = router_dns_timeout_ms_from_env();
             if let DnsResult::Ok(ips) = self
                 .resolve_with_fallback(host_for_domain, timeout_ms)
                 .await
@@ -1078,10 +1129,7 @@ impl RouterHandle {
         #[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
         let started = Instant::now();
         // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
-        let _budget_ms = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(100);
+        let _budget_ms = decide_budget_ms_from_env();
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host_raw);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
@@ -1156,15 +1204,9 @@ impl RouterHandle {
         }
 
         let try_dns = fake_domain_norm.is_none()
-            && std::env::var("SB_ROUTER_DNS")
-                .ok()
-                .map(|v| v == "1")
-                .unwrap_or(false);
+            && router_dns_enabled_from_env();
         if try_dns {
-            let timeout_ms = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(300);
+            let timeout_ms = router_dns_timeout_ms_from_env();
             if let DnsResult::Ok(ips) = self
                 .resolve_with_fallback(host_for_domain, timeout_ms)
                 .await
@@ -1961,19 +2003,10 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
         }
     }
     // DNS → IP → 规则/GeoIP（若开启）
-    let try_dns = std::env::var("SB_ROUTER_DNS")
-        .ok()
-        .map(|v| v == "1")
-        .unwrap_or(false);
-    let try_geoip = std::env::var("SB_GEOIP_ENABLE")
-        .ok()
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let try_dns = router_dns_enabled_from_env();
+    let try_geoip = geoip_enabled_from_env();
     if try_dns {
-        let timeout_ms = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(300);
+        let timeout_ms = router_dns_timeout_ms_from_env();
         match handle.resolve_with_fallback(&host_norm, timeout_ms).await {
             DnsResult::Ok(ips) => {
                 for ip in &ips {
