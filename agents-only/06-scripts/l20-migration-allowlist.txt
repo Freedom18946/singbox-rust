@@ -1,4 +1,4 @@
-VERSION|l21.138-wave141-v1|||L21 wave#141 migration assertion allowlist version
+VERSION|l21.139-wave142-v1|||L21 wave#142 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -378,3 +378,5 @@ require|W140-01-bridge-inbound-duration-parse-helper|crates/sb-core/src/adapter/
 require|W140-02-bridge-invalid-inbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid inbound config; refusing to build adapter|adapter bridge should reject invalid inbound duration config explicitly
 require|W141-01-bridge-outbound-duration-parse-helper|crates/sb-core/src/adapter/bridge.rs|let connect_timeout = parse_optional_outbound_duration\(|adapter bridge should parse outbound connect_timeout through explicit helper instead of silent ignore
 require|W141-02-bridge-invalid-outbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid outbound config; refusing to build adapter|adapter bridge should reject invalid outbound duration config explicitly
+require|W142-01-bridge-outbound-bind-parse-helper|crates/sb-core/src/adapter/bridge.rs|let inet4_bind_address = parse_optional_outbound_ipv4_addr\(|adapter bridge should parse outbound bind addresses through explicit helpers instead of silent ignore
+require|W142-02-bridge-invalid-outbound-ip-explicit-reject|crates/sb-core/src/adapter/bridge.rs|silent IP parse fallback is disabled|adapter bridge should reject invalid outbound bind address config explicitly

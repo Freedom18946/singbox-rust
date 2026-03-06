@@ -235,6 +235,40 @@ fn parse_optional_outbound_duration(
         .transpose()
 }
 
+fn parse_optional_outbound_ipv4_addr(
+    protocol: &str,
+    outbound: &str,
+    field: &str,
+    value: Option<&str>,
+) -> anyhow::Result<Option<std::net::Ipv4Addr>> {
+    value
+        .map(|raw| {
+            raw.parse::<std::net::Ipv4Addr>().map_err(|err| {
+                anyhow::anyhow!(
+                    "{protocol} outbound {field} '{raw}' is invalid for outbound '{outbound}'; silent IP parse fallback is disabled; fix the config explicitly: {err}"
+                )
+            })
+        })
+        .transpose()
+}
+
+fn parse_optional_outbound_ipv6_addr(
+    protocol: &str,
+    outbound: &str,
+    field: &str,
+    value: Option<&str>,
+) -> anyhow::Result<Option<std::net::Ipv6Addr>> {
+    value
+        .map(|raw| {
+            raw.parse::<std::net::Ipv6Addr>().map_err(|err| {
+                anyhow::anyhow!(
+                    "{protocol} outbound {field} '{raw}' is invalid for outbound '{outbound}'; silent IP parse fallback is disabled; fix the config explicitly: {err}"
+                )
+            })
+        })
+        .transpose()
+}
+
 /// Converts inbound IR to adapter parameter.
 fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
     let users_anytls = ib.users_anytls.as_ref().map(|users| {
@@ -386,6 +420,18 @@ fn to_outbound_param(ob: &OutboundIR) -> anyhow::Result<(String, OutboundParam)>
         "connect_timeout",
         ob.connect_timeout.as_deref(),
     )?;
+    let inet4_bind_address = parse_optional_outbound_ipv4_addr(
+        ob.ty.ty_str(),
+        &name,
+        "inet4_bind_address",
+        ob.inet4_bind_address.as_deref(),
+    )?;
+    let inet6_bind_address = parse_optional_outbound_ipv6_addr(
+        ob.ty.ty_str(),
+        &name,
+        "inet6_bind_address",
+        ob.inet6_bind_address.as_deref(),
+    )?;
     Ok((
         name,
         OutboundParam {
@@ -413,8 +459,8 @@ fn to_outbound_param(ob: &OutboundIR) -> anyhow::Result<(String, OutboundParam)>
             ssh_host_key_verification: ob.ssh_host_key_verification,
             ssh_known_hosts_path: ob.ssh_known_hosts_path.clone(),
             bind_interface: ob.bind_interface.clone(),
-            inet4_bind_address: ob.inet4_bind_address.as_ref().and_then(|s| s.parse().ok()),
-            inet6_bind_address: ob.inet6_bind_address.as_ref().and_then(|s| s.parse().ok()),
+            inet4_bind_address,
+            inet6_bind_address,
             routing_mark: ob.routing_mark,
             reuse_addr: ob.reuse_addr,
             connect_timeout,
@@ -884,7 +930,8 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_optional_inbound_duration, parse_optional_outbound_duration, to_inbound_param,
+        parse_optional_inbound_duration, parse_optional_outbound_duration,
+        parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr, to_inbound_param,
         to_outbound_param,
     };
     use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
@@ -939,6 +986,50 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("vmess outbound connect_timeout 'bad' is invalid")
+        );
+    }
+
+    #[test]
+    fn invalid_outbound_ipv4_addr_is_rejected_explicitly() {
+        let err = parse_optional_outbound_ipv4_addr(
+            "vmess",
+            "edge-vmess",
+            "inet4_bind_address",
+            Some("bad"),
+        )
+        .expect_err("invalid ipv4 should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound inet4_bind_address 'bad' is invalid"));
+        assert!(msg.contains("silent IP parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_outbound_ipv6_addr_is_rejected_explicitly() {
+        let err = parse_optional_outbound_ipv6_addr(
+            "vmess",
+            "edge-vmess",
+            "inet6_bind_address",
+            Some("bad"),
+        )
+        .expect_err("invalid ipv6 should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound inet6_bind_address 'bad' is invalid"));
+        assert!(msg.contains("silent IP parse fallback is disabled"));
+    }
+
+    #[test]
+    fn to_outbound_param_rejects_invalid_bind_address() {
+        let ob = OutboundIR {
+            ty: OutboundType::Vmess,
+            name: Some("edge-vmess".to_string()),
+            inet4_bind_address: Some("bad".to_string()),
+            ..OutboundIR::default()
+        };
+
+        let err = to_outbound_param(&ob).expect_err("invalid bind address should be rejected");
+        assert!(
+            err.to_string()
+                .contains("vmess outbound inet4_bind_address 'bad' is invalid")
         );
     }
 }
