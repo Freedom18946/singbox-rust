@@ -1,4 +1,4 @@
-VERSION|l21.194-wave193-v1|||L21 wave#193 migration assertion allowlist version
+VERSION|l21.196-wave194-v1|||L21 wave#194 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -538,3 +538,8 @@ require|W193-06-fakeip-env-ipv6-helper|crates/sb-core/src/dns/fakeip.rs|fn fakei
 require|W193-07-fakeip-env-u8-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_u8\(name: &str, default: u8\)|fakeip should use explicit u8 parse helper
 require|W193-08-fakeip-env-usize-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_usize\(name: &str, default: usize\)|fakeip should use explicit usize parse helper
 require|W193-09-fakeip-explicit-warn|crates/sb-core/src/dns/fakeip.rs|silent parse fallback is disabled, using default|fakeip env should emit explicit diagnostics
+
+forbid|W194-01-no-bufpool-size-silent|crates/sb-core/src/outbound/optimizations.rs|env::var\("SB_BUFFER_POOL_SIZE"\)\.ok\(\)\.and_then|buffer pool size must not silently swallow parse failures
+forbid|W194-02-no-bufpool-cap-silent|crates/sb-core/src/outbound/optimizations.rs|env::var\("SB_BUFFER_POOL_MAX_CAPACITY"\)\.ok\(\)\.and_then|buffer pool max capacity must not silently swallow parse failures
+require|W194-03-bufpool-opt-env-helper|crates/sb-core/src/outbound/optimizations.rs|fn opt_env_usize\(name: &str\)|optimizations should use explicit parse helper
+require|W194-04-bufpool-explicit-warn|crates/sb-core/src/outbound/optimizations.rs|silent parse fallback is disabled|buffer pool env should emit explicit diagnostics

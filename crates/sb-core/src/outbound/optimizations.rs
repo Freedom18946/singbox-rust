@@ -66,17 +66,25 @@ impl BufferPool {
 /// Global buffer pool for protocol operations
 pub static PROTOCOL_BUFFER_POOL: once_cell::sync::Lazy<BufferPool> =
     once_cell::sync::Lazy::new(|| {
-        let max_size = std::env::var("SB_BUFFER_POOL_SIZE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(100);
-        let max_capacity = std::env::var("SB_BUFFER_POOL_MAX_CAPACITY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1024 * 1024); // 1MB
+        let max_size = opt_env_usize("SB_BUFFER_POOL_SIZE").unwrap_or(100);
+        let max_capacity = opt_env_usize("SB_BUFFER_POOL_MAX_CAPACITY").unwrap_or(1024 * 1024); // 1MB
 
         BufferPool::new(max_size, max_capacity)
     });
+
+fn opt_env_usize(name: &str) -> Option<usize> {
+    let raw = std::env::var(name).ok()?;
+    match raw.trim().parse::<usize>() {
+        Ok(v) => Some(v),
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid usize; \
+                 silent parse fallback is disabled: {err}"
+            );
+            None
+        }
+    }
+}
 
 /// Fast bandwidth limiter using atomic operations
 ///
