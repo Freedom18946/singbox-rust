@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 16:50) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.130-wave133-v1
+  FAIL: [W133-02-vmess-invalid-fallback-explicit-reject] required pattern missing in app/src/inbound_starter.rs :: vmess inbound starter should reject invalid fallback config explicitly
+  FAIL: 1/326 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave133-v7.SCsPvk

@@ -718,17 +718,36 @@ fn start_vmess_inbound(
             return None;
         };
 
-        // Map fallback
-        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
-        let fallback_for_alpn = ib
-            .fallback_for_alpn
-            .as_ref()
-            .map(|m| {
-                m.iter()
-                    .filter_map(|(k, v)| parse_listen_addr(v).ok().map(|a| (k.clone(), a)))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let fallback = match parse_optional_inbound_fallback_addr(
+            "vmess",
+            &listen_str,
+            ib.fallback.as_deref(),
+        ) {
+            Ok(fallback) => fallback,
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "vmess inbound: invalid fallback config; refusing to start"
+                );
+                return None;
+            }
+        };
+        let fallback_for_alpn = match parse_inbound_fallback_for_alpn(
+            "vmess",
+            &listen_str,
+            ib.fallback_for_alpn.as_ref(),
+        ) {
+            Ok(fallback_for_alpn) => fallback_for_alpn,
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "vmess inbound: invalid fallback config; refusing to start"
+                );
+                return None;
+            }
+        };
 
         let cfg = VmessInboundConfig {
             listen: addr,
@@ -787,5 +806,14 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("fallback_for_alpn['h2']='bad'"));
         assert!(msg.contains("silent fallback parsing is disabled"));
+    }
+
+    #[test]
+    fn invalid_optional_fallback_reports_requested_protocol() {
+        let err = parse_optional_inbound_fallback_addr("vmess", "127.0.0.1:80", Some("bad"))
+            .expect_err("invalid fallback should be rejected");
+        assert!(err
+            .to_string()
+            .contains("vmess inbound fallback 'bad' is invalid"));
     }
 }
