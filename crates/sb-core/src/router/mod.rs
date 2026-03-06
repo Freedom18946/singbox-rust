@@ -386,7 +386,7 @@ impl RouterIndex {
             *trie.lock().unwrap_or_else(|e| e.into_inner()) = t;
             ver.store(cur, Ordering::Relaxed);
         }
-        if std::env::var("SB_ROUTER_SUFFIX_TRIE").ok().as_deref() == Some("1") {
+        if router_suffix_trie_from_env() {
             {
                 let guard = trie.lock().unwrap_or_else(|e| e.into_inner());
                 guard.query(host)
@@ -2307,6 +2307,29 @@ fn router_suffix_strict_from_env() -> bool {
     }
 }
 
+fn parse_router_suffix_trie_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "router env 'SB_ROUTER_SUFFIX_TRIE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn router_suffix_trie_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_SUFFIX_TRIE").ok();
+    match parse_router_suffix_trie_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
 fn refresh_shared_index_from_env_if_needed() {
     let max_rules = router_rules_max_from_env();
     let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
@@ -3097,6 +3120,7 @@ mod migration_tests {
         parse_router_rules_max_env,
         parse_router_rules_require_default_env,
         parse_router_suffix_strict_env,
+        parse_router_suffix_trie_env,
     };
 
     #[test]
@@ -3168,6 +3192,15 @@ mod migration_tests {
             .expect_err("unrecognized boolean env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_SUFFIX_STRICT"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_suffix_trie_env_reports_explicitly() {
+        let err = parse_router_suffix_trie_env(Some("enable"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_SUFFIX_TRIE"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

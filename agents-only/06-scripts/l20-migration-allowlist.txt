@@ -1,4 +1,4 @@
-VERSION|l21.159-wave162-v1|||L21 wave#162 migration assertion allowlist version
+VERSION|l21.160-wave163-v1|||L21 wave#163 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -420,3 +420,5 @@ require|W161-01-router-require-default-env-parse-helper|crates/sb-core/src/route
 require|W161-02-router-require-default-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_REQUIRE_DEFAULT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router require-default env unrecognized boolean should emit explicit diagnostics instead of silent ignore
 require|W162-01-router-suffix-strict-env-parse-helper|crates/sb-core/src/router/mod.rs|SUFFIX_STRICT.*Lazy::new.*router_suffix_strict_from_env|router suffix-strict env should parse through explicit Lazy helper instead of inline silent boolean ignore
 require|W162-02-router-suffix-strict-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_STRICT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-strict env unrecognized boolean should emit explicit diagnostics instead of silent ignore
+require|W163-01-router-suffix-trie-env-parse-helper|crates/sb-core/src/router/mod.rs|if router_suffix_trie_from_env\(\)|router suffix-trie env should parse through explicit helper instead of inline silent boolean ignore
+require|W163-02-router-suffix-trie-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_TRIE' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-trie env unrecognized boolean should emit explicit diagnostics instead of silent ignore
