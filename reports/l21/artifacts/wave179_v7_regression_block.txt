@@ -1,0 +1,5 @@
+wave179 negative regression test
+Date: 2026-03-06T13:55:50Z
+Reverted SB_LOG_SAMPLE parse to old .and_then(|s| s.parse::<u32>().ok()) pattern
+Result: FAIL (W179-02-logging-sample-explicit-warn required pattern missing)
+exit_code=1 (script found violations)

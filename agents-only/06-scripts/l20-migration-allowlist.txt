@@ -1,4 +1,4 @@
-VERSION|l21.175-wave178-v1|||L21 wave#178 migration assertion allowlist version
+VERSION|l21.176-wave179-v1|||L21 wave#179 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -466,3 +466,6 @@ require|W177-08-engine-geoip-enabled-explicit-warn|crates/sb-core/src/router/eng
 forbid|W178-01-no-bootstrap-rules-max-silent-parse|app/src/bootstrap.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)\.unwrap_or\(100_000|bootstrap SB_ROUTER_RULES_MAX must not silently swallow parse failures
 require|W178-02-bootstrap-rules-max-helper|app/src/bootstrap.rs|parse_env_usize\("SB_ROUTER_RULES_MAX"|bootstrap rules max should use explicit parse helper
 require|W178-03-bootstrap-rules-max-explicit-warn|app/src/bootstrap.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bootstrap rules max env should emit explicit diagnostics
+
+forbid|W179-01-no-logging-sample-silent-parse|app/src/logging.rs|\.and_then\(\|s\| s\.parse::<u32>\(\)\.ok\(\)\)|logging SB_LOG_SAMPLE must not silently swallow parse failures
+require|W179-02-logging-sample-explicit-warn|app/src/logging.rs|env 'SB_LOG_SAMPLE' value '.*' is not a valid u32; silent parse fallback is disabled|logging sample env should emit explicit diagnostics

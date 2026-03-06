@@ -91,13 +91,22 @@ impl LoggingConfig {
 
         let level = std::env::var("SB_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
 
-        let sampling = std::env::var("SB_LOG_SAMPLE")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .map(|rate| SamplingConfig {
-                rate_per_second: rate,
-                window: Duration::from_secs(1),
-            });
+        let sampling = match std::env::var("SB_LOG_SAMPLE") {
+            Ok(raw) => {
+                let trimmed = raw.trim();
+                match trimmed.parse::<u32>() {
+                    Ok(rate) => Some(SamplingConfig {
+                        rate_per_second: rate,
+                        window: Duration::from_secs(1),
+                    }),
+                    Err(err) => {
+                        eprintln!("env 'SB_LOG_SAMPLE' value '{trimmed}' is not a valid u32; silent parse fallback is disabled; ignoring: {err}");
+                        None
+                    }
+                }
+            }
+            Err(_) => None,
+        };
 
         let mut color = std::env::var("SB_LOG_COLOR")
             .ok()
