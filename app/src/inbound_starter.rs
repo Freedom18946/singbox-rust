@@ -142,6 +142,23 @@ fn parse_optional_inbound_duration(
 }
 
 #[cfg(feature = "adapters")]
+fn parse_optional_inbound_uuid(
+    protocol: &str,
+    listen_str: &str,
+    value: Option<&str>,
+) -> Result<Option<uuid::Uuid>> {
+    value
+        .map(|raw| {
+            uuid::Uuid::parse_str(raw).with_context(|| {
+                format!(
+                    "{protocol} inbound uuid '{raw}' is invalid for listen '{listen_str}'; silent uuid parse fallback is disabled; fix the config explicitly"
+                )
+            })
+        })
+        .transpose()
+}
+
+#[cfg(feature = "adapters")]
 fn socks_udp_should_start() -> bool {
     // 显式开关优先；其次只要配置了监听地址也启动
     let enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
@@ -690,9 +707,20 @@ fn start_vless_inbound(
     if let Ok(addr) = parse_listen_addr(&listen_str) {
         let (tx, rx) = mpsc::channel::<()>(1);
 
-        let Some(uuid) = ib.uuid.as_ref().and_then(|u| uuid::Uuid::parse_str(u).ok()) else {
-            warn!(%listen_str, "vless inbound missing or invalid uuid; skipping");
-            return None;
+        let uuid = match parse_optional_inbound_uuid("vless", &listen_str, ib.uuid.as_deref()) {
+            Ok(Some(uuid)) => uuid,
+            Ok(None) => {
+                warn!(%listen_str, "vless inbound missing uuid; skipping");
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "vless inbound: invalid uuid config; refusing to start"
+                );
+                return None;
+            }
         };
 
         let fallback = match parse_optional_inbound_fallback_addr(
@@ -847,7 +875,7 @@ fn start_vmess_inbound(
 mod tests {
     use super::{
         parse_inbound_fallback_for_alpn, parse_optional_inbound_duration,
-        parse_optional_inbound_fallback_addr,
+        parse_optional_inbound_fallback_addr, parse_optional_inbound_uuid,
     };
     use std::collections::HashMap;
 
@@ -911,5 +939,14 @@ mod tests {
             err.to_string()
                 .contains("mixed inbound udp_timeout 'bad' is invalid")
         );
+    }
+
+    #[test]
+    fn invalid_uuid_reports_vless_protocol() {
+        let err = parse_optional_inbound_uuid("vless", "127.0.0.1:443", Some("bad-uuid"))
+            .expect_err("invalid uuid should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vless inbound uuid 'bad-uuid' is invalid"));
+        assert!(msg.contains("silent uuid parse fallback is disabled"));
     }
 }

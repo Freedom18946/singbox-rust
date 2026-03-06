@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 17:20) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.135-wave138-v1
+  FAIL: [W138-01-vless-uuid-parse-helper] required pattern missing in app/src/inbound_starter.rs :: vless inbound starter should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+  FAIL: [W138-02-vless-invalid-uuid-explicit-reject] required pattern missing in app/src/inbound_starter.rs :: vless inbound starter should reject invalid uuid config explicitly
+  FAIL: 2/336 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave138-v7.zDk9LM
