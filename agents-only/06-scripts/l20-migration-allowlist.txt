@@ -1,4 +1,4 @@
-VERSION|l21.154-wave157-v1|||L21 wave#157 migration assertion allowlist version
+VERSION|l21.155-wave158-v1|||L21 wave#158 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -410,3 +410,5 @@ require|W156-01-router-hot-reload-ms-env-parse-helper|crates/sb-core/src/router/
 require|W156-02-router-hot-reload-ms-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_HOT_RELOAD_MS' value '.*' is invalid; silent parse fallback is disabled|router hot reload interval env invalid value should emit explicit diagnostics instead of silent ignore
 require|W157-01-router-jitter-ms-env-parse-helper|crates/sb-core/src/router/mod.rs|let jitter_cap = router_rules_jitter_ms_from_env\(\);|router jitter env should parse through explicit helper instead of v\.parse::<u64>\(\)\.ok\(\)
 require|W157-02-router-jitter-ms-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_JITTER_MS' value '.*' is invalid; silent parse fallback is disabled|router jitter env invalid value should emit explicit diagnostics instead of silent ignore
+require|W158-01-router-backoff-max-ms-env-parse-helper|crates/sb-core/src/router/mod.rs|let cap = router_rules_backoff_max_ms_from_env\(\);|router backoff max env should parse through explicit helper instead of v\.parse::<u64>\(\)\.ok\(\)
+require|W158-02-router-backoff-max-ms-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_BACKOFF_MAX_MS' value '.*' is invalid; silent parse fallback is disabled|router backoff max env invalid value should emit explicit diagnostics instead of silent ignore

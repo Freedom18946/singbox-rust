@@ -1873,10 +1873,7 @@ impl HotReloader {
                 Err(e) => {
                     // 失败：记录并退避
                     tracing::error!("router reload failed: {}", e);
-                    let cap = std::env::var("SB_ROUTER_RULES_BACKOFF_MAX_MS")
-                        .ok()
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(30000);
+                    let cap = router_rules_backoff_max_ms_from_env();
 
                     self.backoff_ms = std::cmp::min(
                         if self.backoff_ms == 0 {
@@ -2205,6 +2202,29 @@ fn router_rules_jitter_ms_from_env() -> u64 {
         Err(reason) => {
             tracing::warn!("{reason}; using default 0");
             0
+        }
+    }
+}
+
+fn parse_router_rules_backoff_max_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<u64>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_RULES_BACKOFF_MAX_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(30000),
+    }
+}
+
+fn router_rules_backoff_max_ms_from_env() -> u64 {
+    let raw = std::env::var("SB_ROUTER_RULES_BACKOFF_MAX_MS").ok();
+    match parse_router_rules_backoff_max_ms_env(raw.as_deref()) {
+        Ok(backoff_max_ms) => backoff_max_ms,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 30000");
+            30000
         }
     }
 }
@@ -2993,7 +3013,8 @@ pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot
 #[cfg(test)]
 mod migration_tests {
     use super::{
-        parse_router_rules_hot_reload_ms_env, parse_router_rules_jitter_ms_env,
+        parse_router_rules_backoff_max_ms_env, parse_router_rules_hot_reload_ms_env,
+        parse_router_rules_jitter_ms_env,
         parse_router_rules_max_env,
     };
 
@@ -3021,6 +3042,15 @@ mod migration_tests {
             .expect_err("invalid jitter env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_JITTER_MS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_rules_backoff_max_ms_env_reports_explicitly() {
+        let err = parse_router_rules_backoff_max_ms_env(Some("bad-backoff"))
+            .expect_err("invalid backoff env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_BACKOFF_MAX_MS"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
