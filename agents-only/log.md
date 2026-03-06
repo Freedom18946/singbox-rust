@@ -14,6 +14,20 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 23:30] Agent: Claude Opus 4.6
+
+**任务**: L21 wave#193-198 推进（sb-core/sb-transport/sb-adapters 层 env-var silent fallback 扫尾收口）
+**变更**:
+- `crates/sb-core/src/dns/fakeip.rs` - 5 env vars × 2 fns: fakeip_env_ipv4/ipv6/u8/usize helpers (wave193)
+- `crates/sb-core/src/outbound/optimizations.rs` - SB_BUFFER_POOL_SIZE/MAX_CAPACITY: opt_env_usize helper (wave194)
+- `crates/sb-transport/src/circuit_breaker.rs` - 5 CB env vars: cb_env_u32/u64/bool helpers (wave195)
+- `crates/sb-transport/src/pool/limit.rs` - SB_DIAL_MAX_CONCURRENCY/QUEUE_MS: dial_env_usize/u64 helpers (wave196)
+- `crates/sb-adapters/src/outbound/tuic.rs` - SB_TUIC retry vars: tuic_env_u32/u64 helpers (wave197)
+- `crates/sb-adapters/src/inbound/http.rs` + `socks/mod.rs` - SB_PROXY_STICKY vars: sticky_env helpers (wave198)
+- `agents-only/06-scripts/l20-migration-allowlist.txt` - V7 升级到 l21.214-wave198-v1 (514 assertions)
+**结果**: 成功 — MIG-02 env-var silent parse fallback 正式关闭，全项目生产源码零残留
+**备注**: 发现并修正了之前 wave192 审计的遗漏（6 个文件 21 个 env vars 未覆盖）。同时发现并记录了 allowlist 的 IFS='|' pipe 分隔符与 regex 中 `\|` 冲突问题，已改用 env::var("NAME")\.ok\(\)\.and_then 格式的 forbid 模式规避
+
 ### [2026-03-06 22:30] Agent: Claude Opus 4.6
 
 **任务**: L21 wave#191-192 推进（bin/ 工具层 env-var silent fallback 收口）

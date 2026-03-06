@@ -8,22 +8,35 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#192**，**app 层 + bin/ 工具 env parse-failure silent fallback 收口全部完成**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#198**，**MIG-02 env-var silent parse fallback 全项目收口完成（真·零残留）**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
 ### 口径说明（2026-03-06 对齐）
 
 - `L18` 是项目总阶段。
-- `L21 wave` 是当前执行层，用来持续推进 `MIG-02` 小步收口。
-- 测试/样例层 `default=direct` 已清零，当前转入真实路径 parse-failure fallback 与兼容占位默认值收口。
+- `L21 wave` 是当前执行层，MIG-02 env-var silent parse fallback 已全面收口。
+- 测试/样例层 `default=direct` 已清零。
 
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- sb-core env-var silent fallback 大面积已清完，app 层 + bin/ 工具已全部收口完成。
-- **全项目 env-var silent parse fallback 审计已完成**：生产源码中零残留 `.and_then(|v| v.parse().ok())` env 模式。
-- 当前 V7 口径：`l21.189-wave192-v1`（476 assertions）。
+- **MIG-02 env-var silent parse fallback 正式关闭**：生产源码零残留（剩余 3 处为 JSON/config 字段解析 + test 文件，非 env-var scope）。
+- 当前 V7 口径：`l21.214-wave198-v1`（514 assertions）。
+
+### 🆕 L21 wave#193-198 推进快照（2026-03-06 23:30）
+
+- 状态：6 波连续完成（wave193-198），扫描发现并收口了 sb-core/sb-transport/sb-adapters 层遗漏的 env-var silent fallback。
+- 本轮覆盖：
+  - **dns/fakeip.rs**: SB_FAKEIP_V4_BASE/V4_MASK/V6_BASE/V6_MASK/CAP × 2 fns (wave193)
+  - **outbound/optimizations.rs**: SB_BUFFER_POOL_SIZE/MAX_CAPACITY (wave194)
+  - **circuit_breaker.rs**: SB_CB_FAILS/WINDOW_MS/HALFOPEN_MAX/OPEN_TIMEOUT_MS/COUNT_TIMEOUTS (wave195)
+  - **pool/limit.rs**: SB_DIAL_MAX_CONCURRENCY/QUEUE_MS (wave196)
+  - **outbound/tuic.rs**: SB_TUIC_MAX_RETRIES/BACKOFF_MS_BASE/BACKOFF_MS_MAX (wave197)
+  - **inbound/http.rs + socks/mod.rs**: SB_PROXY_STICKY_TTL_MS/CAP × 2 files (wave198)
+- V7 断言：476 → 514（+38 新断言）
+- **全项目 env-var silent parse fallback 真·零残留审计完成**（grep 确认仅剩 JSON/config/test 非 env-var sites）
+- origin/main HEAD: `3b02ec5`
 
 ### 🆕 L21 wave#191-192 推进快照（2026-03-06 22:30）
 
