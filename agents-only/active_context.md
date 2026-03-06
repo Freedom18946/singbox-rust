@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#190**，聚焦 **app 层 env parse-failure silent fallback 收口**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#192**，**app 层 + bin/ 工具 env parse-failure silent fallback 收口全部完成**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,19 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- sb-core env-var silent fallback 大面积已清完，app 层已进入收口。
-- 当前 V7 口径：`l21.187-wave190-v1`（471 assertions）。
+- sb-core env-var silent fallback 大面积已清完，app 层 + bin/ 工具已全部收口完成。
+- **全项目 env-var silent parse fallback 审计已完成**：生产源码中零残留 `.and_then(|v| v.parse().ok())` env 模式。
+- 当前 V7 口径：`l21.189-wave192-v1`（476 assertions）。
+
+### 🆕 L21 wave#191-192 推进快照（2026-03-06 22:30）
+
+- 状态：2 波完成，bin/ 工具层最后两处 env-var silent fallback 收口。
+- 本轮覆盖：
+  - **bin/sb-bench.rs**: SB_BENCH_N/PAR/PAYLOAD (wave191)
+  - **bin/sb-explaind.rs**: SB_PPROF_MAX_SEC/FREQ (wave192)
+- V7 断言：471 → 476（+5 新断言）
+- **全项目 env-var silent parse fallback 审计完成**：grep 确认零残留
+- origin/main HEAD: `5038ef7`
 
 ### 🆕 L21 wave#178-190 批量推进快照（2026-03-06 22:15）
 

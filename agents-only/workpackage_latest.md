@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 22:15
-> **当前阶段**：L21 wave#190 推进完成（MIG-02 hardening：app 层 env-var silent fallback 13 波收口）
+> **最后更新**：2026-03-06 22:30
+> **当前阶段**：L21 wave#192 推进完成（MIG-02 hardening：全项目 env-var silent parse fallback 审计完成，零残留）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=471 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=476 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -19,7 +19,17 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- app 层 env-var silent fallback 已大面积收口（wave178-190），剩余候选为 bin/ 工具类（sb-bench、sb-explaind 等）。
+- app 层 + bin/ 工具 env-var silent fallback 全部收口（wave178-192）。全项目零残留。
+
+## 🆕 最新进展：L21 wave#191-192 推进落地（2026-03-06 22:30）
+
+**状态**：✅ 2 波完成；全项目 env-var silent parse fallback 审计完成（零残留）；V7 升级到 `l21.189-wave192-v1`（476 assertions）
+
+1. 本轮覆盖：
+   - `app/src/bin/sb-bench.rs`: SB_BENCH_N/PAR/PAYLOAD — bench_env_usize helper (wave191)
+   - `app/src/bin/sb-explaind.rs`: SB_PPROF_MAX_SEC/FREQ — inline explicit parse (wave192)
+2. 验证：所有波均通过 `cargo check -p app --tests` + `check-boundaries.sh --strict` + 负样例回归
+3. 全项目扫描确认：`grep -rn 'env::var.*parse.*ok()' app/src/ crates/*/src/` = 0 matches
 
 ## 🆕 最新进展：L21 wave#178-190 批量推进落地（2026-03-06 22:15）
 

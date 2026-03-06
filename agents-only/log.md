@@ -14,6 +14,16 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 22:30] Agent: Claude Opus 4.6
+
+**任务**: L21 wave#191-192 推进（bin/ 工具层 env-var silent fallback 收口）
+**变更**:
+- `app/src/bin/sb-bench.rs` - SB_BENCH_N/PAR(x3)/PAYLOAD: bench_env_usize helper (wave191)
+- `app/src/bin/sb-explaind.rs` - SB_PPROF_MAX_SEC/FREQ: inline explicit parse with warn (wave192)
+- `agents-only/06-scripts/l20-migration-allowlist.txt` - V7 升级到 l21.189-wave192-v1 (476 assertions)
+**结果**: 成功 — 全项目 env-var silent parse fallback 审计完成，生产源码零残留
+**备注**: MIG-02 env-var parse-failure silent fallback 收口完成（wave123-192, 共 70 波）
+
 ### [2026-03-06 22:15] Agent: Claude Opus 4.6
 
 **任务**: L21 wave#178-190 批量推进（app 层 env-var silent fallback 收口）
