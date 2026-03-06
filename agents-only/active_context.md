@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#140**，聚焦 **adapter bridge inbound udp_timeout 配置解析不再 silently ignore**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#141**，聚焦 **adapter bridge outbound connect_timeout 配置解析不再 silently ignore**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：adapter bridge outbound parse-failure fallback 与其余运行时兼容占位默认值审计。
-- 当前 V7 口径：`l21.137-wave140-v1`（340 assertions）。
+- 下一阶段重点：adapter bridge outbound bind-address parse-failure 与其余运行时兼容占位默认值审计。
+- 当前 V7 口径：`l21.138-wave141-v1`（342 assertions）。
+
+### 🆕 L21 wave#141 推进快照（2026-03-06 17:38）
+
+- 状态：完成（`crates/sb-core/src/adapter/bridge.rs` 已完成 outbound `connect_timeout` 配置解析收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/adapter/bridge.rs`：新增 `parse_optional_outbound_duration(...)`，使 `to_outbound_param(...)` 不再静默吞掉 invalid `connect_timeout`，改为显式报错；outbound 组装路径统一拒绝构建该 adapter
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.138-wave141-v1`（342 assertions）
+  3. `wave141_v7_regression_block.txt`：恢复旧 `parse_duration(...).ok()` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave141_wp1_app_tests_check.txt` PASS
+  - `wave141_wp1_sb_core_check.txt` PASS
+  - `wave141_sb_core_bridge_tests_check.txt` PASS
+  - `wave141_strict_gate.txt` PASS
+  - `wave141_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#140 推进快照（2026-03-06 17:29）
 

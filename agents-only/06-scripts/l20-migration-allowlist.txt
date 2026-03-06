@@ -1,4 +1,4 @@
-VERSION|l21.137-wave140-v1|||L21 wave#140 migration assertion allowlist version
+VERSION|l21.138-wave141-v1|||L21 wave#141 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -376,3 +376,5 @@ require|W139-01-vmess-uuid-parse-helper|app/src/inbound_starter.rs|parse_optiona
 require|W139-02-vmess-invalid-uuid-explicit-reject|app/src/inbound_starter.rs|vmess inbound: invalid uuid config; refusing to start|vmess inbound starter should reject invalid uuid config explicitly
 require|W140-01-bridge-inbound-duration-parse-helper|crates/sb-core/src/adapter/bridge.rs|let udp_timeout = parse_optional_inbound_duration\(|adapter bridge should parse inbound udp_timeout through explicit helper instead of silent ignore
 require|W140-02-bridge-invalid-inbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid inbound config; refusing to build adapter|adapter bridge should reject invalid inbound duration config explicitly
+require|W141-01-bridge-outbound-duration-parse-helper|crates/sb-core/src/adapter/bridge.rs|let connect_timeout = parse_optional_outbound_duration\(|adapter bridge should parse outbound connect_timeout through explicit helper instead of silent ignore
+require|W141-02-bridge-invalid-outbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid outbound config; refusing to build adapter|adapter bridge should reject invalid outbound duration config explicitly

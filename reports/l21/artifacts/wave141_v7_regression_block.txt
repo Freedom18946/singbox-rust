@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 17:38) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.138-wave141-v1
+  FAIL: [W141-01-bridge-outbound-duration-parse-helper] required pattern missing in crates/sb-core/src/adapter/bridge.rs :: adapter bridge should parse outbound connect_timeout through explicit helper instead of silent ignore
+  FAIL: 1/342 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave141-v7.TgH4TX

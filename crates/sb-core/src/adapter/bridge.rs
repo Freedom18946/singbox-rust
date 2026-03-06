@@ -218,6 +218,23 @@ fn parse_optional_inbound_duration(
         .transpose()
 }
 
+fn parse_optional_outbound_duration(
+    protocol: &str,
+    outbound: &str,
+    field: &str,
+    value: Option<&str>,
+) -> anyhow::Result<Option<std::time::Duration>> {
+    value
+        .map(|raw| {
+            humantime::parse_duration(raw).map_err(|err| {
+                anyhow::anyhow!(
+                    "{protocol} outbound {field} '{raw}' is invalid for outbound '{outbound}'; silent duration fallback is disabled; fix the config explicitly: {err}"
+                )
+            })
+        })
+        .transpose()
+}
+
 /// Converts inbound IR to adapter parameter.
 fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
     let users_anytls = ib.users_anytls.as_ref().map(|users| {
@@ -360,10 +377,16 @@ fn extract_credentials(p: &OutboundParam) -> (Option<String>, Option<String>) {
 /// Converts outbound IR to (name, parameter) tuple.
 ///
 /// The name defaults to the outbound type string if not explicitly provided.
-fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
+fn to_outbound_param(ob: &OutboundIR) -> anyhow::Result<(String, OutboundParam)> {
     let name = ob.name.clone().unwrap_or_else(|| ob.ty_str().to_string());
     let kind = ob.ty.ty_str().to_string();
-    (
+    let connect_timeout = parse_optional_outbound_duration(
+        ob.ty.ty_str(),
+        &name,
+        "connect_timeout",
+        ob.connect_timeout.as_deref(),
+    )?;
+    Ok((
         name,
         OutboundParam {
             kind,
@@ -394,17 +417,14 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             inet6_bind_address: ob.inet6_bind_address.as_ref().and_then(|s| s.parse().ok()),
             routing_mark: ob.routing_mark,
             reuse_addr: ob.reuse_addr,
-            connect_timeout: ob
-                .connect_timeout
-                .as_ref()
-                .and_then(|s| humantime::parse_duration(s).ok()),
+            connect_timeout,
             tcp_fast_open: ob.tcp_fast_open,
             tcp_multi_path: ob.tcp_multi_path,
             udp_fragment: ob.udp_fragment,
             domain_strategy: ob.domain_strategy.clone(),
             multiplex: ob.multiplex.clone(),
         },
-    )
+    ))
 }
 
 /// Attempts to create an inbound service using the adapter registry (when feature enabled).
@@ -450,7 +470,19 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
             continue;
         }
 
-        let (name, p) = to_outbound_param(ob);
+        let (name, p) = match to_outbound_param(ob) {
+            Ok(p) => p,
+            Err(err) => {
+                tracing::warn!(
+                    target: "sb_core::adapter",
+                    outbound = %ob.name.as_deref().unwrap_or(ob.ty_str()),
+                    kind = %ob.ty.ty_str(),
+                    error = %err,
+                    "invalid outbound config; refusing to build adapter"
+                );
+                continue;
+            }
+        };
         let kind = p.kind.clone();
 
         if let Some(o) = try_adapter_outbound(&p, ob, br) {
@@ -580,7 +612,19 @@ fn maybe_wrap_with_cb(
 fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
     for ob in &cfg.outbounds {
         if ob.ty == OutboundType::Selector || ob.ty == OutboundType::UrlTest {
-            let (name, p) = to_outbound_param(ob);
+            let (name, p) = match to_outbound_param(ob) {
+                Ok(p) => p,
+                Err(err) => {
+                    tracing::warn!(
+                        target: "sb_core::adapter",
+                        outbound = %ob.name.as_deref().unwrap_or(ob.ty_str()),
+                        kind = %ob.ty.ty_str(),
+                        error = %err,
+                        "invalid outbound config; refusing to build adapter"
+                    );
+                    continue;
+                }
+            };
             let kind = p.kind.clone();
 
             if let Some(o) = try_adapter_outbound(&p, ob, br) {
@@ -839,8 +883,11 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_optional_inbound_duration, to_inbound_param};
-    use sb_config::ir::{InboundIR, InboundType};
+    use super::{
+        parse_optional_inbound_duration, parse_optional_outbound_duration, to_inbound_param,
+        to_outbound_param,
+    };
+    use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
 
     #[test]
     fn invalid_inbound_duration_is_rejected_explicitly() {
@@ -866,6 +913,32 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("mixed inbound udp_timeout 'bad' is invalid")
+        );
+    }
+
+    #[test]
+    fn invalid_outbound_duration_is_rejected_explicitly() {
+        let err =
+            parse_optional_outbound_duration("vmess", "edge-vmess", "connect_timeout", Some("bad"))
+                .expect_err("invalid duration should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound connect_timeout 'bad' is invalid"));
+        assert!(msg.contains("silent duration fallback is disabled"));
+    }
+
+    #[test]
+    fn to_outbound_param_rejects_invalid_connect_timeout() {
+        let ob = OutboundIR {
+            ty: OutboundType::Vmess,
+            name: Some("edge-vmess".to_string()),
+            connect_timeout: Some("bad".to_string()),
+            ..OutboundIR::default()
+        };
+
+        let err = to_outbound_param(&ob).expect_err("invalid duration should be rejected");
+        assert!(
+            err.to_string()
+                .contains("vmess outbound connect_timeout 'bad' is invalid")
         );
     }
 }
