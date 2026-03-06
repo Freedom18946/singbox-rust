@@ -1,7 +1,7 @@
 //! Minimal structured logging with optional redaction.
 //! Fields: ts, level, target, msg, fields...
 use std::io::Write;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,8 +76,31 @@ pub fn configure(ir: &sb_config::ir::LogIR) {
     *lock.write().unwrap() = config;
 }
 
+fn parse_log_redact_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "log env 'LOG_REDACT' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn log_redact_from_env() -> bool {
+    let raw = std::env::var("LOG_REDACT").ok();
+    match parse_log_redact_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            eprintln!("WARN: {reason}; using default false");
+            false
+        }
+    }
+}
+
 fn redact(s: &str) -> String {
-    if std::env::var("LOG_REDACT").ok().as_deref() == Some("1") {
+    if log_redact_from_env() {
         let n = s.len();
         if n <= 4 {
             "***".into()
@@ -158,5 +181,14 @@ mod tests {
         assert!(Level::Warn < Level::Info);
         assert!(Level::Info < Level::Debug);
         assert!(Level::Debug < Level::Trace);
+    }
+
+    #[test]
+    fn invalid_log_redact_env_reports_explicitly() {
+        let err = super::parse_log_redact_env(Some("yes"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("LOG_REDACT"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
