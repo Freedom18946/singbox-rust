@@ -44,6 +44,19 @@ fn parse_geoip_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
     }
 }
 
+#[cfg(feature = "geoip_mmdb")]
+fn parse_geoip_ttl_env(value: Option<&str>) -> Result<std::time::Duration, Arc<str>> {
+    match value {
+        Some(raw) => humantime::parse_duration(raw).map_err(|err| {
+            format!(
+                "geoip env 'SB_GEOIP_TTL' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(std::time::Duration::from_secs(600)),
+    }
+}
+
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
         return None;
@@ -1991,7 +2004,6 @@ impl RouterHandle {
 #[cfg(feature = "geoip_mmdb")]
 impl RouterHandle {
     pub(crate) fn init_geoip_if_env(&mut self) {
-        use std::time::Duration;
         self.geoip_mux = crate::geoip::multi::GeoMux::from_env().ok();
         self.geoip = None;
         self.geoip_source = None;
@@ -2004,10 +2016,14 @@ impl RouterHandle {
                     8192
                 }
             };
-            let ttl = std::env::var("SB_GEOIP_TTL")
-                .ok()
-                .and_then(|v| humantime::parse_duration(&v).ok())
-                .unwrap_or(Duration::from_secs(600));
+            let ttl_env = std::env::var("SB_GEOIP_TTL").ok();
+            let ttl = match parse_geoip_ttl_env(ttl_env.as_deref()) {
+                Ok(ttl) => ttl,
+                Err(reason) => {
+                    warn!("{reason}; using default 600s");
+                    std::time::Duration::from_secs(600)
+                }
+            };
             match crate::geoip::mmdb::GeoIp::open(std::path::Path::new(&path), cap, ttl) {
                 Ok(geo) => {
                     self.geoip = Some(std::sync::Arc::new(geo));
@@ -2044,7 +2060,7 @@ mod migration_tests {
 
 #[cfg(all(test, feature = "geoip_mmdb"))]
 mod geoip_migration_tests {
-    use super::parse_geoip_cache_cap_env;
+    use super::{parse_geoip_cache_cap_env, parse_geoip_ttl_env};
 
     #[test]
     fn invalid_geoip_cache_env_reports_explicitly() {
@@ -2052,6 +2068,15 @@ mod geoip_migration_tests {
             .expect_err("invalid geoip cache env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_GEOIP_CACHE"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_geoip_ttl_env_reports_explicitly() {
+        let err = parse_geoip_ttl_env(Some("bad-ttl"))
+            .expect_err("invalid geoip ttl env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_GEOIP_TTL"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

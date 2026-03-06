@@ -1,4 +1,4 @@
-VERSION|l21.147-wave150-v1|||L21 wave#150 migration assertion allowlist version
+VERSION|l21.148-wave151-v1|||L21 wave#151 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -396,3 +396,5 @@ require|W149-01-router-udp-env-parse-helper|crates/sb-core/src/router/engine.rs|
 require|W149-02-router-udp-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled|router udp env invalid rules should emit explicit diagnostics instead of silent ignore
 require|W150-01-geoip-cache-env-parse-helper|crates/sb-core/src/router/engine.rs|let cap = match parse_geoip_cache_cap_env\(cap_env\.as_deref\(\)\)|geoip cache env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W150-02-geoip-cache-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|geoip env 'SB_GEOIP_CACHE' value '.*' is invalid; silent parse fallback is disabled|geoip cache env invalid value should emit explicit diagnostics instead of silent ignore
+require|W151-01-geoip-ttl-env-parse-helper|crates/sb-core/src/router/engine.rs|let ttl = match parse_geoip_ttl_env\(ttl_env\.as_deref\(\)\)|geoip ttl env should parse through explicit helper instead of humantime::parse_duration\(&v\)\.ok\(\)
+require|W151-02-geoip-ttl-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|geoip env 'SB_GEOIP_TTL' value '.*' is invalid; silent parse fallback is disabled|geoip ttl env invalid value should emit explicit diagnostics instead of silent ignore
