@@ -802,9 +802,20 @@ fn start_vmess_inbound(
     if let Ok(addr) = parse_listen_addr(&listen_str) {
         let (tx, rx) = mpsc::channel::<()>(1);
 
-        let Some(uuid) = ib.uuid.as_ref().and_then(|u| uuid::Uuid::parse_str(u).ok()) else {
-            warn!(%listen_str, "vmess inbound missing or invalid uuid; skipping");
-            return None;
+        let uuid = match parse_optional_inbound_uuid("vmess", &listen_str, ib.uuid.as_deref()) {
+            Ok(Some(uuid)) => uuid,
+            Ok(None) => {
+                warn!(%listen_str, "vmess inbound missing uuid; skipping");
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "vmess inbound: invalid uuid config; refusing to start"
+                );
+                return None;
+            }
         };
 
         let fallback = match parse_optional_inbound_fallback_addr(
@@ -947,6 +958,15 @@ mod tests {
             .expect_err("invalid uuid should be rejected");
         let msg = err.to_string();
         assert!(msg.contains("vless inbound uuid 'bad-uuid' is invalid"));
+        assert!(msg.contains("silent uuid parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_uuid_reports_vmess_protocol() {
+        let err = parse_optional_inbound_uuid("vmess", "127.0.0.1:443", Some("bad-uuid"))
+            .expect_err("invalid uuid should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess inbound uuid 'bad-uuid' is invalid"));
         assert!(msg.contains("silent uuid parse fallback is disabled"));
     }
 }

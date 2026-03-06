@@ -14,6 +14,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 17:23] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：vmess inbound uuid 配置解析去 silent collapse 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `app/src/inbound_starter.rs`
+    - `start_vmess_inbound(...)` 切到 `parse_optional_inbound_uuid(...)`
+    - invalid `uuid` 不再静默吞掉，改为显式报错并拒绝启动
+    - 缺失 `uuid` 仍保持 skip
+    - 补充最小单元测试，锁定 vmess helper 协议标签
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.136-wave139-v1`
+    - 新增 `W139-01/W139-02`
+- 证据与验证产物：
+  - `wave139_wp1_app_tests_check.txt`（PASS）
+  - `wave139_wp1_sb_core_check.txt`（PASS）
+  - `wave139_inbound_starter_tests_check.txt`（PASS）
+  - `wave139_strict_gate.txt`（PASS）
+  - `wave139_v7_regression_block.txt`（注入旧 `parse_str(...).ok()` 回流后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave139_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#139 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.136-wave139-v1`（338 assertions）。
+
 ### [2026-03-06 17:20] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：vless inbound uuid 配置解析去 silent collapse 并升级 strict gate 断言。

@@ -1,4 +1,4 @@
-VERSION|l21.135-wave138-v1|||L21 wave#138 migration assertion allowlist version
+VERSION|l21.136-wave139-v1|||L21 wave#139 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -372,3 +372,5 @@ require|W137-01-mixed-duration-parse-helper|app/src/inbound_starter.rs|parse_opt
 require|W137-02-mixed-invalid-duration-explicit-reject|app/src/inbound_starter.rs|mixed inbound: invalid duration config; refusing to start|mixed inbound starter should reject invalid duration config explicitly
 require|W138-01-vless-uuid-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_uuid\(\"vless\", &listen_str, ib\.uuid\.as_deref\(\)\)|vless inbound starter should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
 require|W138-02-vless-invalid-uuid-explicit-reject|app/src/inbound_starter.rs|vless inbound: invalid uuid config; refusing to start|vless inbound starter should reject invalid uuid config explicitly
+require|W139-01-vmess-uuid-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_uuid\(\"vmess\", &listen_str, ib\.uuid\.as_deref\(\)\)|vmess inbound starter should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+require|W139-02-vmess-invalid-uuid-explicit-reject|app/src/inbound_starter.rs|vmess inbound: invalid uuid config; refusing to start|vmess inbound starter should reject invalid uuid config explicitly
