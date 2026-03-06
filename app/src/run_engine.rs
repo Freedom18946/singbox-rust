@@ -839,10 +839,19 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 2.2) DNS stub init if needed
     if !dns_applied && (opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
     {
-        let ttl_secs: u64 = std::env::var("DNS_CACHE_TTL")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
+        let ttl_secs: u64 = match std::env::var("DNS_CACHE_TTL") {
+            Ok(raw) => {
+                let t = raw.trim();
+                match t.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!("env 'DNS_CACHE_TTL' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}");
+                        30
+                    }
+                }
+            }
+            Err(_) => 30,
+        };
         sb_core::dns::stub::init_global(ttl_secs);
     }
 

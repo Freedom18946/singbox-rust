@@ -1,4 +1,4 @@
-VERSION|l21.177-wave180-v1|||L21 wave#180 migration assertion allowlist version
+VERSION|l21.178-wave181-v1|||L21 wave#181 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -472,3 +472,6 @@ require|W179-02-logging-sample-explicit-warn|app/src/logging.rs|env 'SB_LOG_SAMP
 
 forbid|W180-01-no-panic-log-max-silent-parse|app/src/panic.rs|\.and_then\(\|v\| v\.parse::<usize>\(\)\.ok\(\)\)\.unwrap_or\(10\)|panic SB_PANIC_LOG_MAX must not silently swallow parse failures
 require|W180-02-panic-log-max-explicit-warn|app/src/panic.rs|env 'SB_PANIC_LOG_MAX' value '.*' is not a valid usize; silent parse fallback is disabled|panic log max env should emit explicit diagnostics
+
+forbid|W181-01-no-dns-cache-ttl-silent-parse|app/src/run_engine.rs|\.and_then\(\|s\| s\.parse\(\)\.ok\(\)\)\.unwrap_or\(30\)|run_engine DNS_CACHE_TTL must not silently swallow parse failures
+require|W181-02-dns-cache-ttl-explicit-warn|app/src/run_engine.rs|env 'DNS_CACHE_TTL' value '.*' is not a valid u64; silent parse fallback is disabled|dns cache ttl env should emit explicit diagnostics

@@ -1,0 +1,5 @@
+wave181 negative regression test
+Date: 2026-03-06T14:00:28Z
+Reverted DNS_CACHE_TTL parse to old .and_then(|s| s.parse().ok()) pattern
+Result: FAIL (W181-02-dns-cache-ttl-explicit-warn required pattern missing)
+exit_code=1 (script found violations)
