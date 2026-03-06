@@ -1002,10 +1002,7 @@ pub fn router_build_index_from_str(
     }
 
     // R5 守门：在开关启用时强制要求显式 default
-    let require_default = std::env::var("SB_ROUTER_RULES_REQUIRE_DEFAULT")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+    let require_default = router_rules_require_default_from_env();
     if require_default && default.is_none() {
         #[cfg(feature = "metrics")]
         incr_counter(
@@ -2269,6 +2266,29 @@ fn router_rules_backoff_max_ms_from_env() -> u64 {
     }
 }
 
+fn parse_router_rules_require_default_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "router env 'SB_ROUTER_RULES_REQUIRE_DEFAULT' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn router_rules_require_default_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_RULES_REQUIRE_DEFAULT").ok();
+    match parse_router_rules_require_default_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
 fn refresh_shared_index_from_env_if_needed() {
     let max_rules = router_rules_max_from_env();
     let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
@@ -3057,6 +3077,7 @@ mod migration_tests {
         parse_router_rules_include_depth_env, parse_router_rules_jitter_ms_env,
         parse_router_rules_max_depth_env,
         parse_router_rules_max_env,
+        parse_router_rules_require_default_env,
     };
 
     #[test]
@@ -3110,6 +3131,15 @@ mod migration_tests {
             .expect_err("invalid include depth env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_INCLUDE_DEPTH"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_rules_require_default_env_reports_explicitly() {
+        let err = parse_router_rules_require_default_env(Some("yes-please"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_REQUIRE_DEFAULT"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

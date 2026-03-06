@@ -1,4 +1,4 @@
-VERSION|l21.157-wave160-v1|||L21 wave#160 migration assertion allowlist version
+VERSION|l21.158-wave161-v1|||L21 wave#161 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -416,3 +416,5 @@ require|W159-01-router-max-depth-env-parse-helper|crates/sb-core/src/router/mod.
 require|W159-02-router-max-depth-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_MAX_DEPTH' value '.*' is invalid; silent parse fallback is disabled|router max depth env invalid value should emit explicit diagnostics instead of silent ignore
 require|W160-01-router-include-depth-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_depth = router_rules_include_depth_from_env\(\);|router include depth env should parse through explicit helper instead of v\.parse::<usize>\(\)\.ok\(\)
 require|W160-02-router-include-depth-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_INCLUDE_DEPTH' value '.*' is invalid; silent parse fallback is disabled|router include depth env invalid value should emit explicit diagnostics instead of silent ignore
+require|W161-01-router-require-default-env-parse-helper|crates/sb-core/src/router/mod.rs|let require_default = router_rules_require_default_from_env\(\);|router require-default env should parse through explicit helper instead of silent boolean ignore
+require|W161-02-router-require-default-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_REQUIRE_DEFAULT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router require-default env unrecognized boolean should emit explicit diagnostics instead of silent ignore
