@@ -1934,10 +1934,7 @@ pub async fn spawn_rules_hot_reload(
     shared: Arc<RwLock<Arc<RouterIndex>>>,
 ) -> Result<tokio::task::JoinHandle<()>, BuildError> {
     let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-    let interval_ms: u64 = std::env::var("SB_ROUTER_RULES_HOT_RELOAD_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let interval_ms = router_rules_hot_reload_ms_from_env();
     if file.is_empty() || interval_ms == 0 {
         // 热重载未启用，直接返回一个 no-op handle
         return Ok(tokio::spawn(async move {}));
@@ -2165,6 +2162,29 @@ fn router_rules_max_from_env() -> usize {
         Err(reason) => {
             tracing::warn!("{reason}; using default 8192");
             8192
+        }
+    }
+}
+
+fn parse_router_rules_hot_reload_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<u64>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_RULES_HOT_RELOAD_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(0),
+    }
+}
+
+fn router_rules_hot_reload_ms_from_env() -> u64 {
+    let raw = std::env::var("SB_ROUTER_RULES_HOT_RELOAD_MS").ok();
+    match parse_router_rules_hot_reload_ms_env(raw.as_deref()) {
+        Ok(interval_ms) => interval_ms,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 0");
+            0
         }
     }
 }
@@ -2952,7 +2972,7 @@ pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot
 
 #[cfg(test)]
 mod migration_tests {
-    use super::parse_router_rules_max_env;
+    use super::{parse_router_rules_hot_reload_ms_env, parse_router_rules_max_env};
 
     #[test]
     fn invalid_router_rules_max_env_reports_explicitly() {
@@ -2960,6 +2980,15 @@ mod migration_tests {
             .expect_err("invalid router rules max env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_MAX"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_rules_hot_reload_ms_env_reports_explicitly() {
+        let err = parse_router_rules_hot_reload_ms_env(Some("bad-ms"))
+            .expect_err("invalid hot reload env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_HOT_RELOAD_MS"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

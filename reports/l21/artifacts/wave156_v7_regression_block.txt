@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 18:45) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.153-wave156-v1
+  FAIL: [W156-02-router-hot-reload-ms-env-invalid-explicit-warn] required pattern missing in crates/sb-core/src/router/mod.rs :: router hot reload interval env invalid value should emit explicit diagnostics instead of silent ignore
+  FAIL: 1/372 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave156-v7.E88Jqf

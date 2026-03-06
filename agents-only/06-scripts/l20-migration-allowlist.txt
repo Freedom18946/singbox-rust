@@ -1,4 +1,4 @@
-VERSION|l21.152-wave155-v1|||L21 wave#155 migration assertion allowlist version
+VERSION|l21.153-wave156-v1|||L21 wave#156 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -406,3 +406,5 @@ forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/r
 require|W154-02-register-listen-parse-explicit-normalize-msg|crates/sb-adapters/src/register.rs|explicit normalization to '\{normalized\}' is applied; silent listen parse fallback is disabled|listen addr helper should emit explicit normalization diagnostics instead of silent fallback
 require|W155-01-router-rules-max-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_rules = router_rules_max_from_env\(\);|router rules max env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W155-02-router-rules-max-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_MAX' value '.*' is invalid; silent parse fallback is disabled|router rules max env invalid value should emit explicit diagnostics instead of silent ignore
+require|W156-01-router-hot-reload-ms-env-parse-helper|crates/sb-core/src/router/mod.rs|let interval_ms = router_rules_hot_reload_ms_from_env\(\);|router hot reload interval env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+require|W156-02-router-hot-reload-ms-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_HOT_RELOAD_MS' value '.*' is invalid; silent parse fallback is disabled|router hot reload interval env invalid value should emit explicit diagnostics instead of silent ignore
