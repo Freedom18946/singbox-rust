@@ -1,4 +1,4 @@
-VERSION|l21.130-wave133-v1|||L21 wave#133 migration assertion allowlist version
+VERSION|l21.131-wave134-v1|||L21 wave#134 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -362,3 +362,5 @@ require|W132-01-trojan-fallback-parse-helper|app/src/inbound_starter.rs|let fall
 require|W132-02-trojan-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|trojan inbound: invalid fallback config; refusing to start|trojan inbound starter should reject invalid fallback config explicitly
 require|W133-01-vmess-fallback-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_fallback_addr\(\"vmess\", \"127\.0\.0\.1:80\", Some\(\"bad\"\)\)|vmess inbound fallback helper should stay covered by explicit unit test
 require|W133-02-vmess-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|vmess inbound: invalid fallback config; refusing to start|vmess inbound starter should reject invalid fallback config explicitly
+require|W134-01-vless-fallback-parse-helper|app/src/inbound_starter.rs|parse_optional_inbound_fallback_addr\(\"vless\", \"127\.0\.0\.1:80\", Some\(\"bad\"\)\)|vless inbound fallback helper should stay covered by explicit unit test
+require|W134-02-vless-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|vless inbound: invalid fallback config; refusing to start|vless inbound starter should reject invalid fallback config explicitly

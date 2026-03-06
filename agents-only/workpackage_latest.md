@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 16:50
-> **当前阶段**：L21 wave#133 推进完成（MIG-02 hardening：vmess inbound fallback 配置解析不再 silently ignore + strict gate 升级）
+> **最后更新**：2026-03-06 16:53
+> **当前阶段**：L21 wave#134 推进完成（MIG-02 hardening：vless inbound fallback 配置解析不再 silently ignore + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=326 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=328 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -19,7 +19,27 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs`、`crates/sb-adapters/src/inbound/hysteria2.rs`、`crates/sb-adapters/src/inbound/tuic.rs`、`app/src/inbound_starter.rs` 已完成一段真实路径收口；近端候选转向 `vless` inbound startup fallback 配置解析中的剩余 silent ignore 路径。
+- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs`、`crates/sb-adapters/src/inbound/hysteria2.rs`、`crates/sb-adapters/src/inbound/tuic.rs`、`app/src/inbound_starter.rs` 已完成一段真实路径收口；近端候选转向其余运行时 parse-failure fallback 与兼容占位默认值审计。
+
+## 🆕 最新进展：L21 wave#134 推进落地（2026-03-06 16:53）
+
+**状态**：✅ 完成一段（vless inbound fallback 配置解析不再 silently ignore）；✅ strict gate allowlist 升级到 `l21.131-wave134-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `app/src/inbound_starter.rs`：`start_vless_inbound(...)` 切到 `parse_optional_inbound_fallback_addr(...)` 与 `parse_inbound_fallback_for_alpn(...)`，不再把无效 `fallback` / `fallback_for_alpn` 静默吞成 `None`，改为显式报错并拒绝启动 inbound
+   - 新增最小单元测试，锁定 vless fallback helper 必须带上协议标签
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.131-wave134-v1`，断言扩展到 `328` 条。
+   - `reports/l21/artifacts/wave134_v7_regression_block.txt`：在临时 root 将 vless fallback 解析注回旧 `parse(...).ok()` 后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave134_wp1_app_tests_check.txt` PASS
+   - `wave134_wp1_sb_core_check.txt` PASS
+   - `wave134_inbound_starter_tests_check.txt` PASS（定向 `app` 单测编译）
+   - `wave134_strict_gate.txt` PASS
+   - `wave134_v7_regression_block.txt` PASS（负样例按预期 FAIL，`exit_code=1`）
+   - `wave134_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - 当前新增收口点：vless inbound 启动配置里的 fallback 地址解析不再 silently ignore。
 
 ## 🆕 最新进展：L21 wave#133 推进落地（2026-03-06 16:50）
 

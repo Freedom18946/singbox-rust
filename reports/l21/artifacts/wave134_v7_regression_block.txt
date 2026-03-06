@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 16:53) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.131-wave134-v1
+  FAIL: [W134-02-vless-invalid-fallback-explicit-reject] required pattern missing in app/src/inbound_starter.rs :: vless inbound starter should reject invalid fallback config explicitly
+  FAIL: 1/328 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave134-v7.sUHY9K
