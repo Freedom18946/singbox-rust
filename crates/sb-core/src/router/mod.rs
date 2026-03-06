@@ -1472,12 +1472,7 @@ pub fn router_index_decide_exact_suffix(idx: &RouterIndex, host: &str) -> Option
 }
 
 /// 控制是否开启严格后缀模式（仅标签边界直查）
-static SUFFIX_STRICT: Lazy<bool> = Lazy::new(|| {
-    std::env::var("SB_ROUTER_SUFFIX_STRICT")
-        .ok()
-        .map(|v| v == "1")
-        .unwrap_or(false)
-});
+static SUFFIX_STRICT: Lazy<bool> = Lazy::new(|| router_suffix_strict_from_env());
 
 /// 基于端口/传输的后置兜底（只在 host/IP 未命中时尝试）
 pub fn router_index_decide_transport_port(
@@ -2289,6 +2284,29 @@ fn router_rules_require_default_from_env() -> bool {
     }
 }
 
+fn parse_router_suffix_strict_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "router env 'SB_ROUTER_SUFFIX_STRICT' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn router_suffix_strict_from_env() -> bool {
+    let raw = std::env::var("SB_ROUTER_SUFFIX_STRICT").ok();
+    match parse_router_suffix_strict_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
 fn refresh_shared_index_from_env_if_needed() {
     let max_rules = router_rules_max_from_env();
     let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
@@ -3078,6 +3096,7 @@ mod migration_tests {
         parse_router_rules_max_depth_env,
         parse_router_rules_max_env,
         parse_router_rules_require_default_env,
+        parse_router_suffix_strict_env,
     };
 
     #[test]
@@ -3140,6 +3159,15 @@ mod migration_tests {
             .expect_err("unrecognized boolean env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_REQUIRE_DEFAULT"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_suffix_strict_env_reports_explicitly() {
+        let err = parse_router_suffix_strict_env(Some("on"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_SUFFIX_STRICT"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

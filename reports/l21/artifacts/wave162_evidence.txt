@@ -1,0 +1,24 @@
+wave162: harden SB_ROUTER_SUFFIX_STRICT env parsing
+====================================================
+
+Target: crates/sb-core/src/router/mod.rs
+Change: SB_ROUTER_SUFFIX_STRICT no longer silently ignores unrecognized boolean values.
+        Old: v == "1" only, anything else silently false.
+        New: Recognized: "1","true","0","false","" (case-insensitive). Unrecognized: explicit warn + default false.
+
+Helpers added:
+  - parse_router_suffix_strict_env(value: Option<&str>) -> Result<bool, Arc<str>>
+  - router_suffix_strict_from_env() -> bool
+
+Test added:
+  - invalid_router_suffix_strict_env_reports_explicitly
+
+Allowlist: l21.159-wave162-v1 (384 assertions)
+
+Verification:
+  - cargo check -p sb-core: PASS
+  - cargo check -p app --tests: PASS
+  - check-boundaries.sh --strict: PASS (384 assertions)
+  - negative regression (revert to old inline): FAIL as expected (v7_exit=1)
+  - specific test: PASS
+  - bash -n scripts/l18/gui_real_cert.sh: PASS

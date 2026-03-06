@@ -1,4 +1,4 @@
-VERSION|l21.158-wave161-v1|||L21 wave#161 migration assertion allowlist version
+VERSION|l21.159-wave162-v1|||L21 wave#162 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -418,3 +418,5 @@ require|W160-01-router-include-depth-env-parse-helper|crates/sb-core/src/router/
 require|W160-02-router-include-depth-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_INCLUDE_DEPTH' value '.*' is invalid; silent parse fallback is disabled|router include depth env invalid value should emit explicit diagnostics instead of silent ignore
 require|W161-01-router-require-default-env-parse-helper|crates/sb-core/src/router/mod.rs|let require_default = router_rules_require_default_from_env\(\);|router require-default env should parse through explicit helper instead of silent boolean ignore
 require|W161-02-router-require-default-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_REQUIRE_DEFAULT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router require-default env unrecognized boolean should emit explicit diagnostics instead of silent ignore
+require|W162-01-router-suffix-strict-env-parse-helper|crates/sb-core/src/router/mod.rs|SUFFIX_STRICT.*Lazy::new.*router_suffix_strict_from_env|router suffix-strict env should parse through explicit Lazy helper instead of inline silent boolean ignore
+require|W162-02-router-suffix-strict-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_SUFFIX_STRICT' value '.*' is not a recognized boolean; silent parse fallback is disabled|router suffix-strict env unrecognized boolean should emit explicit diagnostics instead of silent ignore
