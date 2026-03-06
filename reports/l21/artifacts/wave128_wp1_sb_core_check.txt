@@ -1,0 +1,3 @@
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Checking sb-config v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-config)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 6.47s

@@ -14,6 +14,34 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 16:03] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：`rules::from_rule_action(...)` 缺省动作去 silent direct fallback 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-core/src/router/rules.rs`
+    - 新增 `from_outbound_or_unresolved(...)`，使 `RuleAction::Route` 与 `RuleAction::RouteOptions` 在缺失 `outbound` 时不再默认 `Decision::Direct`，统一改为显式 `Decision::Proxy(Some("unresolved"))`
+    - 补充最小单元测试，覆盖 `Route` 缺失 outbound、`RouteOptions` 缺失 outbound、以及 `RouteOptions` 保留显式 outbound tag
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.125-wave128-v1`
+    - 新增 `W128-01/W128-02`
+- 证据与验证产物：
+  - `wave128_wp1_app_tests_check.txt`（PASS）
+  - `wave128_wp1_sb_core_check.txt`（PASS）
+  - `wave128_strict_gate.txt`（PASS）
+  - `wave128_v7_regression_block.txt`（注入 `RouteOptions => Decision::Direct` 回流后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave128_gui_static_syntax_check.txt`（PASS）
+  - `wave128_sb_core_rule_action_tests_check.txt`（额外定向验证命中已知无关问题：`router_options_parity.rs` 的 `ExperimentalIR` 缺少 `quic_ech_mode` 字段，非 blocker）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#128 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.125-wave128-v1`（316 assertions）。
+
 ### [2026-03-06 04:47] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：router/mod 解析失败 fallback 去 silent direct fallback 并升级 strict gate 断言。

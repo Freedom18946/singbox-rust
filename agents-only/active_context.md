@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#127**，聚焦 **router_json 缺失 outbound 不再默认 direct**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#128**，聚焦 **rules::from_rule_action(...) 缺省动作不再默认 direct**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,23 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：`rules::from_rule_action(...)` 缺省动作收口、剩余 `app/sb-adapters` 决策桥接路径审计、运行时 parse-failure fallback。
-- 当前 V7 口径：`l21.124-wave127-v1`（314 assertions）。
+- 下一阶段重点：`crates/sb-adapters/src/inbound/trojan.rs`、`crates/sb-adapters/src/inbound/vmess.rs` 的 implicit direct fallback 收口，以及剩余运行时 parse-failure fallback 审计。
+- 当前 V7 口径：`l21.125-wave128-v1`（316 assertions）。
+
+### 🆕 L21 wave#128 推进快照（2026-03-06 16:03）
+
+- 状态：完成（`crates/sb-core/src/router/rules.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/router/rules.rs`：新增 `from_outbound_or_unresolved(...)`，使 `RuleAction::Route` 与 `RuleAction::RouteOptions` 缺失 `outbound` 时改为显式 `unresolved` marker，而非默认 `Decision::Direct`
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.125-wave128-v1`（316 assertions）
+  3. `wave128_v7_regression_block.txt`：恢复 `RouteOptions => Decision::Direct` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave128_wp1_app_tests_check.txt` PASS
+  - `wave128_wp1_sb_core_check.txt` PASS
+  - `wave128_strict_gate.txt` PASS
+  - `wave128_gui_static_syntax_check.txt` PASS
+- 额外说明：
+  - `wave128_sb_core_rule_action_tests_check.txt` 命中已知无关问题：`router_options_parity.rs` 的 `ExperimentalIR` 缺少 `quic_ech_mode` 字段；非本波 blocker。
 
 ### 🆕 L21 wave#127 推进快照（2026-03-06 09:38）
 

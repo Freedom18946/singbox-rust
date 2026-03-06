@@ -50,6 +50,14 @@ pub enum Decision {
 }
 
 impl Decision {
+    fn from_outbound_or_unresolved(outbound: Option<&str>) -> Self {
+        match outbound {
+            Some("direct") => Decision::Direct,
+            Some(tag) => Decision::Proxy(Some(tag.to_string())),
+            None => Decision::Proxy(Some("unresolved".to_string())),
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         match self {
             Decision::Direct => "direct",
@@ -90,17 +98,7 @@ impl Decision {
     ) -> Self {
         use sb_config::ir::RuleAction;
         match action {
-            RuleAction::Route => {
-                if let Some(ref ob) = outbound {
-                    if ob == "direct" {
-                        Decision::Direct
-                    } else {
-                        Decision::Proxy(Some(ob.clone()))
-                    }
-                } else {
-                    Decision::Direct
-                }
-            }
+            RuleAction::Route => Self::from_outbound_or_unresolved(outbound.as_deref()),
             RuleAction::Reject => Decision::Reject,
             RuleAction::RejectDrop => Decision::RejectDrop,
             RuleAction::Hijack => Decision::Hijack {
@@ -110,7 +108,7 @@ impl Decision {
             RuleAction::HijackDns => Decision::HijackDns,
             RuleAction::Sniff => Decision::Sniff,
             RuleAction::Resolve => Decision::Resolve,
-            RuleAction::RouteOptions => Decision::Direct, // NOTE: RouteOptions defaults to Direct
+            RuleAction::RouteOptions => Self::from_outbound_or_unresolved(outbound.as_deref()),
             RuleAction::SniffOverride => Decision::Sniff, // NOTE: SniffOverride defaults to Sniff
         }
     }
@@ -2146,6 +2144,7 @@ pub fn init_from_env() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sb_config::ir::{RuleAction, RuleIR};
 
     #[test]
     fn test_adguard_domain_and_subdomains() {
@@ -2278,5 +2277,41 @@ mod tests {
             ..Default::default()
         };
         assert!(composite.matches(&ctx_main));
+    }
+
+    #[test]
+    fn route_action_missing_outbound_defaults_to_unresolved_marker() {
+        assert_eq!(
+            Decision::from_rule_action(&RuleAction::Route, None, None, None),
+            Decision::Proxy(Some("unresolved".to_string()))
+        );
+    }
+
+    #[test]
+    fn route_options_missing_outbound_defaults_to_unresolved_marker() {
+        let rule = RuleIR {
+            action: RuleAction::RouteOptions,
+            domain_suffix: vec![".example.com".into()],
+            ..Default::default()
+        };
+
+        let compiled = CompositeRule::try_from(&rule).expect("compile");
+        assert_eq!(
+            compiled.decision,
+            Decision::Proxy(Some("unresolved".to_string()))
+        );
+    }
+
+    #[test]
+    fn route_options_preserve_explicit_outbound_tag() {
+        assert_eq!(
+            Decision::from_rule_action(
+                &RuleAction::RouteOptions,
+                Some("proxy-a".to_string()),
+                None,
+                None,
+            ),
+            Decision::Proxy(Some("proxy-a".to_string()))
+        );
     }
 }
