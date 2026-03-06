@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 22:30
-> **当前阶段**：L21 wave#192 推进完成（MIG-02 hardening：全项目 env-var silent parse fallback 审计完成，零残留）
+> **最后更新**：2026-03-06 23:30
+> **当前阶段**：L21 wave#198 推进完成（MIG-02 env-var silent parse fallback 全项目正式关闭，真·零残留）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=476 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=514 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -12,24 +12,39 @@
 ## 口径对齐（避免阶段混淆）
 
 1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
-2. 测试/样例层残留 `default=direct` 已清零；当前进入真实路径 parse-failure / 兼容占位默认值收口阶段。
+2. 测试/样例层残留 `default=direct` 已清零；MIG-02 env-var silent parse fallback 已全面收口。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
-- 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- app 层 + bin/ 工具 env-var silent fallback 全部收口（wave178-192）。全项目零残留。
+- **MIG-02 env-var silent parse fallback 正式关闭**：生产源码零残留（仅剩 3 处为 JSON/config 字段解析 + test 文件，非 env-var scope）。
+- 下一阶段可考虑转向 MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 的具体迁移，或其他 codebase hardening 类目。
+
+## 🆕 最新进展：L21 wave#193-198 推进落地（2026-03-06 23:30）
+
+**状态**：✅ 6 波完成；sb-core/sb-transport/sb-adapters 层遗漏 env-var silent fallback 全部收口；V7 升级到 `l21.214-wave198-v1`（514 assertions）
+
+1. 本轮覆盖（6 波 / 21 个 env vars）：
+   - `crates/sb-core/src/dns/fakeip.rs`: SB_FAKEIP_V4_BASE/V4_MASK/V6_BASE/V6_MASK/CAP × 2 fns — fakeip_env_ipv4/ipv6/u8/usize helpers (wave193)
+   - `crates/sb-core/src/outbound/optimizations.rs`: SB_BUFFER_POOL_SIZE/MAX_CAPACITY — opt_env_usize helper (wave194)
+   - `crates/sb-transport/src/circuit_breaker.rs`: SB_CB_FAILS/WINDOW_MS/HALFOPEN_MAX/OPEN_TIMEOUT_MS/COUNT_TIMEOUTS — cb_env_u32/u64/bool helpers (wave195)
+   - `crates/sb-transport/src/pool/limit.rs`: SB_DIAL_MAX_CONCURRENCY/QUEUE_MS — dial_env_usize/u64 helpers (wave196)
+   - `crates/sb-adapters/src/outbound/tuic.rs`: SB_TUIC_MAX_RETRIES/BACKOFF_MS_BASE/BACKOFF_MS_MAX — tuic_env_u32/u64 helpers (wave197)
+   - `crates/sb-adapters/src/inbound/http.rs` + `socks/mod.rs`: SB_PROXY_STICKY_TTL_MS/CAP × 2 files — sticky_env_u64/usize helpers (wave198)
+2. 验证：所有波均通过 `cargo check` + `check-boundaries.sh --strict` + 负样例回归
+3. 全项目 rg 确认：仅剩 3 处 `.and_then(|s| s.parse().ok())` 为非 env-var 上下文（convertor.rs JSON 解析、test 文件）
+4. 技术发现：allowlist `IFS='|'` 与 regex `\|` 冲突，已改用 `env::var("NAME")\.ok\(\)\.and_then` 格式的 forbid 模式
 
 ## 🆕 最新进展：L21 wave#191-192 推进落地（2026-03-06 22:30）
 
-**状态**：✅ 2 波完成；全项目 env-var silent parse fallback 审计完成（零残留）；V7 升级到 `l21.189-wave192-v1`（476 assertions）
+**状态**：✅ 2 波完成；bin/ 工具层 env-var 收口；V7 升级到 `l21.189-wave192-v1`（476 assertions）
+> **注意**：此波的"全项目零残留"结论已被 wave193-198 修正（发现 sb-core/sb-transport/sb-adapters 层遗漏 21 个 env vars）
 
 1. 本轮覆盖：
    - `app/src/bin/sb-bench.rs`: SB_BENCH_N/PAR/PAYLOAD — bench_env_usize helper (wave191)
    - `app/src/bin/sb-explaind.rs`: SB_PPROF_MAX_SEC/FREQ — inline explicit parse (wave192)
 2. 验证：所有波均通过 `cargo check -p app --tests` + `check-boundaries.sh --strict` + 负样例回归
-3. 全项目扫描确认：`grep -rn 'env::var.*parse.*ok()' app/src/ crates/*/src/` = 0 matches
 
 ## 🆕 最新进展：L21 wave#178-190 批量推进落地（2026-03-06 22:15）
 
