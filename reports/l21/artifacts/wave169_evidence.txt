@@ -1,0 +1,10 @@
+wave169: harden SB_EXPLAIN_REBUILD_MS env parsing
+=================================================
+
+Target: crates/sb-core/src/router/explain_index.rs (feature-gated behind explain)
+Change: SB_EXPLAIN_REBUILD_MS no longer silently ignores invalid numeric values.
+        Invalid values now emit explicit warning and disable periodic rebuild.
+
+Helpers: parse_explain_rebuild_ms_env, explain_rebuild_ms_from_env
+Test: invalid_explain_rebuild_ms_env_reports_explicitly (--features explain)
+Allowlist: l21.166-wave169-v1 (402 assertions)

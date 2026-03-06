@@ -7,6 +7,7 @@ use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha256};
 use std::net::IpAddr;
 use std::sync::RwLock;
+use std::sync::Arc;
 
 static EXPLAIN_INDEX: OnceCell<RwLock<ExplainIndex>> = OnceCell::new();
 
@@ -324,11 +325,34 @@ pub fn snapshot_digest(idx: &ExplainIndex) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn parse_explain_rebuild_ms_env(value: Option<&str>) -> Result<Option<u64>, Arc<str>> {
+    match value {
+        Some(raw) => {
+            let ms = raw.parse::<u64>().map_err(|err| -> Arc<str> {
+                format!(
+                    "router env 'SB_EXPLAIN_REBUILD_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+                )
+                .into()
+            })?;
+            if ms > 0 { Ok(Some(ms)) } else { Ok(None) }
+        }
+        None => Ok(None),
+    }
+}
+
+fn explain_rebuild_ms_from_env() -> Option<u64> {
+    let raw = std::env::var("SB_EXPLAIN_REBUILD_MS").ok();
+    match parse_explain_rebuild_ms_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; rebuild disabled");
+            None
+        }
+    }
+}
+
 pub fn rebuild_periodic(handle: crate::router::RouterHandle) {
-    let interval_ms = std::env::var("SB_EXPLAIN_REBUILD_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .filter(|ms| *ms > 0);
+    let interval_ms = explain_rebuild_ms_from_env();
 
     let Some(ms) = interval_ms else { return };
 
@@ -345,4 +369,18 @@ pub fn rebuild_periodic(handle: crate::router::RouterHandle) {
         }
         std::thread::sleep(std::time::Duration::from_millis(ms));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_explain_rebuild_ms_env;
+
+    #[test]
+    fn invalid_explain_rebuild_ms_env_reports_explicitly() {
+        let err = parse_explain_rebuild_ms_env(Some("bad-ms"))
+            .expect_err("invalid explain rebuild ms env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_EXPLAIN_REBUILD_MS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
 }
