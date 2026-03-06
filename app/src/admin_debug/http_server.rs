@@ -1136,23 +1136,28 @@ async fn handle_connection(
 }
 fn admin_limits() -> (usize, usize, u64, u64) {
     // returns (max_header_bytes, max_body_bytes, firstline_timeout_ms, read_timeout_ms)
-    let max_h = std::env::var("SB_ADMIN_MAX_HEADER_BYTES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(64 * 1024);
-    let max_b = std::env::var("SB_ADMIN_MAX_BODY_BYTES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2 * 1024 * 1024);
-    let firstline = std::env::var("SB_ADMIN_FIRSTLINE_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3000);
-    let read_timeout = std::env::var("SB_ADMIN_READ_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(4000);
+    let max_h = admin_env_usize("SB_ADMIN_MAX_HEADER_BYTES", 64 * 1024);
+    let max_b = admin_env_usize("SB_ADMIN_MAX_BODY_BYTES", 2 * 1024 * 1024);
+    let firstline = admin_env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", 3000);
+    let read_timeout = admin_env_u64("SB_ADMIN_READ_TIMEOUT_MS", 4000);
     (max_h, max_b, firstline, read_timeout)
+}
+
+fn admin_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<usize>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
+}
+fn admin_env_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<u64>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-VERSION|l21.185-wave188-v1|||L21 wave#188 migration assertion allowlist version
+VERSION|l21.186-wave189-v1|||L21 wave#189 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -511,3 +511,9 @@ require|W188-01-rate-limit-max-helper|app/src/admin_debug/middleware/rate_limit.
 require|W188-02-rate-limit-window-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_u64\("SB_ADMIN_RATE_LIMIT_WINDOW_SEC"|rate limit window should use explicit parse helper
 require|W188-03-rate-limit-burst-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_opt_u32\("SB_ADMIN_RATE_LIMIT_BURST"|rate limit burst should use explicit parse helper
 require|W188-04-rate-limit-explicit-warn|app/src/admin_debug/middleware/rate_limit.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|rate limit env should emit explicit diagnostics
+
+require|W189-01-admin-limits-header-helper|app/src/admin_debug/http_server.rs|admin_env_usize\("SB_ADMIN_MAX_HEADER_BYTES"|admin limits header should use explicit parse helper
+require|W189-02-admin-limits-body-helper|app/src/admin_debug/http_server.rs|admin_env_usize\("SB_ADMIN_MAX_BODY_BYTES"|admin limits body should use explicit parse helper
+require|W189-03-admin-limits-firstline-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_FIRSTLINE_TIMEOUT_MS"|admin limits firstline should use explicit parse helper
+require|W189-04-admin-limits-read-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_READ_TIMEOUT_MS"|admin limits read timeout should use explicit parse helper
+require|W189-05-admin-limits-explicit-warn|app/src/admin_debug/http_server.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|admin limits env should emit explicit diagnostics

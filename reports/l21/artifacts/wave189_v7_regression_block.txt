@@ -1,0 +1,5 @@
+wave189 negative regression test
+Date: 2026-03-06T14:24:41Z
+Reverted admin_limits env to old .and_then(|v| v.parse::<T>().ok()) pattern
+Result: FAIL (5 assertions failed: W189-01..W189-05)
+exit_code=1 (script found violations)
