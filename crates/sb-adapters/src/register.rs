@@ -201,6 +201,21 @@ fn parse_required_outbound_ip_addr(
     }
 }
 
+fn parse_required_outbound_socket_addr(
+    protocol: &'static str,
+    outbound: &str,
+    server: &str,
+    port: u16,
+) -> Result<SocketAddr, Arc<str>> {
+    let raw = format!("{server}:{port}");
+    raw.parse::<SocketAddr>().map_err(|err| {
+        format!(
+            "{protocol} outbound server '{raw}' is invalid for outbound '{outbound}'; silent socket address parse fallback is disabled; fix the config explicitly: {err}"
+        )
+        .into()
+    })
+}
+
 /// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
 /// Both have identical bounds (AsyncRead + AsyncWrite + Unpin + Send).
 #[cfg(all(
@@ -1001,8 +1016,14 @@ fn build_vmess_outbound(
         }
     };
 
-    // Parse server to SocketAddr (try IP:port first, then resolve)
-    let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
+    let server_addr = match parse_required_outbound_socket_addr("vmess", outbound_name, server, port)
+    {
+        Ok(server_addr) => server_addr,
+        Err(reason) => {
+            warn!("{reason}");
+            return invalid_config_outbound("vmess", reason);
+        }
+    };
 
     // Map security string
     let security = match ir.security.as_deref() {
@@ -3149,7 +3170,8 @@ mod tests {
 #[cfg(test)]
 mod migration_tests {
     use super::{
-        invalid_outbound_config_reason, parse_required_outbound_ip_addr, parse_required_outbound_uuid,
+        invalid_outbound_config_reason, parse_required_outbound_ip_addr,
+        parse_required_outbound_socket_addr, parse_required_outbound_uuid,
     };
 
     #[test]
@@ -3189,6 +3211,15 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("dns outbound server 'bad-ip' is invalid"));
         assert!(msg.contains("silent ip parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_vmess_outbound_server_reports_protocol() {
+        let err = parse_required_outbound_socket_addr("vmess", "edge-vmess", "example.com", 443)
+            .expect_err("invalid socket addr should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound server 'example.com:443' is invalid"));
+        assert!(msg.contains("silent socket address parse fallback is disabled"));
     }
 
     #[test]

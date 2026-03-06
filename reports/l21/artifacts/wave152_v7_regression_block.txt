@@ -1,0 +1,16 @@
+=== 依赖边界检查 (2026-03-06 18:28) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.149-wave152-v1
+  FAIL: [W147-01-register-shadowsocks-invalid-config-helper] required pattern missing in crates/sb-adapters/src/register.rs :: shadowsocks outbound builder should format invalid config through explicit helper instead of swallowing connector errors
+  FAIL: [W147-02-register-shadowsocks-invalid-config-explicit-block] required pattern missing in crates/sb-adapters/src/register.rs :: shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector
+  FAIL: [W148-01-register-shadowsocksr-invalid-config-helper] required pattern missing in crates/sb-adapters/src/register.rs :: shadowsocksr outbound builder should format invalid config through explicit helper instead of swallowing TryFrom errors
+  FAIL: [W148-02-register-shadowsocksr-invalid-config-explicit-block] required pattern missing in crates/sb-adapters/src/register.rs :: shadowsocksr outbound builder should surface invalid TryFrom config through explicit invalid-config connector
+  FAIL: [W152-01-register-vmess-server-addr-parse-helper] required pattern missing in crates/sb-adapters/src/register.rs :: vmess outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
+  FAIL: 5/364 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave152-v7.ZvRQPR
