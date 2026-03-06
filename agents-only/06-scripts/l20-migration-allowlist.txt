@@ -1,4 +1,4 @@
-VERSION|l21.172-wave175-v1|||L21 wave#175 migration assertion allowlist version
+VERSION|l21.173-wave176-v1|||L21 wave#176 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -452,3 +452,5 @@ require|W174-01-dns-config-env-u64-explicit-warn|crates/sb-core/src/dns/config_b
 require|W174-02-dns-config-env-u8-explicit-warn|crates/sb-core/src/dns/config_builder.rs|dns env '.*' value '.*' is invalid; silent parse fallback is disabled; fix the config explicitly|dns config env_u8 helper should emit explicit diagnostics on parse failure
 require|W174-03-dns-config-env-bool-explicit-warn|crates/sb-core/src/dns/config_builder.rs|dns env '.*' value '.*' is not a recognized boolean; silent parse fallback is disabled|dns config env_bool helper should emit explicit diagnostics on unrecognized boolean
 require|W175-01-health-interval-ms-explicit-warn|crates/sb-core/src/health/mod.rs|health env 'HEALTH_INTERVAL_MS' value '.*' is invalid; silent parse fallback is disabled|health interval ms env should emit explicit diagnostics instead of silent ignore
+require|W176-01-udp-rate-limit-explicit-warn|crates/sb-core/src/net/rate_limit.rs|rate-limit env '.*' value '.*' is invalid; silent parse fallback is disabled|udp rate-limit env should emit explicit diagnostics instead of v\.parse\(\)\.ok\(\)
+require|W176-02-tcp-rate-limit-explicit-warn|crates/sb-core/src/net/tcp_rate_limit.rs|tcp-rate-limit env '.*' value '.*' is invalid; silent parse fallback is disabled|tcp rate-limit env should emit explicit diagnostics instead of v\.parse\(\)\.ok\(\)

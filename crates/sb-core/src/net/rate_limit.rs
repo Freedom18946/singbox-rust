@@ -1,6 +1,21 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn parse_env_u64_default(key: &str, default: u64) -> u64 {
+    match std::env::var(key).ok() {
+        Some(raw) => match raw.parse::<u64>() {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::warn!(
+                    "rate-limit env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default {default}"
+                );
+                default
+            }
+        },
+        None => default,
+    }
+}
+
 pub struct RateLimiter {
     tick_ms: u64,       // 时间片（ms）
     bps_tick: u64,      // 每片最大字节
@@ -12,14 +27,8 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn from_env_udp() -> Option<Self> {
-        let bps = std::env::var("SB_UDP_OUTBOUND_BPS_MAX")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        let pps = std::env::var("SB_UDP_OUTBOUND_PPS_MAX")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
+        let bps = parse_env_u64_default("SB_UDP_OUTBOUND_BPS_MAX", 0);
+        let pps = parse_env_u64_default("SB_UDP_OUTBOUND_PPS_MAX", 0);
         if bps == 0 && pps == 0 {
             return None;
         }
