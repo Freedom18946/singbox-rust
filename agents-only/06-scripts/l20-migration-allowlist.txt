@@ -1,4 +1,4 @@
-VERSION|l21.123-wave126-v1|||L21 wave#126 migration assertion allowlist version
+VERSION|l21.124-wave127-v1|||L21 wave#127 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -348,3 +348,5 @@ forbid|W125-01-no-socks-udp-proxy-fallback-direct-switch|crates/sb-adapters/src/
 require|W125-02-socks-udp-proxy-fallback-blocked-warning|crates/sb-adapters/src/inbound/socks/udp.rs|proxy upstream fallback to direct is disabled; packet dropped|socks5-udp proxy fallback should fail explicitly instead of silently using direct
 forbid|W126-01-no-shadowsocks-unsupported-direct-fallback-comment|crates/sb-adapters/src/inbound/shadowsocks.rs|Handle other variants \(Hijack, Sniff, Resolve\) as direct for now|shadowsocks inbound should not keep legacy unsupported-decision direct fallback path
 require|W126-02-shadowsocks-unsupported-decision-explicit-error|crates/sb-adapters/src/inbound/shadowsocks.rs|ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|shadowsocks inbound should fail explicitly for unsupported routing decisions instead of silently using direct
+forbid|W127-01-no-json-bridge-missing-outbound-direct-default|crates/sb-core/src/router/json_bridge.rs|unwrap_or\(Decision::Direct\)|router json bridge should not default missing outbound to direct
+require|W127-02-json-bridge-missing-outbound-unresolved-marker|crates/sb-core/src/router/json_bridge.rs|Decision::Proxy\(Some\(\"unresolved\"\.to_string\(\)\)\)|router json bridge should mark missing outbound as unresolved

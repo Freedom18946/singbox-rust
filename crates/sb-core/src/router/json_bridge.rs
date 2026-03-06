@@ -33,6 +33,7 @@ fn parse_decision(s: &str) -> Option<Decision> {
     match s.to_ascii_lowercase().as_str() {
         "direct" => Some(Decision::Direct),
         "proxy" => Some(Decision::Proxy(None)),
+        "unresolved" => Some(Decision::Proxy(Some("unresolved".to_string()))),
         "reject" => Some(Decision::Reject),
         _ => {
             // Handle "proxy:name" format
@@ -71,7 +72,7 @@ fn to_rules(mut doc: JsonDoc) -> Vec<Rule> {
             .outbound
             .as_deref()
             .and_then(parse_decision)
-            .unwrap_or(Decision::Direct);
+            .unwrap_or_else(|| Decision::Proxy(Some("unresolved".to_string())));
         let k = jr.kind.to_ascii_lowercase();
         let xs: Vec<serde_json::Value> = match jr.values {
             Some(vs) if !vs.is_empty() => vs,
@@ -250,4 +251,43 @@ pub fn init_from_json_env() {
 // 暴露用于测试的函数
 pub fn to_rules_for_test(doc: JsonDoc) -> Vec<Rule> {
     to_rules(doc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_decision, to_rules_for_test, JsonDoc, JsonRule};
+    use crate::router::rules::{Decision, RuleKind};
+    use serde_json::json;
+
+    #[test]
+    fn json_bridge_parses_unresolved_marker() {
+        assert_eq!(
+            parse_decision("unresolved"),
+            Some(Decision::Proxy(Some("unresolved".to_string())))
+        );
+    }
+
+    #[test]
+    fn json_bridge_missing_outbound_defaults_to_unresolved_marker() {
+        let rules = to_rules_for_test(JsonDoc {
+            rules: vec![JsonRule {
+                kind: "domain".to_string(),
+                value: json!("example.com"),
+                values: None,
+                transport: None,
+                outbound: None,
+            }],
+            default: None,
+        });
+
+        assert_eq!(rules.len(), 1);
+        assert!(matches!(
+            rules[0].kind,
+            RuleKind::Exact(ref host) if host == "example.com"
+        ));
+        assert_eq!(
+            rules[0].decision,
+            Decision::Proxy(Some("unresolved".to_string()))
+        );
+    }
 }

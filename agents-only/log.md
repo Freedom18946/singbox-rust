@@ -5336,4 +5336,33 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-03-06 09:38] Agent: Codex (GPT-5)
+
+**任务**: 推进 L21 wave#127，收口 `router_json` 桥接中缺失 `outbound` 时的 legacy direct default。
+
+**变更**:
+- 更新 `crates/sb-core/src/router/json_bridge.rs`
+  - `JsonRule.outbound` 缺失时不再 `unwrap_or(Decision::Direct)`
+  - 改为显式 `Decision::Proxy(Some("unresolved"))`
+  - `parse_decision("unresolved")` 现在可识别
+  - 新增 `json_bridge` 单元测试，覆盖 `unresolved` marker 与缺失 outbound 默认值
+- 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+  - allowlist 升级到 `l21.124-wave127-v1`
+  - V7 assertions 扩展到 `314`
+- 更新 `agents-only/workpackage_latest.md`
+- 更新 `agents-only/active_context.md`
+- 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+
+**验证**:
+- `cargo check -p app --tests` PASS
+- `cargo check -p sb-core` PASS
+- `cargo test -p sb-core --features router_json --lib json_bridge_missing_outbound_defaults_to_unresolved_marker --no-run` PASS
+- `bash agents-only/06-scripts/check-boundaries.sh --strict` PASS
+- `BOUNDARY_PROJECT_ROOT=<tmp> bash agents-only/06-scripts/check-boundaries.sh --v7-only` 负样例 PASS（预期失败，`exit_code=1`）
+- `bash -n scripts/l18/gui_real_cert.sh` PASS
+
+**结果**: 成功（`wave127` 已完成；router_json 缺失 outbound 不再 silently fallback 到 direct）
+
+---
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#126**，聚焦 **shadowsocks inbound unsupported decision 不再 direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#127**，聚焦 **router_json 缺失 outbound 不再默认 direct**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：剩余 `app/sb-adapters` 决策桥接路径审计、`router/engine.rs` 兼容 helper 余项、运行时 parse-failure fallback。
-- 当前 V7 口径：`l21.123-wave126-v1`（312 assertions）。
+- 下一阶段重点：`rules::from_rule_action(...)` 缺省动作收口、剩余 `app/sb-adapters` 决策桥接路径审计、运行时 parse-failure fallback。
+- 当前 V7 口径：`l21.124-wave127-v1`（314 assertions）。
+
+### 🆕 L21 wave#127 推进快照（2026-03-06 09:38）
+
+- 状态：完成（`crates/sb-core/src/router/json_bridge.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/router/json_bridge.rs`：缺失 `outbound` 不再默认 `Decision::Direct`，改为显式 `unresolved` marker
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.124-wave127-v1`（314 assertions）
+  3. `wave127_v7_regression_block.txt`：恢复 `unwrap_or(Decision::Direct)` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave127_wp1_app_tests_check.txt` PASS
+  - `wave127_wp1_sb_core_check.txt` PASS
+  - `wave127_sb_core_router_json_tests_check.txt` PASS
+  - `wave127_strict_gate.txt` PASS
+  - `wave127_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#126 推进快照（2026-03-06 09:26）
 

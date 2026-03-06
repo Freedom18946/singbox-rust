@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 09:26
-> **当前阶段**：L21 wave#126 推进完成（MIG-02 hardening：shadowsocks inbound unsupported decision 不再 direct fallback + strict gate 升级）
+> **最后更新**：2026-03-06 09:38
+> **当前阶段**：L21 wave#127 推进完成（MIG-02 hardening：router_json 缺失 outbound 不再默认 direct + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=312 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=314 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -19,7 +19,27 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs` 已完成一段真实路径收口；近端候选转向其余 `app/sb-adapters` 决策桥接路径与剩余兼容 helper。
+- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs` 已完成一段真实路径收口；近端候选转向其余 `app/sb-adapters` 决策桥接路径与 `rules::from_rule_action(...)` 缺省动作收口。
+
+## 🆕 最新进展：L21 wave#127 推进落地（2026-03-06 09:38）
+
+**状态**：✅ 完成一段（router_json 缺失 outbound 不再默认 direct）；✅ strict gate allowlist 升级到 `l21.124-wave127-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-core/src/router/json_bridge.rs`：`JsonRule.outbound` 缺失时不再 `unwrap_or(Decision::Direct)`，改为显式 `Decision::Proxy(Some("unresolved"))`
+   - 同步允许 `parse_decision("unresolved")`
+   - 新增 `json_bridge` 单元测试，覆盖 `unresolved` marker 解析与缺失 outbound 默认值
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.124-wave127-v1`，断言扩展到 `314` 条。
+   - `reports/l21/artifacts/wave127_v7_regression_block.txt`：在临时 root 将缺失 outbound 的默认值注回 `Decision::Direct` 后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave127_wp1_app_tests_check.txt` PASS
+   - `wave127_wp1_sb_core_check.txt` PASS
+   - `wave127_sb_core_router_json_tests_check.txt` PASS（定向 `router_json` lib test 编译）
+   - `wave127_strict_gate.txt` PASS
+   - `wave127_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - 当前新增收口点：`router_json` 缺失 outbound 不再 silently fallback 到 `direct`。
 
 ## 🆕 最新进展：L21 wave#126 推进落地（2026-03-06 09:26）
 
