@@ -101,22 +101,13 @@ impl Scanner {
         let mut subs_guard = false;
 
         // Parse environment variables for security limits
-        let max_redirects = std::env::var("SB_SUBS_MAX_REDIRECTS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(3);
-        let timeout_ms = std::env::var("SB_SUBS_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(4000);
-        let max_bytes = std::env::var("SB_SUBS_MAX_BYTES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(512 * 1024);
+        let max_redirects = parse_fs_scan_env_usize("SB_SUBS_MAX_REDIRECTS", 3);
+        let timeout_ms = parse_fs_scan_env_u64("SB_SUBS_TIMEOUT_MS", 4000);
+        let max_bytes = parse_fs_scan_env_u64("SB_SUBS_MAX_BYTES", 512 * 1024);
         let subs_limits = SubsLimits {
             max_redirects,
             timeout_ms,
-            max_bytes: max_bytes as u64,
+            max_bytes,
         };
 
         let private_allowlist = if let Ok(s) = std::env::var("SB_SUBS_PRIVATE_ALLOWLIST") {
@@ -304,4 +295,34 @@ fn parse_bin_gates_toml(toml_path: PathBuf) -> BinGates {
     g.minimal_bins.sort();
     g.router_gated_bins.sort();
     g
+}
+
+fn parse_fs_scan_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
+}
+
+fn parse_fs_scan_env_u64(key: &str, default: u64) -> u64 {
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    let trimmed = raw.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            default
+        }
+    }
 }

@@ -1,4 +1,4 @@
-VERSION|l21.182-wave185-v1|||L21 wave#185 migration assertion allowlist version
+VERSION|l21.183-wave186-v1|||L21 wave#186 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -496,3 +496,8 @@ require|W184-05-breaker-explicit-warn|app/src/admin_debug/breaker.rs|env '.*' va
 forbid|W185-01-no-subs-env-usize-silent|app/src/admin_debug/endpoints/subs.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)\.unwrap_or\(def\)|subs env_usize must not silently swallow parse failures
 require|W185-02-subs-env-usize-explicit-warn|app/src/admin_debug/endpoints/subs.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|subs env_usize should emit explicit diagnostics
 require|W185-03-subs-env-u64-explicit-warn|app/src/admin_debug/endpoints/subs.rs|env '.*' value '.*' is not a valid u64; silent parse fallback is disabled|subs env_u64 should emit explicit diagnostics
+
+require|W186-01-fs-scan-redirects-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_usize\("SB_SUBS_MAX_REDIRECTS"|fs_scan redirects should use explicit parse helper
+require|W186-02-fs-scan-timeout-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_u64\("SB_SUBS_TIMEOUT_MS"|fs_scan timeout should use explicit parse helper
+require|W186-03-fs-scan-bytes-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_u64\("SB_SUBS_MAX_BYTES"|fs_scan max_bytes should use explicit parse helper
+require|W186-04-fs-scan-explicit-warn|app/src/cli/fs_scan.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|fs_scan env should emit explicit diagnostics
