@@ -27,7 +27,7 @@ use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{
-    registry, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
+    InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory, registry,
 };
 use tracing::warn;
 
@@ -119,6 +119,57 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
 
         // Convert BoxedStream to IoStream via adapter wrapper
         Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
+    }
+}
+
+#[derive(Debug)]
+struct InvalidConfigConnector {
+    protocol: &'static str,
+    reason: Arc<str>,
+}
+
+impl InvalidConfigConnector {
+    fn new(protocol: &'static str, reason: impl Into<Arc<str>>) -> Self {
+        Self {
+            protocol,
+            reason: reason.into(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl OutboundConnector for InvalidConfigConnector {
+    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::other(format!(
+            "{} outbound is disabled due to invalid config: {}",
+            self.protocol, self.reason
+        )))
+    }
+}
+
+fn invalid_config_outbound(
+    protocol: &'static str,
+    reason: impl Into<Arc<str>>,
+) -> OutboundBuilderResult {
+    Some((
+        Arc::new(InvalidConfigConnector::new(protocol, reason)),
+        None,
+    ))
+}
+
+fn parse_required_outbound_uuid(
+    protocol: &'static str,
+    outbound: &str,
+    value: Option<&String>,
+) -> Result<Option<uuid::Uuid>, Arc<str>> {
+    match value {
+        Some(raw) => uuid::Uuid::parse_str(raw).map(Some).map_err(|err| {
+            format!(
+                "{protocol} outbound uuid '{raw}' is invalid for outbound '{outbound}'; silent uuid parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(None),
     }
 }
 
@@ -896,8 +947,15 @@ fn build_vmess_outbound(
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
-    let uuid_str = ir.uuid.as_ref()?;
-    let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
+    let outbound_name = ir.name.as_deref().unwrap_or("vmess");
+    let uuid = match parse_required_outbound_uuid("vmess", outbound_name, ir.uuid.as_ref()) {
+        Ok(Some(uuid)) => uuid,
+        Ok(None) => return None,
+        Err(reason) => {
+            warn!("{reason}");
+            return invalid_config_outbound("vmess", reason);
+        }
+    };
 
     // Parse server to SocketAddr (try IP:port first, then resolve)
     let server_addr = format!("{}:{}", server, port).parse::<SocketAddr>().ok()?;
@@ -1116,8 +1174,8 @@ fn build_shadowsocks_inbound(
     let adapter = Arc::new(adapter);
     #[cfg(feature = "service_ssmapi")]
     {
-        use sb_core::services::ssmapi::registry::register_managed_ssm_server;
         use sb_core::services::ssmapi::ManagedSSMServer;
+        use sb_core::services::ssmapi::registry::register_managed_ssm_server;
 
         let tag = ManagedSSMServer::tag(adapter.as_ref()).to_string();
         if !tag.trim().is_empty() {
@@ -2916,6 +2974,16 @@ mod tests {
             built.is_some(),
             "DoH outbound should construct successfully"
         );
+    }
+
+    #[test]
+    fn invalid_outbound_uuid_is_rejected_explicitly() {
+        let err =
+            parse_required_outbound_uuid("vmess", "edge-vmess", Some(&"bad-uuid".to_string()))
+                .expect_err("invalid uuid should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound uuid 'bad-uuid' is invalid"));
+        assert!(msg.contains("silent uuid parse fallback is disabled"));
     }
 
     #[test]

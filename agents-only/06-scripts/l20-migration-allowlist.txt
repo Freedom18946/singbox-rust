@@ -1,4 +1,4 @@
-VERSION|l21.139-wave142-v1|||L21 wave#142 migration assertion allowlist version
+VERSION|l21.140-wave143-v1|||L21 wave#143 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -380,3 +380,5 @@ require|W141-01-bridge-outbound-duration-parse-helper|crates/sb-core/src/adapter
 require|W141-02-bridge-invalid-outbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid outbound config; refusing to build adapter|adapter bridge should reject invalid outbound duration config explicitly
 require|W142-01-bridge-outbound-bind-parse-helper|crates/sb-core/src/adapter/bridge.rs|let inet4_bind_address = parse_optional_outbound_ipv4_addr\(|adapter bridge should parse outbound bind addresses through explicit helpers instead of silent ignore
 require|W142-02-bridge-invalid-outbound-ip-explicit-reject|crates/sb-core/src/adapter/bridge.rs|silent IP parse fallback is disabled|adapter bridge should reject invalid outbound bind address config explicitly
+require|W143-01-register-vmess-uuid-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_uuid\(\"vmess\", outbound_name, ir\.uuid\.as_ref\(\)\)|vmess outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+require|W143-02-register-vmess-invalid-uuid-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid uuid through explicit invalid-config connector

@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 17:47) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.140-wave143-v1
+  FAIL: [W143-01-register-vmess-uuid-parse-helper] required pattern missing in crates/sb-adapters/src/register.rs :: vmess outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+  FAIL: [W143-02-register-vmess-invalid-uuid-explicit-block] required pattern missing in crates/sb-adapters/src/register.rs :: vmess outbound builder should surface invalid uuid through explicit invalid-config connector
+  FAIL: 2/346 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave143-v7.U0H3JB
