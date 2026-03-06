@@ -14,6 +14,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-06 18:07] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 wave：adapter register dns outbound server IP 配置解析去 silent collapse 并升级 strict gate 断言。
+**变更**:
+- 代码与门禁：
+  - 更新 `crates/sb-adapters/src/register.rs`
+    - 新增 `parse_required_outbound_ip_addr(...)`
+    - `build_dns_outbound(...)` 不再把 invalid `server` IP 静默折叠成 builder `None`
+    - invalid `server` 改为显式 invalid-config connector；缺失 `server` 仍保持 `None`
+    - 补充最小单元测试，锁定 helper 报错口径
+  - 更新 `agents-only/06-scripts/l20-migration-allowlist.txt`
+    - 版本升级到 `l21.143-wave146-v1`
+    - 新增 `W146-01/W146-02`
+- 证据与验证产物：
+  - `wave146_wp1_app_tests_check.txt`（PASS）
+  - `wave146_wp1_sb_core_check.txt`（PASS）
+  - `wave146_sb_adapters_register_tests_check.txt`（PASS）
+  - `wave146_strict_gate.txt`（PASS）
+  - `wave146_v7_regression_block.txt`（恢复旧 `parse().ok()` 回流后 `--v7-only` 预期 FAIL，`exit_code=1`）
+  - `wave146_gui_static_syntax_check.txt`（PASS）
+- 文档同步：
+  - 更新 `agents-only/workpackage_latest.md`
+  - 更新 `agents-only/05-analysis/L19.3.3-SB-CORE-OVERLAP-MATRIX.md`
+  - 更新 `agents-only/active_context.md`
+  - 更新 `agents-only/log.md`
+
+**结果**: 成功（wave#146 目标已落地并形成可复算证据链）
+**备注**:
+- 当前 V7 口径为 `l21.143-wave146-v1`（352 assertions）。
+
 ### [2026-03-06 17:56] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 wave：adapter register tuic outbound uuid 配置解析去 silent collapse 并升级 strict gate 断言。

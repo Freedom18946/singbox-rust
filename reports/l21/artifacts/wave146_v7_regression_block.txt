@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 18:05) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.143-wave146-v1
+  FAIL: [W146-01-register-dns-server-ip-parse-helper] required pattern missing in crates/sb-adapters/src/register.rs :: dns outbound builder should parse server ip through explicit helper instead of parse\(\)\.ok\(\)
+  FAIL: [W146-02-register-dns-invalid-server-explicit-block] required pattern missing in crates/sb-adapters/src/register.rs :: dns outbound builder should surface invalid server ip through explicit invalid-config connector
+  FAIL: 2/352 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave146-v7.478HaY

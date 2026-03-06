@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#145**，聚焦 **adapter register tuic outbound uuid 配置解析不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#146**，聚焦 **adapter register dns outbound server IP 配置解析不再 silently collapse**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.142-wave145-v1`（350 assertions）。
+- 当前 V7 口径：`l21.143-wave146-v1`（352 assertions）。
+
+### 🆕 L21 wave#146 推进快照（2026-03-06 18:07）
+
+- 状态：完成（`crates/sb-adapters/src/register.rs` 已完成 dns outbound `server` IP 配置解析收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/register.rs`：新增 `parse_required_outbound_ip_addr(...)`，`build_dns_outbound(...)` 不再静默吞掉 invalid `server` IP，改为显式 invalid-config connector；缺失 `server` 仍保持 `None`
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.143-wave146-v1`（352 assertions）
+  3. `wave146_v7_regression_block.txt`：恢复旧 `parse().ok()` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave146_wp1_app_tests_check.txt` PASS
+  - `wave146_wp1_sb_core_check.txt` PASS
+  - `wave146_sb_adapters_register_tests_check.txt` PASS
+  - `wave146_strict_gate.txt` PASS
+  - `wave146_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#145 推进快照（2026-03-06 17:56）
 

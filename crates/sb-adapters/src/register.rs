@@ -11,7 +11,7 @@
     )
 ))]
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 #[cfg(any(
     all(feature = "adapter-http", feature = "http", feature = "router"),
     all(feature = "adapter-socks", feature = "socks", feature = "router"),
@@ -166,6 +166,23 @@ fn parse_required_outbound_uuid(
         Some(raw) => uuid::Uuid::parse_str(raw).map(Some).map_err(|err| {
             format!(
                 "{protocol} outbound uuid '{raw}' is invalid for outbound '{outbound}'; silent uuid parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(None),
+    }
+}
+
+fn parse_required_outbound_ip_addr(
+    protocol: &'static str,
+    field: &'static str,
+    outbound: &str,
+    value: Option<&String>,
+) -> Result<Option<IpAddr>, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<IpAddr>().map(Some).map_err(|err| {
+            format!(
+                "{protocol} outbound {field} '{raw}' is invalid for outbound '{outbound}'; silent ip parse fallback is disabled; fix the config explicitly: {err}"
             )
             .into()
         }),
@@ -2210,16 +2227,25 @@ fn build_dns_outbound(
     use crate::outbound::dns::{DnsConfig, DnsConnector, DnsTransport};
 
     // Extract required fields
-    let server = match ir.server.as_ref().or(param.server.as_ref()) {
-        Some(s) => s.parse().ok(),
-        None => None,
-    };
-
-    let server = match server {
-        Some(s) => s,
-        None => {
+    let outbound_name = ir
+        .name
+        .as_deref()
+        .or(param.name.as_deref())
+        .unwrap_or("dns");
+    let server = match parse_required_outbound_ip_addr(
+        "dns",
+        "server",
+        outbound_name,
+        ir.server.as_ref().or(param.server.as_ref()),
+    ) {
+        Ok(Some(server)) => server,
+        Ok(None) => {
             warn!("DNS outbound requires a valid IP address for server");
             return None;
+        }
+        Err(reason) => {
+            warn!("{reason}");
+            return invalid_config_outbound("dns", reason);
         }
     };
 
@@ -3095,7 +3121,7 @@ mod tests {
 
 #[cfg(test)]
 mod migration_tests {
-    use super::parse_required_outbound_uuid;
+    use super::{parse_required_outbound_ip_addr, parse_required_outbound_uuid};
 
     #[test]
     fn invalid_outbound_uuid_is_rejected_explicitly() {
@@ -3124,6 +3150,16 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("tuic outbound uuid 'bad-uuid' is invalid"));
         assert!(msg.contains("silent uuid parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_dns_outbound_server_reports_protocol() {
+        let err =
+            parse_required_outbound_ip_addr("dns", "server", "edge-dns", Some(&"bad-ip".into()))
+                .expect_err("invalid ip should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("dns outbound server 'bad-ip' is invalid"));
+        assert!(msg.contains("silent ip parse fallback is disabled"));
     }
 }
 
