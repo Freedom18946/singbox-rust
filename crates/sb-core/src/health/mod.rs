@@ -18,10 +18,19 @@ fn target() -> (String, u16) {
 }
 
 fn interval() -> Duration {
-    let ms = std::env::var("HEALTH_INTERVAL_MS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(2000);
+    let raw = std::env::var("HEALTH_INTERVAL_MS").ok();
+    let ms = match raw.as_deref() {
+        Some(v) => match v.parse::<u64>() {
+            Ok(val) => val,
+            Err(err) => {
+                tracing::warn!(
+                    "health env 'HEALTH_INTERVAL_MS' value '{v}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default 2000"
+                );
+                2000
+            }
+        },
+        None => 2000,
+    };
     Duration::from_millis(ms)
 }
 
