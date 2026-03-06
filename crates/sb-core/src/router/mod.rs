@@ -1904,10 +1904,7 @@ impl HotReloader {
     async fn try_reload_once(&mut self) -> Result<Option<Arc<RouterIndex>>, BuildError> {
         // 读取文件, mtime + checksum 判定是否变更；变更则构建
         let s = sfs::read_to_string(&self.path)?;
-        let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(8192);
+        let max_rules = router_rules_max_from_env();
         let idx = router_build_index_from_str(&s, max_rules)?;
         if idx.checksum == self.last_ok_checksum {
             return Ok(None);
@@ -1946,10 +1943,7 @@ pub async fn spawn_rules_hot_reload(
         return Ok(tokio::spawn(async move {}));
     }
     let path = PathBuf::from(&file);
-    let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let max_rules = router_rules_max_from_env();
     let h = tokio::spawn(async move {
         loop {
             let mut visited = HashSet::new();
@@ -2049,10 +2043,7 @@ pub async fn spawn_rules_hot_reload(
 
 /// 便捷：从 ENV 初始化索引并（可选）热重载
 pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>> {
-    let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let max_rules = router_rules_max_from_env();
     let init_rules = if let Ok(p) = std::env::var("SB_ROUTER_RULES_FILE") {
         tokio::fs::read_to_string(&p).await.unwrap_or_default()
     } else {
@@ -2103,10 +2094,7 @@ pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>
 // ===== 共享快照（给 RouterHandle / decide_http 复用）=====
 static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
     // 同步阶段：尽力按 ENV 构造一份索引；失败则显式 unresolved，避免 silent direct fallback
-    let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let max_rules = router_rules_max_from_env();
     let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
     let initial_text = if inline.is_empty() {
         if let Ok(p) = std::env::var("SB_ROUTER_RULES_FILE") {
@@ -2158,11 +2146,31 @@ static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
 
 static SHARED_INDEX_ENV_CACHE: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
 
+fn parse_router_rules_max_env(value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_RULES_MAX' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(8192),
+    }
+}
+
+fn router_rules_max_from_env() -> usize {
+    let raw = std::env::var("SB_ROUTER_RULES_MAX").ok();
+    match parse_router_rules_max_env(raw.as_deref()) {
+        Ok(max_rules) => max_rules,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 8192");
+            8192
+        }
+    }
+}
+
 fn refresh_shared_index_from_env_if_needed() {
-    let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let max_rules = router_rules_max_from_env();
     let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
     let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
 
@@ -2941,3 +2949,17 @@ pub use cache_hot::{register_hot_provider, HotItem};
 pub use cache_stats::{register_provider, CacheStats};
 #[cfg(feature = "router_cache_wire")]
 pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot_adapter};
+
+#[cfg(test)]
+mod migration_tests {
+    use super::parse_router_rules_max_env;
+
+    #[test]
+    fn invalid_router_rules_max_env_reports_explicitly() {
+        let err = parse_router_rules_max_env(Some("bad-max"))
+            .expect_err("invalid router rules max env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_MAX"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+}
