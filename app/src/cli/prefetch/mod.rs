@@ -220,10 +220,7 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
         }
 
         // 检查队列容量配置
-        let queue_cap = std::env::var("SB_PREFETCH_CAP")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(128);
+        let queue_cap = cli_prefetch_env_usize("SB_PREFETCH_CAP", 128);
 
         // 仅入队，不抓取
         let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
@@ -519,5 +516,14 @@ fn sample(
     #[cfg(not(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch")))]
     {
         feature_guard("admin_debug + subs_http + prefetch")
+    }
+}
+
+fn cli_prefetch_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<usize>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
     }
 }

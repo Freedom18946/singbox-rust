@@ -1,0 +1,5 @@
+wave190 negative regression test
+Date: 2026-03-06T14:28:09Z
+Reverted cli prefetch SB_PREFETCH_CAP to old .and_then(|s| s.parse::<usize>().ok()) pattern
+Result: FAIL (2 assertions failed: W190-01, W190-02)
+exit_code=1 (script found violations)

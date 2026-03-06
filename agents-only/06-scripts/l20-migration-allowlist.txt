@@ -1,4 +1,4 @@
-VERSION|l21.186-wave189-v1|||L21 wave#189 migration assertion allowlist version
+VERSION|l21.187-wave190-v1|||L21 wave#190 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -517,3 +517,6 @@ require|W189-02-admin-limits-body-helper|app/src/admin_debug/http_server.rs|admi
 require|W189-03-admin-limits-firstline-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_FIRSTLINE_TIMEOUT_MS"|admin limits firstline should use explicit parse helper
 require|W189-04-admin-limits-read-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_READ_TIMEOUT_MS"|admin limits read timeout should use explicit parse helper
 require|W189-05-admin-limits-explicit-warn|app/src/admin_debug/http_server.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|admin limits env should emit explicit diagnostics
+
+require|W190-01-cli-prefetch-cap-helper|app/src/cli/prefetch/mod.rs|cli_prefetch_env_usize\("SB_PREFETCH_CAP"|cli prefetch cap should use explicit parse helper
+require|W190-02-cli-prefetch-explicit-warn|app/src/cli/prefetch/mod.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|cli prefetch env should emit explicit diagnostics
