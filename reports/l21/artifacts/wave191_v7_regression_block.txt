@@ -1,0 +1,5 @@
+wave191 negative regression test
+Date: 2026-03-06T14:39:22Z
+Reverted SB_BENCH_PAR/PAYLOAD/N to old .and_then(|v| v.parse().ok()) pattern
+Result: FAIL (3 assertions failed: W191-01..W191-03)
+exit_code=1

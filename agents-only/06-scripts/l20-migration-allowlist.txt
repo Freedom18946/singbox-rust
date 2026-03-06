@@ -1,4 +1,4 @@
-VERSION|l21.187-wave190-v1|||L21 wave#190 migration assertion allowlist version
+VERSION|l21.188-wave191-v1|||L21 wave#191 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -520,3 +520,7 @@ require|W189-05-admin-limits-explicit-warn|app/src/admin_debug/http_server.rs|en
 
 require|W190-01-cli-prefetch-cap-helper|app/src/cli/prefetch/mod.rs|cli_prefetch_env_usize\("SB_PREFETCH_CAP"|cli prefetch cap should use explicit parse helper
 require|W190-02-cli-prefetch-explicit-warn|app/src/cli/prefetch/mod.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|cli prefetch env should emit explicit diagnostics
+
+require|W191-01-bench-par-helper|app/src/bin/sb-bench.rs|bench_env_usize\("SB_BENCH_PAR"|bench par should use explicit parse helper
+require|W191-02-bench-payload-helper|app/src/bin/sb-bench.rs|bench_env_usize\("SB_BENCH_PAYLOAD"|bench payload should use explicit parse helper
+require|W191-03-bench-explicit-warn|app/src/bin/sb-bench.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bench env should emit explicit diagnostics

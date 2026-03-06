@@ -35,7 +35,13 @@ async fn main() {
     let runs = std::env::var("SB_BENCH_N")
         .or_else(|_| std::env::var("SB_BENCH_RUNS"))
         .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+        .and_then(|v| {
+            let t = v.trim();
+            match t.parse::<usize>() {
+                Ok(n) => Some(n),
+                Err(e) => { tracing::warn!("env 'SB_BENCH_N' value '{t}' is not a valid usize; silent parse fallback is disabled; using default 200: {e}"); None }
+            }
+        })
         .filter(|&v| v > 0)
         .unwrap_or(200);
 
@@ -63,10 +69,7 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
     let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_TCP address");
     let mut hist = histogram();
 
-    let par: usize = std::env::var("SB_BENCH_PAR")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
 
     let rounds = runs.div_ceil(par);
     for r in 0..rounds {
@@ -114,14 +117,8 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
         .expect("failed to bind UDP probe socket");
     let mut hist = histogram();
 
-    let par: usize = std::env::var("SB_BENCH_PAR")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
-    let payload_size: usize = std::env::var("SB_BENCH_PAYLOAD")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(32);
+    let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
+    let payload_size: usize = bench_env_usize("SB_BENCH_PAYLOAD", 32);
 
     let rounds = runs.div_ceil(par);
     for r in 0..rounds {
@@ -173,10 +170,7 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
     let name = Name::from_ascii(qname).expect("invalid SB_BENCH_DNS_NAME");
     let mut hist = histogram();
 
-    let par: usize = std::env::var("SB_BENCH_PAR")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
 
     let rounds = runs.div_ceil(par);
     for r in 0..rounds {
@@ -245,4 +239,14 @@ fn histogram_json(hist: &Histogram<u64>) -> serde_json::Value {
         "max": hist.max(),
         "min": hist.min(),
     })
+}
+
+#[cfg(feature = "bench")]
+fn bench_env_usize(key: &str, default: usize) -> usize {
+    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let t = raw.trim();
+    match t.parse::<usize>() {
+        Ok(v) => v,
+        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+    }
 }
