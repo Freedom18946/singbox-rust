@@ -4,7 +4,7 @@ use crate::error::{AdapterError, Result};
 use crate::traits::BoxedStream;
 use sb_core::net::metered;
 use sb_core::outbound::{
-    Endpoint as OutEndpoint, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
+    Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
 use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
@@ -83,6 +83,17 @@ pub struct Hysteria2Inbound {
 }
 
 impl Hysteria2Inbound {
+    fn decision_from_route_target(target: &OutRouteTarget) -> sb_core::router::rules::Decision {
+        match target {
+            OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+            OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
+            OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
+            OutRouteTarget::Kind(kind) => {
+                sb_core::router::rules::Decision::Proxy(Some(format!("{kind:?}").to_ascii_lowercase()))
+            }
+        }
+    }
+
     pub fn new(config: Hysteria2InboundConfig) -> Result<Self> {
         #[cfg(not(feature = "adapter-hysteria2"))]
         return Err(AdapterError::NotImplemented {
@@ -277,18 +288,7 @@ impl Hysteria2Inbound {
             OutRouteTarget::Named(name) => Some(name.clone()),
             OutRouteTarget::Kind(kind) => Some(format!("{kind:?}").to_ascii_lowercase()),
         };
-        let decision = match &target {
-            OutRouteTarget::Named(name) => {
-                sb_core::router::rules::Decision::Proxy(Some(name.clone()))
-            }
-            OutRouteTarget::Kind(sb_core::outbound::OutboundKind::Direct) => {
-                sb_core::router::rules::Decision::Direct
-            }
-            OutRouteTarget::Kind(sb_core::outbound::OutboundKind::Block) => {
-                sb_core::router::rules::Decision::Reject
-            }
-            _ => sb_core::router::rules::Decision::Direct,
-        };
+        let decision = Self::decision_from_route_target(&target);
         let endpoint = match host.parse::<IpAddr>() {
             Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
             Err(_) => OutEndpoint::Domain(host.to_string(), port),
@@ -480,6 +480,38 @@ mod tests {
         assert_eq!(config.listen.port(), 443);
         assert_eq!(config.users.len(), 1);
         assert_eq!(config.users[0].password, "password");
+    }
+
+    #[test]
+    fn route_target_kind_proxy_decision_is_not_direct() {
+        assert_eq!(
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Socks)),
+            sb_core::router::rules::Decision::Proxy(Some("socks".to_string()))
+        );
+        assert_eq!(
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Http)),
+            sb_core::router::rules::Decision::Proxy(Some("http".to_string()))
+        );
+    }
+
+    #[test]
+    fn route_target_direct_and_block_keep_explicit_decisions() {
+        assert_eq!(
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Direct)),
+            sb_core::router::rules::Decision::Direct
+        );
+        assert_eq!(
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Block)),
+            sb_core::router::rules::Decision::Reject
+        );
+    }
+
+    #[test]
+    fn route_target_named_proxy_keeps_name() {
+        assert_eq!(
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Named("pool-a".to_string())),
+            sb_core::router::rules::Decision::Proxy(Some("pool-a".to_string()))
+        );
     }
 
     #[cfg(feature = "router")]

@@ -1,4 +1,4 @@
-VERSION|l21.126-wave129-v1|||L21 wave#129 migration assertion allowlist version
+VERSION|l21.127-wave130-v1|||L21 wave#130 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -354,3 +354,5 @@ forbid|W128-01-no-rule-action-route-options-direct-default|crates/sb-core/src/ro
 require|W128-02-rule-action-uses-outbound-or-unresolved-helper|crates/sb-core/src/router/rules.rs|from_outbound_or_unresolved\(outbound\.as_deref\(\)\)|router rule action conversion should preserve explicit outbound or emit unresolved marker
 forbid|W129-01-no-naive-kind-route-direct-decision-fallback|crates/sb-adapters/src/inbound/naive.rs|_ => Decision::Direct|naive inbound should not silently mark non-direct route kinds as direct
 require|W129-02-naive-route-target-decision-helper|crates/sb-adapters/src/inbound/naive.rs|decision_from_route_target\(&target\)|naive inbound should map route targets through explicit decision helper
+forbid|W130-01-no-hysteria2-kind-route-direct-decision-fallback|crates/sb-adapters/src/inbound/hysteria2.rs|_ => sb_core::router::rules::Decision::Direct|hysteria2 inbound should not silently mark non-direct route kinds as direct
+require|W130-02-hysteria2-route-target-decision-helper|crates/sb-adapters/src/inbound/hysteria2.rs|Self::decision_from_route_target\(&target\)|hysteria2 inbound should map route targets through explicit decision helper

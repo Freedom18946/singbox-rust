@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#129**，聚焦 **naive inbound route-target kind 不再 silently 标记为 direct**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#130**，聚焦 **hysteria2 inbound route-target kind 不再 silently 标记为 direct**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：其余 `RouteTarget::Kind(...)` 元数据仍默默标记为 `direct` 的路径，如 `crates/sb-adapters/src/inbound/hysteria2.rs`、`crates/sb-adapters/src/inbound/tuic.rs`，以及剩余运行时 parse-failure fallback 审计。
-- 当前 V7 口径：`l21.126-wave129-v1`（318 assertions）。
+- 下一阶段重点：其余 `RouteTarget::Kind(...)` 元数据仍默默标记为 `direct` 的路径，优先 `crates/sb-adapters/src/inbound/tuic.rs`，以及剩余运行时 parse-failure fallback 审计。
+- 当前 V7 口径：`l21.127-wave130-v1`（320 assertions）。
+
+### 🆕 L21 wave#130 推进快照（2026-03-06 16:28）
+
+- 状态：完成（`crates/sb-adapters/src/inbound/hysteria2.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/hysteria2.rs`：新增 `decision_from_route_target(...)`，使 `OutboundKind::Socks/Http/Naive/Hysteria2` 等 kind 路由目标不再默默记为 `Decision::Direct`，统一改为显式 proxy tag
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.127-wave130-v1`（320 assertions）
+  3. `wave130_v7_regression_block.txt`：恢复旧 `_ => Decision::Direct` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave130_wp1_app_tests_check.txt` PASS
+  - `wave130_wp1_sb_core_check.txt` PASS
+  - `wave130_hysteria2_route_target_tests_check.txt` PASS
+  - `wave130_strict_gate.txt` PASS
+  - `wave130_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#129 推进快照（2026-03-06 16:12）
 

@@ -1,10 +1,10 @@
 # 工作包追踪（Workpackage Latest）
 
-> **最后更新**：2026-03-06 16:12
-> **当前阶段**：L21 wave#129 推进完成（MIG-02 hardening：naive inbound route-target kind 不再 silently 标记为 direct + strict gate 升级）
+> **最后更新**：2026-03-06 16:28
+> **当前阶段**：L21 wave#130 推进完成（MIG-02 hardening：hysteria2 inbound route-target kind 不再 silently 标记为 direct + strict gate 升级）
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
-> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=318 assertions，2026-03-06）
+> **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=320 assertions，2026-03-06）
 > **Interop Lab**：83 YAML case（含 L16 P2 bench 2 case）
 
 ---
@@ -19,7 +19,27 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个测试文件、`0` 处 `default=direct`。
 - 下一阶段不再是测试字面量替换，而是继续检查真实路径里的 parse-failure fallback、兼容占位默认值、以及非字面量 silent fallback。
-- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs` 已完成一段真实路径收口；近端候选转向其余 `RouteTarget::Kind(...)` 元数据仍默默标记为 `direct` 的路径，如 `crates/sb-adapters/src/inbound/hysteria2.rs` / `tuic.rs`。
+- `crates/sb-core/src/router/engine.rs`、`crates/sb-adapters/src/inbound/socks/udp.rs`、`crates/sb-adapters/src/inbound/shadowsocks.rs`、`crates/sb-core/src/router/json_bridge.rs`、`crates/sb-core/src/router/rules.rs`、`crates/sb-adapters/src/inbound/naive.rs`、`crates/sb-adapters/src/inbound/hysteria2.rs` 已完成一段真实路径收口；近端候选转向其余 `RouteTarget::Kind(...)` 元数据仍默默标记为 `direct` 的路径，优先 `crates/sb-adapters/src/inbound/tuic.rs`。
+
+## 🆕 最新进展：L21 wave#130 推进落地（2026-03-06 16:28）
+
+**状态**：✅ 完成一段（hysteria2 inbound route-target kind 不再 silently 标记为 direct）；✅ strict gate allowlist 升级到 `l21.127-wave130-v1`；✅ 回流阻断负样例证据更新
+
+1. 本轮落地：
+   - `crates/sb-adapters/src/inbound/hysteria2.rs`：新增 `decision_from_route_target(...)`，使 `OutboundKind::Socks/Http/Naive/Hysteria2` 等 kind 路由目标不再落成 `Decision::Direct`，统一改为显式 `Decision::Proxy(Some(<kind>))`
+   - 新增最小单元测试，覆盖 proxy kind、direct/block、以及 named proxy 三类 route target 映射
+2. V7 升级：
+   - `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.127-wave130-v1`，断言扩展到 `320` 条。
+   - `reports/l21/artifacts/wave130_v7_regression_block.txt`：在临时 root 将 helper call 注回旧 `_ => Decision::Direct` 后，`--v7-only` 预期失败，`exit_code=1`。
+3. 验证：
+   - `wave130_wp1_app_tests_check.txt` PASS
+   - `wave130_wp1_sb_core_check.txt` PASS
+   - `wave130_hysteria2_route_target_tests_check.txt` PASS（定向 `adapter-hysteria2` 单测）
+   - `wave130_strict_gate.txt` PASS
+   - `wave130_v7_regression_block.txt` PASS（负样例按预期 FAIL，`exit_code=1`）
+   - `wave130_gui_static_syntax_check.txt` PASS
+4. 当前盘点：
+   - 当前新增收口点：hysteria2 inbound 连接元数据不再 silently fallback 到 `direct`。
 
 ## 🆕 最新进展：L21 wave#129 推进落地（2026-03-06 16:12）
 

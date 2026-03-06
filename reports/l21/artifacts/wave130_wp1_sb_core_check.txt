@@ -1,0 +1,75 @@
+ Downloading crates ...
+  Downloaded h2 v0.3.27
+ Downloading crates ...
+  Downloaded windows-sys v0.61.2
+    Checking scopeguard v1.2.0
+   Compiling zerocopy v0.8.31
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+    Checking ring v0.17.14
+    Checking bitflags v2.10.0
+    Checking lock_api v0.4.14
+   Compiling sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+   Compiling smoltcp v0.11.0
+    Checking security-framework v3.5.1
+    Checking parking_lot v0.12.5
+    Checking clap_builder v4.5.53
+    Checking tokio v1.48.0
+    Checking prometheus v0.14.0
+    Checking rustls-webpki v0.103.8
+    Checking rcgen v0.13.2
+    Checking boringtun v0.6.0 (https://github.com/cloudflare/boringtun?branch=master#2f3c85f5)
+    Checking rustls v0.23.35
+    Checking dashmap v6.1.0
+    Checking parking_lot v0.11.2
+    Checking libproc v0.14.11
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+    Checking blake3 v1.8.2
+    Checking tracing-subscriber v0.3.22
+    Checking ppv-lite86 v0.2.21
+    Checking ahash v0.8.12
+    Checking rand_chacha v0.3.1
+    Checking rand_chacha v0.9.0
+    Checking metrics v0.24.3
+    Checking rand v0.8.5
+    Checking tokio-util v0.7.17
+    Checking rand v0.9.2
+    Checking tower v0.5.2
+    Checking tokio-stream v0.1.17
+    Checking fastbloom v0.14.0
+    Checking h2 v0.4.12
+    Checking tungstenite v0.24.0
+    Checking tokio-rustls v0.26.4
+    Checking rustls-platform-verifier v0.6.2
+    Checking tower v0.4.13
+    Checking hyper v0.14.32
+    Checking serde_json v1.0.148
+    Checking uuid v1.19.0
+    Checking quinn-proto v0.11.13
+    Checking tokio-tungstenite v0.24.0
+    Checking tower-http v0.6.8
+    Checking axum v0.7.9
+    Checking serde_urlencoded v0.7.1
+    Checking chrono v0.4.42
+    Checking sb-types v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-types)
+    Checking serde_yaml v0.9.34+deprecated
+    Checking url v2.5.7
+    Checking yamux v0.13.8
+    Checking maxminddb v0.27.1
+    Checking sb-metrics v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics)
+    Checking sb-tls v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-tls)
+    Checking sb-config v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-config)
+    Checking sb-common v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-common)
+    Checking sb-platform v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-platform)
+    Checking notify v6.1.1
+    Checking sled v0.34.7
+    Checking clap v4.5.53
+    Checking dashmap v5.5.3
+    Checking quinn v0.11.9
+    Checking hyper v1.8.1
+    Checking hyper-util v0.1.19
+    Checking hyper-timeout v0.5.2
+    Checking hyper-rustls v0.27.7
+    Checking tonic v0.12.3
+    Checking reqwest v0.12.28
+    Finished `dev` profile [optimized + debuginfo] target(s) in 29.41s
