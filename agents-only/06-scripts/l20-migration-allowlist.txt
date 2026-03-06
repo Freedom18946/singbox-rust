@@ -1,4 +1,4 @@
-VERSION|l21.122-wave125-v1|||L21 wave#125 migration assertion allowlist version
+VERSION|l21.123-wave126-v1|||L21 wave#126 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -346,3 +346,5 @@ require|W124-01-compat-router-index-helper|crates/sb-core/src/router/engine.rs|f
 require|W124-02-router-handle-new-uses-compat-default|crates/sb-core/src/router/engine.rs|Self::from_index\(compat_router_index_from_default\(router.default.as_str\(\)\)\)|RouterHandle::new should honor caller-supplied default
 forbid|W125-01-no-socks-udp-proxy-fallback-direct-switch|crates/sb-adapters/src/inbound/socks/udp.rs|SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT|socks5-udp proxy path should not keep legacy direct fallback env switch
 require|W125-02-socks-udp-proxy-fallback-blocked-warning|crates/sb-adapters/src/inbound/socks/udp.rs|proxy upstream fallback to direct is disabled; packet dropped|socks5-udp proxy fallback should fail explicitly instead of silently using direct
+forbid|W126-01-no-shadowsocks-unsupported-direct-fallback-comment|crates/sb-adapters/src/inbound/shadowsocks.rs|Handle other variants \(Hijack, Sniff, Resolve\) as direct for now|shadowsocks inbound should not keep legacy unsupported-decision direct fallback path
+require|W126-02-shadowsocks-unsupported-decision-explicit-error|crates/sb-adapters/src/inbound/shadowsocks.rs|ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision|shadowsocks inbound should fail explicitly for unsupported routing decisions instead of silently using direct

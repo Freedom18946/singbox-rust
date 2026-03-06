@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#125**，聚焦 **socks5-udp proxy NeedFallback 不再 direct fallback**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#126**，聚焦 **shadowsocks inbound unsupported decision 不再 direct fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：剩余 `app/sb-adapters` 决策桥接路径审计、`router/engine.rs` 兼容 helper 余项、运行时 parse-failure fallback。
-- 当前 V7 口径：`l21.122-wave125-v1`（310 assertions）。
+- 当前 V7 口径：`l21.123-wave126-v1`（312 assertions）。
+
+### 🆕 L21 wave#126 推进快照（2026-03-06 09:26）
+
+- 状态：完成（`crates/sb-adapters/src/inbound/shadowsocks.rs` 已完成本波收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/inbound/shadowsocks.rs`：unsupported 路由决策不再 `_ => direct`，改为显式错误
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.123-wave126-v1`（312 assertions）
+  3. `wave126_v7_regression_block.txt`：恢复旧注释/直连回退后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave126_wp1_app_tests_check.txt` PASS
+  - `wave126_wp1_sb_core_check.txt` PASS
+  - `wave126_sb_adapters_tests_check.txt` PASS
+  - `wave126_strict_gate.txt` PASS
+  - `wave126_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#125 推进快照（2026-03-06 05:11）
 

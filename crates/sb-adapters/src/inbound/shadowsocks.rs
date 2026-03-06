@@ -1382,11 +1382,11 @@ where
                 "ss: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
             ));
         }
-        RDecision::Reject => return Err(anyhow!("ss: rejected by rules")),
-        // Handle other variants (Hijack, Sniff, Resolve) as direct for now
-        _ => {
-            let s = direct_connect_hostport(&host, port, &opts).await?;
-            (s, Some("direct".to_string()))
+        RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("ss: rejected by rules")),
+        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
+            return Err(anyhow!(
+                "ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
+            ));
         }
     };
 
@@ -1493,5 +1493,17 @@ mod tests {
         let new_key = evp_bytes_to_key("newpwd", key_len);
         assert!(adapter.user_keys.read().contains_key(&new_key));
         assert!(!adapter.user_keys.read().contains_key(&old_key));
+    }
+
+    #[test]
+    fn shadowsocks_source_no_legacy_direct_fallback_for_unsupported_decisions() {
+        let source = include_str!("shadowsocks.rs");
+        assert!(!source.contains(concat!(
+            "Handle other variants (Hijack, Sniff, Resolve)",
+            " as direct for now"
+        )));
+        assert!(source.contains(
+            "ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
+        ));
     }
 }

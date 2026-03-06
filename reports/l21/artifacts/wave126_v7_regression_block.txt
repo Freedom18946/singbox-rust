@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 09:26) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.123-wave126-v1
+  FAIL: [W126-01-no-shadowsocks-unsupported-direct-fallback-comment] forbidden pattern matched in crates/sb-adapters/src/inbound/shadowsocks.rs :: shadowsocks inbound should not keep legacy unsupported-decision direct fallback path
+  FAIL: 1/312 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/tmp.O6aSHBCIUW
