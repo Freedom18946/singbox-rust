@@ -1834,10 +1834,7 @@ impl HotReloader {
     /// Run hot reload loop with RouterHandle integration
     async fn run_with_router_handle(mut self, router_handle: RouterHandle) {
         let mut interval = tokio::time::interval(Duration::from_millis(1000));
-        let jitter_cap = std::env::var("SB_ROUTER_RULES_JITTER_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
+        let jitter_cap = router_rules_jitter_ms_from_env();
         self.jitter_ms = jitter_cap;
 
         loop {
@@ -2182,6 +2179,29 @@ fn router_rules_hot_reload_ms_from_env() -> u64 {
     let raw = std::env::var("SB_ROUTER_RULES_HOT_RELOAD_MS").ok();
     match parse_router_rules_hot_reload_ms_env(raw.as_deref()) {
         Ok(interval_ms) => interval_ms,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 0");
+            0
+        }
+    }
+}
+
+fn parse_router_rules_jitter_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<u64>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_RULES_JITTER_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(0),
+    }
+}
+
+fn router_rules_jitter_ms_from_env() -> u64 {
+    let raw = std::env::var("SB_ROUTER_RULES_JITTER_MS").ok();
+    match parse_router_rules_jitter_ms_env(raw.as_deref()) {
+        Ok(jitter_ms) => jitter_ms,
         Err(reason) => {
             tracing::warn!("{reason}; using default 0");
             0
@@ -2972,7 +2992,10 @@ pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot
 
 #[cfg(test)]
 mod migration_tests {
-    use super::{parse_router_rules_hot_reload_ms_env, parse_router_rules_max_env};
+    use super::{
+        parse_router_rules_hot_reload_ms_env, parse_router_rules_jitter_ms_env,
+        parse_router_rules_max_env,
+    };
 
     #[test]
     fn invalid_router_rules_max_env_reports_explicitly() {
@@ -2989,6 +3012,15 @@ mod migration_tests {
             .expect_err("invalid hot reload env should be rejected explicitly");
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_HOT_RELOAD_MS"));
+        assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_router_rules_jitter_ms_env_reports_explicitly() {
+        let err = parse_router_rules_jitter_ms_env(Some("bad-jitter"))
+            .expect_err("invalid jitter env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_RULES_JITTER_MS"));
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

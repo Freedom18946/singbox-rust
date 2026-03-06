@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#156**，聚焦 **router hot reload interval env parse-failure 不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#157**，聚焦 **router jitter env parse-failure 不再 silently collapse**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,21 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.153-wave156-v1`（372 assertions）。
+- 当前 V7 口径：`l21.154-wave157-v1`（374 assertions）。
+
+### 🆕 L21 wave#157 推进快照（2026-03-06 19:35）
+
+- 状态：完成（`crates/sb-core/src/router/mod.rs` 已完成 `SB_ROUTER_RULES_JITTER_MS` parse-failure 收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-core/src/router/mod.rs`：新增 `parse_router_rules_jitter_ms_env(...)` 与 `router_rules_jitter_ms_from_env()`，热重载 jitter env 不再静默吞掉 invalid `SB_ROUTER_RULES_JITTER_MS`，改为显式告警后回退到默认 `0`
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.154-wave157-v1`（374 assertions）
+  3. `wave157_v7_regression_block.txt`：恢复旧 `v.parse::<u64>().ok()` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave157_wp1_app_tests_check.txt` PASS
+  - `wave157_wp1_sb_core_check.txt` PASS
+  - `wave157_sb_core_router_tests_check.txt` PASS
+  - `wave157_strict_gate.txt` PASS
+  - `wave157_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#156 推进快照（2026-03-06 19:28）
 
