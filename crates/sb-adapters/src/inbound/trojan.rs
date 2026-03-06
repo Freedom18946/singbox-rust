@@ -769,25 +769,28 @@ async fn handle_tcp_connect(
     auth_user: &str,
 ) -> Result<()> {
     // Router decision
-    let mut decision = RDecision::Direct;
-    let mut rule: Option<String> = None;
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(host),
-            ip: None,
-            transport_udp: false,
-            port: Some(port),
-            auth_user: Some(auth_user),
-            network: Some("tcp"),
-            ..Default::default()
-        };
-        let (d, r) = eng.decide_with_meta(&ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("trojan: rejected by rules"));
+    let (decision, rule) = match rules_global::global() {
+        Some(eng) => {
+            let ctx = RouteCtx {
+                domain: Some(host),
+                ip: None,
+                transport_udp: false,
+                port: Some(port),
+                auth_user: Some(auth_user),
+                network: Some("tcp"),
+                ..Default::default()
+            };
+            let (d, r) = eng.decide_with_meta(&ctx);
+            if matches!(d, RDecision::Reject) {
+                return Err(anyhow!("trojan: rejected by rules"));
+            }
+            (d, r)
         }
-        decision = d;
-        rule = r;
-    }
+        None => {
+            tracing::warn!("trojan: router engine not initialized; implicit direct fallback is disabled");
+            return Err(anyhow!("trojan: router engine not initialized, implicit direct fallback is disabled"));
+        }
+    };
 
     let opts = ConnectOpts::default();
     let (mut upstream, outbound_tag) = match decision {
