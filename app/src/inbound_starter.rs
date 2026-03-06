@@ -6,6 +6,8 @@ use sb_config::ir::{InboundIR, InboundType};
 use sb_core::adapter::InboundService;
 #[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
+#[cfg(feature = "adapters")]
+use std::collections::HashMap;
 #[cfg(any(feature = "adapters", feature = "router"))]
 use std::net::SocketAddr;
 #[cfg(any(feature = "router", feature = "adapters"))]
@@ -82,6 +84,43 @@ fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
             t.parse::<SocketAddr>()
         })
         .with_context(|| format!("invalid listen addr in config: '{s}'"))
+}
+
+#[cfg(feature = "adapters")]
+fn parse_optional_inbound_fallback_addr(
+    protocol: &str,
+    listen_str: &str,
+    value: Option<&str>,
+) -> Result<Option<SocketAddr>> {
+    value
+        .map(|fallback| {
+            parse_listen_addr(fallback).with_context(|| {
+                format!(
+                    "{protocol} inbound fallback '{fallback}' is invalid for listen '{listen_str}'; silent fallback parsing is disabled; fix the config explicitly"
+                )
+            })
+        })
+        .transpose()
+}
+
+#[cfg(feature = "adapters")]
+fn parse_inbound_fallback_for_alpn(
+    protocol: &str,
+    listen_str: &str,
+    entries: Option<&HashMap<String, String>>,
+) -> Result<HashMap<String, SocketAddr>> {
+    let mut parsed = HashMap::new();
+    if let Some(entries) = entries {
+        for (alpn, addr) in entries {
+            let socket_addr = parse_listen_addr(addr).with_context(|| {
+                format!(
+                    "{protocol} inbound fallback_for_alpn['{alpn}']='{addr}' is invalid for listen '{listen_str}'; silent fallback parsing is disabled; fix the config explicitly"
+                )
+            })?;
+            parsed.insert(alpn.clone(), socket_addr);
+        }
+    }
+    Ok(parsed)
 }
 
 #[cfg(feature = "adapters")]
@@ -527,17 +566,36 @@ fn start_trojan_inbound(
             })
             .unwrap_or_default();
 
-        // Map fallback
-        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
-        let fallback_for_alpn = ib
-            .fallback_for_alpn
-            .as_ref()
-            .map(|m| {
-                m.iter()
-                    .filter_map(|(k, v)| parse_listen_addr(v).ok().map(|a| (k.clone(), a)))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let fallback = match parse_optional_inbound_fallback_addr(
+            "trojan",
+            &listen_str,
+            ib.fallback.as_deref(),
+        ) {
+            Ok(fallback) => fallback,
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "trojan inbound: invalid fallback config; refusing to start"
+                );
+                return None;
+            }
+        };
+        let fallback_for_alpn = match parse_inbound_fallback_for_alpn(
+            "trojan",
+            &listen_str,
+            ib.fallback_for_alpn.as_ref(),
+        ) {
+            Ok(fallback_for_alpn) => fallback_for_alpn,
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "trojan inbound: invalid fallback config; refusing to start"
+                );
+                return None;
+            }
+        };
 
         let cfg = TrojanInboundConfig {
             listen: addr,
@@ -702,5 +760,32 @@ fn start_vmess_inbound(
     } else {
         warn!(%listen_str, "vmess inbound: invalid listen address");
         None
+    }
+}
+
+#[cfg(all(test, feature = "adapters"))]
+mod tests {
+    use super::{parse_inbound_fallback_for_alpn, parse_optional_inbound_fallback_addr};
+    use std::collections::HashMap;
+
+    #[test]
+    fn invalid_optional_fallback_is_rejected_explicitly() {
+        let err = parse_optional_inbound_fallback_addr("trojan", "127.0.0.1:443", Some("bad"))
+            .expect_err("invalid fallback should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("trojan inbound fallback 'bad' is invalid"));
+        assert!(msg.contains("silent fallback parsing is disabled"));
+    }
+
+    #[test]
+    fn invalid_fallback_for_alpn_entry_is_rejected_explicitly() {
+        let mut entries = HashMap::new();
+        entries.insert("h2".to_string(), "bad".to_string());
+
+        let err = parse_inbound_fallback_for_alpn("trojan", "127.0.0.1:443", Some(&entries))
+            .expect_err("invalid fallback_for_alpn entry should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("fallback_for_alpn['h2']='bad'"));
+        assert!(msg.contains("silent fallback parsing is disabled"));
     }
 }

@@ -1,0 +1,32 @@
+   Compiling sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+warning: variable does not need to be mutable
+   --> crates/sb-adapters/src/inbound/http.rs:441:9
+    |
+441 |     let mut outbound_tag: Option<String>;
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/sb-adapters/src/inbound/socks/mod.rs:541:9
+    |
+541 |     let mut decision: RDecision = meta.decision;
+    |         ----^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/sb-adapters/src/inbound/socks/mod.rs:588:9
+    |
+588 |     let mut outbound_tag: Option<String>;
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: `sb-adapters` (lib) generated 3 warnings (run `cargo fix --lib -p sb-adapters` to apply 3 suggestions)
+   Compiling app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
+    Finished `test` profile [optimized + debuginfo] target(s) in 8.90s
+  Executable unittests src/lib.rs (target/debug/deps/app-998190e0c9865a6a)

@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#131**，聚焦 **tuic inbound route-target kind 不再 silently 标记为 direct**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#132**，聚焦 **trojan inbound fallback 配置解析不再 silently ignore**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：其余 `RouteTarget::Kind(...)` 元数据仍默默标记为 `direct` 的路径与剩余运行时 parse-failure fallback 审计。
-- 当前 V7 口径：`l21.128-wave131-v1`（322 assertions）。
+- 下一阶段重点：`vmess/vless` inbound startup fallback 配置解析中的剩余 silent ignore 路径，以及其余运行时 parse-failure fallback 审计。
+- 当前 V7 口径：`l21.129-wave132-v1`（324 assertions）。
+
+### 🆕 L21 wave#132 推进快照（2026-03-06 16:46）
+
+- 状态：完成（`app/src/inbound_starter.rs` 已完成 trojan fallback 配置解析收口并同步升级 V7）。
+- 本轮落地：
+  1. `app/src/inbound_starter.rs`：新增 `parse_optional_inbound_fallback_addr(...)` 与 `parse_inbound_fallback_for_alpn(...)`，使 `start_trojan_inbound(...)` 不再静默吞掉无效 `fallback` / `fallback_for_alpn`，改为显式报错并拒绝启动
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.129-wave132-v1`（324 assertions）
+  3. `wave132_v7_regression_block.txt`：恢复旧 `parse(...).ok()` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave132_wp1_app_tests_check.txt` PASS
+  - `wave132_wp1_sb_core_check.txt` PASS
+  - `wave132_inbound_starter_tests_check.txt` PASS
+  - `wave132_strict_gate.txt` PASS
+  - `wave132_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#131 推进快照（2026-03-06 16:33）
 

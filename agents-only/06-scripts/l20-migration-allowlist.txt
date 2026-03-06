@@ -1,4 +1,4 @@
-VERSION|l21.128-wave131-v1|||L21 wave#131 migration assertion allowlist version
+VERSION|l21.129-wave132-v1|||L21 wave#132 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -358,3 +358,5 @@ forbid|W130-01-no-hysteria2-kind-route-direct-decision-fallback|crates/sb-adapte
 require|W130-02-hysteria2-route-target-decision-helper|crates/sb-adapters/src/inbound/hysteria2.rs|Self::decision_from_route_target\(&target\)|hysteria2 inbound should map route targets through explicit decision helper
 forbid|W131-01-no-tuic-kind-route-direct-decision-fallback|crates/sb-adapters/src/inbound/tuic.rs|_ => sb_core::router::rules::Decision::Direct|tuic inbound should not silently mark non-direct route kinds as direct
 require|W131-02-tuic-route-target-decision-helper|crates/sb-adapters/src/inbound/tuic.rs|decision_from_route_target\(&target\)|tuic inbound should map route targets through explicit decision helper
+require|W132-01-trojan-fallback-parse-helper|app/src/inbound_starter.rs|let fallback = match parse_optional_inbound_fallback_addr\(|trojan inbound starter should parse fallback through explicit helper instead of silent ignore
+require|W132-02-trojan-invalid-fallback-explicit-reject|app/src/inbound_starter.rs|trojan inbound: invalid fallback config; refusing to start|trojan inbound starter should reject invalid fallback config explicitly

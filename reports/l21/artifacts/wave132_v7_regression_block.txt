@@ -1,0 +1,13 @@
+=== 依赖边界检查 (2026-03-06 16:45) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.129-wave132-v1
+  FAIL: [W132-01-trojan-fallback-parse-helper] required pattern missing in app/src/inbound_starter.rs :: trojan inbound starter should parse fallback through explicit helper instead of silent ignore
+  FAIL: [W132-02-trojan-invalid-fallback-explicit-reject] required pattern missing in app/src/inbound_starter.rs :: trojan inbound starter should reject invalid fallback config explicitly
+  FAIL: 2/324 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave132-v7.aowhsk
