@@ -1,4 +1,4 @@
-VERSION|l21.144-wave147-v1|||L21 wave#147 migration assertion allowlist version
+VERSION|l21.145-wave148-v1|||L21 wave#148 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -390,3 +390,5 @@ require|W146-01-register-dns-server-ip-parse-helper|crates/sb-adapters/src/regis
 require|W146-02-register-dns-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"dns\", reason\)|dns outbound builder should surface invalid server ip through explicit invalid-config connector
 require|W147-01-register-shadowsocks-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocks\", outbound_name, &err\)|shadowsocks outbound builder should format invalid config through explicit helper instead of swallowing connector errors
 require|W147-02-register-shadowsocks-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocks\", reason\)|shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector
+require|W148-01-register-shadowsocksr-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocksr\", outbound_name, &err\)|shadowsocksr outbound builder should format invalid config through explicit helper instead of swallowing TryFrom errors
+require|W148-02-register-shadowsocksr-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocksr\", reason\)|shadowsocksr outbound builder should surface invalid TryFrom config through explicit invalid-config connector

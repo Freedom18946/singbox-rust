@@ -864,7 +864,15 @@ fn build_shadowsocksr_outbound(
     use crate::outbound::shadowsocksr::ShadowsocksROutbound;
 
     // Use TryFrom to build adapter from IR
-    let adapter = ShadowsocksROutbound::try_from(ir).ok()?;
+    let outbound_name = ir.name.as_deref().unwrap_or("shadowsocksr");
+    let adapter = match ShadowsocksROutbound::try_from(ir) {
+        Ok(adapter) => adapter,
+        Err(err) => {
+            let reason = invalid_outbound_config_reason("shadowsocksr", outbound_name, &err);
+            warn!("{reason}");
+            return invalid_config_outbound("shadowsocksr", reason);
+        }
+    };
     let adapter_arc = Arc::new(adapter);
 
     // Wrapper
@@ -3189,6 +3197,15 @@ mod migration_tests {
             invalid_outbound_config_reason("shadowsocks", "edge-ss", "unsupported cipher")
                 .to_string();
         assert!(msg.contains("shadowsocks outbound config is invalid"));
+        assert!(msg.contains("silent builder failure is disabled"));
+    }
+
+    #[test]
+    fn invalid_shadowsocksr_outbound_config_reports_protocol() {
+        let msg =
+            invalid_outbound_config_reason("shadowsocksr", "edge-ssr", "unsupported protocol")
+                .to_string();
+        assert!(msg.contains("shadowsocksr outbound config is invalid"));
         assert!(msg.contains("silent builder failure is disabled"));
     }
 }
