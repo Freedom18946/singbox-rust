@@ -1,0 +1,26 @@
+   Compiling sb-adapters v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-adapters)
+warning: struct `InvalidConfigConnector` is never constructed
+   --> crates/sb-adapters/src/register.rs:126:8
+    |
+126 | struct InvalidConfigConnector {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `new` is never used
+   --> crates/sb-adapters/src/register.rs:132:8
+    |
+131 | impl InvalidConfigConnector {
+    | --------------------------- associated function in this implementation
+132 |     fn new(protocol: &'static str, reason: impl Into<Arc<str>>) -> Self {
+    |        ^^^
+
+warning: function `invalid_config_outbound` is never used
+   --> crates/sb-adapters/src/register.rs:150:4
+    |
+150 | fn invalid_config_outbound(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `sb-adapters` (lib test) generated 3 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 2.44s
+  Executable unittests src/lib.rs (target/debug/deps/sb_adapters-3bd8f5119656f32b)

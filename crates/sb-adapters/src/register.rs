@@ -3179,6 +3179,7 @@ mod migration_tests {
         invalid_outbound_config_reason, parse_required_outbound_ip_addr,
         parse_required_outbound_socket_addr, parse_required_outbound_uuid,
     };
+    use std::net::SocketAddr;
 
     #[test]
     fn invalid_outbound_uuid_is_rejected_explicitly() {
@@ -3235,6 +3236,18 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("vless outbound server 'example.com:443' is invalid"));
         assert!(msg.contains("silent socket address parse fallback is disabled"));
+    }
+
+    #[test]
+    fn parse_listen_addr_explicitly_normalizes_ip_host() {
+        let addr = super::parse_listen_addr("127.0.0.1", 8080)
+            .expect("bare listen host should normalize with explicit path");
+        assert_eq!(addr, "127.0.0.1:8080".parse::<SocketAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_listen_addr_rejects_invalid_host() {
+        assert!(super::parse_listen_addr("bad host", 8080).is_none());
     }
 
     #[test]
@@ -3306,10 +3319,26 @@ impl InboundService for HttpInboundAdapter {
 
 #[allow(dead_code)]
 fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
-    listen
-        .parse()
-        .ok()
-        .or_else(|| format!("{listen}:{port}").parse().ok())
+    match listen.parse() {
+        Ok(addr) => Some(addr),
+        Err(raw_err) => {
+            let normalized = format!("{listen}:{port}");
+            match normalized.parse() {
+                Ok(addr) => {
+                    warn!(
+                        "listen addr '{listen}' is not a full socket address; explicit normalization to '{normalized}' is applied; silent listen parse fallback is disabled: {raw_err}"
+                    );
+                    Some(addr)
+                }
+                Err(normalized_err) => {
+                    warn!(
+                        "listen addr '{listen}' is invalid for port {port}; silent listen parse fallback is disabled; raw parse error: {raw_err}; normalized parse error: {normalized_err}"
+                    );
+                    None
+                }
+            }
+        }
+    }
 }
 
 // ========== ShadowTLS Inbound ==========

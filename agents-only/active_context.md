@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#153**，聚焦 **adapter register vless outbound server socket parse 不再 silently collapse**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#154**，聚焦 **adapter register listen addr helper 不再 silently normalize/fallback**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -22,7 +22,22 @@
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
 - 下一阶段重点：其余真实配置路径 parse-failure / 兼容占位默认值审计。
-- 当前 V7 口径：`l21.150-wave153-v1`（366 assertions）。
+- 当前 V7 口径：`l21.151-wave154-v1`（368 assertions）。
+
+### 🆕 L21 wave#154 推进快照（2026-03-06 19:14）
+
+- 状态：完成（`crates/sb-adapters/src/register.rs` 已完成 `parse_listen_addr(...)` 静默规范化/失败路径收口并同步升级 V7）。
+- 本轮落地：
+  1. `crates/sb-adapters/src/register.rs`：`parse_listen_addr(...)` 不再 `parse().ok().or_else(...)` 静默规范化/静默失败；归一化和失败都改为显式告警
+  2. 新增最小单元测试，锁定裸 `listen` host 归一化与非法 host 拒绝路径
+  3. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.151-wave154-v1`（368 assertions）
+  4. `wave154_v7_regression_block.txt`：恢复旧 `parse().ok().or_else(...)` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave154_wp1_app_tests_check.txt` PASS
+  - `wave154_wp1_sb_core_check.txt` PASS
+  - `wave154_sb_adapters_register_tests_check.txt` PASS
+  - `wave154_strict_gate.txt` PASS
+  - `wave154_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#153 推进快照（2026-03-06 19:06）
 

@@ -1,4 +1,4 @@
-VERSION|l21.150-wave153-v1|||L21 wave#153 migration assertion allowlist version
+VERSION|l21.151-wave154-v1|||L21 wave#154 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -402,3 +402,5 @@ require|W152-01-register-vmess-server-addr-parse-helper|crates/sb-adapters/src/r
 require|W152-02-register-vmess-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid server socket address through explicit invalid-config connector
 require|W153-01-register-vless-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vless\", outbound_name, server, port\)|vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
 require|W153-02-register-vless-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid server socket address through explicit invalid-config connector
+forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/register.rs|listen[[:space:]]*\\.[[:space:]]*parse\\([[:space:]]*\\)[[:space:]]*\\.[[:space:]]*ok\\([[:space:]]*\\)[[:space:]]*\\.[[:space:]]*or_else\\([[:space:]]*\\|\\|[[:space:]]*format!\\(\"\\{listen\\}:\\{port\\}\"\\)\\.parse\\(\\)\\.ok\\(\\)\\)|listen addr helper should not silently fallback through chained parse\(\)\.ok\(\)
+require|W154-02-register-listen-parse-explicit-normalize-msg|crates/sb-adapters/src/register.rs|explicit normalization to '\{normalized\}' is applied; silent listen parse fallback is disabled|listen addr helper should emit explicit normalization diagnostics instead of silent fallback

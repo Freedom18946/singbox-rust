@@ -1,0 +1,12 @@
+=== 依赖边界检查 (2026-03-06 18:38) ===
+
+── V7: L20 migration assertions ──
+  INFO: assertion version: l21.151-wave154-v1
+  FAIL: [W154-02-register-listen-parse-explicit-normalize-msg] required pattern missing in crates/sb-adapters/src/register.rs :: listen addr helper should emit explicit normalization diagnostics instead of silent fallback
+  FAIL: 1/368 migration assertions failed
+
+════════════════════════
+发现 1 类违规
+
+exit_code=1
+project_root=/tmp/wave154-v7.TdC8Pz
