@@ -1,4 +1,4 @@
-VERSION|l21.170-wave173-v1|||L21 wave#173 migration assertion allowlist version
+VERSION|l21.171-wave174-v1|||L21 wave#174 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -448,3 +448,6 @@ require|W172-02-naive-allow-insecure-env-invalid-explicit-warn|crates/sb-core/sr
 require|W173-01-admin-env-parse-helper-usize|crates/sb-core/src/admin/http.rs|parse_admin_env_usize|admin env usize helper should use explicit parse with diagnostic instead of v\.parse\(\)\.ok\(\)
 require|W173-02-admin-env-parse-helper-u64|crates/sb-core/src/admin/http.rs|parse_admin_env_u64|admin env u64 helper should use explicit parse with diagnostic instead of v\.parse\(\)\.ok\(\)
 require|W173-03-admin-env-invalid-explicit-warn|crates/sb-core/src/admin/http.rs|silent parse fallback is disabled; fix the config explicitly|admin env invalid value should emit explicit diagnostics instead of silent ignore
+require|W174-01-dns-config-env-u64-explicit-warn|crates/sb-core/src/dns/config_builder.rs|dns env '.*' value '.*' is invalid; silent parse fallback is disabled|dns config env_u64 helper should emit explicit diagnostics on parse failure
+require|W174-02-dns-config-env-u8-explicit-warn|crates/sb-core/src/dns/config_builder.rs|dns env '.*' value '.*' is invalid; silent parse fallback is disabled; fix the config explicitly|dns config env_u8 helper should emit explicit diagnostics on parse failure
+require|W174-03-dns-config-env-bool-explicit-warn|crates/sb-core/src/dns/config_builder.rs|dns env '.*' value '.*' is not a recognized boolean; silent parse fallback is disabled|dns config env_bool helper should emit explicit diagnostics on unrecognized boolean

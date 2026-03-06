@@ -761,19 +761,44 @@ fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
 }
 
 fn env_u64(key: &str) -> Option<u64> {
-    std::env::var(key).ok()?.trim().parse().ok()
+    let raw = std::env::var(key).ok()?;
+    let trimmed = raw.trim();
+    match trimmed.parse::<u64>() {
+        Ok(v) => Some(v),
+        Err(err) => {
+            tracing::warn!(
+                "dns env '{key}' value '{trimmed}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            );
+            None
+        }
+    }
 }
 
 fn env_u8(key: &str) -> Option<u8> {
-    std::env::var(key).ok()?.trim().parse().ok()
+    let raw = std::env::var(key).ok()?;
+    let trimmed = raw.trim();
+    match trimmed.parse::<u8>() {
+        Ok(v) => Some(v),
+        Err(err) => {
+            tracing::warn!(
+                "dns env '{key}' value '{trimmed}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            );
+            None
+        }
+    }
 }
 
 fn env_bool(key: &str) -> Option<bool> {
     let raw = std::env::var(key).ok()?;
     match raw.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" => Some(true),
-        "0" | "false" | "no" => Some(false),
-        _ => None,
+        "0" | "false" | "no" | "" => Some(false),
+        other => {
+            tracing::warn!(
+                "dns env '{key}' value '{other}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true'/'yes' or '0'/'false'/'no'"
+            );
+            None
+        }
     }
 }
 
