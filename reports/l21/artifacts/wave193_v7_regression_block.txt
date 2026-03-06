@@ -1,0 +1,2 @@
+wave193 negative regression: reverted SB_FAKEIP_V4_BASE to .ok().and_then pattern -> W193-01 FAIL (expected)
+exit_code=1

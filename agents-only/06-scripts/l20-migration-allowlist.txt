@@ -1,4 +1,4 @@
-VERSION|l21.189-wave192-v1|||L21 wave#192 migration assertion allowlist version
+VERSION|l21.194-wave193-v1|||L21 wave#193 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -527,3 +527,14 @@ require|W191-03-bench-explicit-warn|app/src/bin/sb-bench.rs|env '.*' value '.*' 
 
 require|W192-01-explaind-pprof-max-sec-warn|app/src/bin/sb-explaind.rs|env 'SB_PPROF_MAX_SEC' value '.*' is not a valid u64; silent parse fallback is disabled|explaind pprof max sec should emit explicit diagnostics
 require|W192-02-explaind-pprof-freq-warn|app/src/bin/sb-explaind.rs|env 'SB_PPROF_FREQ' value '.*' is not a valid i32; silent parse fallback is disabled|explaind pprof freq should emit explicit diagnostics
+
+forbid|W193-01-no-fakeip-v4base-silent|crates/sb-core/src/dns/fakeip.rs|env::var\("SB_FAKEIP_V4_BASE"\)\.ok\(\)\.and_then|fakeip v4 base must not silently swallow parse failures
+forbid|W193-02-no-fakeip-v6base-silent|crates/sb-core/src/dns/fakeip.rs|env::var\("SB_FAKEIP_V6_BASE"\)\.ok\(\)\.and_then|fakeip v6 base must not silently swallow parse failures
+forbid|W193-03-no-fakeip-mask-silent|crates/sb-core/src/dns/fakeip.rs|env::var\("SB_FAKEIP_V4_MASK"\)\.ok\(\)\.and_then|fakeip v4 mask must not silently swallow parse failures
+forbid|W193-04-no-fakeip-v6mask-silent|crates/sb-core/src/dns/fakeip.rs|env::var\("SB_FAKEIP_V6_MASK"\)\.ok\(\)\.and_then|fakeip v6 mask must not silently swallow parse failures
+forbid|W193-05-no-fakeip-cap-silent|crates/sb-core/src/dns/fakeip.rs|env::var\("SB_FAKEIP_CAP"\)\.ok\(\)\.and_then|fakeip cap must not silently swallow parse failures
+require|W193-05-fakeip-env-ipv4-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_ipv4\(name: &str, default: Ipv4Addr\)|fakeip should use explicit ipv4 parse helper
+require|W193-06-fakeip-env-ipv6-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_ipv6\(name: &str, default: Ipv6Addr\)|fakeip should use explicit ipv6 parse helper
+require|W193-07-fakeip-env-u8-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_u8\(name: &str, default: u8\)|fakeip should use explicit u8 parse helper
+require|W193-08-fakeip-env-usize-helper|crates/sb-core/src/dns/fakeip.rs|fn fakeip_env_usize\(name: &str, default: usize\)|fakeip should use explicit usize parse helper
+require|W193-09-fakeip-explicit-warn|crates/sb-core/src/dns/fakeip.rs|silent parse fallback is disabled, using default|fakeip env should emit explicit diagnostics

@@ -5,6 +5,78 @@ use lru::LruCache;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
 
+// ---------------------------------------------------------------------------
+// Env-var parse helpers (MIG-02: no silent parse fallback)
+// ---------------------------------------------------------------------------
+
+fn fakeip_env_ipv4(name: &str, default: Ipv4Addr) -> Ipv4Addr {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<Ipv4Addr>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid Ipv4Addr; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn fakeip_env_ipv6(name: &str, default: Ipv6Addr) -> Ipv6Addr {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<Ipv6Addr>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid Ipv6Addr; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn fakeip_env_u8(name: &str, default: u8) -> u8 {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<u8>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid u8; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
+fn fakeip_env_usize(name: &str, default: usize) -> usize {
+    let raw = match std::env::var(name) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
+    match raw.trim().parse::<usize>() {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::warn!(
+                "env '{name}' value '{raw}' is not a valid usize; \
+                 silent parse fallback is disabled, using default {default}: {err}"
+            );
+            default
+        }
+    }
+}
+
 // ============================================================================
 // FakeIP Store/Storage/Metadata Traits (Go parity)
 // ============================================================================
@@ -86,26 +158,11 @@ static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 fn state() -> &'static Mutex<State> {
     STATE.get_or_init(|| {
         // Defaults: 240.0.0.0/8, capacity 16384
-        let v4_base: Ipv4Addr = std::env::var("SB_FAKEIP_V4_BASE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(Ipv4Addr::new(240, 0, 0, 0));
-        let v4_mask: u8 = std::env::var("SB_FAKEIP_V4_MASK")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8);
-        let v6_base: Ipv6Addr = std::env::var("SB_FAKEIP_V6_BASE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
-        let v6_mask: u8 = std::env::var("SB_FAKEIP_V6_MASK")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8);
-        let cap: usize = std::env::var("SB_FAKEIP_CAP")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(16384);
+        let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
+        let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
+        let v6_base = fakeip_env_ipv6("SB_FAKEIP_V6_BASE", Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
+        let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
+        let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
         let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
         Mutex::new(State {
             v4_base,
@@ -124,26 +181,11 @@ fn state() -> &'static Mutex<State> {
 }
 
 fn refresh_from_env(st: &mut State) {
-    let v4_base: Ipv4Addr = std::env::var("SB_FAKEIP_V4_BASE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(Ipv4Addr::new(240, 0, 0, 0));
-    let v4_mask: u8 = std::env::var("SB_FAKEIP_V4_MASK")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(8);
-    let v6_base: Ipv6Addr = std::env::var("SB_FAKEIP_V6_BASE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
-    let v6_mask: u8 = std::env::var("SB_FAKEIP_V6_MASK")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(8);
-    let cap: usize = std::env::var("SB_FAKEIP_CAP")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(16384);
+    let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
+    let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
+    let v6_base = fakeip_env_ipv6("SB_FAKEIP_V6_BASE", Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
+    let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
+    let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
 
     if st.v4_base == v4_base
         && st.v4_mask == v4_mask
