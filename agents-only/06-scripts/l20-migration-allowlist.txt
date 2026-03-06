@@ -1,4 +1,4 @@
-VERSION|l21.162-wave165-v1|||L21 wave#165 migration assertion allowlist version
+VERSION|l21.163-wave166-v1|||L21 wave#166 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -428,3 +428,5 @@ require|W165-01-decision-cache-env-parse-helper|crates/sb-core/src/router/engine
 require|W165-02-decision-cache-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DECISION_CACHE' value '.*' is not a recognized boolean; silent parse fallback is disabled|decision cache env unrecognized boolean should emit explicit diagnostics instead of silent ignore
 require|W165-03-decision-cache-cap-env-parse-helper|crates/sb-core/src/router/engine.rs|let cap = decision_cache_cap_from_env\(\);|decision cache cap env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W165-04-decision-cache-cap-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_ROUTER_DECISION_CACHE_CAP' value '.*' is invalid; silent parse fallback is disabled|decision cache cap env invalid value should emit explicit diagnostics instead of silent ignore
+require|W166-01-keyword-ac-min-env-parse-helper|crates/sb-core/src/router/keyword.rs|let th = keyword_ac_min_from_env\(\)|keyword ac min env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
+require|W166-02-keyword-ac-min-env-invalid-explicit-warn|crates/sb-core/src/router/keyword.rs|router env 'SB_ROUTER_KEYWORD_AC_MIN' value '.*' is invalid; silent parse fallback is disabled|keyword ac min env invalid value should emit explicit diagnostics instead of silent ignore

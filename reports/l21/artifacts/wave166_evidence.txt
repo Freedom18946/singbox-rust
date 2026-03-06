@@ -1,0 +1,19 @@
+wave166: harden SB_ROUTER_KEYWORD_AC_MIN env parsing
+=====================================================
+
+Target: crates/sb-core/src/router/keyword.rs (feature-gated behind router_keyword)
+Change: SB_ROUTER_KEYWORD_AC_MIN no longer silently ignores invalid numeric values.
+        Invalid values now emit explicit warning and fall back to default 64.
+
+Helpers added:
+  - parse_keyword_ac_min_env(value: Option<&str>) -> Result<usize, Arc<str>>
+  - keyword_ac_min_from_env() -> usize
+
+Test: invalid_keyword_ac_min_env_reports_explicitly (needs --features router_keyword)
+Allowlist: l21.163-wave166-v1 (394 assertions)
+
+Verification:
+  - cargo check -p sb-core: PASS
+  - check-boundaries.sh --strict: PASS (394 assertions)
+  - negative regression: FAIL as expected (v7_exit=1)
+  - specific test: PASS

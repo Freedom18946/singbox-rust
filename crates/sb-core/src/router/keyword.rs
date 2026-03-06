@@ -24,15 +24,35 @@ pub struct Index {
     pub ac: Option<aho_corasick::AhoCorasick>,
 }
 
+use std::sync::Arc;
+
 /// 读取 ENV 决定是否启用 AC（在 router_keyword_ac 打开时才生效）
 pub fn should_enable_ac(count: usize) -> bool {
-    // 默认 64，非法输入忽略
-    let def = 64usize;
-    let th = std::env::var("SB_ROUTER_KEYWORD_AC_MIN")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(def);
+    let th = keyword_ac_min_from_env();
     count >= th
+}
+
+fn parse_keyword_ac_min_env(value: Option<&str>) -> Result<usize, Arc<str>> {
+    match value {
+        Some(raw) => raw.parse::<usize>().map_err(|err| {
+            format!(
+                "router env 'SB_ROUTER_KEYWORD_AC_MIN' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
+            )
+            .into()
+        }),
+        None => Ok(64),
+    }
+}
+
+fn keyword_ac_min_from_env() -> usize {
+    let raw = std::env::var("SB_ROUTER_KEYWORD_AC_MIN").ok();
+    match parse_keyword_ac_min_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default 64");
+            64
+        }
+    }
 }
 
 impl Index {
@@ -83,5 +103,19 @@ where
     #[cfg(not(feature = "router_keyword_ac"))]
     {
         return Some(Index { pats, decs });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_keyword_ac_min_env;
+
+    #[test]
+    fn invalid_keyword_ac_min_env_reports_explicitly() {
+        let err = parse_keyword_ac_min_env(Some("bad-min"))
+            .expect_err("invalid keyword ac min env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_ROUTER_KEYWORD_AC_MIN"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
