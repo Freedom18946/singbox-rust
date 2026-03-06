@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#135**，聚焦 **tun inbound unsupported decision 不再 silently fallback 到 direct**
+**当前执行焦点（短周期）**: **L21 连续 wave 推进中**，当前落点为 **wave#136**，聚焦 **socks inbound udp_timeout 配置解析不再 silently ignore**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -21,8 +21,22 @@
 ### 下一阶段预估（实时）
 
 - `crates/sb-core/tests` 尚余 `0` 个文件、`0` 处 `default=direct`。
-- 下一阶段重点：其余运行时 parse-failure fallback 与兼容占位默认值审计。
-- 当前 V7 口径：`l21.132-wave135-v1`（330 assertions）。
+- 下一阶段重点：`start_mixed_inbound(...)` 的 `udp_timeout` parse-failure silent ignore，以及其余运行时 parse-failure fallback 与兼容占位默认值审计。
+- 当前 V7 口径：`l21.133-wave136-v1`（332 assertions）。
+
+### 🆕 L21 wave#136 推进快照（2026-03-06 17:09）
+
+- 状态：完成（`app/src/inbound_starter.rs` 已完成 socks `udp_timeout` 配置解析收口并同步升级 V7）。
+- 本轮落地：
+  1. `app/src/inbound_starter.rs`：新增 `parse_optional_inbound_duration(...)`，使 `start_socks_inbound(...)` 不再静默吞掉无效 `udp_timeout`，改为显式报错并拒绝启动
+  2. `agents-only/06-scripts/l20-migration-allowlist.txt` 升级到 `l21.133-wave136-v1`（332 assertions）
+  3. `wave136_v7_regression_block.txt`：恢复旧 `parse_duration(...).ok()` 后 `--v7-only` 失败，`exit_code=1`
+- 最小验证：
+  - `wave136_wp1_app_tests_check.txt` PASS
+  - `wave136_wp1_sb_core_check.txt` PASS
+  - `wave136_inbound_starter_tests_check.txt` PASS
+  - `wave136_strict_gate.txt` PASS
+  - `wave136_gui_static_syntax_check.txt` PASS
 
 ### 🆕 L21 wave#135 推进快照（2026-03-06 17:06）
 

@@ -124,6 +124,24 @@ fn parse_inbound_fallback_for_alpn(
 }
 
 #[cfg(feature = "adapters")]
+fn parse_optional_inbound_duration(
+    protocol: &str,
+    listen_str: &str,
+    field: &str,
+    value: Option<&str>,
+) -> Result<Option<std::time::Duration>> {
+    value
+        .map(|raw| {
+            humantime::parse_duration(raw).with_context(|| {
+                format!(
+                    "{protocol} inbound {field} '{raw}' is invalid for listen '{listen_str}'; silent duration fallback is disabled; fix the config explicitly"
+                )
+            })
+        })
+        .transpose()
+}
+
+#[cfg(feature = "adapters")]
 fn socks_udp_should_start() -> bool {
     // 显式开关优先；其次只要配置了监听地址也启动
     let enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
@@ -337,10 +355,22 @@ fn start_socks_inbound(
     if let Ok(addr) = parse_listen_addr(&listen_str) {
         use sb_adapters::inbound::socks::DomainStrategy;
 
-        let udp_timeout = ib
-            .udp_timeout
-            .as_deref()
-            .and_then(|s| humantime::parse_duration(s).ok());
+        let udp_timeout = match parse_optional_inbound_duration(
+            "socks",
+            &listen_str,
+            "udp_timeout",
+            ib.udp_timeout.as_deref(),
+        ) {
+            Ok(udp_timeout) => udp_timeout,
+            Err(e) => {
+                warn!(
+                    addr=%listen_str,
+                    error=%e,
+                    "socks inbound: invalid duration config; refusing to start"
+                );
+                return handles;
+            }
+        };
         let domain_strategy =
             ib.domain_strategy
                 .as_deref()
@@ -803,7 +833,10 @@ fn start_vmess_inbound(
 
 #[cfg(all(test, feature = "adapters"))]
 mod tests {
-    use super::{parse_inbound_fallback_for_alpn, parse_optional_inbound_fallback_addr};
+    use super::{
+        parse_inbound_fallback_for_alpn, parse_optional_inbound_duration,
+        parse_optional_inbound_fallback_addr,
+    };
     use std::collections::HashMap;
 
     #[test]
@@ -843,5 +876,15 @@ mod tests {
         assert!(err
             .to_string()
             .contains("vless inbound fallback 'bad' is invalid"));
+    }
+
+    #[test]
+    fn invalid_duration_is_rejected_explicitly() {
+        let err =
+            parse_optional_inbound_duration("socks", "127.0.0.1:1080", "udp_timeout", Some("bad"))
+                .expect_err("invalid duration should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("socks inbound udp_timeout 'bad' is invalid"));
+        assert!(msg.contains("silent duration fallback is disabled"));
     }
 }
