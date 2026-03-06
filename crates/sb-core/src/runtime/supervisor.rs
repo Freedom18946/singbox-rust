@@ -418,7 +418,7 @@ impl Supervisor {
             .context("failed to send reload message")?;
 
         // Compute diff between old and new configuration
-        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() == Some("1") {
+        if runtime_diff_from_env() {
             // Compute actual diff for debugging/monitoring purposes
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             tracing::debug!(
@@ -838,7 +838,7 @@ impl SupervisorHandle {
             .await
             .context("failed to send reload message")?;
 
-        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() == Some("1") {
+        if runtime_diff_from_env() {
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             Ok(diff)
         } else {
@@ -1366,6 +1366,29 @@ impl Bridge {
     }
 }
 
+fn parse_runtime_diff_env(value: Option<&str>) -> Result<bool, Arc<str>> {
+    match value {
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
+        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
+        Some(raw) => Err(format!(
+            "runtime env 'SB_RUNTIME_DIFF' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
+        )
+        .into()),
+        None => Ok(false),
+    }
+}
+
+fn runtime_diff_from_env() -> bool {
+    let raw = std::env::var("SB_RUNTIME_DIFF").ok();
+    match parse_runtime_diff_env(raw.as_deref()) {
+        Ok(val) => val,
+        Err(reason) => {
+            tracing::warn!("{reason}; using default false");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,5 +1511,14 @@ mod tests {
         );
         stop_services(std::slice::from_ref(&svc));
         assert_eq!(svc_impl.closes.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn invalid_runtime_diff_env_reports_explicitly() {
+        let err = super::parse_runtime_diff_env(Some("on"))
+            .expect_err("unrecognized boolean env should be rejected explicitly");
+        let msg = err.to_string();
+        assert!(msg.contains("SB_RUNTIME_DIFF"));
+        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

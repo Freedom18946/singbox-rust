@@ -1,4 +1,4 @@
-VERSION|l21.166-wave169-v1|||L21 wave#169 migration assertion allowlist version
+VERSION|l21.167-wave170-v1|||L21 wave#170 migration assertion allowlist version
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -438,3 +438,6 @@ require|W168-03-dns-integration-timeout-env-parse-helper|crates/sb-core/src/rout
 require|W168-04-dns-integration-timeout-env-invalid-explicit-warn|crates/sb-core/src/router/dns_integration.rs|router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '.*' is invalid; silent parse fallback is disabled|dns integration timeout env invalid value should emit explicit diagnostics
 require|W169-01-explain-rebuild-ms-env-parse-helper|crates/sb-core/src/router/explain_index.rs|explain_rebuild_ms_from_env\(\)|explain rebuild ms env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W169-02-explain-rebuild-ms-env-invalid-explicit-warn|crates/sb-core/src/router/explain_index.rs|router env 'SB_EXPLAIN_REBUILD_MS' value '.*' is invalid; silent parse fallback is disabled|explain rebuild ms env invalid value should emit explicit diagnostics instead of silent ignore
+forbid|W170-01-no-supervisor-runtime-diff-inline|crates/sb-core/src/runtime/supervisor.rs|std::env::var\(\"SB_RUNTIME_DIFF\"\)\.ok\(\)\.as_deref\(\) == Some\(\"1\"\)|supervisor should not use inline SB_RUNTIME_DIFF check with silent boolean ignore
+require|W170-02-supervisor-runtime-diff-parse-helper|crates/sb-core/src/runtime/supervisor.rs|runtime_diff_from_env\(\)|supervisor should use explicit runtime_diff_from_env helper
+require|W170-03-supervisor-runtime-diff-invalid-explicit-warn|crates/sb-core/src/runtime/supervisor.rs|runtime env 'SB_RUNTIME_DIFF' value '.*' is not a recognized boolean; silent parse fallback is disabled|supervisor runtime diff env unrecognized boolean should emit explicit diagnostics

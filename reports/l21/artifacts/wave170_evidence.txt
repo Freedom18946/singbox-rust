@@ -1,0 +1,9 @@
+wave170: harden SB_RUNTIME_DIFF env parsing
+============================================
+
+Target: crates/sb-core/src/runtime/supervisor.rs (2 call sites)
+Change: SB_RUNTIME_DIFF no longer silently ignores unrecognized boolean values at either call site.
+
+Helpers: parse_runtime_diff_env, runtime_diff_from_env
+Test: invalid_runtime_diff_env_reports_explicitly
+Allowlist: l21.167-wave170-v1 (405 assertions)
