@@ -1,54 +1,54 @@
 {
-  "binary": "../target/debug/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_signal_long_test_49689_1772026330399.json",
+  "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/run",
+  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_signal_long_test_20204_1772842998427.json",
   "iterations": 5,
   "result": "pass",
   "rounds": [
     {
-      "admin_addr": "127.0.0.1:57541",
+      "admin_addr": "127.0.0.1:64222",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 49690,
+      "pid": 20205,
       "port_released": true,
       "round": 1,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:57557",
+      "admin_addr": "127.0.0.1:64232",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 49702,
+      "pid": 20207,
       "port_released": true,
       "round": 2,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:57568",
+      "admin_addr": "127.0.0.1:64239",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 49715,
+      "pid": 20209,
       "port_released": true,
       "round": 3,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:57578",
+      "admin_addr": "127.0.0.1:64246",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 49729,
+      "pid": 20211,
       "port_released": true,
       "round": 4,
       "sigterm_exit_code": 0,
       "task_count": 0
     },
     {
-      "admin_addr": "127.0.0.1:57588",
+      "admin_addr": "127.0.0.1:64253",
       "exited_in_time": true,
       "health_ready": true,
-      "pid": 49741,
+      "pid": 20213,
       "port_released": true,
       "round": 5,
       "sigterm_exit_code": 0,
@@ -74,5 +74,5 @@
     "sigterm_exit_zero_all_rounds": true,
     "task_delta": 0
   },
-  "timestamp": "2026-02-25T13:32:15.799354+00:00"
+  "timestamp": "2026-03-07T00:23:24.163677+00:00"
 }

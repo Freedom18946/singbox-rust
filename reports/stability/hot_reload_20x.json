@@ -1,15 +1,15 @@
 {
-  "admin_addr": "127.0.0.1:57495",
-  "binary": "../target/debug/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_49405_1772026323860.json",
+  "admin_addr": "127.0.0.1:64194",
+  "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/run",
+  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_19920_1772842979808.json",
   "fd_delta": 0,
   "final_fds": 13,
-  "final_rss_kb": 11584,
+  "final_rss_kb": 13856,
   "initial_fds": 13,
-  "initial_rss_kb": 10880,
+  "initial_rss_kb": 13568,
   "iterations": 20,
   "result": "pass",
-  "rss_delta_kb": 704,
+  "rss_delta_kb": 288,
   "test": "hot_reload_100x_stability",
   "threshold_check": {
     "fd_limit_delta": 50,
@@ -17,5 +17,5 @@
     "health_checks_passed": 20,
     "rss_growth_limit_pct": 10
   },
-  "timestamp": "2026-02-25T13:32:10.033448+00:00"
+  "timestamp": "2026-03-07T00:23:06.855555+00:00"
 }

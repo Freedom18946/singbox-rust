@@ -14,6 +14,18 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-07 08:30] Agent: Claude Opus 4.6
+
+**任务**: MIG-02 大验收 Step 2-5 — 最终签收
+**变更**:
+- 51 个文件的 fmt/clippy/type/test 验收修复已提交 (`21c485b`)
+- Step 2: hot_reload 20x PASS + signal_reliability 5x PASS (使用 `--features "parity,long_tests"` 构建的绝对路径二进制)
+- Step 3: interop-lab 27 unit tests PASS
+- Step 4: V7 负样例注入 3/3 violations correctly caught (vless `fallback_connect(`, tailscale `falling back to direct` + `Arc<DirectConnector>`)，还原后 541/541 PASS
+- Step 5: active_context.md 标记 MIG-02 ACCEPTED
+**结果**: 成功 — MIG-02 大验收全部 5 步完成，状态 ACCEPTED
+**备注**: Step 2 需要用绝对路径 SINGBOX_BINARY 而非相对路径（cargo test 工作目录不在项目根）
+
 ### [2026-03-07 01:00] Agent: Claude Opus 4.6
 
 **任务**: L21 wave#200-202 — MIG-02 最终关闭（inbound handler + tailscale 隐式直连回退消除）

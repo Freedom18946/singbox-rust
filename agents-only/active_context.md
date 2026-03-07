@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **MIG-02 大验收进行中（Step 1 完成，Step 2-5 待续）**
+**当前执行焦点（短周期）**: **MIG-02 大验收完成 — ACCEPTED (2026-03-07)**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -18,7 +18,7 @@
 - `L21 wave#200-202` 完成 MIG-02 最后 11 处隐式直连回退修复（8 inbound handler + udp_enhanced + tun_macos + tailscale）。
 - **MIG-02 正式关闭（最终审计通过）**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
 
-### 🆕 MIG-02 大验收进展（2026-03-07, session handoff）
+### 🆕 MIG-02 大验收进展（2026-03-07, ACCEPTED）
 
 **Step 0 (编译修复)**: ✅ DONE
 - `quic_ech_mode: None` 补入 `router_options_parity.rs` + `context_service_wiring_test.rs`
@@ -55,18 +55,19 @@
 6. 稳定性测试配置:
    - `hot_reload_stability.rs` + `signal_reliability.rs`: 空 `{}` 配置 → 含 direct outbound 的最小配置
 
-**Step 2 (路由/热重载/信号)**: 🔶 部分完成
-- router unit tests: ✅ 111 passed, 0 failed, 1 ignored
-- hot_reload 20x: ❌ 二进制需要 `router` + outbound features 才能启动；默认 `cargo test --features long_tests` 构建的二进制无 outbound registry → 需要 `--features "long_tests,router,parity"` 或预构建
-- signal 5x: ❌ 同上原因
+**Step 2 (路由/热重载/信号)**: ✅ ALL PASS
+- router unit tests: 111 passed, 0 failed, 1 ignored
+- hot_reload 20x: PASS (binary built with `--features "parity,long_tests"`, absolute SINGBOX_BINARY path)
+- signal 5x: PASS (5 rounds, all exit code 0, all ports released, 5.74s)
 
-**Step 3 (interop-lab)**: ⏳ 未开始
-**Step 4 (V7 负样例注入)**: ⏳ 未开始
-**Step 5 (签收)**: ⏳ 未开始
+**Step 3 (interop-lab)**: ✅ PASS — 27 unit tests passed, 0 failed
 
-**环境注意事项**:
-- `.cargo/config.toml` 配置 `linker = "rust-lld"` for aarch64-apple-darwin，但当前环境无此工具；所有 `cargo clippy/test` 需追加 `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=cc`
-- 磁盘空间紧张（~19GB free / 926GB），建议定期 `cargo clean`
+**Step 4 (V7 负样例注入)**: ✅ PASS
+- Injected 3 forbidden patterns (vless `fallback_connect(`, tailscale `falling back to direct`, tailscale `Arc<DirectConnector>`)
+- `check-boundaries.sh --v7-only` correctly caught 3/541 violations
+- `git checkout` restored files, re-run confirmed 541/541 PASS
+
+**Step 5 (签收)**: ✅ ACCEPTED — 2026-03-07
 
 ### 🆕 MIG-02 正式关闭（2026-03-07, wave#200-202 最终关闭）
 
