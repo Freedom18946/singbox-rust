@@ -1,0 +1,126 @@
+{
+  "generated_at": "2026-03-07T10:06:50Z",
+  "gui": {
+    "app": "/Applications/GUI.for.SingBox.app",
+    "process_name": "GUI.for.SingBox"
+  },
+  "api_urls": {
+    "go": "http://127.0.0.1:9090",
+    "rust": "http://127.0.0.1:19090"
+  },
+  "sandbox": {
+    "root": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/sandbox/gui_real_20260307T100646Z_6339",
+    "precheck_pass": true,
+    "postcheck_pass": true,
+    "system_proxy_snapshot_unchanged": true,
+    "system_proxy_before_enabled": true,
+    "system_proxy_after_enabled": true,
+    "notes": [
+      "capabilities_negotiation_go_optional-unavailable:http_error:404",
+      "capabilities_negotiation_rust_ok"
+    ]
+  },
+  "required_steps": [
+    "startup",
+    "load_config",
+    "switch_proxy",
+    "connections_panel",
+    "logs_panel"
+  ],
+  "capability_negotiation": {
+    "enabled": true,
+    "go": {
+      "core": "go",
+      "url": "http://127.0.0.1:9090/capabilities",
+      "required": false,
+      "checked": false,
+      "pass": true,
+      "status": "optional-unavailable",
+      "http_status": 404,
+      "contract_version": null,
+      "required_min_contract_version": null,
+      "required_status": null,
+      "breaking_changes_count": null,
+      "reason": "http_error:404"
+    },
+    "rust": {
+      "core": "rust",
+      "url": "http://127.0.0.1:19090/capabilities",
+      "required": true,
+      "checked": true,
+      "pass": true,
+      "status": "ok",
+      "http_status": 200,
+      "contract_version": "2.0.0",
+      "required_min_contract_version": "2.0.0",
+      "required_status": "ok",
+      "breaking_changes_count": 0,
+      "reason": ""
+    }
+  },
+  "cores": {
+    "go": {
+      "pass": true,
+      "missing_steps": [],
+      "steps": [
+        {
+          "id": "startup",
+          "status": "PASS",
+          "note": "gui_process_and_kernel_ready windows=0 "
+        },
+        {
+          "id": "load_config",
+          "status": "PASS",
+          "note": "/proxies=200 "
+        },
+        {
+          "id": "switch_proxy",
+          "status": "PASS",
+          "note": "switched:my-group->direct "
+        },
+        {
+          "id": "connections_panel",
+          "status": "PASS",
+          "note": "/connections=200 "
+        },
+        {
+          "id": "logs_panel",
+          "status": "PASS",
+          "note": "kernel_log_empty_connections_probe=200 "
+        }
+      ]
+    },
+    "rust": {
+      "pass": true,
+      "missing_steps": [],
+      "steps": [
+        {
+          "id": "startup",
+          "status": "PASS",
+          "note": "gui_process_and_kernel_ready windows=0 "
+        },
+        {
+          "id": "load_config",
+          "status": "PASS",
+          "note": "/proxies=200 "
+        },
+        {
+          "id": "switch_proxy",
+          "status": "PASS",
+          "note": "switched:my-group->direct "
+        },
+        {
+          "id": "connections_panel",
+          "status": "PASS",
+          "note": "/connections=200 "
+        },
+        {
+          "id": "logs_panel",
+          "status": "PASS",
+          "note": "kernel_log_non_empty "
+        }
+      ]
+    }
+  },
+  "pass": true
+}
