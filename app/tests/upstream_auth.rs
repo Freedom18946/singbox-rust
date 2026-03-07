@@ -186,10 +186,10 @@ fn upstream_http_basic_auth_sent() {
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
-                outbound: Some("P".into()),
+                outbound: Some("B".into()),
                 ..Default::default()
             }],
-            default: Some("P".into()),
+            default: Some("B".into()),
             ..Default::default()
         },
         ntp: None,
@@ -200,7 +200,19 @@ fn upstream_http_basic_auth_sent() {
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, sb).start();
-    thread::sleep(Duration::from_millis(120));
+    // Wait for the inbound to be actually listening before connecting
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if std::net::TcpStream::connect_timeout(&http_in, Duration::from_millis(50)).is_ok() {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            rt.shutdown();
+            panic!("HTTP inbound not ready at {http_in} within 5s");
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    thread::sleep(Duration::from_millis(50));
     // CONNECT via inbound → upstream with Proxy-Authorization
     let mut s = std::net::TcpStream::connect(http_in).unwrap();
     let req = format!(
@@ -211,9 +223,13 @@ fn upstream_http_basic_auth_sent() {
         echo_addr.port()
     );
     s.write_all(req.as_bytes()).unwrap();
-    let mut head = [0u8; 48];
-    let _ = s.read(&mut head).unwrap();
-    let text = String::from_utf8_lossy(&head);
-    assert!(text.contains("200"));
+    let mut head = [0u8; 256];
+    let n = s.read(&mut head).unwrap();
+    let text = String::from_utf8_lossy(&head[..n]);
+    eprintln!("[upstream_auth] response ({n} bytes): {text}");
+    assert!(
+        text.contains("200"),
+        "Expected '200' in response, got: {text}"
+    );
     rt.shutdown();
 }

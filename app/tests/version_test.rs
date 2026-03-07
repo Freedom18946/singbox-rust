@@ -1,12 +1,15 @@
 use serde_json::{from_str, Value};
 use std::process::Command;
 
+fn sb_version_output() -> std::process::Output {
+    Command::new(assert_cmd::cargo::cargo_bin!("sb-version"))
+        .output()
+        .expect("Failed to execute sb-version")
+}
+
 #[test]
 fn test_sb_version_output_format() {
-    let output = Command::new("cargo")
-        .args(["run", "--bin", "sb-version"])
-        .output()
-        .expect("Failed to execute sb-version");
+    let output = sb_version_output();
 
     assert!(output.status.success(), "sb-version command failed");
 
@@ -53,10 +56,7 @@ fn test_sb_version_output_format() {
 
 #[test]
 fn test_sb_version_platform_fields() {
-    let output = Command::new("cargo")
-        .args(["run", "--bin", "sb-version"])
-        .output()
-        .expect("Failed to execute sb-version");
+    let output = sb_version_output();
 
     assert!(output.status.success(), "sb-version command failed");
 
@@ -93,10 +93,7 @@ fn test_sb_version_platform_fields() {
 
 #[test]
 fn test_sb_version_features_array() {
-    let output = Command::new("cargo")
-        .args(["run", "--bin", "sb-version"])
-        .output()
-        .expect("Failed to execute sb-version");
+    let output = sb_version_output();
 
     assert!(output.status.success(), "sb-version command failed");
 

@@ -589,6 +589,67 @@ impl OutboundConnector for SelectorGroup {
         result
     }
 
+    #[cfg(feature = "v2ray_transport")]
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
+        let member = self.select_best().await.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no available proxy in selector {}", self.name),
+            )
+        })?;
+
+        let count = member
+            .health
+            .active_connections
+            .fetch_add(1, Ordering::Relaxed);
+        sb_metrics::set_active_connections(&member.tag, (count + 1) as i64);
+
+        let start = Instant::now();
+        let result = member.connector.connect_io(host, port).await;
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        match &result {
+            Ok(_) => {
+                member.health.record_success(elapsed_ms);
+                tracing::debug!(
+                    selector = %self.name,
+                    proxy = %member.tag,
+                    duration_ms = elapsed_ms,
+                    "connect_io ok"
+                );
+                sb_metrics::inc_proxy_select(&self.name);
+                sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
+            }
+            Err(e) => {
+                if e.kind() == io::ErrorKind::Unsupported {
+                    member.health.record_permanent_failure(e);
+                    tracing::warn!(
+                        selector = %self.name,
+                        proxy = %member.tag,
+                        error = %e,
+                        "selector member permanently disabled (unsupported outbound)"
+                    );
+                } else {
+                    member.health.record_failure_with_error(e);
+                    tracing::warn!(
+                        selector = %self.name,
+                        proxy = %member.tag,
+                        error = %e,
+                        "connect_io failed"
+                    );
+                }
+            }
+        }
+
+        let count = member
+            .health
+            .active_connections
+            .fetch_sub(1, Ordering::Relaxed);
+        sb_metrics::set_active_connections(&member.tag, (count - 1) as i64);
+
+        result
+    }
+
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }

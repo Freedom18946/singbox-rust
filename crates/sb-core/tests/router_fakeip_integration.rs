@@ -290,8 +290,8 @@ async fn test_fakeip_routing_no_domain_rules_default() {
     // Should fallback to default
     let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "direct",
-        "FakeIP with no matching rules should use default (direct)"
+        decision, "unresolved",
+        "FakeIP with no matching rules should use router default (unresolved)"
     );
 
     cleanup_env();

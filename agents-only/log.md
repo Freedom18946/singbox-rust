@@ -6456,4 +6456,47 @@ L2.8.4-6 Handlers + WebSocket:
 
 ---
 
+### [2026-03-08 02:32] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，清理 workspace gate 阻塞并同步文档
+**变更**:
+- `crates/sb-adapters/src/register.rs` - 为 named HTTP/SOCKS/SOCKS4 outbound 补齐 `connect_io()`，移除错误 feature gate，修复 adapter bridge 下 EOF
+- `crates/sb-core/src/outbound/selector.rs` - selector 补齐 `connect_io()` 路径
+- `crates/sb-core/src/outbound/selector_group.rs` - selector_group 补齐 `connect_io()` 路径
+- `app/tests/upstream_auth.rs` - 路由修正 `P -> B`，补 inbound 就绪等待与调试断言
+- `app/tests/version_test.rs` - 测试从 `cargo run` 改为直接执行 `sb-version` 测试产物，消除 workspace build lock 自锁
+- `agents-only/active_context.md` - 改写为当前真实状态：旧 env blocker 已修，当前主阻塞为 `router_dns_integration`
+**结果**: 部分完成 — `upstream_auth` / `upstream_socks_http` / `version_test` 已独立 PASS，`cargo fmt --all -- --check` 本地 PASS；daily capstone 重跑已越过旧 blocker 并进入 `CANARY`，但 `router_dns_integration` 仍在 workspace gate 中确定性失败
+**备注**: `reports/l18/phase2_baseline.lock.json` 暂未更新；待 capstone daily full PASS 后再清理旧 `known_issues`
+
+### [2026-03-08 02:41] Agent: Codex (GPT-5)
+
+**任务**: L18 workspace gate 续修，收敛 `router_dns_integration`
+**变更**:
+- `crates/sb-core/src/outbound/selector.rs` - `connect_io()` 实现改为与 trait 相同的 `v2ray_transport` feature gating，修复默认特性测试编译失败
+- `crates/sb-core/src/outbound/selector_group.rs` - 同步 `connect_io()` feature gating
+- `crates/sb-core/tests/router_dns_integration.rs` - 串行锁改为 poison-safe；环境变量改为 RAII 恢复；默认回退断言从 `direct` 校正为 `unresolved`
+- `agents-only/active_context.md` - 当前阻塞改写为“等待旧 canary 收尾后做 clean rerun”
+**结果**: 成功 — `cargo test -p sb-core --test router_dns_integration -- --nocapture` 9/9 PASS；`cargo test --workspace` 本地重跑继续进行中，已越过此前的 router DNS 阻塞
+**备注**: 当前运行中的旧 capstone 批次仍停留在修复前的 workspace/fmt 结果上，因此只能保留 canary 证据，不能直接作为 clean full PASS 结论
+
+### [2026-03-08 03:18] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone clean rerun 续推，修掉 FakeIP 默认回退断言并重启 daily
+**变更**:
+- `crates/sb-core/tests/router_fakeip_integration.rs` - `test_fakeip_routing_no_domain_rules_default` 断言从 `direct` 校正为 router 当前默认值 `unresolved`
+- `scripts/l18/l18_capstone.sh` - 删除 `WORKSPACE_TEST` retry wrapper，恢复真实 gate 语义
+- `agents-only/active_context.md` - 记录 `router_fakeip` 已修、`20260307T191136Z` 废弃、`20260307T191724Z` clean rerun 进行中
+**结果**: 部分完成 — `cargo test -p sb-core --test router_fakeip_integration test_fakeip_routing_no_domain_rules_default -- --nocapture` PASS；旧批次 `20260307T191136Z-l18-daily-preflight` 因修复前的 workspace 失败已主动中止；新批次 `20260307T191724Z-l18-daily-preflight` 已启动
+**备注**: 旧批次 `20260307T180008Z-l18-daily-preflight` 的 canary 已完成并产出 `canary_samples_ok`，但缺少可用总状态文件，不再作为 clean 结论来源
+
+### [2026-03-08 03:21] Agent: Codex (GPT-5)
+
+**任务**: 会话收尾前同步 L18 文档并移交进行中的 clean rerun
+**变更**:
+- `agents-only/active_context.md` - 当前有效批次切到 `20260307T191724Z-l18-daily-preflight`，明确 `PREFLIGHT` / `ORACLE` / `BOUNDARIES` 已 PASS，`WORKSPACE_TEST` 进行中
+- `agents-only/log.md` - 记录本次会话收尾状态
+**结果**: 成功 — 文档已与当前运行面一致，可直接用于下一个会话接续
+**备注**: 当前 clean rerun 尚未结束；`phase2_baseline.lock.json` 仍待 clean full PASS 后再更新
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

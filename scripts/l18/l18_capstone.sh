@@ -227,7 +227,9 @@ fi
 
 mkdir -p "$(dirname "$STATUS_FILE")" "$CANARY_OUTPUT_ROOT" "$STABILITY_REPORT_DIR" "$(dirname "$STABILITY_TEST_CONFIG")"
 if [[ ! -f "$STABILITY_TEST_CONFIG" ]]; then
-  printf '{}\n' > "$STABILITY_TEST_CONFIG"
+  cat > "$STABILITY_TEST_CONFIG" <<'STCFG'
+{"outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}}
+STCFG
 fi
 
 DUAL_RUNTIME_DIR="${L18_DUAL_RUNTIME_DIR:-$(dirname "$STATUS_FILE")/dual_runtime}"
@@ -514,6 +516,8 @@ run_dual_gate() {
     managed_go=1
   fi
 
+  echo "[L18 dual-gate] managed_rust=${managed_rust} managed_go=${managed_go} rust_api=${dual_rust_api} go_api=${dual_go_api}"
+
   if [[ -z "$dual_go_secret" ]]; then
     dual_go_secret="$dual_go_token"
   fi
@@ -643,8 +647,8 @@ run_gate_with_fail_fast "PARITY" cargo check -p app --features parity
 run_gate_with_fail_fast "WORKSPACE_TEST" env RUST_TEST_THREADS="${WORKSPACE_TEST_THREADS}" cargo test --workspace
 run_gate_with_fail_fast "FMT" cargo fmt --all -- --check
 run_gate_with_fail_fast "CLIPPY" cargo clippy --workspace --all-features --all-targets -- -D warnings
-run_gate_with_fail_fast "HOT_RELOAD" env SINGBOX_HOT_RELOAD_ITERATIONS="${HOT_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture
-run_gate_with_fail_fast "SIGNAL" env SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test signal_reliability --features long_tests -- --nocapture
+run_gate_with_fail_fast "HOT_RELOAD" env SINGBOX_BINARY="${DUAL_RUST_BIN}" SINGBOX_HOT_RELOAD_ITERATIONS="${HOT_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture
+run_gate_with_fail_fast "SIGNAL" env SINGBOX_BINARY="${DUAL_RUST_BIN}" SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test signal_reliability --features long_tests -- --nocapture
 if ! run_docker_gate; then
   if [[ "$FAIL_FAST" == "1" ]]; then
     echo "[L18 capstone] fail-fast triggered at gate=DOCKER" >&2

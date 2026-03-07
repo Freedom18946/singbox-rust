@@ -214,6 +214,56 @@ impl crate::adapter::OutboundConnector for Selector {
             }
         }
     }
+
+    #[cfg(feature = "v2ray_transport")]
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
+        if self.members.is_empty() {
+            tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect_io called with empty pool");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "selector has no members",
+            ));
+        }
+
+        let sample_rounds = self.min_samples.min(self.members.len().max(1));
+        let mut last_err: Option<std::io::Error> = None;
+        for _ in 0..sample_rounds {
+            for m in &self.members {
+                let t0 = Instant::now();
+                match m.conn.connect_io(host, port).await {
+                    Ok(stream) => {
+                        let ms = t0.elapsed().as_millis();
+                        self.on_result(&m.name, ms, true);
+                        return Ok(stream);
+                    }
+                    Err(e) => {
+                        let ms = t0.elapsed().as_millis();
+                        self.on_result(&m.name, ms, false);
+                        last_err = Some(e);
+                    }
+                }
+            }
+        }
+
+        let idx = self.choose();
+        let mem = &self.members[idx];
+        let t0 = Instant::now();
+        match mem.conn.connect_io(host, port).await {
+            Ok(s) => {
+                self.on_result(&mem.name, t0.elapsed().as_millis(), true);
+                Ok(s)
+            }
+            Err(e) => {
+                self.on_result(&mem.name, t0.elapsed().as_millis(), false);
+                Err(last_err.unwrap_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!("all members failed, last: {e}"),
+                    )
+                }))
+            }
+        }
+    }
 }
 
 #[cfg(test)]

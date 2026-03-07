@@ -100,9 +100,10 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
         )))
     }
 
-    #[cfg(feature = "v2ray_transport")]
     async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        use crate::traits::{DialOpts, Target, TransportKind};
+        use crate::traits::{
+            DialOpts, OutboundConnector as AdapterOutboundConnector, Target, TransportKind,
+        };
 
         let target = Target {
             host: host.to_string(),
@@ -111,9 +112,7 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
         };
         let opts = DialOpts::default();
 
-        let boxed_stream = self
-            .inner
-            .dial(target, opts)
+        let boxed_stream = AdapterOutboundConnector::dial(&*self.inner, target, opts)
             .await
             .map_err(|e| std::io::Error::other(format!("{} dial failed: {}", self.name, e)))?;
 
@@ -218,38 +217,8 @@ fn parse_required_outbound_socket_addr(
 
 /// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
 /// Both have identical bounds (AsyncRead + AsyncWrite + Unpin + Send).
-#[cfg(all(
-    feature = "v2ray_transport",
-    any(
-        feature = "adapter-shadowsocks",
-        feature = "adapter-trojan",
-        feature = "adapter-vmess",
-        feature = "adapter-vless",
-        feature = "adapter-wireguard-outbound",
-        feature = "adapter-hysteria",
-        feature = "adapter-shadowtls",
-        feature = "adapter-tuic",
-        feature = "adapter-hysteria2",
-        feature = "adapter-ssh",
-    )
-))]
 struct BoxedStreamAdapter(crate::traits::BoxedStream);
 
-#[cfg(all(
-    feature = "v2ray_transport",
-    any(
-        feature = "adapter-shadowsocks",
-        feature = "adapter-trojan",
-        feature = "adapter-vmess",
-        feature = "adapter-vless",
-        feature = "adapter-wireguard-outbound",
-        feature = "adapter-hysteria",
-        feature = "adapter-shadowtls",
-        feature = "adapter-tuic",
-        feature = "adapter-hysteria2",
-        feature = "adapter-ssh",
-    )
-))]
 impl tokio::io::AsyncRead for BoxedStreamAdapter {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -260,21 +229,6 @@ impl tokio::io::AsyncRead for BoxedStreamAdapter {
     }
 }
 
-#[cfg(all(
-    feature = "v2ray_transport",
-    any(
-        feature = "adapter-shadowsocks",
-        feature = "adapter-trojan",
-        feature = "adapter-vmess",
-        feature = "adapter-vless",
-        feature = "adapter-wireguard-outbound",
-        feature = "adapter-hysteria",
-        feature = "adapter-shadowtls",
-        feature = "adapter-tuic",
-        feature = "adapter-hysteria2",
-        feature = "adapter-ssh",
-    )
-))]
 impl tokio::io::AsyncWrite for BoxedStreamAdapter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
@@ -616,6 +570,29 @@ fn build_http_outbound(
                 host, port
             )))
         }
+
+        async fn connect_io(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> std::io::Result<sb_transport::IoStream> {
+            use crate::traits::{
+                DialOpts, OutboundConnector as AdapterOutboundConnector, Target, TransportKind,
+            };
+
+            let target = Target {
+                host: host.to_string(),
+                port,
+                kind: TransportKind::Tcp,
+            };
+            let opts = DialOpts::default();
+
+            let boxed_stream = AdapterOutboundConnector::dial(&*self.inner, target, opts)
+                .await
+                .map_err(|e| std::io::Error::other(format!("http dial failed: {e}")))?;
+
+            Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
+        }
     }
 
     let wrapper = HttpConnectorWrapper {
@@ -710,6 +687,29 @@ fn build_socks_outbound(
                 host, port
             )))
         }
+
+        async fn connect_io(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> std::io::Result<sb_transport::IoStream> {
+            use crate::traits::{
+                DialOpts, OutboundConnector as AdapterOutboundConnector, Target, TransportKind,
+            };
+
+            let target = Target {
+                host: host.to_string(),
+                port,
+                kind: TransportKind::Tcp,
+            };
+            let opts = DialOpts::default();
+
+            let boxed_stream = AdapterOutboundConnector::dial(&*self.inner, target, opts)
+                .await
+                .map_err(|e| std::io::Error::other(format!("socks5 dial failed: {e}")))?;
+
+            Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
+        }
     }
 
     let wrapper = Socks5ConnectorWrapper {
@@ -788,6 +788,29 @@ fn build_socks4_outbound(
                 "SOCKS4 uses proxy protocol for {}:{}; use switchboard registry instead",
                 host, port
             )))
+        }
+
+        async fn connect_io(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> std::io::Result<sb_transport::IoStream> {
+            use crate::traits::{
+                DialOpts, OutboundConnector as AdapterOutboundConnector, Target, TransportKind,
+            };
+
+            let target = Target {
+                host: host.to_string(),
+                port,
+                kind: TransportKind::Tcp,
+            };
+            let opts = DialOpts::default();
+
+            let boxed_stream = AdapterOutboundConnector::dial(&*self.inner, target, opts)
+                .await
+                .map_err(|e| std::io::Error::other(format!("socks4 dial failed: {e}")))?;
+
+            Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
         }
     }
 
