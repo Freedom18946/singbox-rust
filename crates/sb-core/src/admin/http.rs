@@ -100,12 +100,8 @@ fn limits() -> Limits {
     Limits {
         max_header_bytes: env_usize("SB_ADMIN_MAX_HEADER_BYTES", 64 * 1024),
         max_body_bytes: env_usize("SB_ADMIN_MAX_BODY_BYTES", 2 * 1024 * 1024),
-        first_byte_timeout: Duration::from_millis(
-            env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", 1500),
-        ),
-        first_line_timeout: Duration::from_millis(
-            env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", 3000),
-        ),
+        first_byte_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", 1500)),
+        first_line_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", 3000)),
         read_timeout: Duration::from_millis(env_u64("SB_ADMIN_READ_TIMEOUT_MS", 4000)),
         write_timeout: Duration::from_millis(env_u64("SB_ADMIN_WRITE_TIMEOUT_MS", 4000)),
         max_conn_per_ip: env_usize("SB_ADMIN_MAX_CONN_PER_IP", 8),

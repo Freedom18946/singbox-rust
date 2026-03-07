@@ -25,21 +25,21 @@ use tracing::warn;
 use sb_core::router::RouterHandle;
 
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::http::{HttpProxyConfig, serve_http};
+use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::mixed::{MixedInboundConfig, serve_mixed};
+use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::socks::{SocksInboundConfig, serve_socks};
+use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser, serve as serve_trojan};
+use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig, TrojanUser};
 #[cfg(all(feature = "tun", feature = "adapters"))]
 use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::vless::{VlessInboundConfig, serve as serve_vless};
+use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
 #[cfg(feature = "adapters")]
-use sb_adapters::inbound::vmess::{VmessInboundConfig, serve as serve_vmess};
+use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
 
 pub enum InboundStop {
     Channel(mpsc::Sender<()>),
@@ -915,20 +915,18 @@ mod tests {
     fn invalid_optional_fallback_reports_requested_protocol() {
         let err = parse_optional_inbound_fallback_addr("vmess", "127.0.0.1:80", Some("bad"))
             .expect_err("invalid fallback should be rejected");
-        assert!(
-            err.to_string()
-                .contains("vmess inbound fallback 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("vmess inbound fallback 'bad' is invalid"));
     }
 
     #[test]
     fn invalid_optional_fallback_reports_vless_protocol() {
         let err = parse_optional_inbound_fallback_addr("vless", "127.0.0.1:80", Some("bad"))
             .expect_err("invalid fallback should be rejected");
-        assert!(
-            err.to_string()
-                .contains("vless inbound fallback 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("vless inbound fallback 'bad' is invalid"));
     }
 
     #[test]
@@ -946,10 +944,9 @@ mod tests {
         let err =
             parse_optional_inbound_duration("mixed", "127.0.0.1:1080", "udp_timeout", Some("bad"))
                 .expect_err("invalid duration should be rejected");
-        assert!(
-            err.to_string()
-                .contains("mixed inbound udp_timeout 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("mixed inbound udp_timeout 'bad' is invalid"));
     }
 
     #[test]

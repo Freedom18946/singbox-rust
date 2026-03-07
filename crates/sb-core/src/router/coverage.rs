@@ -1,7 +1,10 @@
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::sync::{atomic::{AtomicU64, Ordering::Relaxed}, Arc};
+use std::sync::{
+    atomic::{AtomicU64, Ordering::Relaxed},
+    Arc,
+};
 
 static COV: Lazy<DashMap<String, AtomicU64>> = Lazy::new(DashMap::new);
 static ENABLED: Lazy<std::sync::atomic::AtomicBool> =

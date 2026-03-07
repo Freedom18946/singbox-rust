@@ -128,8 +128,12 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
             (d, r)
         }
         None => {
-            tracing::warn!("tproxy: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("tproxy: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "tproxy: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "tproxy: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

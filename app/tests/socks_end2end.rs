@@ -121,7 +121,7 @@ fn end_to_end_echo() {
     drop(l); // Release port
     thread::sleep(Duration::from_millis(100)); // Allow OS to clear
 
-    // Config with Direct outbound
+    // Config with Direct outbound and explicit default route
     let config = json!({
         "inbounds": [{
             "type": "socks",
@@ -132,7 +132,10 @@ fn end_to_end_echo() {
         "outbounds": [{
             "type": "direct",
             "tag": "direct"
-        }]
+        }],
+        "route": {
+            "final": "direct"
+        }
     });
 
     let ir: ConfigIR = to_ir_v1(&config);

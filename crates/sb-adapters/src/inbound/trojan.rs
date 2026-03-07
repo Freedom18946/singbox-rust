@@ -787,8 +787,12 @@ async fn handle_tcp_connect(
             (d, r)
         }
         None => {
-            tracing::warn!("trojan: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("trojan: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "trojan: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "trojan: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

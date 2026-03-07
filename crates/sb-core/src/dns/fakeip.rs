@@ -160,7 +160,10 @@ fn state() -> &'static Mutex<State> {
         // Defaults: 240.0.0.0/8, capacity 16384
         let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
         let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
-        let v6_base = fakeip_env_ipv6("SB_FAKEIP_V6_BASE", Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
+        let v6_base = fakeip_env_ipv6(
+            "SB_FAKEIP_V6_BASE",
+            Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0),
+        );
         let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
         let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
         let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
@@ -183,7 +186,10 @@ fn state() -> &'static Mutex<State> {
 fn refresh_from_env(st: &mut State) {
     let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
     let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
-    let v6_base = fakeip_env_ipv6("SB_FAKEIP_V6_BASE", Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
+    let v6_base = fakeip_env_ipv6(
+        "SB_FAKEIP_V6_BASE",
+        Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0),
+    );
     let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
     let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
 

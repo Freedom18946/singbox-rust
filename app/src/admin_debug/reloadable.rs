@@ -95,11 +95,11 @@ impl EnvConfig {
         Self {
             max_redirects: env_cfg_usize("SB_SUBS_MAX_REDIRECTS", 3),
             timeout_ms: env_cfg_u64("SB_SUBS_TIMEOUT_MS", 4000),
-            max_bytes: env_cfg_u64("SB_SUBS_MAX_BYTES", 512 * 1024),
+            max_bytes: env_cfg_u64("SB_SUBS_MAX_BYTES", 512 * 1024) as usize,
             mime_allow,
             mime_deny,
             max_concurrency: env_cfg_usize("SB_SUBS_MAX_CONCURRENCY", 8),
-            rps: env_cfg_u32("SB_SUBS_RPS", 4),
+            rps: env_cfg_u32("SB_SUBS_RPS", 4) as u64,
             cache_capacity: env_cfg_usize("SB_SUBS_CACHE_CAP", 64),
             cache_ttl_ms: env_cfg_u64("SB_SUBS_CACHE_TTL_MS", 30_000),
             breaker_window_ms: env_cfg_u64("SB_SUBS_BR_WIN_MS", 30_000),
@@ -111,35 +111,59 @@ impl EnvConfig {
 }
 
 fn env_cfg_usize(key: &str, default: usize) -> usize {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<usize>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 fn env_cfg_u64(key: &str, default: u64) -> u64 {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<u64>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 fn env_cfg_u32(key: &str, default: u32) -> u32 {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<u32>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 fn env_cfg_f32(key: &str, default: f32) -> f32 {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<f32>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid f32; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid f32; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 

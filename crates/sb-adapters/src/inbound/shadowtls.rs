@@ -169,8 +169,12 @@ where
             (d, r)
         }
         None => {
-            tracing::warn!("shadowtls: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("shadowtls: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "shadowtls: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "shadowtls: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

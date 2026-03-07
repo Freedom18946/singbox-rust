@@ -403,140 +403,6 @@ fn build_required_by_gui(
     }
 }
 
-#[cfg(test)]
-mod capabilities_provider_tests {
-    use super::*;
-
-    fn mk_entry(id: &str, details: &[(&str, &str)]) -> CapabilitiesReportEntry {
-        let mut map = BTreeMap::new();
-        for (k, v) in details {
-            map.insert((*k).to_string(), (*v).to_string());
-        }
-        CapabilitiesReportEntry {
-            id: id.to_string(),
-            name: id.to_string(),
-            compile_state: "supported".to_string(),
-            runtime_state: "unverified".to_string(),
-            verification_state: "integration_verified".to_string(),
-            overall_state: "implemented_unverified".to_string(),
-            accepted_limitation: true,
-            runtime_probe: Some(CapabilitiesReportRuntimeProbe { details: map }),
-        }
-    }
-
-    fn mk_report(entries: Vec<CapabilitiesReportEntry>) -> CapabilitiesReport {
-        CapabilitiesReport {
-            schema_version: "1.0.0".to_string(),
-            source_commit: Some("testsha".to_string()),
-            profile: Some("test".to_string()),
-            runtime_probe: Some(CapabilitiesReportProbeMeta {
-                generated_at: Some("2026-03-05T00:00:00Z".to_string()),
-            }),
-            capabilities: entries,
-        }
-    }
-
-    #[test]
-    fn derive_tls_provider_returns_ok_for_consistent_runtime_probe() {
-        let report = mk_report(vec![
-            mk_entry(
-                "tls.ech.tcp",
-                &[
-                    ("tls_provider_requested", "aws-lc"),
-                    ("tls_provider", "ring"),
-                    ("tls_provider_source", "env-fallback"),
-                    ("tls_provider_install", "installed"),
-                    (
-                        "tls_provider_fallback_reason",
-                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
-                    ),
-                ],
-            ),
-            mk_entry(
-                "tls.ech.quic",
-                &[
-                    ("tls_provider_requested", "aws-lc"),
-                    ("tls_provider", "ring"),
-                    ("tls_provider_source", "env-fallback"),
-                    ("tls_provider_install", "installed"),
-                    (
-                        "tls_provider_fallback_reason",
-                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
-                    ),
-                ],
-            ),
-        ]);
-        let mut errors = Vec::new();
-
-        let provider = derive_tls_provider(&report, &mut errors);
-
-        assert_eq!(provider.status, "ok");
-        assert_eq!(provider.requested, "aws-lc");
-        assert_eq!(provider.effective, "ring");
-        assert_eq!(provider.source, "env-fallback");
-        assert_eq!(provider.install, "installed");
-        assert_eq!(provider.evidence_capability_ids.len(), 2);
-        assert!(errors.is_empty());
-    }
-
-    #[test]
-    fn derive_tls_provider_marks_mismatch_when_sources_diverge() {
-        let report = mk_report(vec![
-            mk_entry(
-                "tls.ech.tcp",
-                &[
-                    ("tls_provider_requested", "aws-lc"),
-                    ("tls_provider", "ring"),
-                    ("tls_provider_source", "env-fallback"),
-                    ("tls_provider_install", "installed"),
-                ],
-            ),
-            mk_entry(
-                "tls.ech.quic",
-                &[
-                    ("tls_provider_requested", "aws-lc"),
-                    ("tls_provider", "ring"),
-                    ("tls_provider_source", "default"),
-                    ("tls_provider_install", "installed"),
-                ],
-            ),
-        ]);
-        let mut errors = Vec::new();
-
-        let provider = derive_tls_provider(&report, &mut errors);
-
-        assert_eq!(provider.status, "mismatch");
-        assert!(!errors.is_empty());
-    }
-
-    #[test]
-    fn version_satisfies_compares_semver_triplets() {
-        assert!(version_satisfies("2.0.0", "2.0.0"));
-        assert!(version_satisfies("2.1.0", "2.0.9"));
-        assert!(!version_satisfies("1.9.9", "2.0.0"));
-        assert!(!version_satisfies("2", "2.0.0"));
-    }
-
-    #[test]
-    fn build_required_by_gui_blocks_when_breaking_changes_present() {
-        let required =
-            build_required_by_gui("2.0.0", &[String::from("capabilities.v2.remove.foo")]);
-        assert_eq!(required.status, "blocked");
-        assert!(!required.blockers.is_empty());
-    }
-
-    #[test]
-    fn build_required_by_gui_is_ok_for_current_contract() {
-        let required = build_required_by_gui(CAPABILITIES_CONTRACT_VERSION, &[]);
-        assert_eq!(required.status, "ok");
-        assert_eq!(
-            required.min_contract_version,
-            CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION
-        );
-        assert!(required.blockers.is_empty());
-    }
-}
-
 /// Infer proxy type from OutboundImpl
 fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
     if let Some(outbound) = impl_ {
@@ -2299,4 +2165,138 @@ pub async fn upgrade_external_ui(
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod capabilities_provider_tests {
+    use super::*;
+
+    fn mk_entry(id: &str, details: &[(&str, &str)]) -> CapabilitiesReportEntry {
+        let mut map = BTreeMap::new();
+        for (k, v) in details {
+            map.insert((*k).to_string(), (*v).to_string());
+        }
+        CapabilitiesReportEntry {
+            id: id.to_string(),
+            name: id.to_string(),
+            compile_state: "supported".to_string(),
+            runtime_state: "unverified".to_string(),
+            verification_state: "integration_verified".to_string(),
+            overall_state: "implemented_unverified".to_string(),
+            accepted_limitation: true,
+            runtime_probe: Some(CapabilitiesReportRuntimeProbe { details: map }),
+        }
+    }
+
+    fn mk_report(entries: Vec<CapabilitiesReportEntry>) -> CapabilitiesReport {
+        CapabilitiesReport {
+            schema_version: "1.0.0".to_string(),
+            source_commit: Some("testsha".to_string()),
+            profile: Some("test".to_string()),
+            runtime_probe: Some(CapabilitiesReportProbeMeta {
+                generated_at: Some("2026-03-05T00:00:00Z".to_string()),
+            }),
+            capabilities: entries,
+        }
+    }
+
+    #[test]
+    fn derive_tls_provider_returns_ok_for_consistent_runtime_probe() {
+        let report = mk_report(vec![
+            mk_entry(
+                "tls.ech.tcp",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                    (
+                        "tls_provider_fallback_reason",
+                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
+                    ),
+                ],
+            ),
+            mk_entry(
+                "tls.ech.quic",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                    (
+                        "tls_provider_fallback_reason",
+                        "requested aws-lc but build lacks feature tls-provider-aws-lc",
+                    ),
+                ],
+            ),
+        ]);
+        let mut errors = Vec::new();
+
+        let provider = derive_tls_provider(&report, &mut errors);
+
+        assert_eq!(provider.status, "ok");
+        assert_eq!(provider.requested, "aws-lc");
+        assert_eq!(provider.effective, "ring");
+        assert_eq!(provider.source, "env-fallback");
+        assert_eq!(provider.install, "installed");
+        assert_eq!(provider.evidence_capability_ids.len(), 2);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn derive_tls_provider_marks_mismatch_when_sources_diverge() {
+        let report = mk_report(vec![
+            mk_entry(
+                "tls.ech.tcp",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "env-fallback"),
+                    ("tls_provider_install", "installed"),
+                ],
+            ),
+            mk_entry(
+                "tls.ech.quic",
+                &[
+                    ("tls_provider_requested", "aws-lc"),
+                    ("tls_provider", "ring"),
+                    ("tls_provider_source", "default"),
+                    ("tls_provider_install", "installed"),
+                ],
+            ),
+        ]);
+        let mut errors = Vec::new();
+
+        let provider = derive_tls_provider(&report, &mut errors);
+
+        assert_eq!(provider.status, "mismatch");
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn version_satisfies_compares_semver_triplets() {
+        assert!(version_satisfies("2.0.0", "2.0.0"));
+        assert!(version_satisfies("2.1.0", "2.0.9"));
+        assert!(!version_satisfies("1.9.9", "2.0.0"));
+        assert!(!version_satisfies("2", "2.0.0"));
+    }
+
+    #[test]
+    fn build_required_by_gui_blocks_when_breaking_changes_present() {
+        let required =
+            build_required_by_gui("2.0.0", &[String::from("capabilities.v2.remove.foo")]);
+        assert_eq!(required.status, "blocked");
+        assert!(!required.blockers.is_empty());
+    }
+
+    #[test]
+    fn build_required_by_gui_is_ok_for_current_contract() {
+        let required = build_required_by_gui(CAPABILITIES_CONTRACT_VERSION, &[]);
+        assert_eq!(required.status, "ok");
+        assert_eq!(
+            required.min_contract_version,
+            CAPABILITIES_REQUIRED_GUI_MIN_CONTRACT_VERSION
+        );
+        assert!(required.blockers.is_empty());
+    }
 }

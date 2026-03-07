@@ -44,7 +44,11 @@ fn detect_default_config() -> String {
         std::process::id(),
         nonce
     ));
-    std::fs::write(&path, "{}\n").expect("Failed to write temp long-test config");
+    std::fs::write(
+        &path,
+        r#"{"outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}}"#,
+    )
+    .expect("Failed to write temp long-test config");
     path.to_string_lossy().into_owned()
 }
 

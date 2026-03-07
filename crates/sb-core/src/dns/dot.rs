@@ -12,8 +12,10 @@ pub async fn query_dot_once(
     timeout_ms: u64,
 ) -> Result<(Vec<IpAddr>, Option<u32>)> {
     let req = crate::dns::udp::build_query(host, qtype)?;
-    let mut tcp = TcpDialer::default();
-    tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+    let tcp = TcpDialer {
+        connect_timeout: Some(Duration::from_millis(timeout_ms)),
+        ..Default::default()
+    };
     let tls = TlsDialer::from_env(tcp, sb_transport::webpki_roots_config());
     let mut s = tokio::time::timeout(
         Duration::from_millis(timeout_ms),

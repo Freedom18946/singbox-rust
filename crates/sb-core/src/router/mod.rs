@@ -986,12 +986,13 @@ pub fn router_build_index_from_str(
                     default = Some(intern_dec(decision)); // last-wins
                 }
                 _ => {
-                    // 容错：未知 kind 计数并忽略，不中断构建
+                    // MIG-02: reject unknown rule kinds explicitly instead of silently ignoring
                     #[cfg(feature = "metrics")]
                     metrics::counter!("router_rules_invalid_total", "reason"=>"unknown_kind")
                         .increment(1);
-                    eprintln!("router rule: unknown kind `{}` -> ignored", kind);
-                    continue;
+                    return Err(BuildError::Rule(format!(
+                        "router rule: unknown kind `{kind}`; silent parse fallback is disabled; fix the rule explicitly"
+                    )));
                 }
             }
             count += 1;
@@ -1472,7 +1473,7 @@ pub fn router_index_decide_exact_suffix(idx: &RouterIndex, host: &str) -> Option
 }
 
 /// 控制是否开启严格后缀模式（仅标签边界直查）
-static SUFFIX_STRICT: Lazy<bool> = Lazy::new(|| router_suffix_strict_from_env());
+static SUFFIX_STRICT: Lazy<bool> = Lazy::new(router_suffix_strict_from_env);
 
 /// 基于端口/传输的后置兜底（只在 host/IP 未命中时尝试）
 pub fn router_index_decide_transport_port(
@@ -2307,6 +2308,7 @@ fn router_suffix_strict_from_env() -> bool {
     }
 }
 
+#[allow(dead_code)]
 fn parse_router_suffix_trie_env(value: Option<&str>) -> Result<bool, Arc<str>> {
     match value {
         Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
@@ -2319,6 +2321,7 @@ fn parse_router_suffix_trie_env(value: Option<&str>) -> Result<bool, Arc<str>> {
     }
 }
 
+#[allow(dead_code)]
 fn router_suffix_trie_from_env() -> bool {
     let raw = std::env::var("SB_ROUTER_SUFFIX_TRIE").ok();
     match parse_router_suffix_trie_env(raw.as_deref()) {
@@ -3116,10 +3119,8 @@ mod migration_tests {
     use super::{
         parse_router_rules_backoff_max_ms_env, parse_router_rules_hot_reload_ms_env,
         parse_router_rules_include_depth_env, parse_router_rules_jitter_ms_env,
-        parse_router_rules_max_depth_env,
-        parse_router_rules_max_env,
-        parse_router_rules_require_default_env,
-        parse_router_suffix_strict_env,
+        parse_router_rules_max_depth_env, parse_router_rules_max_env,
+        parse_router_rules_require_default_env, parse_router_suffix_strict_env,
         parse_router_suffix_trie_env,
     };
 

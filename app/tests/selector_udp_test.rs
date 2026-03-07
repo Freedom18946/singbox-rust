@@ -178,10 +178,7 @@ async fn test_selector_udp_support() {
     let group = Arc::new(group);
 
     // Test proxy1
-    let session = group
-        .open_session()
-        .await
-        .expect("failed to open session");
+    let session = group.open_session().await.expect("failed to open session");
     let (data, _) = session.recv_from().await.expect("failed to recv");
     assert_eq!(data, member1_tag.as_bytes());
 
@@ -192,10 +189,7 @@ async fn test_selector_udp_support() {
         .expect("failed to select proxy2");
 
     // Test proxy2
-    let session = group
-        .open_session()
-        .await
-        .expect("failed to open session");
+    let session = group.open_session().await.expect("failed to open session");
     let (data, _) = session.recv_from().await.expect("failed to recv");
     assert_eq!(data, member2_tag.as_bytes());
 }
@@ -244,10 +238,7 @@ async fn test_urltest_udp_support() {
     let group = Arc::new(group);
 
     // Should select fast
-    let session = group
-        .open_session()
-        .await
-        .expect("failed to open session");
+    let session = group.open_session().await.expect("failed to open session");
     let (data, _) = session.recv_from().await.expect("failed to recv");
     assert_eq!(data, member1_tag.as_bytes());
 }

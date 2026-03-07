@@ -43,7 +43,8 @@ async fn main() -> Result<()> {
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
     };
     #[cfg(not(feature = "router"))]
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
     if args.print_transport {
         #[cfg(feature = "v2ray_transport")]

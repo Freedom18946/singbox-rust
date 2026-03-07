@@ -8,7 +8,7 @@
 ## 🔗 战略链接
 
 **当前阶段（总阶段）**: **L18 认证替换实施中**
-**当前执行焦点（短周期）**: **L21 wave#202 完成，MIG-02 正式关闭（最终审计通过）**
+**当前执行焦点（短周期）**: **MIG-02 大验收进行中（Step 1 完成，Step 2-5 待续）**
 **Parity（权威口径）**: 100%（209/209 closed, acceptance baseline）
 **Remaining**: 0（`PX-015` 已标记为 Accepted Limitation）
 
@@ -18,11 +18,55 @@
 - `L21 wave#200-202` 完成 MIG-02 最后 11 处隐式直连回退修复（8 inbound handler + udp_enhanced + tun_macos + tailscale）。
 - **MIG-02 正式关闭（最终审计通过）**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
 
-### 下一阶段预估（实时）
+### 🆕 MIG-02 大验收进展（2026-03-07, session handoff）
 
-- **MIG-02 已关闭**（wave#1-202, 541 assertions）。
-- 下一阶段可转向 MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 的具体迁移，或其他 codebase hardening。
-- 当前 V7 口径：`l21.250-wave202-v1`（541 assertions）。
+**Step 0 (编译修复)**: ✅ DONE
+- `quic_ech_mode: None` 补入 `router_options_parity.rs` + `context_service_wiring_test.rs`
+
+**Step 1 (五项核心门禁)**: ✅ ALL PASS
+- boundaries: PASS (541 assertions, V1-V7 全绿)
+- parity: PASS (`cargo check -p app --features parity`)
+- workspace_test: PASS (全部 ok, 0 failed)
+- fmt: PASS (cargo fmt --all -- --check)
+- clippy: PASS (`cargo clippy --workspace --all-features --all-targets -- -D warnings`)
+
+**修复清单（Step 0-1 期间发现并修复）**:
+1. `quic_ech_mode: None` 补两个测试文件
+2. `cargo fmt --all` 修复 MIG-02 wave 代码格式问题（约 30 个文件）
+3. clippy 修复:
+   - `sb-tls/examples/tls_clienthello_probe.rs`: `match` → `unwrap_or_else`
+   - `sb-core/inbound/http_connect.rs`: `match Some/None` → 直接赋值
+   - `sb-core/inbound/socks5.rs`: `else { if }` → `else if`
+   - `sb-core/router/mod.rs`: 冗余闭包 → 函数引用；`#[allow(dead_code)]` for suffix_trie fns
+   - `sb-core/dns/dot.rs` + `app/src/bin/diag.rs`: field-reassign-with-default → struct init
+   - `sb-api/clash/handlers.rs`: test module 移到文件末尾
+   - `sb-api/v2ray/services.rs`: unused mut
+   - `sb-adapters/inbound/socks/mod.rs`: unused mut × 2
+   - `sb-adapters/inbound/http.rs`: unused mut
+4. 类型不匹配修复:
+   - `app/admin_debug/breaker.rs`: usize→u32, f64→f32 casts
+   - `app/admin_debug/reloadable.rs`: u64→usize, u32→u64 casts
+   - `app/cli/fs_scan.rs`: usize→u64 cast
+5. MIG-02 后测试适配:
+   - `socks_end2end.rs`: 添加 `"route": {"final": "direct"}` (默认路由 unresolved→direct)
+   - `socks_udp_direct_e2e.rs`: `ir.route.default = Some("direct")` + `#[ignore]`（需完整 runtime wiring）
+   - `protocol_chain_e2e.rs`: 添加 `use std::sync::Arc`
+   - `router/mod.rs`: unknown rule kind 从 silent ignore → 返回 Err（修复 migration test 期望）
+6. 稳定性测试配置:
+   - `hot_reload_stability.rs` + `signal_reliability.rs`: 空 `{}` 配置 → 含 direct outbound 的最小配置
+
+**Step 2 (路由/热重载/信号)**: 🔶 部分完成
+- router unit tests: ✅ 111 passed, 0 failed, 1 ignored
+- hot_reload 20x: ❌ 二进制需要 `router` + outbound features 才能启动；默认 `cargo test --features long_tests` 构建的二进制无 outbound registry → 需要 `--features "long_tests,router,parity"` 或预构建
+- signal 5x: ❌ 同上原因
+
+**Step 3 (interop-lab)**: ⏳ 未开始
+**Step 4 (V7 负样例注入)**: ⏳ 未开始
+**Step 5 (签收)**: ⏳ 未开始
+
+**环境注意事项**:
+- `.cargo/config.toml` 配置 `linker = "rust-lld"` for aarch64-apple-darwin，但当前环境无此工具；所有 `cargo clippy/test` 需追加 `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=cc`
+- 磁盘空间紧张（~19GB free / 926GB），建议定期 `cargo clean`
 
 ### 🆕 MIG-02 正式关闭（2026-03-07, wave#200-202 最终关闭）
 

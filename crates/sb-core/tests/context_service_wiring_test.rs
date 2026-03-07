@@ -22,6 +22,7 @@ async fn test_context_service_wiring() {
                 stats: None,
             }),
             debug: None,
+            quic_ech_mode: None,
         }),
         ..Default::default()
     };

@@ -449,8 +449,12 @@ async fn handle_conn_impl(
             (d, r)
         }
         None => {
-            tracing::warn!("vless: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("vless: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "vless: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "vless: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

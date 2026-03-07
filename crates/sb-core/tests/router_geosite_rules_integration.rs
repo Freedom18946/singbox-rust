@@ -189,7 +189,8 @@ fn test_geosite_rules_metrics_integration() {
 #[ignore] // Requires protobuf format GeoSite database file
 fn test_geosite_rules_multiple_categories() {
     // Test multiple GeoSite categories for the same decision
-    let rules = "geosite:google=proxy\ngeosite:youtube=proxy\ngeosite:ads=reject\ndefault=unresolved";
+    let rules =
+        "geosite:google=proxy\ngeosite:youtube=proxy\ngeosite:ads=reject\ndefault=unresolved";
 
     let idx = router_build_index_from_str(rules, 1000).expect("Failed to build router index");
 

@@ -1166,7 +1166,8 @@ pub async fn serve_udp_datagrams(
                         "socks5-udp: unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped"
                     );
                     #[cfg(feature = "metrics")]
-                    counter!("socks_udp_error_total", "class"=>"unsupported_no_fallback").increment(1);
+                    counter!("socks_udp_error_total", "class"=>"unsupported_no_fallback")
+                        .increment(1);
                     continue;
                 }
             }

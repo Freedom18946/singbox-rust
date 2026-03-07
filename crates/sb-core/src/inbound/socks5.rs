@@ -418,14 +418,12 @@ pub(crate) async fn handle_conn(
                                 recorder.record_up_packet(1);
                             }
                         }
-                    } else {
-                        if !udp_no_fallback_reported {
-                            tracing::warn!(
-                                "socks5-udp: outbound '{}' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path",
-                                out_name
-                            );
-                            udp_no_fallback_reported = true;
-                        }
+                    } else if !udp_no_fallback_reported {
+                        tracing::warn!(
+                            "socks5-udp: outbound '{}' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path",
+                            out_name
+                        );
+                        udp_no_fallback_reported = true;
                     }
                 } else {
                     // From remote to client: wrap with SOCKS5 UDP header and forward

@@ -1320,8 +1320,12 @@ where
             (d, r)
         }
         None => {
-            tracing::warn!("shadowsocks: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("ss: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "shadowsocks: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "ss: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

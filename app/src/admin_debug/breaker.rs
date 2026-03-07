@@ -365,9 +365,9 @@ pub fn global() -> &'static Mutex<HostBreaker> {
 
         let open_ms = parse_breaker_env_u64("SB_SUBS_BR_OPEN_MS", 15_000);
 
-        let threshold = parse_breaker_env_usize("SB_SUBS_BR_FAILS", 5);
+        let threshold = parse_breaker_env_usize("SB_SUBS_BR_FAILS", 5) as u32;
 
-        let ratio = parse_breaker_env_f64("SB_SUBS_BR_RATIO", 0.5);
+        let ratio = parse_breaker_env_f64("SB_SUBS_BR_RATIO", 0.5) as f32;
 
         Mutex::new(HostBreaker::new(window_ms, open_ms, threshold, ratio))
     })

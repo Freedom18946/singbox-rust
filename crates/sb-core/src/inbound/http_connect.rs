@@ -314,10 +314,7 @@ pub(crate) async fn handle(
     let rule: Option<String> = None;
     let out_name = d.outbound;
     let outbound_tag = out_name.clone();
-    let ob = match br.find_outbound(&out_name) {
-        Some(connector) => Some(connector),
-        None => None,
-    };
+    let ob = br.find_outbound(&out_name);
 
     // 5) 建立上游连接（异步）
     let mut upstream = match ob {

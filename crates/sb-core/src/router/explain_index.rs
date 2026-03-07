@@ -6,8 +6,8 @@ use ipnet::IpNet;
 use once_cell::sync::OnceCell;
 use sha2::{Digest, Sha256};
 use std::net::IpAddr;
-use std::sync::RwLock;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 static EXPLAIN_INDEX: OnceCell<RwLock<ExplainIndex>> = OnceCell::new();
 
@@ -334,7 +334,11 @@ fn parse_explain_rebuild_ms_env(value: Option<&str>) -> Result<Option<u64>, Arc<
                 )
                 .into()
             })?;
-            if ms > 0 { Ok(Some(ms)) } else { Ok(None) }
+            if ms > 0 {
+                Ok(Some(ms))
+            } else {
+                Ok(None)
+            }
         }
         None => Ok(None),
     }

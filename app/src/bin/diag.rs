@@ -46,8 +46,10 @@ fn main() {
             let started = Instant::now();
             let result = match parse_host_port(&addr) {
                 Some((host, port)) => {
-                    let mut tcp = TcpDialer::default();
-                    tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+                    let tcp = TcpDialer {
+                        connect_timeout: Some(Duration::from_millis(timeout_ms)),
+                        ..Default::default()
+                    };
                     tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
@@ -92,14 +94,17 @@ fn main() {
                         "class": "input",
                         "alpn": serde_json::Value::Null,
                     });
-                    let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
+                    let out =
+                        serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
                     println!("{}", out);
                     return;
                 }
             };
 
-            let mut tcp = sb_transport::TcpDialer::default();
-            tcp.connect_timeout = Some(Duration::from_millis(timeout_ms));
+            let tcp = sb_transport::TcpDialer {
+                connect_timeout: Some(Duration::from_millis(timeout_ms)),
+                ..Default::default()
+            };
             let tls = TlsDialer {
                 inner: tcp,
                 config: webpki_roots_config(),

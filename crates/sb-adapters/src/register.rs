@@ -27,7 +27,7 @@ use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{
-    InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory, registry,
+    registry, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
 };
 use tracing::warn;
 
@@ -1016,14 +1016,14 @@ fn build_vmess_outbound(
         }
     };
 
-    let server_addr = match parse_required_outbound_socket_addr("vmess", outbound_name, server, port)
-    {
-        Ok(server_addr) => server_addr,
-        Err(reason) => {
-            warn!("{reason}");
-            return invalid_config_outbound("vmess", reason);
-        }
-    };
+    let server_addr =
+        match parse_required_outbound_socket_addr("vmess", outbound_name, server, port) {
+            Ok(server_addr) => server_addr,
+            Err(reason) => {
+                warn!("{reason}");
+                return invalid_config_outbound("vmess", reason);
+            }
+        };
 
     // Map security string
     let security = match ir.security.as_deref() {
@@ -1099,14 +1099,14 @@ fn build_vless_outbound(
         }
     };
 
-    let server_addr = match parse_required_outbound_socket_addr("vless", outbound_name, server, port)
-    {
-        Ok(server_addr) => server_addr,
-        Err(reason) => {
-            warn!("{reason}");
-            return invalid_config_outbound("vless", reason);
-        }
-    };
+    let server_addr =
+        match parse_required_outbound_socket_addr("vless", outbound_name, server, port) {
+            Ok(server_addr) => server_addr,
+            Err(reason) => {
+                warn!("{reason}");
+                return invalid_config_outbound("vless", reason);
+            }
+        };
 
     // Map flow control
     let flow = match ir.flow.as_deref() {
@@ -1252,8 +1252,8 @@ fn build_shadowsocks_inbound(
     let adapter = Arc::new(adapter);
     #[cfg(feature = "service_ssmapi")]
     {
-        use sb_core::services::ssmapi::ManagedSSMServer;
         use sb_core::services::ssmapi::registry::register_managed_ssm_server;
+        use sb_core::services::ssmapi::ManagedSSMServer;
 
         let tag = ManagedSSMServer::tag(adapter.as_ref()).to_string();
         if !tag.trim().is_empty() {
@@ -3248,9 +3248,8 @@ mod migration_tests {
 
     #[test]
     fn invalid_shadowsocks_outbound_config_reports_protocol() {
-        let msg =
-            invalid_outbound_config_reason("shadowsocks", "edge-ss", "unsupported cipher")
-                .to_string();
+        let msg = invalid_outbound_config_reason("shadowsocks", "edge-ss", "unsupported cipher")
+            .to_string();
         assert!(msg.contains("shadowsocks outbound config is invalid"));
         assert!(msg.contains("silent builder failure is disabled"));
     }

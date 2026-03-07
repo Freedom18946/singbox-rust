@@ -477,8 +477,12 @@ async fn connect_via_router(
             (d, r)
         }
         None => {
-            tracing::warn!("anytls: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("anytls: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "anytls: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "anytls: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

@@ -538,7 +538,7 @@ where
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
     let rule: Option<String> = meta.rule;
-    let mut decision: RDecision = meta.decision;
+    let decision: RDecision = meta.decision;
 
     #[cfg(feature = "metrics")]
     {
@@ -585,7 +585,7 @@ where
     }
 
     let opts = ConnectOpts::default();
-    let mut outbound_tag: Option<String>;
+    let outbound_tag: Option<String>;
 
     // Fast path: if router decided a named outbound, try OutboundRegistry first
     if let RDecision::Proxy(Some(name)) = &decision {

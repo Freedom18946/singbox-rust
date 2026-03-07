@@ -280,8 +280,12 @@ async fn handle_conn(
             (d, r)
         }
         None => {
-            tracing::warn!("vmess: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("vmess: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "vmess: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "vmess: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

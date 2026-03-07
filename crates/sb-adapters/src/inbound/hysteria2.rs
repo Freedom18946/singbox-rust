@@ -85,12 +85,14 @@ pub struct Hysteria2Inbound {
 impl Hysteria2Inbound {
     fn decision_from_route_target(target: &OutRouteTarget) -> sb_core::router::rules::Decision {
         match target {
-            OutRouteTarget::Named(name) => sb_core::router::rules::Decision::Proxy(Some(name.clone())),
+            OutRouteTarget::Named(name) => {
+                sb_core::router::rules::Decision::Proxy(Some(name.clone()))
+            }
             OutRouteTarget::Kind(OutboundKind::Direct) => sb_core::router::rules::Decision::Direct,
             OutRouteTarget::Kind(OutboundKind::Block) => sb_core::router::rules::Decision::Reject,
-            OutRouteTarget::Kind(kind) => {
-                sb_core::router::rules::Decision::Proxy(Some(format!("{kind:?}").to_ascii_lowercase()))
-            }
+            OutRouteTarget::Kind(kind) => sb_core::router::rules::Decision::Proxy(Some(
+                format!("{kind:?}").to_ascii_lowercase(),
+            )),
         }
     }
 
@@ -485,7 +487,9 @@ mod tests {
     #[test]
     fn route_target_kind_proxy_decision_is_not_direct() {
         assert_eq!(
-            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Socks)),
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(
+                OutboundKind::Socks
+            )),
             sb_core::router::rules::Decision::Proxy(Some("socks".to_string()))
         );
         assert_eq!(
@@ -497,11 +501,15 @@ mod tests {
     #[test]
     fn route_target_direct_and_block_keep_explicit_decisions() {
         assert_eq!(
-            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Direct)),
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(
+                OutboundKind::Direct
+            )),
             sb_core::router::rules::Decision::Direct
         );
         assert_eq!(
-            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(OutboundKind::Block)),
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Kind(
+                OutboundKind::Block
+            )),
             sb_core::router::rules::Decision::Reject
         );
     }
@@ -509,7 +517,9 @@ mod tests {
     #[test]
     fn route_target_named_proxy_keeps_name() {
         assert_eq!(
-            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Named("pool-a".to_string())),
+            Hysteria2Inbound::decision_from_route_target(&OutRouteTarget::Named(
+                "pool-a".to_string()
+            )),
             sb_core::router::rules::Decision::Proxy(Some("pool-a".to_string()))
         );
     }

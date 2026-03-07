@@ -451,7 +451,7 @@ impl RoutingService for RouterServiceImpl {
     ) -> Result<Response<RoutingContext>, Status> {
         let req = request.into_inner();
 
-        let mut routing_ctx = req.routing_context.unwrap_or_default();
+        let routing_ctx = req.routing_context.unwrap_or_default();
 
         if routing_ctx.outbound_tag.is_empty() {
             return Err(Status::failed_precondition(

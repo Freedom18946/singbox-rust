@@ -101,7 +101,7 @@ impl Scanner {
         let mut subs_guard = false;
 
         // Parse environment variables for security limits
-        let max_redirects = parse_fs_scan_env_usize("SB_SUBS_MAX_REDIRECTS", 3);
+        let max_redirects = parse_fs_scan_env_usize("SB_SUBS_MAX_REDIRECTS", 3) as u64;
         let timeout_ms = parse_fs_scan_env_u64("SB_SUBS_TIMEOUT_MS", 4000);
         let max_bytes = parse_fs_scan_env_u64("SB_SUBS_MAX_BYTES", 512 * 1024);
         let subs_limits = SubsLimits {

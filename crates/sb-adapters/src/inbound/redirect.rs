@@ -109,8 +109,12 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
             (d, r)
         }
         None => {
-            tracing::warn!("redirect: router engine not initialized; implicit direct fallback is disabled");
-            return Err(anyhow!("redirect: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "redirect: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(anyhow!(
+                "redirect: router engine not initialized, implicit direct fallback is disabled"
+            ));
         }
     };
 

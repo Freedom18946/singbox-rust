@@ -1144,19 +1144,31 @@ fn admin_limits() -> (usize, usize, u64, u64) {
 }
 
 fn admin_env_usize(key: &str, default: usize) -> usize {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<usize>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 fn admin_env_u64(key: &str, default: u64) -> u64 {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<u64>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }
 

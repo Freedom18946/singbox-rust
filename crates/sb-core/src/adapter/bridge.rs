@@ -11,7 +11,7 @@ use crate::adapter::{
     UdpOutboundFactory,
 };
 use crate::context::Context;
-use crate::endpoint::{EndpointContext, endpoint_registry};
+use crate::endpoint::{endpoint_registry, EndpointContext};
 #[allow(unused_imports)]
 use crate::outbound::selector::Selector;
 #[allow(unused_imports)]
@@ -19,7 +19,7 @@ use crate::outbound::selector_group::{ProxyMember, SelectorGroup};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
 use crate::router::RouterHandle;
-use crate::service::{ServiceContext, service_registry};
+use crate::service::{service_registry, ServiceContext};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType};
@@ -957,10 +957,9 @@ mod tests {
         };
 
         let err = to_inbound_param(&ib).expect_err("invalid duration should be rejected");
-        assert!(
-            err.to_string()
-                .contains("mixed inbound udp_timeout 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("mixed inbound udp_timeout 'bad' is invalid"));
     }
 
     #[test]
@@ -983,10 +982,9 @@ mod tests {
         };
 
         let err = to_outbound_param(&ob).expect_err("invalid duration should be rejected");
-        assert!(
-            err.to_string()
-                .contains("vmess outbound connect_timeout 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("vmess outbound connect_timeout 'bad' is invalid"));
     }
 
     #[test]
@@ -1027,9 +1025,8 @@ mod tests {
         };
 
         let err = to_outbound_param(&ob).expect_err("invalid bind address should be rejected");
-        assert!(
-            err.to_string()
-                .contains("vmess outbound inet4_bind_address 'bad' is invalid")
-        );
+        assert!(err
+            .to_string()
+            .contains("vmess outbound inet4_bind_address 'bad' is invalid"));
     }
 }

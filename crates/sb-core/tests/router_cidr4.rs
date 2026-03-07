@@ -27,7 +27,10 @@ fn cidr4_basic_match_and_miss() {
 #[ignore = "env-sensitive; run with RUST_TEST_THREADS=1 if needed"]
 fn cidr4_illegal_ignored() {
     std::env::set_var("SB_ROUTER_UDP", "1");
-    std::env::set_var("SB_ROUTER_UDP_RULES", "cidr4:bad/xx=reject,default=unresolved");
+    std::env::set_var(
+        "SB_ROUTER_UDP_RULES",
+        "cidr4:bad/xx=reject,default=unresolved",
+    );
     let h = router::RouterHandle::new_for_tests();
     let x = UdpTargetAddr::Ip("10.0.0.1:1".parse().unwrap());
     assert_eq!(h.decide_udp(&x), "unresolved");

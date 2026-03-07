@@ -71,10 +71,8 @@ fn capture_client_hello(
     conn.write_tls(&mut stream)?;
     stream.flush()?;
 
-    match rx.recv_timeout(Duration::from_secs(4)) {
-        Ok(result) => result,
-        Err(_) => Err("capture timeout".into()),
-    }
+    rx.recv_timeout(Duration::from_secs(4))
+        .unwrap_or_else(|_| Err("capture timeout".into()))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

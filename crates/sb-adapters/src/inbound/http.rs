@@ -438,7 +438,7 @@ where
 
     // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）
-    let mut outbound_tag: Option<String>;
+    let outbound_tag: Option<String>;
     let mut upstream: IoStream = match &decision {
         RDecision::Direct => {
             outbound_tag = Some("direct".to_string());

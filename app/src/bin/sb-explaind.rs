@@ -77,7 +77,10 @@ async fn handle(
                 let t = raw.trim();
                 match t.parse::<u64>() {
                     Ok(v) => v,
-                    Err(e) => { tracing::warn!("env 'SB_PPROF_MAX_SEC' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}"); 30 }
+                    Err(e) => {
+                        tracing::warn!("env 'SB_PPROF_MAX_SEC' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}");
+                        30
+                    }
                 }
             }
             Err(_) => 30,
@@ -97,7 +100,10 @@ async fn handle(
                 let t = raw.trim();
                 match t.parse::<i32>() {
                     Ok(v) => v,
-                    Err(e) => { tracing::warn!("env 'SB_PPROF_FREQ' value '{t}' is not a valid i32; silent parse fallback is disabled; using default 100: {e}"); 100 }
+                    Err(e) => {
+                        tracing::warn!("env 'SB_PPROF_FREQ' value '{t}' is not a valid i32; silent parse fallback is disabled; using default 100: {e}");
+                        100
+                    }
                 }
             }
             Err(_) => 100,

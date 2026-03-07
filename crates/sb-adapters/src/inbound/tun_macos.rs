@@ -269,8 +269,12 @@ async fn handle_connect(
             (ctx, format!("{decision:?}"), decision, rule)
         }
         None => {
-            tracing::warn!("tun: router engine not initialized; implicit direct fallback is disabled");
-            return Err(io::Error::other("tun: router engine not initialized, implicit direct fallback is disabled"));
+            tracing::warn!(
+                "tun: router engine not initialized; implicit direct fallback is disabled"
+            );
+            return Err(io::Error::other(
+                "tun: router engine not initialized, implicit direct fallback is disabled",
+            ));
         }
     };
 

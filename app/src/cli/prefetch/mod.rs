@@ -520,10 +520,16 @@ fn sample(
 }
 
 fn cli_prefetch_env_usize(key: &str, default: usize) -> usize {
-    let raw = match std::env::var(key) { Ok(v) => v, Err(_) => return default };
+    let raw = match std::env::var(key) {
+        Ok(v) => v,
+        Err(_) => return default,
+    };
     let t = raw.trim();
     match t.parse::<usize>() {
         Ok(v) => v,
-        Err(e) => { tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"); default }
+        Err(e) => {
+            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            default
+        }
     }
 }

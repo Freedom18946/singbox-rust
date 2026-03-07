@@ -1079,8 +1079,7 @@ impl RouterHandle {
         }
 
         // 3) DNS -> IP -> IP rules (only when enabled, and only for real domains).
-        let try_dns = fake_domain_norm.is_none()
-            && router_dns_enabled_from_env();
+        let try_dns = fake_domain_norm.is_none() && router_dns_enabled_from_env();
         if try_dns {
             let timeout_ms = router_dns_timeout_ms_from_env();
             if let DnsResult::Ok(ips) = self
@@ -1203,8 +1202,7 @@ impl RouterHandle {
             }
         }
 
-        let try_dns = fake_domain_norm.is_none()
-            && router_dns_enabled_from_env();
+        let try_dns = fake_domain_norm.is_none() && router_dns_enabled_from_env();
         if try_dns {
             let timeout_ms = router_dns_timeout_ms_from_env();
             if let DnsResult::Ok(ips) = self
@@ -2160,7 +2158,7 @@ mod geoip_migration_tests {
 
 #[cfg(all(test, feature = "router_cache_lru_demo"))]
 mod decision_cache_migration_tests {
-    use super::{parse_decision_cache_env, parse_decision_cache_cap_env};
+    use super::{parse_decision_cache_cap_env, parse_decision_cache_env};
 
     #[test]
     fn invalid_decision_cache_env_reports_explicitly() {
