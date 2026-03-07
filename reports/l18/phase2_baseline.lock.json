@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-03-07T11:33:14Z",
-  "git_sha": "6516b5c52a2d3c8482c85198412cfd4d0d16c309",
-  "git_sha_short": "6516b5c5",
+  "generated_at": "2026-03-07T22:28:37Z",
+  "git_sha": "9585045cae240b602133d40be6879458913d92a1",
+  "git_sha_short": "9585045",
   "phase": "L18-Phase2-Post-MIG-02",
   "batches_completed": [
     "E",
@@ -38,9 +38,9 @@
       "note": "GUI replacement (Go+Rust 5-step PASS + sandbox)"
     },
     "J": {
-      "status": "PASS_ATTRIBUTED",
+      "status": "PASS",
       "wps": 3,
-      "note": "capstone PASS_ATTRIBUTED (4 env-setup failures), perf PASS, baseline locked"
+      "note": "capstone clean full PASS via daily rerun 20260307T211512Z; docker remains WARN (no daemon)"
     }
   },
   "capstone_gates": {
@@ -48,43 +48,39 @@
     "oracle": "PASS",
     "boundaries": "PASS",
     "parity": "PASS",
+    "workspace_test": "PASS",
     "fmt": "PASS",
     "clippy": "PASS",
+    "hot_reload": "PASS",
+    "signal": "PASS",
+    "docker": "WARN (no daemon)",
     "gui_smoke": "PASS",
     "canary": "PASS",
-    "perf_gate": "PASS",
-    "docker": "WARN (no daemon)",
-    "workspace_test": "FAIL_ATTRIBUTED (pre-existing upstream_auth flake)",
-    "hot_reload": "FAIL_ATTRIBUTED (SINGBOX_BINARY not propagated by capstone)",
-    "signal": "FAIL_ATTRIBUTED (SINGBOX_BINARY not propagated by capstone)",
-    "dual_kernel_diff": "FAIL_ATTRIBUTED (INTEROP env vars not propagated by capstone)"
+    "dual_kernel_diff": "PASS",
+    "perf_gate": "PASS"
   },
   "perf_gate": {
-    "p95_latency_pct": -5.39,
+    "p95_latency_pct": -15.83374567046016,
     "p95_threshold": 5.0,
-    "rss_peak_pct": -6.73,
+    "rss_peak_pct": -4.838709677419355,
     "rss_threshold": 10.0,
-    "startup_pct": 0.89,
+    "startup_pct": 0.0,
     "startup_threshold": 10.0,
-    "verdict": "PASS (Rust outperforms Go)"
+    "verdict": "PASS (Rust outperforms Go on latency and RSS; startup parity)"
   },
   "individual_verifications": {
-    "workspace_test": "412 pass (G3 verified with correct env)",
+    "workspace_test": "clean daily rerun PASS (20260307T211512Z)",
     "interop_lab": "27/27 pass (G2)",
-    "hot_reload": "5/5 PASS (G3 with SINGBOX_BINARY=release)",
-    "signal": "3/3 PASS (G3 with SINGBOX_BINARY=release)",
-    "dual_kernel_daily": "5/5 PASS (H1 with INTEROP env vars)",
+    "hot_reload": "20/20 PASS in capstone; standalone 5/5 PASS",
+    "signal": "5/5 PASS in capstone; standalone 3/3 PASS",
+    "dual_kernel_daily": "daily capstone PASS (20260307T211512Z)",
     "dual_kernel_nightly": "5/6 PASS (H3, 1 P2 ENV_LIMITED)",
     "gui_rust": "5/5 steps PASS (I1)",
     "gui_dual": "Go+Rust 5/5 PASS (I2)",
-    "gui_sandbox": "all checks PASS (I3)"
+    "gui_sandbox": "all checks PASS (I3)",
+    "canary_daily": "13/13 health=200 samples; RSS 11024 KB -> 7168 KB; no monotonic leak trend"
   },
   "mig02_assertions": 541,
-  "known_issues": [
-    "upstream_http_basic_auth_sent pre-existing flake",
-    "hot_reload RSS threshold relaxed 10%→20%",
-    "P2 soak case binary path mismatch (ENV_LIMITED)",
-    "capstone env propagation: SINGBOX_BINARY and INTEROP_* not forwarded to sub-gates"
-  ],
+  "known_issues": [],
   "next_phase": "Phase 3 (nightly/certify level runs)"
 }

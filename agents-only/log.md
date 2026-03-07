@@ -6490,6 +6490,37 @@ L2.8.4-6 Handlers + WebSocket:
 **结果**: 部分完成 — `cargo test -p sb-core --test router_fakeip_integration test_fakeip_routing_no_domain_rules_default -- --nocapture` PASS；旧批次 `20260307T191136Z-l18-daily-preflight` 因修复前的 workspace 失败已主动中止；新批次 `20260307T191724Z-l18-daily-preflight` 已启动
 **备注**: 旧批次 `20260307T180008Z-l18-daily-preflight` 的 canary 已完成并产出 `canary_samples_ok`，但缺少可用总状态文件，不再作为 clean 结论来源
 
+### [2026-03-08 04:08] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，收敛 `router_rules_index` 并预修 `router_select_ctx_meta`
+**变更**:
+- `crates/sb-core/tests/router_rules_index.rs` - 未知 rule kind 测试从 “lint 后忽略” 改为校验显式 `BuildError::Rule`，与当前 “silent parse fallback is disabled” 语义对齐
+- `crates/sb-core/tests/router_select_ctx_meta.rs` - `suffix:example.com=direct` 的命中断言改回 `direct`，无匹配 `final` 断言改为 `unresolved`
+- `agents-only/active_context.md` - 当前批次切到 `20260307T200336Z-l18-daily-preflight`，记录 `20260307T194543Z` 的未知 kind 语义漂移
+- `agents-only/log.md` - 追加本次会话进展
+**结果**: 部分完成 — `cargo test -p sb-core --test router_rules_index rules_index_unknown_kind_is_rejected_explicitly -- --nocapture` PASS；新批次 `20260307T200336Z-l18-daily-preflight` 已越过 `PREFLIGHT` / `ORACLE` / `BOUNDARIES` 并进入 `WORKSPACE_TEST`，目前尚未再暴露新的真实失败
+**备注**: `router_select_ctx_meta` 已提前对齐，但尚未做独立定向回归；`reports/l18/phase2_baseline.lock.json` 仍待 clean full PASS 后更新
+
+### [2026-03-08 03:45] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，收敛 `router_rules_decide_with_meta` 并再次重启 clean daily rerun
+**变更**:
+- `crates/sb-core/tests/router_rules_decide_with_meta.rs` - 无匹配默认桶断言从 `Decision::Direct` 改为显式 `Decision::Proxy(Some("unresolved"))`
+- `agents-only/active_context.md` - 批次切到 `20260307T194543Z-l18-daily-preflight`，补记 `20260307T193435Z` 暴露的默认桶断言过时
+- `agents-only/log.md` - 追加本次会话进展
+**结果**: 部分完成 — `cargo test -p sb-core --test router_rules_decide_with_meta -- --nocapture` PASS；`cargo test -p sb-core --test router_inbound_outbound_tag_matching test_parse_rules_with_inbound_outbound -- --nocapture` 复核 PASS；旧批次 `20260307T193435Z-l18-daily-preflight` 已中止，新批次 `20260307T194543Z-l18-daily-preflight` 已启动
+**备注**: `reports/l18/phase2_baseline.lock.json` 仍待 clean full PASS 后更新；当前新 rerun 尚未结束
+
+### [2026-03-08 03:34] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，收敛 `router_inbound_outbound_tag_matching` 并重启 clean daily rerun
+**变更**:
+- `crates/sb-core/src/router/rules.rs` - `parse_rules()` 改为复用 `Decision::parse_decision()`；为 `Decision::parse_decision()` 显式补 `unresolved`，修复 `default=unresolved` 被整行跳过
+- `agents-only/active_context.md` - 批次切到 `20260307T193435Z-l18-daily-preflight`，记录 `20260307T191724Z` 为外部中断、`20260307T192727Z` 为 `default=unresolved` 解析缺口
+- `agents-only/log.md` - 追加本次会话进展
+**结果**: 部分完成 — `cargo test -p sb-core --test router_inbound_outbound_tag_matching test_parse_rules_with_inbound_outbound -- --nocapture` PASS；`cargo test -p sb-core --test router_auth_user_matching test_parse_rules_with_auth_user -- --nocapture` PASS；`cargo clippy --workspace --all-features --all-targets -- -D warnings` 独立退出码 0；旧批次 `20260307T192727Z-l18-daily-preflight` 已中止，新批次 `20260307T193435Z-l18-daily-preflight` 已启动
+**备注**: `reports/l18/phase2_baseline.lock.json` 仍待 clean full PASS 后更新；当前新 rerun 尚未结束
+
 ### [2026-03-08 03:21] Agent: Codex (GPT-5)
 
 **任务**: 会话收尾前同步 L18 文档并移交进行中的 clean rerun
@@ -6498,5 +6529,75 @@ L2.8.4-6 Handlers + WebSocket:
 - `agents-only/log.md` - 记录本次会话收尾状态
 **结果**: 成功 — 文档已与当前运行面一致，可直接用于下一个会话接续
 **备注**: 当前 clean rerun 尚未结束；`phase2_baseline.lock.json` 仍待 clean full PASS 后再更新
+
+### [2026-03-08 04:47] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，收敛 UDP 默认值漂移与 supervisor bridge fallback 回归
+**变更**:
+- `crates/sb-core/tests/router_udp_rules.rs` - 默认 UDP 决策断言从 `direct` 校正为 `unresolved`，并把串行锁改为 poison-safe，避免首个断言失败后连带 `PoisonError`
+- `crates/sb-core/src/adapter/bridge.rs` - `assemble_outbounds()` 在 adapter registry miss 时恢复 core-side fallback：为 `Direct` / `Block` outbound 直接构建最小 connector，避免把可启动配置静默丢弃
+- `crates/sb-core/tests/shutdown_lifecycle.rs` - 两个 lifecycle 测试改用含 `Direct` outbound 的最小可启动 `ConfigIR`，不再依赖空配置启动 supervisor
+- `agents-only/active_context.md` - 记录 `20260307T203645Z` 暴露的 bridge fallback 回归，并切换到“准备新 clean rerun”
+**结果**: 部分完成 — `cargo test -p sb-core --test router_udp_rules -- --nocapture` PASS；`cargo test -p sb-core --test supervisor_lifecycle -- --nocapture` PASS；`cargo test -p sb-core --test shutdown_lifecycle -- --nocapture` PASS；已确认 `Supervisor::start()` 失败是 bridge 真实回归而非旧测试假设
+**备注**: 下一步直接启动新的 clean daily rerun，继续只跟进 newly exposed 真实失败；`reports/l18/phase2_baseline.lock.json` 仍待 full PASS 后更新
+
+### [2026-03-08 05:26] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone env 修复续推，收敛 `xtests/env_doc_drift`
+**变更**:
+- `docs/02-cli-reference/environment-variables.md` - 删除已移除的 legacy 环境变量 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` 与 `SB_PROXY_HEALTH_FALLBACK_DIRECT` 条目，修复公开 env 文档漂移
+- `scripts/e2e/socks5/udp-upstream.sh` - 去掉对已删除 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` 的 export
+- `scripts/e2e/proxy/health.sh` - 去掉对已删除 `SB_PROXY_HEALTH_FALLBACK_DIRECT` 的 export，并把脚本文案从“fallback direct”改回当前健康检查语义
+- `scripts/e2e/proxy/pool.sh` - 去掉对已删除 `SB_PROXY_HEALTH_FALLBACK_DIRECT` 的 export，并同步脚本文案
+**结果**: 部分完成 — `cargo test -p xtests --test env_doc_drift -- --nocapture` PASS；`20260307T205807Z-l18-daily-preflight` 已确认 workspace 首个新失败为 `env_doc_drift`，修复后已中止，待启动下一批 clean rerun
+**备注**: `xtests/.e2e/bench_udp.csv_dns` 为测试产物改动，未处理；`reports/l18/phase2_baseline.lock.json` 仍待 clean full PASS 后更新
+
+### [2026-03-08 05:34] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone clean rerun 续推，确认 `20260307T211512Z` 越过 workspace/lint/stability gates 并进入 canary soak
+**变更**:
+- `agents-only/active_context.md` - 当前有效批次切到 `20260307T211512Z-l18-daily-preflight`，记录 `env_doc_drift` 已在 batch 内实跑通过，`WORKSPACE_TEST` / `FMT` / `CLIPPY` / `HOT_RELOAD` / `SIGNAL` / `GUI` 已完成，当前仅剩 `CANARY`
+- `agents-only/log.md` - 追加本次 clean rerun 进展
+**结果**: 部分完成 — 新批次 `20260307T211512Z-l18-daily-preflight` 已越过 `WORKSPACE_TEST`、`FMT`、`CLIPPY`、`HOT_RELOAD`、`SIGNAL`、`GUI`；`xtests/env_doc_drift` 在 capstone 内已 PASS；当前 `scripts/canary_7day.sh --duration-hours 1 --sample-interval-sec 300` 正在运行，尚未写出 `l18_capstone_status.json`
+**备注**: 当前 `canary_daily.jsonl` 已有首个样本，属于正常 5 分钟采样节奏；`reports/l18/phase2_baseline.lock.json` 仍待 canary 结束并拿到 clean 总状态后更新
+
+### [2026-03-08 05:40] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone clean rerun 收尾监控，确认 `20260307T211512Z` 仅剩 canary soak
+**变更**:
+- `agents-only/active_context.md` - 补记 `CANARY` 的精确运行窗口：`scripts/canary_7day.sh --duration-hours 1 --sample-interval-sec 300` 于 05:20 CST 启动，预计约 06:20 CST 结束后生成总状态
+- `agents-only/log.md` - 追加本次收尾监控进展
+**结果**: 部分完成 — 已确认 `20260307T211512Z-l18-daily-preflight` 在 batch 内越过 `WORKSPACE_TEST` / `FMT` / `CLIPPY` / `HOT_RELOAD` / `SIGNAL` / `GUI`，且 `xtests/env_doc_drift` 已 PASS；当前仅剩 `CANARY` soak，`l18_capstone_status.json` 尚未落盘
+**备注**: `canary_daily.jsonl` 目前只有首个样本，符合 300s 采样间隔；下一个真实动作点是 canary 完成后的总状态汇总与 baseline 更新判定
+
+### [2026-03-08 06:35] Agent: Codex (GPT-5)
+
+**任务**: L18 Phase 2 收尾后补齐 Phase 3 入口文档，并回填认证总报告
+**变更**:
+- `agents-only/planning/L18-PHASE3.md` - 新建 Phase 3 nightly/certify 工作包入口，固定执行顺序、命令口径与收口纪律
+- `agents-only/planning/L18-PHASE2.md` - 顶部状态改为已完成，并补记 `20260307T211512Z` clean full PASS / baseline 已锁定
+- `agents-only/workpackage_latest.md` - 将 Phase 2 Batch J 状态改为 clean full PASS，并把 Phase 3 状态切为“就绪”
+- `reports/L18_REPLACEMENT_CERTIFICATION.md` - 回填 Phase 2 clean daily rerun、canary 与 perf 最新证据
+**结果**: 成功 — Phase 2/Phase 3 文档入口已一致；后续会话可直接从 `agents-only/planning/L18-PHASE3.md` 发车 nightly/certify
+**备注**: 该轮为文档闭环，不引入新的代码或门禁语义变化
+
+### [2026-03-08 06:28] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone clean rerun 收尾，锁定 Phase 2 baseline 并切入 Phase 3 入口
+**变更**:
+- `reports/l18/phase2_baseline.lock.json` - 从旧 `PASS_ATTRIBUTED` 基线更新为 `20260307T211512Z-l18-daily-preflight` 的 clean full PASS；同步写入当前 git SHA、全部 capstone gate、最新 perf gate 与 canary 摘要
+- `agents-only/active_context.md` - 当前阶段切到 “L18 Phase 2 收尾完成”，记录 `20260307T211512Z` 已生成总状态文件、13/13 canary 健康样本，以及下一步转入 Phase 3
+- `agents-only/log.md` - 追加本次收尾状态
+**结果**: 成功 — `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/l18_capstone_status.json` 显示 overall=`PASS`；全部核心 gate PASS，仅 `docker` 为 `WARN`；canary 13/13 `health_code=200`；Phase 2 baseline 已锁定
+**备注**: 下一步只处理 Phase 3 nightly/certify 级运行中暴露的新真实失败；不再回头处理已收敛的 upstream_auth/version_test/router 默认值/env 传播问题
+
+### [2026-03-08 05:45] Agent: Codex (GPT-5)
+
+**任务**: L18 capstone canary soak 持续监控
+**变更**:
+- `agents-only/active_context.md` - 更新 `20260307T211512Z` canary 进度：当前已累计 6 个样本且全部 `health_code=200`
+- `agents-only/log.md` - 追加本次监控进展
+**结果**: 进行中 — `l18_capstone_status.json` 仍未落盘；`canary_daily.jsonl` 已增长到 6 条记录，health/RSS/FD 目前无异常
+**备注**: 仍受 1 小时 canary soak 硬时长限制；下一动作点仍是 canary 结束后的总状态文件生成
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

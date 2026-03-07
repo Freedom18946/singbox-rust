@@ -80,18 +80,17 @@ fn rules_index_comma_separated_on_same_line_ok() {
 }
 
 #[test]
-fn rules_index_unknown_kind_is_linted_but_ignored() {
-    // 未知 kind 不应导致构建失败，但会在 stderr 打印并计数（metrics 下）
+fn rules_index_unknown_kind_is_rejected_explicitly() {
+    // 未知 kind 现在必须显式报错，不能再 silent fallback / lint-only。
     let rules = r#"
     foo:bar=proxy
     suffix:example.com=direct
     default=proxy
     "#;
-    let idx = router_build_index_from_str(rules, 8192).expect("build");
-    assert_eq!(
-        router_index_decide_exact_suffix(&idx, "x.example.com").unwrap(),
-        "direct"
-    );
+    let err = router_build_index_from_str(rules, 8192).expect_err("unknown kind should fail");
+    let msg = err.to_string();
+    assert!(msg.contains("unknown kind `foo`"));
+    assert!(msg.contains("silent parse fallback is disabled"));
 }
 
 #[test]

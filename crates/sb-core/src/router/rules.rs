@@ -1937,15 +1937,7 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
             Some((l, r)) => (l.trim(), r.trim()),
             None => continue,
         };
-        let decision = if rhs.eq_ignore_ascii_case("direct") {
-            Decision::Direct
-        } else if rhs.eq_ignore_ascii_case("proxy") {
-            Decision::Proxy(None)
-        } else if rhs.eq_ignore_ascii_case("reject") {
-            Decision::Reject
-        } else if let Some(pool_name) = rhs.strip_prefix("proxy:") {
-            Decision::Proxy(Some(pool_name.trim().to_string()))
-        } else {
+        let Some(decision) = Decision::parse_decision(rhs) else {
             continue;
         };
         // 支持逗号复合（仅 transport/port 组合场景。其余按单条 rule 解析）
@@ -2082,6 +2074,8 @@ impl Decision {
             Some(Decision::Direct)
         } else if s.eq_ignore_ascii_case("proxy") {
             Some(Decision::Proxy(None))
+        } else if s.eq_ignore_ascii_case("unresolved") {
+            Some(Decision::Proxy(Some("unresolved".to_string())))
         } else if s.eq_ignore_ascii_case("reject") {
             Some(Decision::Reject)
         } else {

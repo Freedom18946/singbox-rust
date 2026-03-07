@@ -508,6 +508,20 @@ struct BuiltOutbound {
 
 // no-op wrapper for non-adapter builds (registry is available regardless)
 
+fn core_fallback_outbound(ob: &OutboundIR) -> Option<BuiltOutbound> {
+    match ob.ty {
+        OutboundType::Direct => Some(BuiltOutbound {
+            tcp: Arc::new(crate::outbound::DirectConnector::new()),
+            udp: None,
+        }),
+        OutboundType::Block => Some(BuiltOutbound {
+            tcp: Arc::new(crate::outbound::block_connector::BlockConnector::new()),
+            udp: None,
+        }),
+        _ => None,
+    }
+}
+
 /// Helper: assembles basic outbounds (excluding selectors).
 fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
     for ob in &cfg.outbounds {
@@ -531,7 +545,7 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
         };
         let kind = p.kind.clone();
 
-        if let Some(o) = try_adapter_outbound(&p, ob, br) {
+        if let Some(o) = try_adapter_outbound(&p, ob, br).or_else(|| core_fallback_outbound(ob)) {
             // Optionally wrap with circuit breaker
             let tcp = maybe_wrap_with_cb(name.as_str(), o.tcp);
             br.add_outbound(name.clone(), kind, tcp);

@@ -53,7 +53,7 @@
 ### Phase 2（Post-MIG-02 开封首跑）— ✅ 完成
 
 > **Phase 2 结论**：MIG-02 后代码基线上首次端到端跑通 L18 全链路。
-> 18 WP 全部 PASS/PASS_ATTRIBUTED。Rust 性能优于 Go。基线已锁定。
+> 18 WP 全部完成，Batch J 已由旧 `PASS_ATTRIBUTED` 收敛为 clean full `PASS`。Rust 性能优于 Go。基线已锁定。
 
 | Batch | 主题 | WP 数 | 依赖 | 状态 |
 |-------|------|--------|------|------|
@@ -62,15 +62,16 @@
 | **G** | Rust 单核认证首跑 | 3 | E+F | ✅ 完成（含 RSS threshold 调整） |
 | **H** | 双核差分首跑 | 3 | E+F+G | ✅ 完成（daily PASS, nightly PASS_ENV_LIMITED） |
 | **I** | GUI 替换首跑 | 3 | H | ✅ 完成（Go+Rust 五步全 PASS + sandbox 验证） |
-| **J** | Capstone 首跑与基线锁定 | 3 | G+H+I | ✅ PASS_ATTRIBUTED（perf PASS, 基线锁定） |
+| **J** | Capstone 首跑与基线锁定 | 3 | G+H+I | ✅ 完成（`20260307T211512Z` clean full PASS，docker WARN） |
 
 目标：在 MIG-02 后代码基线上首次端到端跑通 L18 全链路。
 详见 `planning/L18-PHASE2.md`。
 
-### Phase 3（nightly/certify 级别运行）— 未启动
+### Phase 3（nightly/certify 级别运行）— 🚀 就绪
 
-- 前置：Phase 2 daily capstone PASS
+- 前置：Phase 2 clean full PASS 已满足（batch `20260307T211512Z`）
 - 目标：one full nightly 24h PASS → one certify 7d PASS → L18 关闭
+- 入口：`agents-only/planning/L18-PHASE3.md`
 
 ---
 

@@ -80,17 +80,52 @@ Without all four fields, waiver is invalid.
 ## Current Status
 
 - Status: `IN_PROGRESS`
-- Stage: daily convergence achieved; fixed-profile execution harness landed for nightly/certify.
+- Stage: Phase 2 clean full PASS achieved; Phase 3 nightly/certify entry ready.
 - Closure criteria pending:
   - one full local `nightly` (24h canary) pass with fixed config
   - at least one `certify` (7d canary) pass
   - all mandatory gate evidence uploaded from self-hosted macOS CI
-- Handoff note (2026-02-26 13:27 CST):
-  - Phase A completed (fixed-profile runner + CI baseline lock)
-  - next action is a full local `nightly` run via:
-    - `scripts/l18/run_capstone_fixed_profile.sh --profile nightly --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --workspace-test-threads 1 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- Phase 2 closure note (2026-03-08):
+  - clean daily rerun `20260307T211512Z-l18-daily-preflight` reached `overall=PASS`
+  - capstone gates: all PASS, `docker=WARN`
+  - canary summary: 13/13 `health_code=200`, RSS `11024 KB -> 7168 KB`, no monotonic leak trend
+  - perf gate: PASS (`latency_p95=-15.83%`, `rss_peak=-4.84%`, `startup=0.0%`)
+  - baseline lock refreshed at `reports/l18/phase2_baseline.lock.json`
 
-## Latest Evidence (2026-02-26)
+## Latest Evidence (2026-03-08)
+
+### 1) Phase 2 clean daily rerun
+
+- Batch root:
+  - `reports/l18/batches/20260307T211512Z-l18-daily-preflight`
+- Status artifact:
+  - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/l18_capstone_status.json`
+- Result:
+  - `overall=PASS`
+  - gates: `preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff/perf_gate=PASS`
+  - `docker=WARN`
+
+### 2) Phase 2 canary summary
+
+- Artifact:
+  - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/canary_daily.md`
+- Result:
+  - samples: `13`
+  - health 200 count: `13`
+  - RSS: `11024 KB -> 7168 KB`
+  - conclusion: no monotonic leak trend observed
+
+### 3) Phase 2 perf gate
+
+- Artifact:
+  - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/perf/perf_gate.json`
+- Result:
+  - `latency_p95`: Rust `1.701 ms`, Go `2.021 ms`, regression `-15.83%`
+  - `rss_peak`: Rust `1888 KB`, Go `1984 KB`, regression `-4.84%`
+  - `startup`: Rust `18.0 ms`, Go `18.0 ms`, regression `0.0%`
+  - verdict: `PASS`
+
+## Historical Evidence (2026-02-26)
 
 ### 1) Dual-kernel baseline (daily)
 

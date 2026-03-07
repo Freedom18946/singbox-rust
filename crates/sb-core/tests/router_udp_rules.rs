@@ -6,23 +6,29 @@ use std::sync::{Mutex, OnceLock};
 static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[test]
-fn router_udp_rules_default_direct() {
-    let _g = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+fn router_udp_rules_default_unresolved() {
+    let _g = TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     // Ensure clean env to avoid leakage from other tests
     std::env::remove_var("SB_ROUTER_UDP");
     std::env::remove_var("SB_ROUTER_UDP_RULES");
-    // 不设置 env，默认 direct
+    // 不设置 env，默认 unresolved
     let h = router::RouterHandle::new_for_tests(); // 若无此构造，可改为 router::RouterHandle::default()
     let d = UdpTargetAddr::Domain {
         host: "foo.bar".into(),
         port: 53,
     };
-    assert_eq!(h.decide_udp(&d), "direct");
+    assert_eq!(h.decide_udp(&d), "unresolved");
 }
 
 #[test]
 fn router_udp_rules_env_parsing() {
-    let _g = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let _g = TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     // Clean then set
     std::env::remove_var("SB_ROUTER_UDP");
     std::env::remove_var("SB_ROUTER_UDP_RULES");

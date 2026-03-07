@@ -35,8 +35,7 @@ echo "[INFO] Proxy pool configured with poolA (one good: :8080, one bad: :39998)
 export SB_PROXY_HEALTH_ENABLE=1
 export SB_PROXY_HEALTH_INTERVAL_MS=1000  # Quick checks for testing
 export SB_PROXY_HEALTH_TIMEOUT_MS=500    # Quick timeout
-export SB_PROXY_HEALTH_FALLBACK_DIRECT=1
-echo "[INFO] Health check enabled with circuit breaking and fallback"
+echo "[INFO] Health check enabled with circuit breaking"
 
 # 3) Configure sticky affinity
 export SB_PROXY_STICKY_TTL_MS=5000

@@ -294,7 +294,6 @@ Complete reference of all environment variables supported by singbox-rust.
 | ------------------------------------ | ---- | ------- | --------------------------- |
 | `SB_SOCKS_UDP_NAT_TTL_MS`            | int  | `60000` | UDP NAT session TTL         |
 | `SB_SOCKS_UDP_PROXY_TIMEOUT_MS`      | int  | `10000` | UDP proxy timeout           |
-| `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` | bool | `1`     | Fallback to direct on error |
 
 ### HTTP Inbound
 
@@ -370,7 +369,6 @@ Complete reference of all environment variables supported by singbox-rust.
 | `SB_PROXY_HEALTH_ENABLE`          | bool | `0`     | Enable health checks             |
 | `SB_PROXY_HEALTH_INTERVAL_MS`     | int  | `30000` | Health check interval            |
 | `SB_PROXY_HEALTH_TIMEOUT_MS`      | int  | `5000`  | Health check timeout             |
-| `SB_PROXY_HEALTH_FALLBACK_DIRECT` | bool | `1`     | Fallback to direct on all failed |
 
 ---
 

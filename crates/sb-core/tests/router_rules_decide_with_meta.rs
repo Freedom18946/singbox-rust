@@ -38,5 +38,5 @@ default=unresolved
         ..Default::default()
     });
     assert_eq!(rule.as_deref(), Some("final"));
-    assert!(matches!(d, Decision::Direct));
+    assert!(matches!(d, Decision::Proxy(Some(ref tag)) if tag == "unresolved"));
 }

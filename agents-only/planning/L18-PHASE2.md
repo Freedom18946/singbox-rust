@@ -1,8 +1,13 @@
 <!-- tier: S -->
 # L18 Phase 2 详细工作包：Post-MIG-02 开封首跑
 
-状态：🆕 规划冻结（待执行）
-更新：2026-03-07
+状态：✅ 已完成（Phase 2 baseline 已锁定）
+更新：2026-03-08
+
+> **执行结论（2026-03-08）**：
+> `reports/l18/batches/20260307T211512Z-l18-daily-preflight` 已产出 clean full PASS。
+> `reports/l18/phase2_baseline.lock.json` 已更新到当前基线：除 `docker=WARN (no daemon)` 外，其余 capstone gate 全 PASS；canary 13/13 `health_code=200`；perf gate PASS（Rust 延迟/RSS 优于 Go，startup 持平）。
+> Phase 2 目标已完成，后续执行入口切换到 `agents-only/planning/L18-PHASE3.md`。
 
 > **强制参考**：本文件所有双核/差分/覆盖率工作必须引用 `labs/interop-lab/docs/dual_kernel_golden_spec.md`（简称 **Golden Spec**）。
 > 偏差归因→S4，diff 解读→S2+S3，case promote→S5，覆盖率→S6，Go 配置→S8。
