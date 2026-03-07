@@ -1,6 +1,8 @@
+<!-- tier: C -->
 # AI Activity Log（AI 行为日志）
 
 > **所有 AI 行为必须记录到本文件**：每个 AI 在完成任务前必须自动写入日志条目。
+> **C-tier**：持续写入，但不主动读取。需要审计时通过 git log 或 grep 检索。
 
 ---
 
@@ -6426,6 +6428,31 @@ L2.8.4-6 Handlers + WebSocket:
 - `bash -n scripts/l18/gui_real_cert.sh` PASS
 
 **结果**: 成功（`wave127` 已完成；router_json 缺失 outbound 不再 silently fallback 到 direct）
+
+---
+
+### 2026-03-07 — 双核黄金基准文档创建 + agents 文档更新
+
+**执行者**: Claude Opus 4.6
+**范围**: 文档
+
+**内容**:
+1. 创建 `labs/interop-lab/docs/dual_kernel_golden_spec.md`（430 行，A-tier）
+   - S1: 5 域功能地图（CP/DP/LC/SV/PF）
+   - S2: 6 维 diff 引擎→BHV 映射
+   - S3: 60 个行为注册表（BHV-CP-001…BHV-PF-005）
+   - S4: 12 项已知偏差（3 critical + 4 high + 5 cosmetic）
+   - S5: T1-T4 case promote 路线图（E1-E4 工作量分级）
+   - S6: 覆盖率仪表盘（当前 31.7% all, 1.7% strict）
+   - S7: 维护协议 + 文档边界
+   - S8: Go 配置翻译指南
+2. 验证 6 项通过（行数/case ID/BHV 交叉引用/覆盖率数学/tier 标记）
+3. 更新 CLAUDE.md: 添加 L18 强制规则 + 详细参考表
+4. 更新 active_context.md: 里程碑 + 下一步 + 关键文件速查
+5. 更新 workpackage_latest.md: Phase 2 强制参考注释
+6. 更新 L18-PHASE2.md: WP-F3/H1/H2/J3 添加 Golden Spec 引用 + 引用表添加黄金基准
+
+**结果**: 成功（L18 Phase 2+ 所有双核工作现在必须引用 Golden Spec）
 
 ---
 
