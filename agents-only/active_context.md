@@ -10,16 +10,19 @@
 ## 战略状态
 
 **当前阶段**: L18 认证替换
-**执行焦点**: L18 Phase 2 开封首跑（Post-MIG-02）— 规划冻结，待执行
+**执行焦点**: L18 Phase 2 Batch F 完成 → Batch G（Rust 单核认证首跑）待执行
 **Parity**: 100%（209/209 closed）
 **MIG-02**: ACCEPTED（2026-03-07，Step 0-5 全绿，541 V7 assertions）
 
 ## 关键里程碑
 
-- 双核黄金基准文档创建（2026-03-07）：60 BHV × 12 DIV × T1-T4 路线图，strict both 覆盖率 1.7%
-- MIG-02 大验收 ACCEPTED（2026-03-07）：五项门禁 + hot_reload 20x + signal 5x + interop-lab 27 + V7 负样例 3/3
-- L18 Phase 1 daily 3 轮 PASS + 48x 高压排练 PASS（2026-02-27）
-- interop-lab upstream.rs 强化 8 项修复（2026-03-07）：DnsStub/TlsEcho/TLS roots/shutdown/UDP/SOCKS5 dedup/semaphore/reqwest
+- **Batch F 完成（2026-03-07）**：3 WP 全部 PASS
+  - F1: route.final 审计 → 全部 L18/capstone 配置已有显式 route.final
+  - F2: Env-var 审计 → 所有 L18_*/INTEROP_* 变量与 MIG-02 后代码兼容
+  - F3: 隐式回退影响评估 → 修复 SelectorGroup first-member fallback（Go parity）
+- Batch E 完成（2026-03-07）：环境开封，3 WP 全绿
+- 双核黄金基准文档创建（2026-03-07）
+- MIG-02 大验收 ACCEPTED（2026-03-07）
 
 ## 当前构建状态
 
@@ -27,7 +30,7 @@
 |------|------|
 | `cargo check --workspace` | ✅ |
 | `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ |
-| `cargo test --workspace` | ✅ |
+| `cargo test --workspace` | ✅ (1 pre-existing flake: upstream_auth) |
 | `cargo test -p interop-lab` | ✅ 27 passed |
 | `check-boundaries.sh` | ✅ exit 0 (541 assertions) |
 | Go kernel (`with_clash_api`) | ✅ 18MB arm64 |
@@ -35,9 +38,10 @@
 
 ## 下一步
 
-1. 执行 L18 Phase 2 Batch E（环境开封）：preflight → Rust parity build → Go Oracle build
-2. 所有双核相关工作 **必须** 引用 `dual_kernel_golden_spec.md`（S2-S6）
-3. 工作包详见 `planning/L18-PHASE2.md`
+1. 执行 L18 Phase 2 Batch G（Rust 单核认证首跑）：G1 启动+API → G2 interop-lab → G3 workspace+stability
+2. Batch G 依赖 E2+F1+F3（已完成）
+3. 所有双核相关工作 **必须** 引用 `dual_kernel_golden_spec.md`（S2-S6）
+4. 工作包详见 `planning/L18-PHASE2.md` §5
 
 ## 关键文件速查
 

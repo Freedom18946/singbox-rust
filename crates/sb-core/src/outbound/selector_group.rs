@@ -298,8 +298,13 @@ impl SelectorGroup {
         match self.mode {
             SelectMode::Manual => {
                 let selected = self.selected.read().await.clone();
-                let tag = selected.or_else(|| self.default_member.clone())?;
-                self.members.iter().find(|m| m.tag == tag)
+                let tag = selected.or_else(|| self.default_member.clone());
+                match tag {
+                    Some(t) => self.members.iter().find(|m| m.tag == t),
+                    // Go parity: when no explicit selection and no default_member,
+                    // fall back to first member (sing-box uses first outbound as default)
+                    None => self.members.first(),
+                }
             }
             SelectMode::UrlTest => self.select_by_latency(),
             SelectMode::RoundRobin => self.select_round_robin(),
@@ -492,8 +497,12 @@ impl SelectorGroup {
                     .try_read()
                     .ok()
                     .and_then(|v| v.clone())
-                    .or_else(|| self.default_member.clone())?;
-                self.members.iter().find(|m| m.tag == selected).cloned()
+                    .or_else(|| self.default_member.clone());
+                match selected {
+                    Some(t) => self.members.iter().find(|m| m.tag == t).cloned(),
+                    // Go parity: fall back to first member
+                    None => self.members.first().cloned(),
+                }
             }
             SelectMode::UrlTest => self.select_by_latency().cloned(),
             SelectMode::RoundRobin => self.select_round_robin().cloned(),
