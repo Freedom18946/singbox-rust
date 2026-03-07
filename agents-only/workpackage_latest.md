@@ -67,9 +67,10 @@
 目标：在 MIG-02 后代码基线上首次端到端跑通 L18 全链路。
 详见 `planning/L18-PHASE2.md`。
 
-### Phase 3（nightly/certify 级别运行）— 🚀 就绪
+### Phase 3（nightly/certify 级别运行）— 🔄 进行中
 
 - 前置：Phase 2 clean full PASS 已满足（batch `20260307T211512Z`）
+- 当前批次：`20260307T223436Z-l18-nightly-preflight` 已启动，`PREFLIGHT/ORACLE/BOUNDARIES` 已 PASS
 - 目标：one full nightly 24h PASS → one certify 7d PASS → L18 关闭
 - 入口：`agents-only/planning/L18-PHASE3.md`
 

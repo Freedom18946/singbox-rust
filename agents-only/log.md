@@ -6572,6 +6572,17 @@ L2.8.4-6 Handlers + WebSocket:
 
 ### [2026-03-08 06:35] Agent: Codex (GPT-5)
 
+**任务**: 提交并 push Phase 2 收尾结果，然后直接发车 Phase 3 首个 nightly
+**变更**:
+- `git commit` - 生成提交 `3872dbc`（`Lock L18 phase 2 baseline and phase 3 handoff`）
+- `git push origin main` - 已推送到远端 `origin/main`
+- `scripts/l18/run_capstone_fixed_profile.sh --profile nightly ...` - 启动 Phase 3 首个 nightly batch：`20260307T223436Z-l18-nightly-preflight`
+- `agents-only/active_context.md` / `agents-only/workpackage_latest.md` - 当前阶段切到 “Phase 3 启动中/进行中”
+**结果**: 进行中 — nightly batch 已越过 `PREFLIGHT` / `ORACLE` / `BOUNDARIES`，`capstone.stdout.log` 已进入 `cargo test --workspace`
+**备注**: 当前前台运行会话为长期任务；Phase 2 baseline 已在提交 `3872dbc` 中固定
+
+### [2026-03-08 06:35] Agent: Codex (GPT-5)
+
 **任务**: L18 Phase 2 收尾后补齐 Phase 3 入口文档，并回填认证总报告
 **变更**:
 - `agents-only/planning/L18-PHASE3.md` - 新建 Phase 3 nightly/certify 工作包入口，固定执行顺序、命令口径与收口纪律

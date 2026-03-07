@@ -9,8 +9,8 @@
 
 ## 战略状态
 
-**当前阶段**: L18 Phase 2 收尾完成
-**执行焦点**: 以 `20260307T211512Z` clean full PASS 锁定 Phase 2 baseline，并切入 Phase 3 准备
+**当前阶段**: L18 Phase 3 启动中
+**执行焦点**: 盯住 `20260307T223436Z-l18-nightly-preflight`，先穿过 workspace/lint/stability，再进入 24h canary
 **Parity**: 100%（209/209 closed）
 **MIG-02**: ACCEPTED（2026-03-07，541 V7 assertions）
 
@@ -64,7 +64,7 @@
 
 ## 当前真实阻塞
 
-1. Phase 2 已无真实阻塞；`20260307T211512Z-l18-daily-preflight` 已产出 clean full PASS，总状态文件已落盘，下一工作面转为 Phase 3 nightly/certify 长时运行
+1. Phase 2 已无历史阻塞；当前真实动作点是 `20260307T223436Z-l18-nightly-preflight`，已越过 `PREFLIGHT` / `ORACLE` / `BOUNDARIES`，`WORKSPACE_TEST` 进行中
 
 ## 最近一次 capstone 重跑
 
@@ -79,16 +79,15 @@
   - `reports/l18/batches/20260307T203645Z-l18-daily-preflight`：暴露 `Supervisor::start()` 在 adapter registry miss 时失去 `Direct`/`Block` core fallback，修复后中止
   - `reports/l18/batches/20260307T205807Z-l18-daily-preflight`：暴露 `xtests/env_doc_drift`，指出 env 文档仍引用已删除的 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` / `SB_PROXY_HEALTH_FALLBACK_DIRECT`，修复后中止
 - 当前批次:
-  - `reports/l18/batches/20260307T211512Z-l18-daily-preflight`
-  - 当前阶段：full PASS 已完成；`l18_capstone_status.json` 于 `2026-03-07T22:23:22Z` 生成，`WORKSPACE_TEST` / `FMT` / `CLIPPY` / `HOT_RELOAD` / `SIGNAL` / `GUI` / `CANARY` / `DUAL` / `PERF` 全部通过，`docker` 为 `WARN (no daemon)`
-  - canary 摘要：`canary_7day.sh --duration-hours 1 --sample-interval-sec 300` 共采样 13 次，`health_code=200` 为 13/13，RSS 从 11024 KB 降至 7168 KB，无单调泄漏迹象
-  - baseline：`reports/l18/phase2_baseline.lock.json` 已更新到当前 clean full PASS
+  - `reports/l18/batches/20260307T223436Z-l18-nightly-preflight`
+  - 当前阶段：`PREFLIGHT` / `ORACLE` / `BOUNDARIES` 已 PASS；`capstone.stdout.log` 已进入 `cargo test --workspace`，当前正在跑 `subs_merge_and_diff`、`test_monitoring_system_integration` 等测试
+  - baseline 参考：`20260307T211512Z-l18-daily-preflight` 已 clean full PASS；`reports/l18/phase2_baseline.lock.json` 已锁定 Phase 2 基线
 
 ## 下一步
 
-1. 以 `reports/l18/phase2_baseline.lock.json` 为 Phase 2 锁定基线，避免再回看已收敛的 env/workspace 归因问题
-2. 以 `agents-only/planning/L18-PHASE3.md` 为执行入口，准备 nightly/certify 级长时运行
-3. 启动 Phase 3 首批 nightly 24h / certify 级任务，并只跟进新的真实失败
+1. 持续盯 `20260307T223436Z-l18-nightly-preflight` 的 `WORKSPACE_TEST` / `FMT` / `CLIPPY` / `HOT_RELOAD` / `SIGNAL` / `GUI`
+2. 若 `nightly` 继续穿过前置 gate，则进入 24h canary 监控并只跟进新的真实失败
+3. `nightly` full PASS 后再发车 `certify`
 
 ## 关键文件速查
 
