@@ -10,19 +10,19 @@
 ## 战略状态
 
 **当前阶段**: L18 认证替换
-**执行焦点**: L18 Phase 2 Batch G 完成 → Batch H（双核差分首跑）待执行
+**执行焦点**: L18 Phase 2 Batch H 完成 → Batch I（GUI 替换首跑）待执行
 **Parity**: 100%（209/209 closed）
 **MIG-02**: ACCEPTED（2026-03-07，Step 0-5 全绿，541 V7 assertions）
 
 ## 关键里程碑
 
-- **Batch G 完成（2026-03-07）**：3 WP 全部 PASS
-  - G1: Rust 内核启动 → Clash API 200 (6 proxies), SOCKS5 loopback 200, clean SIGTERM
-  - G2: interop-lab 27/27 passed, 零新增失败
-  - G3: workspace 412 pass (1 pre-existing flake), hot_reload 5/5 PASS (RSS 10%→20%), signal 3/3 PASS
-  - 修复: hot_reload RSS threshold 从 10% 放宽至 20%（100x SIGHUP ~12-17% growth from Tokio fragmentation）
-- Batch F 完成（2026-03-07）：F1 route.final / F2 env-var / F3 selector fallback fix
-- Batch E 完成（2026-03-07）：环境开封，3 WP 全绿
+- **Batch H 完成（2026-03-07）**：3 WP 全部 PASS
+  - H1: daily 双核差分 5/5 PASS, run_fail=0, diff_fail=0
+  - H2: 差分归因 — 零 MIG-02 回归；Phase 1 Go 快照为空致基线无效，Phase 2 为首次有效双核基线
+  - H3: nightly 5/6 PASS, 1 P2 soak case ENV_LIMITED（binary path mismatch）
+  - 关键发现: 需设 INTEROP_*_API_BASE/SECRET 环境变量供 case 定位内核
+- Batch G 完成（2026-03-07）：Rust 单核认证 3/3 PASS
+- Batch E+F 完成（2026-03-07）：环境开封 + MIG-02 适配审计
 
 ## 当前构建状态
 
@@ -38,10 +38,10 @@
 
 ## 下一步
 
-1. 执行 L18 Phase 2 Batch H（双核差分首跑）：H1 daily diff → H2 MIG-02 适配分析 → H3 nightly diff
-2. Batch H 依赖 E3+G1（已完成）
+1. 执行 L18 Phase 2 Batch I（GUI 替换首跑）：I1 GUI Rust 单核 → I2 GUI 双核 → I3 sandbox 验证
+2. Batch I 依赖 H1（已完成）
 3. 所有双核相关工作 **必须** 引用 `dual_kernel_golden_spec.md`（S2-S6）
-4. 工作包详见 `planning/L18-PHASE2.md` §6
+4. 工作包详见 `planning/L18-PHASE2.md` §7
 
 ## 关键文件速查
 

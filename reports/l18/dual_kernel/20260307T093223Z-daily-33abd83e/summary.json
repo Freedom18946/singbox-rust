@@ -1,0 +1,146 @@
+{
+  "generated_at": "2026-03-07T09:37:35Z",
+  "profile": "daily",
+  "run_id": "20260307T093223Z-daily-33abd83e",
+  "artifacts_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel",
+  "go_api": "http://127.0.0.1:9090",
+  "selected_case_count": 5,
+  "results_count": 5,
+  "run_fail_count": 4,
+  "diff_fail_count": 0,
+  "pass": false,
+  "selected": [
+    {
+      "case_id": "l6_local_harness_smoke",
+      "priority": "P0",
+      "env_class": "Strict"
+    },
+    {
+      "case_id": "p0_clash_api_contract",
+      "priority": "P0",
+      "env_class": "EnvLimited"
+    },
+    {
+      "case_id": "p1_auth_negative_missing_token",
+      "priority": "P1",
+      "env_class": "EnvLimited"
+    },
+    {
+      "case_id": "p1_auth_negative_wrong_token",
+      "priority": "P1",
+      "env_class": "EnvLimited"
+    },
+    {
+      "case_id": "p1_optional_endpoints_contract",
+      "priority": "P1",
+      "env_class": "EnvLimited"
+    }
+  ],
+  "results": [
+    {
+      "case_id": "l6_local_harness_smoke",
+      "priority": "P0",
+      "env_class": "Strict",
+      "run_status": "PASS",
+      "diff_status": "PASS",
+      "clean": true,
+      "mismatches": {
+        "http": 0,
+        "ws": 0,
+        "subscription": 0,
+        "traffic": 0
+      },
+      "ignored": {
+        "http": 0,
+        "ws": 0,
+        "counter_jitter": 0
+      },
+      "gate_score": 0.0,
+      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/l6_local_harness_smoke/20260307T093225Z-746bd1be-33d3-488a-a0a4-135a7904226a"
+    },
+    {
+      "case_id": "p0_clash_api_contract",
+      "priority": "P0",
+      "env_class": "EnvLimited",
+      "run_status": "FAIL",
+      "diff_status": "SKIP",
+      "clean": false,
+      "mismatches": {
+        "http": 0,
+        "ws": 0,
+        "subscription": 0,
+        "traffic": 0
+      },
+      "ignored": {
+        "http": 0,
+        "ws": 0,
+        "counter_jitter": 0
+      },
+      "gate_score": 0.0,
+      "run_dir": ""
+    },
+    {
+      "case_id": "p1_auth_negative_missing_token",
+      "priority": "P1",
+      "env_class": "EnvLimited",
+      "run_status": "FAIL",
+      "diff_status": "SKIP",
+      "clean": false,
+      "mismatches": {
+        "http": 0,
+        "ws": 0,
+        "subscription": 0,
+        "traffic": 0
+      },
+      "ignored": {
+        "http": 0,
+        "ws": 0,
+        "counter_jitter": 0
+      },
+      "gate_score": 0.0,
+      "run_dir": ""
+    },
+    {
+      "case_id": "p1_auth_negative_wrong_token",
+      "priority": "P1",
+      "env_class": "EnvLimited",
+      "run_status": "FAIL",
+      "diff_status": "SKIP",
+      "clean": false,
+      "mismatches": {
+        "http": 0,
+        "ws": 0,
+        "subscription": 0,
+        "traffic": 0
+      },
+      "ignored": {
+        "http": 0,
+        "ws": 0,
+        "counter_jitter": 0
+      },
+      "gate_score": 0.0,
+      "run_dir": ""
+    },
+    {
+      "case_id": "p1_optional_endpoints_contract",
+      "priority": "P1",
+      "env_class": "EnvLimited",
+      "run_status": "FAIL",
+      "diff_status": "SKIP",
+      "clean": false,
+      "mismatches": {
+        "http": 0,
+        "ws": 0,
+        "subscription": 0,
+        "traffic": 0
+      },
+      "ignored": {
+        "http": 0,
+        "ws": 0,
+        "counter_jitter": 0
+      },
+      "gate_score": 0.0,
+      "run_dir": ""
+    }
+  ]
+}

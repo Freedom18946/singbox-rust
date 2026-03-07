@@ -60,8 +60,8 @@
 | **E** | 环境开封与基线固化 | 3 | 无 | ✅ 完成 |
 | **F** | MIG-02 后适配审计 | 3 | E | ✅ 完成（含 F3 selector fix） |
 | **G** | Rust 单核认证首跑 | 3 | E+F | ✅ 完成（含 RSS threshold 调整） |
-| **H** | 双核差分首跑 | 3 | E+F+G | 🔄 当前 |
-| **I** | GUI 替换首跑 | 3 | H | ⏳ |
+| **H** | 双核差分首跑 | 3 | E+F+G | ✅ 完成（daily PASS, nightly PASS_ENV_LIMITED） |
+| **I** | GUI 替换首跑 | 3 | H | 🔄 当前 |
 | **J** | Capstone 首跑与基线锁定 | 3 | G+H+I | ⏳ |
 
 目标：在 MIG-02 后代码基线上首次端到端跑通 L18 全链路。
