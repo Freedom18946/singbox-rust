@@ -1,0 +1,195 @@
+{
+  "generated_at": "2026-03-07T10:16:05Z",
+  "pass": true,
+  "aggregation": {
+    "method": "median_of_trimmed_rounds",
+    "rounds": 3,
+    "round_trim_each_side_requested": 1,
+    "round_trim_each_side_applied": {
+      "latency_p95": 1,
+      "startup": 1
+    },
+    "sorted_round_values_ms": {
+      "latency_p95": {
+        "rust": [
+          1.333,
+          1.37,
+          3.023
+        ],
+        "go": [
+          1.385,
+          1.448,
+          3.025
+        ]
+      },
+      "startup": {
+        "rust": [
+          112.0,
+          113.0,
+          123.0
+        ],
+        "go": [
+          111.0,
+          112.0,
+          115.0
+        ]
+      }
+    },
+    "trimmed_round_values_ms": {
+      "latency_p95": {
+        "rust": [
+          1.37
+        ],
+        "go": [
+          1.448
+        ]
+      },
+      "startup": {
+        "rust": [
+          113.0
+        ],
+        "go": [
+          112.0
+        ]
+      }
+    }
+  },
+  "thresholds_pct": {
+    "latency_p95": 5.0,
+    "rss_peak": 10.0,
+    "startup": 10.0
+  },
+  "metrics": {
+    "latency_p95_ms": {
+      "rust": 1.37,
+      "go": 1.448
+    },
+    "rss_peak_kb": {
+      "rust": 1552,
+      "go": 1664
+    },
+    "startup_ms": {
+      "rust": 113.0,
+      "go": 112.0
+    }
+  },
+  "metrics_rounds": {
+    "latency_p95_ms": {
+      "rust": [
+        3.023,
+        1.37,
+        1.333
+      ],
+      "go": [
+        3.025,
+        1.448,
+        1.385
+      ]
+    },
+    "startup_ms": {
+      "rust": [
+        112.0,
+        123.0,
+        113.0
+      ],
+      "go": [
+        111.0,
+        112.0,
+        115.0
+      ]
+    }
+  },
+  "regressions_pct": {
+    "latency_p95": -5.386740331491702,
+    "rss_peak": -6.730769230769231,
+    "startup": 0.8928571428571428
+  },
+  "regressions_rounds_pct": {
+    "latency_p95": [
+      -0.06611570247933156,
+      -5.386740331491702,
+      -3.754512635379065
+    ],
+    "startup": [
+      0.9009009009009009,
+      9.821428571428571,
+      -1.7391304347826086
+    ]
+  },
+  "checks": {
+    "latency_p95": {
+      "value_pct": -5.386740331491702,
+      "limit_pct": 5.0,
+      "pass": true
+    },
+    "rss_peak": {
+      "value_pct": -6.730769230769231,
+      "limit_pct": 10.0,
+      "pass": true
+    },
+    "startup": {
+      "value_pct": 0.8928571428571428,
+      "limit_pct": 10.0,
+      "pass": true
+    }
+  },
+  "inputs": {
+    "lock_file": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/perf_gate.lock.json",
+    "perf_work_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf",
+    "perf_rounds": 3,
+    "round_trim_each_side": 1,
+    "go_bin": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box",
+    "go_config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_go.json",
+    "go_proxy_port": 11811,
+    "rust_bin": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run",
+    "rust_config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_rust.json",
+    "rust_proxy_port": 11810,
+    "rust_build_features": "acceptance",
+    "rust_build_enabled": 1,
+    "startup_warmup_runs": 1,
+    "startup_sample_runs": 7,
+    "warmup_requests": 20,
+    "sample_requests": 120,
+    "sample_count": {
+      "rust": 120,
+      "go": 120
+    },
+    "sample_count_per_round": {
+      "rust": [
+        120,
+        120,
+        120
+      ],
+      "go": [
+        120,
+        120,
+        120
+      ]
+    },
+    "startup_sample_count": {
+      "rust": 7,
+      "go": 7
+    },
+    "startup_sample_count_per_round": {
+      "rust": [
+        7,
+        7,
+        7
+      ],
+      "go": [
+        7,
+        7,
+        7
+      ]
+    },
+    "request_connect_timeout_sec": 3,
+    "request_max_time_sec": 8,
+    "memory_report": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/memory_comparison.json",
+    "local_target": "http://127.0.0.1:18080/",
+    "round_dirs": [
+      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_01",
+      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_02",
+      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_03"
+    ]
+  }
+}

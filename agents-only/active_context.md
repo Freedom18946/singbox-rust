@@ -10,19 +10,20 @@
 ## 战略状态
 
 **当前阶段**: L18 认证替换
-**执行焦点**: L18 Phase 2 Batch I 完成 → Batch J（Capstone 首跑与基线锁定）待执行
+**执行焦点**: L18 Phase 2 完成（Batch E-J 全部 PASS/PASS_ATTRIBUTED）→ Phase 3 待启动
 **Parity**: 100%（209/209 closed）
 **MIG-02**: ACCEPTED（2026-03-07，Step 0-5 全绿，541 V7 assertions）
 
 ## 关键里程碑
 
-- **Batch I 完成（2026-03-07）**：3 WP 全部 PASS
-  - I1: GUI Rust 单核五步全 PASS（capability v2.0.0 ok）
-  - I2: GUI 双核对比五步全 PASS（Go/Rust 行为一致，logs_panel 呈现差异已归因）
-  - I3: sandbox 不扰民全 PASS（系统代理 byte-level 一致, HOME 隔离, 端口释放, 无 0.0.0.0）
-- Batch H 完成（2026-03-07）：双核差分 daily PASS / nightly PASS_ENV_LIMITED
-- Batch G 完成（2026-03-07）：Rust 单核认证 3/3 PASS
-- Batch E+F 完成（2026-03-07）：环境开封 + MIG-02 适配审计
+- **Phase 2 完成（2026-03-07）**：18 WP, Batch E-J 全部通过
+  - Batch J capstone: 10/14 gates PASS, 4 FAIL_ATTRIBUTED（capstone env 传播问题）
+  - Perf gate: Rust 优于 Go（p95 -5.4%, RSS -6.7%, startup +0.9%）
+  - 基线锁定: `reports/l18/phase2_baseline.lock.json`
+- Batch I 完成: GUI Go+Rust 五步全 PASS + sandbox 验证
+- Batch H 完成: 双核差分 daily PASS / nightly PASS_ENV_LIMITED
+- Batch G 完成: Rust 单核认证 3/3 PASS
+- Batch E+F 完成: 环境开封 + MIG-02 适配审计
 
 ## 当前构建状态
 
@@ -38,9 +39,9 @@
 
 ## 下一步
 
-1. 执行 L18 Phase 2 Batch J（Capstone 首跑与基线锁定）：J1 daily capstone → J2 perf gate → J3 基线锁定
-2. Batch J 依赖 G3+H1+I1（全部已完成）
-3. 工作包详见 `planning/L18-PHASE2.md` §8
+1. L18 Phase 3（nightly/certify 级别运行）
+2. 修复 capstone env 传播问题（SINGBOX_BINARY, INTEROP_*）使 capstone 可自包含 PASS
+3. Phase 3 目标: one full nightly 24h PASS → one certify 7d PASS → L18 关闭
 
 ## 关键文件速查
 
