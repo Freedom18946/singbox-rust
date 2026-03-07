@@ -11,19 +11,19 @@ use axum::routing::{any, get};
 use axum::{Json, Router};
 use futures_util::StreamExt;
 use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
-use hickory_proto::rr::{Name, RecordType};
+use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::process::Command;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
@@ -51,7 +51,7 @@ impl UpstreamHarness {
             }
         }
         for (_name, handle) in self.handles {
-            let _ = handle.join.await;
+            let _ = tokio::time::timeout(Duration::from_secs(5), handle.join).await;
         }
     }
 
@@ -209,6 +209,7 @@ async fn start_single_upstream(
             let addr = listener.local_addr().with_context(|| "tcp local_addr")?;
             let service_name = spec.name.clone();
             let delays = harness.service_delays_ms.clone();
+            let semaphore = Arc::new(Semaphore::new(1024));
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 loop {
@@ -221,7 +222,12 @@ async fn start_single_upstream(
                                 Ok((mut stream, _)) => {
                                     let delays = delays.clone();
                                     let svc = service_name.clone();
+                                    let sem = semaphore.clone();
                                     tokio::spawn(async move {
+                                        let _permit = match sem.acquire().await {
+                                            Ok(p) => p,
+                                            Err(_) => return,
+                                        };
                                         let mut buf = vec![0_u8; 256 * 1024]; // 256KB for large payload support
                                         loop {
                                             match stream.read(&mut buf).await {
@@ -333,6 +339,16 @@ async fn start_single_upstream(
                                         resp.set_response_code(ResponseCode::NoError);
                                         for q in req.queries() {
                                             resp.add_query(q.clone());
+                                            // Add synthetic A record (TEST-NET-2, RFC 5737)
+                                            if q.query_type() == RecordType::A {
+                                                resp.add_answer(Record::from_rdata(
+                                                    q.name().clone(),
+                                                    300,
+                                                    RData::A(hickory_proto::rr::rdata::A(
+                                                        Ipv4Addr::new(198, 51, 100, 1),
+                                                    )),
+                                                ));
+                                            }
                                         }
                                         let mut encoded = Vec::with_capacity(256);
                                         let mut encoder = BinEncoder::new(&mut encoded);
@@ -395,7 +411,7 @@ async fn start_single_upstream(
                                     let svc = service_name.clone();
                                     tokio::spawn(async move {
                                         if let Ok(mut tls) = acceptor.accept(stream).await {
-                                            let mut buf = [0_u8; 2048];
+                                            let mut buf = vec![0_u8; 256 * 1024]; // 256KB, matching TcpEcho
                                             loop {
                                                 match tls.read(&mut buf).await {
                                                     Ok(0) => break,
@@ -907,7 +923,9 @@ fn resolve_payload(payload: &str, payload_size: Option<usize>) -> Vec<u8> {
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
-    let response = reqwest::Client::new()
+    static CLIENT: std::sync::LazyLock<reqwest::Client> =
+        std::sync::LazyLock::new(reqwest::Client::new);
+    let response = CLIENT
         .get(url)
         .send()
         .await
@@ -1073,103 +1091,7 @@ async fn tcp_roundtrip_via_socks5(
     target_addr: &str,
     payload: &[u8],
 ) -> Result<Vec<u8>> {
-    let mut stream = TcpStream::connect(proxy_addr)
-        .await
-        .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
-
-    // greeting: SOCKS5 + 1 auth method + no-auth
-    stream
-        .write_all(&[0x05_u8, 0x01, 0x00])
-        .await
-        .with_context(|| "writing socks5 greeting")?;
-    let mut greeting_resp = [0_u8; 2];
-    stream
-        .read_exact(&mut greeting_resp)
-        .await
-        .with_context(|| "reading socks5 greeting response")?;
-    if greeting_resp != [0x05, 0x00] {
-        return Err(anyhow!(
-            "socks5 greeting rejected: version={} method={}",
-            greeting_resp[0],
-            greeting_resp[1]
-        ));
-    }
-
-    let (host, port) = parse_host_port(target_addr)?;
-    let mut req = vec![0x05_u8, 0x01, 0x00]; // v5, connect, reserved
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            req.push(0x01);
-            req.extend_from_slice(&ip.octets());
-        }
-        Ok(IpAddr::V6(ip)) => {
-            req.push(0x04);
-            req.extend_from_slice(&ip.octets());
-        }
-        Err(_) => {
-            let host_bytes = host.as_bytes();
-            if host_bytes.is_empty() || host_bytes.len() > u8::MAX as usize {
-                return Err(anyhow!("invalid socks5 domain target: {host}"));
-            }
-            req.push(0x03);
-            req.push(host_bytes.len() as u8);
-            req.extend_from_slice(host_bytes);
-        }
-    }
-    req.extend_from_slice(&port.to_be_bytes());
-
-    stream
-        .write_all(&req)
-        .await
-        .with_context(|| format!("writing socks5 connect request for {target_addr}"))?;
-
-    let mut resp_head = [0_u8; 4];
-    stream
-        .read_exact(&mut resp_head)
-        .await
-        .with_context(|| "reading socks5 connect response header")?;
-    if resp_head[0] != 0x05 {
-        return Err(anyhow!("invalid socks5 response version: {}", resp_head[0]));
-    }
-    if resp_head[1] != 0x00 {
-        return Err(anyhow!(
-            "socks5 connect rejected with code: {}",
-            resp_head[1]
-        ));
-    }
-
-    match resp_head[3] {
-        0x01 => {
-            let mut buf = [0_u8; 4 + 2];
-            stream
-                .read_exact(&mut buf)
-                .await
-                .with_context(|| "reading socks5 ipv4 bind address")?;
-        }
-        0x03 => {
-            let mut len = [0_u8; 1];
-            stream
-                .read_exact(&mut len)
-                .await
-                .with_context(|| "reading socks5 domain bind length")?;
-            let mut buf = vec![0_u8; len[0] as usize + 2];
-            stream
-                .read_exact(&mut buf)
-                .await
-                .with_context(|| "reading socks5 domain bind address")?;
-        }
-        0x04 => {
-            let mut buf = [0_u8; 16 + 2];
-            stream
-                .read_exact(&mut buf)
-                .await
-                .with_context(|| "reading socks5 ipv6 bind address")?;
-        }
-        atyp => {
-            return Err(anyhow!("unknown socks5 bind atyp: {atyp}"));
-        }
-    }
-
+    let mut stream = socks5_connect(proxy_addr, target_addr).await?;
     stream
         .write_all(payload)
         .await
@@ -1217,7 +1139,7 @@ async fn udp_roundtrip(addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
         .send_to(payload, addr)
         .await
         .with_context(|| format!("udp send {addr}"))?;
-    let mut buf = [0_u8; 4096];
+    let mut buf = [0_u8; 65536]; // 64KB, matching server
     let (n, _peer) = tokio::time::timeout(
         std::time::Duration::from_secs(2),
         socket.recv_from(&mut buf),
@@ -1250,23 +1172,7 @@ async fn udp_roundtrip_via_socks5(
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
 
-    // greeting: SOCKS5 + 1 auth method + no-auth
-    control
-        .write_all(&[0x05_u8, 0x01, 0x00])
-        .await
-        .with_context(|| "writing socks5 greeting")?;
-    let mut greeting_resp = [0_u8; 2];
-    control
-        .read_exact(&mut greeting_resp)
-        .await
-        .with_context(|| "reading socks5 greeting response")?;
-    if greeting_resp != [0x05, 0x00] {
-        return Err(anyhow!(
-            "socks5 greeting rejected: version={} method={}",
-            greeting_resp[0],
-            greeting_resp[1]
-        ));
-    }
+    socks5_greet(&mut control).await?;
 
     // UDP ASSOCIATE command.
     control
@@ -1305,26 +1211,7 @@ async fn udp_roundtrip_via_socks5(
 
     let (target_host, target_port) = parse_host_port(target_addr)?;
     let mut packet = vec![0x00_u8, 0x00, 0x00]; // RSV + FRAG
-    match target_host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            packet.push(0x01);
-            packet.extend_from_slice(&ip.octets());
-        }
-        Ok(IpAddr::V6(ip)) => {
-            packet.push(0x04);
-            packet.extend_from_slice(&ip.octets());
-        }
-        Err(_) => {
-            let host_bytes = target_host.as_bytes();
-            if host_bytes.is_empty() || host_bytes.len() > u8::MAX as usize {
-                return Err(anyhow!("invalid socks5 domain target: {target_host}"));
-            }
-            packet.push(0x03);
-            packet.push(host_bytes.len() as u8);
-            packet.extend_from_slice(host_bytes);
-        }
-    }
-    packet.extend_from_slice(&target_port.to_be_bytes());
+    socks5_append_addr(&mut packet, &target_host, target_port);
     packet.extend_from_slice(payload);
 
     let socket = UdpSocket::bind("127.0.0.1:0")
@@ -1335,7 +1222,7 @@ async fn udp_roundtrip_via_socks5(
         .await
         .with_context(|| format!("sending udp packet to socks relay {relay_addr}"))?;
 
-    let mut recv_buf = [0_u8; 4096];
+    let mut recv_buf = [0_u8; 65536]; // 64KB, matching server
     let (n, _peer) = tokio::time::timeout(
         std::time::Duration::from_secs(2),
         socket.recv_from(&mut recv_buf),
@@ -1544,43 +1431,58 @@ async fn ws_roundtrip(
     }
 }
 
+/// SOCKS5 greeting: send auth method, validate server accepts no-auth.
+async fn socks5_greet(stream: &mut TcpStream) -> Result<()> {
+    stream
+        .write_all(&[0x05_u8, 0x01, 0x00])
+        .await
+        .with_context(|| "writing socks5 greeting")?;
+    let mut resp = [0_u8; 2];
+    stream
+        .read_exact(&mut resp)
+        .await
+        .with_context(|| "reading socks5 greeting response")?;
+    if resp != [0x05, 0x00] {
+        return Err(anyhow!(
+            "socks5 greeting rejected: version={} method={}",
+            resp[0],
+            resp[1]
+        ));
+    }
+    Ok(())
+}
+
+/// Append SOCKS5 address bytes (atyp + addr + port) to buffer.
+fn socks5_append_addr(buf: &mut Vec<u8>, host: &str, port: u16) {
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            buf.push(0x01);
+            buf.extend_from_slice(&ip.octets());
+        }
+        Ok(IpAddr::V6(ip)) => {
+            buf.push(0x04);
+            buf.extend_from_slice(&ip.octets());
+        }
+        Err(_) => {
+            let host_bytes = host.as_bytes();
+            buf.push(0x03);
+            buf.push(host_bytes.len() as u8);
+            buf.extend_from_slice(host_bytes);
+        }
+    }
+    buf.extend_from_slice(&port.to_be_bytes());
+}
+
 async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
     let mut stream = TcpStream::connect(proxy_addr)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
 
-    stream
-        .write_all(&[0x05_u8, 0x01, 0x00])
-        .await
-        .with_context(|| "writing socks5 greeting")?;
-    let mut greeting_resp = [0_u8; 2];
-    stream
-        .read_exact(&mut greeting_resp)
-        .await
-        .with_context(|| "reading socks5 greeting response")?;
-    if greeting_resp != [0x05, 0x00] {
-        return Err(anyhow!("socks5 greeting rejected"));
-    }
+    socks5_greet(&mut stream).await?;
 
     let (host, port) = parse_host_port(target_addr)?;
-    let mut req = vec![0x05_u8, 0x01, 0x00];
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            req.push(0x01);
-            req.extend_from_slice(&ip.octets());
-        }
-        Ok(IpAddr::V6(ip)) => {
-            req.push(0x04);
-            req.extend_from_slice(&ip.octets());
-        }
-        Err(_) => {
-            let host_bytes = host.as_bytes();
-            req.push(0x03);
-            req.push(host_bytes.len() as u8);
-            req.extend_from_slice(host_bytes);
-        }
-    }
-    req.extend_from_slice(&port.to_be_bytes());
+    let mut req = vec![0x05_u8, 0x01, 0x00]; // v5, connect, reserved
+    socks5_append_addr(&mut req, &host, port);
 
     stream
         .write_all(&req)
@@ -1596,23 +1498,7 @@ async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream
         return Err(anyhow!("socks5 connect rejected: {}", resp_head[1]));
     }
 
-    match resp_head[3] {
-        0x01 => {
-            let mut buf = [0_u8; 6];
-            stream.read_exact(&mut buf).await?;
-        }
-        0x03 => {
-            let mut len = [0_u8; 1];
-            stream.read_exact(&mut len).await?;
-            let mut buf = vec![0_u8; len[0] as usize + 2];
-            stream.read_exact(&mut buf).await?;
-        }
-        0x04 => {
-            let mut buf = [0_u8; 18];
-            stream.read_exact(&mut buf).await?;
-        }
-        _ => {}
-    }
+    let _ = read_socks5_addr_port(&mut stream, resp_head[3]).await?;
 
     Ok(stream)
 }
@@ -1645,8 +1531,10 @@ async fn tls_roundtrip(
             .with_custom_certificate_verifier(Arc::new(DangerousVerifier))
             .with_no_client_auth()
     } else {
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         rustls::ClientConfig::builder()
-            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_root_certificates(root_store)
             .with_no_client_auth()
     };
 

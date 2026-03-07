@@ -1,3 +1,4 @@
+<!-- tier: A -->
 # Go-Rust Parity Matrix (2026-01-31 Baseline + 2026-02-10 Recalibration)
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.14` for functional, type, API, comment, and directory parity.

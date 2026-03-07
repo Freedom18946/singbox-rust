@@ -27,6 +27,7 @@ axum = { version = "0.7", features = ["ws"] }
 rcgen = "0.12"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 regex = "1"
+webpki-roots = "0.26"
 
 [dev-dependencies]
 tempfile = { workspace = true }
