@@ -1,7 +1,7 @@
 # 工作包追踪（Workpackage Latest）
 
 > **最后更新**：2026-03-07
-> **当前阶段**：L21 wave#202 完成 — **MIG-02 正式关闭（最终审计通过）**（全部运行路径无隐式直连回退，541 V7 assertions）
+> **当前阶段**：L21 wave#202 完成 — **MIG-02 验收通过 ACCEPTED（大验收 Step 0-5 全绿，2026-03-07）**
 > **Parity（权威口径）**：100%（209/209 closed, acceptance baseline），以 `agents-only/02-reference/GO_PARITY_MATRIX.md`（2026-02-24）为准
 > **Remaining**：0（`PX-015` Linux runtime/system bus 实机验证已标记为 Accepted Limitation）
 > **Boundary Gate**：✅ `check-boundaries.sh --strict` exit 0（V4a=23/25 + V7=541 assertions，2026-03-07）
@@ -12,13 +12,30 @@
 ## 口径对齐（避免阶段混淆）
 
 1. 项目总阶段仍记为 `L18`；当前实际执行是 `L21 wave`。
-2. **MIG-02 正式关闭（最终审计通过）**：全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
+2. **MIG-02 验收通过 ACCEPTED**：大验收 5 步全绿（boundaries/parity/test/fmt/clippy + hot_reload 20x + signal 5x + interop-lab 27 + V7 负样例 3/3），全部运行路径只剩显式失败/显式 unresolved，无隐式直连回退。
 3. 当前所有收口都会同步写入 V7 门禁，防止旧路径回流。
 
 ## 下一阶段评估（实时）
 
-- **MIG-02 已关闭**（wave#1-202, 541 assertions）。
+- **MIG-02 验收通过 ACCEPTED**（wave#1-202, 541 assertions, 大验收 Step 0-5 全绿）。
 - 下一阶段可转向 MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 的具体迁移，或其他 codebase hardening。
+
+## 🆕 最新进展：MIG-02 大验收 ACCEPTED（2026-03-07）
+
+**状态**：✅ 大验收 5 步全绿，MIG-02 正式标记 ACCEPTED
+
+| Step | 内容 | 结果 |
+|------|------|------|
+| 0 | 编译修复（quic_ech_mode 补齐） | ✅ PASS |
+| 1 | 五项核心门禁（boundaries/parity/test/fmt/clippy） | ✅ ALL PASS |
+| 2 | hot_reload 20x + signal_reliability 5x | ✅ PASS |
+| 3 | interop-lab 27 unit tests | ✅ PASS |
+| 4 | V7 负样例注入（3 violations → 3/3 caught, restore 541/541 clean） | ✅ PASS |
+| 5 | 签收 + push | ✅ `86d716d` |
+
+- 验收修复 51 文件（fmt/clippy/type/test）已提交 `21c485b`
+- V7 assertions: 541（l21.250-wave202-v1）
+- 全部生产运行路径零隐式直连回退（两轮独立审计 + 大验收确认）
 
 ## 🆕 最新进展：L21 wave#200-202 — MIG-02 最终关闭（2026-03-07）
 

@@ -5,6 +5,24 @@
 
 ---
 
+## MIG-02 验收通过 ACCEPTED（2026-03-07）
+
+**范围**：L21 wave#1-202，202 波，541 V7 assertions
+
+**大验收（5 步）**：
+- Step 0: 编译修复（quic_ech_mode 补齐）
+- Step 1: 五项核心门禁全绿（boundaries/parity/workspace_test/fmt/clippy）
+- Step 2: hot_reload 20x PASS + signal_reliability 5x PASS
+- Step 3: interop-lab 27 unit tests PASS
+- Step 4: V7 负样例注入 3/3 caught，还原后 541/541 clean
+- Step 5: 签收 commit `86d716d` + push
+
+**验收修复**：51 文件 fmt/clippy/type/test 适配（commit `21c485b`）
+
+**关键发现**：stability tests 需要绝对路径 `SINGBOX_BINARY`（cargo test 工作目录不在项目根）
+
+---
+
 ## WP-L1.1 协议迁移（L1.1.5/L1.1.6）
 
 ### 核心架构
