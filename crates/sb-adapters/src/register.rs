@@ -183,6 +183,7 @@ fn parse_required_outbound_uuid(
     }
 }
 
+#[allow(dead_code)]
 fn parse_required_outbound_ip_addr(
     protocol: &'static str,
     field: &'static str,

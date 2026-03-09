@@ -5,9 +5,7 @@
 //! This module tests SOCKS5 UDP support with mock servers to verify
 //! the UDP encapsulation/decapsulation works correctly.
 
-use sb_adapters::error::AdapterError;
 use sb_adapters::Result;
-use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr};
 
 use std::time::Duration;
@@ -108,8 +106,10 @@ impl MockSocks5Server {
 #[tokio::test]
 async fn test_socks5_udp_associate() -> Result<()> {
     use sb_adapters::outbound::socks5::Socks5Connector;
+    use sb_adapters::error::AdapterError;
     use sb_adapters::{DialOpts, Target};
     use serial_test::serial;
+    use std::io::ErrorKind;
     use std::sync::Arc;
 
     // This test needs to run serially to avoid port conflicts
