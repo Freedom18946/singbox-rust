@@ -80,19 +80,28 @@ Without all four fields, waiver is invalid.
 ## Current Status
 
 - Status: `IN_PROGRESS`
-- Stage: Phase 2 clean full PASS achieved; Phase 3 nightly/certify entry ready.
+- Stage: Phase 3 nightly full PASS achieved; certify deferred pending global static review triage.
 - Closure criteria pending:
-  - one full local `nightly` (24h canary) pass with fixed config
   - at least one `certify` (7d canary) pass
   - all mandatory gate evidence uploaded from self-hosted macOS CI
+- Local workspace note (2026-03-09):
+  - to reduce package size for GPT static audit, bulky runtime artifacts (`target/`, most `reports/l18/batches/`, oracle/build caches) were pruned from the local workspace
+  - batch ids below remain provenance references; referenced artifact files may not exist in this slimmed snapshot
 - Phase 2 closure note (2026-03-08):
   - clean daily rerun `20260307T211512Z-l18-daily-preflight` reached `overall=PASS`
   - capstone gates: all PASS, `docker=WARN`
   - canary summary: 13/13 `health_code=200`, RSS `11024 KB -> 7168 KB`, no monotonic leak trend
   - perf gate: PASS (`latency_p95=-15.83%`, `rss_peak=-4.84%`, `startup=0.0%`)
   - baseline lock refreshed at `reports/l18/phase2_baseline.lock.json`
+- Phase 3 nightly note (2026-03-09):
+  - nightly `20260307T230356Z-l18-nightly-24h` reached `overall=PASS`
+  - capstone gates: all PASS, `docker=WARN`
+  - canary summary: 78/78 `health_code=200`, RSS `11744 KB -> 6736 KB`, no monotonic leak trend
+  - dual gate: PASS (`run_fail_count=0`, `diff_fail_count=0`)
+  - perf gate: PASS (`latency_p95=-5.30%`, `rss_peak=-8.18%`, `startup=0.0%`)
+  - no valid `certify` conclusion has been recorded yet
 
-## Latest Evidence (2026-03-08)
+## Latest Evidence (2026-03-09)
 
 ### 1) Phase 2 clean daily rerun
 
@@ -124,6 +133,52 @@ Without all four fields, waiver is invalid.
   - `rss_peak`: Rust `1888 KB`, Go `1984 KB`, regression `-4.84%`
   - `startup`: Rust `18.0 ms`, Go `18.0 ms`, regression `0.0%`
   - verdict: `PASS`
+
+### 4) Phase 3 nightly 24h full PASS
+
+- Batch root:
+  - `reports/l18/batches/20260307T230356Z-l18-nightly-24h`
+- Status artifact:
+  - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/l18_capstone_status.json`
+- Result:
+  - `overall=PASS`
+  - gates: `preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff/perf_gate=PASS`
+  - `docker=WARN`
+
+### 5) Phase 3 nightly canary summary
+
+- Artifact:
+  - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/canary/canary_nightly.md`
+- Result:
+  - samples: `78`
+  - health 200 count: `78`
+  - RSS: `11744 KB -> 6736 KB`
+  - conclusion: no monotonic leak trend observed
+
+### 6) Phase 3 nightly dual + perf evidence
+
+- Dual artifact:
+  - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/dual_kernel/20260308T231830Z-nightly-34ebea7d/summary.json`
+- Dual result:
+  - selected cases: `6`
+  - `run_fail_count=0`
+  - `diff_fail_count=0`
+  - verdict: `PASS`
+- Perf artifact:
+  - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/perf/perf_gate.json`
+- Perf result:
+  - `latency_p95`: Rust `1.286 ms`, Go `1.358 ms`, regression `-5.30%`
+  - `rss_peak`: Rust `1616 KB`, Go `1760 KB`, regression `-8.18%`
+  - `startup`: Rust `111.0 ms`, Go `111.0 ms`, regression `0.0%`
+  - verdict: `PASS`
+
+### 7) Phase 3 certify status
+
+- Status:
+  - no active `certify` evidence is currently retained in the local slimmed workspace
+- Note:
+  - initial launch `20260309T004601Z-l18-certify-7d` was discarded because prior nightly perf runtimes still occupied `11810/11811`
+  - follow-up launch `20260309T004649Z-l18-certify-7d` did not produce a retained final conclusion before the workflow shifted to global static review
 
 ## Historical Evidence (2026-02-26)
 

@@ -9,8 +9,8 @@
 
 ## 战略状态
 
-**当前阶段**: L18 Phase 3 启动中
-**执行焦点**: 盯住 `20260307T223436Z-l18-nightly-preflight`，先穿过 workspace/lint/stability，再进入 24h canary
+**当前阶段**: L18 Phase 3 nightly 收口完成，转入全局静态审议
+**执行焦点**: 接收并分拣即将到来的 GPT 5.4 Pro 全局静态审议意见；`certify` 暂不继续发车
 **Parity**: 100%（209/209 closed）
 **MIG-02**: ACCEPTED（2026-03-07，541 V7 assertions）
 
@@ -61,10 +61,11 @@
 | `signal_reliability` | ✅ 3x 独立 PASS；capstone 内 5x PASS |
 | `dual_kernel_diff` | ✅ 5/5 PASS（独立验证） |
 | clean capstone daily rerun | ✅ PASS：`20260307T211512Z-l18-daily-preflight` 全量通过；`l18_capstone_status.json` 已生成，gate 结果为 `PASS/PASS/PASS/PASS/PASS/PASS/PASS/PASS/PASS/WARN/PASS/PASS/PASS/PASS`（仅 `docker` 为 `WARN`） |
+| nightly capstone 24h | ✅ PASS：`20260307T230356Z-l18-nightly-24h` 全量通过；`l18_capstone_status.json overall=PASS`，全部核心 gate PASS，仅 `docker=WARN` |
 
 ## 当前真实阻塞
 
-1. Phase 2 已无历史阻塞；当前真实动作点是 `20260307T223436Z-l18-nightly-preflight`，已越过 `PREFLIGHT` / `ORACLE` / `BOUNDARIES`，`WORKSPACE_TEST` 进行中
+1. Phase 2 / nightly 已无真实阻塞；当前主线已切换为“全局静态审议意见处理”
 
 ## 最近一次 capstone 重跑
 
@@ -78,16 +79,21 @@
   - `reports/l18/batches/20260307T200336Z-l18-daily-preflight`：暴露 `router_udp_rules` 默认值/锁污染问题，修复后中止
   - `reports/l18/batches/20260307T203645Z-l18-daily-preflight`：暴露 `Supervisor::start()` 在 adapter registry miss 时失去 `Direct`/`Block` core fallback，修复后中止
   - `reports/l18/batches/20260307T205807Z-l18-daily-preflight`：暴露 `xtests/env_doc_drift`，指出 env 文档仍引用已删除的 `SB_SOCKS_UDP_PROXY_FALLBACK_DIRECT` / `SB_PROXY_HEALTH_FALLBACK_DIRECT`，修复后中止
-- 当前批次:
-  - `reports/l18/batches/20260307T223436Z-l18-nightly-preflight`
-  - 当前阶段：`PREFLIGHT` / `ORACLE` / `BOUNDARIES` 已 PASS；`capstone.stdout.log` 已进入 `cargo test --workspace`，当前正在跑 `subs_merge_and_diff`、`test_monitoring_system_integration` 等测试
+  - `reports/l18/batches/20260307T223436Z-l18-nightly-preflight`：前台会话中断在 nightly canary 首样本后，非代码回归
+  - `reports/l18/batches/20260307T225640Z-l18-nightly-24h`：尝试性重发，同样停在 canary 首样本后；未形成有效 24h 证据
+  - `reports/l18/batches/20260309T004601Z-l18-certify-7d`：首次 certify 发车被上一轮 nightly 遗留的 `11810/11811` perf runtime 占口阻断，已清端口后废弃
+  - `reports/l18/batches/20260309T004649Z-l18-certify-7d`：用户中断当前会话前未形成可用结论；不计为有效 `certify` 证据
+- 当前状态:
+  - 无活动 capstone/certify 进程
+  - `nightly` PASS 结论已经回填到文档；后续是否继续 `certify`，取决于全局静态审议后的整改优先级
+  - 为降低打包上传压力，`target/`、`reports/l18/batches/` 等大体积运行产物已从本地工作区清理；历史 batch id 仅作为证据索引保留在文档中
   - baseline 参考：`20260307T211512Z-l18-daily-preflight` 已 clean full PASS；`reports/l18/phase2_baseline.lock.json` 已锁定 Phase 2 基线
 
 ## 下一步
 
-1. 持续盯 `20260307T223436Z-l18-nightly-preflight` 的 `WORKSPACE_TEST` / `FMT` / `CLIPPY` / `HOT_RELOAD` / `SIGNAL` / `GUI`
-2. 若 `nightly` 继续穿过前置 gate，则进入 24h canary 监控并只跟进新的真实失败
-3. `nightly` full PASS 后再发车 `certify`
+1. 接收 GPT 5.4 Pro 的全局静态审议报告，并逐条核证真伪
+2. 输出分级 triage：`Critical / Risk / Nitpick`，区分“已证实 / 部分成立 / 不成立 / 需运行验证”
+3. 只有在静态审议意见被分拣后，再决定是否恢复 `certify` 7d 长跑
 
 ## 关键文件速查
 

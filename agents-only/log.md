@@ -6611,4 +6611,46 @@ L2.8.4-6 Handlers + WebSocket:
 **结果**: 进行中 — `l18_capstone_status.json` 仍未落盘；`canary_daily.jsonl` 已增长到 6 条记录，health/RSS/FD 目前无异常
 **备注**: 仍受 1 小时 canary soak 硬时长限制；下一动作点仍是 canary 结束后的总状态文件生成
 
+### [2026-03-09 08:48] Agent: Codex (GPT-5)
+
+**任务**: 接续 Phase 3：确认 nightly 24h 结论，回填 PASS 证据，并切入 `certify` 7d 发车。
+**变更**:
+- 结论确认：
+  - 核对 `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/l18_capstone_status.json`，结果为 `overall=PASS`
+  - 关键门禁：`preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff/perf_gate=PASS`，`docker=WARN`
+  - canary：`78/78 health_code=200`，RSS `11744 KB -> 6736 KB`
+  - dual：`20260308T231830Z-nightly-34ebea7d`，`run_fail_count=0`，`diff_fail_count=0`
+  - perf：PASS（`latency_p95=-5.30%`，`rss_peak=-8.18%`，`startup=0.0%`）
+- certify 发车：
+  - 首次启动 `reports/l18/batches/20260309T004601Z-l18-certify-7d`
+  - 发现上一轮 nightly `PERF_GATE` 遗留 runtime 占用 `11810/11811`（PID `40452` / `42026`），清理后重发
+  - 有效 certify 批次切到 `reports/l18/batches/20260309T004649Z-l18-certify-7d`
+  - 当前 certify 由用户态 `Terminal` 会话承载，shell pid 记录在 `/tmp/l18_certify_terminal_20260309T004649Z.pid`
+- 文档回填：
+  - `agents-only/active_context.md`
+  - `agents-only/workpackage_latest.md`
+  - `reports/L18_REPLACEMENT_CERTIFICATION.md`
+
+**结果**: 进行中 — nightly 24h 已正式拿到 full PASS；certify 7d 已重发并进入前置 gate 执行
+**备注**: 当前只继续盯 `20260309T004649Z-l18-certify-7d`，若出现 FAIL，仅处理 certify 新暴露问题
+
+### [2026-03-09 18:40] Agent: Codex (GPT-5)
+
+**任务**: 为切换到“全局静态审议意见处理”阶段同步文档状态，并清理本地大体积运行产物以便打包上传。
+**变更**:
+- 清理工作区：
+  - 删除 `target/`、`app/target/`、`.cache/`、`reports/l18/oracle/`、绝大多数 `reports/l18/batches/` 运行产物，以及本地构建/缓存类大目录
+  - 恢复源码级外部依赖：`go_fork_source/sing-box-1.12.14`（`SagerNet/sing-box@v1.12.14`）与 `GUI_fork_source/GUI.for.SingBox-1.19.0`（`GUI-for-Cores/GUI.for.SingBox@v1.19.0`），仅保留源码树，不带各自 `.git`
+- 状态校正：
+  - 确认 `nightly` 24h 结论已在文档中闭环，`20260307T230356Z-l18-nightly-24h` 为 full PASS
+  - 确认当前无活动 `certify` 进程；`20260309T004649Z-l18-certify-7d` 未形成可用结论，不计作有效认证证据
+  - 将下一阶段执行焦点从“继续盯 certify 长跑”切换为“接收并分拣 GPT 5.4 Pro 全局静态审议意见”
+- 文档同步：
+  - `agents-only/active_context.md`
+  - `agents-only/workpackage_latest.md`
+  - `reports/L18_REPLACEMENT_CERTIFICATION.md`
+
+**结果**: 成功 — 仓库已切换到适合打包上传做静态审计的状态；L18 当前最新结论为“Phase 2 clean PASS + nightly 24h full PASS”，`certify` 暂未形成有效新证据
+**备注**: 下一步优先做静态审议意见 triage，不再默认继续发车长链路
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

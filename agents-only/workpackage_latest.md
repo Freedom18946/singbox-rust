@@ -70,8 +70,10 @@
 ### Phase 3（nightly/certify 级别运行）— 🔄 进行中
 
 - 前置：Phase 2 clean full PASS 已满足（batch `20260307T211512Z`）
-- 当前批次：`20260307T223436Z-l18-nightly-preflight` 已启动，`PREFLIGHT/ORACLE/BOUNDARIES` 已 PASS
-- 目标：one full nightly 24h PASS → one certify 7d PASS → L18 关闭
+- nightly：`20260307T230356Z-l18-nightly-24h` 已 full PASS（`overall=PASS`，仅 `docker=WARN`）
+- certify：当前无活动批次；`20260309T004601Z-l18-certify-7d` 因 `11810/11811` 遗留 perf runtime 占口废弃，`20260309T004649Z-l18-certify-7d` 在会话切换前被中断，未形成有效证据
+- 当前重点：先处理即将到来的全局静态审议意见，再决定 `certify` 重发顺序
+- 目标：nightly 24h PASS 已达成；下一目标是完成全局静态审议 triage，并在必要整改后再取一次有效 `certify` 7d PASS
 - 入口：`agents-only/planning/L18-PHASE3.md`
 
 ---
