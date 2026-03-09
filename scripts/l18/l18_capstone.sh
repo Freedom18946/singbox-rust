@@ -4,7 +4,7 @@ set -u -o pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/l18/l18_capstone.sh [--profile daily|nightly|certify] [--api-url URL] [--pid-file PATH] [--status-file PATH] [--go-api URL] [--go-token TOKEN] [--gui-app PATH] [--gui-sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1] [--canary-hours N] [--canary-interval-sec N] [--canary-output-root DIR] [--workspace-test-threads N] [--require-docker 0|1] [--fail-fast]
+  scripts/l18/l18_capstone.sh [--profile daily|nightly|certify] [--api-url URL] [--pid-file PATH] [--status-file PATH] [--go-api URL] [--go-token TOKEN] [--gui-mode core|host-gui] [--gui-app PATH] [--gui-sandbox-root PATH] [--allow-existing-system-proxy 0|1] [--allow-real-proxy-coexist 0|1] [--canary-hours N] [--canary-interval-sec N] [--canary-output-root DIR] [--workspace-test-threads N] [--require-docker 0|1] [--fail-fast]
 
 Profiles:
   daily: canary 1h
@@ -36,6 +36,7 @@ DUAL_RUST_SECRET="${L18_DUAL_RUST_API_SECRET:-}"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
 GUI_REPORT_JSON="${L18_GUI_REAL_REPORT_JSON:-${ROOT_DIR}/reports/l18/gui_real_cert.json}"
+GUI_MODE="${L18_GUI_MODE:-core}"
 ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
 ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
 REQUIRE_DOCKER="${L18_REQUIRE_DOCKER:-0}"
@@ -82,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --gui-app)
       GUI_APP="$2"
+      shift 2
+      ;;
+    --gui-mode)
+      GUI_MODE="$2"
       shift 2
       ;;
     --gui-sandbox-root)
@@ -160,6 +165,10 @@ DUAL_GO_BIN="$(to_abs_path "$DUAL_GO_BIN")"
 
 if [[ "$ALLOW_EXISTING_SYSTEM_PROXY" != "0" && "$ALLOW_EXISTING_SYSTEM_PROXY" != "1" ]]; then
   echo "--allow-existing-system-proxy must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$GUI_MODE" != "core" && "$GUI_MODE" != "host-gui" ]]; then
+  echo "--gui-mode must be core or host-gui" >&2
   exit 2
 fi
 if [[ "$ALLOW_REAL_PROXY_COEXIST" != "0" && "$ALLOW_REAL_PROXY_COEXIST" != "1" ]]; then
@@ -305,6 +314,7 @@ finalize_status() {
 {
   "generated_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
   "profile": "${PROFILE}",
+  "gui_mode": "${GUI_MODE}",
   "overall": "${overall}",
   "api_url": "${API_URL}",
   "fail_fast": ${FAIL_FAST},
@@ -784,24 +794,29 @@ if ! run_docker_gate; then
   fi
 fi
 
-if [[ -z "$GUI_APP" ]]; then
-  echo "L18_GUI_APP/--gui-app is required for GUI gate" >&2
-  set_gate_status "GUI" "FAILED"
-  HAS_FAIL=1
-  if [[ "$FAIL_FAST" == "1" ]]; then
-    finalize_status
-    exit 1
-  fi
+if [[ "$GUI_MODE" == "core" ]]; then
+  set_gate_status "GUI" "UNTESTED"
+  HAS_PARTIAL=1
 else
-  GUI_CMD=("${ROOT_DIR}/scripts/l18/gui_real_cert.sh" --gui-app "$GUI_APP" --allow-existing-system-proxy "$ALLOW_EXISTING_SYSTEM_PROXY" --allow-real-proxy-coexist "$ALLOW_REAL_PROXY_COEXIST")
-  if [[ -n "$GUI_SANDBOX_ROOT" ]]; then
-    GUI_CMD+=(--sandbox-root "$GUI_SANDBOX_ROOT")
-  fi
-  if ! run_gui_gate "${GUI_CMD[@]}"; then
+  if [[ -z "$GUI_APP" ]]; then
+    echo "L18_GUI_APP/--gui-app is required for host-gui mode" >&2
+    set_gate_status "GUI" "FAILED"
+    HAS_FAIL=1
     if [[ "$FAIL_FAST" == "1" ]]; then
-      echo "[L18 capstone] fail-fast triggered at gate=GUI" >&2
       finalize_status
       exit 1
+    fi
+  else
+    GUI_CMD=("${ROOT_DIR}/scripts/l18/gui_real_cert.sh" --gui-app "$GUI_APP" --allow-existing-system-proxy "$ALLOW_EXISTING_SYSTEM_PROXY" --allow-real-proxy-coexist "$ALLOW_REAL_PROXY_COEXIST")
+    if [[ -n "$GUI_SANDBOX_ROOT" ]]; then
+      GUI_CMD+=(--sandbox-root "$GUI_SANDBOX_ROOT")
+    fi
+    if ! run_gui_gate "${GUI_CMD[@]}"; then
+      if [[ "$FAIL_FAST" == "1" ]]; then
+        echo "[L18 capstone] fail-fast triggered at gate=GUI" >&2
+        finalize_status
+        exit 1
+      fi
     fi
   fi
 fi

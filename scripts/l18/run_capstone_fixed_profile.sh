@@ -6,7 +6,8 @@ usage() {
 Usage:
   scripts/l18/run_capstone_fixed_profile.sh \
     --profile daily|nightly|certify \
-    --gui-app <abs_path_to_gui_app> \
+    [--gui-mode core|host-gui] \
+    [--gui-app <abs_path_to_gui_app>] \
     [--batch-root DIR] \
     [--run-name NAME] \
     [--require-docker 0|1] \
@@ -32,6 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PROFILE="nightly"
+GUI_MODE="core"
 GUI_APP=""
 BATCH_ROOT=""
 RUN_NAME=""
@@ -51,6 +53,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --gui-app)
       GUI_APP="$2"
+      shift 2
+      ;;
+    --gui-mode)
+      GUI_MODE="$2"
       shift 2
       ;;
     --batch-root)
@@ -104,14 +110,19 @@ case "$PROFILE" in
     exit 2
     ;;
 esac
-
-if [[ -z "$GUI_APP" ]]; then
-  echo "--gui-app is required" >&2
+if [[ "$GUI_MODE" != "core" && "$GUI_MODE" != "host-gui" ]]; then
+  echo "--gui-mode must be core or host-gui" >&2
   exit 2
 fi
-if [[ ! -e "$GUI_APP" ]]; then
-  echo "gui app not found: $GUI_APP" >&2
-  exit 1
+if [[ "$GUI_MODE" == "host-gui" ]]; then
+  if [[ -z "$GUI_APP" ]]; then
+    echo "--gui-app is required when --gui-mode host-gui" >&2
+    exit 2
+  fi
+  if [[ ! -e "$GUI_APP" ]]; then
+    echo "gui app not found: $GUI_APP" >&2
+    exit 1
+  fi
 fi
 if [[ "$REQUIRE_DOCKER" != "0" && "$REQUIRE_DOCKER" != "1" ]]; then
   echo "--require-docker must be 0 or 1" >&2
@@ -138,7 +149,11 @@ if [[ "$BATCH_ROOT" != /* ]]; then
 fi
 
 if [[ -z "$RUN_NAME" ]]; then
-  RUN_NAME="capstone_${PROFILE}_fixedcfg"
+  if [[ "$GUI_MODE" == "host-gui" ]]; then
+    RUN_NAME="capstone_${PROFILE}_hostgui_fixedcfg"
+  else
+    RUN_NAME="capstone_${PROFILE}_core_fixedcfg"
+  fi
 fi
 
 if [[ -z "$API_SECRET" ]]; then
@@ -354,6 +369,7 @@ PY
 {
   echo "generated_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   echo "profile=${PROFILE}"
+  echo "gui_mode=${GUI_MODE}"
   echo "gui_app=${GUI_APP}"
   echo "rust_bin=${RUST_BIN}"
   echo "rust_app_bin=${RUST_APP_BIN}"
@@ -444,7 +460,7 @@ if [[ "$ready" != "1" ]]; then
   exit 1
 fi
 
-export ROOT_DIR GUI_APP RUN_ROOT RUN_DIR STATUS_FILE
+export ROOT_DIR GUI_APP GUI_MODE RUN_ROOT RUN_DIR STATUS_FILE
 export PRECHECK_TXT CONFIG_FREEZE_JSON RUST_BIN REQUIRE_DOCKER WORKSPACE_TEST_THREADS
 export ALLOW_EXISTING_SYSTEM_PROXY ALLOW_REAL_PROXY_COEXIST CANARY_API_URL CANARY_PID_FILE
 export FROZEN_RUST_BIN FROZEN_RUST_APP_BIN
@@ -459,6 +475,7 @@ from datetime import datetime, timezone
 payload = {
     "generated_at": datetime.now(timezone.utc).isoformat(),
     "profile": os.environ["FIXED_PROFILE"],
+    "gui_mode": os.environ["GUI_MODE"],
     "run_root": os.environ["RUN_ROOT"],
     "run_dir": os.environ["RUN_DIR"],
     "status_file": os.environ["STATUS_FILE"],
@@ -512,17 +529,19 @@ PY
 CAPSTONE_CMD=(
   "${ROOT_DIR}/scripts/l18/l18_capstone.sh"
   --profile "${PROFILE}"
+  --gui-mode "${GUI_MODE}"
   --api-url "${CANARY_API_URL}"
   --pid-file "${CANARY_PID_FILE}"
   --status-file "${STATUS_FILE}"
-  --gui-app "${GUI_APP}"
-  --gui-sandbox-root "${GUI_DIR}/sandbox"
   --allow-existing-system-proxy "${ALLOW_EXISTING_SYSTEM_PROXY}"
   --allow-real-proxy-coexist "${ALLOW_REAL_PROXY_COEXIST}"
   --workspace-test-threads "${WORKSPACE_TEST_THREADS}"
   --canary-output-root "${RUN_DIR}/canary"
   --require-docker "${REQUIRE_DOCKER}"
 )
+if [[ "$GUI_MODE" == "host-gui" ]]; then
+  CAPSTONE_CMD+=(--gui-app "${GUI_APP}" --gui-sandbox-root "${GUI_DIR}/sandbox")
+fi
 if [[ -n "${GO_API}" ]]; then
   CAPSTONE_CMD+=(--go-api "${GO_API}")
 fi
@@ -701,6 +720,7 @@ artifact_paths = {
 manifest = {
     "batch_id": Path(os.environ["BATCH_ROOT"]).name,
     "profile": os.environ["FIXED_PROFILE"],
+    "gui_mode": os.environ["GUI_MODE"],
     "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
     "command": os.environ["CAPSTONE_CMD_STR"].strip(),
     "artifact_hashes": {name: sha256_file(path) for name, path in artifact_paths.items()},

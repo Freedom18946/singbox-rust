@@ -89,6 +89,9 @@
    - `allow-real-proxy-coexist=0`
 4. 固定端口改成运行时生成 `port_map`
 5. 结束后必须做 leak assertion
+6. 日常执行显式拆分为：
+   - `daily-core`：默认，不运行真实 GUI，不触碰宿主机系统代理
+   - `daily-host-gui`：显式 opt-in，允许真实 GUI / 系统代理验证
 
 ## 5. Wave C：恢复长跑的决策门
 
