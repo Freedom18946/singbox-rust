@@ -12,6 +12,12 @@
 mod common;
 
 use std::net::SocketAddr;
+#[cfg(any(
+    all(feature = "http", feature = "socks"),
+    feature = "shadowsocks",
+    feature = "vmess"
+))]
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};

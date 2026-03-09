@@ -28,6 +28,11 @@ GO_API_SECRET_WRONG="${INTEROP_GO_API_SECRET_WRONG:-l18-capstone-go-secret-wrong
 RUST_API="${INTEROP_RUST_API_BASE:-}"
 RUST_API_SECRET="${INTEROP_RUST_API_SECRET:-${L18_RUST_API_SECRET:-test-secret}}"
 RUST_API_SECRET_WRONG="${INTEROP_RUST_API_SECRET_WRONG:-l18-capstone-rust-secret-wrong}"
+DUAL_GO_API="${L18_DUAL_GO_API:-}"
+DUAL_GO_SECRET="${L18_DUAL_GO_API_SECRET:-}"
+DUAL_GO_TOKEN="${L18_DUAL_GO_API_TOKEN:-}"
+DUAL_RUST_API="${L18_DUAL_RUST_API:-}"
+DUAL_RUST_SECRET="${L18_DUAL_RUST_API_SECRET:-}"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
 GUI_REPORT_JSON="${L18_GUI_REAL_REPORT_JSON:-${ROOT_DIR}/reports/l18/gui_real_cert.json}"
@@ -438,6 +443,36 @@ print(parsed.port or "")
 PY
 }
 
+api_url_from_config() {
+  local config_path="$1"
+  local fallback_url="$2"
+  if [[ ! -f "${config_path}" ]]; then
+    printf '%s\n' "${fallback_url}"
+    return 0
+  fi
+  python3 - "${config_path}" "${fallback_url}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+fallback = sys.argv[2]
+
+try:
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    controller = payload.get("experimental", {}).get("clash_api", {}).get("external_controller")
+except Exception:
+    controller = None
+
+if not controller:
+    print(fallback)
+elif controller.startswith("http://") or controller.startswith("https://"):
+    print(controller)
+else:
+    print(f"http://{controller}")
+PY
+}
+
 stop_dual_go_runtime() {
   if [[ -f "${DUAL_GO_PID_FILE}" ]]; then
     local gpid
@@ -549,23 +584,23 @@ start_dual_rust_runtime() {
 }
 
 run_dual_gate() {
-  local dual_rust_api="$RUST_API"
-  local dual_rust_secret="$RUST_API_SECRET"
-  local dual_go_api="$GO_API"
-  local dual_go_secret="$GO_API_SECRET"
-  local dual_go_token="$GO_TOKEN"
+  local dual_rust_api="$DUAL_RUST_API"
+  local dual_rust_secret="$DUAL_RUST_SECRET"
+  local dual_go_api="$DUAL_GO_API"
+  local dual_go_secret="$DUAL_GO_SECRET"
+  local dual_go_token="$DUAL_GO_TOKEN"
   local managed_rust=0
   local managed_go=0
   local rc=0
 
   if [[ -z "$dual_rust_api" ]]; then
-    dual_rust_api="http://127.0.0.1:19090"
+    dual_rust_api="$(api_url_from_config "${DUAL_RUST_CONFIG}" "http://127.0.0.1:19090")"
     dual_rust_secret="${RUST_API_SECRET}"
     managed_rust=1
   fi
 
   if [[ -z "$dual_go_api" ]]; then
-    dual_go_api="http://127.0.0.1:9090"
+    dual_go_api="$(api_url_from_config "${DUAL_GO_CONFIG}" "http://127.0.0.1:9090")"
     dual_go_secret="${GO_API_SECRET:-${GO_TOKEN:-}}"
     dual_go_token="${GO_TOKEN:-${GO_API_SECRET:-}}"
     managed_go=1
@@ -607,6 +642,7 @@ run_dual_gate() {
     INTEROP_RUST_API_SECRET_WRONG="${RUST_API_SECRET_WRONG}" \
     INTEROP_GO_API_BASE="${dual_go_api}" \
     INTEROP_GO_API_SECRET="${dual_go_secret}" \
+    INTEROP_GO_API_TOKEN="${dual_go_token}" \
     INTEROP_GO_API_SECRET_WRONG="${GO_API_SECRET_WRONG}" \
     "${DUAL_CMD[@]}" || rc=$?
 

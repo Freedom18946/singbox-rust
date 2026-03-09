@@ -387,6 +387,18 @@ is_system_proxy_enabled_file() {
   return 1
 }
 
+expected_runtime_ports_released() {
+  IFS=',' read -r -a expected_ports <<< "$EXPECTED_RUNTIME_PORTS"
+  for raw_port in "${expected_ports[@]}"; do
+    port="$(echo "$raw_port" | tr -d '[:space:]')"
+    [[ -z "$port" ]] && continue
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  return 0
+}
+
 detect_real_proxy_processes() {
   : > "$PROC_HITS_FILE"
   IFS=',' read -r -a patterns <<< "$REAL_PROXY_PROCESS_PATTERNS"
@@ -885,6 +897,28 @@ sandbox_precheck() {
 }
 
 run_postcheck() {
+  local settled=0
+  local after_enabled=0
+  for _ in $(seq 1 40); do
+    snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE"
+    after_enabled=0
+    if is_system_proxy_enabled_file "$SYSTEM_PROXY_AFTER_FILE"; then
+      after_enabled=1
+    fi
+    if cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE" && expected_runtime_ports_released; then
+      SYSTEM_PROXY_AFTER_ENABLED="$after_enabled"
+      SYSTEM_PROXY_UNCHANGED=1
+      SANDBOX_POSTCHECK_PASS=1
+      settled=1
+      break
+    fi
+    sleep 0.25
+  done
+
+  if [[ "$settled" == "1" ]]; then
+    return 0
+  fi
+
   snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE"
   if is_system_proxy_enabled_file "$SYSTEM_PROXY_AFTER_FILE"; then
     SYSTEM_PROXY_AFTER_ENABLED=1

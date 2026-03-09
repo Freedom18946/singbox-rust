@@ -96,10 +96,19 @@ pub async fn run_gui_sequence(
             GuiStep::WsCollect {
                 name,
                 path,
+                no_auth,
+                auth_secret,
                 max_frames,
                 duration_ms,
             } => {
-                let ws_url = build_ws_url(api, path);
+                let step_secret = if *no_auth {
+                    None
+                } else if let Some(secret) = auth_secret {
+                    Some(resolve_with_env(secret))
+                } else {
+                    api.secret.clone()
+                };
+                let ws_url = build_ws_url(api, path, step_secret.as_deref());
                 let result = tokio_tungstenite::connect_async(ws_url.clone()).await;
                 let mut frames = Vec::new();
                 match result {
@@ -201,7 +210,7 @@ async fn run_ws_parallel(
 
     let mut set = JoinSet::new();
     for (idx, spec) in streams.iter().enumerate() {
-        let ws_url = build_ws_url(api, &spec.path);
+        let ws_url = build_ws_url(api, &spec.path, api.secret.as_deref());
         let max_frames = spec.max_frames;
         let dur = duration_ms;
         let path = spec.path.clone();
@@ -277,15 +286,13 @@ async fn request_json(api: &ApiAccess, path: &str) -> Option<Value> {
     response.json::<Value>().await.ok()
 }
 
-fn build_ws_url(api: &ApiAccess, path: &str) -> String {
+fn build_ws_url(api: &ApiAccess, path: &str, token_override: Option<&str>) -> String {
     let base = api
         .base_url
         .trim_end_matches('/')
         .replace("https://", "wss://")
         .replace("http://", "ws://");
-    let token = api
-        .secret
-        .as_ref()
+    let token = token_override
         .map(|secret| format!("token={secret}"))
         .unwrap_or_default();
     if token.is_empty() {

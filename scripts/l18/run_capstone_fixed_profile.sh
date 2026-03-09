@@ -187,6 +187,7 @@ RUST_APP_BIN="${ROOT_DIR}/target/release/app"
 FROZEN_BIN_DIR="${RUN_ROOT}/runtime_bin"
 FROZEN_RUST_BIN="${FROZEN_BIN_DIR}/run"
 FROZEN_RUST_APP_BIN="${FROZEN_BIN_DIR}/app"
+FROZEN_GO_BIN="${FROZEN_BIN_DIR}/sing-box"
 
 allocate_ports() {
   python3 - <<'PY'
@@ -279,7 +280,8 @@ RUST_API_GENERATED="http://127.0.0.1:${RUST_CONTROLLER_PORT}"
 GO_API_EFFECTIVE="${GO_API:-${GO_API_GENERATED}}"
 GO_TOKEN_EFFECTIVE="${GO_TOKEN:-${API_SECRET}}"
 RUST_API_EFFECTIVE="${RUST_API_GENERATED}"
-REQUIRED_PORTS_CSV="${GO_CONTROLLER_PORT},${RUST_CONTROLLER_PORT},${GO_PROXY_PORT},${RUST_PROXY_PORT},${CANARY_CONTROLLER_PORT},${CANARY_PROXY_PORT}"
+RUNTIME_PORTS_CSV="${GO_CONTROLLER_PORT},${RUST_CONTROLLER_PORT},${GO_PROXY_PORT},${RUST_PROXY_PORT}"
+ALL_PORTS_CSV="${RUNTIME_PORTS_CSV},${CANARY_CONTROLLER_PORT},${CANARY_PROXY_PORT}"
 
 export GO_CONTROLLER_PORT RUST_CONTROLLER_PORT GO_PROXY_PORT RUST_PROXY_PORT CANARY_CONTROLLER_PORT CANARY_PROXY_PORT
 export GO_RUNTIME_CFG RUST_RUNTIME_CFG CANARY_CFG API_SECRET PORT_MAP_JSON
@@ -357,6 +359,7 @@ PY
   echo "rust_app_bin=${RUST_APP_BIN}"
   echo "frozen_rust_bin=${FROZEN_RUST_BIN}"
   echo "frozen_rust_app_bin=${FROZEN_RUST_APP_BIN}"
+  echo "frozen_go_bin=${FROZEN_GO_BIN}"
   echo "go_oracle_script=${ROOT_DIR}/scripts/l18/build_go_oracle.sh"
   echo "require_docker=${REQUIRE_DOCKER}"
   echo "workspace_test_threads=${WORKSPACE_TEST_THREADS}"
@@ -406,6 +409,22 @@ cp "${RUST_BIN}" "${FROZEN_RUST_BIN}"
 cp "${RUST_APP_BIN}" "${FROZEN_RUST_APP_BIN}"
 chmod +x "${FROZEN_RUST_BIN}" "${FROZEN_RUST_APP_BIN}"
 
+echo "[L18 fixed-profile] building frozen go oracle..."
+GO_ORACLE_BUILD_OUTPUT="$("${ROOT_DIR}/scripts/l18/build_go_oracle.sh" --output-root "${RUN_ROOT}/go_oracle" 2>&1)"
+printf '%s\n' "${GO_ORACLE_BUILD_OUTPUT}" > "${RUN_ROOT}/go_oracle_build.log"
+FROZEN_GO_BIN_SRC="$(printf '%s\n' "${GO_ORACLE_BUILD_OUTPUT}" | awk -F= '/^binary=/{print $2}' | tail -n1)"
+if [[ -z "${FROZEN_GO_BIN_SRC}" ]]; then
+  echo "failed to parse go oracle binary path from build output" >&2
+  cat "${RUN_ROOT}/go_oracle_build.log" >&2
+  exit 1
+fi
+if [[ ! -x "${FROZEN_GO_BIN_SRC}" ]]; then
+  echo "go oracle binary not executable after build: ${FROZEN_GO_BIN_SRC}" >&2
+  exit 1
+fi
+cp "${FROZEN_GO_BIN_SRC}" "${FROZEN_GO_BIN}"
+chmod +x "${FROZEN_GO_BIN}"
+
 trap stop_canary EXIT
 
 CANARY_PID="$(spawn_in_own_session "${CANARY_LOG}" "${RUST_BIN}" --config "${CANARY_CFG}")"
@@ -430,7 +449,7 @@ export PRECHECK_TXT CONFIG_FREEZE_JSON RUST_BIN REQUIRE_DOCKER WORKSPACE_TEST_TH
 export ALLOW_EXISTING_SYSTEM_PROXY ALLOW_REAL_PROXY_COEXIST CANARY_API_URL CANARY_PID_FILE
 export FROZEN_RUST_BIN FROZEN_RUST_APP_BIN
 export GO_API_EFFECTIVE GO_TOKEN_EFFECTIVE RUST_API_EFFECTIVE PORT_MAP_JSON
-export GO_RUNTIME_CFG RUST_RUNTIME_CFG API_SECRET REQUIRED_PORTS_CSV
+export GO_RUNTIME_CFG RUST_RUNTIME_CFG API_SECRET RUNTIME_PORTS_CSV ALL_PORTS_CSV FROZEN_GO_BIN
 export FIXED_PROFILE="${PROFILE}"
 python3 - <<'PY'
 import json
@@ -459,17 +478,23 @@ payload = {
         "L18_GUI_GO_BUILD_ENABLED": "0",
         "L18_GUI_RUST_BUILD_ENABLED": "0",
         "L18_RUST_BIN": os.environ["FROZEN_RUST_BIN"],
+        "L18_GO_BIN": os.environ["FROZEN_GO_BIN"],
+        "L18_GO_CONFIG": os.environ["GO_RUNTIME_CFG"],
+        "L18_RUST_CONFIG": os.environ["RUST_RUNTIME_CFG"],
+        "L18_DUAL_GO_BIN": os.environ["FROZEN_GO_BIN"],
         "L18_DUAL_RUST_BIN": os.environ["FROZEN_RUST_BIN"],
         "L18_DUAL_RUST_APP_BIN": os.environ["FROZEN_RUST_APP_BIN"],
         "L18_GO_API_URL": os.environ["GO_API_EFFECTIVE"],
         "L18_GO_API_TOKEN": os.environ["GO_TOKEN_EFFECTIVE"],
         "L18_GO_API_SECRET": os.environ["GO_TOKEN_EFFECTIVE"],
         "L18_RUST_API_URL": os.environ["RUST_API_EFFECTIVE"],
+        "L18_RUST_API_TOKEN": os.environ["API_SECRET"],
         "L18_RUST_API_SECRET": os.environ["API_SECRET"],
         "L18_CANARY_API_SECRET": os.environ["API_SECRET"],
         "L18_DUAL_GO_CONFIG": os.environ["GO_RUNTIME_CFG"],
         "L18_DUAL_RUST_CONFIG": os.environ["RUST_RUNTIME_CFG"],
-        "L18_REQUIRED_PORTS": os.environ["REQUIRED_PORTS_CSV"],
+        "L18_REQUIRED_PORTS": os.environ["RUNTIME_PORTS_CSV"],
+        "L18_EXPECTED_RUNTIME_PORTS": os.environ["RUNTIME_PORTS_CSV"],
     },
     "runtime_policy": {
         "require_docker": int(os.environ["REQUIRE_DOCKER"]),
@@ -522,18 +547,23 @@ env -u PROFILE \
   L18_PERF_GATE_LOCK="${RUN_DIR}/perf/perf_gate.lock.json" \
   L18_PERF_GATE_REPORT="${RUN_DIR}/perf/perf_gate.json" \
   L18_PERF_WORK_DIR="${RUN_DIR}/perf/work" \
-  L18_REQUIRED_PORTS="${REQUIRED_PORTS_CSV}" \
-  L18_EXPECTED_RUNTIME_PORTS="${REQUIRED_PORTS_CSV}" \
+  L18_REQUIRED_PORTS="${RUNTIME_PORTS_CSV}" \
+  L18_EXPECTED_RUNTIME_PORTS="${RUNTIME_PORTS_CSV}" \
+  L18_GO_BIN="${FROZEN_GO_BIN}" \
+  L18_GO_CONFIG="${GO_RUNTIME_CFG}" \
   L18_GO_API_URL="${GO_API_EFFECTIVE}" \
   L18_GO_API_TOKEN="${GO_TOKEN_EFFECTIVE}" \
   L18_GO_API_SECRET="${GO_TOKEN_EFFECTIVE}" \
   L18_RUST_API_URL="${RUST_API_EFFECTIVE}" \
+  L18_RUST_API_TOKEN="${API_SECRET}" \
   L18_RUST_API_SECRET="${API_SECRET}" \
   L18_CANARY_API_SECRET="${API_SECRET}" \
   L18_GO_PROXY_PORT="${GO_PROXY_PORT}" \
   L18_RUST_PROXY_PORT="${RUST_PROXY_PORT}" \
+  L18_DUAL_GO_BIN="${FROZEN_GO_BIN}" \
   L18_DUAL_GO_CONFIG="${GO_RUNTIME_CFG}" \
   L18_DUAL_RUST_CONFIG="${RUST_RUNTIME_CFG}" \
+  L18_RUST_CONFIG="${RUST_RUNTIME_CFG}" \
   L18_RUST_BUILD_ENABLED=0 \
   L18_RUST_BIN="${FROZEN_RUST_BIN}" \
   L18_DUAL_RUST_BIN="${FROZEN_RUST_BIN}" \
@@ -550,24 +580,35 @@ set -e
 
 stop_canary
 
-export REQUIRED_PORTS_CSV LEAK_ASSERT_JSON
+export ALL_PORTS_CSV LEAK_ASSERT_JSON
 python3 - <<'PY'
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
-ports = [p.strip() for p in os.environ["REQUIRED_PORTS_CSV"].split(",") if p.strip()]
+ports = [p.strip() for p in os.environ["ALL_PORTS_CSV"].split(",") if p.strip()]
+
+def collect_busy():
+    busy_ports = []
+    for port in ports:
+        proc = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            busy_ports.append({"port": int(port), "lsof": proc.stdout.strip().splitlines()[1:]})
+    return busy_ports
+
 busy = []
-for port in ports:
-    proc = subprocess.run(
-        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode == 0 and proc.stdout.strip():
-        busy.append({"port": int(port), "lsof": proc.stdout.strip().splitlines()[1:]})
+for _ in range(40):
+    busy = collect_busy()
+    if not busy:
+        break
+    time.sleep(0.25)
 
 payload = {
     "ports_checked": [int(p) for p in ports],

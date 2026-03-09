@@ -124,6 +124,10 @@ pub enum GuiStep {
     WsCollect {
         name: String,
         path: String,
+        #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
         #[serde(default = "default_ws_max_frames")]
         max_frames: usize,
         #[serde(default = "default_ws_duration_ms")]
