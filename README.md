@@ -2,7 +2,7 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **Acceptance Baseline**: **209/209 closed** (includes accepted limitations) against upstream sing-box 1.12.14.
+> **Acceptance Closure**: currently under Phase 4 evidence review. In this slim snapshot, prior closure narratives are `UNVERIFIED (slim snapshot)`.
 > Capability facts, evidence, and claim mapping are defined in **[docs/capabilities.md](docs/capabilities.md)** (`reports/capabilities.json`).
 > See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for matrix context and [NEXT_STEPS.md](NEXT_STEPS.md) for milestones.
 
@@ -23,18 +23,18 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 ### 📚 参考文档
 | 文档 | 内容 |
 |------|------|
-| [`05-USER-ABSTRACT-REQUIREMENTS.md`](./agents-only/05-USER-ABSTRACT-REQUIREMENTS.md) | 用户抽象需求 |
-| [`06-STRATEGIC-ROADMAP.md`](./agents-only/03-planning/06-STRATEGIC-ROADMAP.md) | 战略路线图 |
-| [`01-REQUIREMENTS-ANALYSIS.md`](./agents-only/01-REQUIREMENTS-ANALYSIS.md) | 需求分析 |
-| [`02-ACCEPTANCE-CRITERIA.md`](./agents-only/02-ACCEPTANCE-CRITERIA.md) | 验收标准 |
-| [`03-ARCHITECTURE-SPEC.md`](./agents-only/03-ARCHITECTURE-SPEC.md) | 架构规范 |
-| [`04-IMPLEMENTATION-GUIDE.md`](./agents-only/04-IMPLEMENTATION-GUIDE.md) | 实现指南 |
+| [`reference/ACCEPTANCE-CRITERIA.md`](./agents-only/reference/ACCEPTANCE-CRITERIA.md) | 验收标准 |
+| [`reference/ARCHITECTURE-SPEC.md`](./agents-only/reference/ARCHITECTURE-SPEC.md) | 架构规范 |
+| [`reference/GO_PARITY_MATRIX.md`](./agents-only/reference/GO_PARITY_MATRIX.md) | Go 对照矩阵（历史 + 当前审议口径） |
+| [`reference/PROJECT-STRUCTURE.md`](./agents-only/reference/PROJECT-STRUCTURE.md) | 项目结构权威导航 |
+| [`planning/L18-PHASE4.md`](./agents-only/planning/L18-PHASE4.md) | 当前执行工作包 |
+| [`memory/README.md`](./agents-only/memory/README.md) | 长期记忆索引 |
 
 ---
 
 ## 🚨 IMPORTANT: Authoritative Navigation Document
 
-**⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`agents-only/02-reference/08-PROJECT-STRUCTURE.md`](./agents-only/02-reference/08-PROJECT-STRUCTURE.md).**
+**⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`agents-only/reference/PROJECT-STRUCTURE.md`](./agents-only/reference/PROJECT-STRUCTURE.md).**
 
 - 📋 **Authoritative**: This document is the *sole* source of truth for project structure.
 - 🔄 **Update Responsibility**: Any developer modifying the project structure MUST sync this document.

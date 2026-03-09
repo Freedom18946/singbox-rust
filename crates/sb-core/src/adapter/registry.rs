@@ -45,9 +45,9 @@ pub struct AdapterOutboundContext {
     pub context: ContextRegistry,
 }
 
-type InboundBuilder =
+pub type InboundBuilder =
     fn(&InboundParam, &AdapterInboundContext<'_>) -> Option<Arc<dyn InboundService>>;
-type OutboundBuilder = fn(
+pub type OutboundBuilder = fn(
     &OutboundParam,
     &sb_config::ir::OutboundIR,
     &AdapterOutboundContext,
@@ -55,6 +55,27 @@ type OutboundBuilder = fn(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )>;
+
+#[derive(Clone, Default)]
+pub struct RegistrySnapshot {
+    inbounds: HashMap<&'static str, InboundBuilder>,
+    outbounds: HashMap<&'static str, OutboundBuilder>,
+}
+
+impl RegistrySnapshot {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_inbound(&mut self, kind: &'static str, builder: InboundBuilder) -> bool {
+        self.inbounds.insert(kind, builder).is_none()
+    }
+
+    pub fn register_outbound(&mut self, kind: &'static str, builder: OutboundBuilder) -> bool {
+        self.outbounds.insert(kind, builder).is_none()
+    }
+}
 
 static INBOUND_REG: Lazy<RwLock<HashMap<&'static str, InboundBuilder>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
@@ -73,6 +94,15 @@ pub fn register_inbound(kind: &'static str, f: InboundBuilder) -> bool {
 pub fn register_outbound(kind: &'static str, f: OutboundBuilder) -> bool {
     let mut g = OUTBOUND_REG.write().unwrap();
     g.insert(kind, f).is_none()
+}
+
+/// Replace the global adapter registry with an explicit snapshot.
+pub fn install_snapshot(snapshot: &RegistrySnapshot) {
+    let mut inbound = INBOUND_REG.write().unwrap();
+    *inbound = snapshot.inbounds.clone();
+
+    let mut outbound = OUTBOUND_REG.write().unwrap();
+    *outbound = snapshot.outbounds.clone();
 }
 
 /// Look up an inbound builder by kind.

@@ -7,10 +7,11 @@ Machine source of truth: [`reports/capabilities.json`](../reports/capabilities.j
 
 `reports/capabilities.json` top-level fields:
 
-- `schema_version` (`1.0.0`)
+- `schema_version` (`1.1.0`)
 - `generated_at` (RFC3339)
 - `source_commit` (git sha)
 - `profile` (`docs-only` in Batch A)
+- `acceptance_closure`
 - `capabilities[]`
 - `runtime_probe` (optional, present when runtime probe report is available)
 - `claims[]`
@@ -79,11 +80,25 @@ Minimum evidence rule:
 
 - each capability must contain at least one evidence item `{kind,path,line,note}`.
 
+## Acceptance Closure Contract
+
+`acceptance_closure` fields:
+
+- `status` (`snapshot_unverified | evidence_backed`)
+- `evidence_scope`
+- `snapshot_verifiability`
+- `evidence[]`
+
+Current rule:
+
+- closure narrative is tracked separately from per-capability facts
+- in a slim snapshot without retained manifests, `acceptance_closure.status = snapshot_unverified`
+- strong closure language in active docs is blocked unless `status = evidence_backed`
+
 ## Capability Index
 
 | capability id | overall_state | accepted_limitation |
 | --- | --- | --- |
-| [`project.acceptance.baseline`](#capability-project-acceptance-baseline) | `implemented_verified` | `true` |
 | [`tun.macos.tun2socks`](#capability-tun-macos-tun2socks) | `scaffold_stub` | `true` |
 | [`inbound.redirect`](#capability-inbound-redirect) | `scaffold_stub` | `true` |
 | [`inbound.tproxy`](#capability-inbound-tproxy) | `scaffold_stub` | `true` |
@@ -95,14 +110,6 @@ Minimum evidence rule:
 | [`tls.ech.quic`](#capability-tls-ech-quic) | `scaffold_stub` | `true` |
 
 ## Capability Details
-
-### <a id="capability-project-acceptance-baseline"></a>`project.acceptance.baseline`
-
-- `compile_state`: `supported`
-- `runtime_state`: `verified`
-- `verification_state`: `integration_verified`
-- `overall_state`: `implemented_verified`
-- Evidence anchor: `agents-only/02-reference/GO_PARITY_MATRIX.md`
 
 ### <a id="capability-tun-macos-tun2socks"></a>`tun.macos.tun2socks`
 
@@ -193,6 +200,12 @@ Minimum evidence rule:
 - `line`
 - `text`
 - `risk_level` (`high|medium|low`)
-- `linked_capability_ids[]`
+- `claim_kind` (`capability|closure|historical`)
+- `linked_ids[]`
 
-High-risk claims must link to at least one capability id and must only target `implemented_verified` capabilities.
+Rules:
+
+- capability claims must link to capability ids
+- closure claims must link to `acceptance_closure`
+- high-risk capability claims must only target `implemented_verified` capabilities
+- active-doc closure language is blocked unless `acceptance_closure.status = evidence_backed`

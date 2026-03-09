@@ -901,19 +901,30 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 4.5) Install global HTTP client for sb-core (geo downloads, remote rulesets)
     app::reqwest_http::install_global_http_client();
 
-    // 4.6) Register protocol adapters for supervisor runtime path.
-    // Without this, CLI `run` may start with an empty inbound/outbound builder registry.
-    #[cfg(feature = "adapters")]
-    sb_adapters::register_all();
-
     // 5) Start Supervisor
+    #[cfg(feature = "adapters")]
+    info!("Calling Supervisor::start_with_registry");
+    #[cfg(not(feature = "adapters"))]
     info!("Calling Supervisor::start");
+
+    #[cfg(feature = "adapters")]
+    let supervisor = Arc::new(
+        sb_core::runtime::supervisor::Supervisor::start_with_registry(
+            ir,
+            Some(sb_adapters::build_default_registry()),
+        )
+        .await
+        .context("Supervisor::start_with_registry failed")?,
+    );
+
+    #[cfg(not(feature = "adapters"))]
     let supervisor = Arc::new(
         sb_core::runtime::supervisor::Supervisor::start(ir)
             .await
             .context("Supervisor::start failed")?,
     );
-    info!("Supervisor::start returned");
+
+    info!("Supervisor startup returned");
 
     // 6) Optional Clash API server (from config.experimental.clash_api)
     #[cfg(feature = "clash_api")]

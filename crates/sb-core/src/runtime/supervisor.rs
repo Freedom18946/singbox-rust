@@ -124,6 +124,19 @@ impl Supervisor {
     /// Start supervisor with initial configuration
     #[cfg(feature = "router")]
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
+        Self::start_with_registry(ir, None).await
+    }
+
+    /// Start supervisor with an explicit adapter registry snapshot.
+    #[cfg(feature = "router")]
+    pub async fn start_with_registry(
+        ir: sb_config::ir::ConfigIR,
+        adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
+    ) -> Result<Self> {
+        if let Some(snapshot) = adapter_registry.as_ref() {
+            crate::adapter::registry::install_snapshot(snapshot);
+        }
+
         // Ensure TLS crypto provider is installed before any TLS usage
         #[cfg(feature = "tls_rustls")]
         crate::tls::ensure_rustls_crypto_provider();
@@ -272,6 +285,19 @@ impl Supervisor {
     /// Start supervisor with initial configuration (router feature disabled)
     #[cfg(not(feature = "router"))]
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
+        Self::start_with_registry(ir, None).await
+    }
+
+    /// Start supervisor with an explicit adapter registry snapshot (router feature disabled).
+    #[cfg(not(feature = "router"))]
+    pub async fn start_with_registry(
+        ir: sb_config::ir::ConfigIR,
+        adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
+    ) -> Result<Self> {
+        if let Some(snapshot) = adapter_registry.as_ref() {
+            crate::adapter::registry::install_snapshot(snapshot);
+        }
+
         // Ensure TLS crypto provider is installed before any TLS usage
         #[cfg(feature = "tls_rustls")]
         crate::tls::ensure_rustls_crypto_provider();
@@ -1511,6 +1537,30 @@ mod tests {
         );
         stop_services(std::slice::from_ref(&svc));
         assert_eq!(svc_impl.closes.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn start_with_registry_accepts_explicit_snapshot() {
+        let ir = sb_config::ir::ConfigIR {
+            outbounds: vec![sb_config::ir::OutboundIR {
+                ty: sb_config::ir::OutboundType::Direct,
+                name: Some("direct".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let sup = Supervisor::start_with_registry(
+            ir,
+            Some(crate::adapter::registry::RegistrySnapshot::new()),
+        )
+        .await
+        .expect("start supervisor with explicit registry");
+
+        sup.handle()
+            .shutdown_graceful(std::time::Duration::from_millis(100))
+            .await
+            .expect("shutdown supervisor with explicit registry");
     }
 
     #[test]

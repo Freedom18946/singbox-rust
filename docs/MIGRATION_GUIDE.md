@@ -1,6 +1,6 @@
 # Migration Guide: sing-box Go 1.12.14 → singbox-rust
 
-This guide helps users migrate from sing-box Go version 1.12.14 to the Rust implementation, documenting feature parity, configuration compatibility, and known limitations.
+This guide helps users migrate from sing-box Go version 1.12.14 to the Rust implementation, documenting configuration compatibility, capability state, and known limitations.
 
 **Last Updated:** 2026-01-18  
 **Baseline:** sing-box 1.12.14 (Go)  
@@ -8,7 +8,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 
 ## Executive Summary
 
-**Feature Parity Status: 100% acceptance baseline (209/209 closed)**
+**Acceptance Closure Status: `UNVERIFIED (slim snapshot)`**
 
 - ✅ **Protocols**: 100% coverage of Go protocols (18/18 inbound, 19/19 outbound)
 - ✅ **DNS**: 11/11 transports aligned (feature-gated)
@@ -16,7 +16,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 - ◐ **Services**: DERP aligned; V2Ray API gRPC partial; Resolved/SSMAPI parity gaps (feature-gated)
 - ⚠️ **Tailscale**: Endpoint de-scoped (see [Tailscale Limitations](#tailscale-limitations))
 
-**Production Readiness:** ⭐⭐⭐⭐⭐ (9.9/10) - Suitable for production use with documented limitations.
+**Current posture:** capability state is documented in `docs/capabilities.md`; strong closure claims require self-contained local evidence.
 
 ---
 
@@ -36,7 +36,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 | TProxy | ✅ | ✅ Complete | Linux only |
 | Shadowsocks | ✅ | ✅ Complete | All AEAD ciphers, UDP relay |
 | VMess | ✅ | ✅ Complete | AEAD encryption, transport layers |
-| VLESS | ✅ | ✅ Complete | REALITY/ECH support |
+| VLESS | ✅ | ✅ Implemented | REALITY path implemented; ECH state is tracked in `docs/capabilities.md` |
 | Trojan | ✅ | ✅ Complete | TLS with fallback |
 | Naive | ✅ | ✅ Complete | HTTP/2 CONNECT + TLS |
 | ShadowTLS | ✅ | ✅ Complete | TLS masquerading |
@@ -60,7 +60,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 | HTTP/HTTPS | ✅ | ✅ Complete | HTTP proxy client |
 | Shadowsocks | ✅ | ✅ Complete | Full cipher suite |
 | VMess | ✅ | ✅ Complete | Transport options |
-| VLESS | ✅ | ✅ Complete | REALITY/ECH |
+| VLESS | ✅ | ✅ Implemented | REALITY implemented; ECH state is tracked in `docs/capabilities.md` |
 | Trojan | ✅ | ✅ Complete | TLS support |
 | ShadowTLS | ✅ | ✅ Complete | TLS SNI/ALPN |
 | SSH | ✅ | ✅ Complete | Key-based auth, connection pool |
@@ -515,7 +515,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 ## Additional Resources
 
 - **Project Documentation:** [docs/](../)
-- **Feature Parity Matrix:** [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md)
+- **Go Compatibility Matrix:** [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md)
 - **Next Steps:** [NEXT_STEPS.md](../NEXT_STEPS.md)
 - **Rust-Only Enhancements:** [RUST_ENHANCEMENTS.md](RUST_ENHANCEMENTS.md)
 - **Tailscale Research:** [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md)

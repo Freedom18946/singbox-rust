@@ -43,9 +43,9 @@
 //!   它重新导出 `sb-core` 和其他 crate 的核心功能，充当二进制文件的统一外观。
 //!
 //! ## Note / 说明
-//! The actual bootstrap logic has moved to `bin/main.rs` and `bootstrap.rs`.
+//! The active runtime entry is `run_engine::run_supervisor`; `bootstrap.rs` remains legacy.
 //! This file now primarily manages module exports and lint configurations.
-//! 真正的引导流程已经迁到 `bin/main.rs` 和 `bootstrap.rs`。
+//! 当前活跃运行入口是 `run_engine::run_supervisor`；`bootstrap.rs` 仅保留为 legacy。
 //! 本文件现在主要管理模块导出和 lint 配置。
 
 #[cfg(feature = "admin_debug")]

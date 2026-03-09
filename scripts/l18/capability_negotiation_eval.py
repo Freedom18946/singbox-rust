@@ -117,7 +117,7 @@ def evaluate_payload(result: dict, payload: dict) -> None:
     elif breaking_changes:
         result["reason"] = f"breaking_changes_non_empty:{len(breaking_changes)}"
     else:
-        result["status"] = "ok"
+        result["status"] = "PROVEN"
         result["pass"] = True
 
 
@@ -130,7 +130,7 @@ def main() -> None:
         "required": required,
         "checked": False,
         "pass": False,
-        "status": "unknown",
+        "status": "UNTESTED",
         "http_status": None,
         "contract_version": None,
         "required_min_contract_version": None,
@@ -148,9 +148,9 @@ def main() -> None:
 
     if load_err != 0:
         if required:
-            result["status"] = "blocked"
+            result["status"] = "FAILED"
             write_and_exit(result, args.out_json, 1)
-        result["status"] = "optional-unavailable"
+        result["status"] = "PARTIAL"
         result["pass"] = True
         write_and_exit(result, args.out_json, 0)
 
@@ -160,10 +160,10 @@ def main() -> None:
         write_and_exit(result, args.out_json, 0)
 
     if required:
-        result["status"] = "blocked"
+        result["status"] = "FAILED"
         write_and_exit(result, args.out_json, 1)
 
-    result["status"] = "optional-invalid"
+    result["status"] = "PARTIAL"
     result["pass"] = True
     write_and_exit(result, args.out_json, 0)
 

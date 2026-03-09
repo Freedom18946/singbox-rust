@@ -210,7 +210,10 @@ pub use traits::{
 /// - [`TransportType`]: Enum of available transport types (TLS, WS, gRPC, etc.)
 pub use transport_config::{TransportConfig, TransportType};
 
-/// Register adapter builders with sb-core registry (idempotent).
+/// Build the default adapter registry snapshot for product startup paths.
+pub use register::build_default_registry;
+
+/// Register adapter builders with sb-core registry (idempotent, legacy/tests).
 pub use register::register_all;
 
 /// Whether the WireGuard endpoint adapter is compiled in this build.

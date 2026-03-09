@@ -50,5 +50,5 @@ cargo run -p app -- route-explain -c /path/to/config.json --dest example.com:443
 
 ## Compatibility Notes
 
-- Authoritative parity status is tracked in `agents-only/02-reference/GO_PARITY_MATRIX.md`.
+- Current parity / closure review context is tracked in `agents-only/reference/GO_PARITY_MATRIX.md`.
 - Linux `systemd-resolved` runtime/system-bus real-machine evidence (`PX-015`) is accepted as non-blocking and is not tracked as an open item.

@@ -25,8 +25,8 @@
 
 ### Step 3: 检查长期记忆
 ```
-查阅 agents-only/07-memory/LEARNED-PATTERNS.md
-查阅 agents-only/07-memory/TROUBLESHOOTING.md
+查阅 agents-only/memory/LEARNED-PATTERNS.md
+查阅 agents-only/memory/TROUBLESHOOTING.md
 ```
 **目的**：避免重复踩坑，复用已积累的经验
 
@@ -73,8 +73,8 @@ cargo check -p app 2>&1 | tail -5
 2. **验证一致性**：确保 active_context 与 workpackage 同步
 3. **更新上下文**：任务结束前，更新 `active_context.md`
 4. **记录经验**：遇到问题或学到模式，更新 `07-memory/`
-5. **遵守规则**：严格遵守 `AI-RULES.md`
-6. **查阅术语**：不确定术语时查阅 `02-reference/GLOSSARY.md`
+5. **遵守规则**：严格遵守 `archive/AI-RULES.md`
+6. **查阅术语**：不确定术语时查阅 `reference/GLOSSARY.md`
 
 ---
 
@@ -84,8 +84,8 @@ cargo check -p app 2>&1 | tail -5
 |--------|------|------|
 | 1️⃣ | `active_context.md` | 当前状态快照 |
 | 2️⃣ | `workpackage_latest.md` | 战略验证 |
-| 3️⃣ | `07-memory/*.md` | 经验积累 |
-| 4️⃣ | `02-reference/GLOSSARY.md` | 术语确认 |
+| 3️⃣ | `memory/*.md` | 经验积累 |
+| 4️⃣ | `reference/GLOSSARY.md` | 术语确认 |
 | 5️⃣ | `log.md` | 历史记录（按需） |
 
 ---

@@ -79,29 +79,37 @@ Without all four fields, waiver is invalid.
 
 ## Current Status
 
-- Status: `IN_PROGRESS`
-- Stage: Phase 3 nightly full PASS achieved; certify deferred pending global static review triage.
+- Status: `UNVERIFIED (slim snapshot)`
+- Stage: Phase 4 evidence review; `nightly -> certify` recovery is gated on evidence-model and harness corrections.
 - Closure criteria pending:
-  - at least one `certify` (7d canary) pass
-  - all mandatory gate evidence uploaded from self-hosted macOS CI
+  - at least one retained `nightly` evidence package with self-contained manifest
+  - at least one retained `certify` (7d canary) evidence package with self-contained manifest
+  - all mandatory gate evidence locally reproducible or explicitly marked as historical provenance
 - Local workspace note (2026-03-09):
   - to reduce package size for GPT static audit, bulky runtime artifacts (`target/`, most `reports/l18/batches/`, oracle/build caches) were pruned from the local workspace
-  - batch ids below remain provenance references; referenced artifact files may not exist in this slimmed snapshot
-- Phase 2 closure note (2026-03-08):
-  - clean daily rerun `20260307T211512Z-l18-daily-preflight` reached `overall=PASS`
-  - capstone gates: all PASS, `docker=WARN`
-  - canary summary: 13/13 `health_code=200`, RSS `11024 KB -> 7168 KB`, no monotonic leak trend
-  - perf gate: PASS (`latency_p95=-15.83%`, `rss_peak=-4.84%`, `startup=0.0%`)
-  - baseline lock refreshed at `reports/l18/phase2_baseline.lock.json`
-- Phase 3 nightly note (2026-03-09):
-  - nightly `20260307T230356Z-l18-nightly-24h` reached `overall=PASS`
-  - capstone gates: all PASS, `docker=WARN`
-  - canary summary: 78/78 `health_code=200`, RSS `11744 KB -> 6736 KB`, no monotonic leak trend
-  - dual gate: PASS (`run_fail_count=0`, `diff_fail_count=0`)
-  - perf gate: PASS (`latency_p95=-5.30%`, `rss_peak=-8.18%`, `startup=0.0%`)
-  - no valid `certify` conclusion has been recorded yet
+  - batch ids below remain provenance references; missing local artifacts do not count as current PASS evidence
 
-## Latest Evidence (2026-03-09)
+## Local Verifiability Contract
+
+- Missing local batch artifacts are always reported as `UNVERIFIED (slim snapshot)`.
+- Only retained batches with `evidence_manifest.json` may be counted as current replacement-certification evidence.
+- Provenance references may remain in this report, but they do not contribute to a PASS conclusion.
+
+## Retained Local Evidence
+
+### Retained batch snapshot
+
+- Batch root:
+  - `reports/l18/batches/20260307T101914Z-l18-daily-preflight`
+- Status artifact:
+  - `reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/l18_capstone_status.json`
+- Local conclusion:
+  - `overall=FAIL`
+- Notes:
+  - this is the only retained local capstone status artifact in the current slim snapshot
+  - no retained `evidence_manifest.json` exists yet, so it cannot serve as a complete replacement-certification evidence package
+
+## Provenance References (Not Counted As Current PASS)
 
 ### 1) Phase 2 clean daily rerun
 
@@ -110,29 +118,22 @@ Without all four fields, waiver is invalid.
 - Status artifact:
   - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/l18_capstone_status.json`
 - Result:
-  - `overall=PASS`
-  - gates: `preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff/perf_gate=PASS`
-  - `docker=WARN`
+  - `UNVERIFIED (slim snapshot)`
+  - artifact path is preserved as provenance reference only; the local slim snapshot does not retain the self-contained evidence needed to re-verify the claimed PASS
 
 ### 2) Phase 2 canary summary
 
 - Artifact:
   - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/canary_daily.md`
 - Result:
-  - samples: `13`
-  - health 200 count: `13`
-  - RSS: `11024 KB -> 7168 KB`
-  - conclusion: no monotonic leak trend observed
+  - `UNVERIFIED (slim snapshot)`
 
 ### 3) Phase 2 perf gate
 
 - Artifact:
   - `reports/l18/batches/20260307T211512Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/perf/perf_gate.json`
 - Result:
-  - `latency_p95`: Rust `1.701 ms`, Go `2.021 ms`, regression `-15.83%`
-  - `rss_peak`: Rust `1888 KB`, Go `1984 KB`, regression `-4.84%`
-  - `startup`: Rust `18.0 ms`, Go `18.0 ms`, regression `0.0%`
-  - verdict: `PASS`
+  - `UNVERIFIED (slim snapshot)`
 
 ### 4) Phase 3 nightly 24h full PASS
 
@@ -141,36 +142,25 @@ Without all four fields, waiver is invalid.
 - Status artifact:
   - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/l18_capstone_status.json`
 - Result:
-  - `overall=PASS`
-  - gates: `preflight/oracle/boundaries/parity/workspace_test/fmt/clippy/hot_reload/signal/gui_smoke/canary/dual_kernel_diff/perf_gate=PASS`
-  - `docker=WARN`
+  - `UNVERIFIED (slim snapshot)`
 
 ### 5) Phase 3 nightly canary summary
 
 - Artifact:
   - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/canary/canary_nightly.md`
 - Result:
-  - samples: `78`
-  - health 200 count: `78`
-  - RSS: `11744 KB -> 6736 KB`
-  - conclusion: no monotonic leak trend observed
+  - `UNVERIFIED (slim snapshot)`
 
 ### 6) Phase 3 nightly dual + perf evidence
 
 - Dual artifact:
   - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/dual_kernel/20260308T231830Z-nightly-34ebea7d/summary.json`
 - Dual result:
-  - selected cases: `6`
-  - `run_fail_count=0`
-  - `diff_fail_count=0`
-  - verdict: `PASS`
+  - `UNVERIFIED (slim snapshot)`
 - Perf artifact:
   - `reports/l18/batches/20260307T230356Z-l18-nightly-24h/capstone_nightly_fixedcfg/r1/perf/perf_gate.json`
 - Perf result:
-  - `latency_p95`: Rust `1.286 ms`, Go `1.358 ms`, regression `-5.30%`
-  - `rss_peak`: Rust `1616 KB`, Go `1760 KB`, regression `-8.18%`
-  - `startup`: Rust `111.0 ms`, Go `111.0 ms`, regression `0.0%`
-  - verdict: `PASS`
+  - `UNVERIFIED (slim snapshot)`
 
 ### 7) Phase 3 certify status
 

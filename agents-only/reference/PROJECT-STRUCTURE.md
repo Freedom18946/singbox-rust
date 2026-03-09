@@ -1,6 +1,6 @@
 # 项目结构导航（Project Structure Navigation）
 
-> **位置**：权威文档位于 `agents-only/02-reference/08-PROJECT-STRUCTURE.md`（本文件即权威位置）
+> **位置**：权威文档位于 `agents-only/reference/PROJECT-STRUCTURE.md`（本文件即权威位置）
 > **最后更新**：2026-02-07
 >
 > 此文档是项目结构的权威参考。AI 初始化时需验证结构一致性。
@@ -340,8 +340,8 @@ scripts/
 
 ### 📝 Important Files
 
-- 项目战略: `agents-only/03-planning/06-STRATEGIC-ROADMAP.md` - 战略路线图
-- Go Parity Matrix: `agents-only/02-reference/GO_PARITY_MATRIX.md` - Parity status with sing-box 1.12.14
+- 当前工作包: `agents-only/planning/L18-PHASE4.md` - 当前执行顺序与恢复门
+- Go Parity Matrix: `agents-only/reference/GO_PARITY_MATRIX.md` - 历史矩阵与当前审议口径
 - Migration Guide: `docs/MIGRATION_GUIDE.md` - Go → Rust full migration path
 - Performance Benchmarks: `benchmark_results/`, `reports/PERFORMANCE_REPORT.md`, and legacy `docs/archive/root-legacy/BENCHMARKS.md`
 - Test Coverage: `reports/TEST_COVERAGE.md`
@@ -368,7 +368,7 @@ scripts/
 
 ### Parity Baseline (2026-01-07)
 
-**Current Baseline**: sing-box Go 1.12.14 — acceptance baseline parity 100% (209/209 closed, includes accepted limitations). See `agents-only/02-reference/GO_PARITY_MATRIX.md` and `NEXT_STEPS.md`.
+**Current Baseline**: sing-box Go 1.12.14 matrix remains as historical context. Strong closure claims are under Phase 4 evidence review and are `UNVERIFIED (slim snapshot)` unless backed by retained local evidence. See `agents-only/reference/GO_PARITY_MATRIX.md` and `NEXT_STEPS.md`.
 
 #### Protocol Coverage (Go)
 

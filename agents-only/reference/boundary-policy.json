@@ -1,0 +1,46 @@
+{
+  "version": "2026-03-09-phase4",
+  "v4": {
+    "v4a_max": 23,
+    "v4b_mode": "informational"
+  },
+  "pattern_budgets": [
+    {
+      "name": "adapter_io_bridge_instances",
+      "paths": [
+        "crates/sb-adapters/src/register.rs"
+      ],
+      "pattern": "AdapterIoBridge \\{",
+      "max": 10,
+      "severity": "fail"
+    },
+    {
+      "name": "bridge_inbounds_runtime_refs",
+      "paths": [
+        "crates/sb-core/src/runtime/supervisor.rs",
+        "crates/sb-core/src/runtime/mod.rs"
+      ],
+      "pattern": "bridge\\.inbounds",
+      "max": 8,
+      "severity": "fail"
+    },
+    {
+      "name": "legacy_global_context_installs",
+      "paths": [
+        "crates/sb-core/src/runtime/supervisor.rs"
+      ],
+      "pattern": "install_context_registry\\(",
+      "max": 6,
+      "severity": "informational"
+    },
+    {
+      "name": "product_global_adapter_registration",
+      "paths": [
+        "app/src/run_engine.rs"
+      ],
+      "pattern": "sb_adapters::register_all\\(",
+      "max": 0,
+      "severity": "fail"
+    }
+  ]
+}

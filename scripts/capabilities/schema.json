@@ -7,13 +7,14 @@
     "generated_at",
     "source_commit",
     "profile",
+    "acceptance_closure",
     "capabilities",
     "claims"
   ],
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "generated_at": {
       "type": "string",
@@ -25,6 +26,66 @@
     },
     "profile": {
       "type": "string"
+    },
+    "acceptance_closure": {
+      "type": "object",
+      "required": [
+        "status",
+        "evidence_scope",
+        "snapshot_verifiability",
+        "evidence"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "snapshot_unverified",
+            "evidence_backed"
+          ]
+        },
+        "evidence_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshot_verifiability": {
+          "type": "string",
+          "enum": [
+            "slim_snapshot",
+            "self_contained"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "line",
+              "note"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "note": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
     },
     "capabilities": {
       "type": "array",
@@ -201,7 +262,8 @@
           "line",
           "text",
           "risk_level",
-          "linked_capability_ids"
+          "claim_kind",
+          "linked_ids"
         ],
         "properties": {
           "source_path": {
@@ -224,7 +286,15 @@
               "low"
             ]
           },
-          "linked_capability_ids": {
+          "claim_kind": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "closure",
+              "historical"
+            ]
+          },
+          "linked_ids": {
             "type": "array",
             "items": {
               "type": "string",

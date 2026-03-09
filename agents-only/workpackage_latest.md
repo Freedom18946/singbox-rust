@@ -67,14 +67,21 @@
 目标：在 MIG-02 后代码基线上首次端到端跑通 L18 全链路。
 详见 `planning/L18-PHASE2.md`。
 
-### Phase 3（nightly/certify 级别运行）— 🔄 进行中
+### Phase 3（nightly/certify 级运行）— ✅ 历史阶段
 
-- 前置：Phase 2 clean full PASS 已满足（batch `20260307T211512Z`）
-- nightly：`20260307T230356Z-l18-nightly-24h` 已 full PASS（`overall=PASS`，仅 `docker=WARN`）
-- certify：当前无活动批次；`20260309T004601Z-l18-certify-7d` 因 `11810/11811` 遗留 perf runtime 占口废弃，`20260309T004649Z-l18-certify-7d` 在会话切换前被中断，未形成有效证据
-- 当前重点：先处理即将到来的全局静态审议意见，再决定 `certify` 重发顺序
-- 目标：nightly 24h PASS 已达成；下一目标是完成全局静态审议 triage，并在必要整改后再取一次有效 `certify` 7d PASS
-- 入口：`agents-only/planning/L18-PHASE3.md`
+- 原叙事：`nightly/certify` 长跑收口。
+- 当前口径：由于本地已为静态审计裁剪大部分 batch 工件，Phase 3 中提到的 `20260307T211512Z` / `20260307T230356Z` 不再作为当前快照下可独立复核的 PASS 事实。
+- 处理方式：这些 batch id 只保留为 provenance reference；缺失本地工件时统一记为 `UNVERIFIED (slim snapshot)`。
+- 历史入口：`agents-only/planning/L18-PHASE3.md`
+
+### Phase 4（全局静态审议整改）— 🔄 当前阶段
+
+- 目标：`证据模型可信化 -> 运行边界收敛 -> 决定是否恢复 certify`
+- Wave A：证据模型收口
+- Wave B：边界 / 脚手架 containment
+- Wave C：恢复 `nightly -> certify` 的决策门
+- 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
+- 当前入口：`agents-only/planning/L18-PHASE4.md`
 
 ---
 

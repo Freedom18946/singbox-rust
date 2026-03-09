@@ -8,6 +8,7 @@ Usage:
     --duration-hours <hours> \
     --sample-interval-sec <seconds> \
     --api-url <url> \
+    [--api-token <token>] \
     --pid-file <path> \
     --out-jsonl <path> \
     --out-summary <path>
@@ -21,6 +22,7 @@ EOF
 DURATION_HOURS=168
 SAMPLE_INTERVAL_SEC=3600
 API_URL=""
+API_TOKEN=""
 PID_FILE=""
 OUT_JSONL="reports/stability/canary_7day.jsonl"
 OUT_SUMMARY="reports/stability/canary_summary.md"
@@ -30,6 +32,7 @@ while [[ $# -gt 0 ]]; do
     --duration-hours) DURATION_HOURS="$2"; shift 2 ;;
     --sample-interval-sec) SAMPLE_INTERVAL_SEC="$2"; shift 2 ;;
     --api-url) API_URL="$2"; shift 2 ;;
+    --api-token) API_TOKEN="$2"; shift 2 ;;
     --pid-file) PID_FILE="$2"; shift 2 ;;
     --out-jsonl) OUT_JSONL="$2"; shift 2 ;;
     --out-summary) OUT_SUMMARY="$2"; shift 2 ;;
@@ -56,13 +59,31 @@ read_pid() {
   fi
 }
 
+curl_json() {
+  local url="$1"
+  if [[ -n "$API_TOKEN" ]]; then
+    curl -sS -H "Authorization: Bearer ${API_TOKEN}" "$url"
+  else
+    curl -sS "$url"
+  fi
+}
+
+curl_code() {
+  local url="$1"
+  if [[ -n "$API_TOKEN" ]]; then
+    curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN}" "$url"
+  else
+    curl -sS -o /dev/null -w '%{http_code}' "$url"
+  fi
+}
+
 get_health_code() {
-  curl -sS -o /dev/null -w '%{http_code}' "$API_URL/services/health" || echo 000
+  curl_code "$API_URL/services/health" || echo 000
 }
 
 get_conn_count() {
   local payload
-  payload="$(curl -sS "$API_URL/connections" 2>/dev/null || true)"
+  payload="$(curl_json "$API_URL/connections" 2>/dev/null || true)"
   if [[ -z "$payload" ]]; then
     echo "null"
     return
@@ -138,6 +159,7 @@ cat > "$OUT_SUMMARY" <<EOF
 
 - Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
 - API URL: $API_URL
+- API Token Set: $( [[ -n "$API_TOKEN" ]] && echo yes || echo no )
 - PID File: ${PID_FILE:-"(not provided)"}
 - Duration Hours (requested): $DURATION_HOURS
 - Sample Interval Seconds: $SAMPLE_INTERVAL_SEC

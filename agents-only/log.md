@@ -16,6 +16,37 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-09 20:35] Agent: Codex (GPT-5)
+
+**任务**: L18 Phase 4 首轮落地（证据模型 -> 边界 containment -> harness 语义/manifest）
+**变更**:
+- 工作包与口径：
+  - 新建 `agents-only/planning/L18-PHASE4.md`
+  - 更新 `agents-only/workpackage_latest.md` / `agents-only/active_context.md` / `agents-only/planning/L18-PHASE3.md`
+  - 更新 `reports/L18_REPLACEMENT_CERTIFICATION.md`
+  - 收口活跃入口与公开文档：`README.md` / `docs/{README,STATUS,MIGRATION_GUIDE,migration-from-go,00-getting-started/README,capabilities,configuration}.md`
+- 证据模型：
+  - 更新 `scripts/capabilities/{generate.py,schema.json}`，将 `reports/capabilities.json` 升为 `schema_version=1.1.0`
+  - `project.acceptance.baseline` capability 已移除，新增顶层 `acceptance_closure`
+  - 更新 `scripts/check_claims.sh`，活跃入口 closure 话术改为硬阻断
+  - 重新生成 `reports/capabilities.json`
+- 边界 / 运行入口：
+  - 新增 `crates/sb-core/src/adapter/registry.rs` 的 `RegistrySnapshot` / `install_snapshot(...)`
+  - `crates/sb-adapters/src/register.rs` 新增 `build_default_registry()`
+  - `crates/sb-core/src/runtime/supervisor.rs` 新增 `Supervisor::start_with_registry(...)`
+  - `app/src/run_engine.rs` 产品路径不再调用全局 `sb_adapters::register_all()`
+  - 新增版本化 policy：`agents-only/reference/boundary-policy.json`
+  - 更新 `agents-only/06-scripts/check-boundaries.sh`
+- L18 harness：
+  - 更新 `scripts/l18/capability_negotiation_eval.py` 状态词为 `PROVEN/PARTIAL/FAILED/UNTESTED`
+  - 更新 `scripts/l18/gui_real_cert.sh` / `scripts/l18/l18_capstone.sh` / `scripts/l18/run_capstone_fixed_profile.sh`
+  - GUI/capstone taxonomy 已切到 `PROVEN | PARTIAL | ADVISORY | UNTESTED | FAILED`
+  - fixed-profile 已支持动态 `port_map`、非空 secret、`evidence_manifest.json`、post-run leak assertion
+**结果**: 成功
+**备注**:
+- 验证通过：`scripts/check_claims.sh`、`check-boundaries.sh --report`、`cargo test -p sb-core start_with_registry_accepts_explicit_snapshot -- --nocapture`、`cargo test -p app --no-run`、相关 shell `bash -n`
+- 当前仍未恢复 `nightly/certify`；下一步应先做一次新的 `daily` smoke，验证 manifest / taxonomy / dynamic port 路径
+
 ### [2026-03-07 08:30] Agent: Claude Opus 4.6
 
 **任务**: MIG-02 大验收 Step 2-5 — 最终签收
@@ -6633,6 +6664,32 @@ L2.8.4-6 Handlers + WebSocket:
 
 **结果**: 进行中 — nightly 24h 已正式拿到 full PASS；certify 7d 已重发并进入前置 gate 执行
 **备注**: 当前只继续盯 `20260309T004649Z-l18-certify-7d`，若出现 FAIL，仅处理 certify 新暴露问题
+
+### [2026-03-09 20:49] Agent: Codex (GPT-5)
+
+**任务**: 收尾 Phase 4 落地执行，修复新 harness 在 Darwin/secret 模式下暴露的真实阻塞，并重发 `daily` smoke。
+**变更**:
+- Phase 4 文档/代码/脚手架已整体落地：
+  - `agents-only/planning/L18-PHASE4.md`、`agents-only/workpackage_latest.md`、`agents-only/active_context.md`
+  - `scripts/capabilities/{generate.py,schema.json}`、`scripts/check_claims.sh`、`reports/capabilities.json`
+  - `agents-only/reference/boundary-policy.json`、`agents-only/06-scripts/check-boundaries.sh`
+  - `crates/sb-adapters/src/register.rs`、`crates/sb-core/src/runtime/supervisor.rs`、`app/src/run_engine.rs`
+  - `scripts/l18/{run_capstone_fixed_profile.sh,l18_capstone.sh,gui_real_cert.sh,capability_negotiation_eval.py}`、`scripts/canary_7day.sh`
+- 执行中发现并修复两条真实阻塞：
+  - Darwin 环境缺少 `setsid`，新增脚手架内置的可移植 session spawn helper
+  - canary 启用 `clash_api.secret` 后，health probe 仍无鉴权；现已统一改为 Bearer token 探针
+- 运行验证：
+  - `python3 scripts/capabilities/generate.py --out reports/capabilities.json`：PASS
+  - `bash scripts/check_claims.sh`：PASS
+  - `bash agents-only/06-scripts/check-boundaries.sh --report`：PASS
+  - `bash -n scripts/canary_7day.sh scripts/l18/run_capstone_fixed_profile.sh scripts/l18/l18_capstone.sh scripts/l18/gui_real_cert.sh`：PASS
+  - 新 `daily` 批次：`reports/l18/batches/20260309T124603Z-l18-daily-preflight`
+    - `config.freeze.json` / `port_map.json` 已写出
+    - `ORACLE` / `BOUNDARIES` 已 PASS
+    - 当前进入 `WORKSPACE_TEST`
+
+**结果**: 进行中 — Phase 4 改造已进入可执行状态，新的 `daily` smoke 已越过前两个执行期阻塞并开始跑全量 gate
+**备注**: 仍未恢复 `nightly/certify`；是否恢复，取决于 `20260309T124603Z-l18-daily-preflight` 的最终状态与 manifest/leak assertion 结果
 
 ### [2026-03-09 18:40] Agent: Codex (GPT-5)
 

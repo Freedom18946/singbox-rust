@@ -1,26 +1,28 @@
 {
-  "schema_version": "1.0.0",
-  "generated_at": "2026-03-04T17:18:16.978004Z",
-  "source_commit": "ecfbb51",
+  "schema_version": "1.1.0",
+  "generated_at": "2026-03-09T12:21:30.654548Z",
+  "source_commit": "64a8c86",
   "profile": "docs-only",
+  "acceptance_closure": {
+    "status": "snapshot_unverified",
+    "evidence_scope": "active_docs_and_provenance_only",
+    "snapshot_verifiability": "slim_snapshot",
+    "evidence": [
+      {
+        "kind": "doc",
+        "path": "agents-only/planning/L18-PHASE4.md",
+        "line": 17,
+        "note": "Phase 4 explicitly separates closure narrative from per-capability facts."
+      },
+      {
+        "kind": "doc",
+        "path": "reports/L18_REPLACEMENT_CERTIFICATION.md",
+        "line": 82,
+        "note": "Replacement-certification report now treats missing batch artifacts as unverified."
+      }
+    ]
+  },
   "capabilities": [
-    {
-      "id": "project.acceptance.baseline",
-      "name": "Acceptance baseline closure accounting",
-      "compile_state": "supported",
-      "runtime_state": "verified",
-      "verification_state": "integration_verified",
-      "overall_state": "implemented_verified",
-      "accepted_limitation": true,
-      "evidence": [
-        {
-          "kind": "doc",
-          "path": "agents-only/02-reference/GO_PARITY_MATRIX.md",
-          "line": 22,
-          "note": "Baseline closure uses accepted limitations accounting."
-        }
-      ]
-    },
     {
       "id": "tun.macos.tun2socks",
       "name": "macOS tun2socks data-plane path",
@@ -73,7 +75,7 @@
         {
           "kind": "code",
           "path": "app/src/inbound_starter.rs",
-          "line": 222,
+          "line": 296,
           "note": "Runtime warns redirect is not supported in this build."
         }
       ],
@@ -103,7 +105,7 @@
         {
           "kind": "code",
           "path": "app/src/inbound_starter.rs",
-          "line": 222,
+          "line": 296,
           "note": "Runtime warns tproxy is not supported in this build."
         }
       ],
@@ -320,62 +322,7 @@
       }
     }
   ],
-  "claims": [
-    {
-      "source_path": "README.md",
-      "line": 5,
-      "text": "> **Acceptance Baseline**: **209/209 closed** (includes accepted limitations) against upstream sing-box 1.12.14.",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    },
-    {
-      "source_path": "docs/STATUS.md",
-      "line": 3,
-      "text": "**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100% acceptance baseline (209/209 closed, includes accepted limitations)",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    },
-    {
-      "source_path": "docs/STATUS.md",
-      "line": 5,
-      "text": "**🎉 MAJOR MILESTONE: 100% Protocol Coverage + 209/209 acceptance closure 🎉**",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    },
-    {
-      "source_path": "docs/STATUS.md",
-      "line": 44,
-      "text": "- ✅ **Sprint 6** (2025-11): **100% PROTOCOL COVERAGE** - All 36 protocols complete, DERP mesh networking, Migration guide",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    },
-    {
-      "source_path": "docs/STATUS.md",
-      "line": 85,
-      "text": "To build with **full Go feature parity**, use the `parity` feature flag:",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    },
-    {
-      "source_path": "agents-only/02-reference/GO_PARITY_MATRIX.md",
-      "line": 22,
-      "text": "| **Current Parity** | **100% (209/209, acceptance baseline, includes accepted limitations)** |",
-      "risk_level": "medium",
-      "linked_capability_ids": [
-        "project.acceptance.baseline"
-      ]
-    }
-  ],
+  "claims": [],
   "runtime_probe": {
     "source_path": "reports/runtime/capability_probe.json",
     "generated_at": "2026-03-04T16:45:17Z",

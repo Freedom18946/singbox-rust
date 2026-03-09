@@ -4,10 +4,10 @@ This entry file provides the current migration path from Go `sing-box 1.12.14` t
 
 ## Current Parity Baseline
 
-- Baseline date: 2026-02-24
-- Current parity: `100% acceptance baseline (209/209 closed)`
-- Remaining open item: none
-- Authority: `agents-only/02-reference/GO_PARITY_MATRIX.md`
+- Baseline date: 2026-03-09
+- Acceptance closure in this slim snapshot: `UNVERIFIED (slim snapshot)`
+- Current review stage: `L18 Phase 4 evidence review`
+- Authority: `agents-only/reference/GO_PARITY_MATRIX.md`
 
 ## Migration Checklist
 

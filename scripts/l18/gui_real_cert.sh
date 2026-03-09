@@ -55,6 +55,7 @@ ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
 ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
 REAL_PROXY_PROCESS_PATTERNS="${L18_REAL_PROXY_PROCESS_PATTERNS:-ClashX,Clash Verge,Surge,v2ray,xray,mihomo,clash-meta,NekoRay,Quantumult,Outline,AdGuard,sing-box}"
 REAL_PROXY_PORTS="${L18_REAL_PROXY_PORTS:-7890,7891,1080,10808}"
+EXPECTED_RUNTIME_PORTS="${L18_EXPECTED_RUNTIME_PORTS:-${L18_REQUIRED_PORTS:-9090,19090,11810,11811}}"
 CAPABILITIES_GATE_ENABLED="${L20_CAPABILITIES_GATE_ENABLED:-1}"
 CAPABILITIES_GATE_TIMEOUT_SEC="${L20_CAPABILITIES_GATE_TIMEOUT_SEC:-5}"
 GO_CAPABILITIES_REQUIRED="${L20_CAPABILITIES_GO_REQUIRED:-0}"
@@ -313,6 +314,38 @@ sanitize_note() {
   echo "$1" | tr '\t\n\r' ' ' | sed 's/  */ /g'
 }
 
+spawn_in_own_session() {
+  local log_file="$1"
+  shift
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@" >"${log_file}" 2>&1 &
+    echo "$!"
+    return 0
+  fi
+
+  python3 - "${log_file}" "$@" <<'PY'
+import os
+import sys
+
+log_file = sys.argv[1]
+cmd = sys.argv[2:]
+
+pid = os.fork()
+if pid:
+    print(pid)
+    sys.exit(0)
+
+os.setsid()
+fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
+if fd > 2:
+    os.close(fd)
+os.execvp(cmd[0], cmd)
+PY
+}
+
 assert_loopback_url() {
   local label="$1"
   local url="$2"
@@ -483,7 +516,7 @@ stop_pid() {
     return
   fi
   if kill -0 "$pid" >/dev/null 2>&1; then
-    kill "$pid" >/dev/null 2>&1 || true
+    kill "-$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
       if ! kill -0 "$pid" >/dev/null 2>&1; then
         wait "$pid" >/dev/null 2>&1 || true
@@ -491,7 +524,7 @@ stop_pid() {
       fi
       sleep 0.2
     done
-    kill -KILL "$pid" >/dev/null 2>&1 || true
+    kill -KILL "-$pid" >/dev/null 2>&1 || kill -KILL "$pid" >/dev/null 2>&1 || true
     wait "$pid" >/dev/null 2>&1 || true
   fi
 }
@@ -535,8 +568,7 @@ start_gui() {
   XDG_CONFIG_HOME="$core_home/.config" \
   XDG_CACHE_HOME="$core_home/.cache" \
   TMPDIR="$core_tmp" \
-  "$gui_exec" >"$gui_log" 2>&1 &
-  GUI_PID=$!
+  GUI_PID="$(spawn_in_own_session "$gui_log" "$gui_exec")"
 }
 
 switch_proxy_step() {
@@ -622,7 +654,7 @@ append_all_step_failures() {
   local core="$1"
   local reason="$2"
   for step_id in startup load_config switch_proxy connections_panel logs_panel; do
-    printf '%s\t%s\t%s\t%s\n' "$core" "$step_id" "FAIL" "$reason" >> "$RESULTS_FILE"
+    printf '%s\t%s\t%s\t%s\n' "$core" "$step_id" "FAILED" "$reason" >> "$RESULTS_FILE"
   done
 }
 
@@ -633,12 +665,12 @@ run_step() {
   local token="$4"
   local kernel_log="$5"
 
-  local status="PASS"
+  local status="PROVEN"
   local note=""
 
   if [[ -n "$AUTOMATION_CMD" ]]; then
     if ! note="$($AUTOMATION_CMD --core "$core" --step "$step_id" --api-url "$api_url" 2>&1)"; then
-      status="FAIL"
+      status="FAILED"
       note="automation_failed:${note}"
     fi
   else
@@ -646,9 +678,14 @@ run_step() {
       startup)
         if wait_gui_pid "$GUI_PID" "$TIMEOUT_SEC" && wait_kernel_ready "$api_url" "$token" "$TIMEOUT_SEC"; then
           window_count="$(osascript -e "tell application \"System Events\" to count windows of process \"${GUI_PROCESS_NAME}\"" 2>/dev/null || echo 0)"
-          note="gui_process_and_kernel_ready windows=${window_count}"
+          if [[ "${window_count}" =~ ^[0-9]+$ ]] && [[ "${window_count}" -eq 0 ]]; then
+            status="PARTIAL"
+            note="gui_process_and_kernel_ready windows=0"
+          else
+            note="gui_process_and_kernel_ready windows=${window_count}"
+          fi
         else
-          status="FAIL"
+          status="FAILED"
           note="gui_or_kernel_not_ready"
         fi
         ;;
@@ -657,15 +694,19 @@ run_step() {
         if [[ "$code" == "200" ]]; then
           note="/proxies=200"
         else
-          status="FAIL"
+          status="FAILED"
           note="/proxies=${code}"
         fi
         ;;
       switch_proxy)
         if note="$(switch_proxy_step "$api_url" "$token" 2>/dev/null)"; then
-          :
+          case "$note" in
+            switch_not_applicable:*|switch_endpoint_not_supported:*)
+              status="PARTIAL"
+              ;;
+          esac
         else
-          status="FAIL"
+          status="FAILED"
         fi
         ;;
       connections_panel)
@@ -673,7 +714,7 @@ run_step() {
         if [[ "$code" == "200" ]]; then
           note="/connections=200"
         else
-          status="FAIL"
+          status="FAILED"
           note="/connections=${code}"
         fi
         ;;
@@ -683,15 +724,16 @@ run_step() {
         else
           code="$(curl_code "$api_url" "/connections" "$token")"
           if [[ "$code" == "200" ]]; then
+            status="PARTIAL"
             note="kernel_log_empty_connections_probe=200"
           else
-            status="FAIL"
+            status="FAILED"
             note="kernel_log_empty_connections_probe=${code}"
           fi
         fi
         ;;
       *)
-        status="FAIL"
+        status="FAILED"
         note="unknown_step"
         ;;
     esac
@@ -700,7 +742,7 @@ run_step() {
   note="$(sanitize_note "$note")"
   printf '%s\t%s\t%s\t%s\n' "$core" "$step_id" "$status" "$note" >> "$RESULTS_FILE"
 
-  if [[ "$status" != "PASS" ]]; then
+  if [[ "$status" == "FAILED" ]]; then
     return 1
   fi
   return 0
@@ -746,8 +788,7 @@ run_core() {
   XDG_CONFIG_HOME="$core_home/.config" \
   XDG_CACHE_HOME="$core_home/.cache" \
   TMPDIR="$core_tmp" \
-  "${start_cmd[@]}" >"$kernel_log" 2>&1 &
-  ACTIVE_KERNEL_PID=$!
+  ACTIVE_KERNEL_PID="$(spawn_in_own_session "$kernel_log" "${start_cmd[@]}")"
 
   sleep 1
   if ! kill -0 "$ACTIVE_KERNEL_PID" >/dev/null 2>&1; then
@@ -855,7 +896,10 @@ run_postcheck() {
     record_sandbox_note "system_proxy_snapshot_changed"
   fi
 
-  for port in 9090 19090 11810 11811; do
+  IFS=',' read -r -a expected_ports <<< "$EXPECTED_RUNTIME_PORTS"
+  for raw_port in "${expected_ports[@]}"; do
+    port="$(echo "$raw_port" | tr -d '[:space:]')"
+    [[ -z "$port" ]] && continue
     if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       SANDBOX_POSTCHECK_PASS=0
       record_sandbox_note "port_not_released:${port}"
@@ -918,18 +962,21 @@ with open(os.environ["RESULTS_FILE"], "r", encoding="utf-8") as f:
 for core in ("go", "rust"):
     ordered = []
     missing = []
-    pass_all = True
+    overall_status = "PROVEN"
     for step_id in required_steps:
         item = cores[core]["steps"].get(step_id)
         if not item:
-            item = {"id": step_id, "status": "FAIL", "note": "missing_step_record"}
+            item = {"id": step_id, "status": "FAILED", "note": "missing_step_record"}
             missing.append(step_id)
-            pass_all = False
-        elif item["status"] != "PASS":
-            pass_all = False
+            overall_status = "FAILED"
+        elif item["status"] == "FAILED":
+            overall_status = "FAILED"
+        elif item["status"] in ("PARTIAL", "ADVISORY", "UNTESTED") and overall_status != "FAILED":
+            overall_status = "PARTIAL"
         ordered.append(item)
     cores[core]["ordered_steps"] = ordered
-    cores[core]["pass"] = pass_all
+    cores[core]["overall_status"] = overall_status
+    cores[core]["pass"] = overall_status != "FAILED"
     cores[core]["missing_steps"] = missing
 
 sandbox_notes = []
@@ -942,8 +989,7 @@ sandbox_postcheck = os.environ.get("SANDBOX_POSTCHECK_PASS", "0") == "1"
 proxy_unchanged = os.environ.get("SYSTEM_PROXY_UNCHANGED", "0") == "1"
 
 sandbox_pass = sandbox_precheck and sandbox_postcheck and proxy_unchanged
-core_pass = cores["go"]["pass"] and cores["rust"]["pass"]
-overall_pass = core_pass and sandbox_pass
+sandbox_status = "PROVEN" if sandbox_pass else "FAILED"
 
 def load_negotiation(path: str):
     if not os.path.isfile(path):
@@ -979,6 +1025,23 @@ negotiation = {
     "rust": load_negotiation(os.environ["NEGOTIATION_RUST_FILE"]),
 }
 
+for core in ("go", "rust"):
+    item = negotiation[core]
+    if item.get("status") in ("PARTIAL", "ADVISORY", "UNTESTED") and cores[core]["overall_status"] == "PROVEN":
+        cores[core]["overall_status"] = "PARTIAL"
+        cores[core]["pass"] = True
+    if item.get("status") == "FAILED":
+        cores[core]["overall_status"] = "FAILED"
+        cores[core]["pass"] = False
+
+overall_status = "PROVEN"
+if sandbox_status == "FAILED" or any(cores[core]["overall_status"] == "FAILED" for core in ("go", "rust")):
+    overall_status = "FAILED"
+elif any(cores[core]["overall_status"] in ("PARTIAL", "ADVISORY", "UNTESTED") for core in ("go", "rust")):
+    overall_status = "PARTIAL"
+
+overall_pass = overall_status != "FAILED"
+
 payload = {
     "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     "gui": {
@@ -991,6 +1054,7 @@ payload = {
     },
     "sandbox": {
         "root": os.path.abspath(os.environ["SANDBOX_ROOT"]),
+        "status": sandbox_status,
         "precheck_pass": sandbox_precheck,
         "postcheck_pass": sandbox_postcheck,
         "system_proxy_snapshot_unchanged": proxy_unchanged,
@@ -1002,16 +1066,19 @@ payload = {
     "capability_negotiation": negotiation,
     "cores": {
         "go": {
+            "overall_status": cores["go"]["overall_status"],
             "pass": cores["go"]["pass"],
             "missing_steps": cores["go"]["missing_steps"],
             "steps": cores["go"]["ordered_steps"],
         },
         "rust": {
+            "overall_status": cores["rust"]["overall_status"],
             "pass": cores["rust"]["pass"],
             "missing_steps": cores["rust"]["missing_steps"],
             "steps": cores["rust"]["ordered_steps"],
         },
     },
+    "overall_status": overall_status,
     "pass": overall_pass,
 }
 
@@ -1025,8 +1092,8 @@ lines.append(f"- Generated: {payload['generated_at']}")
 lines.append(f"- GUI App: `{payload['gui']['app']}`")
 lines.append(f"- GUI Process: `{payload['gui']['process_name']}`")
 lines.append(f"- Sandbox Root: `{payload['sandbox']['root']}`")
-lines.append(f"- Sandbox: **{'PASS' if sandbox_pass else 'FAIL'}**")
-lines.append(f"- Overall: **{'PASS' if overall_pass else 'FAIL'}**")
+lines.append(f"- Sandbox: **{sandbox_status}**")
+lines.append(f"- Overall: **{overall_status}**")
 lines.append("")
 
 lines.append("## Capability Negotiation")
@@ -1058,8 +1125,8 @@ if sandbox_notes:
 lines.append("| Step | Go | Rust |")
 lines.append("|---|---|---|")
 for step_id in required_steps:
-    go_step = cores["go"]["steps"].get(step_id, {"status": "FAIL", "note": "missing"})
-    rust_step = cores["rust"]["steps"].get(step_id, {"status": "FAIL", "note": "missing"})
+    go_step = cores["go"]["steps"].get(step_id, {"status": "FAILED", "note": "missing"})
+    rust_step = cores["rust"]["steps"].get(step_id, {"status": "FAILED", "note": "missing"})
     go_cell = f"{go_step['status']} ({go_step['note']})"
     rust_cell = f"{rust_step['status']} ({rust_step['note']})"
     lines.append(f"| `{step_id}` | {go_cell} | {rust_cell} |")
@@ -1072,9 +1139,10 @@ print(f"report md written: {os.environ['REPORT_MD']}")
 print(f"overall_pass={int(overall_pass)}")
 PY
 
-if [[ "$(jq -r '.pass' "$REPORT_JSON")" != "true" ]]; then
-  echo "[L18 gui-real] FAIL" >&2
+overall_status="$(jq -r '.overall_status // (if .pass then "PROVEN" else "FAILED" end)' "$REPORT_JSON")"
+if [[ "$overall_status" == "FAILED" ]]; then
+  echo "[L18 gui-real] FAILED" >&2
   exit 1
 fi
 
-echo "[L18 gui-real] PASS"
+echo "[L18 gui-real] ${overall_status}"

@@ -14,6 +14,7 @@ set -euo pipefail
 
 PROJECT_ROOT="${BOUNDARY_PROJECT_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$PROJECT_ROOT"
+BOUNDARY_POLICY_PATH="${BOUNDARY_POLICY_PATH:-agents-only/reference/boundary-policy.json}"
 
 REPORT_ONLY=false
 RUN_V7_ONLY=false
@@ -34,6 +35,23 @@ esac
 
 FAILED=0
 fail() { FAILED=$((FAILED + 1)); }
+
+policy_value() {
+    python3 - "$BOUNDARY_POLICY_PATH" "$1" <<'PY'
+import json
+import sys
+
+policy_path, dotted_key = sys.argv[1], sys.argv[2]
+with open(policy_path, encoding="utf-8") as fh:
+    value = json.load(fh)
+for part in dotted_key.split("."):
+    value = value[part]
+if isinstance(value, bool):
+    print("1" if value else "0")
+else:
+    print(value)
+PY
+}
 
 echo "=== 依赖边界检查 ($(date +%Y-%m-%d\ %H:%M)) ==="
 echo ""
@@ -178,11 +196,11 @@ for proto in trojan vmess vless shadowsocks shadowtls hysteria hysteria2 tuic wi
     # Look for: #[cfg(feature = "out_xxx")] or #[cfg(all(feature = "out_xxx", ...))]
     # followed by: pub mod <proto>
     # Map protocol name to its feature name
-    local_feature=""
+    feature_name=""
     case "$proto" in
-        shadowsocks) local_feature="out_ss" ;;
-        naive)       local_feature="out_naive" ;;
-        *)           local_feature="out_${proto}" ;;
+        shadowsocks) feature_name="out_ss" ;;
+        naive)       feature_name="out_naive" ;;
+        *)           feature_name="out_${proto}" ;;
     esac
     # Check if the pub mod line for this proto has a cfg gate on the preceding line(s)
     if [ -f "$OUTBOUND_MOD" ]; then
@@ -225,6 +243,7 @@ fi
 echo "── V4: sb-adapters → sb-core 反向依赖 ──"
 
 if grep -q 'sb-core' crates/sb-adapters/Cargo.toml 2>/dev/null; then
+    V4A_THRESHOLD="$(policy_value "v4.v4a_max")"
     # V4a: non-inbound (outbound/, register.rs, stubs) — actionable violations
     V4A_USES=$(grep -rn "use sb_core" crates/sb-adapters/src/outbound/ crates/sb-adapters/src/register.rs crates/sb-adapters/src/service_stubs.rs crates/sb-adapters/src/endpoint_stubs.rs 2>/dev/null | wc -l | tr -d ' ')
 
@@ -233,20 +252,61 @@ if grep -q 'sb-core' crates/sb-adapters/Cargo.toml 2>/dev/null; then
 
     V4_TOTAL=$((V4A_USES + V4B_USES))
 
-    echo "  V4a (outbound/register): $V4A_USES 处 use sb_core (threshold: 25)"
+    echo "  V4a (outbound/register): $V4A_USES 处 use sb_core (threshold: ${V4A_THRESHOLD})"
     echo "  V4b (inbound/service/endpoint): $V4B_USES 处 use sb_core (INFO only)"
     echo "  Total: $V4_TOTAL 处"
 
-    # V4a threshold: warn if exceeds baseline but don't fail (these are known remaining deps)
-    # V4b: legitimate dependency, INFO only
-    if [ "$V4A_USES" -gt 25 ]; then
-        echo "  WARN: V4a exceeds threshold (25)"
+    if [ "$V4A_USES" -gt "$V4A_THRESHOLD" ]; then
+        echo "  FAIL: V4a exceeds threshold (${V4A_THRESHOLD})"
         fail
     else
         echo "  PASS (V4a within threshold)"
     fi
 else
     echo "  PASS"
+fi
+
+echo "── V4: pattern budgets ──"
+if python3 - "$BOUNDARY_POLICY_PATH" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+policy_path = Path(sys.argv[1])
+policy = json.loads(policy_path.read_text(encoding="utf-8"))
+failed = False
+
+for rule in policy.get("pattern_budgets", []):
+    name = rule["name"]
+    pattern = re.compile(rule["pattern"])
+    max_allowed = int(rule["max"])
+    severity = str(rule.get("severity", "fail"))
+    total = 0
+    missing = []
+
+    for rel_path in rule.get("paths", []):
+        path = Path(rel_path)
+        if not path.exists():
+            missing.append(rel_path)
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if pattern.search(line):
+                total += 1
+
+    print(f"  {name}: {total} (max {max_allowed}, severity={severity})")
+    if missing:
+        print(f"    missing paths: {', '.join(missing)}")
+    if total > max_allowed and severity == "fail":
+        failed = True
+
+raise SystemExit(1 if failed else 0)
+PY
+then
+    echo "  PASS (policy budgets within bounds)"
+else
+    echo "  FAIL: policy budget exceeded"
+    fail
 fi
 
 # ─── V5: sb-subscribe 越界 ─────────────────────────────

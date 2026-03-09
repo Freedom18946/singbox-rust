@@ -10,16 +10,16 @@ from pathlib import Path
 
 DOC_FILES = [
     "README.md",
-    "docs/capabilities.md",
+    "docs/README.md",
     "docs/STATUS.md",
-    "docs/RUST_ENHANCEMENTS.md",
-    "docs/07-reference/platform-io.md",
-    "agents-only/01-spec/01-REQUIREMENTS-ANALYSIS.md",
-    "agents-only/02-reference/GO_PARITY_MATRIX.md",
+    "docs/MIGRATION_GUIDE.md",
+    "docs/migration-from-go.md",
+    "docs/00-getting-started/README.md",
+    "docs/configuration.md",
+    "docs/capabilities.md",
 ]
 
 KNOWN_CAPABILITY_IDS = {
-    "project.acceptance.baseline",
     "tun.macos.tun2socks",
     "inbound.redirect",
     "inbound.tproxy",
@@ -30,6 +30,7 @@ KNOWN_CAPABILITY_IDS = {
     "tls.ech.tcp",
     "tls.ech.quic",
 }
+ACCEPTANCE_CLOSURE_ID = "acceptance_closure"
 
 DEFAULT_PROBE_REPORT_PATH = "reports/runtime/capability_probe.json"
 COMPILE_STATES = {"supported", "gated_off", "stubbed", "absent"}
@@ -37,17 +38,19 @@ RUNTIME_STATES = {"verified", "unverified", "unsupported", "blocked"}
 
 HIGH_RISK_PATTERNS = [
     re.compile(r"production ready", re.IGNORECASE),
+    re.compile(r"release[- ]ready", re.IGNORECASE),
     re.compile(r"full support", re.IGNORECASE),
     re.compile(r"27\+\s*fingerprints?", re.IGNORECASE),
     re.compile(r"(?:\bECH\b.*\bComplete\b|\bComplete\b.*\bECH\b)", re.IGNORECASE),
     re.compile(r"TUN,\s*Redirect,\s*TProxy.*✅", re.IGNORECASE),
 ]
 
-MEDIUM_RISK_PATTERNS = [
+CLOSURE_PATTERNS = [
     re.compile(r"209/209", re.IGNORECASE),
     re.compile(r"100%\s*parity", re.IGNORECASE),
     re.compile(r"feature parity", re.IGNORECASE),
     re.compile(r"100%\s*protocol coverage", re.IGNORECASE),
+    re.compile(r"acceptance baseline", re.IGNORECASE),
 ]
 
 EXPLICIT_CAPABILITY_RE = re.compile(
@@ -75,13 +78,15 @@ def dedup_keep_order(values: list[str]) -> list[str]:
     return out
 
 
+def matches_any(patterns: list[re.Pattern[str]], text: str) -> bool:
+    return any(pattern.search(text) for pattern in patterns)
+
+
 def classify_risk(text: str) -> str | None:
-    for pattern in HIGH_RISK_PATTERNS:
-        if pattern.search(text):
-            return "high"
-    for pattern in MEDIUM_RISK_PATTERNS:
-        if pattern.search(text):
-            return "medium"
+    if matches_any(HIGH_RISK_PATTERNS, text):
+        return "high"
+    if matches_any(CLOSURE_PATTERNS, text):
+        return "medium"
     return None
 
 
@@ -103,8 +108,17 @@ def extract_explicit_capabilities(text: str) -> list[str]:
     return dedup_keep_order(explicit)
 
 
-def map_claim_to_capabilities(text: str) -> list[str]:
+def classify_claim_kind(text: str) -> str:
+    if matches_any(CLOSURE_PATTERNS, text):
+        return "closure"
+    return "capability"
+
+
+def map_claim_to_ids(text: str, claim_kind: str) -> list[str]:
     lower = text.lower()
+    if claim_kind == "closure":
+        return [ACCEPTANCE_CLOSURE_ID]
+
     mapped = extract_explicit_capabilities(text)
 
     if "tun, redirect, tproxy" in lower:
@@ -134,15 +148,6 @@ def map_claim_to_capabilities(text: str) -> list[str]:
         mapped.append("tls.ech.quic")
     elif re.search(r"\bech\b", lower):
         mapped.append("tls.ech.tcp")
-
-    if (
-        "209/209" in lower
-        or "100% parity" in lower
-        or "feature parity" in lower
-        or "100% protocol coverage" in lower
-        or "acceptance baseline" in lower
-    ):
-        mapped.append("project.acceptance.baseline")
 
     return dedup_keep_order(mapped)
 
@@ -219,6 +224,69 @@ def load_runtime_probes(root: Path, probe_report: str) -> tuple[dict[str, dict],
     return probe_map, meta
 
 
+def discover_evidence_manifests(root: Path) -> list[str]:
+    batch_root = root / "reports/l18/batches"
+    if not batch_root.exists():
+        return []
+    manifests = [
+        path.relative_to(root).as_posix()
+        for path in batch_root.rglob("evidence_manifest.json")
+        if path.is_file()
+    ]
+    return sorted(manifests)
+
+
+def build_acceptance_closure(root: Path, manifests: list[str]) -> dict:
+    def ev(kind: str, rel_path: str, needle: str, note: str) -> dict:
+        line = locate_line(root / rel_path, needle)
+        return {
+            "kind": kind,
+            "path": rel_path,
+            "line": line,
+            "note": note,
+        }
+
+    evidence = [
+        ev(
+            "doc",
+            "agents-only/planning/L18-PHASE4.md",
+            "Wave A: 证据模型收口",
+            "Phase 4 explicitly separates closure narrative from per-capability facts.",
+        ),
+        ev(
+            "doc",
+            "reports/L18_REPLACEMENT_CERTIFICATION.md",
+            "Status: `UNVERIFIED (slim snapshot)`",
+            "Replacement-certification report now treats missing batch artifacts as unverified.",
+        ),
+    ]
+    for rel_path in manifests[:8]:
+        evidence.append(
+            ev(
+                "report",
+                rel_path,
+                "\"batch_id\"",
+                "Retained L18 evidence manifest present in the local workspace.",
+            )
+        )
+
+    if manifests:
+        status = "evidence_backed"
+        evidence_scope = "retained_local_manifests"
+        snapshot_verifiability = "self_contained"
+    else:
+        status = "snapshot_unverified"
+        evidence_scope = "active_docs_and_provenance_only"
+        snapshot_verifiability = "slim_snapshot"
+
+    return {
+        "status": status,
+        "evidence_scope": evidence_scope,
+        "snapshot_verifiability": snapshot_verifiability,
+        "evidence": evidence,
+    }
+
+
 def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict]:
     def ev(kind: str, rel_path: str, needle: str, note: str) -> dict:
         line = locate_line(root / rel_path, needle)
@@ -230,23 +298,6 @@ def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict
         }
 
     capabilities = [
-        {
-            "id": "project.acceptance.baseline",
-            "name": "Acceptance baseline closure accounting",
-            "compile_state": "supported",
-            "runtime_state": "verified",
-            "verification_state": "integration_verified",
-            "overall_state": "implemented_verified",
-            "accepted_limitation": True,
-            "evidence": [
-                ev(
-                    "doc",
-                    "agents-only/02-reference/GO_PARITY_MATRIX.md",
-                    "Current Parity",
-                    "Baseline closure uses accepted limitations accounting.",
-                )
-            ],
-        },
         {
             "id": "tun.macos.tun2socks",
             "name": "macOS tun2socks data-plane path",
@@ -503,13 +554,15 @@ def extract_claims(root: Path) -> list[dict]:
             risk = classify_risk(text)
             if risk is None:
                 continue
+            claim_kind = classify_claim_kind(text)
             claims.append(
                 {
                     "source_path": rel_path,
                     "line": line_no,
                     "text": text,
                     "risk_level": risk,
-                    "linked_capability_ids": map_claim_to_capabilities(text),
+                    "claim_kind": claim_kind,
+                    "linked_ids": map_claim_to_ids(text, claim_kind),
                 }
             )
     return claims
@@ -540,12 +593,14 @@ def main() -> int:
     root = Path(__file__).resolve().parents[2]
     out_path = (root / args.out).resolve()
     runtime_probes, runtime_probe_meta = load_runtime_probes(root, args.probe_report)
+    evidence_manifests = discover_evidence_manifests(root)
 
     payload = {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source_commit": git_short_sha(root),
         "profile": args.profile,
+        "acceptance_closure": build_acceptance_closure(root, evidence_manifests),
         "capabilities": build_capabilities(root, runtime_probes),
         "claims": extract_claims(root),
     }

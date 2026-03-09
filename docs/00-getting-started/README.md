@@ -11,7 +11,7 @@ Get up and running with singbox-rust in **5 minutes**!
 - **Universal Proxy**: SOCKS5, HTTP, TUN, VMess, VLESS, Trojan, Shadowsocks, Hysteria, TUIC, and more
 - **Smart Routing**: Route traffic based on domain, IP, protocol, process, and more
 - **Anti-Censorship**: REALITY and ECH protocols for enhanced privacy
-- **Production-Ready**: 100% feature parity with upstream sing-box, with better performance
+- **Capability status is tracked explicitly**: see `docs/capabilities.md` for per-capability evidence and the current review posture
 
 **Use Cases**:
 
@@ -271,12 +271,12 @@ Go-compatible aliases (for example `user`, `auth_str`, URLTest `*_ms` timing key
 
 ### Q: Which protocols are supported?
 
-**A**: All major protocols are fully supported - **100% of Go protocol coverage achieved!**
+**A**: The current matrix covers all major protocol families used in the Go baseline; consult `docs/MIGRATION_GUIDE.md` and `docs/capabilities.md` for scoped details.
 
 - **Inbounds (18/18)**: SOCKS5, HTTP, Mixed, Direct, DNS, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
 - **Outbounds (19/19)**: Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 
-See [Migration Guide](../MIGRATION_GUIDE.md) for full protocol matrix and feature parity details.
+See [Migration Guide](../MIGRATION_GUIDE.md) for protocol-matrix context and migration details.
 
 ### Q: How do I enable TUN mode on Linux?
 

@@ -1,31 +1,29 @@
 <!-- tier: A -->
-# L18 Phase 3 工作包：nightly / certify 级运行
+# L18 Phase 3 工作包：历史阶段说明
 
-状态：🚀 就绪（待发车）
-更新：2026-03-08
+状态：✅ 历史阶段
+更新：2026-03-09
 
-> **入口条件**：
-> Phase 2 已于 `20260307T211512Z-l18-daily-preflight` 取得 clean full PASS，`reports/l18/phase2_baseline.lock.json` 已锁定。
-> Phase 3 只跟进 nightly/certify 长跑中新暴露的真实失败，不回头处理已收敛的 env/workspace/router 默认值问题。
+> **说明**：
+> Phase 3 原本用于 `nightly / certify` 长跑收口。
+> 在 2026-03-09 进入全局静态审议后，主线已切换到 [L18-PHASE4.md](./L18-PHASE4.md)。
+> 旧的 `nightly PASS / certify deferred` 叙事在当前 slim snapshot 下不构成本地可独立复核证据。
 
 ---
 
-## 1. 目标
+## 1. 原阶段目标（历史）
 
 1. 取得一次本地 `nightly`（24h canary）full PASS。
 2. 在 `nightly` 稳定后取得一次 `certify`（7d canary）PASS。
 3. 产出 L18 关闭所需的长跑证据与最终状态文档更新。
 
-## 2. 当前已满足前置
+## 2. 当前处理口径
 
-- `daily` capstone clean full PASS：`reports/l18/batches/20260307T211512Z-l18-daily-preflight`
-- baseline 已锁定：`reports/l18/phase2_baseline.lock.json`
-- fixed-profile 执行入口已稳定：
-  - `scripts/l18/run_capstone_fixed_profile.sh`
-  - `scripts/l18/l18_capstone.sh`
-- 本地非阻断项仅剩 `docker=WARN (no daemon)`；在 `--require-docker 0` 下不阻塞 nightly
+1. `20260307T211512Z` / `20260307T230356Z` 仍可作为 provenance reference 保留。
+2. 但由于本地大部分 batch 工件已为静态审计瘦身删除，当前快照不能把这些批次继续写成“已复核 PASS”。
+3. 在补齐自包含 manifest 之前，所有缺失本地工件的长跑结论统一记为 `UNVERIFIED (slim snapshot)`。
 
-## 3. 执行顺序
+## 3. 历史执行顺序（保留供参考）
 
 ### Step 1: nightly 24h
 
@@ -69,17 +67,10 @@ scripts/l18/run_capstone_fixed_profile.sh \
 - 7d canary 全程健康
 - mandatory gate 证据完整可追溯
 
-## 4. 文档回填
+## 4. 当前替代入口
 
-完成 nightly/certify 后同步更新：
+当前执行入口已切到：
 
-- `reports/L18_REPLACEMENT_CERTIFICATION.md`
-- `agents-only/active_context.md`
+- `agents-only/planning/L18-PHASE4.md`
 - `agents-only/workpackage_latest.md`
-- `agents-only/log.md`
-
-## 5. 风险纪律
-
-- 仅修复新暴露的真实失败；不要重开已收敛的 Phase 2 问题
-- 不调整 perf threshold，除非出现新的可复算证据并单独审批
-- 保持 fixed-profile 口径不漂移
+- `agents-only/active_context.md`

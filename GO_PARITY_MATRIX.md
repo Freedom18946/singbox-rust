@@ -2,10 +2,9 @@
 
 Authoritative parity matrix moved to:
 
-- `agents-only/02-reference/GO_PARITY_MATRIX.md`
+- `agents-only/reference/GO_PARITY_MATRIX.md`
 
-Current acceptance baseline:
+Current review posture:
 
-- `209/209 closed`
-- `100% (acceptance baseline, includes accepted limitations)`
-
+- historical matrix context remains in the authoritative file above
+- strong closure claims are `UNVERIFIED (slim snapshot)` until backed by retained local evidence

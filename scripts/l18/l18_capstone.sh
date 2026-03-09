@@ -18,17 +18,19 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PROFILE="${L18_PROFILE:-daily}"
 API_URL="${L18_CANARY_API_URL:-http://127.0.0.1:19090}"
+CANARY_API_SECRET="${L18_CANARY_API_SECRET:-}"
 PID_FILE="${L18_CANARY_PID_FILE:-}"
 STATUS_FILE="${L18_STATUS_FILE:-${ROOT_DIR}/reports/l18/l18_capstone_status.json}"
 GO_API="${INTEROP_GO_API_BASE:-}"
 GO_TOKEN="${INTEROP_GO_API_TOKEN:-}"
-GO_API_SECRET="${INTEROP_GO_API_SECRET:-}"
+GO_API_SECRET="${INTEROP_GO_API_SECRET:-${L18_GO_API_SECRET:-}}"
 GO_API_SECRET_WRONG="${INTEROP_GO_API_SECRET_WRONG:-l18-capstone-go-secret-wrong}"
 RUST_API="${INTEROP_RUST_API_BASE:-}"
-RUST_API_SECRET="${INTEROP_RUST_API_SECRET:-test-secret}"
+RUST_API_SECRET="${INTEROP_RUST_API_SECRET:-${L18_RUST_API_SECRET:-test-secret}}"
 RUST_API_SECRET_WRONG="${INTEROP_RUST_API_SECRET_WRONG:-l18-capstone-rust-secret-wrong}"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_SANDBOX_ROOT="${L18_GUI_SANDBOX_ROOT:-}"
+GUI_REPORT_JSON="${L18_GUI_REAL_REPORT_JSON:-${ROOT_DIR}/reports/l18/gui_real_cert.json}"
 ALLOW_EXISTING_SYSTEM_PROXY="${L18_ALLOW_EXISTING_SYSTEM_PROXY:-0}"
 ALLOW_REAL_PROXY_COEXIST="${L18_ALLOW_REAL_PROXY_COEXIST:-0}"
 REQUIRE_DOCKER="${L18_REQUIRE_DOCKER:-0}"
@@ -44,6 +46,8 @@ DUAL_RUST_CONFIG="${L18_DUAL_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l
 DUAL_RUST_BIN="${L18_DUAL_RUST_BIN:-${ROOT_DIR}/target/release/run}"
 DUAL_RUST_APP_BIN="${L18_DUAL_RUST_APP_BIN:-${ROOT_DIR}/target/release/app}"
 DUAL_GO_BIN="${L18_DUAL_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
+GO_PROXY_PORT="${L18_GO_PROXY_PORT:-11811}"
+RUST_PROXY_PORT="${L18_RUST_PROXY_PORT:-11810}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -240,22 +244,24 @@ DUAL_GO_LOG="${DUAL_RUNTIME_DIR}/go.log"
 DUAL_RUST_PID_FILE="${DUAL_RUNTIME_DIR}/rust.pid"
 DUAL_RUST_LOG="${DUAL_RUNTIME_DIR}/rust.log"
 
-PREFLIGHT_STATUS="NOT_RUN"
-ORACLE_STATUS="NOT_RUN"
-BOUNDARIES_STATUS="NOT_RUN"
-PARITY_STATUS="NOT_RUN"
-WORKSPACE_TEST_STATUS="NOT_RUN"
-FMT_STATUS="NOT_RUN"
-CLIPPY_STATUS="NOT_RUN"
-HOT_RELOAD_STATUS="NOT_RUN"
-SIGNAL_STATUS="NOT_RUN"
-DOCKER_STATUS="NOT_RUN"
-GUI_STATUS="NOT_RUN"
-CANARY_STATUS="NOT_RUN"
-DUAL_KERNEL_DIFF_STATUS="NOT_RUN"
-PERF_GATE_STATUS="NOT_RUN"
+PREFLIGHT_STATUS="UNTESTED"
+ORACLE_STATUS="UNTESTED"
+BOUNDARIES_STATUS="UNTESTED"
+PARITY_STATUS="UNTESTED"
+WORKSPACE_TEST_STATUS="UNTESTED"
+FMT_STATUS="UNTESTED"
+CLIPPY_STATUS="UNTESTED"
+HOT_RELOAD_STATUS="UNTESTED"
+SIGNAL_STATUS="UNTESTED"
+DOCKER_STATUS="UNTESTED"
+GUI_STATUS="UNTESTED"
+CANARY_STATUS="UNTESTED"
+DUAL_KERNEL_DIFF_STATUS="UNTESTED"
+PERF_GATE_STATUS="UNTESTED"
 
 HAS_FAIL=0
+HAS_PARTIAL=0
+HAS_ADVISORY=0
 
 set_gate_status() {
   local key="$1"
@@ -283,9 +289,11 @@ set_gate_status() {
 }
 
 finalize_status() {
-  local overall="PASS"
+  local overall="PROVEN"
   if [[ "$HAS_FAIL" -ne 0 ]]; then
-    overall="FAIL"
+    overall="FAILED"
+  elif [[ "$HAS_PARTIAL" -ne 0 || "$HAS_ADVISORY" -ne 0 ]]; then
+    overall="PARTIAL"
   fi
 
   cat > "$STATUS_FILE" <<EOF_JSON
@@ -330,7 +338,7 @@ EOF_JSON
   echo "L18 capstone status: ${overall}"
   echo "status file: ${STATUS_FILE}"
 
-  if [[ "$overall" == "FAIL" ]]; then
+  if [[ "$overall" == "FAILED" ]]; then
     return 1
   fi
   return 0
@@ -341,10 +349,10 @@ run_gate() {
   shift
   echo "==> [${key}] $*"
   if "$@"; then
-    set_gate_status "$key" "PASS"
+    set_gate_status "$key" "PROVEN"
     return 0
   else
-    set_gate_status "$key" "FAIL"
+    set_gate_status "$key" "FAILED"
     HAS_FAIL=1
     return 1
   fi
@@ -364,17 +372,18 @@ run_gate_with_fail_fast() {
 
 run_docker_gate() {
   if docker info >/dev/null 2>&1; then
-    set_gate_status "DOCKER" "PASS"
+    set_gate_status "DOCKER" "PROVEN"
     return 0
   fi
 
   if [[ "$REQUIRE_DOCKER" == "1" ]]; then
-    set_gate_status "DOCKER" "FAIL"
+    set_gate_status "DOCKER" "FAILED"
     HAS_FAIL=1
     return 1
   fi
 
-  set_gate_status "DOCKER" "WARN"
+  set_gate_status "DOCKER" "ADVISORY"
+  HAS_ADVISORY=1
   echo "[L18 capstone] docker unavailable but non-blocking in local mode"
   return 0
 }
@@ -387,14 +396,56 @@ check_port_free() {
   return 0
 }
 
+spawn_in_own_session() {
+  local log_file="$1"
+  shift
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@" >"${log_file}" 2>&1 &
+    echo "$!"
+    return 0
+  fi
+
+  python3 - "${log_file}" "$@" <<'PY'
+import os
+import sys
+
+log_file = sys.argv[1]
+cmd = sys.argv[2:]
+
+pid = os.fork()
+if pid:
+    print(pid)
+    sys.exit(0)
+
+os.setsid()
+fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
+if fd > 2:
+    os.close(fd)
+os.execvp(cmd[0], cmd)
+PY
+}
+
+api_port_from_url() {
+  python3 - "$1" <<'PY'
+import sys
+import urllib.parse
+
+parsed = urllib.parse.urlparse(sys.argv[1])
+print(parsed.port or "")
+PY
+}
+
 stop_dual_go_runtime() {
   if [[ -f "${DUAL_GO_PID_FILE}" ]]; then
     local gpid
     gpid="$(cat "${DUAL_GO_PID_FILE}" 2>/dev/null || true)"
     if [[ -n "${gpid:-}" ]] && kill -0 "$gpid" 2>/dev/null; then
-      kill "$gpid" 2>/dev/null || true
+      kill "-$gpid" 2>/dev/null || kill "$gpid" 2>/dev/null || true
       sleep 0.5
-      kill -0 "$gpid" 2>/dev/null && kill -9 "$gpid" 2>/dev/null || true
+      kill -0 "$gpid" 2>/dev/null && kill -9 "-$gpid" 2>/dev/null || kill -9 "$gpid" 2>/dev/null || true
     fi
   fi
 }
@@ -404,9 +455,9 @@ stop_dual_rust_runtime() {
     local rpid
     rpid="$(cat "${DUAL_RUST_PID_FILE}" 2>/dev/null || true)"
     if [[ -n "${rpid:-}" ]] && kill -0 "$rpid" 2>/dev/null; then
-      kill "$rpid" 2>/dev/null || true
+      kill "-$rpid" 2>/dev/null || kill "$rpid" 2>/dev/null || true
       sleep 0.5
-      kill -0 "$rpid" 2>/dev/null && kill -9 "$rpid" 2>/dev/null || true
+      kill -0 "$rpid" 2>/dev/null && kill -9 "-$rpid" 2>/dev/null || kill -9 "$rpid" 2>/dev/null || true
     fi
   fi
 }
@@ -422,14 +473,16 @@ start_dual_go_runtime() {
     echo "dual go config missing: ${DUAL_GO_CONFIG}" >&2
     return 1
   fi
-  if ! check_port_free 9090; then
-    echo "dual go runtime requires free port: 9090" >&2
-    lsof -nP -iTCP:9090 -sTCP:LISTEN >&2 || true
+  local control_port
+  control_port="$(api_port_from_url "${api_url}")"
+  if [[ -n "${control_port}" ]] && ! check_port_free "${control_port}"; then
+    echo "dual go runtime requires free controller port: ${control_port}" >&2
+    lsof -nP -iTCP:"${control_port}" -sTCP:LISTEN >&2 || true
     return 1
   fi
 
-  "${DUAL_GO_BIN}" run -c "${DUAL_GO_CONFIG}" > "${DUAL_GO_LOG}" 2>&1 &
-  local gpid="$!"
+  local gpid
+  gpid="$(spawn_in_own_session "${DUAL_GO_LOG}" "${DUAL_GO_BIN}" run -c "${DUAL_GO_CONFIG}")"
   echo "${gpid}" > "${DUAL_GO_PID_FILE}"
 
   local ready=0
@@ -465,14 +518,16 @@ start_dual_rust_runtime() {
     echo "dual rust config missing: ${DUAL_RUST_CONFIG}" >&2
     return 1
   fi
-  if ! check_port_free 19090; then
-    echo "dual rust runtime requires free port: 19090" >&2
-    lsof -nP -iTCP:19090 -sTCP:LISTEN >&2 || true
+  local control_port
+  control_port="$(api_port_from_url "${api_url}")"
+  if [[ -n "${control_port}" ]] && ! check_port_free "${control_port}"; then
+    echo "dual rust runtime requires free controller port: ${control_port}" >&2
+    lsof -nP -iTCP:"${control_port}" -sTCP:LISTEN >&2 || true
     return 1
   fi
 
-  "${DUAL_RUST_BIN}" --config "${DUAL_RUST_CONFIG}" > "${DUAL_RUST_LOG}" 2>&1 &
-  local rpid="$!"
+  local rpid
+  rpid="$(spawn_in_own_session "${DUAL_RUST_LOG}" "${DUAL_RUST_BIN}" --config "${DUAL_RUST_CONFIG}")"
   echo "${rpid}" > "${DUAL_RUST_PID_FILE}"
 
   local ready=0
@@ -505,14 +560,14 @@ run_dual_gate() {
 
   if [[ -z "$dual_rust_api" ]]; then
     dual_rust_api="http://127.0.0.1:19090"
-    dual_rust_secret="test-secret"
+    dual_rust_secret="${RUST_API_SECRET}"
     managed_rust=1
   fi
 
   if [[ -z "$dual_go_api" ]]; then
     dual_go_api="http://127.0.0.1:9090"
-    dual_go_secret="test-secret"
-    dual_go_token="test-secret"
+    dual_go_secret="${GO_API_SECRET:-${GO_TOKEN:-}}"
+    dual_go_token="${GO_TOKEN:-${GO_API_SECRET:-}}"
     managed_go=1
   fi
 
@@ -564,6 +619,39 @@ run_dual_gate() {
   return "$rc"
 }
 
+run_gui_gate() {
+  local rc=0
+  "$@" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    set_gate_status "GUI" "FAILED"
+    HAS_FAIL=1
+    return 1
+  fi
+  if [[ ! -f "${GUI_REPORT_JSON}" ]]; then
+    set_gate_status "GUI" "FAILED"
+    HAS_FAIL=1
+    echo "[L18 capstone] gui report missing: ${GUI_REPORT_JSON}" >&2
+    return 1
+  fi
+
+  local gui_overall
+  gui_overall="$(jq -r '.overall_status // (if .pass then "PROVEN" else "FAILED" end)' "${GUI_REPORT_JSON}")"
+  set_gate_status "GUI" "${gui_overall}"
+  case "${gui_overall}" in
+    PROVEN)
+      return 0
+      ;;
+    PARTIAL|ADVISORY|UNTESTED)
+      HAS_PARTIAL=1
+      return 0
+      ;;
+    *)
+      HAS_FAIL=1
+      return 1
+      ;;
+  esac
+}
+
 run_canary_gate() {
   local out_jsonl="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.jsonl"
   local out_summary="${CANARY_OUTPUT_ROOT}/canary_${PROFILE}.md"
@@ -578,6 +666,9 @@ run_canary_gate() {
   )
   if [[ -n "$PID_FILE" ]]; then
     cmd+=(--pid-file "$PID_FILE")
+  fi
+  if [[ -n "$CANARY_API_SECRET" ]]; then
+    cmd+=(--api-token "$CANARY_API_SECRET")
   fi
 
   "${cmd[@]}" || return 1
@@ -659,7 +750,7 @@ fi
 
 if [[ -z "$GUI_APP" ]]; then
   echo "L18_GUI_APP/--gui-app is required for GUI gate" >&2
-  set_gate_status "GUI" "FAIL"
+  set_gate_status "GUI" "FAILED"
   HAS_FAIL=1
   if [[ "$FAIL_FAST" == "1" ]]; then
     finalize_status
@@ -670,7 +761,13 @@ else
   if [[ -n "$GUI_SANDBOX_ROOT" ]]; then
     GUI_CMD+=(--sandbox-root "$GUI_SANDBOX_ROOT")
   fi
-  run_gate_with_fail_fast "GUI" "${GUI_CMD[@]}"
+  if ! run_gui_gate "${GUI_CMD[@]}"; then
+    if [[ "$FAIL_FAST" == "1" ]]; then
+      echo "[L18 capstone] fail-fast triggered at gate=GUI" >&2
+      finalize_status
+      exit 1
+    fi
+  fi
 fi
 
 run_gate_with_fail_fast "CANARY" run_canary_gate

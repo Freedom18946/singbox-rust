@@ -255,88 +255,85 @@ impl tokio::io::AsyncWrite for BoxedStreamAdapter {
 
 static REGISTER_ONCE: Once = Once::new();
 
-/// Register adapter-provided builders with sb-core registry. Safe to call multiple times.
-/// 将适配器提供的构建器注册到 sb-core 注册表中。可以安全地多次调用。
-pub fn register_all() {
-    REGISTER_ONCE.call_once(|| {
+fn populate_default_registry(snapshot: &mut registry::RegistrySnapshot) {
         #[cfg(feature = "adapter-http")]
         {
-            let _ = registry::register_outbound("http", build_http_outbound);
+            let _ = snapshot.register_outbound("http", build_http_outbound);
         }
         #[cfg(feature = "adapter-socks")]
         {
-            let _ = registry::register_outbound("socks", build_socks_outbound);
-            let _ = registry::register_outbound("socks4", build_socks4_outbound);
+            let _ = snapshot.register_outbound("socks", build_socks_outbound);
+            let _ = snapshot.register_outbound("socks4", build_socks4_outbound);
         }
         #[cfg(feature = "adapter-shadowsocks")]
         {
-            let _ = registry::register_outbound("shadowsocks", build_shadowsocks_outbound);
-            let _ = registry::register_outbound("shadowsocksr", build_shadowsocksr_outbound);
+            let _ = snapshot.register_outbound("shadowsocks", build_shadowsocks_outbound);
+            let _ = snapshot.register_outbound("shadowsocksr", build_shadowsocksr_outbound);
         }
         #[cfg(feature = "adapter-trojan")]
         {
-            let _ = registry::register_outbound("trojan", build_trojan_outbound);
+            let _ = snapshot.register_outbound("trojan", build_trojan_outbound);
         }
         #[cfg(feature = "adapter-vmess")]
         {
-            let _ = registry::register_outbound("vmess", build_vmess_outbound);
+            let _ = snapshot.register_outbound("vmess", build_vmess_outbound);
         }
         #[cfg(feature = "adapter-vless")]
         {
-            let _ = registry::register_outbound("vless", build_vless_outbound);
+            let _ = snapshot.register_outbound("vless", build_vless_outbound);
         }
         {
-            let _ = registry::register_outbound("direct", build_direct_outbound);
+            let _ = snapshot.register_outbound("direct", build_direct_outbound);
         }
         {
-            let _ = registry::register_outbound("block", build_block_outbound);
+            let _ = snapshot.register_outbound("block", build_block_outbound);
         }
         {
-            let _ = registry::register_outbound("dns", build_dns_outbound);
+            let _ = snapshot.register_outbound("dns", build_dns_outbound);
         }
         {
-            let _ = registry::register_outbound("tor", build_tor_outbound);
+            let _ = snapshot.register_outbound("tor", build_tor_outbound);
         }
         {
-            let _ = registry::register_outbound("anytls", build_anytls_outbound);
+            let _ = snapshot.register_outbound("anytls", build_anytls_outbound);
         }
         {
-            let _ = registry::register_outbound("wireguard", build_wireguard_outbound);
+            let _ = snapshot.register_outbound("wireguard", build_wireguard_outbound);
         }
         {
-            let _ = registry::register_outbound("tailscale", build_tailscale_outbound);
+            let _ = snapshot.register_outbound("tailscale", build_tailscale_outbound);
         }
         {
-            let _ = registry::register_outbound("hysteria", build_hysteria_outbound);
+            let _ = snapshot.register_outbound("hysteria", build_hysteria_outbound);
         }
         {
-            let _ = registry::register_outbound("tuic", build_tuic_outbound);
+            let _ = snapshot.register_outbound("tuic", build_tuic_outbound);
         }
         {
-            let _ = registry::register_outbound("hysteria2", build_hysteria2_outbound);
+            let _ = snapshot.register_outbound("hysteria2", build_hysteria2_outbound);
         }
         {
-            let _ = registry::register_outbound("ssh", build_ssh_outbound);
+            let _ = snapshot.register_outbound("ssh", build_ssh_outbound);
         }
         {
-            let _ = registry::register_outbound("shadowtls", build_shadowtls_outbound);
+            let _ = snapshot.register_outbound("shadowtls", build_shadowtls_outbound);
         }
         // Selector group outbounds (core functionality, always available)
         {
-            let _ = registry::register_outbound("selector", build_selector_outbound);
+            let _ = snapshot.register_outbound("selector", build_selector_outbound);
         }
         {
-            let _ = registry::register_outbound("urltest", build_urltest_outbound);
+            let _ = snapshot.register_outbound("urltest", build_urltest_outbound);
         }
 
         #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
         {
-            let _ = registry::register_inbound("http", build_http_inbound);
+            let _ = snapshot.register_inbound("http", build_http_inbound);
         }
 
         #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
         {
-            let _ = registry::register_inbound("socks", build_socks_inbound);
+            let _ = snapshot.register_inbound("socks", build_socks_inbound);
         }
 
         #[cfg(all(
@@ -346,71 +343,85 @@ pub fn register_all() {
             feature = "router"
         ))]
         {
-            let _ = registry::register_inbound("mixed", build_mixed_inbound);
+            let _ = snapshot.register_inbound("mixed", build_mixed_inbound);
         }
 
         #[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
         {
-            let _ = registry::register_inbound("shadowsocks", build_shadowsocks_inbound);
+            let _ = snapshot.register_inbound("shadowsocks", build_shadowsocks_inbound);
         }
 
         #[cfg(all(feature = "adapter-vmess", feature = "router"))]
         {
-            let _ = registry::register_inbound("vmess", build_vmess_inbound);
+            let _ = snapshot.register_inbound("vmess", build_vmess_inbound);
         }
 
         #[cfg(all(feature = "adapter-vless", feature = "router"))]
         {
-            let _ = registry::register_inbound("vless", build_vless_inbound);
+            let _ = snapshot.register_inbound("vless", build_vless_inbound);
         }
         #[cfg(all(feature = "adapter-trojan", feature = "router"))]
         {
-            let _ = registry::register_inbound("trojan", build_trojan_inbound);
+            let _ = snapshot.register_inbound("trojan", build_trojan_inbound);
         }
         {
-            let _ = registry::register_inbound("naive", build_naive_inbound);
+            let _ = snapshot.register_inbound("naive", build_naive_inbound);
         }
         {
-            let _ = registry::register_inbound("shadowtls", build_shadowtls_inbound);
+            let _ = snapshot.register_inbound("shadowtls", build_shadowtls_inbound);
         }
         {
-            let _ = registry::register_inbound("hysteria", build_hysteria_inbound);
+            let _ = snapshot.register_inbound("hysteria", build_hysteria_inbound);
         }
         {
-            let _ = registry::register_inbound("hysteria2", build_hysteria2_inbound);
+            let _ = snapshot.register_inbound("hysteria2", build_hysteria2_inbound);
         }
         {
-            let _ = registry::register_inbound("tuic", build_tuic_inbound);
+            let _ = snapshot.register_inbound("tuic", build_tuic_inbound);
         }
         {
-            let _ = registry::register_inbound("anytls", build_anytls_inbound);
+            let _ = snapshot.register_inbound("anytls", build_anytls_inbound);
         }
         #[cfg(feature = "router")]
         {
-            let _ = registry::register_inbound("direct", build_direct_inbound);
+            let _ = snapshot.register_inbound("direct", build_direct_inbound);
         }
 
         #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
         {
-            let _ = registry::register_inbound("tun", build_tun_inbound);
+            let _ = snapshot.register_inbound("tun", build_tun_inbound);
         }
 
         #[cfg(all(target_os = "linux", feature = "router"))]
         {
-            let _ = registry::register_inbound("redirect", build_redirect_inbound);
-            let _ = registry::register_inbound("tproxy", build_tproxy_inbound);
+            let _ = snapshot.register_inbound("redirect", build_redirect_inbound);
+            let _ = snapshot.register_inbound("tproxy", build_tproxy_inbound);
         }
 
         #[cfg(feature = "dns")]
         {
-            let _ = registry::register_inbound("dns", build_dns_inbound);
+            let _ = snapshot.register_inbound("dns", build_dns_inbound);
         }
 
         #[cfg(feature = "ssh")]
         {
-            let _ = registry::register_inbound("ssh", build_ssh_inbound);
+            let _ = snapshot.register_inbound("ssh", build_ssh_inbound);
         }
+}
 
+/// Build the default adapter registry snapshot for product startup paths.
+pub fn build_default_registry() -> registry::RegistrySnapshot {
+    let mut snapshot = registry::RegistrySnapshot::new();
+    populate_default_registry(&mut snapshot);
+    snapshot
+}
+
+/// Register adapter-provided builders with sb-core registry. Safe to call multiple times.
+/// 将适配器提供的构建器注册到 sb-core 注册表中。可以安全地多次调用。
+pub fn register_all() {
+    REGISTER_ONCE.call_once(|| {
+        let snapshot = build_default_registry();
+        registry::install_snapshot(&snapshot);
         // Register endpoint and service stubs (WireGuard, Tailscale, Resolved, DERP, SSM)
         crate::endpoint_stubs::register_endpoint_stubs();
         crate::service_stubs::register_service_stubs();
