@@ -85,7 +85,9 @@
   1. 隔离/修复 `workspace_test -> bench_outputs_json`
   2. 完成 `daily-host-gui` 的完整可复跑收口
   3. 保持 `trojan/shadowsocks` 为已收口状态，不再扩面直到出现新审议要求
-  4. `shadowtls` 继续只盯剩余单点：v3 outbound client-auth / session-id hook
+  4. `shadowtls` 继续只盯 v3 剩余证据
+     - 已落地：vendored `rustls 0.23.35` live `session_id` hook、ShadowTLS v3 outbound runtime、`v3 out -> v3 in -> Shadowsocks(in)` 真实 e2e、`strict_mode` TLS1.2 fallback 真实证据、`wildcard_sni=authed` unauthorized fallback 真实证据、`handshake_for_server_name` unauthorized fallback 真实证据、`wildcard_sni=all` ignored live e2e
+     - 当前纪律：不接受“抓现成 ClientHello 后外部改包”的伪实现；本地环境不能绑定 `<sni>:443`，所以 `wildcard_sni=all` 的默认套件仍保留 ignored live e2e，后续若有 443 能力的环境再补离线版，并在 TLS 升级时保住该 hook
 - 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
 - 当前入口：`agents-only/planning/L18-PHASE4.md`
 

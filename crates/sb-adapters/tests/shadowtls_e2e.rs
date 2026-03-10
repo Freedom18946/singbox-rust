@@ -635,8 +635,8 @@ async fn shadowtls_registry_builder_exposes_detour_only_connect_io() {
 async fn shadowtls_detour_wrapper_rejects_unimplemented_versions() {
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
         server: "127.0.0.1".to_string(),
-        port: 443,
-        version: 3,
+        port: 1,
+        version: 9,
         password: "interop-password".to_string(),
         sni: "localhost".to_string(),
         alpn: Some("http/1.1".to_string()),
@@ -645,10 +645,18 @@ async fn shadowtls_detour_wrapper_rejects_unimplemented_versions() {
     });
 
     let err = match connector.connect_detour_stream("127.0.0.1", 443).await {
-        Ok(_) => panic!("v3 wrapper path should be rejected for now"),
+        Ok(_) => panic!("unknown wrapper version should be rejected"),
         Err(err) => err,
     };
-    assert!(!err.to_string().is_empty());
+    assert!(
+        err.to_string()
+            .contains("supports versions 1, 2 and 3 only"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("version 9"),
+        "unexpected error: {err}"
+    );
 }
 
 #[cfg(feature = "adapter-shadowsocks")]

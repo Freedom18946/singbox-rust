@@ -106,3 +106,4 @@ incremental = true
 
 [patch.crates-io]
 anytls-rs = { path = "vendor/anytls-rs" }
+rustls = { path = "vendor/rustls" }

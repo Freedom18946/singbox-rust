@@ -64,7 +64,9 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
     - `crates/sb-core/src/adapter/registry.rs` and `crates/sb-core/src/adapter/bridge.rs` now install a runtime inbound handle as well, so ShadowTLS inbound can late-bind its chained consumer by tag,
     - the first real inbound consumer is `ShadowsocksInboundAdapter::accept_detour_stream()`, and `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` proves `Shadowsocks(out) -> detour=ShadowTLS(v2 out) -> ShadowTLS(v2 in) -> Shadowsocks(in) -> echo`,
     - adapter-local unit coverage now also locks `version = 3` handshake target selection for `handshake_for_server_name` and `wildcard_sni`,
-    - outbound `version = 3` still remains explicitly unsupported because the current Rust TLS stack does not expose the session-id hook ShadowTLS v3 client auth needs.
+    - vendored `rustls 0.23.35` now carries a live client-hello `session_id` generator hook, wired into the workspace through `[patch.crates-io]`,
+    - `crates/sb-adapters/src/outbound/shadowtls.rs` now implements outbound `version = 3` on the Go-like path: inject the authenticated `session_id` into the real TLS transcript, unwrap handshake-phase server `application_data`, then switch to a verified ShadowTLS v3 bridge,
+    - `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` now proves `Shadowsocks(out) -> detour=ShadowTLS(v3 out) -> ShadowTLS(v3 in) -> Shadowsocks(in) -> echo`.
 
 ## Batch 1: Trojan dual-kernel closeout
 
@@ -112,11 +114,18 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
   - added adapter-level coverage that `Shadowsocks -> detour=ShadowTLS(v2)` also dials successfully through a ShadowTLS v2 relay,
   - added an app-level config/runtime proof for the same chain: `build_bridge -> runtime_outbounds().connect_io()` now carries `Shadowsocks -> detour=ShadowTLS(v1)` through a real Shadowsocks inbound and echo target using the same handshake-only relay semantics,
   - rebuilt the `interop-lab` ShadowTLS case around the same wrapper-chain semantics, added a dedicated handshake server to the topology, and verified matching Rust/Go outcomes in dual-kernel run `20260310T180117Z-a452c721-28f9-452d-954f-ceffe0e4e3e6`,
-  - extended the remodel to inbound detour mode as well: runtime inbound late binding now exists, ShadowTLS inbound `version = 2` can unwrap into a chained Shadowsocks inbound, and `version = 3` now carries the Go-compatible server-side config surface (`users`, `handshake`, `handshake_for_server_name`, `strict_mode`, `wildcard_sni`) even though client-side v3 outbound remains blocked on the TLS session-id hook.
-- Remaining for actual ShadowTLS parity:
-  - finish executable v3 parity by teaching Rust ShadowTLS outbound to generate the authenticated TLS session id that Go v3 uses for client auth,
-  - add a real end-to-end/interoperability proof for `ShadowTLS(v3 out) -> ShadowTLS(v3 in)` once that client-side hook exists, including `strict_mode` fallback and `wildcard_sni` branches,
-  - extend the same detour helper path to the next wrapper consumers only if the final ShadowTLS chain needs more than Trojan and Shadowsocks plain TCP.
+  - extended the remodel to inbound detour mode as well: runtime inbound late binding now exists, ShadowTLS inbound `version = 2` can unwrap into a chained Shadowsocks inbound, and `version = 3` now carries the full Go-compatible server-side config surface (`users`, `handshake`, `handshake_for_server_name`, `strict_mode`, `wildcard_sni`) alongside the new live-hook-based v3 outbound runtime.
+  - `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` now also proves two previously open v3 branches:
+    - `strict_mode=true` with a TLS1.2-only decoy falls back to raw TLS passthrough after authenticated client hello validation, bypassing detour dispatch,
+    - `wildcard_sni=authed` with an unauthorized client falls back to the configured default `handshake` target instead of the wildcard target.
+    - `handshake_for_server_name` with an unauthorized client still honors the matching custom SNI mapping instead of falling back to the default `handshake` target.
+    - `wildcard_sni=all` with an unauthorized client now has a live ignored e2e as well: the local ShadowTLS inbound falls back to public `example.com:443` and returns a real HTTPS response.
+  - `crates/sb-adapters/src/inbound/shadowtls.rs` now routes unauthorized v3 fallback through `PrefixStream` instead of the old `PrefixWriteStream`, fixing the direction of the buffered `client_hello` replay into the decoy handshake connection.
+  - Remaining for actual ShadowTLS parity:
+    - keep the Go-like v3 path stable when touching TLS dependencies: the authenticated `session_id` must stay inside the real rustls transcript, not be patched out of band,
+    - `wildcard_sni=all` still lacks a fully local/offline runtime proof; the current evidence is an ignored live e2e because the test harness cannot bind the wildcard target on port 443 in this environment,
+    - extend the new v3 path into interop-lab once we decide the next ShadowTLS evidence bump needs a dual-kernel case,
+    - extend the same detour helper path to the next wrapper consumers only if the final ShadowTLS chain needs more than Trojan and Shadowsocks plain TCP.
 
 ## Rules for evidence updates
 

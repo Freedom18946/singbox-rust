@@ -128,7 +128,11 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     Ok(())
 }
 
-async fn handle_conn(cfg: ShadowTlsInboundConfig, stream: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn handle_conn(
+    cfg: ShadowTlsInboundConfig,
+    stream: TcpStream,
+    peer: SocketAddr,
+) -> Result<()> {
     match cfg.version {
         2 => handle_v2(cfg, stream, peer).await,
         3 => handle_v3(cfg, stream, peer).await,
@@ -139,7 +143,11 @@ async fn handle_conn(cfg: ShadowTlsInboundConfig, stream: TcpStream, peer: Socke
     }
 }
 
-async fn handle_v2(cfg: ShadowTlsInboundConfig, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn handle_v2(
+    cfg: ShadowTlsInboundConfig,
+    mut stream: TcpStream,
+    peer: SocketAddr,
+) -> Result<()> {
     let password = cfg
         .password
         .as_deref()
@@ -155,8 +163,12 @@ async fn handle_v2(cfg: ShadowTlsInboundConfig, mut stream: TcpStream, peer: Soc
     let mut client_reader = PrefixStream::new(client_hello, cli_read);
     let hash_state = Arc::new(Mutex::new(V2HashState::new(password)));
     let (stop_tx, stop_rx) = oneshot::channel();
-    let server_task =
-        tokio::spawn(relay_server_to_client_hash(hs_read, cli_write, hash_state.clone(), stop_rx));
+    let server_task = tokio::spawn(relay_server_to_client_hash(
+        hs_read,
+        cli_write,
+        hash_state.clone(),
+        stop_rx,
+    ));
 
     match copy_until_handshake_finished_v2(&mut client_reader, &mut hs_write, hash_state.clone(), 2)
         .await
@@ -187,7 +199,11 @@ async fn handle_v2(cfg: ShadowTlsInboundConfig, mut stream: TcpStream, peer: Soc
     }
 }
 
-async fn handle_v3(cfg: ShadowTlsInboundConfig, mut stream: TcpStream, peer: SocketAddr) -> Result<()> {
+async fn handle_v3(
+    cfg: ShadowTlsInboundConfig,
+    mut stream: TcpStream,
+    peer: SocketAddr,
+) -> Result<()> {
     let client_hello = extract_frame(&mut stream).await?;
     let server_name = extract_server_name(&client_hello).context("extract server name")?;
     let chosen = select_v3_handshake(&cfg, &server_name)?;
@@ -234,14 +250,9 @@ async fn handle_v3(cfg: ShadowTlsInboundConfig, mut stream: TcpStream, peer: Soc
         );
         dispatch_detour_stream(&cfg.detour, local, peer).await
     } else {
-        let fallback_target = if chosen.is_custom || cfg.wildcard_sni == ShadowTlsWildcardSniMode::All
-        {
-            chosen.target
-        } else {
-            default_handshake(&cfg)?
-        };
+        let fallback_target = fallback_v3_handshake(&cfg, chosen)?;
         let mut handshake_conn = dial_handshake_target(&fallback_target).await?;
-        let mut client_stream = PrefixWriteStream::new(client_hello, stream);
+        let mut client_stream = PrefixStream::new(client_hello, stream);
         copy_bidirectional(&mut client_stream, &mut handshake_conn).await?;
         Ok(())
     }
@@ -271,7 +282,12 @@ where
 async fn dial_handshake_target(target: &ShadowTlsHandshakeConfig) -> Result<TcpStream> {
     TcpStream::connect((target.server.as_str(), target.server_port))
         .await
-        .with_context(|| format!("connect handshake target {}:{}", target.server, target.server_port))
+        .with_context(|| {
+            format!(
+                "connect handshake target {}:{}",
+                target.server, target.server_port
+            )
+        })
 }
 
 fn select_v2_handshake(
@@ -297,7 +313,10 @@ struct SelectedV3Handshake {
     is_custom: bool,
 }
 
-fn select_v3_handshake(cfg: &ShadowTlsInboundConfig, server_name: &str) -> Result<SelectedV3Handshake> {
+fn select_v3_handshake(
+    cfg: &ShadowTlsInboundConfig,
+    server_name: &str,
+) -> Result<SelectedV3Handshake> {
     if let Some(custom) = cfg.handshake_for_server_name.get(server_name) {
         return Ok(SelectedV3Handshake {
             target: custom.clone(),
@@ -319,6 +338,17 @@ fn select_v3_handshake(cfg: &ShadowTlsInboundConfig, server_name: &str) -> Resul
     })
 }
 
+fn fallback_v3_handshake(
+    cfg: &ShadowTlsInboundConfig,
+    chosen: SelectedV3Handshake,
+) -> Result<ShadowTlsHandshakeConfig> {
+    if chosen.is_custom || cfg.wildcard_sni == ShadowTlsWildcardSniMode::All {
+        Ok(chosen.target)
+    } else {
+        default_handshake(cfg)
+    }
+}
+
 struct VerifiedUser {
     password: String,
 }
@@ -329,7 +359,8 @@ fn verify_client_hello(frame: &[u8], users: &[ShadowTlsUser]) -> Option<Verified
     if frame.len() < hmac_index + SHADOWTLS_V3_HMAC_SIZE {
         return None;
     }
-    if frame.first().copied()? != HANDSHAKE || frame.get(TLS_HEADER_SIZE).copied()? != CLIENT_HELLO {
+    if frame.first().copied()? != HANDSHAKE || frame.get(TLS_HEADER_SIZE).copied()? != CLIENT_HELLO
+    {
         return None;
     }
     if frame.get(session_id_length_index).copied()? != TLS_SESSION_ID_SIZE as u8 {
@@ -379,8 +410,12 @@ fn extract_server_name(frame: &[u8]) -> Result<String> {
         .ok_or_else(|| anyhow!("missing session id length"))? as usize;
     cursor += 1 + session_id_len;
     let cipher_len = u16::from_be_bytes([
-        *frame.get(cursor).ok_or_else(|| anyhow!("missing cipher length"))?,
-        *frame.get(cursor + 1).ok_or_else(|| anyhow!("missing cipher length"))?,
+        *frame
+            .get(cursor)
+            .ok_or_else(|| anyhow!("missing cipher length"))?,
+        *frame
+            .get(cursor + 1)
+            .ok_or_else(|| anyhow!("missing cipher length"))?,
     ]) as usize;
     cursor += 2 + cipher_len;
     let compression_len = *frame
@@ -388,8 +423,12 @@ fn extract_server_name(frame: &[u8]) -> Result<String> {
         .ok_or_else(|| anyhow!("missing compression length"))? as usize;
     cursor += 1 + compression_len;
     let extensions_len = u16::from_be_bytes([
-        *frame.get(cursor).ok_or_else(|| anyhow!("missing extensions length"))?,
-        *frame.get(cursor + 1).ok_or_else(|| anyhow!("missing extensions length"))?,
+        *frame
+            .get(cursor)
+            .ok_or_else(|| anyhow!("missing extensions length"))?,
+        *frame
+            .get(cursor + 1)
+            .ok_or_else(|| anyhow!("missing extensions length"))?,
     ]) as usize;
     cursor += 2;
     let end = cursor + extensions_len;
@@ -433,7 +472,9 @@ fn extract_server_random(frame: &[u8]) -> Option<[u8; TLS_RANDOM_SIZE]> {
         return None;
     }
     let mut random = [0u8; TLS_RANDOM_SIZE];
-    random.copy_from_slice(&frame[TLS_HEADER_SIZE + 4 + 2..TLS_HEADER_SIZE + 4 + 2 + TLS_RANDOM_SIZE]);
+    random.copy_from_slice(
+        &frame[TLS_HEADER_SIZE + 4 + 2..TLS_HEADER_SIZE + 4 + 2 + TLS_RANDOM_SIZE],
+    );
     Some(random)
 }
 
@@ -506,57 +547,12 @@ impl<T: AsyncRead + Unpin> AsyncRead for PrefixStream<T> {
     }
 }
 
-struct PrefixWriteStream<T> {
-    prefix: Vec<u8>,
-    flushed: bool,
-    inner: T,
-}
-
-impl<T> PrefixWriteStream<T> {
-    fn new(prefix: Vec<u8>, inner: T) -> Self {
-        Self {
-            prefix,
-            flushed: false,
-            inner,
-        }
-    }
-}
-
-impl<T: AsyncRead + Unpin> AsyncRead for PrefixWriteStream<T> {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> std::task::Poll<std_io::Result<()>> {
-        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
-    }
-}
-
-impl<T: AsyncWrite + Unpin> AsyncWrite for PrefixWriteStream<T> {
+impl<T: AsyncWrite + Unpin> AsyncWrite for PrefixStream<T> {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         data: &[u8],
     ) -> std::task::Poll<std_io::Result<usize>> {
-        if !self.flushed {
-            let prefix = std::mem::take(&mut self.prefix);
-            self.flushed = true;
-            match std::pin::Pin::new(&mut self.inner).poll_write(cx, &prefix) {
-                std::task::Poll::Ready(Ok(written)) if written == prefix.len() => {}
-                std::task::Poll::Ready(Ok(_)) => {
-                    return std::task::Poll::Ready(Err(std_io::Error::new(
-                        std_io::ErrorKind::WriteZero,
-                        "failed to flush shadowtls prefix",
-                    )));
-                }
-                std::task::Poll::Ready(Err(err)) => return std::task::Poll::Ready(Err(err)),
-                std::task::Poll::Pending => {
-                    self.prefix = prefix;
-                    self.flushed = false;
-                    return std::task::Poll::Pending;
-                }
-            }
-        }
         std::pin::Pin::new(&mut self.inner).poll_write(cx, data)
     }
 
@@ -715,9 +711,7 @@ where
             let payload = &frame[TLS_HEADER_SIZE..];
             if payload.len() >= 8 {
                 let guard = hash_state.lock().unwrap();
-                if guard
-                    .current_sum()
-                    .is_some_and(|sum| payload[..8] == sum)
+                if guard.current_sum().is_some_and(|sum| payload[..8] == sum)
                     || guard.last_sum().is_some_and(|sum| payload[..8] == sum)
                 {
                     return Ok(payload[8..].to_vec());
@@ -819,7 +813,10 @@ where
             if filled == 0 {
                 return Ok(None);
             }
-            return Err(std_io::Error::new(std_io::ErrorKind::UnexpectedEof, "early eof"));
+            return Err(std_io::Error::new(
+                std_io::ErrorKind::UnexpectedEof,
+                "early eof",
+            ));
         }
         filled += n;
     }
@@ -950,7 +947,9 @@ fn spawn_v3_bridge(
             if !first_payload.is_empty() {
                 local_write.write_all(&first_payload).await?;
             }
-            while let Some(payload) = read_v3_application_payload(&mut client_read, &mut verify_state).await? {
+            while let Some(payload) =
+                read_v3_application_payload(&mut client_read, &mut verify_state).await?
+            {
                 local_write.write_all(&payload).await?;
             }
             local_write.shutdown().await
@@ -970,8 +969,9 @@ fn spawn_v3_bridge(
                     header[0] = APPLICATION_DATA;
                     header[1] = 0x03;
                     header[2] = 0x03;
-                    header[3..5]
-                        .copy_from_slice(&((chunk.len() + SHADOWTLS_V3_HMAC_SIZE) as u16).to_be_bytes());
+                    header[3..5].copy_from_slice(
+                        &((chunk.len() + SHADOWTLS_V3_HMAC_SIZE) as u16).to_be_bytes(),
+                    );
                     client_write.write_all(&header).await?;
                     client_write.write_all(&tag).await?;
                     client_write.write_all(chunk).await?;
@@ -1115,13 +1115,50 @@ mod tests {
         assert_eq!(wildcard.target.server, "wild.example");
         assert_eq!(wildcard.target.server_port, 443);
 
-        let default = select_v3_handshake(
-            &base_config(ShadowTlsWildcardSniMode::Off),
-            "wild.example",
-        )
-        .unwrap();
+        let default =
+            select_v3_handshake(&base_config(ShadowTlsWildcardSniMode::Off), "wild.example")
+                .unwrap();
         assert!(!default.is_custom);
         assert_eq!(default.target.server, "default.example");
         assert_eq!(default.target.server_port, 443);
+    }
+
+    #[test]
+    fn shadowtls_v3_fallback_handshake_honors_wildcard_mode() {
+        let custom = SelectedV3Handshake {
+            target: ShadowTlsHandshakeConfig {
+                server: "custom-target.example".to_string(),
+                server_port: 8443,
+            },
+            is_custom: true,
+        };
+        let custom_fallback =
+            fallback_v3_handshake(&base_config(ShadowTlsWildcardSniMode::Off), custom).unwrap();
+        assert_eq!(custom_fallback.server, "custom-target.example");
+        assert_eq!(custom_fallback.server_port, 8443);
+
+        let authed = SelectedV3Handshake {
+            target: ShadowTlsHandshakeConfig {
+                server: "wild.example".to_string(),
+                server_port: 443,
+            },
+            is_custom: false,
+        };
+        let authed_fallback =
+            fallback_v3_handshake(&base_config(ShadowTlsWildcardSniMode::Authed), authed).unwrap();
+        assert_eq!(authed_fallback.server, "default.example");
+        assert_eq!(authed_fallback.server_port, 443);
+
+        let all = SelectedV3Handshake {
+            target: ShadowTlsHandshakeConfig {
+                server: "wild.example".to_string(),
+                server_port: 443,
+            },
+            is_custom: false,
+        };
+        let all_fallback =
+            fallback_v3_handshake(&base_config(ShadowTlsWildcardSniMode::All), all).unwrap();
+        assert_eq!(all_fallback.server, "wild.example");
+        assert_eq!(all_fallback.server_port, 443);
     }
 }
