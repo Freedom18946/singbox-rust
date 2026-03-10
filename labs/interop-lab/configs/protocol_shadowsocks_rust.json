@@ -1,0 +1,62 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19191",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "name": "ss-ok",
+      "server": "127.0.0.1",
+      "port": 12082,
+      "method": "aes-256-gcm",
+      "password": "interop-password",
+      "udp": true
+    },
+    {
+      "type": "shadowsocks",
+      "name": "ss-bad",
+      "server": "127.0.0.1",
+      "port": 12082,
+      "method": "aes-256-gcm",
+      "password": "interop-password-wrong",
+      "udp": true
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": [
+          "18092",
+          "19092"
+        ],
+        "outbound": "ss-bad"
+      },
+      {
+        "port": [
+          "18091",
+          "19091"
+        ],
+        "outbound": "ss-ok"
+      }
+    ],
+    "default": "direct"
+  }
+}

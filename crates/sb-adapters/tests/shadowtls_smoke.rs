@@ -6,11 +6,14 @@ use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
 
 #[tokio::test]
 #[ignore]
-async fn shadowtls_dial_closed_port_returns_error() {
-    // Intentionally dial a closed port to verify error path and linker integration
+async fn shadowtls_standalone_leaf_dial_is_rejected() {
+    // ShadowTLS is intentionally blocked as a standalone leaf until it is
+    // reintroduced with transport-wrapper semantics.
     let cfg = ShadowTlsAdapterConfig {
         server: "127.0.0.1".to_string(),
         port: 1, // typically closed
+        version: 1,
+        password: "interop-password".to_string(),
         sni: "example.com".to_string(),
         alpn: Some("http/1.1".into()),
         skip_cert_verify: true,
@@ -19,5 +22,9 @@ async fn shadowtls_dial_closed_port_returns_error() {
     let conn = ShadowTlsConnector::new(cfg);
     let target = Target::tcp("example.com", 443);
     let res = conn.dial(target, DialOpts::default()).await;
-    assert!(res.is_err());
+    let err = match res {
+        Ok(_) => panic!("shadowtls standalone leaf dial should fail"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("standalone leaf dialing is disabled"));
 }

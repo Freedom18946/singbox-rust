@@ -32,6 +32,7 @@ use util::{canonicalize_or, ensure_dir};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_tracing();
     let cli = Cli::parse();
     ensure_dir(&cli.artifacts_dir)?;
     let cases_dir = cli.cases_dir.clone();
@@ -44,6 +45,16 @@ async fn main() -> Result<()> {
         TopCommand::Report { command } => handle_report_command(command, &artifacts_dir).await,
         TopCommand::GoSnapshot(args) => handle_go_snapshot(args, &artifacts_dir).await,
     }
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_ansi(false)
+        .try_init();
 }
 
 async fn handle_case_command(

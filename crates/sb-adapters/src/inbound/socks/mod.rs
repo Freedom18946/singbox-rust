@@ -593,78 +593,87 @@ where
             Endpoint::Domain(h, p) => OutEndpoint::Domain(h.clone(), *p),
             Endpoint::Ip(sa) => OutEndpoint::Ip(*sa),
         };
-        if let Ok(mut s) = cfg
+        match cfg
             .outbounds
             .connect_io(&OutRouteTarget::Named(name.clone()), out_ep)
             .await
         {
-            // Success: reply and start piping
-            reply(cli, 0x00, None).await?;
-            outbound_tag = Some(name.clone());
+            Ok(mut s) => {
+                // Success: reply and start piping
+                reply(cli, 0x00, None).await?;
+                outbound_tag = Some(name.clone());
 
-            fn dur_from_env(key: &str) -> Option<std::time::Duration> {
-                std::env::var(key)
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .and_then(|ms| {
-                        if ms > 0 {
-                            Some(std::time::Duration::from_millis(ms))
-                        } else {
-                            None
-                        }
-                    })
-            }
-            let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
-            let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
-            let traffic = cfg.stats.as_ref().and_then(|stats| {
-                stats.traffic_recorder(
-                    cfg.tag.as_deref(),
+                fn dur_from_env(key: &str) -> Option<std::time::Duration> {
+                    std::env::var(key)
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .and_then(|ms| {
+                            if ms > 0 {
+                                Some(std::time::Duration::from_millis(ms))
+                            } else {
+                                None
+                            }
+                        })
+                }
+                let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
+                let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+                let traffic = cfg.stats.as_ref().and_then(|stats| {
+                    stats.traffic_recorder(
+                        cfg.tag.as_deref(),
+                        outbound_tag.as_deref(),
+                        auth_user.as_deref(),
+                    )
+                });
+                let (dst_host, dst_port) = match &endpoint {
+                    Endpoint::Domain(h, p) => (h.clone(), *p),
+                    Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                };
+                let chains = sb_core::outbound::chain::compute_chain_for_decision(
+                    Some(cfg.outbounds.as_ref()),
+                    &decision,
                     outbound_tag.as_deref(),
-                    auth_user.as_deref(),
-                )
-            });
-            let (dst_host, dst_port) = match &endpoint {
-                Endpoint::Domain(h, p) => (h.clone(), *p),
-                Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-            };
-            let chains = sb_core::outbound::chain::compute_chain_for_decision(
-                Some(cfg.outbounds.as_ref()),
-                &decision,
-                outbound_tag.as_deref(),
-            );
-            let wiring = sb_core::conntrack::register_inbound_tcp(
-                peer,
-                dst_host.clone(),
-                dst_port,
-                dst_host,
-                "socks",
-                cfg.tag.clone(),
-                outbound_tag.clone(),
-                chains,
-                rule.clone(),
-                None,
-                None,
-                traffic,
-            );
-            let _guard = wiring.guard;
+                );
+                let wiring = sb_core::conntrack::register_inbound_tcp(
+                    peer,
+                    dst_host.clone(),
+                    dst_port,
+                    dst_host,
+                    "socks",
+                    cfg.tag.clone(),
+                    outbound_tag.clone(),
+                    chains,
+                    rule.clone(),
+                    None,
+                    None,
+                    traffic,
+                );
+                let _guard = wiring.guard;
 
-            let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
-                cli,
-                &mut s,
-                "socks",
-                std::time::Duration::from_secs(1),
-                rt,
-                wt,
-                Some(wiring.cancel),
-                Some(wiring.traffic),
-            )
-            .await;
-            match copy_res {
-                Ok(_) => {}
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(e) => return Err(e),
+                let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+                    cli,
+                    &mut s,
+                    "socks",
+                    std::time::Duration::from_secs(1),
+                    rt,
+                    wt,
+                    Some(wiring.cancel),
+                    Some(wiring.traffic),
+                )
+                .await;
+                match copy_res {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e),
+                }
+                return Ok(());
             }
-            return Ok(());
+            Err(e) => {
+                tracing::warn!(
+                    outbound = %name,
+                    error = %e,
+                    "socks5 inbound: named outbound fast-path connect_io failed; falling back to registry path"
+                );
+            }
         }
     }
 

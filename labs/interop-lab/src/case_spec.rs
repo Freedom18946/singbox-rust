@@ -182,6 +182,9 @@ pub enum UpstreamKind {
     WsEcho,
     DnsStub,
     TlsEcho,
+    TrojanInbound,
+    ShadowsocksInbound,
+    ShadowTlsInbound,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -14,12 +14,20 @@ use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use sb_adapters::inbound::shadowtls::{
+    serve as serve_shadowtls, ShadowTlsInboundConfig,
+};
+use sb_adapters::inbound::shadowsocks::{serve as serve_shadowsocks, ShadowsocksInboundConfig};
+use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig};
+use sb_core::router::engine::RouterHandle;
+use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
+use std::sync::Once;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::process::Command;
@@ -29,6 +37,14 @@ use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
 
 const TCP_ROUNDTRIP_TIMEOUT_MS: u64 = 10_000;
+static PROTOCOL_UPSTREAM_RULES_INIT: Once = Once::new();
+
+fn ensure_protocol_upstream_rules() {
+    PROTOCOL_UPSTREAM_RULES_INIT.call_once(|| {
+        let rules = parse_rules("default=direct");
+        install_global_rules(Engine::build(rules));
+    });
+}
 
 #[derive(Default)]
 pub struct UpstreamHarness {
@@ -440,6 +456,168 @@ async fn start_single_upstream(
             harness.endpoints.insert(
                 spec.name.clone(),
                 format!("tls://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::TrojanInbound => {
+            ensure_protocol_upstream_rules();
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding trojan upstream {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "trojan local_addr")?;
+            drop(listener);
+
+            let router = std::sync::Arc::new(RouterHandle::new_mock());
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let (tx, mut rx) = oneshot::channel::<()>();
+
+            let cfg = TrojanInboundConfig {
+                listen: addr,
+                #[allow(deprecated)]
+                password: Some("interop-password".to_string()),
+                users: vec![],
+                cert_path: "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
+                key_path: "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
+                router,
+                tag: Some(spec.name.clone()),
+                stats: None,
+                #[cfg(feature = "tls_reality")]
+                reality: None,
+                multiplex: None,
+                transport_layer: None,
+                fallback: None,
+                fallback_for_alpn: HashMap::new(),
+            };
+
+            let join = tokio::spawn(async move {
+                let serve = serve_trojan(cfg, stop_rx);
+                tokio::pin!(serve);
+                tokio::select! {
+                    _ = &mut rx => {
+                        let _ = stop_tx.send(()).await;
+                        let _ = serve.await;
+                    }
+                    _ = &mut serve => {}
+                }
+            });
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("trojan://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::ShadowsocksInbound => {
+            ensure_protocol_upstream_rules();
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding shadowsocks upstream {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "shadowsocks local_addr")?;
+            drop(listener);
+
+            let router = std::sync::Arc::new(RouterHandle::new_mock());
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let (tx, mut rx) = oneshot::channel::<()>();
+
+            let cfg = ShadowsocksInboundConfig {
+                listen: addr,
+                method: "aes-256-gcm".to_string(),
+                #[allow(deprecated)]
+                password: Some("interop-password".to_string()),
+                users: vec![],
+                router,
+                tag: Some(spec.name.clone()),
+                stats: None,
+                multiplex: None,
+                transport_layer: None,
+            };
+
+            let join = tokio::spawn(async move {
+                let serve = serve_shadowsocks(cfg, stop_rx);
+                tokio::pin!(serve);
+                tokio::select! {
+                    _ = &mut rx => {
+                        let _ = stop_tx.send(()).await;
+                        let _ = serve.await;
+                    }
+                    _ = &mut serve => {}
+                }
+            });
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("ss://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::ShadowTlsInbound => {
+            ensure_protocol_upstream_rules();
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding shadowtls upstream {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "shadowtls local_addr")?;
+            drop(listener);
+
+            let router = std::sync::Arc::new(RouterHandle::new_mock());
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let (tx, mut rx) = oneshot::channel::<()>();
+
+            let cfg = ShadowTlsInboundConfig {
+                listen: addr,
+                tls: sb_transport::TlsConfig::Standard(sb_transport::tls::StandardTlsConfig {
+                    server_name: Some("localhost".to_string()),
+                    alpn: vec!["http/1.1".to_string()],
+                    insecure: false,
+                    cert_path: Some(
+                        "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
+                    ),
+                    key_path: Some(
+                        "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
+                    ),
+                    cert_pem: None,
+                    key_pem: None,
+                }),
+                router,
+                tag: Some(spec.name.clone()),
+                stats: None,
+            };
+
+            let join = tokio::spawn(async move {
+                let serve = serve_shadowtls(cfg, stop_rx);
+                tokio::pin!(serve);
+                tokio::select! {
+                    _ = &mut rx => {
+                        let _ = stop_tx.send(()).await;
+                        let _ = serve.await;
+                    }
+                    _ = &mut serve => {}
+                }
+            });
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("shadowtls://{}:{}", addr.ip(), addr.port()),
             );
             harness.insert_handle(
                 spec.name.clone(),

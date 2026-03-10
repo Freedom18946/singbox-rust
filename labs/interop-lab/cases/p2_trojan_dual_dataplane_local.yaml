@@ -1,0 +1,69 @@
+id: p2_trojan_dual_dataplane_local
+title: trojan dual-kernel local dataplane parity
+priority: p2
+kernel_mode: both
+env_class: strict
+tags:
+  - protocol
+  - dataplane
+  - dual_core
+  - trojan
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/protocol_trojan_rust.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19191
+      secret: test-secret
+  go:
+    command: ${INTEROP_GO_BINARY}
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/protocol_trojan_go.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+upstream_topology:
+  - name: trojan_server
+    kind: trojan_inbound
+    bind: 127.0.0.1:12081
+  - name: local_tcp_ok
+    kind: tcp_echo
+    bind: 127.0.0.1:18081
+  - name: local_tcp_bad
+    kind: tcp_echo
+    bind: 127.0.0.1:18082
+traffic_plan:
+  - kind: tcp_round_trip
+    name: trojan_tcp_ok
+    addr: "{{upstream.local_tcp_ok}}"
+    payload: trojan-dual-ok
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: trojan_tcp_wrong_password
+    addr: "{{upstream.local_tcp_bad}}"
+    payload: trojan-dual-bad
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: traffic.trojan_tcp_ok.success
+    op: eq
+    expected: true
+  - key: traffic.trojan_tcp_wrong_password.success
+    op: eq
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 64

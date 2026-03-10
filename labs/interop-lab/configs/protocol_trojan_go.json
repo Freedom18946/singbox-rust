@@ -1,0 +1,66 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "trojan",
+      "tag": "trojan-ok",
+      "server": "127.0.0.1",
+      "server_port": 12081,
+      "password": "interop-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "insecure": true
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan-bad",
+      "server": "127.0.0.1",
+      "server_port": 12081,
+      "password": "interop-password-wrong",
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "insecure": true
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": [
+          18082
+        ],
+        "outbound": "trojan-bad"
+      },
+      {
+        "port": [
+          18081
+        ],
+        "outbound": "trojan-ok"
+      }
+    ],
+    "final": "direct"
+  }
+}

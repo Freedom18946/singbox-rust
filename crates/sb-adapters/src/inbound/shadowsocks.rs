@@ -148,18 +148,20 @@ impl ShadowsocksInboundConfig {
 }
 
 fn evp_bytes_to_key(password: &str, key_len: usize) -> Vec<u8> {
-    // Minimal EVP_BytesToKey-like derivation using SHA1 (not identical but deterministic)
-    // 使用 SHA1 的最小化 EVP_BytesToKey 派生（不完全相同但确定性）
-    // For production, prefer scrypt/argon2 or standard SS KDF; here we ensure 32 bytes key.
-    // 生产环境中应首选 scrypt/argon2 或标准 SS KDF；此处确保生成 32 字节密钥。
-    use sha1::Digest;
-    let mut hasher = sha1::Sha1::new();
-    hasher.update(password.as_bytes());
-    let mut out = hasher.finalize().to_vec();
+    use md5::{Digest, Md5};
+
+    // Standard Shadowsocks EVP_BytesToKey derivation:
+    // D_i = MD5(D_(i-1) || password), concatenated until key_len bytes are available.
+    let mut out = Vec::with_capacity(key_len);
+    let mut prev = Vec::new();
     while out.len() < key_len {
-        let mut h = sha1::Sha1::new();
-        h.update(&out);
-        out.extend_from_slice(&h.finalize());
+        let mut hasher = Md5::new();
+        if !prev.is_empty() {
+            hasher.update(&prev);
+        }
+        hasher.update(password.as_bytes());
+        prev = hasher.finalize().to_vec();
+        out.extend_from_slice(&prev);
     }
     out.truncate(key_len);
     out
@@ -477,6 +479,32 @@ pub fn parse_ss_addr(buf: &[u8]) -> Result<(String, u16, usize)> {
     }
 }
 
+fn encode_ss_addr(host: &str, port: u16) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(ipv4) => {
+                out.push(0x01);
+                out.extend_from_slice(&ipv4.octets());
+            }
+            IpAddr::V6(ipv6) => {
+                out.push(0x04);
+                out.extend_from_slice(&ipv6.octets());
+            }
+        }
+    } else {
+        let host_bytes = host.as_bytes();
+        if host_bytes.len() > u8::MAX as usize {
+            return Err(anyhow!("domain too long"));
+        }
+        out.push(0x03);
+        out.push(host_bytes.len() as u8);
+        out.extend_from_slice(host_bytes);
+    }
+    out.extend_from_slice(&port.to_be_bytes());
+    Ok(out)
+}
+
 /// Handle UDP relay for Shadowsocks
 async fn handle_udp_relay(
     socket: Arc<tokio::net::UdpSocket>,
@@ -642,8 +670,10 @@ async fn handle_udp_packet(
     let mut resp_buf = vec![0u8; 65536];
     match tokio::time::timeout(Duration::from_secs(5), upstream.recv(&mut resp_buf)).await {
         Ok(Ok(n)) => {
-            // Encrypt and send back to client
+            // Shadowsocks UDP responses must include the target/source address header.
             let response_data = &resp_buf[..n];
+            let mut response_payload = encode_ss_addr(&target_host, target_port)?;
+            response_payload.extend_from_slice(response_data);
 
             // Generate new salt for response
             let mut resp_salt = vec![0u8; cipher.salt_len()];
@@ -651,7 +681,7 @@ async fn handle_udp_packet(
             rand::thread_rng().fill(&mut resp_salt[..]);
 
             let resp_subkey = hkdf_subkey(&master_key, &resp_salt, cipher.key_len())?;
-            let encrypted_resp = aead_encrypt_udp(&cipher, &resp_subkey, 0, response_data)?;
+            let encrypted_resp = aead_encrypt_udp(&cipher, &resp_subkey, 0, &response_payload)?;
 
             let mut full_resp = Vec::new();
             full_resp.extend_from_slice(&resp_salt);

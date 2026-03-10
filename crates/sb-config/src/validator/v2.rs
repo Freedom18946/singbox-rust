@@ -2247,6 +2247,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("password")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                version: o.get("version").and_then(|v| v.as_u64()).map(|x| x as u8),
                 plugin: o
                     .get("plugin")
                     .and_then(|v| v.as_str())
@@ -2336,6 +2337,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 // Dialer options
                 bind_interface: o
                     .get("bind_interface")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                detour: o
+                    .get("detour")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 inet4_bind_address: o

@@ -748,6 +748,10 @@ pub struct OutboundIR {
     /// 上游代理（SOCKS/HTTP）的认证凭据。
     #[serde(default)]
     pub credentials: Option<Credentials>,
+    /// Optional outbound detour tag (Go parity: shared Dial Fields `detour`).
+    /// 可选出站 detour 标签（Go 对齐：共享 Dial Fields `detour`）。
+    #[serde(default)]
+    pub detour: Option<String>,
     /// VLESS-specific fields
     #[serde(default)]
     pub uuid: Option<String>,
@@ -1035,6 +1039,10 @@ pub struct OutboundIR {
     /// Trojan 密码。
     #[serde(default)]
     pub password: Option<String>,
+    /// Protocol version for versioned transports (currently used by ShadowTLS).
+    /// 带版本协议的版本号（当前用于 ShadowTLS）。
+    #[serde(default)]
+    pub version: Option<u8>,
     // Shadowsocks plugin support
     #[serde(default)]
     pub plugin: Option<String>,
@@ -2546,6 +2554,11 @@ impl ConfigIR {
                 Self::validate_shadowsocks(outbound, &mut errors);
             }
 
+            // Validate ShadowTLS configuration
+            if outbound.ty == OutboundType::Shadowtls {
+                Self::validate_shadowtls(outbound, &mut errors);
+            }
+
             // Validate TUIC configuration
             if outbound.ty == OutboundType::Tuic {
                 Self::validate_tuic(outbound, &mut errors);
@@ -2593,6 +2606,33 @@ impl ConfigIR {
             errors.push(format!(
                 "outbound '{name}': shadowsocks.method must be aes-256-gcm or chacha20-poly1305"
             ));
+        }
+    }
+
+    /// Validate ShadowTLS outbound configuration.
+    fn validate_shadowtls(outbound: &OutboundIR, errors: &mut Vec<String>) {
+        let name = outbound.name.as_deref().unwrap_or("unnamed");
+
+        if outbound.server.as_ref().is_none_or(|s| s.trim().is_empty()) {
+            errors.push(format!("outbound '{name}': shadowtls.server is required"));
+        }
+        if outbound.port.is_none() {
+            errors.push(format!("outbound '{name}': shadowtls.port is required"));
+        }
+        if outbound
+            .password
+            .as_ref()
+            .is_none_or(|p| p.trim().is_empty())
+        {
+            errors.push(format!("outbound '{name}': shadowtls.password is required"));
+        }
+
+        if let Some(version) = outbound.version {
+            if !(1..=3).contains(&version) {
+                errors.push(format!(
+                    "outbound '{name}': shadowtls.version must be 1, 2, or 3"
+                ));
+            }
         }
     }
 
@@ -3328,6 +3368,7 @@ pub struct DnsHostIR {
 #[cfg(test)]
 mod tests_reality {
     use super::*;
+    use serde_json::json;
     #[test]
     fn negation_detect() {
         let mut cfg = ConfigIR::default();
@@ -3517,6 +3558,47 @@ mod tests_reality {
         });
 
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn shadowtls_validation_reports_missing_password_and_bad_version() {
+        let mut cfg = ConfigIR::default();
+        cfg.outbounds.push(OutboundIR {
+            ty: OutboundType::Shadowtls,
+            name: Some("shadowtls-out".to_string()),
+            server: Some("example.com".to_string()),
+            port: Some(443),
+            version: Some(9),
+            ..Default::default()
+        });
+
+        let result = cfg.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("shadowtls.password is required")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("shadowtls.version must be 1, 2, or 3")));
+    }
+
+    #[test]
+    fn outbound_ir_deserializes_detour_and_shadowtls_version() {
+        let outbound: OutboundIR = serde_json::from_value(json!({
+            "ty": "shadowsocks",
+            "name": "ss-over-stl",
+            "server": "example.com",
+            "port": 8388,
+            "method": "aes-256-gcm",
+            "password": "secret",
+            "detour": "shadowtls-wrap",
+            "version": 1
+        }))
+        .unwrap();
+
+        assert_eq!(outbound.detour.as_deref(), Some("shadowtls-wrap"));
+        assert_eq!(outbound.version, Some(1));
     }
 
     #[test]

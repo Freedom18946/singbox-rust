@@ -1,0 +1,74 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19191",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "shadowtls",
+      "name": "stl-ok",
+      "server": "127.0.0.1",
+      "port": 12083,
+      "version": 1,
+      "password": "interop-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "skip_cert_verify": true,
+        "alpn": [
+          "http/1.1"
+        ]
+      }
+    },
+    {
+      "type": "shadowtls",
+      "name": "stl-strict",
+      "server": "127.0.0.1",
+      "port": 12083,
+      "version": 1,
+      "password": "interop-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "skip_cert_verify": false,
+        "alpn": [
+          "http/1.1"
+        ]
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": [
+          "18102"
+        ],
+        "outbound": "stl-strict"
+      },
+      {
+        "port": [
+          "18101"
+        ],
+        "outbound": "stl-ok"
+      }
+    ],
+    "default": "direct"
+  }
+}

@@ -134,17 +134,19 @@ impl ShadowsocksConnector {
 
     /// Derive master key from password.
     ///
-    /// Note: this mirrors the inbound's current derivation logic (SHA1-based, deterministic).
-    /// It is intentionally kept compatible with our inbound implementation.
     fn derive_master_key(password: &str, key_len: usize) -> Vec<u8> {
-        use sha1::Digest;
-        let mut hasher = sha1::Sha1::new();
-        hasher.update(password.as_bytes());
-        let mut out = hasher.finalize().to_vec();
+        use md5::{Digest, Md5};
+
+        let mut out = Vec::with_capacity(key_len);
+        let mut prev = Vec::new();
         while out.len() < key_len {
-            let mut h = sha1::Sha1::new();
-            h.update(&out);
-            out.extend_from_slice(&h.finalize());
+            let mut hasher = Md5::new();
+            if !prev.is_empty() {
+                hasher.update(&prev);
+            }
+            hasher.update(password.as_bytes());
+            prev = hasher.finalize().to_vec();
+            out.extend_from_slice(&prev);
         }
         out.truncate(key_len);
         out

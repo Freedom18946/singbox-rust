@@ -386,9 +386,17 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
             ))?
             .clone();
         let port = ir.port.unwrap_or(443);
+        let password =
+            ir.password
+                .clone()
+                .ok_or(crate::error::AdapterError::InvalidConfig(
+                    "shadowtls requires password",
+                ))?;
         let cfg = crate::outbound::shadowtls::ShadowTlsAdapterConfig {
             server,
             port,
+            version: ir.version.unwrap_or(1),
+            password,
             sni: ir
                 .tls_sni
                 .clone()

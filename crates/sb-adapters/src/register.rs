@@ -2827,9 +2827,41 @@ fn build_shadowtls_outbound(
 ) -> OutboundBuilderResult {
     use crate::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
 
+    let outbound_name = ir.name.as_deref().or(param.name.as_deref()).unwrap_or("shadowtls");
+
     // Extract required fields
-    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let server = match ir.server.as_ref().or(param.server.as_ref()) {
+        Some(server) => server,
+        None => {
+            let reason = invalid_outbound_config_reason(
+                "shadowtls",
+                outbound_name,
+                "missing required field 'server'",
+            );
+            return invalid_config_outbound("shadowtls", reason);
+        }
+    };
     let port = ir.port.or(param.port).unwrap_or(443);
+    let password = match ir.password.as_ref().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+        Some(password) => password.to_string(),
+        None => {
+            let reason = invalid_outbound_config_reason(
+                "shadowtls",
+                outbound_name,
+                "missing required field 'password'",
+            );
+            return invalid_config_outbound("shadowtls", reason);
+        }
+    };
+    let version = ir.version.unwrap_or(1);
+    if !(1..=3).contains(&version) {
+        let reason = invalid_outbound_config_reason(
+            "shadowtls",
+            outbound_name,
+            format!("unsupported version {version}; expected 1, 2, or 3"),
+        );
+        return invalid_config_outbound("shadowtls", reason);
+    }
 
     // SNI is required for TLS
     let sni = ir.tls_sni.clone().unwrap_or_else(|| server.clone());
@@ -2844,6 +2876,8 @@ fn build_shadowtls_outbound(
     let cfg = ShadowTlsAdapterConfig {
         server: server.clone(),
         port,
+        version,
+        password,
         sni,
         alpn,
         skip_cert_verify,
@@ -3168,6 +3202,8 @@ mod tests {
             ty: OutboundType::Shadowtls,
             server: Some("example.com".to_string()),
             port: Some(443),
+            password: Some("interop-password".to_string()),
+            version: Some(1),
             tls_sni: Some("example.com".to_string()),
             tls_alpn: Some(vec!["http/1.1".to_string(), "h2".to_string()]),
             skip_cert_verify: Some(false),
@@ -3201,6 +3237,40 @@ mod tests {
             udp_factory.is_none(),
             "ShadowTLS should not provide UDP factory"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-shadowtls")]
+    fn test_shadowtls_outbound_registration_requires_password() {
+        let ir = OutboundIR {
+            ty: OutboundType::Shadowtls,
+            server: Some("example.com".to_string()),
+            port: Some(443),
+            version: Some(1),
+            tls_sni: Some("example.com".to_string()),
+            ..Default::default()
+        };
+
+        let param = OutboundParam {
+            kind: "shadowtls".into(),
+            name: Some("shadowtls_test".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let (connector, _) = build_shadowtls_outbound(&param, &ir, &ctx)
+            .expect("shadowtls invalid config connector should still be constructed");
+
+        let err = futures::executor::block_on(connector.connect("example.com", 443))
+            .expect_err("invalid shadowtls config should be rejected");
+        assert!(err.to_string().contains("missing required field 'password'"));
     }
 }
 
