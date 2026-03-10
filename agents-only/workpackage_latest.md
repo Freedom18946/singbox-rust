@@ -85,15 +85,18 @@
   1. `workspace_test -> bench_outputs_json` 的本地 harness 修稳已完成
   2. `interop-lab` 的 `TrojanInboundConfig.reality` 初始化器漂移已修正，`cargo test -p interop-lab --no-run` 已通过
   3. `shadowtls_e2e` / `shadowtls_inbound_e2e` 的 rustls process-level `CryptoProvider` 初始化缺口已修正，窄测已通过
-  4. 完成 `daily-host-gui` 的完整可复跑收口，并刷新 batch 证据
-  5. 保持 `trojan/shadowsocks` 为已收口状态，不再扩面直到出现新审议要求
-  6. `shadowtls` 继续只盯 v3 剩余证据
+  4. `scripts/l18/gui_real_cert.sh` 已补 system proxy restore + bash 兼容修正，`daily-host-gui` 在 batch 内已重新拿到 GUI=`PROVEN`
+  5. 若需要最终 `l18_capstone_status.json`，需避免人工中断 `CANARY` 再跑一轮完整 fixed-profile
+  6. 保持 `trojan/shadowsocks` 为已收口状态，不再扩面直到出现新审议要求
+  7. `shadowtls` 继续只盯 v3 剩余证据
      - 已落地：vendored `rustls 0.23.35` live `session_id` hook、ShadowTLS v3 outbound runtime、`v3 out -> v3 in -> Shadowsocks(in)` 真实 e2e、`strict_mode` TLS1.2 fallback 真实证据、`wildcard_sni=authed` unauthorized fallback 真实证据、`handshake_for_server_name` unauthorized fallback 真实证据、`wildcard_sni=all` ignored live e2e
      - 当前纪律：不接受“抓现成 ClientHello 后外部改包”的伪实现；本地环境不能绑定 `<sni>:443`，所以 `wildcard_sni=all` 的默认套件仍保留 ignored live e2e，后续若有 443 能力的环境再补离线版，并在 TLS 升级时保住该 hook
 - 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
-- 当前最新 batch：`reports/l18/batches/20260310T214322Z-l18-daily-preflight`
+- 当前最新 batch：`reports/l18/batches/20260310T231132Z-l18-daily-preflight`
   - 已确认跑过 `workspace_test` 中此前暴露的 `interop-lab` / `shadowtls_e2e` / `shadowtls_inbound_e2e` 失败点，均未再复现
-  - 批次仍在进行中，尚未形成最终 overall 口径
+  - `bench_outputs_json` 在 batch 内再次通过
+  - `GUI` gate 已写出 `overall_status=PROVEN` / `sandbox.status=PROVEN`
+  - 本轮在 `CANARY` 阶段被人工提前结束，因此尚未形成最终 `l18_capstone_status.json`
 - 当前入口：`agents-only/planning/L18-PHASE4.md`
 
 ---

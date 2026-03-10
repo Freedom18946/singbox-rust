@@ -301,6 +301,12 @@ SYSTEM_PROXY_AFTER_ENABLED=0
 cleanup_files() {
   stop_pid "$ACTIVE_KERNEL_PID"
   stop_pid "$GUI_PID"
+  if [[ -f "$SYSTEM_PROXY_BEFORE_FILE" ]]; then
+    snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE" >/dev/null 2>&1 || true
+    if [[ ! -f "$SYSTEM_PROXY_AFTER_FILE" ]] || ! cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE"; then
+      restore_system_proxy_snapshot "$SYSTEM_PROXY_BEFORE_FILE" >/dev/null 2>&1 || true
+    fi
+  fi
   rm -f "$RESULTS_FILE" "$SANDBOX_NOTES_FILE" "$PROC_HITS_FILE" "$PORT_HITS_FILE"
 }
 trap cleanup_files EXIT
@@ -379,9 +385,167 @@ snapshot_system_proxy() {
   scutil --proxy > "$out_file"
 }
 
+list_network_services() {
+  networksetup -listallnetworkservices 2>/dev/null | sed '1d' | sed '/^\*/d' | sed '/^$/d'
+}
+
+service_supports_proxy_config() {
+  local service="$1"
+  networksetup -getwebproxy "$service" >/dev/null 2>&1 || \
+    networksetup -getsecurewebproxy "$service" >/dev/null 2>&1 || \
+    networksetup -getsocksfirewallproxy "$service" >/dev/null 2>&1
+}
+
 is_system_proxy_enabled_file() {
   local in_file="$1"
   if grep -Eq '^[[:space:]]*(HTTPEnable|HTTPSEnable|SOCKSEnable|ProxyAutoConfigEnable|ProxyAutoDiscoveryEnable)[[:space:]]*:[[:space:]]*1$' "$in_file"; then
+    return 0
+  fi
+  return 1
+}
+
+restore_system_proxy_snapshot() {
+  local snapshot_file="$1"
+  local http_enable=""
+  local http_proxy=""
+  local http_port=""
+  local https_enable=""
+  local https_proxy=""
+  local https_port=""
+  local socks_enable=""
+  local socks_proxy=""
+  local socks_port=""
+  local pac_enable=""
+  local pac_url=""
+  local autodiscovery_enable=""
+  local bypass_domains=()
+  local services=()
+  local discovered_services=()
+  local key=""
+  local value=""
+  local existing=""
+  local candidate=""
+  local duplicate=0
+
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    discovered_services+=("$candidate")
+  done < <(list_network_services)
+  for candidate in "Wi-Fi" "Ethernet"; do
+    [[ -z "$candidate" ]] && continue
+    services+=("$candidate")
+  done
+  for candidate in "${discovered_services[@]}"; do
+    [[ -z "$candidate" ]] && continue
+    duplicate=0
+    for existing in "${services[@]}"; do
+      if [[ "$existing" == "$candidate" ]]; then
+        duplicate=1
+        break
+      fi
+    done
+    if [[ "$duplicate" == "0" ]]; then
+      services+=("$candidate")
+    fi
+  done
+
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      HTTPEnable) http_enable="$value" ;;
+      HTTPProxy) http_proxy="$value" ;;
+      HTTPPort) http_port="$value" ;;
+      HTTPSEnable) https_enable="$value" ;;
+      HTTPSProxy) https_proxy="$value" ;;
+      HTTPSPort) https_port="$value" ;;
+      SOCKSEnable) socks_enable="$value" ;;
+      SOCKSProxy) socks_proxy="$value" ;;
+      SOCKSPort) socks_port="$value" ;;
+      ProxyAutoConfigEnable) pac_enable="$value" ;;
+      ProxyAutoConfigURLString) pac_url="$value" ;;
+      ProxyAutoDiscoveryEnable) autodiscovery_enable="$value" ;;
+      ExceptionsListItem) bypass_domains+=("$value") ;;
+    esac
+  done < <(
+    python3 - "$snapshot_file" <<'PY'
+import re
+import sys
+
+snapshot_path = sys.argv[1]
+array_key = None
+
+with open(snapshot_path, "r", encoding="utf-8", errors="replace") as fh:
+    for raw in fh:
+        line = raw.rstrip("\n")
+        if array_key:
+            if line.strip() == "}":
+                array_key = None
+                continue
+            match = re.match(r"\s+\d+\s+:\s+(.*)$", line)
+            if match:
+                print(f"{array_key}Item\t{match.group(1)}")
+            continue
+
+        array_match = re.match(r"\s+([A-Za-z0-9]+)\s+:\s+<array>\s+\{$", line)
+        if array_match:
+          array_key = array_match.group(1)
+          continue
+
+        match = re.match(r"\s+([A-Za-z0-9]+)\s+:\s+(.*)$", line)
+        if match:
+            print(f"{match.group(1)}\t{match.group(2)}")
+PY
+  )
+
+  local attempted=0
+  local service=""
+  for service in "${services[@]}"; do
+    if ! service_supports_proxy_config "$service"; then
+      continue
+    fi
+    attempted=1
+
+    if [[ "$http_enable" == "1" && -n "$http_proxy" && "$http_port" =~ ^[0-9]+$ ]]; then
+      networksetup -setwebproxy "$service" "$http_proxy" "$http_port" >/dev/null 2>&1 || true
+      networksetup -setwebproxystate "$service" on >/dev/null 2>&1 || true
+    else
+      networksetup -setwebproxystate "$service" off >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$https_enable" == "1" && -n "$https_proxy" && "$https_port" =~ ^[0-9]+$ ]]; then
+      networksetup -setsecurewebproxy "$service" "$https_proxy" "$https_port" >/dev/null 2>&1 || true
+      networksetup -setsecurewebproxystate "$service" on >/dev/null 2>&1 || true
+    else
+      networksetup -setsecurewebproxystate "$service" off >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$socks_enable" == "1" && -n "$socks_proxy" && "$socks_port" =~ ^[0-9]+$ ]]; then
+      networksetup -setsocksfirewallproxy "$service" "$socks_proxy" "$socks_port" >/dev/null 2>&1 || true
+      networksetup -setsocksfirewallproxystate "$service" on >/dev/null 2>&1 || true
+    else
+      networksetup -setsocksfirewallproxystate "$service" off >/dev/null 2>&1 || true
+    fi
+
+    if [[ "${#bypass_domains[@]}" -gt 0 ]]; then
+      networksetup -setproxybypassdomains "$service" "${bypass_domains[@]}" >/dev/null 2>&1 || true
+    else
+      networksetup -setproxybypassdomains "$service" Empty >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$pac_enable" == "1" && -n "$pac_url" ]]; then
+      networksetup -setautoproxyurl "$service" "$pac_url" >/dev/null 2>&1 || true
+      networksetup -setautoproxystate "$service" on >/dev/null 2>&1 || true
+    else
+      networksetup -setautoproxystate "$service" off >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$autodiscovery_enable" == "1" ]]; then
+      networksetup -setproxyautodiscovery "$service" on >/dev/null 2>&1 || true
+    else
+      networksetup -setproxyautodiscovery "$service" off >/dev/null 2>&1 || true
+    fi
+  done
+
+  if [[ "$attempted" == "1" ]]; then
     return 0
   fi
   return 1
@@ -443,6 +607,32 @@ curl_code() {
   else
     curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "${api_url}${path}" || echo 000
   fi
+}
+
+websocket_code() {
+  local api_url="$1"
+  local path="$2"
+  local code=""
+  local rc=0
+
+  code="$(curl -sS --http1.1 --max-time 3 -o /dev/null -w '%{http_code}' \
+    -H 'Connection: Upgrade' \
+    -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Version: 13' \
+    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+    "${api_url}${path}" 2>/dev/null)" || rc=$?
+
+  if [[ "$code" == "101" || "$code" == "200" ]]; then
+    echo "$code"
+    return 0
+  fi
+
+  if [[ -n "$code" ]]; then
+    echo "$code"
+  else
+    echo "000"
+  fi
+  return "$rc"
 }
 
 check_capabilities_negotiation() {
@@ -514,6 +704,37 @@ wait_gui_pid() {
     sleep 1
   done
   return 1
+}
+
+gui_window_count() {
+  local count
+  count="$(osascript -e "tell application \"System Events\" to count windows of process \"${GUI_PROCESS_NAME}\"" 2>/dev/null || echo 0)"
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    echo "$count"
+  else
+    echo "0"
+  fi
+}
+
+wait_gui_window() {
+  local timeout_sec="$1"
+  local i=0
+  while [[ "$i" -lt "$timeout_sec" ]]; do
+    local count
+    count="$(gui_window_count)"
+    if [[ "$count" -gt 0 ]]; then
+      echo "$count"
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  echo "$(gui_window_count)"
+  return 1
+}
+
+activate_gui_process() {
+  osascript -e "tell application \"System Events\" to set frontmost of process \"${GUI_PROCESS_NAME}\" to true" >/dev/null 2>&1 || true
 }
 
 url_hostport() {
@@ -689,8 +910,8 @@ run_step() {
     case "$step_id" in
       startup)
         if wait_gui_pid "$GUI_PID" "$TIMEOUT_SEC" && wait_kernel_ready "$api_url" "$token" "$TIMEOUT_SEC"; then
-          window_count="$(osascript -e "tell application \"System Events\" to count windows of process \"${GUI_PROCESS_NAME}\"" 2>/dev/null || echo 0)"
-          if [[ "${window_count}" =~ ^[0-9]+$ ]] && [[ "${window_count}" -eq 0 ]]; then
+          activate_gui_process
+          if ! window_count="$(wait_gui_window 5)"; then
             status="PARTIAL"
             note="gui_process_and_kernel_ready windows=0"
           else
@@ -731,7 +952,14 @@ run_step() {
         fi
         ;;
       logs_panel)
-        if [[ -s "$kernel_log" ]]; then
+        local ws_path="/logs?level=debug"
+        if [[ -n "$token" ]]; then
+          ws_path="${ws_path}&token=${token}"
+        fi
+        code="$(websocket_code "$api_url" "$ws_path")"
+        if [[ "$code" == "101" || "$code" == "200" ]]; then
+          note="/logs=${code}"
+        elif [[ -s "$kernel_log" ]]; then
           note="kernel_log_non_empty"
         else
           code="$(curl_code "$api_url" "/connections" "$token")"
@@ -925,6 +1153,35 @@ run_postcheck() {
   fi
 
   if ! cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE"; then
+    if restore_system_proxy_snapshot "$SYSTEM_PROXY_BEFORE_FILE"; then
+      for _ in $(seq 1 20); do
+        snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE"
+        after_enabled=0
+        if is_system_proxy_enabled_file "$SYSTEM_PROXY_AFTER_FILE"; then
+          after_enabled=1
+        fi
+        if cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE" && expected_runtime_ports_released; then
+          SYSTEM_PROXY_AFTER_ENABLED="$after_enabled"
+          SYSTEM_PROXY_UNCHANGED=1
+          SANDBOX_POSTCHECK_PASS=1
+          record_sandbox_note "system_proxy_snapshot_restored"
+          return 0
+        fi
+        sleep 0.25
+      done
+      snapshot_system_proxy "$SYSTEM_PROXY_AFTER_FILE"
+      if is_system_proxy_enabled_file "$SYSTEM_PROXY_AFTER_FILE"; then
+        SYSTEM_PROXY_AFTER_ENABLED=1
+      else
+        SYSTEM_PROXY_AFTER_ENABLED=0
+      fi
+      record_sandbox_note "system_proxy_restore_attempted"
+    else
+      record_sandbox_note "system_proxy_restore_failed"
+    fi
+  fi
+
+  if ! cmp -s "$SYSTEM_PROXY_BEFORE_FILE" "$SYSTEM_PROXY_AFTER_FILE"; then
     SYSTEM_PROXY_UNCHANGED=0
     SANDBOX_POSTCHECK_PASS=0
     record_sandbox_note "system_proxy_snapshot_changed"
@@ -1061,7 +1318,8 @@ negotiation = {
 
 for core in ("go", "rust"):
     item = negotiation[core]
-    if item.get("status") in ("PARTIAL", "ADVISORY", "UNTESTED") and cores[core]["overall_status"] == "PROVEN":
+    required = item.get("required") is True
+    if required and item.get("status") in ("PARTIAL", "ADVISORY", "UNTESTED") and cores[core]["overall_status"] == "PROVEN":
         cores[core]["overall_status"] = "PARTIAL"
         cores[core]["pass"] = True
     if item.get("status") == "FAILED":

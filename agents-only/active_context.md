@@ -38,19 +38,23 @@
   - `logs_panel` 不再依赖本地 kernel log 非空，改为验证 `/logs` WebSocket 握手（成功记 `/logs=101`）
   - 非必需的 Go `/capabilities` 404 仅保留为 note，不再拉低整体状态
   - `startup` 在 GUI pid + kernel ready 后会显式 frontmost GUI，并等待窗口出现，减少 `windows=0` 抖动
+  - postcheck 新增 system proxy restore：优先覆盖 `Wi‑Fi` / `Ethernet`，跳过不支持代理配置的 service，并去掉 `mapfile` 依赖以兼容 batch 实际 bash 环境
+  - 最新 fixed-profile batch 已在 GUI 阶段写出 `system_proxy_snapshot_restored`
 
 ## 当前真实阻塞
 
 1. **不是 GUI gate**
    - GUI gate 已通过独立复验 `PROVEN`
+   - 最新 batch：`reports/l18/batches/20260310T231132Z-l18-daily-preflight`
+   - 其中 `r1/gui/gui_real_cert.json` 已为 `overall_status=PROVEN`、`sandbox.status=PROVEN`
 2. **`workspace_test -> bench_outputs_json` 的本地主阻塞已解开**
    - 文件：`xtests/tests/bench_v1.rs`、`xtests/tests/bench_v2.rs`、`xtests/src/lib.rs`
    - 已修内容：bench harness 不再在测试体内 `cargo run` 冷编译 `sb-bench`；改为先 build 再直接执行预编译 binary，并改成动态端口 + 临时 CSV 路径
    - 本地证据：`cargo test -p xtests -- --nocapture` 已通过，说明 `bench_outputs_json` 不再是当前工作树下 `workspace_test` 的失败点
    - 连带修正：`interop-lab` 的 `TrojanInboundConfig.reality` 初始化器已补齐，`cargo test -p interop-lab --no-run` 已通过
    - 连带修正：`crates/sb-adapters/tests/shadowtls_e2e.rs` 与 `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` 已补 process-level rustls `CryptoProvider` 初始化；对应窄测已通过
-   - 最新 batch：`reports/l18/batches/20260310T214322Z-l18-daily-preflight`
-   - 当前状态：该 fixed-profile 已重跑到 `workspace_test` 中后段，前两轮暴露出的 `interop-lab` / `shadowtls_e2e` / `shadowtls_inbound_e2e` 失败点均未再复现；整条 batch 仍在进行中，尚未拿到最终 overall 结论
+   - batch 内证据：`reports/l18/batches/20260310T231132Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/capstone.stdout.log` 中 `test bench_outputs_json ... ok`
+   - 当前状态：workspace/FMT/CLIPPY/HOT_RELOAD/SIGNAL/GUI 均已跑过；本轮是人工提前结束在 `CANARY` 阶段，因此没有 `l18_capstone_status.json`
 3. **协议 parity 的剩余单点仍集中在 `shadowtls` v3 证据收口**
    - `trojan`: established（最小双核本地模拟公网闭环已完成）
    - `shadowsocks`: established（最小双核本地模拟公网闭环已完成）
@@ -83,8 +87,10 @@
 2. 维护 vendored `rustls` hook 边界：
    - 不接受握手外改包的伪实现
    - 若后续升级 TLS 栈，先确认 `session_id` hook 仍然存在
-3. 与协议 track 并行的 batch track 下一步变成：等当前 `daily-host-gui` / fixed-profile 完整结束，刷新 `workspace_test` 已解锁后的 batch 工件与 manifest
-4. 只有在完整 `daily-host-gui` batch 可复跑后，才重新评估是否恢复更长链路
+3. 与协议 track 并行的 batch track 下一步变成：
+   - 将本轮 `GUI restored to PROVEN` 的证据同步进文档与提交
+   - 若需要最终 `l18_capstone_status.json`，再跑一轮完整 `daily-host-gui`，避免人工中断 `CANARY`
+4. 只有在完整 `daily-host-gui` batch 可复跑且最终 status 落盘后，才重新评估是否恢复更长链路
 
 ## 关键文件速查
 
@@ -95,4 +101,4 @@
 | capstone 脚本 | `scripts/l18/l18_capstone.sh` |
 | 固定 profile 入口 | `scripts/l18/run_capstone_fixed_profile.sh` |
 | GUI gate 脚本 | `scripts/l18/gui_real_cert.sh` |
-| GUI `PROVEN` 证据 | `reports/l18/batches/20260310T115624Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/gui_direct3/gui_real_cert.json` |
+| GUI `PROVEN` 证据 | `reports/l18/batches/20260310T231132Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/gui/gui_real_cert.json` |

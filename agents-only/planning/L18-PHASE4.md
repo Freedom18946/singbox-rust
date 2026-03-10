@@ -29,13 +29,16 @@
 3. 原先卡住长链路的 `workspace_test -> bench_outputs_json` 已在本地 harness 层修稳。
 4. 后续暴露出的 `interop-lab` `TrojanInboundConfig.reality` 初始化器漂移已修正，`cargo test -p interop-lab --no-run` 已通过。
 5. 后续暴露出的 `shadowtls_e2e` / `shadowtls_inbound_e2e` rustls process-level `CryptoProvider` 初始化缺口已修正，窄测已通过。
-6. 最新 fixed-profile batch `20260310T214322Z-l18-daily-preflight` 已重跑到 `workspace_test` 中后段，前述新失败点未再复现；在该 batch 完整结束并刷新 manifest 前，不恢复 `nightly/certify`。
+6. `scripts/l18/gui_real_cert.sh` 已补 system proxy restore 与 bash 兼容修正；最新 fixed-profile batch `20260310T231132Z-l18-daily-preflight` 中，`GUI` 已恢复为 `PROVEN`。
+7. 同一批次内 `bench_outputs_json` 再次通过，workspace/FMT/CLIPPY/HOT_RELOAD/SIGNAL/GUI 均已跑过。
+8. 该批次在 `CANARY` 阶段被人工提前结束，因此当前缺的不是 GUI/bench 证据，而是最终 `l18_capstone_status.json`；在拿到完整最终 status 前，不恢复 `nightly/certify`。
 
 因此当前顺序固定为：
 
-1. 等当前 `daily-host-gui` / fixed-profile 完整结束，确认 `workspace_test` 新旧失败点均已收口
-2. 使 `daily-host-gui` 重新变成完整可复跑 batch
-3. 再进入协议 parity 收口：
+1. 将 `GUI restored to PROVEN` 与 batch 内 `bench_outputs_json ... ok` 证据固化到活跃文档
+2. 若需要最终 `l18_capstone_status.json`，再跑一轮不人工中断 `CANARY` 的完整 `daily-host-gui`
+3. 在完整 status 落盘后，使 `daily-host-gui` 重新变成完整可复跑 batch
+4. 再进入协议 parity 收口：
    - `trojan`
    - `shadowsocks`
    - `shadowtls`（后置）
