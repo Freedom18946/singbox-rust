@@ -77,9 +77,15 @@
 ### Phase 4（全局静态审议整改）— 🔄 当前阶段
 
 - 目标：`证据模型可信化 -> 运行边界收敛 -> 决定是否恢复 certify`
-- Wave A：证据模型收口
-- Wave B：边界 / 脚手架 containment
-- Wave C：恢复 `nightly -> certify` 的决策门
+- 已完成：
+  - Wave A：证据模型收口
+  - Wave B 主干：边界 / 脚手架 containment
+  - GUI gate 独立复验：`PROVEN`
+- 当前执行顺序固定为：
+  1. 隔离/修复 `workspace_test -> bench_outputs_json`
+  2. 完成 `daily-host-gui` 的完整可复跑收口
+  3. 进入 `trojan/shadowsocks` 双核本地模拟公网 parity 收口
+  4. 将 `shadowtls` 作为单独 backlog（先补真实 e2e，再谈双核）
 - 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
 - 当前入口：`agents-only/planning/L18-PHASE4.md`
 

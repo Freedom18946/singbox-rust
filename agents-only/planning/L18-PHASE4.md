@@ -2,7 +2,7 @@
 # L18 Phase 4 工作包：全局静态审议整改
 
 状态：🔄 进行中
-更新：2026-03-09
+更新：2026-03-10
 
 > **定位**：
 > 当前会话不再充当 `nightly/certify` 盯跑入口。
@@ -19,6 +19,24 @@
 3. **Wave C: 长跑恢复决策门**
 
 在 Wave A/B 完成前，不直接恢复 `nightly` 或 `certify`。
+
+## 1.1 当前执行位置（2026-03-10）
+
+已确认事实：
+
+1. `daily-core` 已稳定可跑。
+2. `host-gui` 的 GUI gate 已拿到独立 `PROVEN` 证据。
+3. 当前未收口问题不是 GUI，而是 `workspace_test -> bench_outputs_json` 会卡住完整 `daily-host-gui` batch。
+4. 在完整 `daily-host-gui` 收口前，不恢复 `nightly/certify`。
+
+因此当前顺序固定为：
+
+1. 先隔离/修复 `bench_outputs_json`
+2. 使 `daily-host-gui` 重新变成完整可复跑 batch
+3. 再进入协议 parity 收口：
+   - `trojan`
+   - `shadowsocks`
+   - `shadowtls`（后置）
 
 ## 2. Wave A：证据模型收口
 
@@ -107,6 +125,16 @@
 
 1. 先恢复一次 24h `nightly`
 2. 只有在该 `nightly` 证据包本地完整保留、mandatory gates 均为 `PROVEN`、且 GUI/contract 无 `PARTIAL` 冒充 PASS 时，才进入 `certify` 决策
+
+## 5.1 协议 parity 收口（Phase 4 后半段）
+
+这部分不属于 `nightly/certify` 长跑，而属于“替换 Go sing-box 的产品证据补齐”。
+
+优先级：
+
+1. `trojan`：已有较多 Rust 单边验证，优先补 Go/Rust 双核本地模拟公网对照
+2. `shadowsocks`：已有 AEAD/UDP/多用户验证，优先补 Go/Rust 双核本地模拟公网对照
+3. `shadowtls`：当前仍偏 config/smoke，先补真实 e2e，再决定是否进入双核 parity
 
 ## 6. 口径与默认值
 

@@ -16,6 +16,47 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-10 20:10] Agent: Codex (GPT-5)
+
+**任务**: 同步 `agents-only` Phase 4 文档到最新执行状态
+**变更**:
+- `agents-only/active_context.md`
+  - 重写为当前有效上下文
+  - 写入 `daily-core` 已稳定、`host-gui` GUI gate 已独立 `PROVEN`
+  - 明确当前主阻塞已切换为 `workspace_test -> bench_outputs_json`
+  - 写入协议 parity 当前判断：`trojan/shadowsocks=部分收口`，`shadowtls=未收口`
+- `agents-only/workpackage_latest.md`
+  - 将 Phase 4 当前执行顺序固定为：
+    - bench 隔离/修复
+    - `daily-host-gui` 完整批次收口
+    - `trojan/shadowsocks` parity 收口
+    - `shadowtls` 后置
+- `agents-only/planning/L18-PHASE4.md`
+  - 更新日期到 2026-03-10
+  - 新增 “当前执行位置”
+  - 新增协议 parity 收口顺序说明
+**结果**: 成功
+**备注**:
+- 本次只同步 `agents-only` 文档，不触碰 `reports/*` 活跃报告
+- 当前 GUI `PROVEN` 证据来源：
+  - `reports/l18/batches/20260310T115624Z-l18-daily-preflight/.../gui_direct3/gui_real_cert.json`
+
+### [2026-03-10 19:55] Agent: Codex (GPT-5)
+
+**任务**: 清理 `host-gui` GUI gate 的剩余 `PARTIAL` 并做独立复验
+**变更**:
+- `scripts/l18/gui_real_cert.sh`
+  - `logs_panel` 改为直接验证 `/logs` WebSocket 握手
+  - 非必需 Go `/capabilities` 404 不再拉低整体状态
+  - `startup` 阶段新增 frontmost GUI + 等待窗口出现，减少 `windows=0` 抖动
+**结果**: 成功
+**备注**:
+- 独立复验证据：
+  - `reports/l18/batches/20260310T115624Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/gui_direct3/gui_real_cert.json`
+- 结论：
+  - `overall_status=PROVEN`
+  - Go/Rust 两侧 `startup/load_config/switch_proxy/connections_panel/logs_panel` 全部 `PROVEN`
+
 ### [2026-03-09 20:35] Agent: Codex (GPT-5)
 
 **任务**: L18 Phase 4 首轮落地（证据模型 -> 边界 containment -> harness 语义/manifest）
