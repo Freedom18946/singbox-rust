@@ -1961,6 +1961,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("udp_timeout")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                detour: i
+                    .get("detour")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 domain_strategy: i
                     .get("domain_strategy")
                     .and_then(|v| v.as_str())
@@ -2023,6 +2027,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .map(|s| s.to_string()),
                 users_vless: None,
                 users_trojan: None,
+                version: None,
+                users_shadowtls: None,
+                shadowtls_handshake: None,
+                shadowtls_handshake_for_server_name: None,
+                shadowtls_strict_mode: None,
+                shadowtls_wildcard_sni: None,
                 fallback: i
                     .get("fallback")
                     .and_then(|v| v.as_str())

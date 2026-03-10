@@ -28,6 +28,7 @@ fn test_trojan_config_basic() {
         sni: Some("example.com".to_string()),
         alpn: None,
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -53,6 +54,7 @@ fn test_trojan_config_with_skip_cert_verify() {
         sni: None,
         alpn: None,
         skip_cert_verify: true, // Skip verification for testing
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -74,6 +76,7 @@ fn test_trojan_config_with_alpn() {
         sni: Some("trojan.example.com".to_string()),
         alpn: Some(vec!["h2".to_string(), "http/1.1".to_string()]),
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -95,6 +98,7 @@ fn test_trojan_config_minimal() {
         sni: None,
         alpn: None,
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -179,6 +183,7 @@ async fn test_trojan_connection_to_mock_server() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -205,6 +210,7 @@ async fn test_trojan_connection_timeout() {
         sni: None,
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -247,6 +253,7 @@ fn test_trojan_password_format() {
         sni: None,
         alpn: None,
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -269,6 +276,7 @@ fn test_trojan_empty_password() {
         sni: None,
         alpn: None,
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -290,6 +298,7 @@ fn test_trojan_unicode_password() {
         sni: None,
         alpn: None,
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,
@@ -315,6 +324,7 @@ fn test_trojan_config_serialization() {
         sni: Some("trojan.example.com".to_string()),
         alpn: Some(vec!["h2".to_string()]),
         skip_cert_verify: false,
+        detour: None,
         transport_layer: TransportConfig::default(),
         #[cfg(feature = "tls_reality")]
         reality: None,

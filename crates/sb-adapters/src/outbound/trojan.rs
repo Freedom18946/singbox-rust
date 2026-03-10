@@ -91,6 +91,9 @@ pub struct TrojanConfig {
     /// Skip certificate verification
     #[serde(default)]
     pub skip_cert_verify: bool,
+    /// Optional outbound detour tag for the TCP underlay.
+    #[serde(default)]
+    pub detour: Option<String>,
     /// Transport layer (TCP/WebSocket/gRPC/HTTPUpgrade)
     #[serde(default)]
     pub transport_layer: TransportConfig,
@@ -229,6 +232,15 @@ impl TrojanConnector {
             "Creating Trojan UDP relay"
         );
 
+        if config.detour.is_some()
+            && config.transport_layer.transport_type()
+                != crate::transport_config::TransportType::Tcp
+        {
+            return Err(AdapterError::Protocol(
+                "Trojan detour currently supports plain TCP transport only".to_string(),
+            ));
+        }
+
         // Parse server address
         let server_addr: std::net::SocketAddr = config
             .server
@@ -236,9 +248,13 @@ impl TrojanConnector {
             .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
 
         // Step 1: Establish TCP connection for UDP ASSOCIATE command
-        let tcp_stream = tokio::net::TcpStream::connect(&config.server)
-            .await
-            .map_err(AdapterError::Io)?;
+        let tcp_stream = crate::outbound::detour::connect_tcp_stream(
+            &server_addr.ip().to_string(),
+            server_addr.port(),
+            config.detour.as_deref(),
+            std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30)),
+        )
+        .await?;
 
         // Step 2: Perform TLS handshake
         let mut tls_stream = self
@@ -338,7 +354,6 @@ impl OutboundConnector for TrojanConnector {
             );
 
             // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
-            println!("TrojanConnector: dialing transport...");
             let timeout = std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30));
 
             // Parse server address for host and port
@@ -347,9 +362,27 @@ impl OutboundConnector for TrojanConnector {
                 .parse()
                 .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
 
+            if config.detour.is_some()
+                && (config.transport_layer.transport_type()
+                    != crate::transport_config::TransportType::Tcp
+                    || config.multiplex.is_some())
+            {
+                return Err(AdapterError::Protocol(
+                    "Trojan detour currently supports plain TCP without multiplex".to_string(),
+                ));
+            }
+
             #[cfg(feature = "sb-transport")]
             let base_stream = {
-                if let Some(ref dialer) = self.dialer {
+                if config.detour.is_some() {
+                    crate::outbound::detour::connect_tcp_stream(
+                        &server_addr.ip().to_string(),
+                        server_addr.port(),
+                        config.detour.as_deref(),
+                        timeout,
+                    )
+                    .await?
+                } else if let Some(ref dialer) = self.dialer {
                     let stream = tokio::time::timeout(
                         timeout,
                         dialer.connect(&server_addr.ip().to_string(), server_addr.port()),
@@ -373,15 +406,15 @@ impl OutboundConnector for TrojanConnector {
 
             #[cfg(not(feature = "sb-transport"))]
             let base_stream = {
-                let tcp_stream =
-                    tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&config.server))
-                        .await
-                        .map_err(|_| AdapterError::Timeout(timeout))?
-                        .map_err(AdapterError::Io)?;
-                Box::new(tcp_stream) as BoxedStream
+                crate::outbound::detour::connect_tcp_stream(
+                    &server_addr.ip().to_string(),
+                    server_addr.port(),
+                    config.detour.as_deref(),
+                    timeout,
+                )
+                .await?
             };
 
-            println!("TrojanConnector: transport dialed. Performing TLS handshake...");
             // Step 2: Perform TLS handshake
             #[cfg(feature = "tls_reality")]
             let mut stream: BoxedStream = if let Some(ref reality_cfg) = config.reality {
@@ -416,7 +449,6 @@ impl OutboundConnector for TrojanConnector {
                 Box::new(tls_stream)
             };
 
-            println!("TrojanConnector: TLS handshake done. Performing Trojan handshake...");
             // Step 3: Perform Trojan handshake
 
             // Trojan request format:
@@ -463,7 +495,6 @@ impl OutboundConnector for TrojanConnector {
             stream.write_all(&request).await.map_err(AdapterError::Io)?;
             stream.flush().await.map_err(AdapterError::Io)?;
 
-            println!("TrojanConnector: Trojan handshake done. Connection ready.");
             // Trojan doesn't send a response for CONNECT, connection is ready
             Ok(Box::new(stream) as BoxedStream)
         }
@@ -659,6 +690,7 @@ mod tests {
             sni: Some("example.com".to_string()),
             alpn: None,
             skip_cert_verify: false,
+            detour: None,
             transport_layer: TransportConfig::default(),
             #[cfg(feature = "tls_reality")]
             reality: None,

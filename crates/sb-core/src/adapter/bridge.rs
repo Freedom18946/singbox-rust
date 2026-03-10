@@ -35,6 +35,17 @@ fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHand
     Arc::new(OutboundRegistryHandle::new(reg))
 }
 
+fn install_runtime_inbound_handle(br: &Bridge) {
+    let tagged = br
+        .inbounds
+        .iter()
+        .cloned()
+        .zip(br.inbound_tags.iter().cloned())
+        .filter_map(|(service, tag)| tag.map(|tag| (tag, service)))
+        .collect();
+    registry::install_runtime_inbounds(Arc::new(registry::InboundRegistryHandle::new(tagged)));
+}
+
 #[cfg(feature = "router")]
 fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
@@ -305,6 +316,21 @@ fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
         .as_ref()
         .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
+    let users_shadowtls = ib
+        .users_shadowtls
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
+
+    let shadowtls_handshake = ib
+        .shadowtls_handshake
+        .as_ref()
+        .map(|cfg| serde_json::to_string(cfg).unwrap_or_else(|_| "{}".to_string()));
+
+    let shadowtls_handshake_for_server_name = ib
+        .shadowtls_handshake_for_server_name
+        .as_ref()
+        .map(|cfg| serde_json::to_string(cfg).unwrap_or_else(|_| "{}".to_string()));
+
     // Serialize VLESS users to JSON if present
     let users_vless = ib
         .users_vless
@@ -385,10 +411,17 @@ fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
         hysteria_recv_window: ib.hysteria_recv_window,
         multiplex: ib.multiplex.clone(),
         users_trojan,
+        shadowtls_version: ib.version,
+        users_shadowtls,
+        shadowtls_handshake,
+        shadowtls_handshake_for_server_name,
+        shadowtls_strict_mode: ib.shadowtls_strict_mode,
+        shadowtls_wildcard_sni: ib.shadowtls_wildcard_sni.clone(),
         users_vless,
         users_vmess,
         users_shadowsocks,
         udp_timeout,
+        detour: ib.detour.clone(),
         domain_strategy: ib.domain_strategy.clone(),
         set_system_proxy: ib.set_system_proxy,
         allow_private_network: ib.allow_private_network,
@@ -727,6 +760,7 @@ pub fn build_bridge<'a>(
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
+    registry::install_runtime_outbounds(outbound_handle.clone());
     #[cfg(feature = "router")]
     let router_handle = router_handle_from_ir(cfg);
 
@@ -781,7 +815,7 @@ pub fn build_bridge<'a>(
         };
 
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
-            br.add_inbound_with_kind(p.kind.as_str(), i);
+            br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
             tracing::error!(
                 target: "sb_core::adapter",
@@ -791,6 +825,7 @@ pub fn build_bridge<'a>(
             );
         }
     }
+    install_runtime_inbound_handle(&br);
 
     // Step 4: Endpoints
     for endpoint_ir in &cfg.endpoints {
@@ -863,6 +898,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
+    registry::install_runtime_outbounds(outbound_handle.clone());
 
     // Step 3: Inbounds (without engine)
     for ib in &cfg.inbounds {
@@ -889,7 +925,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         };
 
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
-            br.add_inbound_with_kind(p.kind.as_str(), i);
+            br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
             tracing::error!(
                 target: "sb_core::adapter",
@@ -899,6 +935,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
             );
         }
     }
+    install_runtime_inbound_handle(&br);
 
     // Step 4: Endpoints
     for endpoint_ir in &cfg.endpoints {

@@ -256,6 +256,18 @@ pub struct InboundParam {
     pub multiplex: Option<MultiplexOptionsIR>,
     /// Trojan multi-user authentication (JSON-encoded for now)
     pub users_trojan: Option<String>,
+    /// ShadowTLS protocol version.
+    pub shadowtls_version: Option<u8>,
+    /// ShadowTLS multi-user authentication (JSON-encoded for now).
+    pub users_shadowtls: Option<String>,
+    /// ShadowTLS handshake target (JSON-encoded for now).
+    pub shadowtls_handshake: Option<String>,
+    /// ShadowTLS handshake overrides by server name (JSON-encoded for now).
+    pub shadowtls_handshake_for_server_name: Option<String>,
+    /// ShadowTLS strict mode.
+    pub shadowtls_strict_mode: Option<bool>,
+    /// ShadowTLS wildcard SNI mode.
+    pub shadowtls_wildcard_sni: Option<String>,
     /// VLESS multi-user authentication (JSON-encoded for now)
     pub users_vless: Option<String>,
     /// VMess multi-user authentication (JSON-encoded for now)
@@ -264,6 +276,8 @@ pub struct InboundParam {
     pub users_shadowsocks: Option<String>,
     /// UDP Timeout
     pub udp_timeout: Option<std::time::Duration>,
+    /// Detour to another inbound tag.
+    pub detour: Option<String>,
     /// Domain resolution strategy
     pub domain_strategy: Option<String>,
     pub set_system_proxy: bool,
@@ -318,10 +332,17 @@ impl Default for InboundParam {
             hysteria_recv_window: None,
             multiplex: None,
             users_trojan: None,
+            shadowtls_version: None,
+            users_shadowtls: None,
+            shadowtls_handshake: None,
+            shadowtls_handshake_for_server_name: None,
+            shadowtls_strict_mode: None,
+            shadowtls_wildcard_sni: None,
             users_vless: None,
             users_vmess: None,
             users_shadowsocks: None,
             udp_timeout: None,
+            detour: None,
             domain_strategy: None,
             set_system_proxy: false,
             allow_private_network: true,
@@ -430,6 +451,8 @@ pub struct Bridge {
     pub inbounds: Vec<Arc<dyn InboundService>>,
     /// Inbound protocol kinds aligned with `inbounds` indices
     pub inbound_kinds: Vec<String>,
+    /// Optional inbound tags aligned with `inbounds` indices
+    pub inbound_tags: Vec<Option<String>>,
     /// (name, kind, connector) tuples
     pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
     /// UDP outbound factories by name
@@ -455,6 +478,7 @@ impl Bridge {
         Self {
             inbounds: vec![],
             inbound_kinds: vec![],
+            inbound_tags: vec![],
             outbounds: vec![],
             udp_factories: HashMap::new(),
             outbound_deps: HashMap::new(),
@@ -745,12 +769,26 @@ impl Bridge {
     pub fn add_inbound(&mut self, ib: Arc<dyn InboundService>) {
         self.inbounds.push(ib);
         self.inbound_kinds.push("unknown".to_string());
+        self.inbound_tags.push(None);
     }
 
     /// Registers an inbound service with explicit kind label
     pub fn add_inbound_with_kind(&mut self, kind: &str, ib: Arc<dyn InboundService>) {
         self.inbounds.push(ib);
         self.inbound_kinds.push(kind.to_string());
+        self.inbound_tags.push(None);
+    }
+
+    /// Registers an inbound service with explicit kind label and optional tag.
+    pub fn add_inbound_with_meta(
+        &mut self,
+        kind: &str,
+        tag: Option<String>,
+        ib: Arc<dyn InboundService>,
+    ) {
+        self.inbounds.push(ib);
+        self.inbound_kinds.push(kind.to_string());
+        self.inbound_tags.push(tag);
     }
 
     /// Registers an outbound connector with name and kind.

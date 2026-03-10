@@ -24,6 +24,7 @@ pub mod prelude {
 /// Block outbound adapter - rejects all connection attempts
 /// 阻断出站适配器 - 拒绝所有连接尝试
 pub mod block;
+pub mod detour;
 /// Direct outbound adapter - connects directly to target
 /// 直连出站适配器 - 直接连接到目标
 pub mod direct;
@@ -386,12 +387,12 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
             ))?
             .clone();
         let port = ir.port.unwrap_or(443);
-        let password =
-            ir.password
-                .clone()
-                .ok_or(crate::error::AdapterError::InvalidConfig(
-                    "shadowtls requires password",
-                ))?;
+        let password = ir
+            .password
+            .clone()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "shadowtls requires password",
+            ))?;
         let cfg = crate::outbound::shadowtls::ShadowTlsAdapterConfig {
             server,
             port,

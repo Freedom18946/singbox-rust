@@ -171,6 +171,10 @@ pub struct UpstreamServiceSpec {
     pub name: String,
     pub kind: UpstreamKind,
     pub bind: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub handshake_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +186,7 @@ pub enum UpstreamKind {
     WsEcho,
     DnsStub,
     TlsEcho,
+    TlsRelayTcp,
     TrojanInbound,
     ShadowsocksInbound,
     ShadowTlsInbound,

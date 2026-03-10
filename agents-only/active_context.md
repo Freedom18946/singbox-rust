@@ -9,7 +9,7 @@
 ## 战略状态
 
 **当前阶段**: L18 Phase 4 全局静态审议整改  
-**当前主线**: `bench_outputs_json` 隔离/修复 -> `trojan/shadowsocks` parity 收口 -> `shadowtls` backlog  
+**当前主线**: `shadowtls` runtime remodel / parity 收口（bounded v1 已闭环，继续盯 v3 outbound）  
 **Acceptance Closure**: `UNVERIFIED (slim snapshot)`  
 **MIG-02**: ACCEPTED（2026-03-07，541 V7 assertions）
 
@@ -43,14 +43,16 @@
 
 1. **不是 GUI gate**
    - GUI gate 已通过独立复验 `PROVEN`
-2. **当前主阻塞是 `workspace_test -> bench_outputs_json`**
+2. **长链路 batch 的主阻塞仍是 `workspace_test -> bench_outputs_json`**
    - 文件：`xtests/tests/bench_v1.rs`
    - 影响：会卡住完整 `daily-host-gui` batch，导致整条 batch 难以形成完整最终状态
    - 判断：这是 xtests / bench harness 问题，不是 GUI/system proxy 主链路回归
-3. **协议 parity 证据未完全收口**
-   - `trojan`: 部分收口（内部测试多，但缺 Go 双边闭环）
-   - `shadowsocks`: 部分收口（内部测试多，但缺 Go 双边闭环）
-   - `shadowtls`: 未收口（仍偏 config/smoke，缺真实 e2e + parity）
+3. **协议 parity 的剩余单点已经收缩到 `shadowtls` v3 outbound**
+   - `trojan`: established（最小双核本地模拟公网闭环已完成）
+   - `shadowsocks`: established（最小双核本地模拟公网闭环已完成）
+   - `shadowtls`: partial
+   - 已闭环部分：`Shadowsocks -> detour=ShadowTLS(v1)` 本地双核 interop 已通过；outbound `version = 2` 与 inbound `version = 2` 链路均已有真实 runtime 证据
+   - 当前阻塞：Rust TLS 栈未暴露 Go-compatible ShadowTLS v3 client auth 所需的 session-id hook
 
 ## 当前口径
 
@@ -60,11 +62,13 @@
 
 ## 下一步
 
-1. 先把 `bench_outputs_json` 从 `daily-host-gui` 主路径里隔离或修掉
-2. 修完后立即进入：
-   - `trojan` 双核本地模拟公网测试
-   - `shadowsocks` 双核本地模拟公网测试
-3. `shadowtls` 单独补真实 e2e，再决定何时做双核 parity
+1. 若继续协议 parity，优先决定 ShadowTLS v3 outbound 的实现路径：
+   - 换可控 ClientHello / session-id 的 TLS 实现，或
+   - 明确把 v3 client auth 标成当前 Rust 栈阻塞项
+2. 在 v3 outbound 可执行后，再补：
+   - `ShadowTLS(v3 out) -> ShadowTLS(v3 in)` 真实 e2e / interop
+   - `strict_mode` fallback 与 `wildcard_sni` 分支证据
+3. 与协议 track 并行的 batch track 仍是：先把 `bench_outputs_json` 从 `daily-host-gui` 主路径里隔离或修掉
 4. 只有在完整 `daily-host-gui` batch 可复跑后，才重新评估是否恢复更长链路
 
 ## 关键文件速查

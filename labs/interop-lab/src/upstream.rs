@@ -14,10 +14,8 @@ use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use sb_adapters::inbound::shadowtls::{
-    serve as serve_shadowtls, ShadowTlsInboundConfig,
-};
 use sb_adapters::inbound::shadowsocks::{serve as serve_shadowsocks, ShadowsocksInboundConfig};
+use sb_adapters::inbound::shadowtls::{serve as serve_shadowtls, ShadowTlsInboundConfig};
 use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
@@ -28,7 +26,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::sync::Once;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::process::Command;
 use tokio::sync::{oneshot, RwLock, Semaphore};
@@ -44,6 +42,43 @@ fn ensure_protocol_upstream_rules() {
         let rules = parse_rules("default=direct");
         install_global_rules(Engine::build(rules));
     });
+}
+
+async fn copy_until_handshake_finished<R, W>(dst: &mut W, src: &mut R) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    const TLS_HEADER_SIZE: usize = 5;
+    const HANDSHAKE: u8 = 22;
+    const CHANGE_CIPHER_SPEC: u8 = 20;
+
+    let mut seen_change_cipher_spec = false;
+    let mut header = [0u8; TLS_HEADER_SIZE];
+    loop {
+        src.read_exact(&mut header).await?;
+        let length = u16::from_be_bytes([header[3], header[4]]) as usize;
+        dst.write_all(&header).await?;
+        let mut payload = vec![0u8; length];
+        src.read_exact(&mut payload).await?;
+        dst.write_all(&payload).await?;
+        if header[0] != HANDSHAKE {
+            if header[0] != CHANGE_CIPHER_SPEC {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unexpected tls frame type: {}", header[0]),
+                ));
+            }
+            if !seen_change_cipher_spec {
+                seen_change_cipher_spec = true;
+                continue;
+            }
+        }
+        if seen_change_cipher_spec {
+            dst.flush().await?;
+            return Ok(());
+        }
+    }
 }
 
 #[derive(Default)]
@@ -465,6 +500,87 @@ async fn start_single_upstream(
                 },
             );
         }
+        UpstreamKind::TlsRelayTcp => {
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding tls relay {}", spec.bind))?;
+            let addr = listener
+                .local_addr()
+                .with_context(|| "tls relay local_addr")?;
+
+            let target = spec
+                .target
+                .as_ref()
+                .map(|v| normalize_addr(&harness.resolve_templates(v)))
+                .ok_or_else(|| anyhow!("tls relay upstream '{}' missing target", spec.name))?;
+            let handshake_target = spec
+                .handshake_target
+                .as_ref()
+                .map(|v| normalize_addr(&harness.resolve_templates(v)))
+                .ok_or_else(|| {
+                    anyhow!(
+                        "tls relay upstream '{}' missing handshake_target",
+                        spec.name
+                    )
+                })?;
+
+            let (tx, mut rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = &mut rx => {
+                            break;
+                        }
+                        accepted = listener.accept() => {
+                            match accepted {
+                                Ok((mut client, _)) => {
+                                    let target = target.clone();
+                                    let handshake_target = handshake_target.clone();
+                                    tokio::spawn(async move {
+                                        let mut handshake = match TcpStream::connect(&handshake_target).await {
+                                            Ok(stream) => stream,
+                                            Err(_) => return,
+                                        };
+                                        {
+                                            let (mut client_read, mut client_write) = client.split();
+                                            let (mut handshake_read, mut handshake_write) = handshake.split();
+                                            if tokio::try_join!(
+                                                copy_until_handshake_finished(&mut handshake_write, &mut client_read),
+                                                copy_until_handshake_finished(&mut client_write, &mut handshake_read),
+                                            )
+                                            .is_err()
+                                            {
+                                                return;
+                                            }
+                                        }
+                                        drop(handshake);
+
+                                        let mut upstream = match TcpStream::connect(&target).await {
+                                            Ok(stream) => stream,
+                                            Err(_) => return,
+                                        };
+                                        let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                                    });
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            });
+
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("tls://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
         UpstreamKind::TrojanInbound => {
             ensure_protocol_upstream_rules();
             let listener = TcpListener::bind(&spec.bind)
@@ -525,7 +641,9 @@ async fn start_single_upstream(
             let listener = TcpListener::bind(&spec.bind)
                 .await
                 .with_context(|| format!("binding shadowsocks upstream {}", spec.bind))?;
-            let addr = listener.local_addr().with_context(|| "shadowsocks local_addr")?;
+            let addr = listener
+                .local_addr()
+                .with_context(|| "shadowsocks local_addr")?;
             drop(listener);
 
             let router = std::sync::Arc::new(RouterHandle::new_mock());
@@ -575,7 +693,9 @@ async fn start_single_upstream(
             let listener = TcpListener::bind(&spec.bind)
                 .await
                 .with_context(|| format!("binding shadowtls upstream {}", spec.bind))?;
-            let addr = listener.local_addr().with_context(|| "shadowtls local_addr")?;
+            let addr = listener
+                .local_addr()
+                .with_context(|| "shadowtls local_addr")?;
             drop(listener);
 
             let router = std::sync::Arc::new(RouterHandle::new_mock());
@@ -584,7 +704,29 @@ async fn start_single_upstream(
 
             let cfg = ShadowTlsInboundConfig {
                 listen: addr,
-                tls: sb_transport::TlsConfig::Standard(sb_transport::tls::StandardTlsConfig {
+                detour: spec
+                    .target
+                    .clone()
+                    .unwrap_or_else(|| "shadowtls-upstream-detour".to_string()),
+                version: 2,
+                password: Some("shadowtls-upstream-password".to_string()),
+                users: Vec::new(),
+                handshake: Some(
+                    parse_host_port(spec.handshake_target.as_deref().unwrap_or("google.com:443"))
+                        .map(|(host, port)| sb_adapters::inbound::shadowtls::ShadowTlsHandshakeConfig {
+                            server: host,
+                            server_port: port,
+                        })
+                        .unwrap_or(sb_adapters::inbound::shadowtls::ShadowTlsHandshakeConfig {
+                            server: "google.com".to_string(),
+                            server_port: 443,
+                        }),
+                ),
+                handshake_for_server_name: std::collections::HashMap::new(),
+                strict_mode: false,
+                wildcard_sni: sb_adapters::inbound::shadowtls::ShadowTlsWildcardSniMode::Off,
+                tag: Some(spec.name.clone()),
+                tls: Some(sb_transport::TlsConfig::Standard(sb_transport::tls::StandardTlsConfig {
                     server_name: Some("localhost".to_string()),
                     alpn: vec!["http/1.1".to_string()],
                     insecure: false,
@@ -596,9 +738,8 @@ async fn start_single_upstream(
                     ),
                     cert_pem: None,
                     key_pem: None,
-                }),
-                router,
-                tag: Some(spec.name.clone()),
+                })),
+                router: Some(router),
                 stats: None,
             };
 

@@ -273,6 +273,26 @@ pub struct TrojanUserIR {
     pub password: String,
 }
 
+/// ShadowTLS user configuration for multi-user inbound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShadowTlsUserIR {
+    /// Optional user name for logging/routing purposes.
+    #[serde(default)]
+    pub name: String,
+    /// User password.
+    pub password: String,
+}
+
+/// ShadowTLS handshake target configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShadowTlsHandshakeIR {
+    /// Upstream handshake server hostname or IP.
+    pub server: String,
+    /// Upstream handshake server port.
+    #[serde(rename = "server_port")]
+    pub server_port: u16,
+}
+
 /// AnyTLS user configuration for multi-user inbound.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AnyTlsUserIR {
@@ -424,6 +444,9 @@ pub struct InboundIR {
     /// UDP 超时（例如 "5m"）。
     #[serde(default)]
     pub udp_timeout: Option<String>,
+    /// Detour to another inbound tag.
+    #[serde(default)]
+    pub detour: Option<String>,
     /// Domain/IP resolution strategy for Socks inbound.
     /// Socks 入站的域名/IP 解析策略。
     #[serde(default)]
@@ -505,6 +528,25 @@ pub struct InboundIR {
     /// Trojan 多用户配置。
     #[serde(default)]
     pub users_trojan: Option<Vec<TrojanUserIR>>,
+    /// ShadowTLS protocol version.
+    #[serde(default)]
+    pub version: Option<u8>,
+    /// ShadowTLS multi-user configuration.
+    #[serde(default)]
+    pub users_shadowtls: Option<Vec<ShadowTlsUserIR>>,
+    /// ShadowTLS handshake target configuration.
+    #[serde(default)]
+    pub shadowtls_handshake: Option<ShadowTlsHandshakeIR>,
+    /// ShadowTLS handshake target overrides by server name.
+    #[serde(default)]
+    pub shadowtls_handshake_for_server_name:
+        Option<std::collections::HashMap<String, ShadowTlsHandshakeIR>>,
+    /// ShadowTLS strict mode (primarily version 3).
+    #[serde(default)]
+    pub shadowtls_strict_mode: Option<bool>,
+    /// ShadowTLS wildcard SNI mode (`off`, `authed`, `all`).
+    #[serde(default)]
+    pub shadowtls_wildcard_sni: Option<String>,
     /// Trojan fallback target address (e.g. "127.0.0.1:80").
     #[serde(default)]
     pub fallback: Option<String>,
@@ -3599,6 +3641,63 @@ mod tests_reality {
 
         assert_eq!(outbound.detour.as_deref(), Some("shadowtls-wrap"));
         assert_eq!(outbound.version, Some(1));
+    }
+
+    #[test]
+    fn inbound_ir_deserializes_shadowtls_runtime_fields() {
+        let inbound: InboundIR = serde_json::from_value(json!({
+            "ty": "shadowtls",
+            "listen": "127.0.0.1",
+            "port": 443,
+            "detour": "ss-detour",
+            "version": 3,
+            "users_shadowtls": [
+                { "name": "alice", "password": "pw1" }
+            ],
+            "shadowtls_handshake": {
+                "server": "handshake.example.com",
+                "server_port": 443
+            },
+            "shadowtls_handshake_for_server_name": {
+                "cdn.example.com": {
+                    "server": "cdn-handshake.example.com",
+                    "server_port": 8443
+                }
+            },
+            "shadowtls_strict_mode": true,
+            "shadowtls_wildcard_sni": "authed"
+        }))
+        .unwrap();
+
+        assert_eq!(inbound.detour.as_deref(), Some("ss-detour"));
+        assert_eq!(inbound.version, Some(3));
+        assert_eq!(
+            inbound
+                .users_shadowtls
+                .as_ref()
+                .expect("shadowtls users should deserialize")[0]
+                .name,
+            "alice"
+        );
+        assert_eq!(
+            inbound
+                .shadowtls_handshake
+                .as_ref()
+                .expect("handshake should deserialize")
+                .server,
+            "handshake.example.com"
+        );
+        assert_eq!(
+            inbound
+                .shadowtls_handshake_for_server_name
+                .as_ref()
+                .and_then(|m| m.get("cdn.example.com"))
+                .expect("handshake override should deserialize")
+                .server_port,
+            8443
+        );
+        assert_eq!(inbound.shadowtls_strict_mode, Some(true));
+        assert_eq!(inbound.shadowtls_wildcard_sni.as_deref(), Some("authed"));
     }
 
     #[test]

@@ -19,7 +19,7 @@
   "outbounds": [
     {
       "type": "shadowtls",
-      "tag": "stl-ok",
+      "tag": "stl-wrap-ok",
       "server": "127.0.0.1",
       "server_port": 12083,
       "version": 1,
@@ -35,7 +35,7 @@
     },
     {
       "type": "shadowtls",
-      "tag": "stl-strict",
+      "tag": "stl-wrap-strict",
       "server": "127.0.0.1",
       "server_port": 12083,
       "version": 1,
@@ -50,6 +50,24 @@
       }
     },
     {
+      "type": "shadowsocks",
+      "tag": "ss-over-stl-ok",
+      "server": "127.0.0.1",
+      "server_port": 12082,
+      "method": "aes-256-gcm",
+      "password": "interop-password",
+      "detour": "stl-wrap-ok"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-over-stl-strict",
+      "server": "127.0.0.1",
+      "server_port": 12082,
+      "method": "aes-256-gcm",
+      "password": "interop-password",
+      "detour": "stl-wrap-strict"
+    },
+    {
       "type": "direct",
       "tag": "direct"
     }
@@ -60,13 +78,13 @@
         "port": [
           18102
         ],
-        "outbound": "stl-strict"
+        "outbound": "ss-over-stl-strict"
       },
       {
         "port": [
           18101
         ],
-        "outbound": "stl-ok"
+        "outbound": "ss-over-stl-ok"
       }
     ],
     "final": "direct"

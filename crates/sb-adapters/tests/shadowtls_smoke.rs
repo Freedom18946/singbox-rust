@@ -26,5 +26,7 @@ async fn shadowtls_standalone_leaf_dial_is_rejected() {
         Ok(_) => panic!("shadowtls standalone leaf dial should fail"),
         Err(err) => err,
     };
-    assert!(err.to_string().contains("standalone leaf dialing is disabled"));
+    assert!(err
+        .to_string()
+        .contains("standalone leaf dialing is disabled"));
 }

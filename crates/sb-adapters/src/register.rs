@@ -121,6 +121,31 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
     }
 }
 
+#[cfg(feature = "adapter-shadowtls")]
+#[derive(Debug)]
+struct ShadowTlsDetourBridge {
+    inner: Arc<crate::outbound::shadowtls::ShadowTlsConnector>,
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+#[async_trait::async_trait]
+impl OutboundConnector for ShadowTlsDetourBridge {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::other(format!(
+            "shadowtls adapter uses wrapped stream for {host}:{port}; use connect_io() instead"
+        )))
+    }
+
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
+        let boxed_stream = self
+            .inner
+            .connect_detour_stream(host, port)
+            .await
+            .map_err(|e| std::io::Error::other(format!("shadowtls dial failed: {e}")))?;
+        Ok(Box::new(BoxedStreamAdapter(boxed_stream)))
+    }
+}
+
 #[derive(Debug)]
 struct InvalidConfigConnector {
     protocol: &'static str,
@@ -257,157 +282,157 @@ impl tokio::io::AsyncWrite for BoxedStreamAdapter {
 static REGISTER_ONCE: Once = Once::new();
 
 fn populate_default_registry(snapshot: &mut registry::RegistrySnapshot) {
-        #[cfg(feature = "adapter-http")]
-        {
-            let _ = snapshot.register_outbound("http", build_http_outbound);
-        }
-        #[cfg(feature = "adapter-socks")]
-        {
-            let _ = snapshot.register_outbound("socks", build_socks_outbound);
-            let _ = snapshot.register_outbound("socks4", build_socks4_outbound);
-        }
-        #[cfg(feature = "adapter-shadowsocks")]
-        {
-            let _ = snapshot.register_outbound("shadowsocks", build_shadowsocks_outbound);
-            let _ = snapshot.register_outbound("shadowsocksr", build_shadowsocksr_outbound);
-        }
-        #[cfg(feature = "adapter-trojan")]
-        {
-            let _ = snapshot.register_outbound("trojan", build_trojan_outbound);
-        }
-        #[cfg(feature = "adapter-vmess")]
-        {
-            let _ = snapshot.register_outbound("vmess", build_vmess_outbound);
-        }
-        #[cfg(feature = "adapter-vless")]
-        {
-            let _ = snapshot.register_outbound("vless", build_vless_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("direct", build_direct_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("block", build_block_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("dns", build_dns_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("tor", build_tor_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("anytls", build_anytls_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("wireguard", build_wireguard_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("tailscale", build_tailscale_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("hysteria", build_hysteria_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("tuic", build_tuic_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("hysteria2", build_hysteria2_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("ssh", build_ssh_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("shadowtls", build_shadowtls_outbound);
-        }
-        // Selector group outbounds (core functionality, always available)
-        {
-            let _ = snapshot.register_outbound("selector", build_selector_outbound);
-        }
-        {
-            let _ = snapshot.register_outbound("urltest", build_urltest_outbound);
-        }
+    #[cfg(feature = "adapter-http")]
+    {
+        let _ = snapshot.register_outbound("http", build_http_outbound);
+    }
+    #[cfg(feature = "adapter-socks")]
+    {
+        let _ = snapshot.register_outbound("socks", build_socks_outbound);
+        let _ = snapshot.register_outbound("socks4", build_socks4_outbound);
+    }
+    #[cfg(feature = "adapter-shadowsocks")]
+    {
+        let _ = snapshot.register_outbound("shadowsocks", build_shadowsocks_outbound);
+        let _ = snapshot.register_outbound("shadowsocksr", build_shadowsocksr_outbound);
+    }
+    #[cfg(feature = "adapter-trojan")]
+    {
+        let _ = snapshot.register_outbound("trojan", build_trojan_outbound);
+    }
+    #[cfg(feature = "adapter-vmess")]
+    {
+        let _ = snapshot.register_outbound("vmess", build_vmess_outbound);
+    }
+    #[cfg(feature = "adapter-vless")]
+    {
+        let _ = snapshot.register_outbound("vless", build_vless_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("direct", build_direct_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("block", build_block_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("dns", build_dns_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("tor", build_tor_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("anytls", build_anytls_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("wireguard", build_wireguard_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("tailscale", build_tailscale_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("hysteria", build_hysteria_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("tuic", build_tuic_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("hysteria2", build_hysteria2_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("ssh", build_ssh_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("shadowtls", build_shadowtls_outbound);
+    }
+    // Selector group outbounds (core functionality, always available)
+    {
+        let _ = snapshot.register_outbound("selector", build_selector_outbound);
+    }
+    {
+        let _ = snapshot.register_outbound("urltest", build_urltest_outbound);
+    }
 
-        #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("http", build_http_inbound);
-        }
+    #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("http", build_http_inbound);
+    }
 
-        #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("socks", build_socks_inbound);
-        }
+    #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("socks", build_socks_inbound);
+    }
 
-        #[cfg(all(
-            feature = "adapter-http",
-            feature = "adapter-socks",
-            feature = "mixed",
-            feature = "router"
-        ))]
-        {
-            let _ = snapshot.register_inbound("mixed", build_mixed_inbound);
-        }
+    #[cfg(all(
+        feature = "adapter-http",
+        feature = "adapter-socks",
+        feature = "mixed",
+        feature = "router"
+    ))]
+    {
+        let _ = snapshot.register_inbound("mixed", build_mixed_inbound);
+    }
 
-        #[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("shadowsocks", build_shadowsocks_inbound);
-        }
+    #[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("shadowsocks", build_shadowsocks_inbound);
+    }
 
-        #[cfg(all(feature = "adapter-vmess", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("vmess", build_vmess_inbound);
-        }
+    #[cfg(all(feature = "adapter-vmess", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("vmess", build_vmess_inbound);
+    }
 
-        #[cfg(all(feature = "adapter-vless", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("vless", build_vless_inbound);
-        }
-        #[cfg(all(feature = "adapter-trojan", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("trojan", build_trojan_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("naive", build_naive_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("shadowtls", build_shadowtls_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("hysteria", build_hysteria_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("hysteria2", build_hysteria2_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("tuic", build_tuic_inbound);
-        }
-        {
-            let _ = snapshot.register_inbound("anytls", build_anytls_inbound);
-        }
-        #[cfg(feature = "router")]
-        {
-            let _ = snapshot.register_inbound("direct", build_direct_inbound);
-        }
+    #[cfg(all(feature = "adapter-vless", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("vless", build_vless_inbound);
+    }
+    #[cfg(all(feature = "adapter-trojan", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("trojan", build_trojan_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("naive", build_naive_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("shadowtls", build_shadowtls_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("hysteria", build_hysteria_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("hysteria2", build_hysteria2_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("tuic", build_tuic_inbound);
+    }
+    {
+        let _ = snapshot.register_inbound("anytls", build_anytls_inbound);
+    }
+    #[cfg(feature = "router")]
+    {
+        let _ = snapshot.register_inbound("direct", build_direct_inbound);
+    }
 
-        #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("tun", build_tun_inbound);
-        }
+    #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("tun", build_tun_inbound);
+    }
 
-        #[cfg(all(target_os = "linux", feature = "router"))]
-        {
-            let _ = snapshot.register_inbound("redirect", build_redirect_inbound);
-            let _ = snapshot.register_inbound("tproxy", build_tproxy_inbound);
-        }
+    #[cfg(all(target_os = "linux", feature = "router"))]
+    {
+        let _ = snapshot.register_inbound("redirect", build_redirect_inbound);
+        let _ = snapshot.register_inbound("tproxy", build_tproxy_inbound);
+    }
 
-        #[cfg(feature = "dns")]
-        {
-            let _ = snapshot.register_inbound("dns", build_dns_inbound);
-        }
+    #[cfg(feature = "dns")]
+    {
+        let _ = snapshot.register_inbound("dns", build_dns_inbound);
+    }
 
-        #[cfg(feature = "ssh")]
-        {
-            let _ = snapshot.register_inbound("ssh", build_ssh_inbound);
-        }
+    #[cfg(feature = "ssh")]
+    {
+        let _ = snapshot.register_inbound("ssh", build_ssh_inbound);
+    }
 }
 
 /// Build the default adapter registry snapshot for product startup paths.
@@ -873,6 +898,7 @@ fn build_shadowsocks_outbound(
         method,
         password,
         connect_timeout_sec: ir.connect_timeout_sec.map(|s| s as u64),
+        detour: ir.detour.clone(),
         multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
     };
 
@@ -998,6 +1024,7 @@ fn build_trojan_outbound(
             })
         }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        detour: ir.detour.clone(),
         transport_layer,
         #[cfg(feature = "tls_reality")]
         reality: build_reality_client_config(ir, server),
@@ -1756,8 +1783,10 @@ fn build_shadowtls_inbound(
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-shadowtls")]
     {
-        use crate::inbound::shadowtls::ShadowTlsInboundConfig;
-        use sb_transport::tls::StandardTlsConfig;
+        use crate::inbound::shadowtls::{
+            ShadowTlsHandshakeConfig, ShadowTlsInboundConfig, ShadowTlsUser,
+            ShadowTlsWildcardSniMode,
+        };
 
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
@@ -1772,44 +1801,96 @@ fn build_shadowtls_inbound(
             }
         };
 
-        // Get TLS certificate and key (required for ShadowTLS)
-        let (cert_pem, cert_path) = match (&param.tls_cert_pem, &param.tls_cert_path) {
-            (Some(pem), _) => (Some(pem.clone()), None),
-            (None, Some(path)) => (None, Some(path.clone())),
-            (None, None) => {
-                warn!("ShadowTLS inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+        let detour = match param.detour.as_ref().filter(|tag| !tag.is_empty()) {
+            Some(tag) => tag.clone(),
+            None => {
+                warn!("ShadowTLS inbound requires detour to a chained inbound");
                 return None;
             }
         };
 
-        let (key_pem, key_path) = match (&param.tls_key_pem, &param.tls_key_path) {
-            (Some(pem), _) => (Some(pem.clone()), None),
-            (None, Some(path)) => (None, Some(path.clone())),
-            (None, None) => {
-                warn!("ShadowTLS inbound requires TLS private key (tls_key_pem or tls_key_path)");
-                return None;
+        let version = param.shadowtls_version.unwrap_or(1);
+        if !(1..=3).contains(&version) {
+            warn!("ShadowTLS inbound version {version} is unsupported");
+            return None;
+        }
+
+        let users = match param.users_shadowtls.as_deref() {
+            Some(raw) => match serde_json::from_str::<Vec<ShadowTlsUser>>(raw) {
+                Ok(users) => users,
+                Err(err) => {
+                    warn!("Failed to parse ShadowTLS users: {err}");
+                    return None;
+                }
+            },
+            None => Vec::new(),
+        };
+
+        let handshake = match param.shadowtls_handshake.as_deref() {
+            Some(raw) => match serde_json::from_str::<ShadowTlsHandshakeConfig>(raw) {
+                Ok(cfg) => Some(cfg),
+                Err(err) => {
+                    warn!("Failed to parse ShadowTLS handshake target: {err}");
+                    return None;
+                }
+            },
+            None => None,
+        };
+
+        let handshake_for_server_name = match param.shadowtls_handshake_for_server_name.as_deref() {
+            Some(raw) => {
+                match serde_json::from_str::<
+                    std::collections::HashMap<String, ShadowTlsHandshakeConfig>,
+                >(raw)
+                {
+                    Ok(cfg) => cfg,
+                    Err(err) => {
+                        warn!("Failed to parse ShadowTLS handshake overrides: {err}");
+                        return None;
+                    }
+                }
             }
+            None => std::collections::HashMap::new(),
         };
 
-        // Create TLS configuration using sb-transport infrastructure
-        let alpn = param.tls_alpn.clone().unwrap_or_default();
-        let standard_tls = StandardTlsConfig {
-            server_name: param.tls_server_name.clone(),
-            alpn,
-            insecure: false,
-            cert_path,
-            key_path,
-            cert_pem,
-            key_pem,
-        };
+        if version == 2
+            && param
+                .password
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .is_none()
+        {
+            warn!("ShadowTLS inbound v2 requires password");
+            return None;
+        }
 
-        let tls = sb_transport::TlsConfig::Standard(standard_tls);
+        if version == 3 && users.is_empty() {
+            warn!("ShadowTLS inbound v3 requires users");
+            return None;
+        }
+
+        let wildcard_sni =
+            match ShadowTlsWildcardSniMode::parse(param.shadowtls_wildcard_sni.as_deref()) {
+                Ok(mode) => mode,
+                Err(err) => {
+                    warn!("{err}");
+                    return None;
+                }
+            };
 
         let config = ShadowTlsInboundConfig {
             listen,
-            tls,
-            router: ctx.router.clone(),
+            detour,
+            version,
+            password: param.password.clone(),
+            users,
+            handshake,
+            handshake_for_server_name,
+            strict_mode: param.shadowtls_strict_mode.unwrap_or(false),
+            wildcard_sni,
             tag: param.tag.clone(),
+            tls: None,
+            router: Some(ctx.router.clone()),
             stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         };
 
@@ -2827,7 +2908,11 @@ fn build_shadowtls_outbound(
 ) -> OutboundBuilderResult {
     use crate::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
 
-    let outbound_name = ir.name.as_deref().or(param.name.as_deref()).unwrap_or("shadowtls");
+    let outbound_name = ir
+        .name
+        .as_deref()
+        .or(param.name.as_deref())
+        .unwrap_or("shadowtls");
 
     // Extract required fields
     let server = match ir.server.as_ref().or(param.server.as_ref()) {
@@ -2842,7 +2927,12 @@ fn build_shadowtls_outbound(
         }
     };
     let port = ir.port.or(param.port).unwrap_or(443);
-    let password = match ir.password.as_ref().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+    let password = match ir
+        .password
+        .as_ref()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+    {
         Some(password) => password.to_string(),
         None => {
             let reason = invalid_outbound_config_reason(
@@ -2888,9 +2978,8 @@ fn build_shadowtls_outbound(
     let connector = ShadowTlsConnector::new(cfg);
     let connector_arc = Arc::new(connector);
 
-    let bridge = AdapterIoBridge {
+    let bridge = ShadowTlsDetourBridge {
         inner: connector_arc,
-        name: "shadowtls",
     };
 
     // ShadowTLS only supports TCP, no UDP factory
@@ -3239,6 +3328,90 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[cfg(feature = "adapter-shadowtls")]
+    async fn test_shadowtls_outbound_registration_connect_io_only_for_configured_server() {
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+        use tokio_rustls::TlsAcceptor;
+
+        fn generate_cert() -> (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>) {
+            let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+            let key = cert.key_pair.serialize_der();
+            let cert = cert.cert.der().to_vec();
+            (
+                vec![CertificateDer::from(cert)],
+                PrivateKeyDer::try_from(key).unwrap(),
+            )
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let (certs, key) = generate_cert();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap();
+        let acceptor = TlsAcceptor::from(std::sync::Arc::new(server_config));
+
+        let server_task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut tls_stream = acceptor.accept(stream).await.unwrap();
+            let mut buf = [0u8; 4];
+            tls_stream.read_exact(&mut buf).await.unwrap();
+            tls_stream.write_all(&buf).await.unwrap();
+        });
+
+        let ir = OutboundIR {
+            ty: OutboundType::Shadowtls,
+            server: Some("127.0.0.1".to_string()),
+            port: Some(server_addr.port()),
+            password: Some("interop-password".to_string()),
+            version: Some(1),
+            tls_sni: Some("localhost".to_string()),
+            tls_alpn: Some(vec!["http/1.1".to_string()]),
+            skip_cert_verify: Some(true),
+            ..Default::default()
+        };
+
+        let param = OutboundParam {
+            kind: "shadowtls".into(),
+            name: Some("shadowtls_test".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let (connector, _) = build_shadowtls_outbound(&param, &ir, &ctx)
+            .expect("shadowtls bridge should be constructed");
+
+        let mut stream = connector
+            .connect_io("127.0.0.1", server_addr.port())
+            .await
+            .expect("configured server should be allowed for detour bridge");
+        stream.write_all(b"ping").await.unwrap();
+        let mut buf = [0u8; 4];
+        stream.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"ping");
+
+        let err = match connector.connect_io("198.51.100.10", 443).await {
+            Ok(_) => panic!("non-wrapper target should be rejected"),
+            Err(err) => err,
+        };
+        assert!(err
+            .to_string()
+            .contains("only supports the configured server"));
+
+        server_task.await.unwrap();
+    }
+
     #[test]
     #[cfg(feature = "adapter-shadowtls")]
     fn test_shadowtls_outbound_registration_requires_password() {
@@ -3270,7 +3443,9 @@ mod tests {
 
         let err = futures::executor::block_on(connector.connect("example.com", 443))
             .expect_err("invalid shadowtls config should be rejected");
-        assert!(err.to_string().contains("missing required field 'password'"));
+        assert!(err
+            .to_string()
+            .contains("missing required field 'password'"));
     }
 }
 

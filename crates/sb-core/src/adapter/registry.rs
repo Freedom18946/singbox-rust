@@ -81,6 +81,25 @@ static INBOUND_REG: Lazy<RwLock<HashMap<&'static str, InboundBuilder>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static OUTBOUND_REG: Lazy<RwLock<HashMap<&'static str, OutboundBuilder>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+static RUNTIME_INBOUNDS: Lazy<RwLock<Option<Arc<InboundRegistryHandle>>>> =
+    Lazy::new(|| RwLock::new(None));
+static RUNTIME_OUTBOUNDS: Lazy<RwLock<Option<Arc<OutboundRegistryHandle>>>> =
+    Lazy::new(|| RwLock::new(None));
+
+#[derive(Clone, Debug, Default)]
+pub struct InboundRegistryHandle {
+    inner: HashMap<String, Arc<dyn InboundService>>,
+}
+
+impl InboundRegistryHandle {
+    pub fn new(inner: HashMap<String, Arc<dyn InboundService>>) -> Self {
+        Self { inner }
+    }
+
+    pub fn get(&self, tag: &str) -> Option<Arc<dyn InboundService>> {
+        self.inner.get(tag).cloned()
+    }
+}
 
 /// Register an inbound builder for a kind key (e.g., "socks", "http", "tun").
 /// Returns false if a builder for this kind already exists.
@@ -115,6 +134,30 @@ pub fn get_inbound(kind: &str) -> Option<InboundBuilder> {
 pub fn get_outbound(kind: &str) -> Option<OutboundBuilder> {
     let g = OUTBOUND_REG.read().unwrap();
     g.get(kind).copied()
+}
+
+/// Install the current runtime outbound registry handle for late-bound detours.
+pub fn install_runtime_outbounds(handle: Arc<OutboundRegistryHandle>) {
+    let mut g = RUNTIME_OUTBOUNDS.write().unwrap();
+    *g = Some(handle);
+}
+
+/// Install the current runtime inbound registry handle for late-bound detours.
+pub fn install_runtime_inbounds(handle: Arc<InboundRegistryHandle>) {
+    let mut g = RUNTIME_INBOUNDS.write().unwrap();
+    *g = Some(handle);
+}
+
+/// Retrieve the current runtime inbound registry handle, if installed.
+pub fn runtime_inbounds() -> Option<Arc<InboundRegistryHandle>> {
+    let g = RUNTIME_INBOUNDS.read().unwrap();
+    g.clone()
+}
+
+/// Retrieve the current runtime outbound registry handle, if installed.
+pub fn runtime_outbounds() -> Option<Arc<OutboundRegistryHandle>> {
+    let g = RUNTIME_OUTBOUNDS.read().unwrap();
+    g.clone()
 }
 
 /// List all registered outbound kinds (for testing).

@@ -84,8 +84,8 @@
 - 当前执行顺序固定为：
   1. 隔离/修复 `workspace_test -> bench_outputs_json`
   2. 完成 `daily-host-gui` 的完整可复跑收口
-  3. 进入 `trojan/shadowsocks` 双核本地模拟公网 parity 收口
-  4. 将 `shadowtls` 作为单独 backlog（先补真实 e2e，再谈双核）
+  3. 保持 `trojan/shadowsocks` 为已收口状态，不再扩面直到出现新审议要求
+  4. `shadowtls` 继续只盯剩余单点：v3 outbound client-auth / session-id hook
 - 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
 - 当前入口：`agents-only/planning/L18-PHASE4.md`
 

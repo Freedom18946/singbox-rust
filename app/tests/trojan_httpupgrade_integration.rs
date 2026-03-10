@@ -30,6 +30,7 @@ async fn test_trojan_httpupgrade_config_creation() {
         transport_layer: TransportConfig::HttpUpgrade(httpupgrade_config),
         reality: None,
         multiplex: None,
+        detour: None,
     };
 
     assert_eq!(config.server, server_addr);
@@ -57,6 +58,7 @@ async fn test_trojan_httpupgrade_with_multiplex() {
         }),
         reality: None,
         multiplex: Some(sb_transport::multiplex::MultiplexConfig::default()),
+        detour: None,
     };
 
     let connector = TrojanConnector::new(config);
@@ -84,6 +86,7 @@ async fn test_trojan_httpupgrade_path_variants() {
             }),
             reality: None,
             multiplex: None,
+            detour: None,
         };
 
         let connector = TrojanConnector::new(config);
@@ -107,6 +110,7 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
+        detour: None,
     };
 
     // HTTPUpgrade configuration
@@ -124,6 +128,7 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         }),
         reality: None,
         multiplex: None,
+        detour: None,
     };
 
     let tcp_connector = TrojanConnector::new(tcp_config);

@@ -26,25 +26,45 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
 - ShadowTLS: partial.
   - The previous Rust adapter/test path was validating a legacy `TLS + HTTP CONNECT` tunnel model, not sing-box ShadowTLS semantics.
   - As of 2026-03-10, standalone leaf dialing is intentionally blocked by `crates/sb-adapters/tests/shadowtls_e2e.rs` so the legacy model stops contaminating parity claims.
-  - As of 2026-03-11, the IR/validator/builder path now models `shadowtls.password`, `shadowtls.version`, and generic outbound `detour`, so the config surface is aligned with the upcoming transport-wrapper remodel instead of the legacy tunnel shortcut.
+  - As of 2026-03-11, the IR/validator/builder path models `shadowtls.password`, `shadowtls.version`, and generic outbound `detour`, and the runtime path now supports the minimum real `version = 1` wrapper behavior: perform a TLS 1.2 camouflage handshake, then hand the raw TCP stream back to the chained outbound.
   - Verified on 2026-03-11 with:
     - `cargo test -p sb-config shadowtls_validation_reports_missing_password_and_bad_version -- --nocapture`
     - `cargo test -p sb-config outbound_ir_deserializes_detour_and_shadowtls_version -- --nocapture`
+    - `cargo test -p sb-config inbound_ir_deserializes_shadowtls_runtime_fields -- --nocapture`
     - `cargo test -p sb-adapters --test shadowtls_e2e --features adapter-shadowtls -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-shadowtls,adapter-shadowsocks shadowtls_ -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-shadowtls,adapter-shadowsocks --test shadowtls_inbound_e2e -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-trojan detour_ --lib -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-trojan trojan_config_ --test trojan_integration -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-shadowsocks --test shadowsocks_integration -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-shadowsocks shadowsocks_ --lib -- --nocapture`
+    - `cargo test -p sb-adapters --features adapter-shadowtls,adapter-shadowsocks --test shadowtls_e2e -- --nocapture`
+    - `cargo test -p app --features adapters --test shadowtls_detour_chain_app -- --nocapture`
     - `cargo build -p interop-lab`
-  - The current Rust `shadowtls` adapter remains registrable, but runtime use is now explicitly outside parity scope until transport-wrapper chaining is implemented.
-  - Dual-kernel Go/Rust parity is still not established.
+    - `cargo check -p app --features adapters --tests`
+    - `cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local --kernel rust`
+    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-11214/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local --kernel go`
+    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-11214/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local`
+  - The current Rust `shadowtls` adapter remains registrable, with parity evidence now limited to the detour-only `version = 1` wrapper path. Standalone leaf dialing remains intentionally out of scope.
+  - Minimum dual-kernel Go/Rust parity is now established for the local `Shadowsocks -> detour=ShadowTLS(v1)` wrapper-chain case.
   - New local dual-kernel case exists:
     - `labs/interop-lab/cases/p2_shadowtls_dual_dataplane_local.yaml`
-  - Fresh dual-kernel gap observed on run `20260310T152408Z-10dee6a6-abba-4a6e-a319-c7540aee4339`:
-    - Rust: `stl_tcp_ok=true`, `stl_tcp_strict_cert=false`
-    - Go: `stl_tcp_ok=false`, `stl_tcp_strict_cert=false`
-    - Diff report: `labs/interop-lab/artifacts/manual_protocols/p2_shadowtls_dual_dataplane_local/20260310T152408Z-10dee6a6-abba-4a6e-a319-c7540aee4339/diff.md`
-  - Current diagnosis:
-    - Go oracle accepted the `shadowtls` config and routed traffic into `outbound/shadowtls[stl-ok]`.
-    - Rust managed `shadowtls` inbound logged protocol-level failures for the Go positive path (`InvalidContentType` / TLS alert path), so this is not just a route miss.
-    - The mismatch looks structural, not incidental: current Rust `shadowtls` code is a TLS + HTTP CONNECT tunnel, while Go `sing-box` documents `version/password/users/handshake` semantics for ShadowTLS.
-    - More specifically, Go `protocol/shadowtls/outbound.go` ignores the requested destination and returns `client.DialContext(ctx)`, while current Rust `outbound/shadowtls.rs` serializes `CONNECT host:port HTTP/1.1` to the server. The present local direct-tunnel case is therefore a divergence probe, not a final semantically-correct parity target.
+  - Historical gap note:
+    - earlier runs `20260310T174026Z-46036dbc-e5b3-4e68-a052-e7496ed7fefb` and `20260310T174553Z-55d226bb-1118-4631-b4e2-37cd6ebc540e` failed the Go positive path with `unexpected EOF`, which turned out to be caused by a wrong Rust-side model that terminated TLS and forwarded plaintext instead of emulating ShadowTLS v1 handshake-only wrapping.
+  - Current v1 wrapper-chain evidence on 2026-03-11:
+    - `crates/sb-adapters/src/outbound/shadowtls.rs` now performs a TLS 1.2 handshake for camouflage and returns the raw stream for `version = 1`,
+    - `labs/interop-lab/src/upstream.rs` now models the server side as `TLS record relay for handshake -> raw TCP relay for payload`, instead of TLS termination,
+    - Rust-only run `20260310T175904Z-9e2ab106-0ad1-4b4f-8f2d-86ea9b0e47ba` passed with `stl_tcp_ok=true`, `stl_tcp_strict_cert=false`, `errors.count=0`,
+    - Go-only run `20260310T180019Z-c0f1a5a0-cb3f-4073-b8ce-b3a33892c8c7` passed with the same outcome against a freshly rebuilt oracle from `go_fork_source/sing-box-1.12.14`,
+    - combined dual-kernel run `20260310T180117Z-a452c721-28f9-452d-954f-ceffe0e4e3e6` produced matching Rust/Go snapshots for both the positive path and the strict-cert negative path.
+  - Additional runtime/config progress on 2026-03-11:
+    - `crates/sb-adapters/src/outbound/shadowtls.rs` now supports outbound `version = 2` in detour mode by preserving the handshake hash prefix and switching the returned stream to ShadowTLS v2 application-data framing after TLS camouflage,
+    - `crates/sb-adapters/tests/shadowtls_e2e.rs` now covers direct v2 echo and `Shadowsocks -> detour=ShadowTLS(v2)` dial success,
+    - inbound-side `detour`, `users/handshake/strict_mode/wildcard_sni` fields now deserialize through IR/bridge into a real ShadowTLS inbound runtime instead of being dropped or force-routed into the legacy TLS+CONNECT implementation,
+    - `crates/sb-core/src/adapter/registry.rs` and `crates/sb-core/src/adapter/bridge.rs` now install a runtime inbound handle as well, so ShadowTLS inbound can late-bind its chained consumer by tag,
+    - the first real inbound consumer is `ShadowsocksInboundAdapter::accept_detour_stream()`, and `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` proves `Shadowsocks(out) -> detour=ShadowTLS(v2 out) -> ShadowTLS(v2 in) -> Shadowsocks(in) -> echo`,
+    - adapter-local unit coverage now also locks `version = 3` handshake target selection for `handshake_for_server_name` and `wildcard_sni`,
+    - outbound `version = 3` still remains explicitly unsupported because the current Rust TLS stack does not expose the session-id hook ShadowTLS v3 client auth needs.
 
 ## Batch 1: Trojan dual-kernel closeout
 
@@ -69,20 +89,34 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
 - What is now covered:
   - standalone `shadowtls` leaf dialing is rejected with a stable error,
   - rejection happens before any network handshake or misleading "success" path.
-- Remaining follow-up before any parity claim:
-  - redesign Rust ShadowTLS as a transport wrapper/detour instead of a destination-carrying leaf connector,
-  - finish the runtime half of the new config model so `detour`-capable leaf outbounds can actually dial over ShadowTLS,
-  - add the remaining Go-compatible `users/handshake/strict_mode/wildcard_sni` semantics,
-  - either rebuild `interop-lab` around a semantically correct wrapper case or add a dedicated compatibility harness that proves the Go outbound path against the remodeled Rust server,
-  - only after that, rerun the ShadowTLS dual-kernel case and decide whether to extend to more TLS/SNI variants.
+- Follow-up only if we later reshape the runtime again:
+  - keep the guardrail aligned with the detour-only wrapper model,
+  - avoid reintroducing the old standalone `TLS + HTTP CONNECT` claim surface.
 
 ## Batch 4: ShadowTLS runtime remodel
 
-- Status: next.
+- Status: bounded scope done; overall protocol status remains `partial`.
 - Minimum executable target:
   - teach leaf outbounds to honor outbound `detour`,
   - let ShadowTLS provide a transport stream instead of serializing destination metadata itself,
   - re-run the existing divergence probe only after the wrapper chain is live.
+- Done on 2026-03-11:
+  - installed a runtime outbound-registry handle in `sb-core::adapter::registry` so adapter outbounds can resolve `detour` late instead of depending on build order,
+  - added `sb-adapters::outbound::detour::connect_tcp_stream()` as the shared TCP underlay helper,
+  - switched Trojan to carry `detour` in config and honor it for plain-TCP underlay dialing,
+  - switched Shadowsocks to carry `detour` in config and reuse the same helper for non-multiplex TCP tunnel dialing,
+  - explicitly kept the boundary narrow: Shadowsocks detour currently rejects UDP relay and `multiplex` instead of silently bypassing the wrapper path,
+  - remodeled ShadowTLS outbound so standalone leaf dialing is still rejected, while detour-mode `connect_io()` now performs the Go-compatible `version = 1` TLS 1.2 camouflage handshake and then yields the raw transport stream,
+  - extended that outbound runtime to `version = 2` as well, using a post-handshake ShadowTLS v2 record bridge for the returned detour stream,
+  - validated that wrapper path with a real chained consumer: `Shadowsocks -> detour=ShadowTLS(v1)` now completes a mock Shadowsocks handshake through a ShadowTLS v1 raw relay,
+  - added adapter-level coverage that `Shadowsocks -> detour=ShadowTLS(v2)` also dials successfully through a ShadowTLS v2 relay,
+  - added an app-level config/runtime proof for the same chain: `build_bridge -> runtime_outbounds().connect_io()` now carries `Shadowsocks -> detour=ShadowTLS(v1)` through a real Shadowsocks inbound and echo target using the same handshake-only relay semantics,
+  - rebuilt the `interop-lab` ShadowTLS case around the same wrapper-chain semantics, added a dedicated handshake server to the topology, and verified matching Rust/Go outcomes in dual-kernel run `20260310T180117Z-a452c721-28f9-452d-954f-ceffe0e4e3e6`,
+  - extended the remodel to inbound detour mode as well: runtime inbound late binding now exists, ShadowTLS inbound `version = 2` can unwrap into a chained Shadowsocks inbound, and `version = 3` now carries the Go-compatible server-side config surface (`users`, `handshake`, `handshake_for_server_name`, `strict_mode`, `wildcard_sni`) even though client-side v3 outbound remains blocked on the TLS session-id hook.
+- Remaining for actual ShadowTLS parity:
+  - finish executable v3 parity by teaching Rust ShadowTLS outbound to generate the authenticated TLS session id that Go v3 uses for client auth,
+  - add a real end-to-end/interoperability proof for `ShadowTLS(v3 out) -> ShadowTLS(v3 in)` once that client-side hook exists, including `strict_mode` fallback and `wildcard_sni` branches,
+  - extend the same detour helper path to the next wrapper consumers only if the final ShadowTLS chain needs more than Trojan and Shadowsocks plain TCP.
 
 ## Rules for evidence updates
 

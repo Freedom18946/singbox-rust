@@ -46,6 +46,9 @@ pub struct ShadowsocksConfig {
     /// 连接超时（秒）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
+    /// Optional outbound detour tag for the TCP underlay.
+    #[serde(default)]
+    pub detour: Option<String>,
     /// Multiplex configuration
     /// 多路复用配置
     #[serde(default)]
@@ -165,6 +168,7 @@ impl ShadowsocksConnector {
             method: method.into(),
             password: password.into(),
             connect_timeout_sec: Some(30),
+            detour: None,
             multiplex: None,
         };
         Self::new(config)
@@ -186,6 +190,12 @@ impl ShadowsocksConnector {
                 method = %self.config.method,
                 "Creating Shadowsocks UDP relay"
             );
+
+            if self.config.detour.is_some() {
+                return Err(AdapterError::Protocol(
+                    "Shadowsocks detour currently supports TCP tunnel dialing only".to_string(),
+                ));
+            }
 
             // Parse server address
             // 解析服务器地址
@@ -234,6 +244,7 @@ impl Default for ShadowsocksConnector {
             method: "aes-256-gcm".to_string(),
             password: "default-password".to_string(),
             connect_timeout_sec: Some(30),
+            detour: None,
             multiplex: None,
         };
         Self::new(config.clone()).unwrap_or_else(|_| Self {
@@ -287,6 +298,12 @@ impl OutboundConnector for ShadowsocksConnector {
             let target_for_log = format!("{}:{}", target.host, target.port);
 
             let dial_result = async {
+                if self.config.detour.is_some() && self.multiplex_dialer.is_some() {
+                    return Err(AdapterError::Protocol(
+                        "Shadowsocks detour currently does not support multiplex".to_string(),
+                    ));
+                }
+
                 // Parse server address
                 // 解析服务器地址
                 let server_addr: SocketAddr = self
@@ -322,19 +339,13 @@ impl OutboundConnector for ShadowsocksConnector {
                     let timeout = std::time::Duration::from_secs(
                         self.config.connect_timeout_sec.unwrap_or(30),
                     );
-                    let tcp_stream = tokio::time::timeout(timeout, TcpStream::connect(server_addr))
-                        .await
-                        .with_context(|| {
-                            format!("Failed to connect to Shadowsocks server {}", server_addr)
-                        })
-                        .map_err(|e| AdapterError::Other(e.to_string()))?
-                        .with_context(|| {
-                            format!(
-                                "TCP connection to Shadowsocks server {} failed",
-                                server_addr
-                            )
-                        })
-                        .map_err(|e| AdapterError::Other(e.to_string()))?;
+                    let tcp_stream = crate::outbound::detour::connect_tcp_stream(
+                        &server_addr.ip().to_string(),
+                        server_addr.port(),
+                        self.config.detour.as_deref(),
+                        timeout,
+                    )
+                    .await?;
 
                     let mut tunnel: BoxedStream = Box::new(
                         ShadowsocksTunnelStream::connect(
@@ -588,30 +599,26 @@ struct ShadowsocksTunnelStream {
 
 #[cfg(feature = "adapter-shadowsocks")]
 impl ShadowsocksTunnelStream {
-    async fn connect(
-        mut tcp_stream: TcpStream,
-        cipher: CipherMethod,
-        master_key: Vec<u8>,
-    ) -> Result<Self> {
+    async fn connect<S>(mut stream: S, cipher: CipherMethod, master_key: Vec<u8>) -> Result<Self>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
         let salt_len = cipher.salt_len();
 
         // Client salt + subkey (client -> server)
         let mut csalt = vec![0u8; salt_len];
         rand::thread_rng().fill_bytes(&mut csalt);
-        tcp_stream
-            .write_all(&csalt)
-            .await
-            .map_err(AdapterError::Io)?;
+        stream.write_all(&csalt).await.map_err(AdapterError::Io)?;
         let c_subkey = hkdf_subkey(&master_key, &csalt, cipher.key_size())?;
 
         // Write one empty chunk to ensure the server proceeds and sends back server salt.
         let mut wnonce = 0u64;
-        write_aead_chunk(&cipher, &c_subkey, &mut wnonce, &mut tcp_stream, &[]).await?;
+        write_aead_chunk(&cipher, &c_subkey, &mut wnonce, &mut stream, &[]).await?;
         debug_assert_eq!(wnonce, 2);
 
         // Server salt + subkey (server -> client)
         let mut ssalt = vec![0u8; salt_len];
-        tcp_stream
+        stream
             .read_exact(&mut ssalt)
             .await
             .map_err(AdapterError::Io)?;
@@ -619,7 +626,7 @@ impl ShadowsocksTunnelStream {
 
         let (clear_local, clear_remote) = tokio::io::duplex(65536);
         let (mut clear_r, mut clear_w) = tokio::io::split(clear_remote);
-        let (mut tcp_r, mut tcp_w) = tokio::io::split(tcp_stream);
+        let (mut tcp_r, mut tcp_w) = tokio::io::split(stream);
 
         let cipher_read = cipher.clone();
         let key_read = s_subkey.clone();
@@ -1031,6 +1038,7 @@ mod tests {
             method: "aes-256-gcm".to_string(),
             password: "test-password".to_string(),
             connect_timeout_sec: Some(30),
+            detour: None,
             multiplex: None,
         };
 

@@ -8,12 +8,44 @@
 //! - Connector construction
 //! - Outbound dial mechanics
 
+use async_trait::async_trait;
 use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
+use sb_core::adapter::OutboundConnector as CoreOutboundConnector;
+use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use std::io::ErrorKind;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+
+#[derive(Debug)]
+struct MockIoConnector;
+
+#[async_trait]
+impl CoreOutboundConnector for MockIoConnector {
+    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::other(
+            "connect() should not be used in detour test",
+        ))
+    }
+
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
+        let stream = tokio::net::TcpStream::connect((host, port)).await?;
+        Ok(Box::new(stream))
+    }
+}
+
+fn install_mock_runtime_outbounds() {
+    let mut reg = OutboundRegistry::default();
+    reg.insert(
+        "mock-detour".to_string(),
+        OutboundImpl::Connector(Arc::new(MockIoConnector)),
+    );
+    sb_core::adapter::registry::install_runtime_outbounds(Arc::new(OutboundRegistryHandle::new(
+        reg,
+    )));
+}
 
 // ============================================================================
 // Configuration Tests
@@ -28,6 +60,7 @@ fn test_shadowsocks_config_aes256gcm() {
         method: "aes-256-gcm".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: Some(30),
+        detour: None,
         multiplex: None,
     };
 
@@ -44,6 +77,7 @@ fn test_shadowsocks_config_chacha20() {
         method: "chacha20-ietf-poly1305".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: Some(30),
+        detour: None,
         multiplex: None,
     };
 
@@ -63,6 +97,7 @@ fn test_shadowsocks_config_chacha20_alternative() {
         method: "chacha20-poly1305".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: None,
+        detour: None,
         multiplex: None,
     };
 
@@ -82,6 +117,7 @@ fn test_shadowsocks_config_invalid_method() {
         method: "invalid-cipher".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: None,
+        detour: None,
         multiplex: None,
     };
 
@@ -162,6 +198,7 @@ async fn test_shadowsocks_connection_timeout() {
         method: "aes-256-gcm".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: Some(1), // 1 second timeout
+        detour: None,
         multiplex: None,
     };
     let connector = ShadowsocksConnector::new(config).unwrap();
@@ -243,6 +280,7 @@ async fn test_shadowsocks_connector_dial_mock() {
         method: "aes-256-gcm".to_string(),
         password: "test_password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
     let connector = ShadowsocksConnector::new(config).unwrap();
@@ -266,6 +304,88 @@ async fn test_shadowsocks_connector_dial_mock() {
         server_received_data,
         "Server should have received SS handshake data"
     );
+}
+
+#[tokio::test]
+async fn test_shadowsocks_connector_dial_via_detour_mock() {
+    install_mock_runtime_outbounds();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = listener.local_addr().unwrap();
+
+    let server_handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+
+        let mut buf = [0u8; 256];
+        let n1 = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .unwrap_or(Ok(0))
+            .unwrap_or(0);
+        if n1 == 0 {
+            return false;
+        }
+
+        let server_salt = [7u8; 32];
+        if stream.write_all(&server_salt).await.is_err() {
+            return false;
+        }
+
+        let n2 = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .unwrap_or(Ok(0))
+            .unwrap_or(0);
+        n2 > 0
+    });
+
+    let config = ShadowsocksConfig {
+        server: server_addr.to_string(),
+        tag: None,
+        method: "aes-256-gcm".to_string(),
+        password: "test_password".to_string(),
+        connect_timeout_sec: Some(5),
+        detour: Some("mock-detour".to_string()),
+        multiplex: None,
+    };
+    let connector = ShadowsocksConnector::new(config).unwrap();
+
+    let target = Target::tcp("example.com", 80);
+    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let dial_result = connector.dial(target, opts).await;
+
+    assert!(
+        dial_result.is_ok(),
+        "Dial through detour should succeed: {:?}",
+        dial_result.err()
+    );
+
+    let server_received_data = server_handle.await.unwrap();
+    assert!(
+        server_received_data,
+        "Server should have received SS handshake data through detour"
+    );
+}
+
+#[tokio::test]
+async fn test_shadowsocks_detour_rejects_multiplex() {
+    let config = ShadowsocksConfig {
+        server: "127.0.0.1:8388".to_string(),
+        tag: None,
+        method: "aes-256-gcm".to_string(),
+        password: "test_password".to_string(),
+        connect_timeout_sec: Some(5),
+        detour: Some("mock-detour".to_string()),
+        multiplex: Some(sb_transport::multiplex::MultiplexConfig::default()),
+    };
+    let connector = ShadowsocksConnector::new(config).unwrap();
+
+    let err = match connector
+        .dial(Target::tcp("example.com", 80), DialOpts::new())
+        .await
+    {
+        Ok(_) => panic!("detour + multiplex should fail"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("does not support multiplex"));
 }
 
 #[tokio::test]

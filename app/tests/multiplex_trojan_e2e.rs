@@ -21,6 +21,7 @@ fn trojan_multiplex_config_creation() {
             transport_layer: TransportConfig::Tcp,
             reality: None,
             multiplex: Some(MultiplexConfig::default()),
+            detour: None,
         };
 
         let connector = TrojanConnector::new(client_config);
@@ -41,6 +42,7 @@ fn trojan_non_multiplex_config_creation() {
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
+        detour: None,
     };
 
     let connector = TrojanConnector::new(client_config);

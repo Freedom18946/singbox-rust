@@ -1186,6 +1186,37 @@ impl ShadowsocksInboundAdapter {
             udp_sessions_seen,
         }
     }
+
+    fn runtime_shared_for_detour(&self, method: &AeadCipherKind) -> RuntimeShared {
+        #[cfg(feature = "service_ssmapi")]
+        {
+            let _ = method;
+            RuntimeShared {
+                user_keys: self.user_keys.clone(),
+                tracker: self.tracker.clone(),
+                udp_sessions_seen: self.udp_sessions_seen.clone(),
+            }
+        }
+
+        #[cfg(not(feature = "service_ssmapi"))]
+        {
+            let user_map = self.config.build_user_map(method);
+            RuntimeShared {
+                user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+            }
+        }
+    }
+
+    pub async fn accept_detour_stream<T>(&self, stream: T, peer: SocketAddr) -> Result<()>
+    where
+        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        let method = AeadCipherKind::from_method(&self.config.method)
+            .ok_or_else(|| anyhow!("unsupported method"))?;
+        let shared = self.runtime_shared_for_detour(&method);
+        let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+        handle_conn_stream(&self.config, method, stream, peer, &rate_limiter, shared).await
+    }
 }
 
 #[cfg(feature = "service_ssmapi")]
@@ -1273,6 +1304,10 @@ impl InboundService for ShadowsocksInboundAdapter {
         if let Some(tx) = self.stop_tx.lock().take() {
             let _ = tx.try_send(());
         }
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
     }
 }
 

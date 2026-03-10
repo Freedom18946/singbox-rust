@@ -1,5 +1,5 @@
 id: p2_shadowtls_dual_dataplane_local
-title: shadowtls dual-kernel legacy-model divergence probe
+title: shadowtls dual-kernel wrapper-chain parity probe
 priority: p2
 kernel_mode: both
 env_class: strict
@@ -8,8 +8,8 @@ tags:
   - dataplane
   - dual_core
   - shadowtls
-  - gap_probe
-  - legacy_model
+  - wrapper_chain
+  - detour
 bootstrap:
   rust:
     command: cargo
@@ -25,7 +25,7 @@ bootstrap:
       - run
       - --admin-listen
       - 127.0.0.1:19190
-    startup_timeout_ms: 120000
+    startup_timeout_ms: 240000
     ready_path: /version
     api:
       base_url: http://127.0.0.1:19191
@@ -42,9 +42,17 @@ bootstrap:
       base_url: http://127.0.0.1:9090
       secret: test-secret
 upstream_topology:
+  - name: shadowsocks_server
+    kind: shadowsocks_inbound
+    bind: 127.0.0.1:12082
+  - name: shadowtls_handshake
+    kind: tls_echo
+    bind: 127.0.0.1:12084
   - name: shadowtls_server
-    kind: shadow_tls_inbound
+    kind: tls_relay_tcp
     bind: 127.0.0.1:12083
+    target: 127.0.0.1:12082
+    handshake_target: 127.0.0.1:12084
   - name: local_tcp_ok
     kind: tcp_echo
     bind: 127.0.0.1:18101
