@@ -123,6 +123,7 @@ async fn test_ss_aes256gcm_encryption() {
         method: "aes-256-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");
@@ -167,6 +168,7 @@ async fn test_ss_aes128gcm_encryption() {
         method: "aes-128-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");
@@ -212,6 +214,7 @@ async fn test_ss_chacha20poly1305_encryption() {
         method: "chacha20-poly1305".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");
@@ -281,6 +284,7 @@ async fn test_ss_multi_user_concurrent() {
                 method,
                 password,
                 connect_timeout_sec: Some(5),
+                detour: None,
                 multiplex: None,
             })
             .expect("Failed to create connector");
@@ -361,6 +365,7 @@ async fn test_ss_high_concurrency() {
             method: "chacha20-poly1305".to_string(),
             password: "test-password".to_string(),
             connect_timeout_sec: Some(10),
+            detour: None,
             multiplex: None,
         })
         .expect("Failed to create connector"),
@@ -427,6 +432,7 @@ async fn test_ss_large_payload() {
         method: "aes-256-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");
@@ -484,6 +490,7 @@ async fn test_ss_wrong_password() {
         method: "aes-256-gcm".to_string(),
         password: "wrong-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");

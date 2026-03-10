@@ -31,6 +31,10 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 type HmacSha1 = Hmac<Sha1>;
 
+fn init_crypto() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 fn install_direct_rules_engine() {
     let rules = sb_core::router::rules::parse_rules("default=direct");
     let engine = sb_core::router::rules::Engine::build(rules);
@@ -48,6 +52,7 @@ fn generate_cert() -> (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>) {
 }
 
 fn tls_acceptor(tls12_only: bool) -> TlsAcceptor {
+    init_crypto();
     let (certs, key) = generate_cert();
     let builder = if tls12_only {
         rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS12])
@@ -218,6 +223,7 @@ fn tls_client_config(
     tls12_only: bool,
     session_id_generator: Option<Arc<dyn rustls::client::SessionIdGenerator>>,
 ) -> Arc<rustls::ClientConfig> {
+    init_crypto();
     let builder = if tls12_only {
         rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS12])
     } else {

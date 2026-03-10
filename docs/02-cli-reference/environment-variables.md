@@ -437,12 +437,6 @@ Complete reference of all environment variables supported by singbox-rust.
 | ------------------------- | ---- | ------- | -------------------------- |
 | `SB_NAIVE_ALLOW_INSECURE` | bool | `0`     | Allow insecure connections |
 
-### ShadowTLS
-
-| Variable                | Type | Default | Description                |
-| ----------------------- | ---- | ------- | -------------------------- |
-| `SB_STL_ALLOW_INSECURE` | bool | `0`     | Allow insecure connections |
-
 ---
 
 ## Transport Configuration

@@ -152,6 +152,7 @@ async fn test_ss_aes_128_gcm() {
         method: "aes-128-gcm".to_string(),
         password: "test-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -185,6 +186,7 @@ async fn test_ss_aes_256_gcm() {
         method: "aes-256-gcm".to_string(),
         password: "test-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -220,6 +222,7 @@ async fn test_ss_chacha20_poly1305() {
         method: "chacha20-ietf-poly1305".to_string(),
         password: "test-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -265,6 +268,7 @@ async fn test_ss_udp_relay() {
         method: "aes-256-gcm".to_string(),
         password: "test-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -310,6 +314,7 @@ async fn test_ss_multi_user_auth() {
         method: "aes-256-gcm".to_string(),
         password: "user1-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -336,6 +341,7 @@ async fn test_ss_multi_user_auth() {
         method: "aes-256-gcm".to_string(),
         password: "user2-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 

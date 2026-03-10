@@ -219,6 +219,7 @@ async fn test_slowloris_slow_read_mitigation() {
         method: "chacha20-poly1305".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");
@@ -278,6 +279,7 @@ async fn test_resource_exhaustion_memory() {
             method: "chacha20-poly1305".to_string(),
             password: "test-password".to_string(),
             connect_timeout_sec: Some(10),
+            detour: None,
             multiplex: None,
         })
         .expect("Failed to create connector"),
@@ -352,6 +354,7 @@ async fn test_burst_traffic_handling() {
             method: "chacha20-poly1305".to_string(),
             password: "test-password".to_string(),
             connect_timeout_sec: Some(5),
+            detour: None,
             multiplex: None,
         })
         .expect("Failed to create connector"),
@@ -438,6 +441,7 @@ async fn test_recovery_after_flood() {
         method: "chacha20-poly1305".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("Failed to create connector");

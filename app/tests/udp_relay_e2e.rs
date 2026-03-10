@@ -165,6 +165,7 @@ async fn test_shadowsocks_udp_relay() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-udp".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: None,
     };
 
@@ -299,6 +300,7 @@ async fn test_shadowsocks_udp_large_packet() {
         method: "chacha20-poly1305".to_string(),
         password: "test-password-udp".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: None,
     };
 
@@ -362,6 +364,7 @@ async fn test_udp_relay_multiple_packets() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-udp".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: None,
     };
 
@@ -430,6 +433,7 @@ async fn test_udp_relay_concurrent_operations() {
                 method: "aes-256-gcm".to_string(),
                 password: "test-password-udp".to_string(),
                 connect_timeout_sec: Some(10),
+                detour: None,
                 multiplex: None,
             };
 

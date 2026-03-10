@@ -140,6 +140,7 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
                             method: cipher.to_string(),
                             password: "benchmark-pass".to_string(),
                             connect_timeout_sec: Some(5),
+                            detour: None,
                             multiplex: None,
                         };
                         let connector = ShadowsocksConnector::new(client_config).unwrap();

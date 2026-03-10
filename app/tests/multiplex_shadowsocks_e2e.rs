@@ -156,6 +156,7 @@ async fn test_shadowsocks_multiplex_single_stream() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: Some(MultiplexConfig::default()),
     };
 
@@ -208,6 +209,7 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: Some(MultiplexConfig::default()),
     };
 
@@ -298,6 +300,7 @@ async fn test_shadowsocks_multiplex_data_integrity() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: Some(MultiplexConfig::default()),
     };
 
@@ -391,6 +394,7 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
             method: "aes-256-gcm".to_string(),
             password: "test-password-123".to_string(),
             connect_timeout_sec: Some(10),
+            detour: None,
             multiplex: None, // No multiplex
         };
 
@@ -428,6 +432,7 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
             method: "aes-256-gcm".to_string(),
             password: "test-password-123".to_string(),
             connect_timeout_sec: Some(10),
+            detour: None,
             multiplex: Some(MultiplexConfig::default()),
         };
 
@@ -477,6 +482,7 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
+        detour: None,
         multiplex: Some(MultiplexConfig::default()),
     };
 

@@ -155,6 +155,7 @@ async fn test_trojan_connection_pooling() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,

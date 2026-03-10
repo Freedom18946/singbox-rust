@@ -92,7 +92,7 @@ pub fn collect_features() -> Vec<String> {
     features
 }
 
-fn tun2socks_mode_tag() -> &'static str {
+const fn tun2socks_mode_tag() -> &'static str {
     if cfg!(feature = "tun2socks-real") {
         "tun2socks-real"
     } else if cfg!(feature = "tun2socks-stub") {

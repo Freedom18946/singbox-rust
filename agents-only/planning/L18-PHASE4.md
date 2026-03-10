@@ -2,7 +2,7 @@
 # L18 Phase 4 工作包：全局静态审议整改
 
 状态：🔄 进行中
-更新：2026-03-10
+更新：2026-03-11
 
 > **定位**：
 > 当前会话不再充当 `nightly/certify` 盯跑入口。
@@ -20,18 +20,20 @@
 
 在 Wave A/B 完成前，不直接恢复 `nightly` 或 `certify`。
 
-## 1.1 当前执行位置（2026-03-10）
+## 1.1 当前执行位置（2026-03-11）
 
 已确认事实：
 
 1. `daily-core` 已稳定可跑。
 2. `host-gui` 的 GUI gate 已拿到独立 `PROVEN` 证据。
-3. 当前未收口问题不是 GUI，而是 `workspace_test -> bench_outputs_json` 会卡住完整 `daily-host-gui` batch。
-4. 在完整 `daily-host-gui` 收口前，不恢复 `nightly/certify`。
+3. 原先卡住长链路的 `workspace_test -> bench_outputs_json` 已在本地 harness 层修稳。
+4. 后续暴露出的 `interop-lab` `TrojanInboundConfig.reality` 初始化器漂移已修正，`cargo test -p interop-lab --no-run` 已通过。
+5. 后续暴露出的 `shadowtls_e2e` / `shadowtls_inbound_e2e` rustls process-level `CryptoProvider` 初始化缺口已修正，窄测已通过。
+6. 最新 fixed-profile batch `20260310T214322Z-l18-daily-preflight` 已重跑到 `workspace_test` 中后段，前述新失败点未再复现；在该 batch 完整结束并刷新 manifest 前，不恢复 `nightly/certify`。
 
 因此当前顺序固定为：
 
-1. 先隔离/修复 `bench_outputs_json`
+1. 等当前 `daily-host-gui` / fixed-profile 完整结束，确认 `workspace_test` 新旧失败点均已收口
 2. 使 `daily-host-gui` 重新变成完整可复跑 batch
 3. 再进入协议 parity 收口：
    - `trojan`

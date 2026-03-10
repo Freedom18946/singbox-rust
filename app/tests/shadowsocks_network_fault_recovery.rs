@@ -194,6 +194,7 @@ async fn run_concurrent_ss_round(
                 method: "aes-256-gcm".to_string(),
                 password,
                 connect_timeout_sec: Some(3),
+                detour: None,
                 multiplex: None,
             }) {
                 Ok(c) => c,
@@ -233,6 +234,7 @@ async fn test_shadowsocks_server_restart_recovery() {
         method: "aes-256-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(3),
+        detour: None,
         multiplex: None,
     })
     .expect("failed to create shadowsocks connector");
@@ -284,6 +286,7 @@ async fn test_shadowsocks_server_multi_flap_recovery() {
         method: "aes-256-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(3),
+        detour: None,
         multiplex: None,
     })
     .expect("failed to create shadowsocks connector");

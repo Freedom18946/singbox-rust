@@ -753,7 +753,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             );
             probe.details.insert(
                 "tls_provider_requested".to_string(),
-                tls_provider.requested.to_string(),
+                tls_provider.requested.clone(),
             );
             probe.details.insert(
                 "tls_provider_fallback_reason".to_string(),
@@ -773,16 +773,13 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
             .find(|probe| probe.capability_id == id)
     };
     let ech_tcp_requested = find_probe("tls.ech.tcp").is_some_and(|probe| probe.requested);
-    let ech_tcp_runtime = find_probe("tls.ech.tcp")
-        .map(|probe| probe.runtime_state.as_str())
-        .unwrap_or("unsupported");
-    let ech_tcp_compile = find_probe("tls.ech.tcp")
-        .map(|probe| probe.compile_state.as_str())
-        .unwrap_or("absent");
+    let ech_tcp_runtime =
+        find_probe("tls.ech.tcp").map_or("unsupported", |probe| probe.runtime_state.as_str());
+    let ech_tcp_compile =
+        find_probe("tls.ech.tcp").map_or("absent", |probe| probe.compile_state.as_str());
     let ech_quic_requested = find_probe("tls.ech.quic").is_some_and(|probe| probe.requested);
-    let ech_quic_runtime = find_probe("tls.ech.quic")
-        .map(|probe| probe.runtime_state.as_str())
-        .unwrap_or("unsupported");
+    let ech_quic_runtime =
+        find_probe("tls.ech.quic").map_or("unsupported", |probe| probe.runtime_state.as_str());
     tracing::info!(
         target: "app::tls_provider",
         provider = tls_provider.provider.as_str(),
@@ -839,19 +836,16 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     // 2.2) DNS stub init if needed
     if !dns_applied && (opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
     {
-        let ttl_secs: u64 = match std::env::var("DNS_CACHE_TTL") {
-            Ok(raw) => {
-                let t = raw.trim();
-                match t.parse::<u64>() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!("env 'DNS_CACHE_TTL' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}");
-                        30
-                    }
+        let ttl_secs: u64 = std::env::var("DNS_CACHE_TTL").map_or(30, |raw| {
+            let t = raw.trim();
+            match t.parse::<u64>() {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("env 'DNS_CACHE_TTL' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}");
+                    30
                 }
             }
-            Err(_) => 30,
-        };
+        });
         sb_core::dns::stub::init_global(ttl_secs);
     }
 

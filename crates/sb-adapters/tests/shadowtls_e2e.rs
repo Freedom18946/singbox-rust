@@ -23,7 +23,12 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::TlsAcceptor;
 
+fn init_crypto() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 fn test_connector() -> ShadowTlsConnector {
+    init_crypto();
     ShadowTlsConnector::new(ShadowTlsAdapterConfig {
         server: "127.0.0.1".to_string(),
         port: 443,
@@ -72,6 +77,7 @@ async fn start_tcp_echo_server() -> std::io::Result<(std::net::SocketAddr, JoinH
 }
 
 fn tls_acceptor(tls12_only: bool) -> TlsAcceptor {
+    init_crypto();
     let (certs, key) = generate_cert();
     let builder = if tls12_only {
         rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS12])

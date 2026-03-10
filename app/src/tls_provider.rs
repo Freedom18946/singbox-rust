@@ -9,7 +9,7 @@ pub enum TlsProviderKind {
 
 impl TlsProviderKind {
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Ring => "ring",
             Self::AwsLc => "aws-lc",
@@ -32,7 +32,7 @@ pub fn ensure_default_provider() -> TlsProviderDecision {
 }
 
 #[must_use]
-pub fn aws_lc_compiled() -> bool {
+pub const fn aws_lc_compiled() -> bool {
     cfg!(feature = "tls-provider-aws-lc")
 }
 

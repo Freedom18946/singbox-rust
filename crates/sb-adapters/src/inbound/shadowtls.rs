@@ -262,11 +262,26 @@ async fn dispatch_detour_stream<S>(tag: &str, stream: S, peer: SocketAddr) -> Re
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    if tag.trim().is_empty() {
+        return Err(anyhow!(
+            "shadowtls: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
+        ));
+    }
     let runtime = registry::runtime_inbounds()
-        .ok_or_else(|| anyhow!("shadowtls inbound detour requires runtime inbound registry"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "shadowtls: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path; implicit direct fallback is disabled",
+                tag
+            )
+        })?;
     let service = runtime
         .get(tag)
-        .ok_or_else(|| anyhow!("shadowtls inbound detour '{tag}' not found"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "shadowtls: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
+                tag
+            )
+        })?;
     if let Some(adapter) = service
         .as_any()
         .and_then(|any| any.downcast_ref::<ShadowsocksInboundAdapter>())
@@ -274,7 +289,8 @@ where
         adapter.accept_detour_stream(stream, peer).await
     } else {
         Err(anyhow!(
-            "shadowtls inbound detour '{tag}' is not a supported stream consumer yet"
+            "shadowtls: named proxy decision '{}' has no selectable endpoint; implicit fallback is disabled; use adapter bridge/supervisor path",
+            tag
         ))
     }
 }
@@ -371,8 +387,8 @@ fn verify_client_hello(frame: &[u8], users: &[ShadowTlsUser]) -> Option<Verified
         hmac.update(&frame[TLS_HEADER_SIZE..hmac_index]);
         hmac.update(&[0, 0, 0, 0]);
         hmac.update(&frame[hmac_index + SHADOWTLS_V3_HMAC_SIZE..]);
-        if &hmac.finalize().into_bytes()[..SHADOWTLS_V3_HMAC_SIZE]
-            == &frame[hmac_index..hmac_index + SHADOWTLS_V3_HMAC_SIZE]
+        if hmac.finalize().into_bytes()[..SHADOWTLS_V3_HMAC_SIZE]
+            == frame[hmac_index..hmac_index + SHADOWTLS_V3_HMAC_SIZE]
         {
             return Some(VerifiedUser {
                 password: user.password.clone(),

@@ -510,7 +510,7 @@ else:
     if core_id is None:
         errors.append("cannot locate sb-core package in cargo metadata")
     else:
-        allowlist = {"app", "sb-api", "sb-adapters", "sb-benches", "xtests"}
+        allowlist = {"app", "interop-lab", "sb-api", "sb-adapters", "sb-benches", "xtests"}
         optional_allowlist = {"sb-subscribe"}
         actual = set()
         optional_actual = set()

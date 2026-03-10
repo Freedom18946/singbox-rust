@@ -63,6 +63,12 @@ pub fn log_report(report: &CapabilityProbeReport) {
     }
 }
 
+/// Write the startup capability probe report to disk.
+///
+/// # Errors
+///
+/// Returns an error when the output directory cannot be created, the report
+/// cannot be serialized, or the file cannot be written.
 pub fn write_report(report: &CapabilityProbeReport, out_path: &Path) -> Result<()> {
     let parent = out_path
         .parent()
@@ -97,7 +103,7 @@ pub fn probe_output_path_from_env() -> Option<String> {
 }
 
 #[must_use]
-pub fn default_probe_output_path() -> &'static str {
+pub const fn default_probe_output_path() -> &'static str {
     "reports/runtime/capability_probe.json"
 }
 
@@ -207,7 +213,6 @@ fn probe_tproxy(ir: &ConfigIR) -> CapabilityProbeEntry {
 
 #[derive(Debug, Clone)]
 struct UtlsProfileObservation {
-    requested_profile: String,
     effective_profile: String,
     fallback_reason: Option<String>,
 }
@@ -459,11 +464,23 @@ fn resolve_utls_profile(requested_profile: &str) -> UtlsProfileObservation {
         | "chromepq"
         | "android"
         | "android11"
-        | "android_11" => (
+        | "android_11"
+        | "edge"
+        | "edge85"
+        | "edge106"
+        | "random"
+        | "randomized"
+        | "randomchrome"
+        | "random_chrome"
+        | "randomfirefox"
+        | "random_firefox"
+        | "360"
+        | "360browser"
+        | "qq"
+        | "qqbrowser" => (
             "chrome110".to_string(),
             Some(format!(
-                "requested '{}' mapped to chrome110 template",
-                requested
+                "requested '{requested}' mapped to chrome110 template"
             )),
         ),
 
@@ -472,8 +489,7 @@ fn resolve_utls_profile(requested_profile: &str) -> UtlsProfileObservation {
         "firefox" | "firefox63" | "firefox65" | "firefox99" => (
             "firefox105".to_string(),
             Some(format!(
-                "requested '{}' mapped to firefox105 template",
-                requested
+                "requested '{requested}' mapped to firefox105 template"
             )),
         ),
 
@@ -481,8 +497,7 @@ fn resolve_utls_profile(requested_profile: &str) -> UtlsProfileObservation {
         "firefox55" | "firefox56" => (
             "chrome110".to_string(),
             Some(format!(
-                "requested '{}' falls back to chrome110 template",
-                requested
+                "requested '{requested}' falls back to chrome110 template"
             )),
         ),
 
@@ -491,33 +506,19 @@ fn resolve_utls_profile(requested_profile: &str) -> UtlsProfileObservation {
         "safari" | "ios" | "ios14" | "safari_ios14" | "ios15" | "safari_ios15" | "ios16" => (
             "safari_ios16".to_string(),
             Some(format!(
-                "requested '{}' mapped to safari_ios16 template",
-                requested
-            )),
-        ),
-
-        // Edge / browser-specific / randomized aliases are all mapped to chrome_110 template.
-        "edge" | "edge85" | "edge106" | "random" | "randomized" | "randomchrome"
-        | "random_chrome" | "randomfirefox" | "random_firefox" | "360" | "360browser" | "qq"
-        | "qqbrowser" => (
-            "chrome110".to_string(),
-            Some(format!(
-                "requested '{}' mapped to chrome110 template",
-                requested
+                "requested '{requested}' mapped to safari_ios16 template"
             )),
         ),
 
         other => (
             "chrome110".to_string(),
             Some(format!(
-                "requested '{}' is unknown to startup probe mapping; assume chrome110 fallback",
-                other
+                "requested '{other}' is unknown to startup probe mapping; assume chrome110 fallback"
             )),
         ),
     };
 
     UtlsProfileObservation {
-        requested_profile: requested,
         effective_profile,
         fallback_reason,
     }
@@ -632,7 +633,6 @@ mod tests {
     #[test]
     fn resolves_utls_profile_with_effective_and_fallback() {
         let resolved = resolve_utls_profile("randomized");
-        assert_eq!(resolved.requested_profile, "randomized");
         assert_eq!(resolved.effective_profile, "chrome110");
         assert!(resolved
             .fallback_reason

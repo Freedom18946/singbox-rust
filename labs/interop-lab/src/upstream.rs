@@ -603,7 +603,6 @@ async fn start_single_upstream(
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
-                #[cfg(feature = "tls_reality")]
                 reality: None,
                 multiplex: None,
                 transport_layer: None,
@@ -713,9 +712,11 @@ async fn start_single_upstream(
                 users: Vec::new(),
                 handshake: Some(
                     parse_host_port(spec.handshake_target.as_deref().unwrap_or("google.com:443"))
-                        .map(|(host, port)| sb_adapters::inbound::shadowtls::ShadowTlsHandshakeConfig {
-                            server: host,
-                            server_port: port,
+                        .map(|(host, port)| {
+                            sb_adapters::inbound::shadowtls::ShadowTlsHandshakeConfig {
+                                server: host,
+                                server_port: port,
+                            }
                         })
                         .unwrap_or(sb_adapters::inbound::shadowtls::ShadowTlsHandshakeConfig {
                             server: "google.com".to_string(),
@@ -726,19 +727,21 @@ async fn start_single_upstream(
                 strict_mode: false,
                 wildcard_sni: sb_adapters::inbound::shadowtls::ShadowTlsWildcardSniMode::Off,
                 tag: Some(spec.name.clone()),
-                tls: Some(sb_transport::TlsConfig::Standard(sb_transport::tls::StandardTlsConfig {
-                    server_name: Some("localhost".to_string()),
-                    alpn: vec!["http/1.1".to_string()],
-                    insecure: false,
-                    cert_path: Some(
-                        "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
-                    ),
-                    key_path: Some(
-                        "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
-                    ),
-                    cert_pem: None,
-                    key_pem: None,
-                })),
+                tls: Some(sb_transport::TlsConfig::Standard(
+                    sb_transport::tls::StandardTlsConfig {
+                        server_name: Some("localhost".to_string()),
+                        alpn: vec!["http/1.1".to_string()],
+                        insecure: false,
+                        cert_path: Some(
+                            "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
+                        ),
+                        key_path: Some(
+                            "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
+                        ),
+                        cert_pem: None,
+                        key_pem: None,
+                    },
+                )),
                 router: Some(router),
                 stats: None,
             };

@@ -107,6 +107,7 @@ async fn test_stability_long_running() {
         method: "aes-256-gcm".to_string(),
         password: "stability-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 

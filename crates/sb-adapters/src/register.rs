@@ -1314,8 +1314,7 @@ fn build_shadowsocks_inbound(
     let adapter = Arc::new(adapter);
     #[cfg(feature = "service_ssmapi")]
     {
-        use sb_core::services::ssmapi::registry::register_managed_ssm_server;
-        use sb_core::services::ssmapi::ManagedSSMServer;
+        use sb_core::services::ssmapi::{registry::register_managed_ssm_server, ManagedSSMServer};
 
         let tag = ManagedSSMServer::tag(adapter.as_ref()).to_string();
         if !tag.trim().is_empty() {
@@ -2112,20 +2111,25 @@ fn build_hysteria2_inbound(
 
         // Parse Masquerade config
         let masquerade = if let Some(json) = &param.masquerade {
-            use sb_core::outbound::hysteria2::inbound::MasqueradeConfig as CoreMasq;
             match serde_json::from_str::<sb_config::ir::MasqueradeIR>(json) {
                 Ok(ir) => match ir.type_.as_str() {
-                    "string" => ir.string.map(|s| CoreMasq::String {
-                        content: s.content,
-                        headers: s.headers.unwrap_or_default().into_iter().collect(),
-                        status_code: s.status_code,
+                    "string" => ir.string.map(|s| {
+                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::String {
+                            content: s.content,
+                            headers: s.headers.unwrap_or_default().into_iter().collect(),
+                            status_code: s.status_code,
+                        }
                     }),
-                    "file" => ir.file.map(|f| CoreMasq::File {
-                        directory: f.directory,
+                    "file" => ir.file.map(|f| {
+                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::File {
+                            directory: f.directory,
+                        }
                     }),
-                    "proxy" => ir.proxy.map(|p| CoreMasq::Proxy {
-                        url: p.url,
-                        rewrite_host: p.rewrite_host,
+                    "proxy" => ir.proxy.map(|p| {
+                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::Proxy {
+                            url: p.url,
+                            rewrite_host: p.rewrite_host,
+                        }
                     }),
                     _ => {
                         warn!("Unknown masquerade type: {}", ir.type_);
@@ -2553,8 +2557,7 @@ struct CoreDirectConnector {
 #[async_trait::async_trait]
 impl OutboundConnector for CoreDirectConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        use sb_core::net::Address;
-        use sb_core::pipeline::Outbound;
+        use sb_core::{net::Address, pipeline::Outbound};
 
         let fut = self.inner.connect(Address::Domain(host.to_string(), port));
         if let Some(timeout) = self.timeout {
@@ -2619,8 +2622,7 @@ fn build_block_outbound(
     impl OutboundConnector for BlockConnectorWrapper {
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Block outbound always returns error
-            use sb_core::net::Address;
-            use sb_core::pipeline::Outbound;
+            use sb_core::{net::Address, pipeline::Outbound};
 
             let target = Address::Domain(host.to_string(), port);
             self.inner.connect(target).await

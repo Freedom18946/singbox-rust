@@ -578,6 +578,7 @@ async fn test_shadowsocks_chain() {
         method: "aes-256-gcm".to_string(),
         password: "test-password".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     })
     .expect("create ss connector");

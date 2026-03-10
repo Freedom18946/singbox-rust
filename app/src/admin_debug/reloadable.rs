@@ -99,7 +99,7 @@ impl EnvConfig {
             mime_allow,
             mime_deny,
             max_concurrency: env_cfg_usize("SB_SUBS_MAX_CONCURRENCY", 8),
-            rps: env_cfg_u32("SB_SUBS_RPS", 4) as u64,
+            rps: u64::from(env_cfg_u32("SB_SUBS_RPS", 4)),
             cache_capacity: env_cfg_usize("SB_SUBS_CACHE_CAP", 64),
             cache_ttl_ms: env_cfg_u64("SB_SUBS_CACHE_TTL_MS", 30_000),
             breaker_window_ms: env_cfg_u64("SB_SUBS_BR_WIN_MS", 30_000),

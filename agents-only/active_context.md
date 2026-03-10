@@ -13,7 +13,7 @@
 **Acceptance Closure**: `UNVERIFIED (slim snapshot)`  
 **MIG-02**: ACCEPTED（2026-03-07，541 V7 assertions）
 
-## 已落地且可确认的 Phase 4 结果（2026-03-10）
+## 已落地且可确认的 Phase 4 结果（2026-03-11）
 
 - 证据模型 / 边界 containment 已入库：
   - `reports/capabilities.json` 已切到 `schema_version=1.1.0`
@@ -32,7 +32,7 @@
   - sandbox=`PROVEN`
   - 仅保留 note：`capabilities_negotiation_go_PARTIAL:http_error:404`
 
-## 本轮新增修正（未提交到主线）
+## 本轮新增修正
 
 - `scripts/l18/gui_real_cert.sh`
   - `logs_panel` 不再依赖本地 kernel log 非空，改为验证 `/logs` WebSocket 握手（成功记 `/logs=101`）
@@ -43,10 +43,14 @@
 
 1. **不是 GUI gate**
    - GUI gate 已通过独立复验 `PROVEN`
-2. **长链路 batch 的主阻塞仍是 `workspace_test -> bench_outputs_json`**
-   - 文件：`xtests/tests/bench_v1.rs`
-   - 影响：会卡住完整 `daily-host-gui` batch，导致整条 batch 难以形成完整最终状态
-   - 判断：这是 xtests / bench harness 问题，不是 GUI/system proxy 主链路回归
+2. **`workspace_test -> bench_outputs_json` 的本地主阻塞已解开**
+   - 文件：`xtests/tests/bench_v1.rs`、`xtests/tests/bench_v2.rs`、`xtests/src/lib.rs`
+   - 已修内容：bench harness 不再在测试体内 `cargo run` 冷编译 `sb-bench`；改为先 build 再直接执行预编译 binary，并改成动态端口 + 临时 CSV 路径
+   - 本地证据：`cargo test -p xtests -- --nocapture` 已通过，说明 `bench_outputs_json` 不再是当前工作树下 `workspace_test` 的失败点
+   - 连带修正：`interop-lab` 的 `TrojanInboundConfig.reality` 初始化器已补齐，`cargo test -p interop-lab --no-run` 已通过
+   - 连带修正：`crates/sb-adapters/tests/shadowtls_e2e.rs` 与 `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` 已补 process-level rustls `CryptoProvider` 初始化；对应窄测已通过
+   - 最新 batch：`reports/l18/batches/20260310T214322Z-l18-daily-preflight`
+   - 当前状态：该 fixed-profile 已重跑到 `workspace_test` 中后段，前两轮暴露出的 `interop-lab` / `shadowtls_e2e` / `shadowtls_inbound_e2e` 失败点均未再复现；整条 batch 仍在进行中，尚未拿到最终 overall 结论
 3. **协议 parity 的剩余单点仍集中在 `shadowtls` v3 证据收口**
    - `trojan`: established（最小双核本地模拟公网闭环已完成）
    - `shadowsocks`: established（最小双核本地模拟公网闭环已完成）
@@ -79,7 +83,7 @@
 2. 维护 vendored `rustls` hook 边界：
    - 不接受握手外改包的伪实现
    - 若后续升级 TLS 栈，先确认 `session_id` hook 仍然存在
-3. 与协议 track 并行的 batch track 仍是：先把 `bench_outputs_json` 从 `daily-host-gui` 主路径里隔离或修掉
+3. 与协议 track 并行的 batch track 下一步变成：等当前 `daily-host-gui` / fixed-profile 完整结束，刷新 `workspace_test` 已解锁后的 batch 工件与 manifest
 4. 只有在完整 `daily-host-gui` batch 可复跑后，才重新评估是否恢复更长链路
 
 ## 关键文件速查

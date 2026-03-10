@@ -319,6 +319,7 @@ async fn test_trojan_tls_handshake_stress() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true, // For test environment
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -373,6 +374,7 @@ async fn test_trojan_sni_verification() {
         sni: Some(sni.to_string()),
         alpn: None,
         skip_cert_verify: true, // Self-signed cert on test server
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -417,6 +419,7 @@ async fn test_trojan_cert_validation_valid() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true, // We are using self-signed, so we must skip verify unless we add CA
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -451,6 +454,7 @@ async fn test_trojan_cert_validation_expired() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: false, // Enforce validation
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -488,6 +492,7 @@ async fn test_trojan_cert_validation_self_signed() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: false, // Enforce validation, should fail for self-signed without CA
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -526,6 +531,7 @@ async fn test_trojan_alpn_negotiation() {
         sni: Some(expected_sni.to_string()),
         alpn,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -574,6 +580,7 @@ async fn test_trojan_connection_pooling() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -648,6 +655,7 @@ async fn test_trojan_timeout_handling() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -722,6 +730,7 @@ async fn test_trojan_auth_failure() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,

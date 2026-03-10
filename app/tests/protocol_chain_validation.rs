@@ -202,6 +202,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         method: "aes-256-gcm".to_string(),
         password: "ss-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
     let _ss_connector = ShadowsocksConnector::new(ss_client_config).unwrap();
@@ -215,6 +216,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,

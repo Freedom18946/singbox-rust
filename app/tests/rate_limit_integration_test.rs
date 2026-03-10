@@ -251,6 +251,7 @@ async fn test_trojan_high_load_rate_limiting() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -386,6 +387,7 @@ async fn test_shadowsocks_high_load_rate_limiting() {
         method: "aes-256-gcm".to_string(),
         password: "test-pass".to_string(),
         connect_timeout_sec: Some(5),
+        detour: None,
         multiplex: None,
     };
 
@@ -522,6 +524,7 @@ async fn test_rate_limit_metrics_recording() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
@@ -605,6 +608,7 @@ async fn test_auth_failure_ban() {
         sni: Some("localhost".to_string()),
         alpn: None,
         skip_cert_verify: true,
+        detour: None,
         transport_layer: TransportConfig::Tcp,
         reality: None,
         multiplex: None,
