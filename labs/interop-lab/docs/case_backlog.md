@@ -19,7 +19,7 @@
 | `p0_subscription_yaml` | YAML `proxies` parser | `strict` | implemented |
 | `p0_subscription_base64` | Base64 mixed-link parser | `strict` | implemented |
 | `p0_clash_api_contract` | replay GUI P0 HTTP/WS contract against Go+Rust APIs | `env_limited` | implemented |
-| `p0_clash_api_contract_strict` | strict version of P0 contract (no external kernel) | `strict` | implemented |
+| `p0_clash_api_contract_strict` | strict version of P0 contract (self-managed dual kernel) | `strict` | implemented (`kernel_mode: both`) |
 
 ## P1 (contract + dataplane)
 
@@ -71,7 +71,7 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p1_gui_full_boot_replay` | WsParallel + HTTP GUI 启动全序列回放 | `strict` | implemented |
-| `p1_gui_proxy_switch_replay` | selector PUT 切换回放 | `strict` | implemented |
+| `p1_gui_proxy_switch_replay` | selector PUT 切换回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_proxy_delay_replay` | proxy delay 测试回放 | `strict` | implemented |
 | `p1_gui_group_delay_replay` | group delay 测试回放 | `strict` | implemented |
 | `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented |

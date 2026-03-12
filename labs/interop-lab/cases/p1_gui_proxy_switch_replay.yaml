@@ -1,10 +1,11 @@
 id: p1_gui_proxy_switch_replay
 title: gui proxy selector switch replay
 priority: p1
-kernel_mode: rust
+kernel_mode: both
 env_class: strict
 tags:
   - control-plane
+  - dual_core
 bootstrap:
   rust:
     command: ./target/debug/app
@@ -18,6 +19,17 @@ bootstrap:
     ready_path: /version
     api:
       base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/l18_gui_go.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
       secret: test-secret
 gui_sequence:
   - kind: http
@@ -52,3 +64,5 @@ assertions:
     expected: 200
 oracle:
   tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /proxies

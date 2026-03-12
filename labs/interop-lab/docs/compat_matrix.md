@@ -4,19 +4,19 @@
 
 | Surface | 语义目标 | Case ID | Env Class | 状态 |
 | --- | --- | --- | --- | --- |
-| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented |
-| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented |
-| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` | `env_limited`/`strict` | implemented |
-| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` | `strict` | implemented |
+| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_switch_replay` = both) |
+| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both) |
 | `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented |
 | `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
-| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p1_gui_connections_tracking` | `env_limited`/`strict` | implemented |
-| `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` | `env_limited` | implemented |
-| `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
-| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
+| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
-| `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented |
-| WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented |
+| `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | WS reconnect | kernel restart 后 WS 重连 | `p1_gui_ws_reconnect_behavior` | `strict` | implemented |
 | wrong token | 鉴权失败语义 | `p1_auth_negative_wrong_token` | `env_limited` | implemented |
 | missing token | 鉴权失败语义 | `p1_auth_negative_missing_token` | `env_limited` | implemented |
