@@ -1,0 +1,50 @@
+id: p1_dns_query_endpoint_contract
+title: dns query endpoint resolves localhost on both kernels
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - control-plane
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: dns_query
+    method: GET
+    path: /dns/query?name=localhost&type=A
+    expect_status: 200
+assertions:
+  - key: http.dns_query.status
+    op: eq
+    expected: 200
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /dns/query*

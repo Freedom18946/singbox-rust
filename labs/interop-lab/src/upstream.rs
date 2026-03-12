@@ -1395,6 +1395,10 @@ async fn tcp_roundtrip_via_proxy(proxy: &str, addr: &str, payload: &[u8]) -> Res
         );
         return tcp_roundtrip_via_socks5(&proxy_addr, addr, payload).await;
     }
+    if proxy.starts_with("http://") {
+        let proxy_addr = normalize_addr(proxy.trim_start_matches("http://"));
+        return tcp_roundtrip_via_http_connect(&proxy_addr, addr, payload).await;
+    }
 
     Err(anyhow!("unsupported tcp proxy scheme: {proxy}"))
 }
@@ -1415,6 +1419,70 @@ async fn tcp_roundtrip_via_socks5(
         .await
         .with_context(|| format!("reading payload via socks5 from {target_addr}"))?;
     Ok(buf)
+}
+
+async fn tcp_roundtrip_via_http_connect(
+    proxy_addr: &str,
+    target_addr: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>> {
+    let mut stream = TcpStream::connect(proxy_addr)
+        .await
+        .with_context(|| format!("connecting http proxy {proxy_addr}"))?;
+    let request =
+        format!("CONNECT {target_addr} HTTP/1.1\r\nHost: {target_addr}\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .with_context(|| format!("writing http connect request via {proxy_addr}"))?;
+    read_http_connect_response(&mut stream, proxy_addr, target_addr).await?;
+    stream
+        .write_all(payload)
+        .await
+        .with_context(|| format!("writing payload via http connect to {target_addr}"))?;
+    let mut buf = vec![0_u8; payload.len()];
+    stream
+        .read_exact(&mut buf)
+        .await
+        .with_context(|| format!("reading payload via http connect from {target_addr}"))?;
+    Ok(buf)
+}
+
+async fn read_http_connect_response(
+    stream: &mut TcpStream,
+    proxy_addr: &str,
+    target_addr: &str,
+) -> Result<()> {
+    let mut response = Vec::with_capacity(256);
+    let mut byte = [0_u8; 1];
+    loop {
+        let n = stream
+            .read(&mut byte)
+            .await
+            .with_context(|| format!("reading http connect response from {proxy_addr}"))?;
+        if n == 0 {
+            return Err(anyhow!(
+                "unexpected eof reading http connect response from {proxy_addr} to {target_addr}"
+            ));
+        }
+        response.push(byte[0]);
+        if response.ends_with(b"\r\n\r\n") {
+            break;
+        }
+        if response.len() > 8192 {
+            return Err(anyhow!(
+                "http connect response headers too large from {proxy_addr} to {target_addr}"
+            ));
+        }
+    }
+    let response_text = String::from_utf8_lossy(&response);
+    let status_line = response_text.lines().next().unwrap_or_default();
+    if !(status_line.starts_with("HTTP/1.1 200") || status_line.starts_with("HTTP/1.0 200")) {
+        return Err(anyhow!(
+            "http connect failed via {proxy_addr} to {target_addr}: {status_line}"
+        ));
+    }
+    Ok(())
 }
 
 fn parse_host_port(addr: &str) -> Result<(String, u16)> {

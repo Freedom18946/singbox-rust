@@ -7,12 +7,13 @@
 | `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` / `p1_gui_full_boot_replay` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_gui_full_boot_replay` = both, `p1_gui_full_session_replay` = both) |
-| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both) |
+| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
 | `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_delay_replay` = both) |
 | `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
 | `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_session_replay` = both) |
 | `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | `GET /version` | 版本信息可读 | `p1_version_endpoint_contract` | `strict` | implemented (`p1_version_endpoint_contract` = both) |
+| `GET /dns/query` | DNS 查询结果可读 | `p1_dns_query_endpoint_contract` | `strict` | implemented (`p1_dns_query_endpoint_contract` = both) |
 | `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
@@ -42,9 +43,12 @@
 | 协议/路径 | 连通 | 故障 | 恢复 | Jitter | Case ID |
 | --- | --- | --- | --- | --- | --- |
 | HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` (both) `p1_fault_*_http_*` `p1_recovery_*_http_*` |
+| HTTP CONNECT via HTTP proxy | yes | — | — | — | `p1_http_connect_via_http_proxy` (both) |
+| Selector switch via SOCKS | blocked->direct | — | — | — | `p1_selector_switch_traffic_replay` (both) |
 | TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` (both) `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
 | UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` (both) `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
 | DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` (both) `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| IP-CIDR routing via SOCKS | direct on match | final block on miss | — | — | `p1_ip_cidr_rule_via_socks` (both) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |

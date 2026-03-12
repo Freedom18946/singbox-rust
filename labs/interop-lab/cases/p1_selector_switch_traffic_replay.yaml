@@ -1,0 +1,91 @@
+id: p1_selector_switch_traffic_replay
+title: selector switch changes dataplane outcome on both kernels
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - dataplane
+  - control-plane
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_selector_switch.json
+      - run
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_selector_switch.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - name: local_http
+    kind: http_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: http_get
+    name: before_switch_blocked
+    url: "{{upstream.local_http}}/v1/echo?scene=before-selector-switch"
+    proxy: socks5://127.0.0.1:11801
+  - kind: command
+    name: switch_selector_to_direct
+    command: sh
+    args:
+      - -lc
+      - |
+        for port in 19290 9090; do
+          curl -fsS -X PUT \
+            -H 'Authorization: Bearer test-secret' \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"direct"}' \
+            "http://127.0.0.1:$port/proxies/my-group" && exit 0
+        done
+        exit 1
+    timeout_ms: 5000
+    expect_exit: 0
+  - kind: sleep
+    name: wait_after_switch
+    ms: 200
+  - kind: http_get
+    name: after_switch_direct
+    url: "{{upstream.local_http}}/v1/echo?scene=after-selector-switch"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+assertions:
+  - key: http.version.status
+    op: eq
+    expected: 200
+  - key: traffic.before_switch_blocked.success
+    op: eq
+    expected: false
+  - key: traffic.switch_selector_to_direct.success
+    op: eq
+    expected: true
+  - key: traffic.after_switch_direct.success
+    op: eq
+    expected: true
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /version

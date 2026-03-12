@@ -24,7 +24,7 @@ use sb_config::ir::ConfigIR;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, watch};
 use tower_http::cors::{Any, CorsLayer};
 
 /// Clash API server state shared across handlers
@@ -56,6 +56,10 @@ pub struct ApiState {
     pub cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
     /// URL test history storage for delay tracking
     pub urltest_history: Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
+    /// Shutdown signal fan-out for long-lived websocket handlers.
+    pub shutdown_tx: watch::Sender<bool>,
+    /// Shutdown signal receiver for long-lived websocket handlers.
+    pub shutdown_rx: watch::Receiver<bool>,
 }
 
 impl ApiState {
@@ -69,6 +73,7 @@ impl ApiState {
     ) {
         let (traffic_tx, traffic_rx) = broadcast::channel(1000);
         let (log_tx, log_rx) = broadcast::channel(1000);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let state = Self {
             config: Arc::new(config),
@@ -82,6 +87,8 @@ impl ApiState {
             global_config: None,
             cache_file: None,
             urltest_history: None,
+            shutdown_tx,
+            shutdown_rx,
         };
 
         (state, traffic_rx, log_rx)
@@ -98,6 +105,7 @@ impl ApiState {
     ) {
         let (traffic_tx, traffic_rx) = broadcast::channel(1000);
         let (log_tx, log_rx) = broadcast::channel(1000);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let state = Self {
             config: Arc::new(config),
@@ -111,6 +119,8 @@ impl ApiState {
             global_config: None,
             cache_file: None,
             urltest_history: None,
+            shutdown_tx,
+            shutdown_rx,
         };
 
         (state, traffic_rx, log_rx)
@@ -159,6 +169,12 @@ impl ClashApiServer {
         self
     }
 
+    /// Set DNS resolver for `/dns/query` and cache management endpoints.
+    pub fn with_dns_resolver(mut self, resolver: Arc<DnsResolver>) -> Self {
+        self.state.dns_resolver = Some(resolver);
+        self
+    }
+
     /// Set global configuration IR
     pub fn with_config_ir(mut self, config: Arc<ConfigIR>) -> Self {
         self.state.global_config = Some(config);
@@ -182,8 +198,6 @@ impl ClashApiServer {
 
     /// Start the API server
     pub async fn start(&self) -> ApiResult<()> {
-        let app = self.create_app();
-
         log::info!("Starting Clash API server on {}", self.listen_addr);
 
         let listener = tokio::net::TcpListener::bind(self.listen_addr)
@@ -192,17 +206,11 @@ impl ClashApiServer {
                 ApiError::configuration(format!("Failed to bind to {}: {}", self.listen_addr, e))
             })?;
 
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| ApiError::Internal { source: e.into() })?;
-
-        Ok(())
+        self.serve_with_listener(listener).await
     }
 
     /// Start the API server with a graceful shutdown signal.
     pub async fn start_with_shutdown(&self, shutdown: oneshot::Receiver<()>) -> ApiResult<()> {
-        let app = self.create_app();
-
         log::info!("Starting Clash API server on {}", self.listen_addr);
 
         let listener = tokio::net::TcpListener::bind(self.listen_addr)
@@ -211,9 +219,32 @@ impl ClashApiServer {
                 ApiError::configuration(format!("Failed to bind to {}: {}", self.listen_addr, e))
             })?;
 
+        self.serve_with_listener_and_shutdown(listener, shutdown)
+            .await
+    }
+
+    /// Serve the API on an existing listener.
+    pub async fn serve_with_listener(&self, listener: tokio::net::TcpListener) -> ApiResult<()> {
+        let app = self.create_app();
+        axum::serve(listener, app)
+            .await
+            .map_err(|e| ApiError::Internal { source: e.into() })?;
+        Ok(())
+    }
+
+    /// Serve the API on an existing listener with graceful shutdown.
+    pub async fn serve_with_listener_and_shutdown(
+        &self,
+        listener: tokio::net::TcpListener,
+        shutdown: oneshot::Receiver<()>,
+    ) -> ApiResult<()> {
+        let app = self.create_app();
+        let shutdown_tx = self.state.shutdown_tx.clone();
+
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown.await;
+                let _ = shutdown_tx.send(true);
             })
             .await
             .map_err(|e| ApiError::Internal { source: e.into() })?;

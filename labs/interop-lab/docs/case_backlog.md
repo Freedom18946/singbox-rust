@@ -31,6 +31,7 @@
 | `p1_auth_negative_missing_token` | missing token HTTP/WS rejection | `env_limited` | implemented |
 | `p1_optional_endpoints_contract` | providers/rules/script/profile response semantics | `env_limited` | implemented |
 | `p1_version_endpoint_contract` | `/version` 返回带 version 字段的 JSON | `strict` | implemented (`kernel_mode: both`) |
+| `p1_dns_query_endpoint_contract` | `/dns/query` 返回 200 且可解析域名 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented |
 
 ### 数据面连通/故障/恢复
@@ -38,9 +39,12 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p1_rust_core_http_via_socks` | HTTP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_http_connect_via_http_proxy` | HTTP CONNECT 隧道链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_selector_switch_traffic_replay` | selector 从 block 切到 direct 后流量恢复 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_ip_cidr_rule_via_socks` | IP-CIDR 路由命中优先于 final block | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

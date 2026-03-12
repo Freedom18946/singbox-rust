@@ -10,12 +10,12 @@
 
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
-| CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 20 | 95.2% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 7 | 38.9% |
+| CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 10 | 55.6% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 2 | 22.2% |
 | SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 1 | 20.0% |
-| **Total** | | **16** | **60** | **30** | **50.0%** |
+| **Total** | | **16** | **60** | **34** | **56.7%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
@@ -84,7 +84,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-CP-018 | GET /providers returns provider list | GET /providers/proxies | 200 + provider JSON | HTTP | `p1_optional_endpoints_contract` | — | DIV-H-003 |
 | BHV-CP-019 | GET /rules returns rule list | GET /rules | 200 + rules array | HTTP | `p1_optional_endpoints_contract` | — | — |
 | BHV-CP-020 | GET /version returns version info | GET /version | 200 + `{version, ...}` | HTTP | `p1_version_endpoint_contract` | — | — |
-| BHV-CP-021 | GET /dns/query resolves domain | GET /dns/query?name=example.com | 200 + DNS result JSON | HTTP | — | — | DIV-M-005 |
+| BHV-CP-021 | GET /dns/query resolves domain | GET /dns/query?name=example.com | 200 + DNS result JSON | HTTP | `p1_dns_query_endpoint_contract` | — | DIV-M-005 |
 
 ### DP.1: Inbound
 
@@ -92,7 +92,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_tcp_via_socks` | — | — |
 | BHV-DP-002 | SOCKS5 UDP relays packets | UDP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_udp_via_socks` | — | DIV-C-002 |
-| BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | — | — | — |
+| BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | `p1_http_connect_via_http_proxy` | — | — |
 | BHV-DP-004 | Mixed inbound detects protocol | SOCKS5 or HTTP to same port | Auto-detect and handle | Traffic | — | `p0_clash_api_contract_strict` | — |
 
 ### DP.2: Outbound
@@ -100,7 +100,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-005 | Direct outbound connects to target | Routed to direct | TCP connection established | Traffic, Conn | `p1_rust_core_http_via_socks` | — | DIV-C-001 |
-| BHV-DP-006 | Selector switches via PUT API | PUT /proxies/{group} | Subsequent traffic uses new path | Traffic | — | `p1_gui_proxy_switch_replay` | — |
+| BHV-DP-006 | Selector switches via PUT API | PUT /proxies/{group} | Subsequent traffic uses new path | Traffic | `p1_selector_switch_traffic_replay` | `p1_gui_proxy_switch_replay` | — |
 | BHV-DP-007 | URLTest auto-selects lowest latency | urltest group configured | Auto-selects best outbound | Traffic | — | `p1_gui_proxy_delay_replay` | — |
 | BHV-DP-008 | Block outbound rejects connection | Routed to block | Connection refused/reset | Traffic | `p1_block_outbound_via_socks` | — | — |
 | BHV-DP-009 | Chain proxy (multi-hop) | SOCKS5→SOCKS5→direct | End-to-end connectivity | Traffic | `p2_dataplane_chain_proxy` | — | — |
@@ -112,7 +112,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-010 | Rule match dispatches correctly | Traffic matching a rule | Dispatched to rule's outbound | Traffic | — | `p1_gui_connections_tracking` | — |
 | BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | `p1_gui_full_session_replay` | `p1_rust_core_http_via_socks` | — |
 | BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | — | — | — |
-| BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | — | — | — |
+| BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | `p1_ip_cidr_rule_via_socks` | — | — |
 | BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | — | — | DIV-C-003 |
 
 ### DP.4: DNS
@@ -222,7 +222,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV-M-002 | COSMETIC | /logs WS: Rust frames include extra `timestamp` and `source` fields not in Go. | BHV-CP-011 | `ignore_ws_paths: ["/logs"]` or structural diff |
 | DIV-M-003 | COSMETIC | Shutdown grace period: Rust configurable, Go fixed 30s. | BHV-LC-007 | No oracle action (not observed in API) |
 | DIV-M-004 | COSMETIC | /connections WS: Rust hardcodes 1s push interval, Go uses `?interval=` param. | BHV-CP-010 | `tolerate_counter_jitter: true` for connection counts |
-| DIV-M-005 | COSMETIC | /dns/query response: Rust returns simplified JSON vs Go's full dig-style output. | BHV-CP-021 | `ignore_http_paths: ["/dns/query"]` |
+| DIV-M-005 | COSMETIC | /dns/query response: Rust returns simplified JSON vs Go's full dig-style output. | BHV-CP-021 | `ignore_http_paths: ["/dns/query*"]` |
 | DIV-M-006 | COSMETIC | `/configs` payload normalization still differs in mode casing, mode-list, and exposed port fields under strict self-managed configs. | BHV-CP-001, BHV-LC-004 | `ignore_http_paths: ["/configs"]` |
 | DIV-M-007 | COSMETIC | `/proxies` inventory differs because Rust injects synthetic entries and richer group metadata than Go. | BHV-CP-003, BHV-CP-004 | `ignore_http_paths: ["/proxies"]` |
 | DIV-M-008 | COSMETIC | `/connections` HTTP snapshot includes runtime/platform-specific `memory` values; Rust returns 0 on non-Linux. | BHV-CP-006 | `ignore_http_paths: ["/connections"]` |
@@ -245,11 +245,11 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Baseline | 18 | 18 / 85 | 50.0% (30/60 BHV) |
-| T1 Immediate (Completed) | GUI critical path strict | +0 | 18 / 85 | 50.0% (30/60 BHV) |
-| T2 Near-term | Control plane complete | +4 | 19 / 83 | ~58% (35/60 BHV) |
-| T3 Planned | Data plane core + lifecycle | +3 | 22 / 83 | ~63% (38/60 BHV) |
-| T4 Long-term | Protocol suites + perf | +4 | 26 / 83 | ~75% (45/60 BHV) |
+| Current | Baseline | 25 | 25 / 92 | 56.7% (34/60 BHV) |
+| T1 Immediate (Completed) | GUI critical path strict | +0 | 25 / 92 | 56.7% (34/60 BHV) |
+| T2 Near-term | Routing + lifecycle unblock | +3 | 28 / 92 | ~61.7% (37/60 BHV) |
+| T3 Planned | Services + more routing | +3 | 31 / 92 | ~66.7% (40/60 BHV) |
+| T4 Long-term | Protocol suites + perf | +4 | 35 / 92 | ~75% (45/60 BHV) |
 
 ### T1: Immediate (5 cases, all E2-E3)
 
@@ -288,6 +288,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 2 | `p1_rust_core_http_via_socks` | both | E2 | BHV-DP-005 | Promoted on 2026-03-12 after replacing curl-only SOCKS traffic with `reqwest+socks` and `/version` oracle ignore |
 | 3 | `p1_rust_core_dns_via_socks` | both | E2 | BHV-DP-015 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
 | 4 | `p1_rust_core_udp_via_socks` | both | E2 | BHV-DP-002 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap, `SB_SOCKS_UDP_ENABLE=1`, and `/version` oracle ignore |
+| 5 | `p1_http_connect_via_http_proxy` | both | E3 | BHV-DP-003 | Promoted on 2026-03-12 after adding HTTP CONNECT proxy support to `tcp_round_trip` harness |
+| 6 | `p1_selector_switch_traffic_replay` | both | E3 | BHV-DP-006 | Promoted on 2026-03-12 with selector defaulting to `block`, then switching to `direct` via PUT API |
+| 7 | `p1_dns_query_endpoint_contract` | both | E1 | BHV-CP-021 | Promoted on 2026-03-12 after wiring Rust Clash API `dns_resolver` into managed runtime startup |
+| 8 | `p1_ip_cidr_rule_via_socks` | both | E2 | BHV-DP-013 | Promoted on 2026-03-12 with an `ip_cidr` allow rule for `127.0.0.0/8` ahead of final `block` |
 
 ### T4: Long-term (+4 cases)
 
@@ -324,21 +328,21 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 7.2% (6/83) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 31.7% (19/60) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 1.7% (1/60) |
-| GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 90.9% (10/11) |
-| GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 0% (0/11) |
-| MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 0% (0/7) |
+| Both-mode case ratio | both cases / total cases | 27.2% (25/92) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 56.7% (34/60) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 43.3% (26/60) |
+| GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
+| GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
+| MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
 
-> **Note**: Current both-mode coverage is heavily skewed toward `env_limited` cases (5/6 both cases are env_limited).
-> The operational gap is in **strict** both-mode coverage, which requires managed kernel bootstrap.
+> **Note**: strict both-mode coverage is no longer the main bottleneck.
+> The remaining parity gap is concentrated in routing, lifecycle, and service behaviors that still need product fixes or richer dual-kernel scenarios.
 
 ### Projected Coverage by Tier
 
 | After Tier | Both Cases | BHV Coverage | Strict BHV Coverage |
 |------------|-----------|--------------|---------------------|
-| Current | 6 | 31.7% (19/60) | 1.7% (1/60) |
+| Current | 25 | 56.7% (34/60) | 43.3% (26/60) |
 | T1 | 11 | ~50.0% (30/60) | ~18.3% (11/60) |
 | T2 | 15 | ~58.3% (35/60) | ~25.0% (15/60) |
 | T3 | 22 | ~68.3% (41/60) | ~40.0% (24/60) |
