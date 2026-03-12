@@ -1,11 +1,12 @@
 id: p2_dataplane_chain_proxy
 title: chain proxy dual-hop via SOCKS5 → SOCKS5 → direct
 priority: p2
-kernel_mode: rust
+kernel_mode: both
 env_class: strict
 tags:
   - dataplane
   - chain_proxy
+  - dual_core
 bootstrap:
   rust:
     command: ./target/debug/app
@@ -13,33 +14,76 @@ bootstrap:
       - -c
       - labs/interop-lab/configs/rust_core_chain_proxy.json
       - run
-      - --admin-listen
-      - 127.0.0.1:19190
     startup_timeout_ms: 15000
-    ready_path: /healthz
+    ready_path: /version
     api:
-      base_url: http://127.0.0.1:19190
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_chain_proxy.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
 gui_sequence:
   - kind: http
-    name: healthz
+    name: version
     method: GET
-    path: /healthz
+    path: /version
     expect_status: 200
 upstream_topology:
   - name: local_http
     kind: http_echo
     bind: 127.0.0.1:0
 traffic_plan:
+  - kind: command
+    name: start_second_hop
+    command: sh
+    args:
+      - -lc
+      - |
+        pkill -f 'labs/interop-lab/configs/go_core_second_hop_socks.json' >/dev/null 2>&1 || true
+        rm -f /tmp/interop-chain-hop.pid
+        nohup go_fork_source/sing-box-1.12.14/sing-box run -c labs/interop-lab/configs/go_core_second_hop_socks.json >/tmp/interop-chain-hop.log 2>&1 &
+        echo $! >/tmp/interop-chain-hop.pid
+        sleep 1
+        kill -0 "$(cat /tmp/interop-chain-hop.pid)"
+    timeout_ms: 5000
+    expect_exit: 0
   - kind: http_get
     name: chain_proxy_http_echo
     url: "{{upstream.local_http}}/echo"
     proxy: socks5://127.0.0.1:11801
     expect_status: 200
+  - kind: command
+    name: stop_second_hop
+    command: sh
+    args:
+      - -lc
+      - |
+        if [ -f /tmp/interop-chain-hop.pid ]; then
+          kill "$(cat /tmp/interop-chain-hop.pid)" >/dev/null 2>&1 || true
+          rm -f /tmp/interop-chain-hop.pid
+        fi
+        pkill -f 'labs/interop-lab/configs/go_core_second_hop_socks.json' >/dev/null 2>&1 || true
+    timeout_ms: 5000
+    expect_exit: 0
 assertions:
-  - key: http.healthz.status
+  - key: http.version.status
     op: eq
     expected: 200
+  - key: traffic.start_second_hop.success
+    op: eq
+    expected: true
   - key: traffic.chain_proxy_http_echo.success
+    op: eq
+    expected: true
+  - key: traffic.stop_second_hop.success
     op: eq
     expected: true
   - key: errors.count
@@ -47,3 +91,5 @@ assertions:
     expected: 0
 oracle:
   tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /version

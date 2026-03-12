@@ -1139,6 +1139,15 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::ApiWsSoak { name, path, .. } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "api_ws_soak",
+                    "path": path,
+                    "error": "api_ws_soak requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
             TrafficAction::TlsRoundTrip {
                 name,
                 addr,
@@ -1258,48 +1267,30 @@ async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
 }
 
 async fn http_get_via_curl(url: &str, proxy: Option<&str>) -> Result<(u16, String)> {
-    let marker = "__INTEROP_STATUS__:";
-    let mut cmd = Command::new("curl");
-    cmd.arg("-sS").arg("-L").arg("--max-time").arg("12");
+    let client = if let Some(proxy) = proxy {
+        let reqwest_proxy =
+            reqwest::Proxy::all(proxy).with_context(|| format!("building proxy for {proxy}"))?;
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(12))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .proxy(reqwest_proxy)
+            .build()
+            .with_context(|| format!("building proxied http client for {url}"))?
+    } else {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(12))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .with_context(|| format!("building http client for {url}"))?
+    };
 
-    if let Some(proxy) = proxy {
-        if proxy.starts_with("socks5://") {
-            let addr = proxy.trim_start_matches("socks5://");
-            cmd.arg("--socks5-hostname").arg(addr);
-        } else if proxy.starts_with("socks5h://") {
-            let addr = proxy.trim_start_matches("socks5h://");
-            cmd.arg("--socks5-hostname").arg(addr);
-        } else {
-            cmd.arg("-x").arg(proxy);
-        }
-    }
-
-    cmd.arg("-w").arg(format!("\n{marker}%{{http_code}}"));
-    cmd.arg(url);
-
-    let output = cmd
-        .output()
+    let response = client
+        .get(url)
+        .send()
         .await
-        .with_context(|| format!("running curl for {url}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(anyhow!(
-            "curl failed status={} stderr={}",
-            output.status,
-            stderr.trim()
-        ));
-    }
-
-    let stdout = String::from_utf8(output.stdout).with_context(|| "curl stdout non-utf8")?;
-    let idx = stdout
-        .rfind(marker)
-        .ok_or_else(|| anyhow!("curl output missing status marker"))?;
-    let body = stdout[..idx].trim_end_matches('\n').to_string();
-    let status_raw = stdout[idx + marker.len()..].trim();
-    let status = status_raw
-        .parse::<u16>()
-        .with_context(|| format!("invalid curl http status: {status_raw}"))?;
+        .with_context(|| format!("proxied http get {url}"))?;
+    let status = response.status().as_u16();
+    let body = response.text().await.unwrap_or_default();
     Ok((status, body))
 }
 

@@ -10,15 +10,15 @@
 
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
-| CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 19 | 90.5% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 0 | 0% |
-| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 1 | 11.1% |
+| CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 20 | 95.2% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 7 | 38.9% |
+| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 2 | 22.2% |
 | SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 1 | 20.0% |
-| **Total** | | **16** | **60** | **21** | **35.0%** |
+| **Total** | | **16** | **60** | **30** | **50.0%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
-> Coverage gaps still cluster in DP/SV; LC now has its first strict dual-kernel behavior via `PATCH /configs`.
+> Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
 
 ---
 
@@ -49,11 +49,11 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-CP-001 | GET /configs returns runtime config | GET /configs | 200 + JSON with `mode`, `mixed-port` | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | DIV-M-006 |
+| BHV-CP-001 | GET /configs returns runtime config | GET /configs | 200 + JSON with `mode`, `mixed-port` | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-006 |
 | BHV-CP-002 | PATCH /configs updates mode | PATCH /configs `{"mode":"rule"}` | 204 No Content | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
-| BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict` | — | DIV-M-007 |
+| BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-007 |
 | BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | DIV-M-007 |
-| BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_proxy_delay_replay` | DIV-M-009 |
+| BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay` | — | DIV-M-009 |
 | BHV-CP-006 | GET /connections lists active conns | GET /connections | 200 + `{connections[], downloadTotal, uploadTotal}` | HTTP, Conn | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_connections_tracking` | DIV-M-008 |
 | BHV-CP-007 | DELETE /connections/{id} closes conn | DELETE /connections/{id} | 204 or 404 | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
 
@@ -61,10 +61,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-CP-008 | /traffic streams real-time bandwidth | WS /traffic | JSON frames `{up, down}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_full_boot_replay` | — |
-| BHV-CP-009 | /memory streams RSS usage | WS /memory | JSON frames `{inuse, oslimit}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_full_boot_replay` | — |
+| BHV-CP-008 | /traffic streams real-time bandwidth | WS /traffic | JSON frames `{up, down}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
+| BHV-CP-009 | /memory streams RSS usage | WS /memory | JSON frames `{inuse, oslimit}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
 | BHV-CP-010 | /connections streams conn updates | WS /connections | JSON frames with connection list | WS | `p0_clash_api_contract`, `p2_connections_ws_soak_dual_core` | `p2_connections_ws_concurrency_suite` | DIV-M-004 |
-| BHV-CP-011 | /logs streams log entries | WS /logs | JSON frames with log message | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_full_boot_replay` | DIV-M-002 |
+| BHV-CP-011 | /logs streams log entries | WS /logs | JSON frames with log message | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-002 |
 
 ### CP.3: Authentication
 
@@ -83,34 +83,34 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-CP-018 | GET /providers returns provider list | GET /providers/proxies | 200 + provider JSON | HTTP | `p1_optional_endpoints_contract` | — | DIV-H-003 |
 | BHV-CP-019 | GET /rules returns rule list | GET /rules | 200 + rules array | HTTP | `p1_optional_endpoints_contract` | — | — |
-| BHV-CP-020 | GET /version returns version info | GET /version | 200 + `{version, ...}` | HTTP | — | — | — |
+| BHV-CP-020 | GET /version returns version info | GET /version | 200 + `{version, ...}` | HTTP | `p1_version_endpoint_contract` | — | — |
 | BHV-CP-021 | GET /dns/query resolves domain | GET /dns/query?name=example.com | 200 + DNS result JSON | HTTP | — | — | DIV-M-005 |
 
 ### DP.1: Inbound
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | — | `p1_rust_core_tcp_via_socks` | — |
-| BHV-DP-002 | SOCKS5 UDP relays packets | UDP via SOCKS5 | Round-trip echo success | Traffic | — | `p1_rust_core_udp_via_socks` | DIV-C-002 |
-| BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | — | `p1_rust_core_http_via_socks` | — |
+| BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_tcp_via_socks` | — | — |
+| BHV-DP-002 | SOCKS5 UDP relays packets | UDP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_udp_via_socks` | — | DIV-C-002 |
+| BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | — | — | — |
 | BHV-DP-004 | Mixed inbound detects protocol | SOCKS5 or HTTP to same port | Auto-detect and handle | Traffic | — | `p0_clash_api_contract_strict` | — |
 
 ### DP.2: Outbound
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-DP-005 | Direct outbound connects to target | Routed to direct | TCP connection established | Traffic, Conn | — | `p1_rust_core_http_via_socks` | DIV-C-001 |
+| BHV-DP-005 | Direct outbound connects to target | Routed to direct | TCP connection established | Traffic, Conn | `p1_rust_core_http_via_socks` | — | DIV-C-001 |
 | BHV-DP-006 | Selector switches via PUT API | PUT /proxies/{group} | Subsequent traffic uses new path | Traffic | — | `p1_gui_proxy_switch_replay` | — |
 | BHV-DP-007 | URLTest auto-selects lowest latency | urltest group configured | Auto-selects best outbound | Traffic | — | `p1_gui_proxy_delay_replay` | — |
-| BHV-DP-008 | Block outbound rejects connection | Routed to block | Connection refused/reset | Traffic | — | — | — |
-| BHV-DP-009 | Chain proxy (multi-hop) | SOCKS5→SOCKS5→direct | End-to-end connectivity | Traffic | — | `p2_dataplane_chain_proxy` | — |
+| BHV-DP-008 | Block outbound rejects connection | Routed to block | Connection refused/reset | Traffic | `p1_block_outbound_via_socks` | — | — |
+| BHV-DP-009 | Chain proxy (multi-hop) | SOCKS5→SOCKS5→direct | End-to-end connectivity | Traffic | `p2_dataplane_chain_proxy` | — | — |
 
 ### DP.3: Routing
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-010 | Rule match dispatches correctly | Traffic matching a rule | Dispatched to rule's outbound | Traffic | — | `p1_gui_connections_tracking` | — |
-| BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | — | `p1_rust_core_http_via_socks` | — |
+| BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | `p1_gui_full_session_replay` | `p1_rust_core_http_via_socks` | — |
 | BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | — | — | — |
 | BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | — | — | — |
 | BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | — | — | DIV-C-003 |
@@ -119,7 +119,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-DP-015 | DNS resolves via configured servers | Domain lookup | IP address returned | Traffic | — | `p1_rust_core_dns_via_socks` | — |
+| BHV-DP-015 | DNS resolves via configured servers | Domain lookup | IP address returned | Traffic | `p1_rust_core_dns_via_socks` | — | — |
 | BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | — | — | DIV-M-001 |
 | BHV-DP-017 | FakeIP cache flush via API | DELETE /cache/fakeip/flush | Cache cleared, 204 | HTTP | — | — | DIV-M-001 |
 | BHV-DP-018 | DNS result caching and TTL | Repeated domain lookup | Cached response, respects TTL | Traffic | — | — | — |
@@ -129,7 +129,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-LC-001 | Config validate and parse | JSON config file | Parse success or structured error | — | — | `p1_deprecated_v1_style_config` | — |
-| BHV-LC-002 | API ready signal on startup | Process start | GET /version returns 200 | HTTP | — | `p1_lifecycle_restart_reload_replay` | — |
+| BHV-LC-002 | API ready signal on startup | Process start | GET /version returns 200 | HTTP | `p1_gui_full_session_replay` | `p1_lifecycle_restart_reload_replay` | — |
 | BHV-LC-003 | Concurrent service initialization | Multiple services configured | All services started, failures isolated | — | — | `p1_service_failure_isolation` | — |
 
 ### LC.2: Reload
@@ -202,7 +202,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |
 |--------|-----|-------------|--------------|---------------|
 | DIV-C-001 | INTENTIONAL | No implicit direct fallback — unresolvable destinations return error instead of silently falling back to direct. MIG-02 wave#200. | BHV-DP-005, BHV-DP-011 | `ignore_http_paths` for affected traffic test endpoints |
-| DIV-C-002 | KNOWN-GAP | SOCKS5 UDP ASSOCIATE defaults to off. Clients must explicitly enable. | BHV-DP-002 | Skip UDP tests in both-mode unless Go config also disables |
+| DIV-C-002 | KNOWN-GAP | SOCKS5 UDP ASSOCIATE defaults to off unless explicitly enabled on the Rust inbound. | BHV-DP-002 | Set `SB_SOCKS_UDP_ENABLE=1` for Rust strict both-mode cases |
 | DIV-C-003 | KNOWN-GAP | Sniff/Resolve/Hijack actions rejected on inbound path. Go allows them; Rust treats as config error. | BHV-DP-014 | Omit sniff-dependent routing rules from Go config |
 
 ### High (Partial Scenario Failure)
@@ -245,10 +245,10 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Baseline | 8 | 8 / 83 | 35.0% (21/60 BHV) |
-| T1 Immediate | GUI critical path strict | +5 | 11 / 83 | ~50% (30/60 BHV) |
-| T2 Near-term | Control plane complete | +4 | 15 / 83 | ~58% (35/60 BHV) |
-| T3 Planned | Data plane core + lifecycle | +7 | 22 / 83 | ~68% (41/60 BHV) |
+| Current | Baseline | 18 | 18 / 85 | 50.0% (30/60 BHV) |
+| T1 Immediate (Completed) | GUI critical path strict | +0 | 18 / 85 | 50.0% (30/60 BHV) |
+| T2 Near-term | Control plane complete | +4 | 19 / 83 | ~58% (35/60 BHV) |
+| T3 Planned | Data plane core + lifecycle | +3 | 22 / 83 | ~63% (38/60 BHV) |
 | T4 Long-term | Protocol suites + perf | +4 | 26 / 83 | ~75% (45/60 BHV) |
 
 ### T1: Immediate (5 cases, all E2-E3)
@@ -258,10 +258,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | # | Case ID | Current Mode | Effort | New BHVs Covered | Notes |
 |---|---------|-------------|--------|------------------|-------|
 | 1 | `p0_clash_api_contract_strict` | both | E3 | BHV-CP-001…007, 008…011 (strict), BHV-LC-004 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle |
-| 2 | `p1_gui_full_boot_replay` | rust | E2 | BHV-CP-008…011 (parallel WS) | 4 WS parallel + HTTP GET startup sequence |
+| 2 | `p1_gui_full_boot_replay` | both | E3 | BHV-CP-001, BHV-CP-003, BHV-CP-008…011 (parallel WS) | Promoted on 2026-03-12 with self-managed Go bootstrap + `/configs` `/proxies` oracle ignores |
 | 3 | `p1_gui_proxy_switch_replay` | both | E3 | BHV-CP-004, BHV-DP-006 | Promoted on 2026-03-12 with self-managed Go bootstrap + `/proxies` oracle ignore |
-| 4 | `p1_gui_proxy_delay_replay` | rust | E2 | BHV-CP-005 (strict), BHV-DP-007 | GET /proxies/{name}/delay |
-| 5 | `p1_gui_full_session_replay` | rust | E3 | BHV-LC-002, BHV-DP-010, BHV-DP-011 | Needs oracle for /logs format divergence (DIV-M-002) |
+| 4 | `p1_gui_proxy_delay_replay` | both | E3 | BHV-CP-005 (strict), BHV-DP-007 | Promoted on 2026-03-12 with self-managed Go bootstrap + delay-path oracle ignore |
+| 5 | `p1_gui_full_session_replay` | both | E3 | BHV-LC-002, BHV-DP-011 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle |
 
 ### T2: Near-term (+4 cases)
 
@@ -272,17 +272,22 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 3 | `p1_gui_group_delay_replay` | E2 | BHV-CP-005 (group variant) |
 | 4 | `p1_gui_ws_reconnect_behavior` | E3 | BHV-LC-002 (restart recovery) |
 
-### T3: Planned (+7 cases)
+### T3: Planned (+3 cases)
 
 | # | Case ID | Effort | New BHVs Covered |
 |---|---------|--------|------------------|
-| 1 | `p1_rust_core_http_via_socks` | E2 | BHV-DP-001, BHV-DP-003, BHV-DP-005, BHV-DP-011 |
-| 2 | `p1_rust_core_tcp_via_socks` | E2 | BHV-DP-001 |
-| 3 | `p1_rust_core_udp_via_socks` | E3 | BHV-DP-002 (needs DIV-C-002 oracle) |
-| 4 | `p1_rust_core_dns_via_socks` | E2 | BHV-DP-015 |
-| 5 | `p1_lifecycle_restart_reload_replay` | E3 | BHV-LC-001…004 |
-| 6 | `p0_subscription_json` | E2 | BHV-SV-001 |
-| 7 | `p0_subscription_yaml` | E2 | BHV-SV-002 |
+| 1 | `p1_lifecycle_restart_reload_replay` | E3 | BHV-LC-001…004 |
+| 2 | `p0_subscription_json` | E2 | BHV-SV-001 |
+| 3 | `p0_subscription_yaml` | E2 | BHV-SV-002 |
+
+### Recent Promotions
+
+| # | Case ID | Current Mode | Effort | New BHVs Covered | Notes |
+|---|---------|-------------|--------|------------------|-------|
+| 1 | `p1_rust_core_tcp_via_socks` | both | E2 | BHV-DP-001 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
+| 2 | `p1_rust_core_http_via_socks` | both | E2 | BHV-DP-005 | Promoted on 2026-03-12 after replacing curl-only SOCKS traffic with `reqwest+socks` and `/version` oracle ignore |
+| 3 | `p1_rust_core_dns_via_socks` | both | E2 | BHV-DP-015 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
+| 4 | `p1_rust_core_udp_via_socks` | both | E2 | BHV-DP-002 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap, `SB_SOCKS_UDP_ENABLE=1`, and `/version` oracle ignore |
 
 ### T4: Long-term (+4 cases)
 

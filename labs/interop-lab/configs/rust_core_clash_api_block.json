@@ -17,14 +17,12 @@
     ],
     "outbounds": [
         {
-            "type": "socks",
-            "name": "socks-hop",
-            "server": "127.0.0.1",
-            "port": 11802
+            "type": "block",
+            "name": "block"
         }
     ],
     "route": {
         "rules": [],
-        "final": "socks-hop"
+        "final": "block"
     }
 }

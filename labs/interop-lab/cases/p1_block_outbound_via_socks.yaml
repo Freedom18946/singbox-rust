@@ -1,5 +1,5 @@
-id: p1_rust_core_tcp_via_socks
-title: core tcp roundtrip via socks inbound
+id: p1_block_outbound_via_socks
+title: block outbound rejects socks tcp connect on both kernels
 priority: p1
 kernel_mode: both
 env_class: strict
@@ -11,7 +11,7 @@ bootstrap:
     command: ./target/debug/app
     args:
       - -c
-      - labs/interop-lab/configs/rust_core_clash_api.json
+      - labs/interop-lab/configs/rust_core_clash_api_block.json
       - run
     startup_timeout_ms: 15000
     ready_path: /version
@@ -23,7 +23,7 @@ bootstrap:
     args:
       - run
       - -c
-      - labs/interop-lab/configs/go_core_clash_api_dataplane.json
+      - labs/interop-lab/configs/go_core_clash_api_block.json
     startup_timeout_ms: 15000
     ready_path: /version
     api:
@@ -41,17 +41,20 @@ upstream_topology:
     bind: 127.0.0.1:0
 traffic_plan:
   - kind: tcp_round_trip
-    name: via_socks_tcp_echo
+    name: blocked_tcp_echo
     addr: "{{upstream.local_tcp}}"
-    payload: hello-tcp-via-socks
+    payload: should-never-reach-upstream
     proxy: socks5://127.0.0.1:11801
 assertions:
   - key: http.version.status
     op: eq
     expected: 200
-  - key: traffic.via_socks_tcp_echo.success
+  - key: traffic.blocked_tcp_echo.success
     op: eq
-    expected: true
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:

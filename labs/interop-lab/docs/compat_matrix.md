@@ -4,19 +4,20 @@
 
 | Surface | 语义目标 | Case ID | Env Class | 状态 |
 | --- | --- | --- | --- | --- |
-| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
-| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_switch_replay` = both) |
+| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` / `p1_gui_full_boot_replay` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_gui_full_boot_replay` = both, `p1_gui_full_session_replay` = both) |
 | `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both) |
-| `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented |
+| `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_delay_replay` = both) |
 | `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
-| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_session_replay` = both) |
 | `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
-| `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
-| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `GET /version` | 版本信息可读 | `p1_version_endpoint_contract` | `strict` | implemented (`p1_version_endpoint_contract` = both) |
+| `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
+| `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
-| `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
-| WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
+| WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | WS reconnect | kernel restart 后 WS 重连 | `p1_gui_ws_reconnect_behavior` | `strict` | implemented |
 | wrong token | 鉴权失败语义 | `p1_auth_negative_wrong_token` | `env_limited` | implemented |
 | missing token | 鉴权失败语义 | `p1_auth_negative_missing_token` | `env_limited` | implemented |
@@ -40,19 +41,47 @@
 
 | 协议/路径 | 连通 | 故障 | 恢复 | Jitter | Case ID |
 | --- | --- | --- | --- | --- | --- |
-| HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` `p1_fault_*_http_*` `p1_recovery_*_http_*` |
-| TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
-| UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
-| DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` (both) `p1_fault_*_http_*` `p1_recovery_*_http_*` |
+| TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` (both) `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
+| UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` (both) `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
+| DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` (both) `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
-| WS 稳定性 | concurrency | soak | trend gate | — | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` |
+| WS 稳定性 | concurrency | soak | trend gate | dual-core diff | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` `p2_connections_ws_soak_dual_core` |
 | Trojan 协议 | suite | auth fault | recovery/restart | — | `p2_trojan_*` |
 | Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` |
 | Large TCP (128KB) | yes | — | — | — | `p1_dataplane_large_payload_tcp` |
 | Large UDP (8KB) | yes | — | — | — | `p1_dataplane_large_payload_udp` |
 | Large HTTP (256KB) | yes | — | — | — | `p1_dataplane_large_payload_http` |
-| Chain proxy (2-hop) | yes | — | — | — | `p2_dataplane_chain_proxy` |
+| Chain proxy (2-hop) | yes | — | — | — | `p2_dataplane_chain_proxy` (both) |
+
+## 行为 Spec 交叉映射（仓库级自动化）
+
+> 说明：本节补齐 `dual_kernel_golden_spec.md` 中“Both/Rust-Only 未挂 case”但已存在仓库级自动化的行为。
+
+| BHV ID | 行为 | 已有测试 |
+| --- | --- | --- |
+| `BHV-CP-020` | `GET /version returns version info` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_version` |
+| `BHV-CP-021` | `GET /dns/query resolves domain` | `crates/sb-api/tests/clash_http_e2e.rs::test_dns_query_valid` |
+| `BHV-CP-010` | `/connections streams conn updates` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_single_client_snapshot`, `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_reflects_close_all_updates` |
+| `BHV-DP-008` | `Block outbound rejects connection` | `app/tests/direct_block_outbound_test.rs::test_block_outbound_always_fails` |
+| `BHV-DP-012` | `Domain rules match FQDN` | `app/tests/parity_spec_routing.rs::parity_spec_domain_rules_match_fqdn_before_default` |
+| `BHV-DP-013` | `IP-CIDR rules match addresses` | `app/tests/parity_spec_routing.rs::parity_spec_ip_cidr_rules_match_addresses_before_default` |
+| `BHV-DP-014` | `Sniff detects protocol from payload` | `app/tests/router_sniff_sni_alpn.rs`, `crates/sb-core/tests/tun_sni_routing.rs` |
+| `BHV-DP-016` | `FakeIP pool allocates addresses` | `crates/sb-core/tests/router_fakeip_integration.rs` |
+| `BHV-DP-017` | `FakeIP cache flush via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_flush_fakeip_cache` |
+| `BHV-DP-018` | `DNS result caching and TTL` | `crates/sb-core/tests/dns_cache.rs`, `crates/sb-core/tests/dns_cache_basic.rs`, `crates/sb-core/tests/dns_steady.rs` |
+| `BHV-LC-006` | `State preservation across reload` | `crates/sb-core/tests/supervisor_reload_state.rs::selector_selection_survives_reload_via_cache_file` |
+| `BHV-LC-007` | `Graceful shutdown drains connections` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_waits_for_http_connection_to_drain` |
+| `BHV-LC-008` | `Connection close notification` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_closes_on_server_shutdown` |
+| `BHV-LC-009` | `Resource cleanup on exit` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_releases_listener_and_clears_runtime_trackers` |
+| `BHV-PF-003` | `Peak RSS within bounds` | `labs/interop-lab/src/diff_report.rs::peak_memory_ratio_over_2x_is_mismatch`, `labs/interop-lab/cases/p2_connections_ws_soak_dual_core.yaml` |
+| `BHV-PF-002` | `API response p95 latency` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxies_p95_latency` |
+| `BHV-PF-004` | `WS connection memory stable` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_memory_remains_bounded_over_time` |
+| `BHV-SV-005` | `Proxy provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxy_providers` |
+| `BHV-SV-006` | `Rule provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_rule_providers` |
+| `BHV-SV-007` | `Provider healthcheck via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_healthcheck_proxy_provider` |
 
 ## 双核差分维度矩阵（L10.2.1）
 

@@ -30,16 +30,18 @@
 | `p1_auth_negative_wrong_token` | wrong token HTTP/WS rejection | `env_limited` | implemented |
 | `p1_auth_negative_missing_token` | missing token HTTP/WS rejection | `env_limited` | implemented |
 | `p1_optional_endpoints_contract` | providers/rules/script/profile response semantics | `env_limited` | implemented |
+| `p1_version_endpoint_contract` | `/version` 返回带 version 字段的 JSON | `strict` | implemented (`kernel_mode: both`) |
 | `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented |
 
 ### 数据面连通/故障/恢复
 
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
-| `p1_rust_core_http_via_socks` | HTTP 核心链路连通 | `strict` | implemented |
-| `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented |
-| `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented |
-| `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented |
+| `p1_rust_core_http_via_socks` | HTTP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |
 | `p1_fault_jitter_http_via_socks` | jitter 故障可观测 | `strict` | implemented |
@@ -70,13 +72,13 @@
 
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
-| `p1_gui_full_boot_replay` | WsParallel + HTTP GUI 启动全序列回放 | `strict` | implemented |
+| `p1_gui_full_boot_replay` | WsParallel + HTTP GUI 启动全序列回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_proxy_switch_replay` | selector PUT 切换回放 | `strict` | implemented (`kernel_mode: both`) |
-| `p1_gui_proxy_delay_replay` | proxy delay 测试回放 | `strict` | implemented |
+| `p1_gui_proxy_delay_replay` | proxy delay 测试回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_group_delay_replay` | group delay 测试回放 | `strict` | implemented |
 | `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented |
 | `p1_gui_connections_tracking` | connections tracking 断言 (chains/rule) | `strict` | implemented |
-| `p1_gui_full_session_replay` | 完整用户会话端到端回放 capstone | `strict` | implemented |
+| `p1_gui_full_session_replay` | 完整用户会话端到端回放 capstone | `strict` | implemented (`kernel_mode: both`) |
 
 ### 迁移兼容 / Deprecation（L12）
 
@@ -151,7 +153,7 @@
 
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
-| `p2_dataplane_chain_proxy` | SOCKS5→SOCKS5→direct 双跳连通 | `strict` | implemented |
+| `p2_dataplane_chain_proxy` | SOCKS5→SOCKS5→direct 双跳连通 | `strict` | implemented (`kernel_mode: both`) |
 
 ### 订阅容错（L9.1.1）
 
