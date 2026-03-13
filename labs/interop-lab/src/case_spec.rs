@@ -258,6 +258,50 @@ pub enum TrafficAction {
         #[serde(default)]
         expect_exit: Option<i32>,
     },
+    CommandStart {
+        name: String,
+        handle: String,
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+        #[serde(default)]
+        workdir: Option<PathBuf>,
+    },
+    CommandWait {
+        name: String,
+        handle: String,
+        #[serde(default = "default_command_timeout_ms")]
+        timeout_ms: u64,
+        #[serde(default)]
+        expect_exit: Option<i32>,
+    },
+    ApiHttp {
+        name: String,
+        method: String,
+        path: String,
+        #[serde(default)]
+        method_rust: Option<String>,
+        #[serde(default)]
+        method_go: Option<String>,
+        #[serde(default)]
+        path_rust: Option<String>,
+        #[serde(default)]
+        path_go: Option<String>,
+        #[serde(default)]
+        body: Option<Value>,
+        #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
+        #[serde(default)]
+        expect_status: Option<u16>,
+        #[serde(default)]
+        expect_status_rust: Option<u16>,
+        #[serde(default)]
+        expect_status_go: Option<u16>,
+    },
     KernelControl {
         name: String,
         action: KernelControlAction,
@@ -284,6 +328,26 @@ pub enum TrafficAction {
         #[serde(default = "default_ws_roundtrip_timeout_ms")]
         timeout_ms: u64,
     },
+    ApiWsSoak {
+        name: String,
+        path: String,
+        #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
+        #[serde(default = "default_api_ws_soak_clients_per_wave")]
+        clients_per_wave: usize,
+        #[serde(default = "default_api_ws_soak_waves")]
+        waves: usize,
+        #[serde(default = "default_api_ws_soak_wave_delay_ms")]
+        wave_delay_ms: u64,
+        #[serde(default = "default_api_ws_soak_success_percent")]
+        wave_success_percent: usize,
+        #[serde(default = "default_api_ws_soak_success_percent")]
+        overall_success_percent: usize,
+        #[serde(default = "default_api_ws_soak_frame_timeout_ms")]
+        frame_timeout_ms: u64,
+    },
     TlsRoundTrip {
         name: String,
         addr: String,
@@ -299,6 +363,26 @@ pub enum TrafficAction {
 
 fn default_ws_roundtrip_timeout_ms() -> u64 {
     5_000
+}
+
+fn default_api_ws_soak_clients_per_wave() -> usize {
+    24
+}
+
+fn default_api_ws_soak_waves() -> usize {
+    20
+}
+
+fn default_api_ws_soak_wave_delay_ms() -> u64 {
+    120
+}
+
+fn default_api_ws_soak_success_percent() -> usize {
+    95
+}
+
+fn default_api_ws_soak_frame_timeout_ms() -> u64 {
+    3_000
 }
 
 fn default_tls_roundtrip_timeout_ms() -> u64 {

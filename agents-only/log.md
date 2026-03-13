@@ -16,6 +16,33 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-14 09:10] Agent: Codex (GPT-5)
+
+**任务**: 同步 `agents-only` 到最新 dual-kernel parity 主线，并准备提交本轮 parity 改动
+**变更**:
+- `agents-only/active_context.md`
+  - 从旧的 L18 / ShadowTLS 叙事切换到当前 `L22 dual-kernel parity`
+  - 写入当前 SoT、`Both-Covered = 39 / 60`、strict both 覆盖、最新 artifacts 与 blocker
+- `agents-only/workpackage_latest.md`
+  - 将当前阶段切换为 `L22 dual-kernel parity 收口`
+  - 固化最近新增覆盖、当前优先级、明确不再重复的方向
+- `agents-only/planning/L22-DUAL-KERNEL-PARITY.md`
+  - 新增独立工作包文档
+  - 记录目标、分数、已完成增量、本轮新增能力、blocker 与执行纪律
+- `agents-only/README.md`
+  - 快速入口改指向 `planning/L22-DUAL-KERNEL-PARITY.md`
+  - 更新时间更新到 2026-03-14
+**结果**: 成功
+**备注**:
+- 当前 dual-kernel SoT 口径：
+  - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
+  - `Both-Covered = 39 / 60`
+- 本轮待一并提交的 parity 增量包括：
+  - `p1_gui_connections_tracking`
+  - `p1_lifecycle_restart_reload_replay`
+  - `p1_fakeip_dns_query_contract`
+  - `p1_fakeip_cache_flush_contract`
+
 ### [2026-03-10 20:10] Agent: Codex (GPT-5)
 
 **任务**: 同步 `agents-only` Phase 4 文档到最新执行状态

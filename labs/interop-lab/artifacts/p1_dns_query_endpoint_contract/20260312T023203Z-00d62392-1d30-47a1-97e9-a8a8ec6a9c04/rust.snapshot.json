@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "run_id": "20260312T023203Z-00d62392-1d30-47a1-97e9-a8a8ec6a9c04",
+  "case_id": "p1_dns_query_endpoint_contract",
+  "kernel": "rust",
+  "started_at": "2026-03-12T02:32:03.478257Z",
+  "finished_at": "2026-03-12T02:32:03.741675Z",
+  "http_results": [
+    {
+      "name": "dns_query",
+      "method": "GET",
+      "path": "/dns/query?name=localhost&type=A",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "127.0.0.1"
+        ],
+        "name": "localhost",
+        "ttl": 300,
+        "type": "A"
+      },
+      "body_hash": "1b41970d0261a4cc1447abcd1717b0da318077d4c07f43d8121e93837e3901ae"
+    },
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "DIRECT": {
+            "alive": true,
+            "delay": 0,
+            "history": [],
+            "name": "DIRECT",
+            "type": "Direct",
+            "udp": true
+          },
+          "GLOBAL": {
+            "all": [
+              "direct"
+            ],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "REJECT": {
+            "alive": true,
+            "history": [],
+            "name": "REJECT",
+            "type": "Reject",
+            "udp": false
+          },
+          "direct": {
+            "alive": true,
+            "history": [],
+            "name": "direct",
+            "type": "Unknown",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 0,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [],
+  "errors": [],
+  "fd_samples": []
+}

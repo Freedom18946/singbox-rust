@@ -1,0 +1,16 @@
+{
+  "case_id": "p1_fakeip_dns_query_contract",
+  "run_dir": "labs/interop-lab/artifacts/p1_fakeip_dns_query_contract/20260313T195112Z-f594fae4-8589-4b12-a34b-76676b75ea10",
+  "compared_at": "2026-03-13T19:51:37.958304+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 1,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": []
+}

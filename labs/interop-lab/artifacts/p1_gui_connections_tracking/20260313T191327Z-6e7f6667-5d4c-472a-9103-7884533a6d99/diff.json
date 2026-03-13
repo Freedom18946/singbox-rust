@@ -1,0 +1,16 @@
+{
+  "case_id": "p1_gui_connections_tracking",
+  "run_dir": "labs/interop-lab/artifacts/p1_gui_connections_tracking/20260313T191327Z-6e7f6667-5d4c-472a-9103-7884533a6d99",
+  "compared_at": "2026-03-13T19:13:44.324744+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 2,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": []
+}

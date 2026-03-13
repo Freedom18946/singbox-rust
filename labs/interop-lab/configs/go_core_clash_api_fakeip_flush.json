@@ -1,0 +1,61 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "labs/interop-lab/artifacts/fakeip-go-cache.db",
+      "cache_id": "interop-fakeip-go",
+      "store_fakeip": true
+    },
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 11811
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "tag": "real",
+        "address": "1.1.1.1"
+      },
+      {
+        "tag": "fakeip",
+        "address": "fakeip"
+      }
+    ],
+    "rules": [
+      {
+        "query_type": [
+          "A",
+          "AAAA"
+        ],
+        "server": "fakeip"
+      }
+    ],
+    "fakeip": {
+      "enabled": true,
+      "inet4_range": "198.18.0.0/15",
+      "inet6_range": "fc00::/18"
+    }
+  },
+  "route": {
+    "rules": [],
+    "final": "direct"
+  }
+}

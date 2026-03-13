@@ -1,0 +1,22 @@
+{
+  "case_id": "p1_ip_cidr_rule_via_socks",
+  "run_dir": "labs/interop-lab/artifacts/p1_ip_cidr_rule_via_socks/20260312T023915Z-167aabe7-4afe-42a8-8955-7256bf8b1bf3",
+  "compared_at": "2026-03-12T02:39:25.824378+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 1,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": [
+    {
+      "action_name": "ip_cidr_miss_blocked",
+      "category": "unknown",
+      "evidence": "unclassified"
+    }
+  ]
+}

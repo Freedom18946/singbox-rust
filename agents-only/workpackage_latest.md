@@ -3,8 +3,7 @@
 
 > **用途**：阶段划分 + 当前位置。S-tier，每次会话必读。
 > **纪律**：Phase 关闭后压缩为一行状态。本文件严格 ≤120 行。
-> **对比**：本文件管"在哪"（阶段地图）；`active_context.md` 管"刚做了什么 / 下一步"（事件细节）。
-> **历史**：完整 5728 行原文见 `archive/logs/workpackage_latest.md`。
+> **对比**：本文件管“在哪”；`active_context.md` 管“刚做了什么 / 下一步”。
 
 ---
 
@@ -12,98 +11,83 @@
 
 | 阶段 | 交付 | 关闭时间 |
 |------|------|----------|
-| L1 | 架构整固，crate 边界固化，check-boundaries.sh | 2026-01 |
-| L2 | 功能对齐 88%→99%，Tier 1+2 全部完成 | 2026-01 |
-| L3-L4 | DERP/CacheFile/ConnMetadata prework | 2026-02 |
-| L5 | 协议×故障矩阵（6×4=24 cell） | 2026-02 |
-| L6 | WsRoundTrip/TlsRoundTrip + delay 注入 + 趋势报告 | 2026-02 |
-| L7 | GUI 回放 + E2E capstone | 2026-02 |
-| L8-L11 | CI smoke/nightly + 趋势门禁 + JSONL 追踪 + 回归检测 | 2026-02 |
-| L12 | 弃用检测 + 迁移诊断 + WG 迁移辅助 | 2026-02 |
-| L13 | Clash API/SSMAPI 认证 + 故障隔离 + 健康 API | 2026-02 |
-| L14 | TLS 证书存储 + 热重载 + 能力矩阵 | 2026-02 |
-| L15 | CLI generate/convert/format + 验收清单签署 | 2026-02 |
-| L16 | feature-matrix 46/46 + benchmark + 稳定性 + CI bench gate | 2026-02 |
-| L17 | 发布收口 PASS_ENV_LIMITED | 2026-02 |
+| L1-L17 | 架构整固、功能对齐、CI / 发布收口 | 2026-01 ~ 2026-02 |
+| MIG-02 / L21 | 隐式回退消除，541 V7 assertions，生产路径零隐式直连回退 | 2026-03-07 |
+| L18 Phase 1-4 | 认证替换、证据模型收口、GUI gate 复验、长跑恢复决策门 | 2026-03-11（历史阶段） |
 
-## MIG-02 隐式回退消除
+## 当前阶段：L22 dual-kernel parity 收口
 
-| 状态 | 范围 | 断言数 | 关闭时间 |
-|------|------|--------|----------|
-| ✅ ACCEPTED | wave#1-202, 全部生产路径零隐式回退 | 541 V7 | 2026-03-07 |
+工作包 ID：`WP-L22`
 
-大验收 Step 0-5 全绿（boundaries/parity/test/fmt/clippy + hot_reload 20x + signal 5x + interop-lab 27 + V7 负样例 3/3）。
+- 目标：只用诚实的 Go/Rust strict both-case 提高 `Both-Covered`
+- SoT：`labs/interop-lab/docs/dual_kernel_golden_spec.md`
+- 当前口径：
+  - 不把 Rust-only 单测记成 parity 完成
+  - 不把 repo-level 自动化 / soak / nightly 记成 behavior 覆盖完成
+  - 不做 coverage-neutral 的 promote 充当新增 BHV 覆盖
 
----
+## 当前分数（2026-03-14）
 
-## 当前阶段：L18 认证替换
+| 指标 | 当前值 |
+|------|--------|
+| `Both-Covered` | `39 / 60` |
+| 覆盖率 | `65.0%` |
+| strict both 覆盖 | `31 / 60` |
+| both-case ratio | `29 / 94` |
 
-### Phase 1（脚本开发 + daily 收敛）— ✅ 完成
+## 本轮已真实新增的 both 覆盖
 
-| Batch | 主题 | 状态 |
-|-------|------|------|
-| A | preflight + Go Oracle 构建 | ✅ |
-| B | 双核差分 + GUI 双轨认证 | ✅ |
-| C | 性能门禁 + capstone | ✅ |
-| D | CI 调度 + 状态总线 | ✅ |
+| Case | 行为 / 收益 | 备注 |
+|------|-------------|------|
+| `p1_gui_connections_tracking` | `BHV-DP-010` + `BHV-CP-006` | 在 live SOCKS 请求未结束时抓 `/connections` |
+| `p1_lifecycle_restart_reload_replay` | `BHV-LC-001` | reload 改走真实 `SIGHUP` fallback |
+| `p1_fakeip_dns_query_contract` | `BHV-DP-016` | 双核 `/dns/query` fakeip contract |
+| `p1_fakeip_cache_flush_contract` | `BHV-DP-017` | 双核 fakeip flush/reset contract |
 
-证据：daily 3 轮 PASS + 48x 高压排练 PASS。
-详见 `archive/L12-L17/12-L18-REPLACEMENT-CERTIFICATION-WORKPACKAGES.md`。
+## 本轮顺带补齐的产品 / harness 能力
 
-### Phase 2（Post-MIG-02 开封首跑）— ✅ 完成
+1. Rust Clash API `dns_resolver` 接线到运行时，`GET /dns/query` 不再天然 `503`
+2. Rust fakeip flush 接到 core fakeip state，而不是静态 stub
+3. interop-lab 新增：
+   - `command_start` / `command_wait` / `api_http`
+   - per-kernel `api_http` method/path/status override
+   - `eq_ref` / `ne_ref` 断言
 
-> **Phase 2 结论**：MIG-02 后代码基线上首次端到端跑通 L18 全链路。
-> 18 WP 全部完成，Batch J 已由旧 `PASS_ATTRIBUTED` 收敛为 clean full `PASS`。Rust 性能优于 Go。基线已锁定。
+## 当前优先级
 
-| Batch | 主题 | WP 数 | 依赖 | 状态 |
-|-------|------|--------|------|------|
-| **E** | 环境开封与基线固化 | 3 | 无 | ✅ 完成 |
-| **F** | MIG-02 后适配审计 | 3 | E | ✅ 完成（含 F3 selector fix） |
-| **G** | Rust 单核认证首跑 | 3 | E+F | ✅ 完成（含 RSS threshold 调整） |
-| **H** | 双核差分首跑 | 3 | E+F+G | ✅ 完成（daily PASS, nightly PASS_ENV_LIMITED） |
-| **I** | GUI 替换首跑 | 3 | H | ✅ 完成（Go+Rust 五步全 PASS + sandbox 验证） |
-| **J** | Capstone 首跑与基线锁定 | 3 | G+H+I | ✅ 完成（`20260307T211512Z` clean full PASS，docker WARN） |
+1. `p1_service_failure_isolation`
+   - 前提：先做真实 broken-service dual-core model
+   - 如果仍只有 static stub，就不要硬记 both
+2. `p1_gui_ws_reconnect_behavior`
+   - 只在能诚实映射到 `Both-Covered` 行为时推进
+3. 继续寻找 strict both routing / lifecycle / service 快速增量
+   - 优先复用现有 harness 能力
+   - 优先补已有 Go/Rust config 与 oracle 最小差异的 case
 
-目标：在 MIG-02 后代码基线上首次端到端跑通 L18 全链路。
-详见 `planning/L18-PHASE2.md`。
+## 明确不再重复的方向
 
-### Phase 3（nightly/certify 级运行）— ✅ 历史阶段
+- `/connections` dual-core soak / trend gate / nightly 已有，不再当新增覆盖
+- `api_ws_soak` traffic action 已有，不再重复补
+- `p1_gui_connections_tracking` 已完成，不再回头做 active entry 可见性
+- `BHV-DP-012` domain-rule both-case 当前更像真实行为缺口，不要硬记
+- mixed inbound 真实 Rust gap 未解前，不优先
+- `p1_urltest_auto_select_replay` 真实语义分歧未解前，不优先
 
-- 原叙事：`nightly/certify` 长跑收口。
-- 当前口径：由于本地已为静态审计裁剪大部分 batch 工件，Phase 3 中提到的 `20260307T211512Z` / `20260307T230356Z` 不再作为当前快照下可独立复核的 PASS 事实。
-- 处理方式：这些 batch id 只保留为 provenance reference；缺失本地工件时统一记为 `UNVERIFIED (slim snapshot)`。
-- 历史入口：`agents-only/planning/L18-PHASE3.md`
+## 每次新增 both-case 的最小流程
 
-### Phase 4（全局静态审议整改）— 🔄 当前阶段
+1. 检查 case YAML、Go/Rust config、oracle ignore / tolerance 是否缺失
+2. 实跑：
+   - `cargo run -p interop-lab -- case run ... --kernel both --env-class strict`
+   - `cargo run -p interop-lab -- case diff ...`
+3. 更新：
+   - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
+   - `labs/interop-lab/docs/compat_matrix.md`
+   - `labs/interop-lab/docs/case_backlog.md`（必要时）
+   - `AGENTS.md`
+   - `agents-only/active_context.md`
 
-- 目标：`证据模型可信化 -> 运行边界收敛 -> 决定是否恢复 certify`
-- 已完成：
-  - Wave A：证据模型收口
-  - Wave B 主干：边界 / 脚手架 containment
-  - GUI gate 独立复验：`PROVEN`
-- 当前执行顺序固定为：
-  1. `workspace_test -> bench_outputs_json` 的本地 harness 修稳已完成
-  2. `interop-lab` 的 `TrojanInboundConfig.reality` 初始化器漂移已修正，`cargo test -p interop-lab --no-run` 已通过
-  3. `shadowtls_e2e` / `shadowtls_inbound_e2e` 的 rustls process-level `CryptoProvider` 初始化缺口已修正，窄测已通过
-  4. `scripts/l18/gui_real_cert.sh` 已补 system proxy restore + bash 兼容修正，`daily-host-gui` 在 batch 内已重新拿到 GUI=`PROVEN`
-  5. 若需要最终 `l18_capstone_status.json`，需避免人工中断 `CANARY` 再跑一轮完整 fixed-profile
-  6. 保持 `trojan/shadowsocks` 为已收口状态，不再扩面直到出现新审议要求
-  7. `shadowtls` 继续只盯 v3 剩余证据
-     - 已落地：vendored `rustls 0.23.35` live `session_id` hook、ShadowTLS v3 outbound runtime、`v3 out -> v3 in -> Shadowsocks(in)` 真实 e2e、`strict_mode` TLS1.2 fallback 真实证据、`wildcard_sni=authed` unauthorized fallback 真实证据、`handshake_for_server_name` unauthorized fallback 真实证据、`wildcard_sni=all` ignored live e2e
-     - 当前纪律：不接受“抓现成 ClientHello 后外部改包”的伪实现；本地环境不能绑定 `<sni>:443`，所以 `wildcard_sni=all` 的默认套件仍保留 ignored live e2e，后续若有 443 能力的环境再补离线版，并在 TLS 升级时保住该 hook
-- 当前纪律：默认不继续跑长链路；除非某条审议意见必须由运行证据核定
-- 当前最新 batch：`reports/l18/batches/20260310T231132Z-l18-daily-preflight`
-  - 已确认跑过 `workspace_test` 中此前暴露的 `interop-lab` / `shadowtls_e2e` / `shadowtls_inbound_e2e` 失败点，均未再复现
-  - `bench_outputs_json` 在 batch 内再次通过
-  - `GUI` gate 已写出 `overall_status=PROVEN` / `sandbox.status=PROVEN`
-  - 本轮在 `CANARY` 阶段被人工提前结束，因此尚未形成最终 `l18_capstone_status.json`
-- 当前入口：`agents-only/planning/L18-PHASE4.md`
+## 当前入口
 
----
-
-## 下一阶段评估
-
-L18 关闭后可选方向：
-- MIG-03 (Hysteria2) / MIG-04 (HTTP/Mixed) / MIG-05 (Transport) 具体迁移
-- Codebase hardening / 性能优化
-- Server-side 能力补齐
+- 当前工作包：`agents-only/planning/L22-DUAL-KERNEL-PARITY.md`
+- 当前状态快照：`agents-only/active_context.md`
+- parity 执行规则：`AGENTS.md`

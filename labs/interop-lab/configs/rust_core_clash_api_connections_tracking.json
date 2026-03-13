@@ -1,0 +1,39 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1:11801"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "route-hit"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "ip_cidr": [
+          "127.0.0.0/8"
+        ],
+        "outbound": "route-hit"
+      }
+    ],
+    "final": "block"
+  }
+}

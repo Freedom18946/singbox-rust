@@ -1,0 +1,16 @@
+{
+  "case_id": "p1_fakeip_cache_flush_contract",
+  "run_dir": "labs/interop-lab/artifacts/p1_fakeip_cache_flush_contract/20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f",
+  "compared_at": "2026-03-13T20:25:44.101245+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 6,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": []
+}

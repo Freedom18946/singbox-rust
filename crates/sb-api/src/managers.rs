@@ -13,8 +13,8 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -286,8 +286,8 @@ impl DnsResolver {
     /// Flush fake IP cache.
     /// 清空伪造 IP 缓存。
     pub async fn flush_fake_ip_cache(&self) -> ApiResult<()> {
+        let count = sb_core::dns::fakeip::reset();
         let mut fake_ips = self.fake_ip_mappings.write().await;
-        let count = fake_ips.len();
         fake_ips.clear();
         log::info!("Fake IP cache flushed, {} entries cleared", count);
         Ok(())
@@ -297,8 +297,7 @@ impl DnsResolver {
     /// 获取缓存统计信息。
     pub async fn get_cache_stats(&self) -> (usize, usize) {
         let cache = self.cache.read().await;
-        let fake_ips = self.fake_ip_mappings.read().await;
-        (cache.len(), fake_ips.len())
+        (cache.len(), sb_core::dns::fakeip::mapping_count())
     }
 
     /// Add fake IP mapping.
@@ -312,11 +311,10 @@ impl DnsResolver {
     /// Resolve fake IP to domain.
     /// 将伪造 IP 解析为域名。
     pub async fn resolve_fake_ip(&self, fake_ip: &str) -> Option<String> {
-        let fake_ips = self.fake_ip_mappings.read().await;
-        fake_ips
-            .iter()
-            .find(|(_, ip)| ip.as_str() == fake_ip)
-            .map(|(domain, _)| domain.clone())
+        fake_ip
+            .parse()
+            .ok()
+            .and_then(|ip| sb_core::dns::fakeip::lookup_domain(&ip))
     }
 
     /// Query DNS for a domain.
@@ -338,6 +336,23 @@ impl DnsResolver {
         drop(cache);
 
         log::info!("Performing DNS query for {} (type: {})", name, query_type);
+
+        if sb_core::dns::fakeip::enabled() && matches!(query_type, "A" | "AAAA") {
+            let ip = if query_type == "AAAA" {
+                sb_core::dns::fakeip::allocate_v6(name)
+            } else {
+                sb_core::dns::fakeip::allocate_v4(name)
+            };
+            let addresses = vec![SocketAddr::new(ip, 0)];
+            let cache_entry = DnsCacheEntry {
+                addresses: addresses.clone(),
+                expires_at: Instant::now() + Duration::from_secs(300),
+                query_type: query_type.to_string(),
+            };
+            let mut cache = self.cache.write().await;
+            cache.insert(name.to_string(), cache_entry);
+            return Ok(vec![ip.to_string()]);
+        }
 
         // Perform actual DNS query using tokio's resolver
         let addresses = match query_type {

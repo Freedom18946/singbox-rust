@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_ip_cidr_rule_via_socks",
+  "generated_at": "2026-03-12T02:39:16.068474Z",
+  "run_id": "20260312T023915Z-167aabe7-4afe-42a8-8955-7256bf8b1bf3",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_ip_cidr_rule_via_socks/20260312T023915Z-167aabe7-4afe-42a8-8955-7256bf8b1bf3/rust.snapshot.json",
+    "labs/interop-lab/artifacts/p1_ip_cidr_rule_via_socks/20260312T023915Z-167aabe7-4afe-42a8-8955-7256bf8b1bf3/go.snapshot.json"
+  ]
+}

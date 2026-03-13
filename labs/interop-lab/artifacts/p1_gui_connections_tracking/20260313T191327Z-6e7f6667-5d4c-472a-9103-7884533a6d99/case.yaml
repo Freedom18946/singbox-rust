@@ -1,0 +1,126 @@
+id: p1_gui_connections_tracking
+title: gui connections tracking assertion with chains and rule metadata
+owner: null
+priority: p1
+kernel_mode: both
+tags:
+- control-plane
+- dataplane
+- routing
+- dual_core
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_clash_api_connections_tracking.json
+    - run
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+    - run
+    - -c
+    - labs/interop-lab/configs/go_core_clash_api_connections_tracking.json
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+- kind: http
+  name: version
+  method: GET
+  path: /version
+  body: null
+  no_auth: false
+  auth_secret: null
+  expect_status: 200
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:0
+  target: null
+  handshake_target: null
+traffic_plan:
+- kind: command_start
+  name: start_live_http_via_socks
+  handle: live_http_via_socks
+  command: sh
+  args:
+  - -lc
+  - curl --socks5-hostname 127.0.0.1:11801 -fsS '{{upstream.local_http}}/v1/echo?scene=connection-tracking' >/dev/null
+  env: {}
+  workdir: null
+- kind: sleep
+  name: wait_for_active_entry
+  ms: 300
+- kind: api_http
+  name: capture_live_connections
+  method: GET
+  path: /connections
+  body: null
+  no_auth: false
+  auth_secret: null
+  expect_status: 200
+- kind: command_wait
+  name: wait_live_http_via_socks
+  handle: live_http_via_socks
+  timeout_ms: 10000
+  expect_exit: null
+subscription_input: null
+faults:
+- kind: delay
+  target: local_http
+  ms: 4000
+assertions:
+- key: errors.count
+  op: eq
+  expected: 0
+- key: http.version.status
+  op: eq
+  expected: 200
+- key: traffic.start_live_http_via_socks.success
+  op: eq
+  expected: true
+- key: traffic.capture_live_connections.success
+  op: eq
+  expected: true
+- key: traffic.capture_live_connections.detail.connection_count
+  op: gte
+  expected: 1
+- key: traffic.wait_live_http_via_socks.success
+  op: eq
+  expected: true
+- key: connections.count
+  op: gte
+  expected: 1
+- key: connections.0.chains
+  op: contains
+  expected: route-hit
+- key: connections.0.rule
+  op: ne
+  expected: ''
+- key: connections.0.rule
+  op: ne
+  expected: final
+- key: connections.uploadTotal
+  op: gt
+  expected: 0
+oracle:
+  ignore_http_paths:
+  - /version
+  - /connections
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

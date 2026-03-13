@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 10 | 55.6% |
-| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 2 | 22.2% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 13 | 72.2% |
+| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 3 | 33.3% |
 | SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
-| PF | Performance | 3 (Latency / Memory / Startup) | 5 | 1 | 20.0% |
-| **Total** | | **16** | **60** | **34** | **56.7%** |
+| PF | Performance | 3 (Latency / Memory / Startup) | 5 | 2 | 40.0% |
+| **Total** | | **16** | **60** | **39** | **65.0%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
@@ -31,7 +31,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 | HTTP | `http_mismatches` | status + body_hash per endpoint | BHV-CP-001 … 007, 018 … 021 | `ignore_http_paths` |
 | WebSocket | `ws_mismatches` | frame_count + frame_hash per stream | BHV-CP-008 … 011 | `ignore_ws_paths` |
 | Subscription | `subscription_mismatches` | format + node_count | BHV-SV-001 … 004 | — |
-| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 014, BHV-PF-001 | `tolerate_counter_jitter`, `counter_jitter_abs` |
+| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-PF-001 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
 
@@ -54,7 +54,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-007 |
 | BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | DIV-M-007 |
 | BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay` | — | DIV-M-009 |
-| BHV-CP-006 | GET /connections lists active conns | GET /connections | 200 + `{connections[], downloadTotal, uploadTotal}` | HTTP, Conn | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | `p1_gui_connections_tracking` | DIV-M-008 |
+| BHV-CP-006 | GET /connections lists active conns | GET /connections | 200 + `{connections[], downloadTotal, uploadTotal}` | HTTP, Conn | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_connections_tracking` | — | DIV-M-008 |
 | BHV-CP-007 | DELETE /connections/{id} closes conn | DELETE /connections/{id} | 204 or 404 | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
 
 ### CP.2: Clash API WebSocket Streams
@@ -109,7 +109,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-DP-010 | Rule match dispatches correctly | Traffic matching a rule | Dispatched to rule's outbound | Traffic | — | `p1_gui_connections_tracking` | — |
+| BHV-DP-010 | Rule match dispatches correctly | Traffic matching a rule | Dispatched to rule's outbound | Traffic | `p1_gui_connections_tracking` | — | — |
 | BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | `p1_gui_full_session_replay` | `p1_rust_core_http_via_socks` | — |
 | BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | — | — | — |
 | BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | `p1_ip_cidr_rule_via_socks` | — | — |
@@ -120,16 +120,16 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-015 | DNS resolves via configured servers | Domain lookup | IP address returned | Traffic | `p1_rust_core_dns_via_socks` | — | — |
-| BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | — | — | DIV-M-001 |
-| BHV-DP-017 | FakeIP cache flush via API | DELETE /cache/fakeip/flush | Cache cleared, 204 | HTTP | — | — | DIV-M-001 |
+| BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | `p1_fakeip_dns_query_contract` | — | DIV-M-001 |
+| BHV-DP-017 | FakeIP cache flush via API | DELETE /cache/fakeip/flush | Cache cleared, 204 | HTTP | `p1_fakeip_cache_flush_contract` | — | DIV-M-001 |
 | BHV-DP-018 | DNS result caching and TTL | Repeated domain lookup | Cached response, respects TTL | Traffic | — | — | — |
 
 ### LC.1: Startup
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-LC-001 | Config validate and parse | JSON config file | Parse success or structured error | — | — | `p1_deprecated_v1_style_config` | — |
-| BHV-LC-002 | API ready signal on startup | Process start | GET /version returns 200 | HTTP | `p1_gui_full_session_replay` | `p1_lifecycle_restart_reload_replay` | — |
+| BHV-LC-001 | Config validate and parse | JSON config file | Parse success or structured error | — | `p1_lifecycle_restart_reload_replay` | `p1_deprecated_v1_style_config` | — |
+| BHV-LC-002 | API ready signal on startup | Process start | GET /version returns 200 | HTTP | `p1_gui_full_session_replay`, `p1_lifecycle_restart_reload_replay` | — | — |
 | BHV-LC-003 | Concurrent service initialization | Multiple services configured | All services started, failures isolated | — | — | `p1_service_failure_isolation` | — |
 
 ### LC.2: Reload
@@ -183,7 +183,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-PF-005 | Time to API ready | Process launch | /version 200 within timeout | — | — | `p1_lifecycle_restart_reload_replay` | — |
+| BHV-PF-005 | Time to API ready | Process launch | /version 200 within timeout | — | `p1_version_endpoint_contract` | `p1_lifecycle_restart_reload_replay` | — |
 
 ---
 
@@ -245,11 +245,11 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Baseline | 25 | 25 / 92 | 56.7% (34/60 BHV) |
-| T1 Immediate (Completed) | GUI critical path strict | +0 | 25 / 92 | 56.7% (34/60 BHV) |
-| T2 Near-term | Routing + lifecycle unblock | +3 | 28 / 92 | ~61.7% (37/60 BHV) |
-| T3 Planned | Services + more routing | +3 | 31 / 92 | ~66.7% (40/60 BHV) |
-| T4 Long-term | Protocol suites + perf | +4 | 35 / 92 | ~75% (45/60 BHV) |
+| Current | Baseline | 29 | 29 / 94 | 65.0% (39/60 BHV) |
+| T1 Immediate (Completed) | GUI critical path strict | +0 | 29 / 94 | 65.0% (39/60 BHV) |
+| T2 Near-term | Coverage-neutral strict promotions | +3 | 30 / 92 | ~61.7% (37/60 BHV) |
+| T3 Planned | Subscription both-cases | +2 | 32 / 92 | ~65.0% (39/60 BHV) |
+| T4 Long-term | Protocol suites + perf | +4 | 36 / 92 | ~68.3% (41/60 BHV) |
 
 ### T1: Immediate (5 cases, all E2-E3)
 
@@ -263,22 +263,20 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 4 | `p1_gui_proxy_delay_replay` | both | E3 | BHV-CP-005 (strict), BHV-DP-007 | Promoted on 2026-03-12 with self-managed Go bootstrap + delay-path oracle ignore |
 | 5 | `p1_gui_full_session_replay` | both | E3 | BHV-LC-002, BHV-DP-011 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle |
 
-### T2: Near-term (+4 cases)
+### T2: Near-term (+3 cases)
 
 | # | Case ID | Effort | New BHVs Covered |
 |---|---------|--------|------------------|
 | 1 | `p1_clash_api_auth_enforcement` | E2 | BHV-CP-012…017 (strict auth coverage) |
-| 2 | `p1_gui_connections_tracking` | E2 | BHV-CP-006 (strict), BHV-DP-010 |
-| 3 | `p1_gui_group_delay_replay` | E2 | BHV-CP-005 (group variant) |
-| 4 | `p1_gui_ws_reconnect_behavior` | E3 | BHV-LC-002 (restart recovery) |
+| 2 | `p1_gui_group_delay_replay` | E2 | BHV-CP-005 (group variant) |
+| 3 | `p1_gui_ws_reconnect_behavior` | E3 | BHV-LC-002 (restart recovery) |
 
-### T3: Planned (+3 cases)
+### T3: Planned (+2 cases)
 
 | # | Case ID | Effort | New BHVs Covered |
 |---|---------|--------|------------------|
-| 1 | `p1_lifecycle_restart_reload_replay` | E3 | BHV-LC-001…004 |
-| 2 | `p0_subscription_json` | E2 | BHV-SV-001 |
-| 3 | `p0_subscription_yaml` | E2 | BHV-SV-002 |
+| 1 | `p0_subscription_json` | E2 | BHV-SV-001 |
+| 2 | `p0_subscription_yaml` | E2 | BHV-SV-002 |
 
 ### Recent Promotions
 
@@ -292,6 +290,11 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 6 | `p1_selector_switch_traffic_replay` | both | E3 | BHV-DP-006 | Promoted on 2026-03-12 with selector defaulting to `block`, then switching to `direct` via PUT API |
 | 7 | `p1_dns_query_endpoint_contract` | both | E1 | BHV-CP-021 | Promoted on 2026-03-12 after wiring Rust Clash API `dns_resolver` into managed runtime startup |
 | 8 | `p1_ip_cidr_rule_via_socks` | both | E2 | BHV-DP-013 | Promoted on 2026-03-12 with an `ip_cidr` allow rule for `127.0.0.0/8` ahead of final `block` |
+| 9 | `p1_version_endpoint_contract` | both | E1 | BHV-CP-020, BHV-PF-005 | Re-verified on 2026-03-12 with `/version` readiness probes on both kernels (`20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6`) |
+| 10 | `p1_gui_connections_tracking` | both | E2 | BHV-CP-006 (strict), BHV-DP-010 | Promoted on 2026-03-13 with a live slow-request window, mid-traffic `/connections` capture, and `/connections` oracle ignore for body-shape divergence |
+| 11 | `p1_lifecycle_restart_reload_replay` | both | E2 | BHV-LC-001 | Promoted on 2026-03-13 by switching restart/reload replay to Clash API `/version` probes and `SIGHUP` reload fallback on both kernels |
+| 12 | `p1_fakeip_dns_query_contract` | both | E2 | BHV-DP-016 | Promoted on 2026-03-13 with shared fakeip DNS configs and normalized `/dns/query` answer-IP assertions across Go and Rust |
+| 13 | `p1_fakeip_cache_flush_contract` | both | E3 | BHV-DP-017 | Promoted on 2026-03-13 after adding per-kernel API method overrides, Rust fakeip flush wiring, and a real v4+v6 bucket warm-up before reset |
 
 ### T4: Long-term (+4 cases)
 
@@ -328,9 +331,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 27.2% (25/92) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 56.7% (34/60) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 43.3% (26/60) |
+| Both-mode case ratio | both cases / total cases | 30.9% (29/94) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 65.0% (39/60) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 51.7% (31/60) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -342,11 +345,11 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | After Tier | Both Cases | BHV Coverage | Strict BHV Coverage |
 |------------|-----------|--------------|---------------------|
-| Current | 25 | 56.7% (34/60) | 43.3% (26/60) |
+| Current | 29 | 65.0% (39/60) | 51.7% (31/60) |
 | T1 | 11 | ~50.0% (30/60) | ~18.3% (11/60) |
 | T2 | 15 | ~58.3% (35/60) | ~25.0% (15/60) |
-| T3 | 22 | ~68.3% (41/60) | ~40.0% (24/60) |
-| T4 | 26 | ~75.0% (45/60) | ~46.7% (28/60) |
+| T3 | 32 | ~65.0% (39/60) | ~51.7% (31/60) |
+| T4 | 36 | ~68.3% (41/60) | ~55.0% (33/60) |
 
 ---
 

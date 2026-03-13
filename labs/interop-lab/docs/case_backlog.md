@@ -32,7 +32,7 @@
 | `p1_optional_endpoints_contract` | providers/rules/script/profile response semantics | `env_limited` | implemented |
 | `p1_version_endpoint_contract` | `/version` 返回带 version 字段的 JSON | `strict` | implemented (`kernel_mode: both`) |
 | `p1_dns_query_endpoint_contract` | `/dns/query` 返回 200 且可解析域名 | `strict` | implemented (`kernel_mode: both`) |
-| `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented |
+| `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented (`kernel_mode: both`) |
 
 ### 数据面连通/故障/恢复
 
@@ -44,6 +44,8 @@
 | `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_fakeip_dns_query_contract` | FakeIP DNS 查询返回池内地址 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_fakeip_cache_flush_contract` | FakeIP cache flush 后分配序列重置 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_ip_cidr_rule_via_socks` | IP-CIDR 路由命中优先于 final block | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
@@ -81,7 +83,7 @@
 | `p1_gui_proxy_delay_replay` | proxy delay 测试回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_group_delay_replay` | group delay 测试回放 | `strict` | implemented |
 | `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented |
-| `p1_gui_connections_tracking` | connections tracking 断言 (chains/rule) | `strict` | implemented |
+| `p1_gui_connections_tracking` | connections tracking 断言 (chains/rule) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_full_session_replay` | 完整用户会话端到端回放 capstone | `strict` | implemented (`kernel_mode: both`) |
 
 ### 迁移兼容 / Deprecation（L12）

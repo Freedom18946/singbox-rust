@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "run_id": "20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f",
+  "case_id": "p1_fakeip_cache_flush_contract",
+  "kernel": "rust",
+  "started_at": "2026-03-13T20:25:30.301207Z",
+  "finished_at": "2026-03-13T20:25:32.326512Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "DIRECT": {
+            "alive": true,
+            "delay": 0,
+            "history": [],
+            "name": "DIRECT",
+            "type": "Direct",
+            "udp": true
+          },
+          "GLOBAL": {
+            "all": [
+              "direct"
+            ],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "REJECT": {
+            "alive": true,
+            "history": [],
+            "name": "REJECT",
+            "type": "Reject",
+            "udp": false
+          },
+          "direct": {
+            "alive": true,
+            "history": [],
+            "name": "direct",
+            "type": "Unknown",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    },
+    {
+      "name": "query_seed",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-seed.example&type=A",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "198.18.0.3"
+        ],
+        "name": "fakeip-seed.example",
+        "ttl": 300,
+        "type": "A"
+      },
+      "body_hash": "c010ba27f16410c220c4fb4b7ee8951ddd96e94f106a4d9536e655ce4bfc601d"
+    },
+    {
+      "name": "query_next",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-next.example&type=A",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "198.18.0.4"
+        ],
+        "name": "fakeip-next.example",
+        "ttl": 300,
+        "type": "A"
+      },
+      "body_hash": "f149c4de21b2a5170f58d23d3b8a4746ffaf41d9e3e11dca77963d88bdcc5e44"
+    },
+    {
+      "name": "query_ipv6_bucket",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-v6.example&type=AAAA",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "fc00::3"
+        ],
+        "name": "fakeip-v6.example",
+        "ttl": 300,
+        "type": "AAAA"
+      },
+      "body_hash": "c0d7bb13f51a610ae6df8d821d29b6dc958bd2a240871f3a4127932f268cd9a5"
+    },
+    {
+      "name": "flush_reset",
+      "method": "DELETE",
+      "path": "/cache/fakeip/flush",
+      "status": 200,
+      "body": {
+        "flushed": 3,
+        "message": "Flushed 3 fake IP mappings",
+        "status": "success"
+      },
+      "body_hash": "e371e836022c27448fd509d8cd1adbb34dcc0dc3de672e6ef8e7f5a0d82227b1"
+    },
+    {
+      "name": "query_after_reset",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-reset.example&type=A",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "198.18.0.3"
+        ],
+        "name": "fakeip-reset.example",
+        "ttl": 300,
+        "type": "A"
+      },
+      "body_hash": "5e74c7f2d8b93b43ac86bdd0ebd07d52b414b14fd2d8763333c0549f599a7c60"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 0,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "query_seed",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.3"
+        ],
+        "body_hash": "c010ba27f16410c220c4fb4b7ee8951ddd96e94f106a4d9536e655ce4bfc601d",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-seed.example&type=A",
+        "status": 200
+      }
+    },
+    {
+      "name": "query_next",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.4"
+        ],
+        "body_hash": "f149c4de21b2a5170f58d23d3b8a4746ffaf41d9e3e11dca77963d88bdcc5e44",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-next.example&type=A",
+        "status": 200
+      }
+    },
+    {
+      "name": "query_ipv6_bucket",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "fc00::3"
+        ],
+        "body_hash": "c0d7bb13f51a610ae6df8d821d29b6dc958bd2a240871f3a4127932f268cd9a5",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-v6.example&type=AAAA",
+        "status": 200
+      }
+    },
+    {
+      "name": "wait_for_fakeip_persist",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 500
+      }
+    },
+    {
+      "name": "flush_reset",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [],
+        "body_hash": "e371e836022c27448fd509d8cd1adbb34dcc0dc3de672e6ef8e7f5a0d82227b1",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "DELETE",
+        "path": "/cache/fakeip/flush",
+        "status": 200
+      }
+    },
+    {
+      "name": "query_after_reset",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.3"
+        ],
+        "body_hash": "5e74c7f2d8b93b43ac86bdd0ebd07d52b414b14fd2d8763333c0549f599a7c60",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-reset.example&type=A",
+        "status": 200
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

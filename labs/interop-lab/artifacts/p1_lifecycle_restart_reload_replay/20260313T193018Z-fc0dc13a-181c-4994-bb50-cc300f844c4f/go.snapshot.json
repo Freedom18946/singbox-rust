@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "run_id": "20260313T193018Z-fc0dc13a-181c-4994-bb50-cc300f844c4f",
+  "case_id": "p1_lifecycle_restart_reload_replay",
+  "kernel": "go",
+  "started_at": "2026-03-13T19:30:18.879549Z",
+  "finished_at": "2026-03-13T19:30:19.399439Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "GLOBAL": {
+            "all": [],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "direct": {
+            "history": [],
+            "name": "direct",
+            "type": "Direct",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    },
+    {
+      "name": "version_before_restart",
+      "method": "GET",
+      "path": "/version",
+      "status": 200,
+      "body": {
+        "meta": true,
+        "premium": true,
+        "version": "sing-box unknown"
+      },
+      "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40"
+    },
+    {
+      "name": "version_after_restart",
+      "method": "GET",
+      "path": "/version",
+      "status": 200,
+      "body": {
+        "meta": true,
+        "premium": true,
+        "version": "sing-box unknown"
+      },
+      "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40"
+    },
+    {
+      "name": "version_after_reload",
+      "method": "GET",
+      "path": "/version",
+      "status": 200,
+      "body": {
+        "meta": true,
+        "premium": true,
+        "version": "sing-box unknown"
+      },
+      "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 4071424,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "version_before_restart",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/version",
+        "status": 200
+      }
+    },
+    {
+      "name": "restart_rust_kernel",
+      "success": true,
+      "detail": {
+        "action": "kernel_control",
+        "mode": "Go",
+        "op": "Restart",
+        "skipped": true,
+        "target": "Rust"
+      }
+    },
+    {
+      "name": "restart_go_kernel",
+      "success": true,
+      "detail": {
+        "action": "kernel_control",
+        "op": "Restart",
+        "target": "Go",
+        "wait_ready_ms": 15000
+      }
+    },
+    {
+      "name": "version_after_restart",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/version",
+        "status": 200
+      }
+    },
+    {
+      "name": "reload_rust_kernel",
+      "success": true,
+      "detail": {
+        "action": "kernel_control",
+        "mode": "Go",
+        "op": "Reload",
+        "skipped": true,
+        "target": "Rust"
+      }
+    },
+    {
+      "name": "reload_go_kernel",
+      "success": true,
+      "detail": {
+        "action": "kernel_control",
+        "op": "Reload",
+        "target": "Go",
+        "wait_ready_ms": 15000
+      }
+    },
+    {
+      "name": "version_after_reload",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "body_hash": "b9e93222628d8006e47f5b8b1cc437929621ae9bcce0daedd96775594826ff40",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/version",
+        "status": 200
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

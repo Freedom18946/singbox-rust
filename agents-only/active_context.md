@@ -8,97 +8,80 @@
 
 ## 战略状态
 
-**当前阶段**: L18 Phase 4 全局静态审议整改  
-**当前主线**: `shadowtls` runtime remodel / parity 收口（v1/v2/v3 outbound runtime 已接通，继续补 v3 分支证据）  
-**Acceptance Closure**: `UNVERIFIED (slim snapshot)`  
-**MIG-02**: ACCEPTED（2026-03-07，541 V7 assertions）
+**当前阶段**: L22 dual-kernel parity 收口  
+**当前工作包 ID**: `WP-L22`  
+**当前主线**: 直接提高 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 的 `Both-Covered`  
+**Source of Truth**: `labs/interop-lab/docs/dual_kernel_golden_spec.md`  
+**当前口径**: 不把 Rust-only 单测、仓库级自动化或纯文档润色记成 dual-kernel parity 完成
 
-## 已落地且可确认的 Phase 4 结果（2026-03-11）
+## 当前已验证覆盖（2026-03-14）
 
-- 证据模型 / 边界 containment 已入库：
-  - `reports/capabilities.json` 已切到 `schema_version=1.1.0`
-  - `scripts/check_claims.sh` 已对活跃 closure 话术做硬收口
-  - `agents-only/reference/boundary-policy.json` 已成为边界 policy SoT
-  - 产品路径已切到显式 registry / `start_with_registry(...)`
-- L18 日常执行已显式拆分：
-  - `daily-core`: 默认安全，不跑真实 GUI，不碰宿主机系统代理
-  - `daily-host-gui`: 显式 opt-in，才跑真实 GUI
-- `daily-core` 已稳定可跑：
-  - batch: `reports/l18/batches/20260309T204410Z-l18-daily-preflight`
-  - 结论：`overall=PARTIAL`，仅因 `gui_smoke=UNTESTED`
-- `host-gui` 的 GUI gate 已拿到独立、干净的 `PROVEN` 证据：
-  - 证据：`reports/l18/batches/20260310T115624Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/gui_direct3/gui_real_cert.json`
-  - 结论：Go/Rust 两侧 `startup/load_config/switch_proxy/connections_panel/logs_panel` 全部 `PROVEN`
-  - sandbox=`PROVEN`
-  - 仅保留 note：`capabilities_negotiation_go_PARTIAL:http_error:404`
+- `Both-Covered = 39 / 60`，覆盖率 `65.0%`
+- strict both 覆盖：`31 / 60`
+- both-case ratio：`29 / 94`
+- 最新已推到 `origin/main` 的基线提交：
+  - `6aa3de8 interop: promote strict dual-kernel routing and dns parity`
+- 本地在该基线后新增、待一并提交的真实 both 增量：
+  - `p1_gui_connections_tracking` -> `/connections` live active entry 可见性打通
+  - `p1_lifecycle_restart_reload_replay` -> reload 走真实 `SIGHUP` fallback
+  - `p1_fakeip_dns_query_contract` -> `BHV-DP-016`
+  - `p1_fakeip_cache_flush_contract` -> `BHV-DP-017`
 
-## 本轮新增修正
+## 本轮已落地的关键产品 / harness 修正
 
-- `scripts/l18/gui_real_cert.sh`
-  - `logs_panel` 不再依赖本地 kernel log 非空，改为验证 `/logs` WebSocket 握手（成功记 `/logs=101`）
-  - 非必需的 Go `/capabilities` 404 仅保留为 note，不再拉低整体状态
-  - `startup` 在 GUI pid + kernel ready 后会显式 frontmost GUI，并等待窗口出现，减少 `windows=0` 抖动
-  - postcheck 新增 system proxy restore：优先覆盖 `Wi‑Fi` / `Ethernet`，跳过不支持代理配置的 service，并去掉 `mapfile` 依赖以兼容 batch 实际 bash 环境
-  - 最新 fixed-profile batch 已在 GUI 阶段写出 `system_proxy_snapshot_restored`
+- Rust Clash API 已把 `dns_resolver` 接入运行时，`GET /dns/query` 不再天然 `503`
+  - 相关：`crates/sb-api/src/clash/server.rs`
+  - 相关：`app/src/run_engine.rs`
+  - 相关：`app/src/bootstrap.rs`
+- Rust fakeip flush 已接到 core fakeip 状态，不再只是 sb-api 私有 stub
+  - 相关：`crates/sb-api/src/managers.rs`
+  - 相关：`crates/sb-core/src/dns/fakeip.rs`
+  - 相关：`crates/sb-core/src/services/cache_file.rs`
+- interop-lab 已支持更诚实的 both-case 编排：
+  - `command_start` / `command_wait` / `api_http`
+  - per-kernel `api_http` method/path/status override
+  - `eq_ref` / `ne_ref` 断言
+  - 相关：`labs/interop-lab/src/case_spec.rs`
+  - 相关：`labs/interop-lab/src/orchestrator.rs`
 
-## 当前真实阻塞
+## 最近已确认的 strict both artifacts
 
-1. **不是 GUI gate**
-   - GUI gate 已通过独立复验 `PROVEN`
-   - 最新 batch：`reports/l18/batches/20260310T231132Z-l18-daily-preflight`
-   - 其中 `r1/gui/gui_real_cert.json` 已为 `overall_status=PROVEN`、`sandbox.status=PROVEN`
-2. **`workspace_test -> bench_outputs_json` 的本地主阻塞已解开**
-   - 文件：`xtests/tests/bench_v1.rs`、`xtests/tests/bench_v2.rs`、`xtests/src/lib.rs`
-   - 已修内容：bench harness 不再在测试体内 `cargo run` 冷编译 `sb-bench`；改为先 build 再直接执行预编译 binary，并改成动态端口 + 临时 CSV 路径
-   - 本地证据：`cargo test -p xtests -- --nocapture` 已通过，说明 `bench_outputs_json` 不再是当前工作树下 `workspace_test` 的失败点
-   - 连带修正：`interop-lab` 的 `TrojanInboundConfig.reality` 初始化器已补齐，`cargo test -p interop-lab --no-run` 已通过
-   - 连带修正：`crates/sb-adapters/tests/shadowtls_e2e.rs` 与 `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` 已补 process-level rustls `CryptoProvider` 初始化；对应窄测已通过
-   - batch 内证据：`reports/l18/batches/20260310T231132Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/capstone.stdout.log` 中 `test bench_outputs_json ... ok`
-   - 当前状态：workspace/FMT/CLIPPY/HOT_RELOAD/SIGNAL/GUI 均已跑过；本轮是人工提前结束在 `CANARY` 阶段，因此没有 `l18_capstone_status.json`
-3. **协议 parity 的剩余单点仍集中在 `shadowtls` v3 证据收口**
-   - `trojan`: established（最小双核本地模拟公网闭环已完成）
-   - `shadowsocks`: established（最小双核本地模拟公网闭环已完成）
-   - `shadowtls`: partial
-   - 已闭环部分：`Shadowsocks -> detour=ShadowTLS(v1)` 本地双核 interop 已通过；outbound/inbound `version = 2` 链路均已有真实 runtime 证据；`version = 3` outbound 现已走真实 TLS handshake + live `session_id` hook + post-handshake v3 framing
-   - 本轮新增证据：
-     - vendored `rustls 0.23.35` 已增加 live `ClientHello.session_id` generator hook，并通过 workspace `[patch.crates-io]` 接到 `tokio-rustls`
-   - `crates/sb-adapters/src/outbound/shadowtls.rs` 已按 Go 路径实现 v3：真实 TLS 握手期 `session_id` 注入、握手期 server `application_data` 解包、握手后 v3 verified bridge
-   - `crates/sb-adapters/tests/shadowtls_inbound_e2e.rs` 已证明 `Shadowsocks(out) -> detour=ShadowTLS(v3 out) -> ShadowTLS(v3 in) -> Shadowsocks(in) -> echo`
-   - `strict_mode=true` + TLS1.2 decoy 已有真实 fallback 证据：认证后的 v3 client hello 会退回纯 TLS passthrough，不触发 detour consumer
-   - `wildcard_sni=authed` 的 unauthorized 分支已有真实 fallback 证据：未知 SNI 不会走 wildcard 目标，而是回落到默认 `handshake`
-   - `handshake_for_server_name` 的 unauthorized 分支已有真实 fallback 证据：命中的自定义 SNI 映射会直接落到对应 decoy，而不是回落到默认 `handshake`
-   - `wildcard_sni=all` 的 unauthorized 分支已有真实 runtime 证据：ignored live e2e 已通过本地 ShadowTLS inbound 回落到公网 `example.com:443` 并完成 HTTPS 响应
-   - 当前剩余边界：
-     - `shadowtls` 整体状态仍保持 `partial`
-     - `wildcard_sni=all` 的默认本地/离线套件仍无法直接覆盖：当前开发环境无特权端口 443，所以这条 runtime 证据保留为 ignored live e2e
-     - 仍缺必要时的 interop-lab v3 case
+- `p1_gui_connections_tracking`
+  - `labs/interop-lab/artifacts/p1_gui_connections_tracking/20260313T191327Z-6e7f6667-5d4c-472a-9103-7884533a6d99/`
+- `p1_lifecycle_restart_reload_replay`
+  - `labs/interop-lab/artifacts/p1_lifecycle_restart_reload_replay/20260313T193018Z-fc0dc13a-181c-4994-bb50-cc300f844c4f/`
+- `p1_fakeip_dns_query_contract`
+  - `labs/interop-lab/artifacts/p1_fakeip_dns_query_contract/20260313T195112Z-f594fae4-8589-4b12-a34b-76676b75ea10/`
+- `p1_fakeip_cache_flush_contract`
+  - `labs/interop-lab/artifacts/p1_fakeip_cache_flush_contract/20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f/`
 
-## 当前口径
+## 当前真实 blocker
 
-- 缺失本地 batch 工件时，一律标记 `UNVERIFIED (slim snapshot)`
-- `20260307T211512Z` / `20260307T230356Z` 仅保留为 provenance reference
-- 只有本地存在 `evidence_manifest.json` 或等效独立证据时，才允许写成当前快照下已证实结论
+1. `p1_service_failure_isolation` 仍不是诚实 both-case
+   - Rust `/services/health` 还是 static stub
+   - 还缺真实 broken-service dual-core model
+2. `BHV-DP-012` domain-rule both-case 先前试验仍更像真实行为缺口，不要硬记
+3. mixed inbound 仍有真实 Rust gap，不要先撞
+4. `p1_urltest_auto_select_replay` 仍有 Rust vs Go 真实行为分歧，不要先撞
+5. `/connections` 路径的 soak/trend/nightly 已接好，但不等于整体 `Both-Covered` 完成
 
 ## 下一步
 
-1. 若继续协议 parity，优先补 ShadowTLS v3 剩余分支证据：
-   - 若后续需要完全离线覆盖，再补 `wildcard_sni=all` 的本地 443 专用环境证据
-   - 必要时补 `ShadowTLS(v3 out) -> ShadowTLS(v3 in)` 的 Go/Rust interop-lab case
-2. 维护 vendored `rustls` hook 边界：
-   - 不接受握手外改包的伪实现
-   - 若后续升级 TLS 栈，先确认 `session_id` hook 仍然存在
-3. 与协议 track 并行的 batch track 下一步变成：
-   - 将本轮 `GUI restored to PROVEN` 的证据同步进文档与提交
-   - 若需要最终 `l18_capstone_status.json`，再跑一轮完整 `daily-host-gui`，避免人工中断 `CANARY`
-4. 只有在完整 `daily-host-gui` batch 可复跑且最终 status 落盘后，才重新评估是否恢复更长链路
+1. 先评估 `p1_service_failure_isolation` 能否改造成真实 broken-service dual-core model，再决定是否可拿 `BHV-LC-003`
+2. 若不适合，继续找能最快新增 `Both-Covered` 的 strict both routing / lifecycle / service case
+3. 每完成一个 both-case，必须：
+   - 更新 `dual_kernel_golden_spec.md` / `compat_matrix.md`
+   - 必要时更新 `case_backlog.md`
+   - 实跑 `cargo run -p interop-lab -- case run ... --kernel both --env-class strict`
+   - 再跑 `cargo run -p interop-lab -- case diff ...`
 
 ## 关键文件速查
 
 | 内容 | 路径 |
 |------|------|
-| L18 Phase 4 工作包 | `agents-only/planning/L18-PHASE4.md` |
-| 当前工作包地图 | `agents-only/workpackage_latest.md` |
-| capstone 脚本 | `scripts/l18/l18_capstone.sh` |
-| 固定 profile 入口 | `scripts/l18/run_capstone_fixed_profile.sh` |
-| GUI gate 脚本 | `scripts/l18/gui_real_cert.sh` |
-| GUI `PROVEN` 证据 | `reports/l18/batches/20260310T231132Z-l18-daily-preflight/capstone_daily_hostgui_fixedcfg/r1/gui/gui_real_cert.json` |
+| 当前工作包 | `agents-only/planning/L22-DUAL-KERNEL-PARITY.md` |
+| 当前阶段地图 | `agents-only/workpackage_latest.md` |
+| parity 入口规则 | `AGENTS.md` |
+| SoT spec | `labs/interop-lab/docs/dual_kernel_golden_spec.md` |
+| 兼容矩阵 | `labs/interop-lab/docs/compat_matrix.md` |
+| case 积压 | `labs/interop-lab/docs/case_backlog.md` |

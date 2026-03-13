@@ -101,6 +101,9 @@ pub trait FakeIpStorage: Send + Sync + std::fmt::Debug {
 
     /// Save FakeIP metadata with debounce.
     fn save_metadata_debounced(&self, _metadata: FakeIpMetadata) {}
+
+    /// Reset persisted FakeIP mappings and allocation cursors.
+    fn reset(&self) {}
 }
 
 /// Persisted FakeIP metadata — simplified Go parity.
@@ -353,6 +356,30 @@ pub fn lookup_domain(ip: &IpAddr) -> Option<String> {
     let mut st = state().lock();
     refresh_from_env(&mut st);
     st.by_ip.get(ip).cloned()
+}
+
+pub fn mapping_count() -> usize {
+    let mut st = state().lock();
+    refresh_from_env(&mut st);
+    st.by_domain_v4.len() + st.by_domain_v6.len()
+}
+
+pub fn reset() -> usize {
+    let mut st = state().lock();
+    refresh_from_env(&mut st);
+
+    let count = st.by_domain_v4.len() + st.by_domain_v6.len();
+    st.by_domain_v4.clear();
+    st.by_domain_v6.clear();
+    st.by_ip.clear();
+    st.v4_current = start_v4(st.v4_base);
+    st.v6_current = start_v6(st.v6_base);
+
+    if let Some(storage) = st.storage.clone() {
+        storage.reset();
+    }
+
+    count
 }
 
 fn mask_v4(ip: Ipv4Addr, mask: u8) -> Ipv4Addr {

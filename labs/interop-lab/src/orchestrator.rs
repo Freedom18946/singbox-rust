@@ -6,15 +6,26 @@ use crate::diff_report::{build_diff_report, to_markdown as diff_to_markdown};
 use crate::go_collector::{collect_go_snapshot, save_go_snapshot_to_dir};
 use crate::gui_replay::run_gui_sequence;
 use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
-use crate::snapshot::{KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
+use crate::leak_detector::detect_memory_leak;
+use crate::snapshot::{HttpResult, KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
 use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
-use crate::util::{ensure_dir, resolve_with_env};
+use crate::util::{ensure_dir, resolve_command_with_fallback, resolve_with_env, sha256_hex};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use futures_util::StreamExt;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, HashMap};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::process::Child;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -33,6 +44,15 @@ pub struct CaseFailure {
     pub kernel: KernelKind,
     pub stage: String,
     pub message: String,
+}
+
+struct BackgroundCommandProcess {
+    child: Child,
+    started_at: tokio::time::Instant,
+    command: String,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+    workdir: Option<String>,
 }
 
 impl RunOutput {
@@ -235,6 +255,7 @@ pub async fn run_case(
                     &launch_spec,
                     &kernel_log_dir,
                     &mut session,
+                    &mut snapshot,
                 )
                 .await
                 {
@@ -377,10 +398,96 @@ async fn run_traffic_plan_with_kernel_control(
     launch_spec: &KernelLaunchSpec,
     kernel_log_dir: &Path,
     session: &mut KernelSession,
+    snapshot: &mut NormalizedSnapshot,
 ) -> Result<Vec<TrafficResult>> {
     let mut outputs = Vec::with_capacity(case.traffic_plan.len());
+    let mut background_commands = HashMap::new();
     for action in &case.traffic_plan {
         match action {
+            TrafficAction::CommandStart {
+                name,
+                handle,
+                command,
+                args,
+                env,
+                workdir,
+            } => {
+                let result = execute_command_start_action(
+                    name,
+                    handle,
+                    command,
+                    args,
+                    env,
+                    workdir.as_ref(),
+                    harness,
+                    &mut background_commands,
+                )
+                .await;
+                outputs.push(result);
+            }
+            TrafficAction::CommandWait {
+                name,
+                handle,
+                timeout_ms,
+                expect_exit,
+            } => {
+                let result = execute_command_wait_action(
+                    name,
+                    handle,
+                    *timeout_ms,
+                    *expect_exit,
+                    &mut background_commands,
+                )
+                .await;
+                outputs.push(result);
+            }
+            TrafficAction::ApiHttp {
+                name,
+                method,
+                path,
+                method_rust,
+                method_go,
+                path_rust,
+                path_go,
+                body,
+                no_auth,
+                auth_secret,
+                expect_status,
+                expect_status_rust,
+                expect_status_go,
+            } => {
+                let resolved_method = select_kernel_string_override(
+                    mode,
+                    method,
+                    method_rust.as_deref(),
+                    method_go.as_deref(),
+                );
+                let resolved_path = select_kernel_string_override(
+                    mode,
+                    path,
+                    path_rust.as_deref(),
+                    path_go.as_deref(),
+                );
+                let resolved_expect_status = select_kernel_u16_override(
+                    mode,
+                    *expect_status,
+                    *expect_status_rust,
+                    *expect_status_go,
+                );
+                let result = execute_api_http_action(
+                    name,
+                    resolved_method,
+                    resolved_path,
+                    body.as_ref(),
+                    *no_auth,
+                    auth_secret.as_deref(),
+                    resolved_expect_status,
+                    session,
+                    snapshot,
+                )
+                .await;
+                outputs.push(result);
+            }
             TrafficAction::KernelControl {
                 name,
                 action,
@@ -400,6 +507,34 @@ async fn run_traffic_plan_with_kernel_control(
                 .await;
                 outputs.push(result);
             }
+            TrafficAction::ApiWsSoak {
+                name,
+                path,
+                no_auth,
+                auth_secret,
+                clients_per_wave,
+                waves,
+                wave_delay_ms,
+                wave_success_percent,
+                overall_success_percent,
+                frame_timeout_ms,
+            } => {
+                let result = execute_api_ws_soak_action(
+                    name,
+                    path,
+                    *no_auth,
+                    auth_secret.as_deref(),
+                    *clients_per_wave,
+                    *waves,
+                    *wave_delay_ms,
+                    *wave_success_percent,
+                    *overall_success_percent,
+                    *frame_timeout_ms,
+                    session,
+                )
+                .await;
+                outputs.push(result);
+            }
             _ => {
                 let mut one = run_traffic_plan(harness, std::slice::from_ref(action)).await?;
                 if let Some(result) = one.pop() {
@@ -408,7 +543,494 @@ async fn run_traffic_plan_with_kernel_control(
             }
         }
     }
+    cleanup_background_commands(&mut background_commands).await;
     Ok(outputs)
+}
+
+async fn execute_command_start_action(
+    name: &str,
+    handle: &str,
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    workdir: Option<&PathBuf>,
+    harness: &crate::upstream::UpstreamHarness,
+    background_commands: &mut HashMap<String, BackgroundCommandProcess>,
+) -> TrafficResult {
+    if background_commands.contains_key(handle) {
+        return TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "command_start",
+                "handle": handle,
+                "error": "duplicate background command handle",
+            }),
+        };
+    }
+
+    let resolved_command =
+        resolve_command_with_fallback(&resolve_with_env(&harness.resolve_templates(command)));
+    let resolved_args: Vec<String> = args
+        .iter()
+        .map(|arg| resolve_with_env(&harness.resolve_templates(arg)))
+        .collect();
+    let resolved_env: BTreeMap<String, String> = env
+        .iter()
+        .map(|(k, v)| (k.clone(), resolve_with_env(&harness.resolve_templates(v))))
+        .collect();
+    let resolved_workdir = workdir.as_ref().map(|dir| {
+        let raw = dir.to_string_lossy();
+        PathBuf::from(resolve_with_env(&harness.resolve_templates(&raw)))
+    });
+    let resolved_workdir_text = resolved_workdir
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string());
+
+    let mut cmd = tokio::process::Command::new(&resolved_command);
+    cmd.args(&resolved_args);
+    for (key, value) in &resolved_env {
+        cmd.env(key, value);
+    }
+    if let Some(dir) = &resolved_workdir {
+        cmd.current_dir(dir);
+    }
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
+
+    match cmd.spawn() {
+        Ok(child) => {
+            let pid = child.id();
+            background_commands.insert(
+                handle.to_string(),
+                BackgroundCommandProcess {
+                    child,
+                    started_at: tokio::time::Instant::now(),
+                    command: resolved_command.clone(),
+                    args: resolved_args.clone(),
+                    env: resolved_env.clone(),
+                    workdir: resolved_workdir_text.clone(),
+                },
+            );
+            TrafficResult {
+                name: name.to_string(),
+                success: true,
+                detail: json!({
+                    "action": "command_start",
+                    "handle": handle,
+                    "command": resolved_command,
+                    "args": resolved_args,
+                    "env": resolved_env,
+                    "workdir": resolved_workdir_text,
+                    "pid": pid,
+                }),
+            }
+        }
+        Err(err) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "command_start",
+                "handle": handle,
+                "command": resolved_command,
+                "args": resolved_args,
+                "env": resolved_env,
+                "workdir": resolved_workdir_text,
+                "error": err.to_string(),
+            }),
+        },
+    }
+}
+
+async fn execute_command_wait_action(
+    name: &str,
+    handle: &str,
+    timeout_ms: u64,
+    expect_exit: Option<i32>,
+    background_commands: &mut HashMap<String, BackgroundCommandProcess>,
+) -> TrafficResult {
+    let Some(mut process) = background_commands.remove(handle) else {
+        return TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "command_wait",
+                "handle": handle,
+                "error": "background command handle not found",
+            }),
+        };
+    };
+
+    match timeout(
+        Duration::from_millis(timeout_ms.max(1)),
+        process.child.wait(),
+    )
+    .await
+    {
+        Ok(Ok(status)) => {
+            let code = status.code();
+            let success = if let Some(expected) = expect_exit {
+                code == Some(expected)
+            } else {
+                status.success()
+            };
+            TrafficResult {
+                name: name.to_string(),
+                success,
+                detail: json!({
+                    "action": "command_wait",
+                    "handle": handle,
+                    "command": process.command,
+                    "args": process.args,
+                    "env": process.env,
+                    "workdir": process.workdir,
+                    "elapsed_ms": process.started_at.elapsed().as_millis() as u64,
+                    "exit_code": code,
+                    "expect_exit": expect_exit,
+                }),
+            }
+        }
+        Ok(Err(err)) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "command_wait",
+                "handle": handle,
+                "command": process.command,
+                "args": process.args,
+                "env": process.env,
+                "workdir": process.workdir,
+                "elapsed_ms": process.started_at.elapsed().as_millis() as u64,
+                "error": err.to_string(),
+            }),
+        },
+        Err(_) => {
+            let _ = process.child.kill().await;
+            let _ = process.child.wait().await;
+            TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "command_wait",
+                    "handle": handle,
+                    "command": process.command,
+                    "args": process.args,
+                    "env": process.env,
+                    "workdir": process.workdir,
+                    "elapsed_ms": process.started_at.elapsed().as_millis() as u64,
+                    "timeout_ms": timeout_ms,
+                    "killed": true,
+                }),
+            }
+        }
+    }
+}
+
+async fn execute_api_http_action(
+    name: &str,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+    no_auth: bool,
+    auth_secret: Option<&str>,
+    expect_status: Option<u16>,
+    session: &KernelSession,
+    snapshot: &mut NormalizedSnapshot,
+) -> TrafficResult {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "api_http",
+                    "method": method,
+                    "path": path,
+                    "error": err.to_string(),
+                }),
+            };
+        }
+    };
+
+    let parsed_method = method
+        .parse::<reqwest::Method>()
+        .unwrap_or(reqwest::Method::GET);
+    let url = format!("{}{}", session.api.base_url.trim_end_matches('/'), path);
+    let mut req = client.request(parsed_method.clone(), url);
+    let step_secret = if no_auth {
+        None
+    } else if let Some(secret) = auth_secret {
+        Some(resolve_with_env(secret))
+    } else {
+        session.api.secret.clone()
+    };
+    if let Some(secret) = &step_secret {
+        req = req.bearer_auth(secret);
+    }
+    if let Some(body) = body {
+        req = req.json(body);
+    }
+
+    match req.send().await {
+        Ok(response) => {
+            let status_code = response.status();
+            let status = status_code.as_u16();
+            let bytes = response.bytes().await.unwrap_or_default();
+            let parsed_body = serde_json::from_slice::<Value>(&bytes).ok();
+            let body_hash = if bytes.is_empty() {
+                None
+            } else {
+                Some(sha256_hex(&bytes))
+            };
+
+            snapshot.http_results.push(HttpResult {
+                name: name.to_string(),
+                method: parsed_method.to_string(),
+                path: path.to_string(),
+                status,
+                body: parsed_body.clone(),
+                body_hash: body_hash.clone(),
+            });
+            if path.contains("/connections") {
+                if let Some(value) = parsed_body.clone() {
+                    snapshot.conn_summary = Some(value);
+                }
+            }
+
+            let success = expect_status
+                .map(|expected| status == expected)
+                .unwrap_or_else(|| status_code.is_success());
+            let connection_count = parsed_body
+                .as_ref()
+                .and_then(|value| value.get("connections"))
+                .and_then(|value| value.as_array())
+                .map(|items| items.len());
+            let answer_ips = parsed_body
+                .as_ref()
+                .map(extract_dns_answer_ips)
+                .unwrap_or_default();
+
+            TrafficResult {
+                name: name.to_string(),
+                success,
+                detail: json!({
+                    "action": "api_http",
+                    "method": parsed_method.to_string(),
+                    "path": path,
+                    "status": status,
+                    "expect_status": expect_status,
+                    "body_hash": body_hash,
+                    "connection_count": connection_count,
+                    "answer_ips": answer_ips,
+                }),
+            }
+        }
+        Err(err) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "api_http",
+                "method": parsed_method.to_string(),
+                "path": path,
+                "expect_status": expect_status,
+                "error": err.to_string(),
+            }),
+        },
+    }
+}
+
+async fn cleanup_background_commands(
+    background_commands: &mut HashMap<String, BackgroundCommandProcess>,
+) {
+    for (_handle, mut process) in background_commands.drain() {
+        let _ = process.child.kill().await;
+        let _ = process.child.wait().await;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_api_ws_soak_action(
+    name: &str,
+    path: &str,
+    no_auth: bool,
+    auth_secret: Option<&str>,
+    clients_per_wave: usize,
+    waves: usize,
+    wave_delay_ms: u64,
+    wave_success_percent: usize,
+    overall_success_percent: usize,
+    frame_timeout_ms: u64,
+    session: &KernelSession,
+) -> TrafficResult {
+    let ws_url = build_api_ws_url(&session.api, path, no_auth, auth_secret);
+    let mut total_success = 0usize;
+    let mut failing_wave = None;
+
+    for wave in 0..waves {
+        let mut set = JoinSet::new();
+        for _ in 0..clients_per_wave {
+            let ws_url = ws_url.clone();
+            let path = path.to_string();
+            set.spawn(async move {
+                receive_api_ws_frame(&ws_url, &path, frame_timeout_ms)
+                    .await
+                    .unwrap_or(false)
+            });
+        }
+
+        let mut wave_success = 0usize;
+        while let Some(result) = set.join_next().await {
+            if matches!(result, Ok(true)) {
+                wave_success += 1;
+            }
+        }
+
+        if wave_success < required_success(clients_per_wave, wave_success_percent) {
+            failing_wave = Some((wave + 1, wave_success));
+            break;
+        }
+        total_success += wave_success;
+
+        if wave + 1 < waves {
+            tokio::time::sleep(Duration::from_millis(wave_delay_ms)).await;
+        }
+    }
+
+    let total_clients = waves * clients_per_wave;
+    let overall_success = total_success >= required_success(total_clients, overall_success_percent);
+    let success = failing_wave.is_none() && overall_success;
+
+    TrafficResult {
+        name: name.to_string(),
+        success,
+        detail: json!({
+            "action": "api_ws_soak",
+            "path": path,
+            "clients_per_wave": clients_per_wave,
+            "waves": waves,
+            "wave_delay_ms": wave_delay_ms,
+            "wave_success_percent": wave_success_percent,
+            "overall_success_percent": overall_success_percent,
+            "frame_timeout_ms": frame_timeout_ms,
+            "total_success": total_success,
+            "total_clients": total_clients,
+            "failing_wave": failing_wave.map(|(wave, wave_success)| json!({
+                "wave": wave,
+                "wave_success": wave_success,
+            })),
+        }),
+    }
+}
+
+fn build_api_ws_url(
+    api: &crate::case_spec::ApiAccess,
+    path: &str,
+    no_auth: bool,
+    auth_secret: Option<&str>,
+) -> String {
+    let base = api
+        .base_url
+        .trim_end_matches('/')
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+    let token = if no_auth {
+        String::new()
+    } else {
+        auth_secret
+            .map(resolve_with_env)
+            .or_else(|| api.secret.clone())
+            .unwrap_or_default()
+    };
+    if token.is_empty() {
+        format!("{base}{path}")
+    } else {
+        let delimiter = if path.contains('?') { '&' } else { '?' };
+        format!("{base}{path}{delimiter}token={token}")
+    }
+}
+
+fn required_success(total: usize, success_percent: usize) -> usize {
+    (total * success_percent) / 100
+}
+
+fn extract_dns_answer_ips(body: &Value) -> Vec<String> {
+    let mut answer_ips = Vec::new();
+
+    if let Some(addresses) = body.get("addresses").and_then(|value| value.as_array()) {
+        for address in addresses {
+            if let Some(text) = address.as_str() {
+                if parse_ip_token(text).is_some() {
+                    answer_ips.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(answers) = body.get("Answer").and_then(|value| value.as_array()) {
+        for answer in answers {
+            if let Some(data) = answer.get("data").and_then(|value| value.as_str()) {
+                if let Some(ip) = parse_ip_token(data) {
+                    answer_ips.push(ip.to_string());
+                }
+            }
+        }
+    }
+
+    answer_ips.sort();
+    answer_ips.dedup();
+    answer_ips
+}
+
+fn parse_ip_token(value: &str) -> Option<IpAddr> {
+    value
+        .split_whitespace()
+        .find_map(|token| token.trim_end_matches('.').parse::<IpAddr>().ok())
+}
+
+async fn receive_api_ws_frame(ws_url: &str, path: &str, frame_timeout_ms: u64) -> Result<bool> {
+    let (mut stream, _) = connect_async(ws_url).await?;
+    let next = timeout(
+        Duration::from_millis(frame_timeout_ms.max(1)),
+        stream.next(),
+    )
+    .await;
+    let ok = match next {
+        Ok(Some(Ok(Message::Text(text)))) => {
+            validate_ws_payload(path, serde_json::from_str::<Value>(&text).ok())
+        }
+        Ok(Some(Ok(Message::Binary(data)))) => {
+            validate_ws_payload(path, serde_json::from_slice::<Value>(&data).ok())
+        }
+        Ok(Some(Ok(_))) => false,
+        Ok(Some(Err(err))) => return Err(err.into()),
+        Ok(None) => false,
+        Err(_) => false,
+    };
+    let _ = stream.close(None).await;
+    Ok(ok)
+}
+
+fn validate_ws_payload(path: &str, payload: Option<Value>) -> bool {
+    let Some(value) = payload else {
+        return false;
+    };
+    if path.contains("/connections") {
+        return value.get("connections").is_some()
+            && value.get("uploadTotal").is_some()
+            && value.get("downloadTotal").is_some()
+            && value.get("memory").is_some();
+    }
+    if path.contains("/memory") {
+        return value.get("inuse").is_some();
+    }
+    if path.contains("/traffic") {
+        return value.get("up").is_some() && value.get("down").is_some();
+    }
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -533,6 +1155,19 @@ async fn trigger_reload(session: &KernelSession) -> Option<String> {
             Err(err) => attempts.push(format!("{path}:err={err}")),
         }
     }
+    if let Some(pid) = session.child.as_ref().and_then(tokio::process::Child::id) {
+        let outcome = match tokio::process::Command::new("kill")
+            .arg("-HUP")
+            .arg(pid.to_string())
+            .status()
+            .await
+        {
+            Ok(status) if status.success() => format!("signal:SIGHUP:{pid}:ok"),
+            Ok(status) => format!("signal:SIGHUP:{pid}:status={status}"),
+            Err(err) => format!("signal:SIGHUP:{pid}:err={err}"),
+        };
+        attempts.push(outcome);
+    }
     if attempts.is_empty() {
         None
     } else {
@@ -543,8 +1178,9 @@ async fn trigger_reload(session: &KernelSession) -> Option<String> {
 fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     for assertion in &case.assertions {
         let actual = resolve_assertion_value(snapshot, &assertion.key);
+        let expected = resolve_expected_value(snapshot, assertion.op.as_str(), &assertion.expected);
         let passed =
-            evaluate_assertion_op(assertion.op.as_str(), actual.as_ref(), &assertion.expected);
+            evaluate_assertion_op(assertion.op.as_str(), actual.as_ref(), expected.as_ref());
         if !passed {
             snapshot.errors.push(NormalizedError {
                 stage: format!("assertion:{}", assertion.key),
@@ -552,7 +1188,10 @@ fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
                     "assertion failed: key={} op={} expected={} actual={}",
                     assertion.key,
                     assertion.op,
-                    assertion.expected,
+                    expected
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or_else(|| assertion.expected.clone()),
                     actual
                         .as_ref()
                         .map(Value::to_string)
@@ -593,22 +1232,60 @@ fn collect_case_failures(
         .collect()
 }
 
-fn evaluate_assertion_op(op: &str, actual: Option<&Value>, expected: &Value) -> bool {
-    match (op, actual) {
-        ("eq", Some(value)) => value == expected,
-        ("ne", Some(value)) => value != expected,
-        ("exists", Some(_)) => true,
-        ("exists", None) => false,
-        ("not_exists", Some(_)) => false,
-        ("not_exists", None) => true,
-        ("gt", Some(value)) => compare_numeric(value, expected, |a, b| a > b),
-        ("gte", Some(value)) => compare_numeric(value, expected, |a, b| a >= b),
-        ("lt", Some(value)) => compare_numeric(value, expected, |a, b| a < b),
-        ("lte", Some(value)) => compare_numeric(value, expected, |a, b| a <= b),
-        ("contains", Some(value)) => contains_value(value, expected),
-        ("regex", Some(value)) => matches_regex(value, expected),
-        (_unknown, None) => false,
-        (_unknown, Some(_)) => false,
+fn resolve_expected_value(
+    snapshot: &NormalizedSnapshot,
+    op: &str,
+    expected: &Value,
+) -> Option<Value> {
+    match op {
+        "eq_ref" | "ne_ref" => expected
+            .as_str()
+            .and_then(|path| resolve_assertion_value(snapshot, path)),
+        _ => Some(expected.clone()),
+    }
+}
+
+fn evaluate_assertion_op(op: &str, actual: Option<&Value>, expected: Option<&Value>) -> bool {
+    match (op, actual, expected) {
+        ("eq", Some(value), Some(expected)) => value == expected,
+        ("ne", Some(value), Some(expected)) => value != expected,
+        ("eq_ref", Some(value), Some(expected)) => value == expected,
+        ("ne_ref", Some(value), Some(expected)) => value != expected,
+        ("exists", Some(_), _) => true,
+        ("exists", None, _) => false,
+        ("not_exists", Some(_), _) => false,
+        ("not_exists", None, _) => true,
+        ("gt", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a > b),
+        ("gte", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a >= b),
+        ("lt", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a < b),
+        ("lte", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a <= b),
+        ("contains", Some(value), Some(expected)) => contains_value(value, expected),
+        ("regex", Some(value), Some(expected)) => matches_regex(value, expected),
+        _ => false,
+    }
+}
+
+fn select_kernel_string_override<'a>(
+    mode: &KernelKind,
+    default_value: &'a str,
+    rust_override: Option<&'a str>,
+    go_override: Option<&'a str>,
+) -> &'a str {
+    match mode {
+        KernelKind::Rust => rust_override.unwrap_or(default_value),
+        KernelKind::Go => go_override.unwrap_or(default_value),
+    }
+}
+
+fn select_kernel_u16_override(
+    mode: &KernelKind,
+    default_value: Option<u16>,
+    rust_override: Option<u16>,
+    go_override: Option<u16>,
+) -> Option<u16> {
+    match mode {
+        KernelKind::Rust => rust_override.or(default_value),
+        KernelKind::Go => go_override.or(default_value),
     }
 }
 
@@ -684,6 +1361,7 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
                 "frame_count" => Some(json!(r.frames.len())),
                 _ => None,
             }),
+        "memory" => resolve_memory_assertion(snapshot, &parts[1..]),
         "http" if parts.len() == 3 => snapshot
             .http_results
             .iter()
@@ -707,6 +1385,65 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
             }),
         "connections" => resolve_connections_assertion(snapshot, &parts[1..]),
         _ => None,
+    }
+}
+
+fn resolve_memory_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Option<Value> {
+    if path.is_empty() {
+        return None;
+    }
+
+    match path[0] {
+        "count" => Some(json!(snapshot.memory_series.len())),
+        "peak_inuse" => snapshot
+            .memory_series
+            .iter()
+            .map(|point| point.inuse)
+            .max()
+            .map(|v| json!(v)),
+        "peak_oslimit" => snapshot
+            .memory_series
+            .iter()
+            .map(|point| point.oslimit)
+            .max()
+            .map(|v| json!(v)),
+        "leak_detected" => Some(json!(
+            detect_memory_leak(&snapshot.memory_series, None).is_some()
+        )),
+        "leak" if path.len() == 1 => {
+            detect_memory_leak(&snapshot.memory_series, None).map(|signal| {
+                json!({
+                    "kind": signal.kind,
+                    "message": signal.message,
+                    "slope": signal.slope,
+                    "threshold": signal.threshold
+                })
+            })
+        }
+        "leak" => detect_memory_leak(&snapshot.memory_series, None).and_then(|signal| {
+            let root = json!({
+                "kind": signal.kind,
+                "message": signal.message,
+                "slope": signal.slope,
+                "threshold": signal.threshold
+            });
+            resolve_json_path(&root, &path[1..])
+        }),
+        idx_str => {
+            let idx = idx_str.parse::<usize>().ok()?;
+            let point = snapshot.memory_series.get(idx)?;
+            if path.len() == 1 {
+                return Some(json!({
+                    "inuse": point.inuse,
+                    "oslimit": point.oslimit
+                }));
+            }
+            let root = json!({
+                "inuse": point.inuse,
+                "oslimit": point.oslimit
+            });
+            resolve_json_path(&root, &path[1..])
+        }
     }
 }
 

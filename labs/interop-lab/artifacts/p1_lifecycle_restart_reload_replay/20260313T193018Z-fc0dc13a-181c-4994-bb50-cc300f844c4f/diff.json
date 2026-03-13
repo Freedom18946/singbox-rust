@@ -1,0 +1,16 @@
+{
+  "case_id": "p1_lifecycle_restart_reload_replay",
+  "run_dir": "labs/interop-lab/artifacts/p1_lifecycle_restart_reload_replay/20260313T193018Z-fc0dc13a-181c-4994-bb50-cc300f844c4f",
+  "compared_at": "2026-03-13T19:30:28.097112+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 1,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": []
+}

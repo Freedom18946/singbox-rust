@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "run_id": "20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f",
+  "case_id": "p1_fakeip_cache_flush_contract",
+  "kernel": "go",
+  "started_at": "2026-03-13T20:25:32.326932Z",
+  "finished_at": "2026-03-13T20:25:33.112076Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "GLOBAL": {
+            "all": [],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "direct": {
+            "history": [],
+            "name": "direct",
+            "type": "Direct",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    },
+    {
+      "name": "query_seed",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-seed.example&type=A",
+      "status": 200,
+      "body": {
+        "AD": false,
+        "Answer": [
+          {
+            "TTL": 600,
+            "data": "198.18.0.3",
+            "name": "fakeip-seed.example.",
+            "type": 1
+          }
+        ],
+        "CD": false,
+        "Question": [
+          {
+            "Name": "fakeip-seed.example.",
+            "Qclass": 1,
+            "Qtype": 1
+          }
+        ],
+        "RA": true,
+        "RD": true,
+        "Server": "internal",
+        "Status": 0,
+        "TC": false
+      },
+      "body_hash": "8fd492ab9c0da83a3b814282734fed8de9f5582069cfe5b23152e7c52707387a"
+    },
+    {
+      "name": "query_next",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-next.example&type=A",
+      "status": 200,
+      "body": {
+        "AD": false,
+        "Answer": [
+          {
+            "TTL": 600,
+            "data": "198.18.0.4",
+            "name": "fakeip-next.example.",
+            "type": 1
+          }
+        ],
+        "CD": false,
+        "Question": [
+          {
+            "Name": "fakeip-next.example.",
+            "Qclass": 1,
+            "Qtype": 1
+          }
+        ],
+        "RA": true,
+        "RD": true,
+        "Server": "internal",
+        "Status": 0,
+        "TC": false
+      },
+      "body_hash": "bda79a94f9b30f8f94b4f34d62764d595bc8396c51ee410ee326231b39ce26e0"
+    },
+    {
+      "name": "query_ipv6_bucket",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-v6.example&type=AAAA",
+      "status": 200,
+      "body": {
+        "AD": false,
+        "Answer": [
+          {
+            "TTL": 600,
+            "data": "fc00::3",
+            "name": "fakeip-v6.example.",
+            "type": 28
+          }
+        ],
+        "CD": false,
+        "Question": [
+          {
+            "Name": "fakeip-v6.example.",
+            "Qclass": 1,
+            "Qtype": 28
+          }
+        ],
+        "RA": true,
+        "RD": true,
+        "Server": "internal",
+        "Status": 0,
+        "TC": false
+      },
+      "body_hash": "01e5e832e8b2492f743eec8301c4335c2946e3877bc3d31c6cb8651950b68fbc"
+    },
+    {
+      "name": "flush_reset",
+      "method": "POST",
+      "path": "/cache/fakeip/flush",
+      "status": 204,
+      "body": null,
+      "body_hash": null
+    },
+    {
+      "name": "query_after_reset",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip-reset.example&type=A",
+      "status": 200,
+      "body": {
+        "AD": false,
+        "Answer": [
+          {
+            "TTL": 600,
+            "data": "198.18.0.3",
+            "name": "fakeip-reset.example.",
+            "type": 1
+          }
+        ],
+        "CD": false,
+        "Question": [
+          {
+            "Name": "fakeip-reset.example.",
+            "Qclass": 1,
+            "Qtype": 1
+          }
+        ],
+        "RA": true,
+        "RD": true,
+        "Server": "internal",
+        "Status": 0,
+        "TC": false
+      },
+      "body_hash": "8408cc93f0203221c6266244d660b2895c4ecaf68ef42e5dff99d7b2729d8bbb"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 4005888,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "query_seed",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.3"
+        ],
+        "body_hash": "8fd492ab9c0da83a3b814282734fed8de9f5582069cfe5b23152e7c52707387a",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-seed.example&type=A",
+        "status": 200
+      }
+    },
+    {
+      "name": "query_next",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.4"
+        ],
+        "body_hash": "bda79a94f9b30f8f94b4f34d62764d595bc8396c51ee410ee326231b39ce26e0",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-next.example&type=A",
+        "status": 200
+      }
+    },
+    {
+      "name": "query_ipv6_bucket",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "fc00::3"
+        ],
+        "body_hash": "01e5e832e8b2492f743eec8301c4335c2946e3877bc3d31c6cb8651950b68fbc",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-v6.example&type=AAAA",
+        "status": 200
+      }
+    },
+    {
+      "name": "wait_for_fakeip_persist",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 500
+      }
+    },
+    {
+      "name": "flush_reset",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [],
+        "body_hash": null,
+        "connection_count": null,
+        "expect_status": 204,
+        "method": "POST",
+        "path": "/cache/fakeip/flush",
+        "status": 204
+      }
+    },
+    {
+      "name": "query_after_reset",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.0.3"
+        ],
+        "body_hash": "8408cc93f0203221c6266244d660b2895c4ecaf68ef42e5dff99d7b2729d8bbb",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip-reset.example&type=A",
+        "status": 200
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

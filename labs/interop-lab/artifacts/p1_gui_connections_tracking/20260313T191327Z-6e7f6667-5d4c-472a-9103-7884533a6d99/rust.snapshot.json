@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "run_id": "20260313T191327Z-6e7f6667-5d4c-472a-9103-7884533a6d99",
+  "case_id": "p1_gui_connections_tracking",
+  "kernel": "rust",
+  "started_at": "2026-03-13T19:13:27.220909Z",
+  "finished_at": "2026-03-13T19:13:32.507493Z",
+  "http_results": [
+    {
+      "name": "version",
+      "method": "GET",
+      "path": "/version",
+      "status": 200,
+      "body": {
+        "meta": true,
+        "premium": true,
+        "version": "sing-box 0.1.0"
+      },
+      "body_hash": "58696a5bb7f6381eaa6b290c8ec59117fd23ce290746f21512103226d6af9184"
+    },
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "DIRECT": {
+            "alive": true,
+            "delay": 0,
+            "history": [],
+            "name": "DIRECT",
+            "type": "Direct",
+            "udp": true
+          },
+          "GLOBAL": {
+            "all": [
+              "block",
+              "route-hit"
+            ],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "block",
+            "type": "Fallback",
+            "udp": true
+          },
+          "REJECT": {
+            "alive": true,
+            "history": [],
+            "name": "REJECT",
+            "type": "Reject",
+            "udp": false
+          },
+          "block": {
+            "alive": true,
+            "history": [],
+            "name": "block",
+            "type": "Unknown",
+            "udp": true
+          },
+          "route-hit": {
+            "alive": true,
+            "history": [],
+            "name": "route-hit",
+            "type": "Unknown",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    },
+    {
+      "name": "capture_live_connections",
+      "method": "GET",
+      "path": "/connections",
+      "status": 200,
+      "body": {
+        "connections": [
+          {
+            "chains": [
+              "route-hit"
+            ],
+            "download": 0,
+            "id": "1",
+            "metadata": {
+              "destinationIP": "",
+              "destinationPort": "63838",
+              "dnsMode": "normal",
+              "host": "127.0.0.1",
+              "network": "tcp",
+              "processPath": "",
+              "sourceIP": "127.0.0.1",
+              "sourcePort": "63849",
+              "type": "socks"
+            },
+            "rule": "rule#0",
+            "rulePayload": "",
+            "start": "2026-03-13T19:13:28.503478041Z",
+            "upload": 111
+          }
+        ],
+        "downloadTotal": 0,
+        "memory": 0,
+        "uploadTotal": 111
+      },
+      "body_hash": "5d9eb447e6ecf75d9686fb08f57b9fde703b00e868024c4f3d022e8e1a5c9c9e"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [
+      {
+        "chains": [
+          "route-hit"
+        ],
+        "download": 0,
+        "id": "1",
+        "metadata": {
+          "destinationIP": "",
+          "destinationPort": "63838",
+          "dnsMode": "normal",
+          "host": "127.0.0.1",
+          "network": "tcp",
+          "processPath": "",
+          "sourceIP": "127.0.0.1",
+          "sourcePort": "63849",
+          "type": "socks"
+        },
+        "rule": "rule#0",
+        "rulePayload": "",
+        "start": "2026-03-13T19:13:28.503478041Z",
+        "upload": 111
+      }
+    ],
+    "downloadTotal": 0,
+    "memory": 0,
+    "uploadTotal": 111
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "start_live_http_via_socks",
+      "success": true,
+      "detail": {
+        "action": "command_start",
+        "args": [
+          "-lc",
+          "curl --socks5-hostname 127.0.0.1:11801 -fsS 'http://127.0.0.1:63838/v1/echo?scene=connection-tracking' >/dev/null"
+        ],
+        "command": "sh",
+        "env": {},
+        "handle": "live_http_via_socks",
+        "pid": 52598,
+        "workdir": null
+      }
+    },
+    {
+      "name": "wait_for_active_entry",
+      "success": true,
+      "detail": {
+        "action": "sleep",
+        "ms": 300
+      }
+    },
+    {
+      "name": "capture_live_connections",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "body_hash": "5d9eb447e6ecf75d9686fb08f57b9fde703b00e868024c4f3d022e8e1a5c9c9e",
+        "connection_count": 1,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/connections",
+        "status": 200
+      }
+    },
+    {
+      "name": "wait_live_http_via_socks",
+      "success": true,
+      "detail": {
+        "action": "command_wait",
+        "args": [
+          "-lc",
+          "curl --socks5-hostname 127.0.0.1:11801 -fsS 'http://127.0.0.1:63838/v1/echo?scene=connection-tracking' >/dev/null"
+        ],
+        "command": "sh",
+        "elapsed_ms": 4021,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": null,
+        "handle": "live_http_via_socks",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

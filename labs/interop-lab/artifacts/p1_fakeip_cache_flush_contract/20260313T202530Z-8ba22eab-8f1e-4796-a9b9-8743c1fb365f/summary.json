@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_fakeip_cache_flush_contract",
+  "generated_at": "2026-03-13T20:25:33.112673Z",
+  "run_id": "20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_fakeip_cache_flush_contract/20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f/rust.snapshot.json",
+    "labs/interop-lab/artifacts/p1_fakeip_cache_flush_contract/20260313T202530Z-8ba22eab-8f1e-4796-a9b9-8743c1fb365f/go.snapshot.json"
+  ]
+}

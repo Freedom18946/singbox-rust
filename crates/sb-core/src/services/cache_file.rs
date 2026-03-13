@@ -796,6 +796,31 @@ impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
             }
         }
     }
+
+    fn reset(&self) {
+        if !self.store_fakeip {
+            return;
+        }
+
+        match &*self.backend {
+            CacheBackend::Memory(mem) => {
+                mem.fakeip_by_domain.write().clear();
+                mem.fakeip_by_ip.write().clear();
+                *mem.fakeip_meta.write() = None;
+            }
+            CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("fakeip_domain") {
+                    let _ = tree.clear();
+                }
+                if let Ok(tree) = db.open_tree("fakeip_ip") {
+                    let _ = tree.clear();
+                }
+                if let Ok(tree) = db.open_tree("fakeip_meta") {
+                    let _ = tree.clear();
+                }
+            }
+        }
+    }
 }
 
 /// Parse duration string like "7d", "24h", "30m", "60s"

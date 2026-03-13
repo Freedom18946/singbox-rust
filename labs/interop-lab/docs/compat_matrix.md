@@ -10,10 +10,10 @@
 | `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
 | `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_delay_replay` = both) |
 | `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
-| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_session_replay` = both) |
+| `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_connections_tracking` = both, `p1_gui_full_session_replay` = both) |
 | `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | `GET /version` | 版本信息可读 | `p1_version_endpoint_contract` | `strict` | implemented (`p1_version_endpoint_contract` = both) |
-| `GET /dns/query` | DNS 查询结果可读 | `p1_dns_query_endpoint_contract` | `strict` | implemented (`p1_dns_query_endpoint_contract` = both) |
+| `GET /dns/query` | DNS 查询结果可读 | `p1_dns_query_endpoint_contract` / `p1_fakeip_dns_query_contract` | `strict` | implemented (`p1_dns_query_endpoint_contract` = both, `p1_fakeip_dns_query_contract` = both) |
 | `WS /memory` | 内存流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `WS /traffic` | 流量流图表 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
@@ -23,7 +23,13 @@
 | wrong token | 鉴权失败语义 | `p1_auth_negative_wrong_token` | `env_limited` | implemented |
 | missing token | 鉴权失败语义 | `p1_auth_negative_missing_token` | `env_limited` | implemented |
 | optional endpoints | `/providers` `/rules` `/script` `/profile` 行为可解释 | `p1_optional_endpoints_contract` | `env_limited` | implemented |
-| lifecycle restart/reload | 同端口重启与 reload 后控制面可用 | `p1_lifecycle_restart_reload_replay` | `strict` | implemented |
+| lifecycle restart/reload | 同端口重启与 reload 后控制面可用 | `p1_lifecycle_restart_reload_replay` | `strict` | implemented (`kernel_mode: both`) |
+
+## 启动 / 可用性矩阵
+
+| Surface | 语义目标 | Case ID | Env Class | 状态 |
+| --- | --- | --- | --- | --- |
+| `/version` readiness | 进程启动后在超时内返回 200 | `p1_version_endpoint_contract` | `strict` | implemented (`kernel_mode: both`) |
 
 ## 订阅解析契约矩阵
 
@@ -48,6 +54,8 @@
 | TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` (both) `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
 | UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` (both) `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
 | DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` (both) `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| FakeIP DNS query | allocates fake IP from pool | — | — | — | `p1_fakeip_dns_query_contract` (both) |
+| FakeIP cache flush | reset fakeip allocation via API | — | — | — | `p1_fakeip_cache_flush_contract` (both) |
 | IP-CIDR routing via SOCKS | direct on match | final block on miss | — | — | `p1_ip_cidr_rule_via_socks` (both) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
@@ -73,8 +81,8 @@
 | `BHV-DP-012` | `Domain rules match FQDN` | `app/tests/parity_spec_routing.rs::parity_spec_domain_rules_match_fqdn_before_default` |
 | `BHV-DP-013` | `IP-CIDR rules match addresses` | `app/tests/parity_spec_routing.rs::parity_spec_ip_cidr_rules_match_addresses_before_default` |
 | `BHV-DP-014` | `Sniff detects protocol from payload` | `app/tests/router_sniff_sni_alpn.rs`, `crates/sb-core/tests/tun_sni_routing.rs` |
-| `BHV-DP-016` | `FakeIP pool allocates addresses` | `crates/sb-core/tests/router_fakeip_integration.rs` |
-| `BHV-DP-017` | `FakeIP cache flush via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_flush_fakeip_cache` |
+| `BHV-DP-016` | `FakeIP pool allocates addresses` | `labs/interop-lab/cases/p1_fakeip_dns_query_contract.yaml`, `crates/sb-core/tests/router_fakeip_integration.rs` |
+| `BHV-DP-017` | `FakeIP cache flush via API` | `labs/interop-lab/cases/p1_fakeip_cache_flush_contract.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_flush_fakeip_cache` |
 | `BHV-DP-018` | `DNS result caching and TTL` | `crates/sb-core/tests/dns_cache.rs`, `crates/sb-core/tests/dns_cache_basic.rs`, `crates/sb-core/tests/dns_steady.rs` |
 | `BHV-LC-006` | `State preservation across reload` | `crates/sb-core/tests/supervisor_reload_state.rs::selector_selection_survives_reload_via_cache_file` |
 | `BHV-LC-007` | `Graceful shutdown drains connections` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_waits_for_http_connection_to_drain` |

@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "run_id": "20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6",
+  "case_id": "p1_version_endpoint_contract",
+  "kernel": "rust",
+  "started_at": "2026-03-12T03:25:18.420090Z",
+  "finished_at": "2026-03-12T03:25:20.263236Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "DIRECT": {
+            "alive": true,
+            "delay": 0,
+            "history": [],
+            "name": "DIRECT",
+            "type": "Direct",
+            "udp": true
+          },
+          "GLOBAL": {
+            "all": [
+              "direct"
+            ],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "REJECT": {
+            "alive": true,
+            "history": [],
+            "name": "REJECT",
+            "type": "Reject",
+            "udp": false
+          },
+          "direct": {
+            "alive": true,
+            "history": [],
+            "name": "direct",
+            "type": "Unknown",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 0,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "get_version",
+      "success": true,
+      "detail": {
+        "action": "command",
+        "args": [
+          "-lc",
+          "for port in 19290 9090; do\n  curl -fsS -H 'Authorization: Bearer test-secret' \"http://127.0.0.1:$port/version\" && exit 0\ndone\nexit 1\n"
+        ],
+        "command": "sh",
+        "elapsed_ms": 60,
+        "env": {},
+        "exit_code": 0,
+        "expect_exit": 0,
+        "stderr": "",
+        "stdout": "{\"meta\":true,\"premium\":true,\"version\":\"sing-box 0.1.0\"}",
+        "workdir": null
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

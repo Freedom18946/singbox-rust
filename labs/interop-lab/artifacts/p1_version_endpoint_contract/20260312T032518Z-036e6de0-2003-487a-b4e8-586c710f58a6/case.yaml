@@ -1,0 +1,73 @@
+id: p1_version_endpoint_contract
+title: version endpoint returns version info on both kernels
+owner: null
+priority: p1
+kernel_mode: both
+tags:
+- control-plane
+- dual_core
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_clash_api.json
+    - run
+    - --admin-listen
+    - 127.0.0.1:19190
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+    - run
+    - -c
+    - labs/interop-lab/configs/go_core_clash_api.json
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence: []
+upstream_topology: []
+traffic_plan:
+- kind: command
+  name: get_version
+  command: sh
+  args:
+  - -lc
+  - |
+    for port in 19290 9090; do
+      curl -fsS -H 'Authorization: Bearer test-secret' "http://127.0.0.1:$port/version" && exit 0
+    done
+    exit 1
+  env: {}
+  workdir: null
+  timeout_ms: 5000
+  expect_exit: 0
+subscription_input: null
+faults: []
+assertions:
+- key: traffic.get_version.success
+  op: eq
+  expected: true
+- key: traffic.get_version.detail.stdout
+  op: contains
+  expected: version
+- key: errors.count
+  op: eq
+  expected: 0
+oracle:
+  ignore_http_paths: []
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

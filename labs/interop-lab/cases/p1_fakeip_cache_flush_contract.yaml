@@ -1,0 +1,97 @@
+id: p1_fakeip_cache_flush_contract
+title: fakeip cache flush resets allocation sequence on both kernels
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - control-plane
+  - dataplane
+  - dual_core
+  - dns
+  - fakeip
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_fakeip_flush.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_fakeip_flush.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+traffic_plan:
+  - kind: api_http
+    name: query_seed
+    method: GET
+    path: /dns/query?name=fakeip-seed.example&type=A
+    expect_status: 200
+  - kind: api_http
+    name: query_next
+    method: GET
+    path: /dns/query?name=fakeip-next.example&type=A
+    expect_status: 200
+  - kind: api_http
+    name: query_ipv6_bucket
+    method: GET
+    path: /dns/query?name=fakeip-v6.example&type=AAAA
+    expect_status: 200
+  - kind: sleep
+    name: wait_for_fakeip_persist
+    ms: 500
+  - kind: api_http
+    name: flush_reset
+    method: DELETE
+    method_go: POST
+    path: /cache/fakeip/flush
+    expect_status: 200
+    expect_status_go: 204
+  - kind: api_http
+    name: query_after_reset
+    method: GET
+    path: /dns/query?name=fakeip-reset.example&type=A
+    expect_status: 200
+assertions:
+  - key: traffic.flush_reset.success
+    op: eq
+    expected: true
+  - key: traffic.query_seed.detail.answer_ips.0
+    op: regex
+    expected: "^198\\.(18|19)\\."
+  - key: traffic.query_next.detail.answer_ips.0
+    op: regex
+    expected: "^198\\.(18|19)\\."
+  - key: traffic.query_after_reset.detail.answer_ips.0
+    op: regex
+    expected: "^198\\.(18|19)\\."
+  - key: traffic.query_ipv6_bucket.detail.answer_ips.0
+    op: regex
+    expected: "^fc"
+  - key: traffic.query_seed.detail.answer_ips.0
+    op: ne_ref
+    expected: traffic.query_next.detail.answer_ips.0
+  - key: traffic.query_seed.detail.answer_ips.0
+    op: eq_ref
+    expected: traffic.query_after_reset.detail.answer_ips.0
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /dns/query*
+    - /cache/fakeip/flush

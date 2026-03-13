@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_version_endpoint_contract",
+  "generated_at": "2026-03-12T03:25:20.554722Z",
+  "run_id": "20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_version_endpoint_contract/20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6/rust.snapshot.json",
+    "labs/interop-lab/artifacts/p1_version_endpoint_contract/20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6/go.snapshot.json"
+  ]
+}

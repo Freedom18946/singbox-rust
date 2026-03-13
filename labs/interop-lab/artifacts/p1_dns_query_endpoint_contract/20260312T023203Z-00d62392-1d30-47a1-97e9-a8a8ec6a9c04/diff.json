@@ -1,0 +1,16 @@
+{
+  "case_id": "p1_dns_query_endpoint_contract",
+  "run_dir": "labs/interop-lab/artifacts/p1_dns_query_endpoint_contract/20260312T023203Z-00d62392-1d30-47a1-97e9-a8a8ec6a9c04",
+  "compared_at": "2026-03-12T02:37:19.422065+00:00",
+  "http_mismatches": [],
+  "ws_mismatches": [],
+  "subscription_mismatches": [],
+  "traffic_mismatches": [],
+  "connection_mismatches": [],
+  "memory_mismatches": [],
+  "ignored_http_count": 1,
+  "ignored_ws_count": 0,
+  "ignored_counter_jitter_count": 0,
+  "gate_score": 0,
+  "env_limited_attributions": []
+}

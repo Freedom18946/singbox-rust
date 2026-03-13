@@ -1,0 +1,55 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "tag": "real",
+        "address": "1.1.1.1"
+      },
+      {
+        "tag": "fakeip",
+        "address": "fakeip"
+      }
+    ],
+    "rules": [
+      {
+        "query_type": [
+          "A",
+          "AAAA"
+        ],
+        "server": "fakeip"
+      }
+    ],
+    "fakeip": {
+      "enabled": true,
+      "inet4_range": "198.18.0.0/15",
+      "inet6_range": "fc00::/18"
+    }
+  },
+  "route": {
+    "rules": [],
+    "final": "direct"
+  }
+}

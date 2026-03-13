@@ -33,7 +33,7 @@ agents-only/
 | 操作规则 | [archive/AI-RULES.md](./archive/AI-RULES.md) |
 | 理解架构约束 | [reference/ARCHITECTURE-SPEC.md](./reference/ARCHITECTURE-SPEC.md) |
 | 查看当前进度 | [workpackage_latest.md](./workpackage_latest.md) |
-| 当前执行工作包 | [planning/L18-PHASE4.md](./planning/L18-PHASE4.md) |
+| 当前执行工作包 | [planning/L22-DUAL-KERNEL-PARITY.md](./planning/L22-DUAL-KERNEL-PARITY.md) |
 | 术语查询 | [reference/GLOSSARY.md](./reference/GLOSSARY.md) |
 | 经验积累 | [memory/](./memory/) |
 | 创建新文档 | [templates/README.md](./templates/README.md) |
@@ -41,4 +41,4 @@ agents-only/
 
 ---
 
-*更新时间: 2026-03-09*
+*更新时间: 2026-03-14*

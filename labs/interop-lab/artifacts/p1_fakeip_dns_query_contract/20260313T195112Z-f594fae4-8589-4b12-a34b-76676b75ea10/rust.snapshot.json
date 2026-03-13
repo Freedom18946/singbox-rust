@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "run_id": "20260313T195112Z-f594fae4-8589-4b12-a34b-76676b75ea10",
+  "case_id": "p1_fakeip_dns_query_contract",
+  "kernel": "rust",
+  "started_at": "2026-03-13T19:51:12.466203Z",
+  "finished_at": "2026-03-13T19:51:14.879916Z",
+  "http_results": [
+    {
+      "name": "auto_get_proxies",
+      "method": "GET",
+      "path": "/proxies",
+      "status": 200,
+      "body": {
+        "proxies": {
+          "DIRECT": {
+            "alive": true,
+            "delay": 0,
+            "history": [],
+            "name": "DIRECT",
+            "type": "Direct",
+            "udp": true
+          },
+          "GLOBAL": {
+            "all": [
+              "direct"
+            ],
+            "history": [],
+            "name": "GLOBAL",
+            "now": "direct",
+            "type": "Fallback",
+            "udp": true
+          },
+          "REJECT": {
+            "alive": true,
+            "history": [],
+            "name": "REJECT",
+            "type": "Reject",
+            "udp": false
+          },
+          "direct": {
+            "alive": true,
+            "history": [],
+            "name": "direct",
+            "type": "Unknown",
+            "udp": true
+          }
+        }
+      },
+      "body_hash": null
+    },
+    {
+      "name": "fakeip_dns_query",
+      "method": "GET",
+      "path": "/dns/query?name=fakeip.example&type=A",
+      "status": 200,
+      "body": {
+        "addresses": [
+          "198.18.1.148"
+        ],
+        "name": "fakeip.example",
+        "ttl": 300,
+        "type": "A"
+      },
+      "body_hash": "08e066329be12d5188db9f7cdaea648f80caaa8ef64fe9b3e3c822cbdb6a51cb"
+    }
+  ],
+  "ws_frames": [],
+  "conn_summary": {
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 0,
+    "uploadTotal": 0
+  },
+  "traffic_counters": null,
+  "memory_series": [],
+  "subscription_result": null,
+  "traffic_results": [
+    {
+      "name": "fakeip_dns_query",
+      "success": true,
+      "detail": {
+        "action": "api_http",
+        "answer_ips": [
+          "198.18.1.148"
+        ],
+        "body_hash": "08e066329be12d5188db9f7cdaea648f80caaa8ef64fe9b3e3c822cbdb6a51cb",
+        "connection_count": null,
+        "expect_status": 200,
+        "method": "GET",
+        "path": "/dns/query?name=fakeip.example&type=A",
+        "status": 200
+      }
+    }
+  ],
+  "errors": [],
+  "fd_samples": []
+}

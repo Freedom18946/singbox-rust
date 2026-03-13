@@ -1,0 +1,9 @@
+{
+  "case_id": "p1_dns_query_endpoint_contract",
+  "generated_at": "2026-03-12T02:32:04.004574Z",
+  "run_id": "20260312T023203Z-00d62392-1d30-47a1-97e9-a8a8ec6a9c04",
+  "snapshots": [
+    "labs/interop-lab/artifacts/p1_dns_query_endpoint_contract/20260312T023203Z-00d62392-1d30-47a1-97e9-a8a8ec6a9c04/rust.snapshot.json",
+    "labs/interop-lab/artifacts/p1_dns_query_endpoint_contract/20260312T023203Z-00d62392-1d30-47a1-97e9-a8a8ec6a9c04/go.snapshot.json"
+  ]
+}
