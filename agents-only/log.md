@@ -16,6 +16,28 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-14 10:15] Agent: Codex (GPT-5)
+
+**任务**: 将 `agents-only` 入口文档同步到最新 dual-kernel parity 口径，并准备单独提交/推送该目录
+**变更**:
+- `agents-only/active_context.md`
+  - 覆盖率口径更新为 `Both-Covered = 45 / 60`、strict both `37 / 60`、both-case ratio `31 / 95`
+  - 补入本轮新增的真实 both 增量：`BHV-LC-008`、`BHV-LC-006`、`BHV-LC-009`、`BHV-PF-001`、`BHV-PF-002`、`BHV-DP-018`
+  - 更新最新 strict both artifact 列表与 `p1_service_failure_isolation` 的真实 blocker 描述
+- `agents-only/workpackage_latest.md`
+  - 当前分数改为 `45 / 60`
+  - “本轮已真实新增的 both 覆盖”补入近期已完成的 lifecycle / perf / DNS cache 合同
+- `agents-only/planning/L22-DUAL-KERNEL-PARITY.md`
+  - 同步最新分数与已完成增量
+  - 写入 `p1_dns_cache_ttl_via_socks` 对 Rust 产品侧的最小修复结论
+- `agents-only/log.md`
+  - 追加本次同步记录
+**结果**: 成功
+**备注**:
+- 最新新增并实跑通过的 `BHV-DP-018` artifact：
+  - `labs/interop-lab/artifacts/p1_dns_cache_ttl_via_socks/20260314T021211Z-247eb412-7cb4-43ce-8a64-927df58a5ff7/`
+- 本次只同步 `agents-only`，不打包其它工作区改动
+
 ### [2026-03-14 09:10] Agent: Codex (GPT-5)
 
 **任务**: 同步 `agents-only` 到最新 dual-kernel parity 主线，并准备提交本轮 parity 改动

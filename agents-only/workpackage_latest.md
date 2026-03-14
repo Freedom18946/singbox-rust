@@ -30,19 +30,24 @@
 
 | 指标 | 当前值 |
 |------|--------|
-| `Both-Covered` | `39 / 60` |
-| 覆盖率 | `65.0%` |
-| strict both 覆盖 | `31 / 60` |
-| both-case ratio | `29 / 94` |
+| `Both-Covered` | `45 / 60` |
+| 覆盖率 | `75.0%` |
+| strict both 覆盖 | `37 / 60` |
+| both-case ratio | `31 / 95` |
 
 ## 本轮已真实新增的 both 覆盖
 
 | Case | 行为 / 收益 | 备注 |
 |------|-------------|------|
 | `p1_gui_connections_tracking` | `BHV-DP-010` + `BHV-CP-006` | 在 live SOCKS 请求未结束时抓 `/connections` |
-| `p1_lifecycle_restart_reload_replay` | `BHV-LC-001` | reload 改走真实 `SIGHUP` fallback |
+| `p1_gui_ws_reconnect_behavior` | `BHV-LC-008` | restart 期间 `/connections` WS 关闭且 ready 后可重连 |
+| `p1_selector_switch_traffic_replay` | `BHV-LC-006` | selector 选中态在 reload 后保持 |
+| `p1_lifecycle_restart_reload_replay` | `BHV-LC-009` | shutdown 后同端口 restart 恢复 |
 | `p1_fakeip_dns_query_contract` | `BHV-DP-016` | 双核 `/dns/query` fakeip contract |
 | `p1_fakeip_cache_flush_contract` | `BHV-DP-017` | 双核 fakeip flush/reset contract |
+| `p0_clash_api_contract_strict` | `BHV-PF-002` | repeated `GET /proxies` p95 latency contract |
+| `p1_rust_core_http_via_socks` | `BHV-PF-001` | repeated HTTP via SOCKS5 p95 latency contract |
+| `p1_dns_cache_ttl_via_socks` | `BHV-DP-018` | TTL 内缓存命中、TTL 后重新查询 |
 
 ## 本轮顺带补齐的产品 / harness 能力
 
@@ -57,10 +62,9 @@
 
 1. `p1_service_failure_isolation`
    - 前提：先做真实 broken-service dual-core model
-   - 如果仍只有 static stub，就不要硬记 both
-2. `p1_gui_ws_reconnect_behavior`
-   - 只在能诚实映射到 `Both-Covered` 行为时推进
-3. 继续寻找 strict both routing / lifecycle / service 快速增量
+   - Go 当前 service init error 会 abort startup，Rust 仍是 best-effort
+   - 如果语义不统一，就不要硬记 both
+2. 继续寻找 strict both routing / lifecycle / service 快速增量
    - 优先复用现有 harness 能力
    - 优先补已有 Go/Rust config 与 oracle 最小差异的 case
 

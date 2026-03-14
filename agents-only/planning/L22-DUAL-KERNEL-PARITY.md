@@ -17,10 +17,10 @@
 
 ## 2. 当前分数
 
-- `Both-Covered = 39 / 60`
-- 覆盖率 `65.0%`
-- strict both 覆盖 `31 / 60`
-- both-case ratio `29 / 94`
+- `Both-Covered = 45 / 60`
+- 覆盖率 `75.0%`
+- strict both 覆盖 `37 / 60`
+- both-case ratio `31 / 95`
 
 ## 3. 本轮已完成的新增覆盖
 
@@ -36,6 +36,24 @@
 4. `p1_fakeip_cache_flush_contract`
    - 诚实覆盖：`BHV-DP-017`
    - 核心点：Rust / Go 分别走真实 fakeip flush 语义后验证 reset
+5. `p1_gui_ws_reconnect_behavior`
+   - 诚实覆盖：`BHV-LC-008`
+   - 核心点：restart 时 `/connections` WS 关闭、ready 后可重连
+6. `p1_selector_switch_traffic_replay`
+   - 诚实覆盖：`BHV-LC-006`
+   - 核心点：selector 切到 `direct` 后，reload 仍保持选中态
+7. `p1_lifecycle_restart_reload_replay`
+   - 诚实覆盖：`BHV-LC-009`
+   - 核心点：shutdown 后同端口 restart 恢复
+8. `p0_clash_api_contract_strict`
+   - 诚实覆盖：`BHV-PF-002`
+   - 核心点：重复 `GET /proxies` 的 p95 latency contract
+9. `p1_rust_core_http_via_socks`
+   - 诚实覆盖：`BHV-PF-001`
+   - 核心点：重复 HTTP via SOCKS5 的 p95 latency contract
+10. `p1_dns_cache_ttl_via_socks`
+   - 诚实覆盖：`BHV-DP-018`
+   - 核心点：TTL 内命中缓存，TTL 后重新查询；Rust 补齐 configured DNS + no-rule TTL cache 语义
 
 ## 4. 本轮新增能力
 
@@ -56,8 +74,9 @@
 ## 5. 当前 blocker
 
 1. `p1_service_failure_isolation`
-   - Rust `/services/health` 还是 static stub
-   - 尚无真实 broken-service dual-core model
+   - Go service init failure 直接 abort startup
+   - Rust 仍是 best-effort build
+   - 尚无诚实的 broken-service dual-core model
 2. `BHV-DP-012`
    - domain-rule both-case 之前试验更像真实行为缺口
 3. mixed inbound
@@ -83,5 +102,7 @@
    - `labs/interop-lab/docs/case_backlog.md`（必要时）
    - `AGENTS.md`
    - `agents-only/active_context.md`
+   - `agents-only/workpackage_latest.md`
+   - `agents-only/planning/L22-DUAL-KERNEL-PARITY.md`
 4. 不回滚工作区里的非本任务改动
 5. 不把 artifacts / soak / nightly 当成 behavior 覆盖本身
