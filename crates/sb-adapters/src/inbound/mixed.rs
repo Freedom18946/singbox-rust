@@ -10,6 +10,7 @@
 use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
 use tokio::{
+    io::AsyncReadExt,
     net::{TcpListener, TcpStream},
     select,
     sync::{mpsc, oneshot},
@@ -129,30 +130,26 @@ pub async fn serve_mixed(
 
 /// Detect protocol and route to appropriate handler
 async fn handle_mixed_conn(
-    cli: TcpStream,
+    mut cli: TcpStream,
     peer: SocketAddr,
     cfg: &MixedInboundConfig,
 ) -> io::Result<()> {
     #[cfg(feature = "metrics")]
     counter!("inbound_connections_total", "protocol" => "mixed", "network" => "tcp").increment(1);
 
-    // Peek first byte to detect protocol without consuming
+    // Read first byte to detect protocol (consumed from stream, replayed via PeekedStream)
     let mut first_byte = [0u8; 1];
 
     // Apply read timeout if configured
     let peek_result = if let Some(timeout) = cfg.read_timeout {
-        tokio::time::timeout(timeout, cli.peek(&mut first_byte))
+        tokio::time::timeout(timeout, cli.read_exact(&mut first_byte))
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "protocol detection timeout"))?
     } else {
-        cli.peek(&mut first_byte).await
+        cli.read_exact(&mut first_byte).await
     };
 
     match peek_result {
-        Ok(0) => {
-            // Connection closed immediately
-            Ok(())
-        }
         Ok(_) => {
             let first = first_byte[0];
 
@@ -180,6 +177,10 @@ async fn handle_mixed_conn(
 
                 handle_http(cli, first, peer, cfg).await
             }
+        }
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+            // Connection closed before sending any data
+            Ok(())
         }
         Err(e) => {
             sb_core::metrics::http::record_error_display(&e);
@@ -320,6 +321,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             set_system_proxy: cfg.set_system_proxy,
             allow_private_network: cfg.allow_private_network,
             stats: cfg.stats.clone(),
+            active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         let stream = PeekedStream::new(tls_stream, first);
         crate::inbound::http::serve_conn(stream, peer, &http_cfg)
@@ -346,6 +348,7 @@ async fn handle_http(
         set_system_proxy: cfg.set_system_proxy,
         allow_private_network: cfg.allow_private_network,
         stats: cfg.stats.clone(),
+        active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let stream = PeekedStream::new(cli, first_byte);

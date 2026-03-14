@@ -11,7 +11,7 @@ use crate::{
 use async_trait::async_trait;
 use futures::StreamExt;
 use std::net::SocketAddr;
-use tokio::net::{lookup_host, TcpStream, UdpSocket};
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::time::{timeout, Duration};
 
 /// Direct outbound connector that connects directly to targets
@@ -73,24 +73,11 @@ impl DirectConnector {
     async fn resolve_endpoint(&self, endpoint: &Endpoint) -> SbResult<Vec<SocketAddr>> {
         match &endpoint.host {
             Host::Ip(ip) => Ok(vec![SocketAddr::new(*ip, endpoint.port)]),
-            Host::Name(domain) => {
-                let addr_str = format!("{}:{}", domain, endpoint.port);
-                let addrs = lookup_host(&addr_str).await.map_err(|e| {
-                    SbError::network(
-                        ErrorClass::Connection,
-                        format!("DNS resolution failed: {e}"),
-                    )
-                })?;
-
-                let addrs: Vec<_> = addrs.collect();
-                if addrs.is_empty() {
-                    return Err(SbError::network(
-                        ErrorClass::Connection,
-                        "No addresses resolved for domain".to_string(),
-                    ));
-                }
-                Ok(addrs)
-            }
+            Host::Name(domain) => super::resolve_host_for_direct(domain, endpoint.port)
+                .await
+                .map_err(|e| {
+                    SbError::network(ErrorClass::Connection, format!("DNS resolution failed: {e}"))
+                }),
         }
     }
 }
@@ -455,22 +442,19 @@ impl UdpTransport for DirectUdpTransport {
         // But we'll implement send_to for flexibility
         let addr = match &dst.host {
             Host::Ip(ip) => SocketAddr::new(*ip, dst.port),
-            Host::Name(domain) => {
-                let addr_str = format!("{}:{}", domain, dst.port);
-                let mut addrs = lookup_host(&addr_str).await.map_err(|e| {
-                    SbError::network(
-                        ErrorClass::Connection,
-                        format!("DNS resolution failed: {e}"),
-                    )
-                })?;
-
-                addrs.next().ok_or_else(|| {
+            Host::Name(domain) => super::resolve_host_for_direct(domain, dst.port)
+                .await
+                .map_err(|e| {
+                    SbError::network(ErrorClass::Connection, format!("DNS resolution failed: {e}"))
+                })?
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
                     SbError::network(
                         ErrorClass::Connection,
                         "No addresses resolved for domain".to_string(),
                     )
-                })?
-            }
+                })?,
         };
 
         self.socket

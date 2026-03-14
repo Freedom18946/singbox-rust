@@ -6,8 +6,9 @@
 | --- | --- | --- | --- | --- |
 | `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
-| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p1_gui_proxy_switch_replay` / `p1_gui_full_boot_replay` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_gui_full_boot_replay` = both, `p1_gui_full_session_replay` = both) |
-| `PUT /proxies/{group}` | selector 切换 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
+| `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_proxy_switch_replay` / `p1_gui_full_boot_replay` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_proxy_switch_replay` = both, `p1_gui_full_boot_replay` = both, `p1_gui_full_session_replay` = both) |
+| `GET /proxies` (repeated p95) | 重复 API 调用响应延迟 p95 合约 | `p0_clash_api_contract_strict` | `strict` | implemented (`kernel_mode: both`) |
+| `PUT /proxies/{group}` | selector 切换 + reload 后保持选中态 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
 | `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_delay_replay` = both) |
 | `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
 | `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_connections_tracking` = both, `p1_gui_full_session_replay` = both) |
@@ -19,11 +20,12 @@
 | `WS /connections` | 连接流推送 | `p0_clash_api_contract` / `p2_connections_ws_*` | `env_limited`/`strict` | implemented |
 | `WS /logs` | 日志流推送 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
 | WS parallel (4 streams) | 4 WS 流并行连接 | `p1_gui_full_boot_replay` / `p0_clash_api_contract_strict` | `strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
-| WS reconnect | kernel restart 后 WS 重连 | `p1_gui_ws_reconnect_behavior` | `strict` | implemented |
+| WS reconnect | kernel restart 后 WS 重连 + `/connections` WS 关闭可观测 | `p1_gui_ws_reconnect_behavior` | `strict` | implemented (`kernel_mode: both`) |
 | wrong token | 鉴权失败语义 | `p1_auth_negative_wrong_token` | `env_limited` | implemented |
 | missing token | 鉴权失败语义 | `p1_auth_negative_missing_token` | `env_limited` | implemented |
 | optional endpoints | `/providers` `/rules` `/script` `/profile` 行为可解释 | `p1_optional_endpoints_contract` | `env_limited` | implemented |
-| lifecycle restart/reload | 同端口重启与 reload 后控制面可用 | `p1_lifecycle_restart_reload_replay` | `strict` | implemented (`kernel_mode: both`) |
+| lifecycle restart/reload | 同端口重启、shutdown 后同端口恢复、reload 后控制面可用 / selector 状态保持 | `p1_lifecycle_restart_reload_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`kernel_mode: both`) |
+| graceful shutdown drain | SIGTERM 时活跃 TCP 连接行为一致 | `p1_graceful_shutdown_drain` | `strict` | implemented (`kernel_mode: both`) |
 
 ## 启动 / 可用性矩阵
 
@@ -48,15 +50,19 @@
 
 | 协议/路径 | 连通 | 故障 | 恢复 | Jitter | Case ID |
 | --- | --- | --- | --- | --- | --- |
-| HTTP via SOCKS | yes | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` (both) `p1_fault_*_http_*` `p1_recovery_*_http_*` |
+| HTTP via SOCKS | yes + repeated p95 latency contract | disconnect/delay | reconnect/multi-flap | yes | `p1_rust_core_http_via_socks` (both) `p1_fault_*_http_*` `p1_recovery_*_http_*` |
 | HTTP CONNECT via HTTP proxy | yes | — | — | — | `p1_http_connect_via_http_proxy` (both) |
+| Mixed inbound (SOCKS5+HTTP) | auto-detect | — | — | — | `p1_mixed_inbound_dual_protocol` (both) |
 | Selector switch via SOCKS | blocked->direct | — | — | — | `p1_selector_switch_traffic_replay` (both) |
+| URLTest auto-select via SOCKS | auto-selects lowest latency | — | — | — | `p1_urltest_auto_select_replay` (both) |
 | TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` (both) `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
 | UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` (both) `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
 | DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` (both) `p1_fault_*_dns_*` `p1_recovery_dns_*` |
+| DNS cache TTL via SOCKS | cache hit within TTL, refresh after expiry | — | — | — | `p1_dns_cache_ttl_via_socks` (both) |
 | FakeIP DNS query | allocates fake IP from pool | — | — | — | `p1_fakeip_dns_query_contract` (both) |
 | FakeIP cache flush | reset fakeip allocation via API | — | — | — | `p1_fakeip_cache_flush_contract` (both) |
 | IP-CIDR routing via SOCKS | direct on match | final block on miss | — | — | `p1_ip_cidr_rule_via_socks` (both) |
+| Domain routing via SOCKS | direct on match | final block on miss | — | — | `p1_domain_rule_via_socks` (both) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
@@ -83,13 +89,14 @@
 | `BHV-DP-014` | `Sniff detects protocol from payload` | `app/tests/router_sniff_sni_alpn.rs`, `crates/sb-core/tests/tun_sni_routing.rs` |
 | `BHV-DP-016` | `FakeIP pool allocates addresses` | `labs/interop-lab/cases/p1_fakeip_dns_query_contract.yaml`, `crates/sb-core/tests/router_fakeip_integration.rs` |
 | `BHV-DP-017` | `FakeIP cache flush via API` | `labs/interop-lab/cases/p1_fakeip_cache_flush_contract.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_flush_fakeip_cache` |
-| `BHV-DP-018` | `DNS result caching and TTL` | `crates/sb-core/tests/dns_cache.rs`, `crates/sb-core/tests/dns_cache_basic.rs`, `crates/sb-core/tests/dns_steady.rs` |
-| `BHV-LC-006` | `State preservation across reload` | `crates/sb-core/tests/supervisor_reload_state.rs::selector_selection_survives_reload_via_cache_file` |
+| `BHV-DP-018` | `DNS result caching and TTL` | `labs/interop-lab/cases/p1_dns_cache_ttl_via_socks.yaml`, `crates/sb-core/tests/dns_cache.rs`, `crates/sb-core/tests/dns_cache_basic.rs`, `crates/sb-core/tests/dns_steady.rs` |
+| `BHV-LC-006` | `State preservation across reload` | `labs/interop-lab/cases/p1_selector_switch_traffic_replay.yaml`, `crates/sb-core/tests/supervisor_reload_state.rs::selector_selection_survives_reload_via_cache_file` |
 | `BHV-LC-007` | `Graceful shutdown drains connections` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_waits_for_http_connection_to_drain` |
 | `BHV-LC-008` | `Connection close notification` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_closes_on_server_shutdown` |
-| `BHV-LC-009` | `Resource cleanup on exit` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_releases_listener_and_clears_runtime_trackers` |
+| `BHV-LC-009` | `Resource cleanup on exit` | `labs/interop-lab/cases/p1_lifecycle_restart_reload_replay.yaml`, `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_releases_listener_and_clears_runtime_trackers` |
 | `BHV-PF-003` | `Peak RSS within bounds` | `labs/interop-lab/src/diff_report.rs::peak_memory_ratio_over_2x_is_mismatch`, `labs/interop-lab/cases/p2_connections_ws_soak_dual_core.yaml` |
-| `BHV-PF-002` | `API response p95 latency` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxies_p95_latency` |
+| `BHV-PF-001` | `HTTP proxy p95 latency` | `labs/interop-lab/cases/p1_rust_core_http_via_socks.yaml`, `benches/benches/socks5_throughput.rs` |
+| `BHV-PF-002` | `API response p95 latency` | `labs/interop-lab/cases/p0_clash_api_contract_strict.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxies_p95_latency` |
 | `BHV-PF-004` | `WS connection memory stable` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_memory_remains_bounded_over_time` |
 | `BHV-SV-005` | `Proxy provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxy_providers` |
 | `BHV-SV-006` | `Rule provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_rule_providers` |

@@ -175,6 +175,10 @@ pub struct UpstreamServiceSpec {
     pub target: Option<String>,
     #[serde(default)]
     pub handshake_target: Option<String>,
+    #[serde(default)]
+    pub answer_ipv4: Option<String>,
+    #[serde(default)]
+    pub ttl_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,6 +206,21 @@ pub enum TrafficAction {
         proxy: Option<String>,
         #[serde(default)]
         expect_status: Option<u16>,
+    },
+    HttpGetLatency {
+        name: String,
+        url: String,
+        #[serde(default)]
+        proxy: Option<String>,
+        #[serde(default)]
+        expect_status: Option<u16>,
+        #[serde(default = "default_http_get_latency_samples")]
+        samples: usize,
+        #[serde(default = "default_http_get_latency_warmup")]
+        warmup: usize,
+        #[serde(default = "default_http_get_latency_timeout_ms")]
+        timeout_ms: u64,
+        max_p95_ms: u64,
     },
     TcpRoundTrip {
         name: String,
@@ -231,6 +250,10 @@ pub enum TrafficAction {
         qname: String,
         #[serde(default)]
         proxy: Option<String>,
+    },
+    UpstreamQueryCount {
+        name: String,
+        target: String,
     },
     FaultDisconnect {
         name: String,
@@ -302,6 +325,36 @@ pub enum TrafficAction {
         #[serde(default)]
         expect_status_go: Option<u16>,
     },
+    ApiHttpLatency {
+        name: String,
+        method: String,
+        path: String,
+        #[serde(default)]
+        method_rust: Option<String>,
+        #[serde(default)]
+        method_go: Option<String>,
+        #[serde(default)]
+        path_rust: Option<String>,
+        #[serde(default)]
+        path_go: Option<String>,
+        #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
+        #[serde(default)]
+        expect_status: Option<u16>,
+        #[serde(default)]
+        expect_status_rust: Option<u16>,
+        #[serde(default)]
+        expect_status_go: Option<u16>,
+        #[serde(default = "default_api_http_latency_samples")]
+        samples: usize,
+        #[serde(default = "default_api_http_latency_warmup")]
+        warmup: usize,
+        #[serde(default = "default_api_http_latency_timeout_ms")]
+        timeout_ms: u64,
+        max_p95_ms: u64,
+    },
     KernelControl {
         name: String,
         action: KernelControlAction,
@@ -348,6 +401,22 @@ pub enum TrafficAction {
         #[serde(default = "default_api_ws_soak_frame_timeout_ms")]
         frame_timeout_ms: u64,
     },
+    ApiWsExpectCloseOnKernelControl {
+        name: String,
+        path: String,
+        action: KernelControlAction,
+        target: KernelTarget,
+        #[serde(default)]
+        no_auth: bool,
+        #[serde(default)]
+        auth_secret: Option<String>,
+        #[serde(default = "default_api_ws_soak_frame_timeout_ms")]
+        frame_timeout_ms: u64,
+        #[serde(default = "default_api_ws_close_timeout_ms")]
+        close_timeout_ms: u64,
+        #[serde(default = "default_kernel_control_wait_ready_ms")]
+        wait_ready_ms: u64,
+    },
     TlsRoundTrip {
         name: String,
         addr: String,
@@ -359,9 +428,46 @@ pub enum TrafficAction {
         #[serde(default = "default_tls_roundtrip_timeout_ms")]
         timeout_ms: u64,
     },
+    /// Opens a TCP connection through a proxy, verifies echo, sends SIGTERM,
+    /// then verifies the connection is still usable (graceful drain).
+    TcpDrainDuringShutdown {
+        name: String,
+        addr: String,
+        proxy: String,
+        payload: String,
+        action: KernelControlAction,
+        target: KernelTarget,
+        /// How long to hold the connection after SIGTERM before closing (ms)
+        #[serde(default = "default_drain_hold_ms")]
+        hold_ms: u64,
+        #[serde(default = "default_kernel_control_wait_ready_ms")]
+        wait_ready_ms: u64,
+        #[serde(default = "default_tcp_drain_timeout_ms")]
+        timeout_ms: u64,
+    },
 }
 
 fn default_ws_roundtrip_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_drain_hold_ms() -> u64 {
+    1_500
+}
+
+fn default_tcp_drain_timeout_ms() -> u64 {
+    15_000
+}
+
+fn default_http_get_latency_samples() -> usize {
+    20
+}
+
+fn default_http_get_latency_warmup() -> usize {
+    3
+}
+
+fn default_http_get_latency_timeout_ms() -> u64 {
     5_000
 }
 
@@ -385,12 +491,28 @@ fn default_api_ws_soak_frame_timeout_ms() -> u64 {
     3_000
 }
 
+fn default_api_ws_close_timeout_ms() -> u64 {
+    5_000
+}
+
 fn default_tls_roundtrip_timeout_ms() -> u64 {
     5_000
 }
 
 fn default_command_timeout_ms() -> u64 {
     300_000
+}
+
+fn default_api_http_latency_samples() -> usize {
+    20
+}
+
+fn default_api_http_latency_warmup() -> usize {
+    3
+}
+
+fn default_api_http_latency_timeout_ms() -> u64 {
+    5_000
 }
 
 fn default_kernel_control_wait_ready_ms() -> u64 {
@@ -406,6 +528,7 @@ fn default_jitter_ratio() -> f64 {
 pub enum KernelControlAction {
     Restart,
     Reload,
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

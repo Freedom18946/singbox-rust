@@ -10,6 +10,8 @@ use sb_core::outbound::OutboundRegistryHandle;
 use std::collections::HashMap;
 #[cfg(any(feature = "adapters", feature = "router"))]
 use std::net::SocketAddr;
+#[cfg(feature = "adapters")]
+use std::sync::atomic::AtomicU64;
 #[cfg(any(feature = "router", feature = "adapters"))]
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -341,6 +343,7 @@ fn start_http_inbound(
                 users: ib.users.clone(),
                 set_system_proxy: ib.set_system_proxy,
                 allow_private_network: ib.allow_private_network,
+                active_connections: Arc::new(AtomicU64::new(0)),
             };
             let listen_str_log = listen_str.clone();
             let join = tokio::spawn(async move {

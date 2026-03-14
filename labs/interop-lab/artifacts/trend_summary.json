@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-02-13T12:02:46Z",
-  "kernel": "rust",
+  "generated_at": "2026-03-12T00:21:09Z",
+  "kernel": "both",
   "iterations": 1,
   "cases": [
     {
-      "id": "p1_cli_generate_uuid_format",
+      "id": "p2_connections_ws_soak_dual_core",
       "scores": [
         0
       ],

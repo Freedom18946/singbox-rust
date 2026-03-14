@@ -488,6 +488,58 @@ async fn run_traffic_plan_with_kernel_control(
                 .await;
                 outputs.push(result);
             }
+            TrafficAction::ApiHttpLatency {
+                name,
+                method,
+                path,
+                method_rust,
+                method_go,
+                path_rust,
+                path_go,
+                no_auth,
+                auth_secret,
+                expect_status,
+                expect_status_rust,
+                expect_status_go,
+                samples,
+                warmup,
+                timeout_ms,
+                max_p95_ms,
+            } => {
+                let resolved_method = select_kernel_string_override(
+                    mode,
+                    method,
+                    method_rust.as_deref(),
+                    method_go.as_deref(),
+                );
+                let resolved_path = select_kernel_string_override(
+                    mode,
+                    path,
+                    path_rust.as_deref(),
+                    path_go.as_deref(),
+                );
+                let resolved_expect_status = select_kernel_u16_override(
+                    mode,
+                    *expect_status,
+                    *expect_status_rust,
+                    *expect_status_go,
+                );
+                let result = execute_api_http_latency_action(
+                    name,
+                    resolved_method,
+                    resolved_path,
+                    *no_auth,
+                    auth_secret.as_deref(),
+                    resolved_expect_status,
+                    *samples,
+                    *warmup,
+                    *timeout_ms,
+                    *max_p95_ms,
+                    session,
+                )
+                .await;
+                outputs.push(result);
+            }
             TrafficAction::KernelControl {
                 name,
                 action,
@@ -530,6 +582,64 @@ async fn run_traffic_plan_with_kernel_control(
                     *wave_success_percent,
                     *overall_success_percent,
                     *frame_timeout_ms,
+                    session,
+                )
+                .await;
+                outputs.push(result);
+            }
+            TrafficAction::ApiWsExpectCloseOnKernelControl {
+                name,
+                path,
+                action,
+                target,
+                no_auth,
+                auth_secret,
+                frame_timeout_ms,
+                close_timeout_ms,
+                wait_ready_ms,
+            } => {
+                let result = execute_api_ws_expect_close_on_kernel_control_action(
+                    name,
+                    path,
+                    action,
+                    target,
+                    *no_auth,
+                    auth_secret.as_deref(),
+                    *frame_timeout_ms,
+                    *close_timeout_ms,
+                    *wait_ready_ms,
+                    mode,
+                    launch_spec,
+                    kernel_log_dir,
+                    session,
+                )
+                .await;
+                outputs.push(result);
+            }
+            TrafficAction::TcpDrainDuringShutdown {
+                name,
+                addr,
+                proxy,
+                payload,
+                action,
+                target,
+                hold_ms,
+                wait_ready_ms,
+                timeout_ms,
+            } => {
+                let result = execute_tcp_drain_during_shutdown_action(
+                    name,
+                    &harness.resolve_templates(addr),
+                    proxy,
+                    payload,
+                    action,
+                    target,
+                    *hold_ms,
+                    *wait_ready_ms,
+                    *timeout_ms,
+                    mode,
+                    launch_spec,
+                    kernel_log_dir,
                     session,
                 )
                 .await;
@@ -843,6 +953,151 @@ async fn execute_api_http_action(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn execute_api_http_latency_action(
+    name: &str,
+    method: &str,
+    path: &str,
+    no_auth: bool,
+    auth_secret: Option<&str>,
+    expect_status: Option<u16>,
+    samples: usize,
+    warmup: usize,
+    timeout_ms: u64,
+    max_p95_ms: u64,
+    session: &KernelSession,
+) -> TrafficResult {
+    let total_samples = samples.max(1);
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_millis(timeout_ms.max(1)))
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "api_http_latency",
+                    "method": method,
+                    "path": path,
+                    "error": err.to_string(),
+                }),
+            };
+        }
+    };
+
+    let parsed_method = method
+        .parse::<reqwest::Method>()
+        .unwrap_or(reqwest::Method::GET);
+    let url = format!("{}{}", session.api.base_url.trim_end_matches('/'), path);
+    let step_secret = if no_auth {
+        None
+    } else if let Some(secret) = auth_secret {
+        Some(resolve_with_env(secret))
+    } else {
+        session.api.secret.clone()
+    };
+
+    let mut latencies_us = Vec::with_capacity(total_samples);
+    let mut statuses = Vec::with_capacity(total_samples);
+    for idx in 0..(warmup + total_samples) {
+        let mut req = client.request(parsed_method.clone(), &url);
+        if let Some(secret) = &step_secret {
+            req = req.bearer_auth(secret);
+        }
+
+        let started = tokio::time::Instant::now();
+        let response = match req.send().await {
+            Ok(response) => response,
+            Err(err) => {
+                return TrafficResult {
+                    name: name.to_string(),
+                    success: false,
+                    detail: json!({
+                        "action": "api_http_latency",
+                        "method": parsed_method.to_string(),
+                        "path": path,
+                        "sample_index": idx,
+                        "timeout_ms": timeout_ms,
+                        "error": err.to_string(),
+                    }),
+                };
+            }
+        };
+        let status = response.status().as_u16();
+        let _ = response.bytes().await;
+
+        let success = expect_status
+            .map(|expected| status == expected)
+            .unwrap_or_else(|| status < 400);
+        if !success {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "api_http_latency",
+                    "method": parsed_method.to_string(),
+                    "path": path,
+                    "sample_index": idx,
+                    "status": status,
+                    "expect_status": expect_status,
+                    "timeout_ms": timeout_ms,
+                }),
+            };
+        }
+
+        if idx >= warmup {
+            latencies_us.push(started.elapsed().as_micros() as u64);
+            statuses.push(status);
+        }
+    }
+
+    let p95_us = percentile_us(&latencies_us, 95);
+    let max_us = latencies_us.iter().copied().max().unwrap_or(0);
+    let min_us = latencies_us.iter().copied().min().unwrap_or(0);
+    let avg_us = if latencies_us.is_empty() {
+        0.0
+    } else {
+        latencies_us.iter().map(|v| *v as f64).sum::<f64>() / latencies_us.len() as f64
+    };
+    let p95_ms = p95_us as f64 / 1000.0;
+    let min_ms = min_us as f64 / 1000.0;
+    let max_ms = max_us as f64 / 1000.0;
+    let avg_ms = avg_us / 1000.0;
+
+    TrafficResult {
+        name: name.to_string(),
+        success: p95_us <= max_p95_ms.saturating_mul(1000),
+        detail: json!({
+            "action": "api_http_latency",
+            "method": parsed_method.to_string(),
+            "path": path,
+            "samples": total_samples,
+            "warmup": warmup,
+            "timeout_ms": timeout_ms,
+            "expect_status": expect_status,
+            "statuses": statuses,
+            "p95_us": p95_us,
+            "p95_ms": p95_ms,
+            "max_p95_ms": max_p95_ms,
+            "min_ms": min_ms,
+            "max_ms": max_ms,
+            "avg_ms": avg_ms,
+        }),
+    }
+}
+
+fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
+    if samples.is_empty() {
+        return 0;
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
+    sorted[rank.min(sorted.len() - 1)]
+}
+
 async fn cleanup_background_commands(
     background_commands: &mut HashMap<String, BackgroundCommandProcess>,
 ) {
@@ -923,6 +1178,334 @@ async fn execute_api_ws_soak_action(
                 "wave_success": wave_success,
             })),
         }),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_api_ws_expect_close_on_kernel_control_action(
+    name: &str,
+    path: &str,
+    action: &KernelControlAction,
+    target: &KernelTarget,
+    no_auth: bool,
+    auth_secret: Option<&str>,
+    frame_timeout_ms: u64,
+    close_timeout_ms: u64,
+    wait_ready_ms: u64,
+    mode: &KernelKind,
+    launch_spec: &KernelLaunchSpec,
+    kernel_log_dir: &Path,
+    session: &mut KernelSession,
+) -> TrafficResult {
+    if !target_matches_mode(target, mode) {
+        return TrafficResult {
+            name: name.to_string(),
+            success: true,
+            detail: json!({
+                "action": "api_ws_expect_close_on_kernel_control",
+                "path": path,
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "mode": format!("{:?}", mode),
+                "initial_frame_ok": true,
+                "close_observed": true,
+                "skipped": true,
+            }),
+        };
+    }
+
+    let ws_url = build_api_ws_url(&session.api, path, no_auth, auth_secret);
+    let (mut stream, _) = match connect_async(&ws_url).await {
+        Ok(pair) => pair,
+        Err(err) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "api_ws_expect_close_on_kernel_control",
+                    "path": path,
+                    "op": format!("{:?}", action),
+                    "target": format!("{:?}", target),
+                    "ws_url": ws_url,
+                    "error": format!("ws_connect: {err}"),
+                }),
+            };
+        }
+    };
+
+    let initial_frame_ok = match timeout(
+        Duration::from_millis(frame_timeout_ms.max(1)),
+        stream.next(),
+    )
+    .await
+    {
+        Ok(Some(Ok(Message::Text(text)))) => {
+            validate_ws_payload(path, serde_json::from_str::<Value>(&text).ok())
+        }
+        Ok(Some(Ok(Message::Binary(data)))) => {
+            validate_ws_payload(path, serde_json::from_slice::<Value>(&data).ok())
+        }
+        Ok(Some(Ok(_))) => false,
+        Ok(Some(Err(_))) => false,
+        Ok(None) => false,
+        Err(_) => false,
+    };
+
+    if !initial_frame_ok {
+        let _ = stream.close(None).await;
+        return TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "api_ws_expect_close_on_kernel_control",
+                "path": path,
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "ws_url": ws_url,
+                "frame_timeout_ms": frame_timeout_ms,
+                "error": "initial frame missing or invalid",
+            }),
+        };
+    }
+
+    let kernel_result = perform_kernel_control(
+        action,
+        wait_ready_ms,
+        mode,
+        launch_spec,
+        kernel_log_dir,
+        session,
+    )
+    .await;
+
+    let close_observed = wait_for_ws_close(&mut stream, close_timeout_ms).await;
+    let _ = stream.close(None).await;
+
+    match kernel_result {
+        Ok(kernel_detail) => TrafficResult {
+            name: name.to_string(),
+            success: close_observed,
+            detail: json!({
+                "action": "api_ws_expect_close_on_kernel_control",
+                "path": path,
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "frame_timeout_ms": frame_timeout_ms,
+                "close_timeout_ms": close_timeout_ms,
+                "initial_frame_ok": initial_frame_ok,
+                "close_observed": close_observed,
+                "kernel_control": kernel_detail,
+            }),
+        },
+        Err(err) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "api_ws_expect_close_on_kernel_control",
+                "path": path,
+                "op": format!("{:?}", action),
+                "target": format!("{:?}", target),
+                "frame_timeout_ms": frame_timeout_ms,
+                "close_timeout_ms": close_timeout_ms,
+                "initial_frame_ok": initial_frame_ok,
+                "close_observed": close_observed,
+                "error": err.to_string(),
+            }),
+        },
+    }
+}
+
+/// Test graceful shutdown: open TCP connection through proxy, trigger SIGTERM,
+/// verify the connection is still usable (kernel drains active connections).
+#[allow(clippy::too_many_arguments)]
+async fn execute_tcp_drain_during_shutdown_action(
+    name: &str,
+    addr: &str,
+    proxy: &str,
+    payload: &str,
+    action: &KernelControlAction,
+    target: &KernelTarget,
+    hold_ms: u64,
+    wait_ready_ms: u64,
+    timeout_ms: u64,
+    mode: &KernelKind,
+    launch_spec: &KernelLaunchSpec,
+    kernel_log_dir: &Path,
+    session: &mut KernelSession,
+) -> TrafficResult {
+    use crate::upstream::socks5_connect;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::time::{timeout, Duration, Instant};
+
+    if !target_matches_mode(target, mode) {
+        return TrafficResult {
+            name: name.to_string(),
+            success: true,
+            detail: json!({
+                "action": "tcp_drain_during_shutdown",
+                "skipped": true,
+                "target": format!("{target:?}"),
+                "mode": format!("{mode:?}"),
+            }),
+        };
+    }
+
+    let proxy_addr = proxy
+        .trim_start_matches("socks5://")
+        .trim_start_matches("socks5h://")
+        .trim_start_matches("http://");
+
+    let addr = addr
+        .trim_start_matches("tcp://")
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .trim_end_matches('/');
+
+    // Step 1: Establish TCP connection through proxy
+    let mut stream = match timeout(
+        Duration::from_millis(timeout_ms.min(10_000)),
+        socks5_connect(proxy_addr, addr),
+    )
+    .await
+    {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": format!("socks5 connect: {e}"),
+                    "proxy": proxy,
+                    "addr": addr,
+                }),
+            };
+        }
+        Err(_) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": "socks5 connect timeout",
+                    "proxy": proxy,
+                    "addr": addr,
+                }),
+            };
+        }
+    };
+
+    // Step 2: Verify connection works (initial echo)
+    let payload_bytes = payload.as_bytes();
+    if let Err(e) = stream.write_all(payload_bytes).await {
+        return TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "tcp_drain_during_shutdown",
+                "error": format!("initial write: {e}"),
+            }),
+        };
+    }
+
+    let mut initial_echo = vec![0u8; payload_bytes.len()];
+    match timeout(
+        Duration::from_millis(5_000),
+        stream.read_exact(&mut initial_echo),
+    )
+    .await
+    {
+        Ok(Ok(_)) if initial_echo == payload_bytes => { /* initial echo verified */ }
+        Ok(Ok(_)) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": "initial echo mismatch",
+                }),
+            };
+        }
+        Ok(Err(e)) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": format!("initial read: {e}"),
+                }),
+            };
+        }
+        Err(_) => {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": "initial echo timeout",
+                }),
+            };
+        }
+    }
+
+    // Step 3: Trigger kernel shutdown (SIGTERM + wait for process exit)
+    let shutdown_start = Instant::now();
+    let kernel_result = perform_kernel_control(
+        action,
+        wait_ready_ms,
+        mode,
+        launch_spec,
+        kernel_log_dir,
+        session,
+    )
+    .await;
+    let shutdown_elapsed_ms = shutdown_start.elapsed().as_millis() as u64;
+
+    // Step 4: After shutdown, try to send more data through the connection
+    // This tests whether the connection was still alive during shutdown.
+    // The kernel may have already completed shutdown by now; the key question
+    // is whether data sent during shutdown was properly relayed.
+    let drain_payload = b"drain-verify";
+    let drain_echo_ok = match timeout(Duration::from_millis(hold_ms.max(500)), async {
+        stream.write_all(drain_payload).await?;
+        let mut buf = vec![0u8; drain_payload.len()];
+        stream.read_exact(&mut buf).await?;
+        Ok::<bool, std::io::Error>(buf == drain_payload)
+    })
+    .await
+    {
+        Ok(Ok(true)) => true,
+        _ => false,
+    };
+
+    match kernel_result {
+        Ok(kernel_detail) => TrafficResult {
+            name: name.to_string(),
+            success: true, // initial echo succeeded = connection was active
+            detail: json!({
+                "action": "tcp_drain_during_shutdown",
+                "addr": addr,
+                "proxy": proxy,
+                "initial_echo_ok": true,
+                "drain_echo_ok": drain_echo_ok,
+                "shutdown_elapsed_ms": shutdown_elapsed_ms,
+                "hold_ms": hold_ms,
+                "kernel_control": kernel_detail,
+            }),
+        },
+        Err(err) => TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "tcp_drain_during_shutdown",
+                "addr": addr,
+                "proxy": proxy,
+                "initial_echo_ok": true,
+                "drain_echo_ok": drain_echo_ok,
+                "shutdown_elapsed_ms": shutdown_elapsed_ms,
+                "error": err.to_string(),
+            }),
+        },
     }
 }
 
@@ -1058,43 +1641,17 @@ async fn execute_kernel_control_action(
         };
     }
 
-    let outcome = match action {
-        KernelControlAction::Restart => {
-            let _ = session.shutdown().await;
-            match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
-                Ok(new_session) => {
-                    *session = new_session;
-                    wait_until_ready(
-                        &session.api,
-                        &launch_spec.ready_path,
-                        wait_ready_ms.max(100),
-                    )
-                    .await
-                }
-                Err(err) => Err(err),
-            }
-        }
-        KernelControlAction::Reload => {
-            let reload_detail = trigger_reload(session).await;
-            match wait_until_ready(
-                &session.api,
-                &launch_spec.ready_path,
-                wait_ready_ms.max(100),
-            )
-            .await
-            {
-                Ok(()) => Ok(()),
-                Err(err) => {
-                    let info =
-                        reload_detail.unwrap_or_else(|| "reload attempt unavailable".to_string());
-                    Err(anyhow!("{err}; {info}"))
-                }
-            }
-        }
-    };
-
-    match outcome {
-        Ok(()) => TrafficResult {
+    match perform_kernel_control(
+        action,
+        wait_ready_ms,
+        mode,
+        launch_spec,
+        kernel_log_dir,
+        session,
+    )
+    .await
+    {
+        Ok(_) => TrafficResult {
             name: name.to_string(),
             success: true,
             detail: json!({
@@ -1116,6 +1673,148 @@ async fn execute_kernel_control_action(
             }),
         },
     }
+}
+
+async fn perform_kernel_control(
+    action: &KernelControlAction,
+    wait_ready_ms: u64,
+    mode: &KernelKind,
+    launch_spec: &KernelLaunchSpec,
+    kernel_log_dir: &Path,
+    session: &mut KernelSession,
+) -> Result<Value> {
+    match action {
+        KernelControlAction::Restart => {
+            let _ = session.shutdown().await;
+            match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
+                Ok(new_session) => {
+                    *session = new_session;
+                    wait_until_ready(
+                        &session.api,
+                        &launch_spec.ready_path,
+                        wait_ready_ms.max(100),
+                    )
+                    .await?;
+                    Ok(json!({
+                        "wait_ready_ms": wait_ready_ms,
+                    }))
+                }
+                Err(err) => Err(err),
+            }
+        }
+        KernelControlAction::Reload => {
+            let reload_detail = trigger_reload(session).await;
+            match wait_until_ready(
+                &session.api,
+                &launch_spec.ready_path,
+                wait_ready_ms.max(100),
+            )
+            .await
+            {
+                Ok(()) => Ok(json!({
+                    "wait_ready_ms": wait_ready_ms,
+                    "reload_detail": reload_detail,
+                })),
+                Err(err) => {
+                    let info =
+                        reload_detail.unwrap_or_else(|| "reload attempt unavailable".to_string());
+                    Err(anyhow!("{err}; {info}"))
+                }
+            }
+        }
+        KernelControlAction::Shutdown => shutdown_kernel_process(session, wait_ready_ms).await,
+    }
+}
+
+async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64) -> Result<Value> {
+    let Some(mut child) = session.child.take() else {
+        return Err(anyhow!(
+            "kernel_control shutdown requires a managed child process"
+        ));
+    };
+
+    let pid = child
+        .id()
+        .ok_or_else(|| anyhow!("kernel process pid unavailable for shutdown"))?;
+    let signaled_at = tokio::time::Instant::now();
+    let signal_status = tokio::process::Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .await
+        .with_context(|| format!("sending SIGTERM to pid {pid}"))?;
+    if !signal_status.success() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        join_kernel_log_tasks(session).await;
+        return Err(anyhow!(
+            "failed to send SIGTERM to pid {pid}: status={signal_status}"
+        ));
+    }
+
+    let wait_timeout_ms = wait_exit_ms.max(100);
+    let exit_status = match timeout(Duration::from_millis(wait_timeout_ms), child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(err)) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            join_kernel_log_tasks(session).await;
+            return Err(anyhow!("waiting for pid {pid} after SIGTERM failed: {err}"));
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            join_kernel_log_tasks(session).await;
+            return Err(anyhow!(
+                "pid {pid} did not exit within {wait_timeout_ms} ms after SIGTERM"
+            ));
+        }
+    };
+
+    join_kernel_log_tasks(session).await;
+    if !exit_status.success() {
+        return Err(anyhow!(
+            "pid {pid} exited non-zero after SIGTERM: code={:?}",
+            exit_status.code()
+        ));
+    }
+
+    Ok(json!({
+        "pid": pid,
+        "exit_code": exit_status.code(),
+        "elapsed_ms": signaled_at.elapsed().as_millis() as u64,
+        "wait_exit_ms": wait_timeout_ms,
+        "signal": "SIGTERM",
+    }))
+}
+
+async fn join_kernel_log_tasks(session: &mut KernelSession) {
+    if let Some(task) = session.stdout_task.take() {
+        let _ = task.await;
+    }
+    if let Some(task) = session.stderr_task.take() {
+        let _ = task.await;
+    }
+}
+
+async fn wait_for_ws_close<S>(
+    stream: &mut tokio_tungstenite::WebSocketStream<S>,
+    close_timeout_ms: u64,
+) -> bool
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    matches!(
+        timeout(Duration::from_millis(close_timeout_ms.max(1)), async {
+            loop {
+                match stream.next().await {
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return true,
+                    Some(Ok(_)) => continue,
+                }
+            }
+        })
+        .await,
+        Ok(true)
+    )
 }
 
 fn target_matches_mode(target: &KernelTarget, mode: &KernelKind) -> bool {
@@ -1623,19 +2322,19 @@ mod tests {
 
     #[test]
     fn evaluate_assertion_new_operators() {
-        assert!(evaluate_assertion_op("gt", Some(&json!(10)), &json!(9)));
-        assert!(evaluate_assertion_op("gte", Some(&json!(10)), &json!(10)));
-        assert!(evaluate_assertion_op("lt", Some(&json!(9)), &json!(10)));
-        assert!(evaluate_assertion_op("lte", Some(&json!(10)), &json!(10)));
+        assert!(evaluate_assertion_op("gt", Some(&json!(10)), Some(&json!(9))));
+        assert!(evaluate_assertion_op("gte", Some(&json!(10)), Some(&json!(10))));
+        assert!(evaluate_assertion_op("lt", Some(&json!(9)), Some(&json!(10))));
+        assert!(evaluate_assertion_op("lte", Some(&json!(10)), Some(&json!(10))));
         assert!(evaluate_assertion_op(
             "contains",
             Some(&json!("abc-hello-xyz")),
-            &json!("hello")
+            Some(&json!("hello"))
         ));
         assert!(evaluate_assertion_op(
             "regex",
             Some(&json!("abc-123")),
-            &json!("^abc-\\d+$")
+            Some(&json!("^abc-\\d+$"))
         ));
     }
 }

@@ -41,26 +41,27 @@ upstream_topology:
     kind: http_echo
     bind: 127.0.0.1:0
 traffic_plan:
+  - kind: api_http
+    name: switch_selector_to_block
+    method: PUT
+    path: /proxies/my-group
+    body:
+      name: block
+    expect_status: 204
+  - kind: sleep
+    name: wait_after_reset_to_block
+    ms: 200
   - kind: http_get
     name: before_switch_blocked
     url: "{{upstream.local_http}}/v1/echo?scene=before-selector-switch"
     proxy: socks5://127.0.0.1:11801
-  - kind: command
+  - kind: api_http
     name: switch_selector_to_direct
-    command: sh
-    args:
-      - -lc
-      - |
-        for port in 19290 9090; do
-          curl -fsS -X PUT \
-            -H 'Authorization: Bearer test-secret' \
-            -H 'Content-Type: application/json' \
-            -d '{"name":"direct"}' \
-            "http://127.0.0.1:$port/proxies/my-group" && exit 0
-        done
-        exit 1
-    timeout_ms: 5000
-    expect_exit: 0
+    method: PUT
+    path: /proxies/my-group
+    body:
+      name: direct
+    expect_status: 204
   - kind: sleep
     name: wait_after_switch
     ms: 200
@@ -69,10 +70,31 @@ traffic_plan:
     url: "{{upstream.local_http}}/v1/echo?scene=after-selector-switch"
     proxy: socks5://127.0.0.1:11801
     expect_status: 200
+  - kind: kernel_control
+    name: reload_rust_kernel
+    action: reload
+    target: rust
+    wait_ready_ms: 15000
+  - kind: kernel_control
+    name: reload_go_kernel
+    action: reload
+    target: go
+    wait_ready_ms: 15000
+  - kind: sleep
+    name: wait_after_reload
+    ms: 200
+  - kind: http_get
+    name: after_reload_direct
+    url: "{{upstream.local_http}}/v1/echo?scene=after-selector-reload"
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
 assertions:
   - key: http.version.status
     op: eq
     expected: 200
+  - key: traffic.switch_selector_to_block.success
+    op: eq
+    expected: true
   - key: traffic.before_switch_blocked.success
     op: eq
     expected: false
@@ -82,6 +104,15 @@ assertions:
   - key: traffic.after_switch_direct.success
     op: eq
     expected: true
+  - key: traffic.reload_rust_kernel.success
+    op: eq
+    expected: true
+  - key: traffic.reload_go_kernel.success
+    op: eq
+    expected: true
+  - key: traffic.after_reload_direct.success
+    op: eq
+    expected: true
   - key: errors.count
     op: eq
     expected: 0
@@ -89,3 +120,4 @@ oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:
     - /version
+    - /proxies

@@ -3,11 +3,6 @@
         "level": "info"
     },
     "experimental": {
-        "cache_file": {
-            "enabled": true,
-            "path": "labs/interop-lab/artifacts/selector-switch-rust-cache.db",
-            "cache_id": "interop-selector-switch-rust"
-        },
         "clash_api": {
             "external_controller": "127.0.0.1:19290",
             "secret": "test-secret"
@@ -23,18 +18,20 @@
     ],
     "outbounds": [
         {
-            "type": "selector",
+            "type": "urltest",
             "name": "my-group",
-            "outbounds": ["block", "direct"],
-            "default": "block"
-        },
-        {
-            "type": "block",
-            "name": "block"
+            "outbounds": ["direct", "block"],
+            "url": "http://127.0.0.1:18898/",
+            "interval": 3,
+            "tolerance": 50
         },
         {
             "type": "direct",
             "name": "direct"
+        },
+        {
+            "type": "block",
+            "name": "block"
         }
     ],
     "route": {

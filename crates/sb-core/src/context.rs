@@ -550,7 +550,7 @@ impl Startable for ConnectionManager {
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::debug!(target: "sb_core::context", "ConnectionManager closing");
-        // Optionally clear connections or save state
+        self.connections.clear();
         Ok(())
     }
 }
@@ -647,6 +647,7 @@ impl Startable for TaskMonitor {
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::debug!(target: "sb_core::context", "TaskMonitor closing - cancelling all tasks");
         self.cancel_all();
+        self.tasks.clear();
         Ok(())
     }
 }

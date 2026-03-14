@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::{
+    cache::{DnsCache, Key as CacheKey, QType as CacheQType},
     resolver::DnsResolver,
     rule_engine::{DnsRoutingRule, DnsRuleEngine},
     DnsUpstream, Resolver,
@@ -198,7 +199,8 @@ pub fn build_dns_components(
             .with_strategy(strategy),
     );
     let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-    Ok((overlay, None))
+    let cached = maybe_wrap_cache(&dns, overlay);
+    Ok((cached, None))
 }
 
 /// Build a DNS resolver from sb-config IR (DnsIR).
@@ -634,6 +636,67 @@ impl Resolver for HostsOverlayResolver {
             "decision": "passthrough",
             "inner": inner
         }))
+    }
+}
+
+fn maybe_wrap_cache(dns: &sb_config::ir::DnsIR, base: Arc<dyn Resolver>) -> Arc<dyn Resolver> {
+    if dns.disable_cache.unwrap_or(false) {
+        return base;
+    }
+
+    let cap = std::env::var("SB_DNS_CACHE_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1024);
+    let cache = Arc::new(DnsCache::new(cap).with_disable_expire(
+        dns.disable_expire.unwrap_or(false),
+    ));
+
+    Arc::new(CachedResolver { inner: base, cache })
+}
+
+struct CachedResolver {
+    inner: Arc<dyn Resolver>,
+    cache: Arc<DnsCache>,
+}
+
+#[async_trait::async_trait]
+impl Resolver for CachedResolver {
+    async fn resolve(&self, domain: &str) -> Result<super::DnsAnswer> {
+        let cache_key = CacheKey {
+            name: domain.to_ascii_lowercase(),
+            qtype: CacheQType::A,
+            transport_tag: None,
+        };
+
+        if let Some(answer) = self.cache.get(&cache_key) {
+            return Ok(answer);
+        }
+
+        let answer = self.inner.resolve(domain).await?;
+        self.cache.put(cache_key, answer.clone());
+        Ok(answer)
+    }
+
+    fn name(&self) -> &str {
+        "cached_resolver"
+    }
+
+    async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+        self.inner.explain(domain).await
+    }
+
+    async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        self.inner.start(stage).await
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.inner.close().await
+    }
+
+    fn cache_stats(&self) -> (usize, usize) {
+        let stats = self.cache.stats();
+        (stats.total_entries, stats.max_entries)
     }
 }
 

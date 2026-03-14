@@ -5,6 +5,14 @@ ROOT_ARTIFACTS_DIR="${ARTIFACTS_DIR:-labs/interop-lab/artifacts}"
 STRICT_ARTIFACTS_DIR="${STRICT_ARTIFACTS_DIR:-${ROOT_ARTIFACTS_DIR}/strict_dual_kernel}"
 ENV_ARTIFACTS_DIR="${ENV_ARTIFACTS_DIR:-${ROOT_ARTIFACTS_DIR}/env_limited_dual_kernel}"
 INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
+MANAGE_GO_ORACLE="${MANAGE_GO_ORACLE:-0}"
+GO_ORACLE_BIN="${GO_ORACLE_BIN:-go_fork_source/sing-box-1.12.14/sing-box}"
+GO_ORACLE_CONFIG="${GO_ORACLE_CONFIG:-labs/interop-lab/configs/l18_gui_go.json}"
+GO_ORACLE_API_URL="${GO_ORACLE_API_URL:-http://127.0.0.1:9090}"
+GO_ORACLE_API_SECRET="${GO_ORACLE_API_SECRET:-test-secret}"
+GO_ORACLE_BUILD_IF_MISSING="${GO_ORACLE_BUILD_IF_MISSING:-1}"
+GO_ORACLE_LOG="${GO_ORACLE_LOG:-/tmp/interop-go-oracle-diff-replay.log}"
+GO_ORACLE_PID=""
 
 EXIT_DIFF_FAIL=1
 EXIT_USAGE=2
@@ -12,9 +20,118 @@ EXIT_NO_CASES=3
 EXIT_ARTIFACT_INCOMPLETE=4
 
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
-  echo "prebuild: cargo build -p app --features acceptance --bin app"
-  cargo build -p app --features acceptance --bin app >/dev/null
+  echo "prebuild: cargo build -p app --features acceptance,clash_api --bin app"
+  cargo build -p app --features acceptance,clash_api --bin app >/dev/null
 fi
+
+check_port_free() {
+  local port="$1"
+  ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+api_port_from_url() {
+  local url="$1"
+  python3 - "$url" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+u = urlparse(sys.argv[1])
+print(u.port or "")
+PY
+}
+
+ensure_go_oracle_binary() {
+  if [[ -x "${GO_ORACLE_BIN}" ]]; then
+    return 0
+  fi
+  if [[ "${GO_ORACLE_BUILD_IF_MISSING}" != "1" ]]; then
+    echo "error: go oracle binary missing and auto-build disabled: ${GO_ORACLE_BIN}" >&2
+    return 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "error: go command not found; cannot auto-build oracle" >&2
+    return 1
+  fi
+  local go_src
+  go_src="$(dirname "${GO_ORACLE_BIN}")"
+  if [[ ! -d "${go_src}" ]]; then
+    echo "error: go oracle source dir missing: ${go_src}" >&2
+    return 1
+  fi
+  echo "go-oracle: building ${GO_ORACLE_BIN}"
+  (
+    cd "${go_src}"
+    go build -tags with_clash_api -ldflags "-s -w" -o "$(basename "${GO_ORACLE_BIN}")" ./cmd/sing-box
+  )
+}
+
+stop_managed_go_oracle() {
+  if [[ -n "${GO_ORACLE_PID}" ]] && kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1; then
+    kill "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+    sleep 0.5
+    kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1 && kill -9 "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+start_managed_go_oracle() {
+  local api_port
+  api_port="$(api_port_from_url "${GO_ORACLE_API_URL}")"
+  if [[ -z "${api_port}" ]]; then
+    echo "error: failed to parse go oracle api port from ${GO_ORACLE_API_URL}" >&2
+    return 1
+  fi
+  if ! check_port_free "${api_port}"; then
+    echo "error: go oracle port already in use: ${api_port}" >&2
+    lsof -nP -iTCP:"${api_port}" -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+  if [[ ! -f "${GO_ORACLE_CONFIG}" ]]; then
+    echo "error: go oracle config missing: ${GO_ORACLE_CONFIG}" >&2
+    return 1
+  fi
+  ensure_go_oracle_binary
+  echo "go-oracle: starting bin=${GO_ORACLE_BIN} config=${GO_ORACLE_CONFIG} api=${GO_ORACLE_API_URL}"
+  : > "${GO_ORACLE_LOG}"
+  "${GO_ORACLE_BIN}" run -c "${GO_ORACLE_CONFIG}" >"${GO_ORACLE_LOG}" 2>&1 &
+  GO_ORACLE_PID="$!"
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GO_ORACLE_API_SECRET}" "${GO_ORACLE_API_URL}/version" || true)"
+    if [[ "${code}" == "200" || "${code}" == "204" || "${code}" == "401" ]]; then
+      echo "go-oracle: ready pid=${GO_ORACLE_PID} api=${GO_ORACLE_API_URL}"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "error: go oracle health check failed: ${GO_ORACLE_API_URL}" >&2
+  [[ -f "${GO_ORACLE_LOG}" ]] && tail -n 50 "${GO_ORACLE_LOG}" >&2 || true
+  stop_managed_go_oracle
+  return 1
+}
+
+cleanup() {
+  stop_managed_go_oracle
+}
+trap cleanup EXIT
+
+case_needs_external_go_oracle() {
+  local case_id="$1"
+  local case_file="labs/interop-lab/cases/${case_id}.yaml"
+  if [[ ! -f "${case_file}" ]]; then
+    return 1
+  fi
+  python3 - "${case_file}" <<'PY'
+import sys
+import yaml
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    case = yaml.safe_load(f)
+
+go_spec = ((case or {}).get("bootstrap") or {}).get("go") or {}
+command = go_spec.get("command")
+raise SystemExit(0 if not command else 1)
+PY
+}
 
 echo "dual-kernel replay: strict_artifacts=${STRICT_ARTIFACTS_DIR} env_artifacts=${ENV_ARTIFACTS_DIR}"
 
@@ -60,6 +177,10 @@ if [[ ${#strict_cases[@]} -gt 0 ]]; then
   echo "running strict dual-kernel cases..."
   for case_id in "${strict_cases[@]}"; do
     echo "  run case=${case_id} artifacts=${STRICT_ARTIFACTS_DIR}"
+    stop_managed_go_oracle
+    if [[ "${MANAGE_GO_ORACLE}" == "1" ]] && case_needs_external_go_oracle "${case_id}"; then
+      start_managed_go_oracle
+    fi
     run_output="$(cargo run -p interop-lab -- --artifacts-dir "${STRICT_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class strict)"
     echo "${run_output}"
 
@@ -83,6 +204,10 @@ if [[ ${#env_cases[@]} -gt 0 ]]; then
   echo "running env-limited dual-kernel cases..."
   for case_id in "${env_cases[@]}"; do
     echo "  run case=${case_id} artifacts=${ENV_ARTIFACTS_DIR}"
+    stop_managed_go_oracle
+    if [[ "${MANAGE_GO_ORACLE}" == "1" ]] && case_needs_external_go_oracle "${case_id}"; then
+      start_managed_go_oracle
+    fi
     run_output="$(cargo run -p interop-lab -- --artifacts-dir "${ENV_ARTIFACTS_DIR}" case run "${case_id}" --kernel both --env-class env-limited)"
     echo "${run_output}"
 

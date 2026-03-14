@@ -105,8 +105,8 @@ impl MockSocks5Server {
 #[cfg(feature = "socks-udp")]
 #[tokio::test]
 async fn test_socks5_udp_associate() -> Result<()> {
-    use sb_adapters::outbound::socks5::Socks5Connector;
     use sb_adapters::error::AdapterError;
+    use sb_adapters::outbound::socks5::Socks5Connector;
     use sb_adapters::{DialOpts, Target};
     use serial_test::serial;
     use std::io::ErrorKind;

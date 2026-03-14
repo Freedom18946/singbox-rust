@@ -1,17 +1,18 @@
-id: p1_rust_core_http_via_socks
-title: core egress via socks inbound to local upstream
+id: p1_domain_rule_via_socks
+title: domain routing matches fqdn before final block
 priority: p1
 kernel_mode: both
 env_class: strict
 tags:
   - dataplane
+  - routing
   - dual_core
 bootstrap:
   rust:
     command: ./target/debug/app
     args:
       - -c
-      - labs/interop-lab/configs/rust_core_clash_api.json
+      - labs/interop-lab/configs/rust_core_clash_api_domain_rule.json
       - run
     startup_timeout_ms: 15000
     ready_path: /version
@@ -23,7 +24,7 @@ bootstrap:
     args:
       - run
       - -c
-      - labs/interop-lab/configs/go_core_clash_api_dataplane.json
+      - labs/interop-lab/configs/go_core_clash_api_domain_rule.json
     startup_timeout_ms: 15000
     ready_path: /version
     api:
@@ -36,34 +37,33 @@ gui_sequence:
     path: /version
     expect_status: 200
 upstream_topology:
-  - name: local_http
-    kind: http_echo
-    bind: 127.0.0.1:0
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18897
 traffic_plan:
-  - kind: http_get
-    name: via_socks_http_echo
-    url: "{{upstream.local_http}}/v1/echo?scene=rust-core"
+  - kind: tcp_round_trip
+    name: domain_match_direct
+    addr: "localhost:18897"
+    payload: domain-direct
     proxy: socks5://127.0.0.1:11801
-    expect_status: 200
-  - kind: http_get_latency
-    name: via_socks_http_echo_p95
-    url: "{{upstream.local_http}}/v1/echo?scene=rust-core-latency"
+  - kind: tcp_round_trip
+    name: domain_miss_blocked
+    addr: "nope.invalid:18897"
+    payload: should-be-blocked
     proxy: socks5://127.0.0.1:11801
-    expect_status: 200
-    warmup: 3
-    samples: 20
-    timeout_ms: 3000
-    max_p95_ms: 500
 assertions:
   - key: http.version.status
     op: eq
     expected: 200
-  - key: traffic.via_socks_http_echo.success
+  - key: traffic.domain_match_direct.success
     op: eq
     expected: true
-  - key: traffic.via_socks_http_echo_p95.success
+  - key: traffic.domain_miss_blocked.success
     op: eq
-    expected: true
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:

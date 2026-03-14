@@ -102,6 +102,7 @@ windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock", "Win32
 
 [dev-dependencies]
 # Test dependencies
+sb-adapters = { path = "../sb-adapters", features = ["sb-transport", "router", "http", "adapter-http"] }
 sb-test-utils = { path = "../sb-test-utils" }
 tempfile = "3"
 tokio = { version = "1.47", features = ["full", "test-util"] }

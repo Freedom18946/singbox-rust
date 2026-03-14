@@ -78,6 +78,16 @@ gui_sequence:
     name: close_connection_probe
     method: DELETE
     path: /connections/non-existent-connection-id
+traffic_plan:
+  - kind: api_http_latency
+    name: proxies_p95_latency
+    method: GET
+    path: /proxies
+    expect_status: 200
+    warmup: 3
+    samples: 20
+    timeout_ms: 3000
+    max_p95_ms: 500
 assertions:
   - key: errors.count
     op: eq
@@ -91,6 +101,9 @@ assertions:
   - key: http.get_connections.status
     op: eq
     expected: 200
+  - key: traffic.proxies_p95_latency.success
+    op: eq
+    expected: true
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:

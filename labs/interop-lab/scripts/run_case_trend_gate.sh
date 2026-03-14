@@ -10,6 +10,14 @@ RUN_TAGS="${RUN_TAGS:-}"
 RUN_EXCLUDE_TAGS="${RUN_EXCLUDE_TAGS:-}"
 RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
 INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
+MANAGE_GO_ORACLE="${MANAGE_GO_ORACLE:-0}"
+GO_ORACLE_BIN="${GO_ORACLE_BIN:-go_fork_source/sing-box-1.12.14/sing-box}"
+GO_ORACLE_CONFIG="${GO_ORACLE_CONFIG:-labs/interop-lab/configs/l18_gui_go.json}"
+GO_ORACLE_API_URL="${GO_ORACLE_API_URL:-http://127.0.0.1:9090}"
+GO_ORACLE_API_SECRET="${GO_ORACLE_API_SECRET:-test-secret}"
+GO_ORACLE_BUILD_IF_MISSING="${GO_ORACLE_BUILD_IF_MISSING:-1}"
+GO_ORACLE_LOG="${GO_ORACLE_LOG:-/tmp/interop-go-oracle.log}"
+GO_ORACLE_PID=""
 
 # --- Threshold configuration ---
 THRESHOLD_CONFIG="${THRESHOLD_CONFIG:-}"
@@ -53,6 +61,8 @@ MAX_HTTP_MISMATCHES="${MAX_HTTP_MISMATCHES:-$(_yaml_val max_http_mismatches 0)}"
 MAX_WS_MISMATCHES="${MAX_WS_MISMATCHES:-$(_yaml_val max_ws_mismatches 0)}"
 MAX_SUB_MISMATCHES="${MAX_SUB_MISMATCHES:-$(_yaml_val max_sub_mismatches 0)}"
 MAX_TRAFFIC_MISMATCHES="${MAX_TRAFFIC_MISMATCHES:-$(_yaml_val max_traffic_mismatches 0)}"
+MAX_CONNECTION_MISMATCHES="${MAX_CONNECTION_MISMATCHES:-$(_yaml_val max_connection_mismatches 0)}"
+MAX_MEMORY_MISMATCHES="${MAX_MEMORY_MISMATCHES:-$(_yaml_val max_memory_mismatches 0)}"
 
 ALLOW_MISSING_DIFF="${ALLOW_MISSING_DIFF:-$(_yaml_val allow_missing_diff 1)}"
 ENFORCE_NON_INCREASING_SCORE="${ENFORCE_NON_INCREASING_SCORE:-$(_yaml_val enforce_non_increasing_score 1)}"
@@ -67,8 +77,8 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
-  echo "prebuild: cargo build -p app --features acceptance --bin app"
-  cargo build -p app --features acceptance --bin app >/dev/null
+  echo "prebuild: cargo build -p app --features acceptance,clash_api --bin app"
+  cargo build -p app --features acceptance,clash_api --bin app >/dev/null
 fi
 
 if [[ -f "${TREND_ALLOWLIST_FILE}" ]]; then
@@ -76,6 +86,100 @@ if [[ -f "${TREND_ALLOWLIST_FILE}" ]]; then
 fi
 
 echo "trend-gate case=${CASE_ID} iterations=${ITERATIONS} kernel=${KERNEL} priority=${RUN_PRIORITY:-none} env_class=${RUN_ENV_CLASS:-none} artifacts_dir=${ARTIFACTS_DIR}"
+
+check_port_free() {
+  local port="$1"
+  ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+api_port_from_url() {
+  local url="$1"
+  python3 - "$url" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+u = urlparse(sys.argv[1])
+print(u.port or "")
+PY
+}
+
+ensure_go_oracle_binary() {
+  if [[ -x "${GO_ORACLE_BIN}" ]]; then
+    return 0
+  fi
+  if [[ "${GO_ORACLE_BUILD_IF_MISSING}" != "1" ]]; then
+    echo "error: go oracle binary missing and auto-build disabled: ${GO_ORACLE_BIN}" >&2
+    return 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "error: go command not found; cannot auto-build oracle" >&2
+    return 1
+  fi
+  local go_src
+  go_src="$(dirname "${GO_ORACLE_BIN}")"
+  if [[ ! -d "${go_src}" ]]; then
+    echo "error: go oracle source dir missing: ${go_src}" >&2
+    return 1
+  fi
+  echo "go-oracle: building ${GO_ORACLE_BIN}"
+  (
+    cd "${go_src}"
+    go build -tags with_clash_api -ldflags "-s -w" -o "$(basename "${GO_ORACLE_BIN}")" ./cmd/sing-box
+  )
+}
+
+stop_managed_go_oracle() {
+  if [[ -n "${GO_ORACLE_PID}" ]] && kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1; then
+    kill "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+    sleep 0.5
+    kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1 && kill -9 "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+start_managed_go_oracle() {
+  local api_port
+  api_port="$(api_port_from_url "${GO_ORACLE_API_URL}")"
+  if [[ -z "${api_port}" ]]; then
+    echo "error: failed to parse go oracle api port from ${GO_ORACLE_API_URL}" >&2
+    return 1
+  fi
+  if ! check_port_free "${api_port}"; then
+    echo "error: go oracle port already in use: ${api_port}" >&2
+    lsof -nP -iTCP:"${api_port}" -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+  if [[ ! -f "${GO_ORACLE_CONFIG}" ]]; then
+    echo "error: go oracle config missing: ${GO_ORACLE_CONFIG}" >&2
+    return 1
+  fi
+  ensure_go_oracle_binary
+  echo "go-oracle: starting bin=${GO_ORACLE_BIN} config=${GO_ORACLE_CONFIG} api=${GO_ORACLE_API_URL}"
+  : > "${GO_ORACLE_LOG}"
+  "${GO_ORACLE_BIN}" run -c "${GO_ORACLE_CONFIG}" >"${GO_ORACLE_LOG}" 2>&1 &
+  GO_ORACLE_PID="$!"
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GO_ORACLE_API_SECRET}" "${GO_ORACLE_API_URL}/version" || true)"
+    if [[ "${code}" == "200" || "${code}" == "204" || "${code}" == "401" ]]; then
+      echo "go-oracle: ready pid=${GO_ORACLE_PID} api=${GO_ORACLE_API_URL}"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "error: go oracle health check failed: ${GO_ORACLE_API_URL}" >&2
+  [[ -f "${GO_ORACLE_LOG}" ]] && tail -n 50 "${GO_ORACLE_LOG}" >&2 || true
+  stop_managed_go_oracle
+  return 1
+}
+
+cleanup() {
+  stop_managed_go_oracle
+}
+trap cleanup EXIT
+
+if [[ "${KERNEL}" == "both" && "${MANAGE_GO_ORACLE}" == "1" ]]; then
+  start_managed_go_oracle
+fi
 
 _to_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
@@ -288,6 +392,8 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     ws_mismatches=0
     sub_mismatches=0
     traffic_mismatches=0
+    connection_mismatches=0
+    memory_mismatches=0
 
     diff_case_id="${case_id}"
     if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" ]]; then
@@ -308,6 +414,8 @@ for ((i = 1; i <= ITERATIONS; i++)); do
         ws_mismatches="$(awk -F= '/^ws_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
         sub_mismatches="$(awk -F= '/^subscription_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
         traffic_mismatches="$(awk -F= '/^traffic_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+        connection_mismatches="$(awk -F= '/^connection_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
+        memory_mismatches="$(awk -F= '/^memory_mismatches=/{print $2}' "${diff_output_file}" | tail -n 1)"
       else
         cat "${diff_output_file}"
         if [[ "${ALLOW_MISSING_DIFF}" != "1" ]]; then
@@ -324,6 +432,8 @@ for ((i = 1; i <= ITERATIONS; i++)); do
     ws_mismatches="${ws_mismatches:-0}"
     sub_mismatches="${sub_mismatches:-0}"
     traffic_mismatches="${traffic_mismatches:-0}"
+    connection_mismatches="${connection_mismatches:-0}"
+    memory_mismatches="${memory_mismatches:-0}"
 
     if (( functional_rust_errors > MAX_RUST_ERRORS )); then
       case_failed=1
@@ -349,8 +459,16 @@ for ((i = 1; i <= ITERATIONS; i++)); do
       case_failed=1
       case_failure_reasons+="traffic mismatches ${traffic_mismatches} exceed gate ${MAX_TRAFFIC_MISMATCHES}\n"
     fi
+    if (( connection_mismatches > MAX_CONNECTION_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="connection mismatches ${connection_mismatches} exceed gate ${MAX_CONNECTION_MISMATCHES}\n"
+    fi
+    if (( memory_mismatches > MAX_MEMORY_MISMATCHES )); then
+      case_failed=1
+      case_failure_reasons+="memory mismatches ${memory_mismatches} exceed gate ${MAX_MEMORY_MISMATCHES}\n"
+    fi
 
-    case_score=$((functional_rust_errors + functional_failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches))
+    case_score=$((functional_rust_errors + functional_failed_traffic + http_mismatches + ws_mismatches + sub_mismatches + traffic_mismatches + connection_mismatches + memory_mismatches))
 
     if (( case_failed == 1 )); then
       if _case_allowlisted "${case_id}"; then
@@ -365,7 +483,7 @@ for ((i = 1; i <= ITERATIONS; i++)); do
       iteration_score=$((iteration_score + case_score))
     fi
 
-    echo "iteration ${i} case=${case_id} score=${case_score} (functional_errors=${functional_rust_errors}, functional_failed_traffic=${functional_failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches}, raw_errors=${rust_errors}, raw_failed_traffic=${failed_traffic}, env_errors=${env_error_count}, env_failed_traffic=${env_traffic_count}, env_unknown=${unknown_env_count}, env_categories=${env_categories:-none})"
+    echo "iteration ${i} case=${case_id} score=${case_score} (functional_errors=${functional_rust_errors}, functional_failed_traffic=${functional_failed_traffic}, http=${http_mismatches}, ws=${ws_mismatches}, sub=${sub_mismatches}, traffic=${traffic_mismatches}, connections=${connection_mismatches}, memory=${memory_mismatches}, raw_errors=${rust_errors}, raw_failed_traffic=${failed_traffic}, env_errors=${env_error_count}, env_failed_traffic=${env_traffic_count}, env_unknown=${unknown_env_count}, env_categories=${env_categories:-none})"
   done
 
   echo "iteration ${i} total_score=${iteration_score} waived_cases=${iteration_waived}"

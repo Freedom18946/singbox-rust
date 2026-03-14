@@ -67,6 +67,31 @@ traffic_plan:
     method: GET
     path: /version
     expect_status: 200
+  - kind: kernel_control
+    name: shutdown_rust_kernel
+    action: shutdown
+    target: rust
+    wait_ready_ms: 6000
+  - kind: kernel_control
+    name: restart_rust_after_shutdown
+    action: restart
+    target: rust
+    wait_ready_ms: 15000
+  - kind: kernel_control
+    name: shutdown_go_kernel
+    action: shutdown
+    target: go
+    wait_ready_ms: 6000
+  - kind: kernel_control
+    name: restart_go_after_shutdown
+    action: restart
+    target: go
+    wait_ready_ms: 15000
+  - kind: api_http
+    name: version_after_shutdown_restart
+    method: GET
+    path: /version
+    expect_status: 200
 assertions:
   - key: traffic.version_before_restart.success
     op: eq
@@ -89,6 +114,21 @@ assertions:
   - key: traffic.version_after_reload.success
     op: eq
     expected: true
+  - key: traffic.shutdown_rust_kernel.success
+    op: eq
+    expected: true
+  - key: traffic.restart_rust_after_shutdown.success
+    op: eq
+    expected: true
+  - key: traffic.shutdown_go_kernel.success
+    op: eq
+    expected: true
+  - key: traffic.restart_go_after_shutdown.success
+    op: eq
+    expected: true
+  - key: traffic.version_after_shutdown_restart.success
+    op: eq
+    expected: true
   - key: http.version_before_restart.status
     op: eq
     expected: 200
@@ -96,6 +136,9 @@ assertions:
     op: eq
     expected: 200
   - key: http.version_after_reload.status
+    op: eq
+    expected: 200
+  - key: http.version_after_shutdown_restart.status
     op: eq
     expected: 200
   - key: errors.count

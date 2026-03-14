@@ -54,7 +54,13 @@ fn http_legacy_write_enabled() -> bool {
 
 #[cfg(feature = "metrics")]
 use std::sync::atomic::AtomicUsize;
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 #[cfg(feature = "metrics")]
 #[deprecated(
@@ -164,6 +170,8 @@ pub struct HttpProxyConfig {
     pub allow_private_network: bool,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+    /// Active connection gauge exposed to supervisor graceful shutdown.
+    pub active_connections: Arc<AtomicU64>,
 }
 
 /// Ready signal notifier - sends when socket binding completes
@@ -198,7 +206,6 @@ pub async fn serve_http(
 
     // Add disable stop debug switch
     let disable_stop = http_disable_stop_enabled();
-
     loop {
         select! {
             _ = stop_rx.recv(), if !disable_stop => {
@@ -242,7 +249,11 @@ pub async fn serve_http(
                     continue;
                 }
                 let cfg_clone = cfg.clone();
+                cfg.active_connections.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(async move {
+                    let _active_guard = scopeguard::guard(cfg_clone.active_connections.clone(), |active| {
+                        active.fetch_sub(1, Ordering::Relaxed);
+                    });
                     // Wrap with TLS if configured
                     let stream: sb_transport::dialer::IoStream = if let Some(ref tls_config) = cfg_clone.tls {
                         let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
@@ -265,6 +276,10 @@ pub async fn serve_http(
                 });
             }
         }
+    }
+
+    while cfg.active_connections.load(Ordering::Relaxed) > 0 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     Ok(())
 }

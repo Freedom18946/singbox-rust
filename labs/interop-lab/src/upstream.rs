@@ -86,6 +86,7 @@ pub struct UpstreamHarness {
     pub endpoints: BTreeMap<String, String>,
     specs: BTreeMap<String, UpstreamServiceSpec>,
     service_delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
+    dns_query_counts: Arc<RwLock<BTreeMap<String, u64>>>,
     handles: BTreeMap<String, UpstreamHandle>,
 }
 
@@ -157,6 +158,11 @@ impl UpstreamHarness {
             .cloned()
             .ok_or_else(|| anyhow!("fault reconnect target not found: {target}"))?;
         start_single_upstream(self, &spec).await
+    }
+
+    pub async fn dns_query_count(&self, target: &str) -> Option<u64> {
+        let map = self.dns_query_counts.read().await;
+        map.get(target).copied()
     }
 }
 
@@ -363,6 +369,14 @@ async fn start_single_upstream(
             let addr = socket.local_addr().with_context(|| "dns local_addr")?;
             let service_name = spec.name.clone();
             let delays = harness.service_delays_ms.clone();
+            let counts = harness.dns_query_counts.clone();
+            let answer_ipv4 = spec
+                .answer_ipv4
+                .as_deref()
+                .unwrap_or("198.51.100.1")
+                .parse::<Ipv4Addr>()
+                .with_context(|| format!("invalid dns stub answer_ipv4 for {}", spec.name))?;
+            let ttl_secs = spec.ttl_secs.unwrap_or(300);
             let (tx, mut rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let mut buf = [0_u8; 4096];
@@ -376,6 +390,11 @@ async fn start_single_upstream(
                                 Ok((n, peer)) => {
                                     let data = &buf[..n];
                                     if let Ok(req) = Message::from_vec(data) {
+                                        {
+                                            let mut map = counts.write().await;
+                                            let entry = map.entry(service_name.clone()).or_insert(0);
+                                            *entry = entry.saturating_add(1);
+                                        }
                                         let delay_ms = service_delay(&delays, &service_name).await;
                                         if delay_ms > 0 {
                                             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
@@ -394,9 +413,9 @@ async fn start_single_upstream(
                                             if q.query_type() == RecordType::A {
                                                 resp.add_answer(Record::from_rdata(
                                                     q.name().clone(),
-                                                    300,
+                                                    ttl_secs,
                                                     RData::A(hickory_proto::rr::rdata::A(
-                                                        Ipv4Addr::new(198, 51, 100, 1),
+                                                        answer_ipv4,
                                                     )),
                                                 ));
                                             }
@@ -821,6 +840,122 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::HttpGetLatency {
+                name,
+                url,
+                proxy,
+                expect_status,
+                samples,
+                warmup,
+                timeout_ms,
+                max_p95_ms,
+            } => {
+                let url = harness.resolve_templates(url);
+                let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
+                let total_samples = warmup.saturating_add(*samples);
+                let mut latencies_us = Vec::with_capacity(*samples);
+                let mut statuses = Vec::with_capacity(*samples);
+                let mut failed_detail = None;
+
+                for idx in 0..total_samples {
+                    let started = tokio::time::Instant::now();
+                    let response = tokio::time::timeout(
+                        Duration::from_millis((*timeout_ms).max(1)),
+                        async {
+                            if let Some(proxy) = resolved_proxy.as_deref() {
+                                http_get_via_curl(&url, Some(proxy)).await
+                            } else {
+                                http_get_via_reqwest(&url).await
+                            }
+                        },
+                    )
+                    .await;
+
+                    let (status, _body) = match response {
+                        Ok(Ok((status, body))) => (status, body),
+                        Ok(Err(err)) => {
+                            failed_detail = Some(json!({
+                                "url": url,
+                                "proxy": resolved_proxy,
+                                "timeout_ms": timeout_ms,
+                                "error": err.to_string(),
+                            }));
+                            break;
+                        }
+                        Err(_) => {
+                            failed_detail = Some(json!({
+                                "url": url,
+                                "proxy": resolved_proxy,
+                                "timeout_ms": timeout_ms,
+                                "error": format!("http get timeout after {}ms", timeout_ms),
+                            }));
+                            break;
+                        }
+                    };
+
+                    if let Some(expected) = expect_status {
+                        if status != *expected {
+                            failed_detail = Some(json!({
+                                "url": url,
+                                "proxy": resolved_proxy,
+                                "timeout_ms": timeout_ms,
+                                "expect_status": expected,
+                                "status": status,
+                            }));
+                            break;
+                        }
+                    }
+
+                    if idx >= *warmup {
+                        latencies_us.push(started.elapsed().as_micros() as u64);
+                        statuses.push(status);
+                    }
+                }
+
+                if let Some(detail) = failed_detail {
+                    TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "http_get_latency",
+                            "samples": total_samples,
+                            "warmup": warmup,
+                            "max_p95_ms": max_p95_ms,
+                            "detail": detail,
+                        }),
+                    }
+                } else {
+                    let p95_us = percentile_us(&latencies_us, 95);
+                    let max_us = latencies_us.iter().copied().max().unwrap_or(0);
+                    let min_us = latencies_us.iter().copied().min().unwrap_or(0);
+                    let avg_us = if latencies_us.is_empty() {
+                        0.0
+                    } else {
+                        latencies_us.iter().map(|v| *v as f64).sum::<f64>()
+                            / latencies_us.len() as f64
+                    };
+                    TrafficResult {
+                        name: name.clone(),
+                        success: p95_us <= max_p95_ms.saturating_mul(1000),
+                        detail: json!({
+                            "action": "http_get_latency",
+                            "url": url,
+                            "proxy": resolved_proxy,
+                            "samples": total_samples,
+                            "warmup": warmup,
+                            "timeout_ms": timeout_ms,
+                            "expect_status": expect_status,
+                            "statuses": statuses,
+                            "p95_us": p95_us,
+                            "p95_ms": p95_us as f64 / 1000.0,
+                            "max_p95_ms": max_p95_ms,
+                            "min_ms": min_us as f64 / 1000.0,
+                            "max_ms": max_us as f64 / 1000.0,
+                            "avg_ms": avg_us / 1000.0,
+                        }),
+                    }
+                }
+            }
             TrafficAction::TcpRoundTrip {
                 name,
                 addr,
@@ -949,6 +1084,17 @@ pub async fn run_traffic_plan(
                             "error": err.to_string()
                         }),
                     },
+                }
+            }
+            TrafficAction::UpstreamQueryCount { name, target } => {
+                let count = harness.dns_query_count(target).await.unwrap_or(0);
+                TrafficResult {
+                    name: name.clone(),
+                    success: true,
+                    detail: json!({
+                        "target": target,
+                        "count": count,
+                    }),
                 }
             }
             TrafficAction::FaultDisconnect { name, target } => {
@@ -1084,6 +1230,36 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::CommandStart { name, handle, .. } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "command_start",
+                    "handle": handle,
+                    "error": "command_start requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
+            TrafficAction::CommandWait { name, handle, .. } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "command_wait",
+                    "handle": handle,
+                    "error": "command_wait requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
+            TrafficAction::ApiHttp {
+                name, method, path, ..
+            } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "api_http",
+                    "method": method,
+                    "path": path,
+                    "error": "api_http requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
             TrafficAction::FaultJitter {
                 name,
                 target,
@@ -1148,6 +1324,38 @@ pub async fn run_traffic_plan(
                     "error": "api_ws_soak requires run_traffic_plan_with_kernel_control context",
                 }),
             },
+            TrafficAction::ApiHttpLatency {
+                name,
+                method,
+                path,
+                ..
+            } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "api_http_latency",
+                    "method": method,
+                    "path": path,
+                    "error": "api_http_latency requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
+            TrafficAction::ApiWsExpectCloseOnKernelControl {
+                name,
+                path,
+                action,
+                target,
+                ..
+            } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "api_ws_expect_close_on_kernel_control",
+                    "path": path,
+                    "op": format!("{:?}", action),
+                    "target": format!("{:?}", target),
+                    "error": "api_ws_expect_close_on_kernel_control requires run_traffic_plan_with_kernel_control context",
+                }),
+            },
             TrafficAction::TlsRoundTrip {
                 name,
                 addr,
@@ -1203,6 +1411,14 @@ pub async fn run_traffic_plan(
                     "error": "kernel_control must be handled by orchestrator",
                 }),
             },
+            TrafficAction::TcpDrainDuringShutdown { name, .. } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "tcp_drain_during_shutdown",
+                    "error": "tcp_drain_during_shutdown must be handled by orchestrator",
+                }),
+            },
         };
 
         out.push(result);
@@ -1235,6 +1451,16 @@ fn compute_jitter_delay(target: &str, base_ms: u64, jitter_ms: u64, ratio: f64) 
     let bucket = (hash % 1000) as f64 / 1000.0;
     let scaled_jitter = (jitter_ms as f64 * ratio * bucket).round() as u64;
     base_ms.saturating_add(scaled_jitter)
+}
+
+fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
+    if samples.is_empty() {
+        return 0;
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
+    sorted[rank.min(sorted.len() - 1)]
 }
 
 /// Resolve the effective payload bytes: if `payload_size` is set, generate
@@ -1429,8 +1655,7 @@ async fn tcp_roundtrip_via_http_connect(
     let mut stream = TcpStream::connect(proxy_addr)
         .await
         .with_context(|| format!("connecting http proxy {proxy_addr}"))?;
-    let request =
-        format!("CONNECT {target_addr} HTTP/1.1\r\nHost: {target_addr}\r\n\r\n");
+    let request = format!("CONNECT {target_addr} HTTP/1.1\r\nHost: {target_addr}\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .await
@@ -1854,7 +2079,7 @@ fn socks5_append_addr(buf: &mut Vec<u8>, host: &str, port: u16) {
     buf.extend_from_slice(&port.to_be_bytes());
 }
 
-async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
+pub(crate) async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
     let mut stream = TcpStream::connect(proxy_addr)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;

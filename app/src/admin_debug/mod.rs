@@ -79,7 +79,9 @@ pub async fn init(addr: Option<&str>) {
     // Initialize SIGHUP signal handler for configuration reloading
     reloadable::init_signal_handler();
 
-    if let Err(e) = http_server::serve_plain(&bind_addr).await {
-        tracing::error!(error = %e, "failed to start admin debug server");
-    }
+    tokio::spawn(async move {
+        if let Err(e) = http_server::serve_plain(&bind_addr).await {
+            tracing::error!(error = %e, "failed to start admin debug server");
+        }
+    });
 }

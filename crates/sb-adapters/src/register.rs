@@ -1243,6 +1243,7 @@ fn build_http_inbound(
         set_system_proxy: param.set_system_proxy,
         allow_private_network: param.allow_private_network,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
     Some(Arc::new(HttpInboundAdapter::new(cfg)))
 }
@@ -3591,6 +3592,14 @@ impl InboundService for HttpInboundAdapter {
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        Some(
+            self.cfg
+                .active_connections
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
     }
 }
 

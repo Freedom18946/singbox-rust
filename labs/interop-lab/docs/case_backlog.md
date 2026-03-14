@@ -19,7 +19,7 @@
 | `p0_subscription_yaml` | YAML `proxies` parser | `strict` | implemented |
 | `p0_subscription_base64` | Base64 mixed-link parser | `strict` | implemented |
 | `p0_clash_api_contract` | replay GUI P0 HTTP/WS contract against Go+Rust APIs | `env_limited` | implemented |
-| `p0_clash_api_contract_strict` | strict version of P0 contract (self-managed dual kernel) | `strict` | implemented (`kernel_mode: both`) |
+| `p0_clash_api_contract_strict` | strict version of P0 contract (self-managed dual kernel) + repeated `/proxies` p95 latency contract | `strict` | implemented (`kernel_mode: both`) |
 
 ## P1 (contract + dataplane)
 
@@ -32,21 +32,26 @@
 | `p1_optional_endpoints_contract` | providers/rules/script/profile response semantics | `env_limited` | implemented |
 | `p1_version_endpoint_contract` | `/version` 返回带 version 字段的 JSON | `strict` | implemented (`kernel_mode: both`) |
 | `p1_dns_query_endpoint_contract` | `/dns/query` 返回 200 且可解析域名 | `strict` | implemented (`kernel_mode: both`) |
-| `p1_lifecycle_restart_reload_replay` | restart + reload health semantics | `strict` | implemented (`kernel_mode: both`) |
+| `p1_lifecycle_restart_reload_replay` | restart + reload health semantics，并验证 shutdown 后同端口 restart 恢复 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_graceful_shutdown_drain` | 优雅关闭时活跃 TCP 连接一致性验证 | `strict` | implemented (`kernel_mode: both`) |
 
 ### 数据面连通/故障/恢复
 
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
-| `p1_rust_core_http_via_socks` | HTTP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_rust_core_http_via_socks` | HTTP 核心链路连通 + repeated HTTP via SOCKS p95 latency contract | `strict` | implemented (`kernel_mode: both`) |
 | `p1_http_connect_via_http_proxy` | HTTP CONNECT 隧道链路连通 | `strict` | implemented (`kernel_mode: both`) |
-| `p1_selector_switch_traffic_replay` | selector 从 block 切到 direct 后流量恢复 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_mixed_inbound_dual_protocol` | 混合入站端口自动检测 SOCKS5 和 HTTP CONNECT | `strict` | implemented (`kernel_mode: both`) |
+| `p1_selector_switch_traffic_replay` | selector 从 block 切到 direct 后流量恢复，并在 reload 后保持选中态 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_urltest_auto_select_replay` | URLTest 组健康检查后自动选择最低延迟出站 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_tcp_via_socks` | TCP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_udp_via_socks` | UDP 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rust_core_dns_via_socks` | DNS 核心链路连通 | `strict` | implemented (`kernel_mode: both`) |
+| `p1_dns_cache_ttl_via_socks` | DNS 缓存命中保持于 TTL 内，并在 TTL 过期后重新查询 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fakeip_dns_query_contract` | FakeIP DNS 查询返回池内地址 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fakeip_cache_flush_contract` | FakeIP cache flush 后分配序列重置 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_ip_cidr_rule_via_socks` | IP-CIDR 路由命中优先于 final block | `strict` | implemented (`kernel_mode: both`) |
+| `p1_domain_rule_via_socks` | 域名规则精确匹配 FQDN 优先于 final block | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |
@@ -82,7 +87,7 @@
 | `p1_gui_proxy_switch_replay` | selector PUT 切换回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_proxy_delay_replay` | proxy delay 测试回放 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_group_delay_replay` | group delay 测试回放 | `strict` | implemented |
-| `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented |
+| `p1_gui_ws_reconnect_behavior` | WS 重连行为（kernel restart 后） | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_connections_tracking` | connections tracking 断言 (chains/rule) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_gui_full_session_replay` | 完整用户会话端到端回放 capstone | `strict` | implemented (`kernel_mode: both`) |
 
@@ -99,7 +104,7 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p1_clash_api_auth_enforcement` | Clash API auth enforcement: 无 token→401, Bearer→200, 错误→401 | `strict` | implemented |
-| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented |
+| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented (not yet an honest both-case; real broken-service dual-kernel model still missing) |
 
 ### TLS 高级能力（L14）
 

@@ -1,0 +1,102 @@
+id: p1_urltest_auto_select_replay
+title: urltest auto-selects direct over block after health check on both kernels
+owner: null
+priority: p1
+kernel_mode: both
+tags:
+- dataplane
+- control-plane
+- dual_core
+env_class: strict
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+    - -c
+    - labs/interop-lab/configs/rust_core_clash_api_urltest.json
+    - run
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+    - run
+    - -c
+    - labs/interop-lab/configs/go_core_clash_api_urltest.json
+    env: {}
+    workdir: null
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+- kind: http
+  name: version
+  method: GET
+  path: /version
+  body: null
+  no_auth: false
+  auth_secret: null
+  expect_status: 200
+upstream_topology:
+- name: local_http
+  kind: http_echo
+  bind: 127.0.0.1:18898
+  target: null
+  handshake_target: null
+traffic_plan:
+  # Wait for background URLTest health check to complete on both kernels.
+  # Go runs its first check immediately on PostStart; Rust now also runs
+  # immediately but spawns concurrent tasks. 5s sleep ensures completion.
+  - kind: command
+    name: wait_health_check
+    command: sleep
+    args: ["5"]
+    env: {}
+    workdir: null
+    timeout_ms: 8000
+    expect_exit: 0
+  # Verify /proxies/my-group shows correct auto-selection
+  - kind: api_http
+    name: inspect_group
+    method: GET
+    path: /proxies/my-group
+    expect_status: 200
+  # Verify data-plane traffic routes through URLTest group to direct
+  - kind: http_get
+    name: via_urltest_group
+    url: '{{upstream.local_http}}/v1/echo?scene=urltest-auto-select'
+    proxy: socks5://127.0.0.1:11801
+    expect_status: 200
+subscription_input: null
+faults: []
+assertions:
+- key: http.version.status
+  op: eq
+  expected: 200
+- key: traffic.wait_health_check.success
+  op: eq
+  expected: true
+- key: traffic.inspect_group.success
+  op: eq
+  expected: true
+- key: traffic.via_urltest_group.success
+  op: eq
+  expected: true
+- key: errors.count
+  op: eq
+  expected: 0
+oracle:
+  ignore_http_paths:
+  - /version
+  - /proxies/my-group
+  ignore_ws_paths: []
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 0
+post_traffic_gui_sequence: null

@@ -453,7 +453,23 @@ pub fn to_markdown(report: &DiffReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::{KernelKind, NormalizedSnapshot, TrafficCounters};
+    use crate::snapshot::{KernelKind, MemoryPoint, NormalizedSnapshot, TrafficCounters};
+
+    fn snapshot_with_memory(
+        kernel: KernelKind,
+        memory_series: &[(i64, i64)],
+    ) -> NormalizedSnapshot {
+        let now = Utc::now();
+        let mut snapshot = NormalizedSnapshot::new("run".into(), "case".into(), kernel, now);
+        snapshot.memory_series = memory_series
+            .iter()
+            .map(|(inuse, oslimit)| MemoryPoint {
+                inuse: *inuse,
+                oslimit: *oslimit,
+            })
+            .collect();
+        snapshot
+    }
 
     #[test]
     fn oracle_ignore_and_counter_jitter_work() {
@@ -499,6 +515,31 @@ mod tests {
         assert_eq!(report.http_mismatches.len(), 0);
         assert_eq!(report.ignored_http_count, 1);
         assert_eq!(report.ignored_counter_jitter_count, 2);
+        assert_eq!(report.gate_score, 0);
+    }
+
+    #[test]
+    fn peak_memory_ratio_over_2x_is_mismatch() {
+        let rust = snapshot_with_memory(KernelKind::Rust, &[(100, 0), (2_500, 0)]);
+        let go = snapshot_with_memory(KernelKind::Go, &[(100, 0), (1_000, 0)]);
+        let oracle = OracleSpec::default();
+
+        let report = build_diff_report("case", PathBuf::from("."), &rust, &go, &oracle);
+
+        assert_eq!(report.memory_mismatches.len(), 1);
+        assert_eq!(report.memory_mismatches[0].key, "memory.peak_ratio");
+        assert_eq!(report.gate_score, 1);
+    }
+
+    #[test]
+    fn peak_memory_ratio_within_2x_is_not_mismatch() {
+        let rust = snapshot_with_memory(KernelKind::Rust, &[(100, 0), (1_999, 0)]);
+        let go = snapshot_with_memory(KernelKind::Go, &[(100, 0), (1_000, 0)]);
+        let oracle = OracleSpec::default();
+
+        let report = build_diff_report("case", PathBuf::from("."), &rust, &go, &oracle);
+
+        assert!(report.memory_mismatches.is_empty());
         assert_eq!(report.gate_score, 0);
     }
 }

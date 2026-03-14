@@ -458,38 +458,72 @@ async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<Tc
     }
 }
 
-async fn direct_connect(ep: Endpoint) -> io::Result<TcpStream> {
-    let addr = match ep {
-        Endpoint::Ip(sa) => sa,
-        Endpoint::Domain(host, port) => {
-            let query = format!("{host}:{port}");
-            let mut it = lookup_host(query).await?;
-            if let Some(sa) = it.next() {
-                sa
-            } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::AddrNotAvailable,
-                    "resolve empty",
-                ));
+pub(crate) async fn resolve_host_for_direct(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    if let Some(resolver) = crate::dns::global::get() {
+        match resolver.resolve(host).await {
+            Ok(answer) => {
+                let addrs: Vec<_> = answer
+                    .ips
+                    .into_iter()
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .collect();
+                if !addrs.is_empty() {
+                    return Ok(addrs);
+                }
+                tracing::warn!(
+                    host = %host,
+                    "global dns resolver returned an empty answer for direct connect; falling back to system lookup"
+                );
+            }
+            Err(error) => {
+                tracing::debug!(
+                    host = %host,
+                    %error,
+                    "global dns resolver failed for direct connect; falling back to system lookup"
+                );
             }
         }
+    }
+
+    let query = format!("{host}:{port}");
+    let addrs: Vec<_> = lookup_host(query).await?.collect();
+    if addrs.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::AddrNotAvailable,
+            "resolve empty",
+        ));
+    }
+    Ok(addrs)
+}
+
+async fn direct_connect(ep: Endpoint) -> io::Result<TcpStream> {
+    let addrs: Vec<SocketAddr> = match ep {
+        Endpoint::Ip(sa) => vec![sa],
+        Endpoint::Domain(host, port) => resolve_host_for_direct(&host, port).await?,
     };
 
-    match connect_with_keepalive(addr, CONNECT_TIMEOUT, Some(Duration::from_secs(30))).await {
-        Err(e) => {
-            let res = if e.kind() == io::ErrorKind::TimedOut {
-                "timeout"
-            } else {
-                "error"
-            };
-            outbound_connect("direct", res, Some(err_kind(&e)));
-            Err(e)
-        }
-        Ok(s) => {
-            outbound_connect("direct", "ok", None);
-            Ok(s)
+    let mut last_err: Option<io::Error> = None;
+    for addr in &addrs {
+        match connect_with_keepalive(*addr, CONNECT_TIMEOUT, Some(Duration::from_secs(30))).await {
+            Ok(s) => {
+                outbound_connect("direct", "ok", None);
+                return Ok(s);
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
         }
     }
+
+    let e = last_err
+        .unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address to connect"));
+    let res = if e.kind() == io::ErrorKind::TimedOut {
+        "timeout"
+    } else {
+        "error"
+    };
+    outbound_connect("direct", res, Some(err_kind(&e)));
+    Err(e)
 }
 
 #[derive(Clone, Debug)]

@@ -1,0 +1,48 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "test-secret"
+    }
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "cache",
+        "address": "udp://127.0.0.1:38554",
+        "detour": "direct",
+        "strategy": "ipv4_only"
+      }
+    ],
+    "final": "cache",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 11821
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": [
+          "dns"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "final": "direct"
+  }
+}

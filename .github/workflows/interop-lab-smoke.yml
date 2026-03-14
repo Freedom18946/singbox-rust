@@ -35,7 +35,7 @@ jobs:
             ${{ runner.os }}-cargo-interop-
 
       - name: Build app
-        run: cargo build -p app --features router
+        run: cargo build -p app --features acceptance,clash_api --bin app
 
       - name: Build interop-lab
         run: cargo build -p interop-lab

@@ -201,6 +201,11 @@ async fn handle_case_command(
                 report.subscription_mismatches.len()
             );
             println!("traffic_mismatches={}", report.traffic_mismatches.len());
+            println!(
+                "connection_mismatches={}",
+                report.connection_mismatches.len()
+            );
+            println!("memory_mismatches={}", report.memory_mismatches.len());
             println!("ignored_http={}", report.ignored_http_count);
             println!("ignored_ws={}", report.ignored_ws_count);
             println!(

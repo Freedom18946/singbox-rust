@@ -405,6 +405,10 @@ impl SelectorGroup {
         let weak = Arc::downgrade(&self);
         let interval = self.test_interval;
         tokio::spawn(async move {
+            // Go parity: run initial check immediately (Go's PostStart calls CheckOutbounds)
+            if let Some(selector) = weak.upgrade() {
+                selector.run_health_checks().await;
+            }
             while let Some(selector) = weak.upgrade() {
                 tokio::time::sleep(interval).await;
                 selector.run_health_checks().await;
@@ -661,13 +665,24 @@ impl OutboundConnector for SelectorGroup {
 
 impl crate::adapter::OutboundGroup for SelectorGroup {
     fn now(&self) -> String {
-        self.selected
-            .try_read()
-            .ok()
-            .and_then(|g| g.clone())
-            .or_else(|| self.default_member.clone())
-            .or_else(|| self.members.first().map(|m| m.tag.clone()))
-            .unwrap_or_default()
+        match self.mode {
+            SelectMode::UrlTest => {
+                // Go parity: return computed-best outbound by latency
+                // (Go caches this in selectedOutboundTCP via performUpdateCheck)
+                self.select_by_latency()
+                    .map(|m| m.tag.clone())
+                    .or_else(|| self.members.first().map(|m| m.tag.clone()))
+                    .unwrap_or_default()
+            }
+            _ => self
+                .selected
+                .try_read()
+                .ok()
+                .and_then(|g| g.clone())
+                .or_else(|| self.default_member.clone())
+                .or_else(|| self.members.first().map(|m| m.tag.clone()))
+                .unwrap_or_default(),
+        }
     }
 
     fn all(&self) -> Vec<String> {

@@ -13,6 +13,14 @@ RUN_ENV_CLASS="${RUN_ENV_CLASS:-}"
 INTEROP_SKIP_APP_BUILD="${INTEROP_SKIP_APP_BUILD:-0}"
 CLASSIFY_ENV_LIMITED="${CLASSIFY_ENV_LIMITED:-1}"
 TREND_ALLOWLIST_FILE="${TREND_ALLOWLIST_FILE:-labs/interop-lab/configs/trend_gate_allowlist.json}"
+MANAGE_GO_ORACLE="${MANAGE_GO_ORACLE:-0}"
+GO_ORACLE_BIN="${GO_ORACLE_BIN:-go_fork_source/sing-box-1.12.14/sing-box}"
+GO_ORACLE_CONFIG="${GO_ORACLE_CONFIG:-labs/interop-lab/configs/l18_gui_go.json}"
+GO_ORACLE_API_URL="${GO_ORACLE_API_URL:-http://127.0.0.1:9090}"
+GO_ORACLE_API_SECRET="${GO_ORACLE_API_SECRET:-test-secret}"
+GO_ORACLE_BUILD_IF_MISSING="${GO_ORACLE_BUILD_IF_MISSING:-1}"
+GO_ORACLE_LOG="${GO_ORACLE_LOG:-/tmp/interop-go-oracle-aggregate.log}"
+GO_ORACLE_PID=""
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "error: jq is required by aggregate_trend_report.sh"
@@ -20,15 +28,198 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
-  echo "prebuild: cargo build -p app --features acceptance --bin app"
-  cargo build -p app --features acceptance --bin app >/dev/null
+  echo "prebuild: cargo build -p app --features acceptance,clash_api --bin app"
+  cargo build -p app --features acceptance,clash_api --bin app >/dev/null
 fi
 
 echo "aggregate-trend case=${CASE_ID:-ALL} iterations=${ITERATIONS} kernel=${KERNEL} artifacts_dir=${ARTIFACTS_DIR}"
 
+check_port_free() {
+  local port="$1"
+  ! lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+api_port_from_url() {
+  local url="$1"
+  python3 - "$url" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+u = urlparse(sys.argv[1])
+print(u.port or "")
+PY
+}
+
+ensure_go_oracle_binary() {
+  if [[ -x "${GO_ORACLE_BIN}" ]]; then
+    return 0
+  fi
+  if [[ "${GO_ORACLE_BUILD_IF_MISSING}" != "1" ]]; then
+    echo "error: go oracle binary missing and auto-build disabled: ${GO_ORACLE_BIN}" >&2
+    return 1
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    echo "error: go command not found; cannot auto-build oracle" >&2
+    return 1
+  fi
+  local go_src
+  go_src="$(dirname "${GO_ORACLE_BIN}")"
+  if [[ ! -d "${go_src}" ]]; then
+    echo "error: go oracle source dir missing: ${go_src}" >&2
+    return 1
+  fi
+  echo "go-oracle: building ${GO_ORACLE_BIN}"
+  (
+    cd "${go_src}"
+    go build -tags with_clash_api -ldflags "-s -w" -o "$(basename "${GO_ORACLE_BIN}")" ./cmd/sing-box
+  )
+}
+
+stop_managed_go_oracle() {
+  if [[ -n "${GO_ORACLE_PID}" ]] && kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1; then
+    kill "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+    sleep 0.5
+    kill -0 "${GO_ORACLE_PID}" >/dev/null 2>&1 && kill -9 "${GO_ORACLE_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+start_managed_go_oracle() {
+  local api_port
+  api_port="$(api_port_from_url "${GO_ORACLE_API_URL}")"
+  if [[ -z "${api_port}" ]]; then
+    echo "error: failed to parse go oracle api port from ${GO_ORACLE_API_URL}" >&2
+    return 1
+  fi
+  if ! check_port_free "${api_port}"; then
+    echo "error: go oracle port already in use: ${api_port}" >&2
+    lsof -nP -iTCP:"${api_port}" -sTCP:LISTEN >&2 || true
+    return 1
+  fi
+  if [[ ! -f "${GO_ORACLE_CONFIG}" ]]; then
+    echo "error: go oracle config missing: ${GO_ORACLE_CONFIG}" >&2
+    return 1
+  fi
+  ensure_go_oracle_binary
+  echo "go-oracle: starting bin=${GO_ORACLE_BIN} config=${GO_ORACLE_CONFIG} api=${GO_ORACLE_API_URL}"
+  : > "${GO_ORACLE_LOG}"
+  "${GO_ORACLE_BIN}" run -c "${GO_ORACLE_CONFIG}" >"${GO_ORACLE_LOG}" 2>&1 &
+  GO_ORACLE_PID="$!"
+  for _ in $(seq 1 120); do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GO_ORACLE_API_SECRET}" "${GO_ORACLE_API_URL}/version" || true)"
+    if [[ "${code}" == "200" || "${code}" == "204" || "${code}" == "401" ]]; then
+      echo "go-oracle: ready pid=${GO_ORACLE_PID} api=${GO_ORACLE_API_URL}"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "error: go oracle health check failed: ${GO_ORACLE_API_URL}" >&2
+  [[ -f "${GO_ORACLE_LOG}" ]] && tail -n 50 "${GO_ORACLE_LOG}" >&2 || true
+  stop_managed_go_oracle
+  return 1
+}
+
+cleanup() {
+  stop_managed_go_oracle
+}
+trap cleanup EXIT
+
+case_needs_external_go_oracle() {
+  local case_id="$1"
+  local case_file="labs/interop-lab/cases/${case_id}.yaml"
+  if [[ ! -f "${case_file}" ]]; then
+    return 1
+  fi
+  python3 - "${case_file}" <<'PY'
+import sys
+import yaml
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    case = yaml.safe_load(f)
+
+go_spec = ((case or {}).get("bootstrap") or {}).get("go") or {}
+command = go_spec.get("command")
+raise SystemExit(0 if not command else 1)
+PY
+}
+
+collect_selected_both_kernel_cases() {
+  local case_list_output
+  case_list_output="$(cargo run -q -p interop-lab -- case list)"
+
+  while IFS=$'\t' read -r case_id priority kernel_mode env_class _tags; do
+    [[ -z "${case_id}" ]] && continue
+    if [[ -n "${CASE_ID}" && "${CASE_ID}" != "ALL" && "${case_id}" != "${CASE_ID}" ]]; then
+      continue
+    fi
+    if [[ -n "${RUN_PRIORITY}" && "${priority}" != "${RUN_PRIORITY}" ]]; then
+      continue
+    fi
+
+    local kernel_mode_lc env_class_lc
+    kernel_mode_lc="$(_to_lower "${kernel_mode}")"
+    env_class_lc="$(_to_lower "${env_class}")"
+    if [[ "${env_class_lc}" == "envlimited" ]]; then
+      env_class_lc="env_limited"
+    fi
+    if [[ -n "${RUN_ENV_CLASS}" && "${env_class_lc}" != "$(_to_lower "${RUN_ENV_CLASS}")" ]]; then
+      continue
+    fi
+    if [[ "${kernel_mode_lc}" != "both" ]]; then
+      continue
+    fi
+    printf '%s\n' "${case_id}"
+  done <<< "${case_list_output}"
+}
+
+prepare_managed_go_oracle() {
+  if [[ "${KERNEL}" != "both" || "${MANAGE_GO_ORACLE}" != "1" ]]; then
+    return 0
+  fi
+
+  local selected_cases=()
+  local selected_case
+  while IFS= read -r selected_case; do
+    [[ -z "${selected_case}" ]] && continue
+    selected_cases+=("${selected_case}")
+  done < <(collect_selected_both_kernel_cases)
+  if [[ ${#selected_cases[@]} -eq 0 ]]; then
+    echo "go-oracle: no selected both-kernel cases require evaluation"
+    return 0
+  fi
+
+  local external_cases=()
+  local managed_cases=()
+  local case_id
+  for case_id in "${selected_cases[@]}"; do
+    if case_needs_external_go_oracle "${case_id}"; then
+      external_cases+=("${case_id}")
+    else
+      managed_cases+=("${case_id}")
+    fi
+  done
+
+  if [[ ${#external_cases[@]} -gt 0 && ${#managed_cases[@]} -gt 0 ]]; then
+    echo "error: MANAGE_GO_ORACLE=1 selection mixes external-go and self-managed go cases" >&2
+    echo "error: external-go cases: ${external_cases[*]}" >&2
+    echo "error: self-managed cases: ${managed_cases[*]}" >&2
+    echo "error: narrow CASE_ID / RUN_PRIORITY / RUN_ENV_CLASS, or disable MANAGE_GO_ORACLE" >&2
+    return 1
+  fi
+
+  if [[ ${#external_cases[@]} -gt 0 ]]; then
+    echo "go-oracle: managing external oracle for cases: ${external_cases[*]}"
+    start_managed_go_oracle
+  else
+    echo "go-oracle: selected cases self-manage Go bootstrap; no external oracle needed"
+  fi
+}
+
 _to_lower() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
+
+prepare_managed_go_oracle
 
 _classify_env_limited_category() {
   local text_lc

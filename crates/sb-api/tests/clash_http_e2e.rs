@@ -10,7 +10,37 @@ use reqwest::{Client, StatusCode};
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
+use std::time::Instant;
 use tokio::time::{sleep, Duration};
+
+fn env_usize(key: &str, default: usize) -> usize {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn env_u128(key: &str, default: u128) -> u128 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u128>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn percentile_micros(samples: &[u128], percentile: usize) -> anyhow::Result<u128> {
+    anyhow::ensure!(
+        !samples.is_empty(),
+        "cannot calculate percentile of empty sample set"
+    );
+    anyhow::ensure!(percentile <= 100, "percentile must be <= 100");
+
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let rank = ((sorted.len() - 1) * percentile) / 100;
+    Ok(sorted[rank])
+}
 
 /// Test server helper - starts server on random port
 struct TestServer {
@@ -294,6 +324,43 @@ async fn test_get_proxies() -> anyhow::Result<()> {
 
     // Should return proxies object
     assert!(json.get("proxies").is_some());
+    Ok(())
+}
+
+/// Test GET /proxies - repeated requests stay within a bounded p95 latency.
+#[tokio::test]
+async fn test_get_proxies_p95_latency() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let warmup_requests = env_usize("SB_API_P95_WARMUP_REQUESTS", 5);
+    let sample_requests = env_usize("SB_API_P95_SAMPLE_REQUESTS", 40);
+    let max_p95_micros = env_u128("SB_API_P95_MAX_US", 100_000);
+
+    for _ in 0..warmup_requests {
+        let response = server.get("/proxies").await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = response.bytes().await?;
+    }
+
+    let mut latencies_micros = Vec::with_capacity(sample_requests);
+    for _ in 0..sample_requests {
+        let started_at = Instant::now();
+        let response = server.get("/proxies").await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = response.bytes().await?;
+        latencies_micros.push(started_at.elapsed().as_micros());
+    }
+
+    let p95_micros = percentile_micros(&latencies_micros, 95)?;
+    assert!(
+        p95_micros <= max_p95_micros,
+        "GET /proxies p95 latency {}us exceeded threshold {}us over {} samples",
+        p95_micros,
+        max_p95_micros,
+        sample_requests
+    );
     Ok(())
 }
 

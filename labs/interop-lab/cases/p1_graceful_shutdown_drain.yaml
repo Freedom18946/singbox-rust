@@ -1,0 +1,79 @@
+id: p1_graceful_shutdown_drain
+title: graceful shutdown drains active tcp connections before exit
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - lifecycle
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api.json
+      - run
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_dataplane.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence: []
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  - kind: api_http
+    name: version_check
+    method: GET
+    path: /version
+    expect_status: 200
+  - kind: tcp_drain_during_shutdown
+    name: drain_rust
+    addr: "{{upstream.local_tcp}}"
+    proxy: socks5://127.0.0.1:11801
+    payload: graceful-drain-rust
+    action: shutdown
+    target: rust
+    hold_ms: 2000
+    wait_ready_ms: 10000
+    timeout_ms: 15000
+  - kind: tcp_drain_during_shutdown
+    name: drain_go
+    addr: "{{upstream.local_tcp}}"
+    proxy: socks5://127.0.0.1:11801
+    payload: graceful-drain-go
+    action: shutdown
+    target: go
+    hold_ms: 2000
+    wait_ready_ms: 10000
+    timeout_ms: 15000
+assertions:
+  - key: traffic.version_check.success
+    op: eq
+    expected: true
+  - key: traffic.drain_rust.success
+    op: eq
+    expected: true
+  - key: traffic.drain_go.success
+    op: eq
+    expected: true
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /version

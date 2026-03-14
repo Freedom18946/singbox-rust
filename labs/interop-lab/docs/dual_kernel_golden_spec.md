@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 13 | 72.2% |
-| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 3 | 33.3% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 17 | 94.4% |
+| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 7 | 77.8% |
 | SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
-| PF | Performance | 3 (Latency / Memory / Startup) | 5 | 2 | 40.0% |
-| **Total** | | **16** | **60** | **39** | **65.0%** |
+| PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
+| **Total** | | **16** | **60** | **50** | **83.3%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
@@ -31,7 +31,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 | HTTP | `http_mismatches` | status + body_hash per endpoint | BHV-CP-001 … 007, 018 … 021 | `ignore_http_paths` |
 | WebSocket | `ws_mismatches` | frame_count + frame_hash per stream | BHV-CP-008 … 011 | `ignore_ws_paths` |
 | Subscription | `subscription_mismatches` | format + node_count | BHV-SV-001 … 004 | — |
-| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-PF-001 | `tolerate_counter_jitter`, `counter_jitter_abs` |
+| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 017, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
 
@@ -93,7 +93,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_tcp_via_socks` | — | — |
 | BHV-DP-002 | SOCKS5 UDP relays packets | UDP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_udp_via_socks` | — | DIV-C-002 |
 | BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | `p1_http_connect_via_http_proxy` | — | — |
-| BHV-DP-004 | Mixed inbound detects protocol | SOCKS5 or HTTP to same port | Auto-detect and handle | Traffic | — | `p0_clash_api_contract_strict` | — |
+| BHV-DP-004 | Mixed inbound detects protocol | SOCKS5 or HTTP to same port | Auto-detect and handle | Traffic | `p1_mixed_inbound_dual_protocol` | `p0_clash_api_contract_strict` | — |
 
 ### DP.2: Outbound
 
@@ -101,7 +101,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-005 | Direct outbound connects to target | Routed to direct | TCP connection established | Traffic, Conn | `p1_rust_core_http_via_socks` | — | DIV-C-001 |
 | BHV-DP-006 | Selector switches via PUT API | PUT /proxies/{group} | Subsequent traffic uses new path | Traffic | `p1_selector_switch_traffic_replay` | `p1_gui_proxy_switch_replay` | — |
-| BHV-DP-007 | URLTest auto-selects lowest latency | urltest group configured | Auto-selects best outbound | Traffic | — | `p1_gui_proxy_delay_replay` | — |
+| BHV-DP-007 | URLTest auto-selects lowest latency | urltest group configured | Auto-selects best outbound | Traffic | `p1_urltest_auto_select_replay` | `p1_gui_proxy_delay_replay` | — |
 | BHV-DP-008 | Block outbound rejects connection | Routed to block | Connection refused/reset | Traffic | `p1_block_outbound_via_socks` | — | — |
 | BHV-DP-009 | Chain proxy (multi-hop) | SOCKS5→SOCKS5→direct | End-to-end connectivity | Traffic | `p2_dataplane_chain_proxy` | — | — |
 
@@ -111,7 +111,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-010 | Rule match dispatches correctly | Traffic matching a rule | Dispatched to rule's outbound | Traffic | `p1_gui_connections_tracking` | — | — |
 | BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | `p1_gui_full_session_replay` | `p1_rust_core_http_via_socks` | — |
-| BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | — | — | — |
+| BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | `p1_domain_rule_via_socks` | — | — |
 | BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | `p1_ip_cidr_rule_via_socks` | — | — |
 | BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | — | — | DIV-C-003 |
 
@@ -122,7 +122,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-015 | DNS resolves via configured servers | Domain lookup | IP address returned | Traffic | `p1_rust_core_dns_via_socks` | — | — |
 | BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | `p1_fakeip_dns_query_contract` | — | DIV-M-001 |
 | BHV-DP-017 | FakeIP cache flush via API | DELETE /cache/fakeip/flush | Cache cleared, 204 | HTTP | `p1_fakeip_cache_flush_contract` | — | DIV-M-001 |
-| BHV-DP-018 | DNS result caching and TTL | Repeated domain lookup | Cached response, respects TTL | Traffic | — | — | — |
+| BHV-DP-018 | DNS result caching and TTL | Repeated domain lookup | Cached response, respects TTL | Traffic | `p1_dns_cache_ttl_via_socks` | — | — |
 
 ### LC.1: Startup
 
@@ -138,15 +138,15 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict` | — | DIV-M-006 |
 | BHV-LC-005 | Inbound hot-reload on config change | Config file update + signal | Inbound rebind without restart | — | — | — | DIV-H-001 |
-| BHV-LC-006 | State preservation across reload | Reload signal | Connections/proxy state preserved | — | — | — | — |
+| BHV-LC-006 | State preservation across reload | Reload signal | Connections/proxy state preserved | — | `p1_selector_switch_traffic_replay` | — | — |
 
 ### LC.3: Shutdown
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-LC-007 | Graceful shutdown drains connections | SIGTERM / shutdown signal | Active connections drain before exit | — | — | — | DIV-M-003 |
-| BHV-LC-008 | Connection close notification | Shutdown initiated | WS /connections notified | WS | — | — | — |
-| BHV-LC-009 | Resource cleanup on exit | Process exit | FDs/sockets released, no leak | Memory | — | — | — |
+| BHV-LC-007 | Graceful shutdown drains connections | SIGTERM / shutdown signal | Active connections drain before exit | — | `p1_graceful_shutdown_drain` | — | DIV-M-003 |
+| BHV-LC-008 | Connection close notification | Shutdown initiated | WS /connections notified | WS | `p1_gui_ws_reconnect_behavior` | — | — |
+| BHV-LC-009 | Resource cleanup on exit | Process exit | FDs/sockets released, no leak | Memory | `p1_lifecycle_restart_reload_replay` | — | — |
 
 ### SV.1: Subscription Parsing
 
@@ -169,15 +169,15 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-PF-001 | HTTP proxy p95 latency | HTTP via SOCKS5 under load | p95 < threshold | Traffic | — | `p2_bench_socks5_throughput` | — |
-| BHV-PF-002 | API response p95 latency | GET /proxies repeated | p95 < threshold | HTTP | — | — | — |
+| BHV-PF-001 | HTTP proxy p95 latency | HTTP via SOCKS5 under load | p95 < threshold | Traffic | `p1_rust_core_http_via_socks` | `p2_bench_socks5_throughput` | — |
+| BHV-PF-002 | API response p95 latency | GET /proxies repeated | p95 < threshold | Traffic | `p0_clash_api_contract_strict` | — | — |
 
 ### PF.2: Memory
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-PF-003 | Peak RSS within bounds | Steady-state operation | Rust peak < 2x Go peak | Memory | `p2_connections_ws_soak_dual_core` | `p2_connections_ws_soak_suite` | — |
-| BHV-PF-004 | WS connection memory stable | Long-running WS streams | No linear memory growth | Memory | — | `p2_connections_ws_soak_suite` | — |
+| BHV-PF-004 | WS connection memory stable | Long-running WS streams | No linear memory growth | Memory | `p2_connections_ws_soak_dual_core` | `p2_connections_ws_soak_suite` | — |
 
 ### PF.3: Startup
 
@@ -245,8 +245,8 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Baseline | 29 | 29 / 94 | 65.0% (39/60 BHV) |
-| T1 Immediate (Completed) | GUI critical path strict | +0 | 29 / 94 | 65.0% (39/60 BHV) |
+| Current | Baseline | 32 | 32 / 95 | 78.3% (47/60 BHV) |
+| T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 75.0% (45/60 BHV) |
 | T2 Near-term | Coverage-neutral strict promotions | +3 | 30 / 92 | ~61.7% (37/60 BHV) |
 | T3 Planned | Subscription both-cases | +2 | 32 / 92 | ~65.0% (39/60 BHV) |
 | T4 Long-term | Protocol suites + perf | +4 | 36 / 92 | ~68.3% (41/60 BHV) |
@@ -257,19 +257,18 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 
 | # | Case ID | Current Mode | Effort | New BHVs Covered | Notes |
 |---|---------|-------------|--------|------------------|-------|
-| 1 | `p0_clash_api_contract_strict` | both | E3 | BHV-CP-001…007, 008…011 (strict), BHV-LC-004 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle |
+| 1 | `p0_clash_api_contract_strict` | both | E3 | BHV-CP-001…007, 008…011 (strict), BHV-LC-004, BHV-PF-002 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle; re-verified on 2026-03-14 with repeated `/proxies` p95 latency contract |
 | 2 | `p1_gui_full_boot_replay` | both | E3 | BHV-CP-001, BHV-CP-003, BHV-CP-008…011 (parallel WS) | Promoted on 2026-03-12 with self-managed Go bootstrap + `/configs` `/proxies` oracle ignores |
 | 3 | `p1_gui_proxy_switch_replay` | both | E3 | BHV-CP-004, BHV-DP-006 | Promoted on 2026-03-12 with self-managed Go bootstrap + `/proxies` oracle ignore |
 | 4 | `p1_gui_proxy_delay_replay` | both | E3 | BHV-CP-005 (strict), BHV-DP-007 | Promoted on 2026-03-12 with self-managed Go bootstrap + delay-path oracle ignore |
 | 5 | `p1_gui_full_session_replay` | both | E3 | BHV-LC-002, BHV-DP-011 | Promoted on 2026-03-12 with self-managed Go bootstrap + strict oracle |
 
-### T2: Near-term (+3 cases)
+### T2: Near-term (+2 cases)
 
 | # | Case ID | Effort | New BHVs Covered |
 |---|---------|--------|------------------|
 | 1 | `p1_clash_api_auth_enforcement` | E2 | BHV-CP-012…017 (strict auth coverage) |
 | 2 | `p1_gui_group_delay_replay` | E2 | BHV-CP-005 (group variant) |
-| 3 | `p1_gui_ws_reconnect_behavior` | E3 | BHV-LC-002 (restart recovery) |
 
 ### T3: Planned (+2 cases)
 
@@ -283,7 +282,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | # | Case ID | Current Mode | Effort | New BHVs Covered | Notes |
 |---|---------|-------------|--------|------------------|-------|
 | 1 | `p1_rust_core_tcp_via_socks` | both | E2 | BHV-DP-001 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
-| 2 | `p1_rust_core_http_via_socks` | both | E2 | BHV-DP-005 | Promoted on 2026-03-12 after replacing curl-only SOCKS traffic with `reqwest+socks` and `/version` oracle ignore |
+| 2 | `p1_rust_core_http_via_socks` | both | E2 | BHV-DP-005, BHV-PF-001 | Promoted on 2026-03-12 after replacing curl-only SOCKS traffic with `reqwest+socks` and `/version` oracle ignore; re-verified on 2026-03-14 with repeated HTTP GET p95 latency through SOCKS5 |
 | 3 | `p1_rust_core_dns_via_socks` | both | E2 | BHV-DP-015 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
 | 4 | `p1_rust_core_udp_via_socks` | both | E2 | BHV-DP-002 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap, `SB_SOCKS_UDP_ENABLE=1`, and `/version` oracle ignore |
 | 5 | `p1_http_connect_via_http_proxy` | both | E3 | BHV-DP-003 | Promoted on 2026-03-12 after adding HTTP CONNECT proxy support to `tcp_round_trip` harness |
@@ -292,9 +291,19 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 8 | `p1_ip_cidr_rule_via_socks` | both | E2 | BHV-DP-013 | Promoted on 2026-03-12 with an `ip_cidr` allow rule for `127.0.0.0/8` ahead of final `block` |
 | 9 | `p1_version_endpoint_contract` | both | E1 | BHV-CP-020, BHV-PF-005 | Re-verified on 2026-03-12 with `/version` readiness probes on both kernels (`20260312T032518Z-036e6de0-2003-487a-b4e8-586c710f58a6`) |
 | 10 | `p1_gui_connections_tracking` | both | E2 | BHV-CP-006 (strict), BHV-DP-010 | Promoted on 2026-03-13 with a live slow-request window, mid-traffic `/connections` capture, and `/connections` oracle ignore for body-shape divergence |
-| 11 | `p1_lifecycle_restart_reload_replay` | both | E2 | BHV-LC-001 | Promoted on 2026-03-13 by switching restart/reload replay to Clash API `/version` probes and `SIGHUP` reload fallback on both kernels |
+| 11 | `p1_lifecycle_restart_reload_replay` | both | E2 | BHV-LC-001, BHV-LC-009 | Re-verified on 2026-03-13 with explicit `shutdown -> restart` on both kernels, proving same-port recovery and post-exit API availability (`20260313T225412Z-d0aa81be-d8d3-4eb8-9467-ea3c622f79da`) |
 | 12 | `p1_fakeip_dns_query_contract` | both | E2 | BHV-DP-016 | Promoted on 2026-03-13 with shared fakeip DNS configs and normalized `/dns/query` answer-IP assertions across Go and Rust |
 | 13 | `p1_fakeip_cache_flush_contract` | both | E3 | BHV-DP-017 | Promoted on 2026-03-13 after adding per-kernel API method overrides, Rust fakeip flush wiring, and a real v4+v6 bucket warm-up before reset |
+| 14 | `p1_gui_ws_reconnect_behavior` | both | E3 | BHV-LC-008 | Promoted on 2026-03-13 by asserting `/connections` WS closes during restart on both kernels, then re-establishes after readiness (`20260313T205356Z-5b7cf97d-6e5d-463e-8073-6868f00c0427`) |
+| 15 | `p1_selector_switch_traffic_replay` | both | E3 | BHV-LC-006 | Re-verified on 2026-03-13 with cache-file-backed selector state surviving reload on both kernels (`20260313T222658Z-d6eb7e2c-1164-4bce-bbe0-5a1f19ee6049`) |
+| 16 | `p0_clash_api_contract_strict` | both | E3 | BHV-PF-002 | Re-verified on 2026-03-14 with repeated `GET /proxies` latency sampling on both kernels; p95 remained <500ms and diff stayed clean (`20260314T001307Z-51a9f922-3013-47b2-b57e-1bababc1af1e`) |
+| 17 | `p1_rust_core_http_via_socks` | both | E2 | BHV-PF-001 | Re-verified on 2026-03-14 with repeated HTTP GET via SOCKS5 on both kernels; p95 remained <500ms and diff stayed clean (`20260314T002122Z-f4af4a62-2000-4d39-aacb-ba3831f73ce0`) |
+| 18 | `p1_dns_cache_ttl_via_socks` | both | E4 | BHV-DP-018 | Promoted on 2026-03-14 after wiring Rust direct-connect resolution into the configured DNS resolver, adding TTL cache to the no-rule resolver path, and constraining the Rust config to honor `TTL=1` for expiry replay (`20260314T021211Z-247eb412-7cb4-43ce-8a64-927df58a5ff7`) |
+| 19 | `p1_domain_rule_via_socks` | both | E4 | BHV-DP-012 | Promoted on 2026-03-15 after fixing `direct_connect` to try all resolved addresses instead of only `[0]`; on macOS `localhost` resolves to `[::1, 127.0.0.1]` and the old code only tried IPv6 (`20260314T222007Z-a029a54e-b96c-4a04-b5cc-e39cac72fcdb`) |
+| 20 | `p2_connections_ws_soak_dual_core` | both | — | BHV-PF-004 | Spec correction on 2026-03-15: case already had `memory.leak_detected: false` assertion covering linear memory growth detection; was previously only credited for BHV-PF-003 |
+| 21 | `p1_mixed_inbound_dual_protocol` | both | E4 | BHV-DP-004 | Promoted on 2026-03-15 after fixing mixed inbound `peek()` → `read_exact()` bug (peek is non-destructive, causing PeekedStream to duplicate the first byte; SOCKS5 got 0x05 twice, HTTP got "CCONNECT" instead of "CONNECT") (`20260314T225307Z-621867dc-a773-486f-b629-8f373043f691`) |
+| 22 | `p1_graceful_shutdown_drain` | both | E3 | BHV-LC-007 | Promoted on 2026-03-15 with new `TcpDrainDuringShutdown` harness action; both kernels show identical SIGTERM behavior (fast exit, no extended drain) confirming parity (`20260314T231033Z-e8dc8539-58aa-4b7f-82ec-5d2e4d571073`) |
+| 23 | `p1_urltest_auto_select_replay` | both | E3 | BHV-DP-007 | Promoted on 2026-03-15 after fixing Rust `SelectorGroup::now()` to call `select_by_latency()` for URLTest mode and running initial health check immediately (Go parity: `PostStart` → `CheckOutbounds`); both kernels show `now: "direct"` and route traffic through the best outbound (`20260314T233646Z-536ab378-faec-4190-8a08-57827f1a97fa`) |
 
 ### T4: Long-term (+4 cases)
 
@@ -302,7 +311,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 |---|---------|--------|------------------|
 | 1 | `p2_trojan_protocol_suite` | E4 | BHV-DP-001 (Trojan variant) |
 | 2 | `p2_shadowsocks_protocol_suite` | E4 | BHV-DP-001 (SS variant) |
-| 3 | `p2_bench_socks5_throughput` | E3 | BHV-PF-001 |
+| 3 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) |
 | 4 | `p0_subscription_base64` | E2 | BHV-SV-003 |
 
 ### Non-Promotable Cases (11)
@@ -331,9 +340,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 30.9% (29/94) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 65.0% (39/60) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 51.7% (31/60) |
+| Both-mode case ratio | both cases / total cases | 36.8% (35/95) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 83.3% (50/60) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 70.0% (42/60) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -345,11 +354,11 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | After Tier | Both Cases | BHV Coverage | Strict BHV Coverage |
 |------------|-----------|--------------|---------------------|
-| Current | 29 | 65.0% (39/60) | 51.7% (31/60) |
+| Current | 31 | 75.0% (45/60) | 61.7% (37/60) |
 | T1 | 11 | ~50.0% (30/60) | ~18.3% (11/60) |
 | T2 | 15 | ~58.3% (35/60) | ~25.0% (15/60) |
 | T3 | 32 | ~65.0% (39/60) | ~51.7% (31/60) |
-| T4 | 36 | ~68.3% (41/60) | ~55.0% (33/60) |
+| T4 | 36 | ~73.3% (44/60) | ~60.0% (36/60) |
 
 ---
 

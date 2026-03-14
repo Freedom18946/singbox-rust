@@ -25,6 +25,16 @@ cargo run -p interop-lab -- case diff p0_clash_api_contract
 cargo run -p interop-lab -- report open p0_clash_api_contract --print
 ```
 
+## Build prerequisites
+
+Cases that launch the Rust app binary now require Clash API support in the built artifact.
+
+```bash
+cargo build -p app --features acceptance,clash_api --bin app
+```
+
+If `bootstrap.<kernel>.command` is omitted, `interop-lab` treats that kernel as externally running and only probes its API readiness.
+
 ## External Clash API replay
 
 `p0_clash_api_contract` targets already-running kernels by default.
@@ -60,6 +70,7 @@ Top-level fields:
 
 - `kernel_control` (`action=restart|reload`, `target=rust|go`, `wait_ready_ms`)
 - `fault_jitter` (`target`, `base_ms`, `jitter_ms`, `ratio`)
+- `api_ws_soak` (`path`, `clients_per_wave`, `waves`, `wave_delay_ms`, `min_success_ratio`, `frame_timeout_ms`)
 
 `assertions` operators:
 
@@ -77,6 +88,48 @@ A run writes `NormalizedSnapshot` JSON with:
 
 ## Notes
 
-- If `bootstrap.<kernel>.command` is omitted, `interop-lab` treats the kernel as externally running and probes `api.base_url` readiness.
 - String placeholders support `${ENV_VAR}` and `{{upstream.<name>}}`.
 - `case run` supports filters: `--priority`, `--tag`, `--exclude-tag`, `--env-class`.
+
+## `/connections` WS soak workflows
+
+`p2_connections_ws_concurrency_suite`, `p2_connections_ws_soak_suite`, and `p2_connections_ws_soak_dual_core` now use the built-in `api_ws_soak` traffic action. The action opens waves of WebSocket clients directly against `session.api`, validates `/connections` frame structure, and records success/failure into the case snapshot.
+
+Rust-only runs:
+
+```bash
+cargo build -p app --features acceptance,clash_api --bin app
+cargo run -p interop-lab -- case run p2_connections_ws_concurrency_suite
+cargo run -p interop-lab -- case run p2_connections_ws_soak_suite
+```
+
+Dual-kernel replay with a manually managed Go oracle:
+
+```bash
+go_fork_source/sing-box-1.12.14/sing-box run -c labs/interop-lab/configs/l18_gui_go.json
+cargo run -p interop-lab -- case run p2_connections_ws_soak_dual_core
+cargo run -p interop-lab -- case diff p2_connections_ws_soak_dual_core
+```
+
+Dual-kernel trend gate with a script-managed Go oracle:
+
+```bash
+MANAGE_GO_ORACLE=1 ITERATIONS=1 KERNEL=both RUN_ENV_CLASS=strict \
+  labs/interop-lab/scripts/run_case_trend_gate.sh p2_connections_ws_soak_dual_core
+```
+
+Dual-kernel aggregate report with a script-managed Go oracle:
+
+```bash
+MANAGE_GO_ORACLE=1 ITERATIONS=1 KERNEL=both RUN_ENV_CLASS=strict \
+  ARTIFACTS_DIR=labs/interop-lab/artifacts/dual_core_trend \
+  labs/interop-lab/scripts/aggregate_trend_report.sh p2_connections_ws_soak_dual_core
+```
+
+`run_case_trend_gate.sh`, `run_dual_kernel_diff_replay.sh`, and `aggregate_trend_report.sh` all honor the following optional environment variables when `MANAGE_GO_ORACLE=1`:
+
+- `GO_ORACLE_BIN`
+- `GO_ORACLE_CONFIG`
+- `GO_ORACLE_API_URL`
+- `GO_ORACLE_API_SECRET`
+- `GO_ORACLE_BUILD_IF_MISSING`

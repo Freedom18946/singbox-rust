@@ -3709,6 +3709,9 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "rustls",
+ "sb-adapters",
+ "sb-core",
+ "sb-transport",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3718,6 +3721,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
+ "tracing-subscriber",
  "url",
  "uuid",
  "webpki-roots 0.26.11",
@@ -6249,8 +6253,6 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "533f54bc6a7d4f647e46ad909549eda97bf5afc1585190ef692b4286b198bd8f"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -6634,6 +6636,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "rustls-pki-types",
+ "sb-adapters",
  "sb-common",
  "sb-config",
  "sb-metrics",

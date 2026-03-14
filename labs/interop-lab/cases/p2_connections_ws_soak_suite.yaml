@@ -5,40 +5,47 @@ kernel_mode: rust
 env_class: strict
 tags:
   - ws
+  - soak
 bootstrap:
   rust:
-    ready_path: /v1/echo
-    api:
-      base_url: "{{upstream.local_http}}"
-upstream_topology:
-  - name: local_http
-    kind: http_echo
-    bind: 127.0.0.1:0
-traffic_plan:
-  - kind: command
-    name: connections_ws_long_running_soak
-    command: cargo
+    command: ./target/debug/app
     args:
-      - test
-      - -p
-      - sb-api
-      - --test
-      - clash_websocket_e2e
-      - test_connections_ws_long_running_soak
-      - --
-      - --ignored
-      - --nocapture
-    env:
-      SB_WS_SOAK_CLIENTS_PER_WAVE: "24"
-      SB_WS_SOAK_WAVES: "20"
-      SB_WS_SOAK_WAVE_DELAY_MS: "120"
-      SB_WS_SOAK_WAVE_SUCCESS_PERCENT: "95"
-      SB_WS_SOAK_OVERALL_SUCCESS_PERCENT: "97"
-    timeout_ms: 900000
-    expect_exit: 0
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+traffic_plan:
+  - kind: api_ws_soak
+    name: connections_ws_long_running_soak
+    path: /connections
+    clients_per_wave: 24
+    waves: 20
+    wave_delay_ms: 120
+    wave_success_percent: 95
+    overall_success_percent: 97
+post_traffic_gui_sequence:
+  - kind: sleep
+    ms: 1000
+  - kind: ws_collect
+    name: post_soak_memory
+    path: /memory
+    max_frames: 8
+    duration_ms: 5000
 assertions:
   - key: traffic.connections_ws_long_running_soak.success
     op: eq
     expected: true
+  - key: ws.post_soak_memory.frame_count
+    op: gte
+    expected: 3
+  - key: errors.count
+    op: eq
+    expected: 0
 oracle:
   tolerate_counter_jitter: true

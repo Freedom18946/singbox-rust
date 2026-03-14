@@ -19,6 +19,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go_fork_source/sing-box-1.12.14/go.mod
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -31,7 +36,7 @@ jobs:
             ${{ runner.os }}-cargo-interop-
 
       - name: Build app
-        run: cargo build -p app --features router
+        run: cargo build -p app --features acceptance,clash_api --bin app
 
       - name: Build interop-lab
         run: cargo build -p interop-lab
@@ -74,12 +79,26 @@ jobs:
             THRESHOLD_TEMPLATE=env_limited \
             bash labs/interop-lab/scripts/run_case_trend_gate.sh ALL
 
+      - name: Trend gate - P2 dual-core strict
+        run: |
+          ITERATIONS=1 KERNEL=both RUN_ENV_CLASS=strict MANAGE_GO_ORACLE=1 \
+            THRESHOLD_CONFIG=labs/interop-lab/configs/trend_thresholds.yaml \
+            THRESHOLD_TEMPLATE=strict \
+            bash labs/interop-lab/scripts/run_case_trend_gate.sh p2_connections_ws_soak_dual_core
+
       - name: Aggregate trend report with history
         if: always()
         run: |
           ITERATIONS=2 KERNEL=rust \
             ARTIFACTS_DIR=labs/interop-lab/artifacts \
             bash labs/interop-lab/scripts/aggregate_trend_report.sh ALL
+
+      - name: Aggregate trend report - P2 dual-core strict
+        if: always()
+        run: |
+          ITERATIONS=1 KERNEL=both RUN_ENV_CLASS=strict MANAGE_GO_ORACLE=1 \
+            ARTIFACTS_DIR=labs/interop-lab/artifacts/dual_core_trend \
+            bash labs/interop-lab/scripts/aggregate_trend_report.sh p2_connections_ws_soak_dual_core
 
       - name: Upload artifacts
         if: always()

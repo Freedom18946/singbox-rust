@@ -1,5 +1,5 @@
-id: p1_rust_core_http_via_socks
-title: core egress via socks inbound to local upstream
+id: p1_mixed_inbound_dual_protocol
+title: mixed inbound detects socks5 and http connect on same port
 priority: p1
 kernel_mode: both
 env_class: strict
@@ -11,7 +11,7 @@ bootstrap:
     command: ./target/debug/app
     args:
       - -c
-      - labs/interop-lab/configs/rust_core_clash_api.json
+      - labs/interop-lab/configs/rust_core_clash_api_mixed.json
       - run
     startup_timeout_ms: 15000
     ready_path: /version
@@ -23,7 +23,7 @@ bootstrap:
     args:
       - run
       - -c
-      - labs/interop-lab/configs/go_core_clash_api_dataplane.json
+      - labs/interop-lab/configs/go_core_clash_api_mixed.json
     startup_timeout_ms: 15000
     ready_path: /version
     api:
@@ -36,34 +36,35 @@ gui_sequence:
     path: /version
     expect_status: 200
 upstream_topology:
-  - name: local_http
-    kind: http_echo
+  - name: local_tcp
+    kind: tcp_echo
     bind: 127.0.0.1:0
 traffic_plan:
-  - kind: http_get
-    name: via_socks_http_echo
-    url: "{{upstream.local_http}}/v1/echo?scene=rust-core"
+  # SOCKS5 through mixed port - tests byte 0x05 detection
+  - kind: tcp_round_trip
+    name: via_mixed_socks5
+    addr: "{{upstream.local_tcp}}"
+    payload: mixed-socks5-detect
     proxy: socks5://127.0.0.1:11801
-    expect_status: 200
-  - kind: http_get_latency
-    name: via_socks_http_echo_p95
-    url: "{{upstream.local_http}}/v1/echo?scene=rust-core-latency"
-    proxy: socks5://127.0.0.1:11801
-    expect_status: 200
-    warmup: 3
-    samples: 20
-    timeout_ms: 3000
-    max_p95_ms: 500
+  # HTTP CONNECT through mixed port - tests non-SOCKS byte detection
+  - kind: tcp_round_trip
+    name: via_mixed_http_connect
+    addr: "{{upstream.local_tcp}}"
+    payload: mixed-http-connect-detect
+    proxy: http://127.0.0.1:11801
 assertions:
   - key: http.version.status
     op: eq
     expected: 200
-  - key: traffic.via_socks_http_echo.success
+  - key: traffic.via_mixed_socks5.success
     op: eq
     expected: true
-  - key: traffic.via_socks_http_echo_p95.success
+  - key: traffic.via_mixed_http_connect.success
     op: eq
     expected: true
+  - key: errors.count
+    op: eq
+    expected: 0
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:

@@ -3,11 +3,6 @@
     "level": "warn"
   },
   "experimental": {
-    "cache_file": {
-      "enabled": true,
-      "path": "labs/interop-lab/artifacts/selector-switch-go-cache.db",
-      "cache_id": "interop-selector-switch-go"
-    },
     "clash_api": {
       "external_controller": "127.0.0.1:9090",
       "secret": "test-secret"
@@ -23,22 +18,23 @@
   ],
   "outbounds": [
     {
-      "type": "selector",
-      "tag": "my-group",
-      "outbounds": ["block", "direct"],
-      "default": "block"
+      "type": "direct",
+      "tag": "direct"
     },
     {
       "type": "block",
       "tag": "block"
-    },
-    {
-      "type": "direct",
-      "tag": "direct"
     }
   ],
   "route": {
-    "rules": [],
-    "final": "my-group"
+    "rules": [
+      {
+        "domain": [
+          "localhost"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "final": "block"
   }
 }
