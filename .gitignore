@@ -209,17 +209,11 @@ instruction/
 *.tun
 *.tap
 
-# interop-lab generated run artifacts (keep tracked historical fixtures intact)
-labs/interop-lab/artifacts/l18_dual_kernel/
-labs/interop-lab/artifacts/l6_local_harness_smoke/*/
-labs/interop-lab/artifacts/p0_clash_api_contract/*/
-labs/interop-lab/artifacts/p0_clash_api_contract_strict/*/
-labs/interop-lab/artifacts/p0_subscription_base64/*/
-labs/interop-lab/artifacts/p0_subscription_json/*/
-labs/interop-lab/artifacts/p0_subscription_yaml/*/
-labs/interop-lab/artifacts/p1_cli_generate_uuid_format/*/
-labs/interop-lab/artifacts/p2_protocol_unit_vmess/*/
-labs/interop-lab/artifacts/p2_subscription_truncated_base64/*/
+# interop-lab generated run artifacts (keep tracked top-level summaries intact)
+# Wildcard covers all per-case run directories; already-tracked files unaffected.
+labs/interop-lab/artifacts/*/
+!labs/interop-lab/artifacts/trend_history.jsonl
+!labs/interop-lab/artifacts/trend_summary.json
 
 # Temporary routing tables or rule files
 routes.tmp
@@ -287,3 +281,6 @@ vgcore.*
 # Memory dumps
 *.dmp
 *.mdmp
+
+# Local reports / meeting notes
+reports/
