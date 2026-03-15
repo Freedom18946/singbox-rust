@@ -6797,7 +6797,44 @@ L2.8.4-6 Handlers + WebSocket:
   - `agents-only/workpackage_latest.md`
   - `reports/L18_REPLACEMENT_CERTIFICATION.md`
 
-**结果**: 成功 — 仓库已切换到适合打包上传做静态审计的状态；L18 当前最新结论为“Phase 2 clean PASS + nightly 24h full PASS”，`certify` 暂未形成有效新证据
+**结果**: 成功 — 仓库已切换到适合打包上传做静态审计的状态；L18 当前最新结论为”Phase 2 clean PASS + nightly 24h full PASS”，`certify` 暂未形成有效新证据
 **备注**: 下一步优先做静态审议意见 triage，不再默认继续发车长链路
+
+### [2026-03-15 14:00] Agent: Claude Opus 4.6
+
+**任务**: 实现 Sniff Phase A — `Decision::Sniff` 规则动作集成（DIV-C-003 关闭）
+**变更**:
+- `sb-core/src/router/engine.rs` — 新增 `Decision::Sniff` 变体，”already sniffed” 守卫
+- `sb-adapters/src/inbound/sniff_util.rs` — 新增 `SniffedStream` 包装器
+- `sb-adapters/src/inbound/{socks,http,tun,endpoint}.rs` — 处理 Sniff 决策
+- `sb-core/src/router/sniff.rs` — 新增 `skip_sniff()` for SMTP/IMAP/POP3
+- `labs/interop-lab/` — 新增 `p1_sniff_rule_action_tls` both-mode case
+**结果**: 成功 — DIV-C-003 CLOSED, BHV-DP-014 both-case 注册, 覆盖率 52/60 (86.7%)
+
+### [2026-03-15 16:00] Agent: Claude Opus 4.6
+
+**任务**: 实现 Sniff Phase B — QUIC Initial 包解密 SNI 提取
+**变更**:
+- `crates/sb-core/Cargo.toml` — 新增 `aes = “0.8”` 依赖
+- `crates/sb-core/src/router/sniff_quic.rs` — 新增 ~280 行 QUIC 解密模块
+  - HKDF 密钥派生（v1/v2/Draft-29 三组 salt）
+  - AES-ECB 头部保护移除 + AES-128-GCM 载荷解密
+  - CRYPTO 帧解析重组 + TLS ClientHello SNI 提取
+  - 10 个测试（3 Go parity 测试向量 + 7 单元测试）
+- `crates/sb-core/src/router/mod.rs` — 新增 `mod sniff_quic`
+- `crates/sb-core/src/router/sniff.rs` — `sniff_datagram()` 接入 `sniff_quic_sni()`, 删除废弃 `sniff_quic_initial_extended()`
+**结果**: 成功 — sb-core 504 测试全过, clippy 0 warnings, interop-lab 29 测试全过
+**备注**: Multi-packet QUIC reassembly (Chrome) 不在此次范围
+
+### [2026-03-15 17:00] Agent: Claude Opus 4.6
+
+**任务**: 关闭 L22 阶段，归档所有规划文档
+**变更**:
+- `agents-only/planning/` → `agents-only/archive/L22/` — 移动 5 个规划文档
+- `agents-only/archive/logs/workpackage_L22_closed.md` — workpackage 快照
+- `agents-only/active_context.md` — 重写为”无活跃工作包”
+- `agents-only/workpackage_latest.md` — L22 压缩为一行, 清空活跃段
+- `CLAUDE.md` — 阶段更新为 “L1-L22 全部 Closed”
+**结果**: 成功 — L22 正式关闭, 最终分数 52/60 (86.7%), 16 个 both-case, Sniff Phase A+B
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
