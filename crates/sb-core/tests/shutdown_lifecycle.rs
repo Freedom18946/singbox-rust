@@ -95,10 +95,9 @@ async fn open_connect_tunnel(
 
     let response_text = String::from_utf8_lossy(&response);
     if !response_text.starts_with("HTTP/1.1 200") {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("unexpected CONNECT response: {response_text}"),
-        ));
+        return Err(io::Error::other(format!(
+            "unexpected CONNECT response: {response_text}"
+        )));
     }
 
     Ok(stream)

@@ -84,7 +84,7 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
 
     // Initialize admin debug server if enabled (separate from core admin)
     #[cfg(all(feature = "observe", feature = "admin_debug"))]
-    crate::admin_debug::init(None).await;
+    crate::admin_debug::init(None);
 
     // Build ConfigInputs (entries collected dynamically in run_supervisor)
     let config_inputs = app::run_engine::ConfigInputs {

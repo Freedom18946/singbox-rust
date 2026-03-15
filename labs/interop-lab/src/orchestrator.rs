@@ -657,6 +657,7 @@ async fn run_traffic_plan_with_kernel_control(
     Ok(outputs)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_command_start_action(
     name: &str,
     handle: &str,
@@ -836,6 +837,7 @@ async fn execute_command_wait_action(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_api_http_action(
     name: &str,
     method: &str,
@@ -1466,17 +1468,13 @@ async fn execute_tcp_drain_during_shutdown_action(
     // The kernel may have already completed shutdown by now; the key question
     // is whether data sent during shutdown was properly relayed.
     let drain_payload = b"drain-verify";
-    let drain_echo_ok = match timeout(Duration::from_millis(hold_ms.max(500)), async {
+    let drain_echo_ok = matches!(timeout(Duration::from_millis(hold_ms.max(500)), async {
         stream.write_all(drain_payload).await?;
         let mut buf = vec![0u8; drain_payload.len()];
         stream.read_exact(&mut buf).await?;
         Ok::<bool, std::io::Error>(buf == drain_payload)
     })
-    .await
-    {
-        Ok(Ok(true)) => true,
-        _ => false,
-    };
+    .await, Ok(Ok(true)));
 
     match kernel_result {
         Ok(kernel_detail) => TrafficResult {

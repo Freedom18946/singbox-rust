@@ -40,10 +40,10 @@ mod imp {
         Ok(())
     }
 
-    pub async fn init_and_listen() {
+    pub fn init_and_listen() {
         // Metrics exporter integration point - admin_debug provides HTTP metrics endpoint
         #[cfg(feature = "admin_debug")]
-        crate::admin_debug::init(None).await;
+        crate::admin_debug::init(None);
     }
 }
 
@@ -69,8 +69,7 @@ mod imp {
         Ok(())
     }
 
-    #[allow(clippy::unused_async)] // Conditional: async needed for observe feature
-    pub async fn init_and_listen() {
+    pub fn init_and_listen() {
         // NOP for minimal
     }
 }

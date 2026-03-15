@@ -70,7 +70,7 @@ pub mod middleware;
 // while http/ contains redirect policies and other HTTP utilities
 
 /// Initialize admin debug server if enabled
-pub async fn init(addr: Option<&str>) {
+pub fn init(addr: Option<&str>) {
     let bind_addr = match addr {
         Some(a) => a.to_string(),
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
