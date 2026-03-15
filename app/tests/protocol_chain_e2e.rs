@@ -306,6 +306,8 @@ async fn test_socks5_to_direct_chain() {
         domain_strategy: None,
         udp_timeout: None,
         stats: None,
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {
@@ -426,6 +428,8 @@ async fn test_http_to_socks5_chain() {
         allow_private_network: true,
         stats: None,
         active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {

@@ -6837,4 +6837,58 @@ L2.8.4-6 Handlers + WebSocket:
 - `CLAUDE.md` — 阶段更新为 “L1-L22 全部 Closed”
 **结果**: 成功 — L22 正式关闭, 最终分数 52/60 (86.7%), 16 个 both-case, Sniff Phase A+B
 
+### [2026-03-15 18:00] Agent: Claude Sonnet 4.6
+
+**任务**: 后 L22 补丁 — 4 个增强任务（commit 699b35a）
+**变更**:
+- **Task 1 (QUIC multi-packet reassembly)**: `crates/sb-core/src/router/sniff_quic.rs` — 新增 `QuicReassembly` 状态机，`sniff_quic_sni_multi()` 函数，支持 Chrome 分包 QUIC Initial CRYPTO 帧重组
+- **Task 2 (OverrideDestination)**: `sb-core/src/router/engine.rs` — `Decision::Sniff` 变体新增 `override_destination: bool` 字段；影响所有 inbound sniff 调用点
+- **Task 3 (UDP datagram sniff)**: `sb-adapters/src/inbound/socks.rs` — SOCKS5 UDP handler 中通过 rule action 触发 UDP datagram sniff，对齐 TCP sniff 行为
+- **Task 4 (e2e_proxy_flow 编译修复)**: `labs/interop-lab/tests/e2e_proxy_flow.rs` — 补充缺失的 `active_connections` 字段，修复结构体构造编译错误
+**结果**: 成功 — 所有变更已提交，文档同步更新
+
+---
+
+### 2026-03-16 L23 Tier 1 实施（T3→T2→T1）
+
+**操作者**: Claude Opus 4.6
+**阶段**: L23 — TUN / Sniff 运行时补全
+**范围**: Tier 1 全部 3 个任务
+
+**T3: TUN sniff override_destination** (~15 行)
+- `crates/sb-adapters/src/inbound/tun/mod.rs` — `matches!()` → `if let Decision::Sniff { override_destination }` 解构
+- sniff 成功时 `Endpoint::Domain(sniffed_host, port)` 替换 `Endpoint::Ip`
+
+**T2: `sniff:true` 自动注入** (~60 行, 12 文件)
+- `sb-core/src/router/mod.rs` — `RouteCtx` 新增 `inbound_sniff`, `inbound_sniff_override`
+- `sb-core/src/router/engine.rs` — `decide()` 开头: `if inbound_sniff && protocol.is_none()` → `Decision::Sniff`
+- `sb-config/src/ir/mod.rs` — `InboundIR` 新增 `sniff_override_destination: bool`
+- `sb-core/src/adapter/mod.rs` — `InboundParam` 新增 `sniff_override_destination: bool`
+- `sb-core/src/adapter/bridge.rs` — IR→Param 映射
+- `sb-config/src/validator/v2.rs` — V2 parser 解析 `sniff_override_destination`
+- `sb-adapters/src/inbound/{http,socks/mod,mixed,tun/mod}.rs` — Config 加 sniff 字段 + RouteCtx 传递
+- `sb-adapters/src/register.rs` + `app/src/inbound_starter.rs` — Param→Config 传递
+- 6 个测试文件补 sniff 字段
+
+**T1: TUN UDP 转发** (~200 行, 2 文件)
+- 新文件 `crates/sb-adapters/src/inbound/tun/udp.rs`:
+  - `UdpNatTable` (DashMap-based) + `UdpFourTuple` + `UdpSession`
+  - `forward()`: 快路径(existing session) + 慢路径(bind+connect+spawn relay)
+  - `spawn_reverse_relay()`: outbound→TUN, 构造 raw IP/UDP 包, `TunWriter::write_packet()`
+  - `build_ipv4_udp()`: IPv4+UDP packet construction, macOS AF_INET prefix / Linux PI header
+  - `ip_checksum()`: RFC 1071
+  - `spawn_eviction_task()`: 60s 周期清理过期 session (默认 5min TTL)
+- `crates/sb-adapters/src/inbound/tun/mod.rs`:
+  - `mod udp` 注册, `UdpNatTable` 加入 `TunInbound` struct
+  - macOS UDP 分支: 提取完整 payload → `udp_nat.forward()` 替代 `trace!("drop")`
+  - `run()` 启动时 spawn eviction task
+
+**验证**:
+- `cargo check --workspace --all-features --all-targets` ✅
+- `cargo clippy -p sb-adapters --all-features -- -D warnings` ✅
+- `cargo test -p sb-core --lib` ✅ 504 passed
+- `cargo test -p sb-adapters --all-features --lib -- tun::udp` ✅ 2 passed
+
+**结果**: 成功 — L23 Tier 1 全部完成
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->

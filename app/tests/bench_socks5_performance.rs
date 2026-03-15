@@ -107,6 +107,8 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
         domain_strategy: None,
         udp_timeout: None,
         stats: None,
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {

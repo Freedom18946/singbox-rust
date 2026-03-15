@@ -43,6 +43,10 @@ pub struct MixedInboundConfig {
     pub udp_timeout: Option<Duration>,
     pub domain_strategy: Option<crate::inbound::socks::DomainStrategy>,
     pub stats: Option<Arc<StatsManager>>,
+    /// Inbound sniff configuration (Go parity: sniff_enabled).
+    pub sniff: bool,
+    /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
+    pub sniff_override_destination: bool,
 }
 
 pub async fn serve_mixed(
@@ -236,6 +240,8 @@ async fn handle_socks(
         udp_timeout: cfg.udp_timeout,
         domain_strategy: cfg.domain_strategy,
         stats: cfg.stats.clone(),
+        sniff: cfg.sniff,
+        sniff_override_destination: cfg.sniff_override_destination,
     };
 
     let mut stream = PeekedStream::new(cli, first_byte);
@@ -302,6 +308,8 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             udp_timeout: cfg.udp_timeout,
             domain_strategy: cfg.domain_strategy,
             stats: cfg.stats.clone(),
+            sniff: cfg.sniff,
+            sniff_override_destination: cfg.sniff_override_destination,
         };
         let mut stream = PeekedStream::new(tls_stream, first);
         crate::inbound::socks::serve_conn(&mut stream, peer, &socks_cfg, None).await
@@ -322,6 +330,8 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             allow_private_network: cfg.allow_private_network,
             stats: cfg.stats.clone(),
             active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            sniff: cfg.sniff,
+            sniff_override_destination: cfg.sniff_override_destination,
         };
         let stream = PeekedStream::new(tls_stream, first);
         crate::inbound::http::serve_conn(stream, peer, &http_cfg)
@@ -349,6 +359,8 @@ async fn handle_http(
         allow_private_network: cfg.allow_private_network,
         stats: cfg.stats.clone(),
         active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        sniff: cfg.sniff,
+        sniff_override_destination: cfg.sniff_override_destination,
     };
 
     let stream = PeekedStream::new(cli, first_byte);

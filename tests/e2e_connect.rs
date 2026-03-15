@@ -69,7 +69,7 @@ async fn start_http_inbound(listen: SocketAddr, router: RouterHandle, out: Outbo
 
 async fn start_socks_inbound(listen: SocketAddr, router: RouterHandle, out: OutboundRegistryHandle) {
     let (tx, rx) = mpsc::channel(1);
-    let cfg = SocksInboundConfig { listen, udp_bind: None, router, outbounds: out, udp_nat_ttl: Duration::from_secs(60) };
+    let cfg = SocksInboundConfig { listen, udp_bind: None, router, outbounds: out, udp_nat_ttl: Duration::from_secs(60), sniff: false, sniff_override_destination: false };
     tokio::spawn(async move { let _ = serve_socks(cfg, rx).await; });
     tokio::time::sleep(Duration::from_millis(100)).await;
     drop(tx);

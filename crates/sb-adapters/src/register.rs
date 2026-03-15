@@ -1244,6 +1244,8 @@ fn build_http_inbound(
         allow_private_network: param.allow_private_network,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        sniff: param.sniff,
+        sniff_override_destination: param.sniff_override_destination,
     };
     Some(Arc::new(HttpInboundAdapter::new(cfg)))
 }
@@ -1702,6 +1704,8 @@ fn build_socks_inbound(
         udp_timeout: param.udp_timeout,
         domain_strategy,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        sniff: param.sniff,
+        sniff_override_destination: param.sniff_override_destination,
     };
     Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(
         cfg,
@@ -1749,6 +1753,8 @@ fn build_mixed_inbound(
         udp_timeout: param.udp_timeout,
         domain_strategy,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        sniff: param.sniff,
+        sniff_override_destination: param.sniff_override_destination,
     };
     Some(Arc::new(MixedInboundAdapter::new(cfg)))
 }
@@ -2352,6 +2358,8 @@ fn build_tun_inbound(
         ctx.outbounds.clone(),
         param.tag.clone(),
         stats,
+        param.sniff,
+        param.sniff_override_destination,
     )))
 }
 

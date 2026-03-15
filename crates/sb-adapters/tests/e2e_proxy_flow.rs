@@ -103,6 +103,8 @@ async fn start_socks5_inbound(
         domain_strategy: None,
         udp_timeout: None,
         stats: None,
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {
@@ -146,6 +148,8 @@ async fn start_http_inbound(
         allow_private_network: true,
         stats: None,
         active_connections: Arc::new(AtomicU64::new(0)),
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {

@@ -436,6 +436,9 @@ pub struct InboundIR {
     /// 启用流量嗅探。
     #[serde(default)]
     pub sniff: bool,
+    /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
+    #[serde(default)]
+    pub sniff_override_destination: bool,
     /// Enable UDP support.
     /// 启用 UDP 支持。
     #[serde(default)]

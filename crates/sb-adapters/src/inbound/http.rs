@@ -172,6 +172,10 @@ pub struct HttpProxyConfig {
     pub stats: Option<Arc<StatsManager>>,
     /// Active connection gauge exposed to supervisor graceful shutdown.
     pub active_connections: Arc<AtomicU64>,
+    /// Inbound sniff configuration (Go parity: sniff_enabled).
+    pub sniff: bool,
+    /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
+    pub sniff_override_destination: bool,
 }
 
 /// Ready signal notifier - sends when socket binding completes
@@ -416,6 +420,8 @@ where
         transport: Transport::Tcp,
         network: "tcp",
         inbound_tag: cfg.tag.as_deref(),
+        inbound_sniff: cfg.sniff,
+        inbound_sniff_override: cfg.sniff_override_destination,
         ..Default::default()
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);

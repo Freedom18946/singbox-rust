@@ -1387,7 +1387,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     match k.as_str() {
                         // Go parity: include 'tag' for inbound identification
                         "tag" | "name" | "type" | "listen" | "port" | "udp" | "network"
-                        | "sniff" | "override_address" | "override_host" | "override_port"
+                        | "sniff" | "sniff_override_destination" | "override_address" | "override_host" | "override_port"
                         | "interface_name" | "inet4_address" | "inet6_address" | "auto_route"
                         | "auth" | "users" | "cert" | "key" | "congestion_control"
                         | "salamander" | "obfs" | "up_mbps" | "down_mbps" => {}
@@ -1909,6 +1909,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             }
             let port = port.unwrap_or(1080);
             let sniff = i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false);
+            let sniff_override_destination = i
+                .get("sniff_override_destination")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             // Network selection: if network == "udp", set udp=true; if "tcp" or missing, false
             let udp = if let Some(net) = i.get("network").and_then(|v| v.as_str()) {
                 net.eq_ignore_ascii_case("udp")
@@ -1956,6 +1960,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 listen,
                 port,
                 sniff,
+                sniff_override_destination,
                 udp,
                 udp_timeout: i
                     .get("udp_timeout")

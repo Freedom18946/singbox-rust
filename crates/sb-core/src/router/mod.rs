@@ -158,6 +158,10 @@ pub struct RouteCtx<'a> {
     pub outbound_tag: Option<&'a str>,
     /// Sniffed protocol (e.g. "tls", "http", "ssh"). Set after sniffing.
     pub protocol: Option<&'a str>,
+    /// If true, inbound config requests automatic sniffing (Go parity: sniff_enabled).
+    pub inbound_sniff: bool,
+    /// If true, override destination with sniffed hostname (Go parity: sniff_override_destination).
+    pub inbound_sniff_override: bool,
 }
 
 impl<'a> Default for RouteCtx<'a> {
@@ -187,6 +191,8 @@ impl<'a> Default for RouteCtx<'a> {
             ip_accept_any: None,
             outbound_tag: None,
             protocol: None,
+            inbound_sniff: false,
+            inbound_sniff_override: false,
         }
     }
 }

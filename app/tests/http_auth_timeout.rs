@@ -69,6 +69,8 @@ async fn test_http_auth_timeout() -> Result<()> {
         allow_private_network: true,
         stats: None,
         active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {

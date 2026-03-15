@@ -178,6 +178,8 @@ pub struct InboundParam {
     pub port: u16,
     pub basic_auth: Option<Credentials>,
     pub sniff: bool,
+    /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
+    pub sniff_override_destination: bool,
     /// Enable UDP on inbound (for protocols that support it)
     pub udp: bool,
     /// Optional fixed override destination (used by direct inbound)
@@ -297,6 +299,7 @@ impl Default for InboundParam {
             port: 0,
             basic_auth: None,
             sniff: false,
+            sniff_override_destination: false,
             udp: false,
             override_host: None,
             override_port: None,

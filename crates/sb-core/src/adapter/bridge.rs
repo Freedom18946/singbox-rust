@@ -376,6 +376,7 @@ fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
         port: ib.port,
         basic_auth: ib.basic_auth.clone(),
         sniff: ib.sniff,
+        sniff_override_destination: ib.sniff_override_destination,
         udp: ib.udp,
         override_host: ib.override_host.clone(),
         override_port: ib.override_port,

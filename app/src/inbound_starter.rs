@@ -344,6 +344,8 @@ fn start_http_inbound(
                 set_system_proxy: ib.set_system_proxy,
                 allow_private_network: ib.allow_private_network,
                 active_connections: Arc::new(AtomicU64::new(0)),
+                sniff: ib.sniff,
+                sniff_override_destination: ib.sniff_override_destination,
             };
             let listen_str_log = listen_str.clone();
             let join = tokio::spawn(async move {
@@ -417,6 +419,8 @@ fn start_socks_inbound(
             users: ib.users.clone(),
             udp_timeout,
             domain_strategy,
+            sniff: ib.sniff,
+            sniff_override_destination: ib.sniff_override_destination,
         };
         let listen_str_log = listen_str.clone();
         let join = tokio::spawn(async move {
@@ -511,6 +515,8 @@ fn start_mixed_inbound(
                 allow_private_network: ib.allow_private_network,
                 udp_timeout,
                 domain_strategy,
+                sniff: ib.sniff,
+                sniff_override_destination: ib.sniff_override_destination,
             };
             let listen_str_log = listen_str.clone();
             let join = tokio::spawn(async move {

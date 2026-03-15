@@ -27,6 +27,10 @@ use sb_core::services::v2ray_api::StatsManager;
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
 
+// UDP NAT table
+mod udp;
+use udp::{UdpFourTuple, UdpNatTable};
+
 // Platform hooks for routing configuration
 pub mod platform;
 use platform::{TunPlatformConfig, TunPlatformHook};
@@ -216,6 +220,12 @@ pub struct TunInbound {
     cfg: TunInboundConfig,
     inbound_tag: Option<String>,
     stats: Option<Arc<StatsManager>>,
+    /// Inbound sniff configuration (Go parity: sniff_enabled)
+    sniff: bool,
+    /// Override destination with sniffed hostname (Go parity: sniff_override_destination)
+    sniff_override_destination: bool,
+    /// UDP NAT table for TUN UDP forwarding
+    udp_nat: Arc<UdpNatTable>,
     /// Userspace network stack
     stack: Arc<tokio::sync::Mutex<TunStack>>,
     /// Receiver for packets from stack to TUN
@@ -231,6 +241,8 @@ impl TunInbound {
         outbounds: Arc<OutboundRegistryHandle>,
         inbound_tag: Option<String>,
         stats: Option<Arc<StatsManager>>,
+        sniff: bool,
+        sniff_override_destination: bool,
     ) -> Self {
         // Create a dummy channel for now; actual channel will be created in run() or passed in
         // For simplicity, we initialize TunStack here but it might need reconfiguration.
@@ -242,6 +254,7 @@ impl TunInbound {
         let stack = TunStack::new(cfg.mtu as usize, tx);
         let platform_hook = platform::create_platform_hook();
         let session_manager = Arc::new(TcpSessionManager::new());
+        let udp_nat = Arc::new(UdpNatTable::new(None));
 
         Self {
             router,
@@ -250,6 +263,9 @@ impl TunInbound {
             cfg,
             inbound_tag,
             stats,
+            sniff,
+            sniff_override_destination,
+            udp_nat,
             stack: Arc::new(tokio::sync::Mutex::new(stack)),
             stack_rx: Arc::new(tokio::sync::Mutex::new(rx)),
             platform_hook,
@@ -339,6 +355,10 @@ impl TunInbound {
                 e
             );
         }
+
+        // Spawn UDP NAT eviction task
+        udp::spawn_eviction_task(Arc::clone(&self.udp_nat));
+
         // Spawn test-only memory feeder pump
         // Spawn test-only memory feeder pump
         #[cfg(test)]
@@ -523,12 +543,16 @@ impl TunInbound {
                                                 protocol: sniff_proto,
                                                 wifi_ssid: wifi_ssid.as_deref(),
                                                 wifi_bssid: wifi_bssid.as_deref(),
+                                                inbound_tag: self.inbound_tag.as_deref(),
+                                                inbound_sniff: self.sniff,
+                                                inbound_sniff_override: self.sniff_override_destination,
                                                 ..Default::default()
                                             };
                                             let mut decision = self.router.decide(&route_ctx);
 
                                             // Handle Decision::Sniff: re-decide with sniffed metadata
-                                            if matches!(decision, Decision::Sniff { .. }) {
+                                            let mut override_host: Option<String> = None;
+                                            if let Decision::Sniff { override_destination } = decision {
                                                 if sniff_proto.is_some() {
                                                     // Already sniffed — re-decide should skip Sniff rules
                                                     // The guard in engine.rs handles this via protocol.is_some()
@@ -537,6 +561,15 @@ impl TunInbound {
                                                 // Safety net
                                                 if matches!(decision, Decision::Sniff { .. }) {
                                                     decision = Decision::Direct;
+                                                }
+                                                // Apply override_destination: replace IP target with sniffed hostname
+                                                if override_destination {
+                                                    if let Some(ref h) = sniff_host {
+                                                        if !h.is_empty() {
+                                                            tracing::debug!(sniffed_host = %h, "tun: override destination with sniffed host");
+                                                            override_host = Some(h.clone());
+                                                        }
+                                                    }
                                                 }
                                             }
 
@@ -560,8 +593,12 @@ impl TunInbound {
                                                 )
                                             });
 
-                                            // Dial Outbound
-                                            let ep = Endpoint::Ip(SocketAddr::new(ip, port));
+                                            // Dial Outbound — use sniffed domain when override_destination is active
+                                            let ep = if let Some(ref oh) = override_host {
+                                                Endpoint::Domain(oh.clone(), port)
+                                            } else {
+                                                Endpoint::Ip(SocketAddr::new(ip, port))
+                                            };
                                             match self
                                                 .outbounds
                                                 .connect_tcp(&selected_target, ep)
@@ -601,10 +638,50 @@ impl TunInbound {
                                             }
                                         }
                                     }
+                                    sys_macos::L4::Udp => {
+                                        // Extract full UDP payload from raw buffer
+                                        let udp_payload = {
+                                            let ip_start = 4; // AF prefix
+                                            let ip_version = buf[ip_start] >> 4;
+                                            if ip_version == 4 {
+                                                let ihl = (buf[ip_start] & 0x0f) as usize * 4;
+                                                let payload_offset = ip_start + ihl + 8; // IP hdr + UDP hdr (8 bytes)
+                                                if payload_offset < readn {
+                                                    Some(&buf[payload_offset..readn])
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        };
+
+                                        if let Some(payload) = udp_payload {
+                                            let key = UdpFourTuple {
+                                                src_ip: pkt.src_ip,
+                                                src_port: pkt.src_port,
+                                                dst_ip: pkt.dst_ip,
+                                                dst_port: pkt.dst_port,
+                                            };
+                                            trace!(
+                                                "tun udp {}:{} -> {}:{} len={}",
+                                                pkt.src_ip, pkt.src_port,
+                                                pkt.dst_ip, pkt.dst_port,
+                                                payload.len()
+                                            );
+                                            if let Err(e) = self.udp_nat.forward(
+                                                key,
+                                                payload,
+                                                writer.clone(),
+                                            ).await {
+                                                trace!("tun udp forward error: {}", e);
+                                            }
+                                        }
+                                    }
                                     _ => {
-                                        // UDP/Other - Ignore for now
+                                        // Other protocols - skip
                                         trace!(
-                                            "tun pkt {:?} -> {}:{} | skip (UDP/Other)",
+                                            "tun pkt {:?} -> {}:{} | skip (other)",
                                             pkt.proto,
                                             pkt.dst_ip,
                                             pkt.dst_port
@@ -818,6 +895,8 @@ impl TunInbound {
             Arc::new(sb_core::outbound::OutboundRegistryHandle::default()),
             None,
             None,
+            false,
+            false,
         ))
     }
 
@@ -1583,7 +1662,7 @@ mod tests {
         let cfg = TunInboundConfig::default();
         let router = create_dummy_router();
         let outbounds = Arc::new(sb_core::outbound::OutboundRegistryHandle::default());
-        let inbound = TunInbound::new(cfg, router, outbounds, None, None);
+        let inbound = TunInbound::new(cfg, router, outbounds, None, None, false, false);
 
         // Run for a short time to verify it starts without error
         let _ = tokio::time::timeout(std::time::Duration::from_millis(100), inbound.run()).await;

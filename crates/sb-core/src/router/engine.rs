@@ -859,6 +859,15 @@ impl RouterHandle {
             }
         }
 
+        // 1.5 Inbound sniff auto-injection (Go parity: metadata.InboundOptions.SniffEnabled)
+        // If the inbound config has sniff:true and we haven't sniffed yet, return Sniff decision
+        // before evaluating any rules. This mirrors Go's pre-rule actionSniff() call.
+        if ctx.inbound_sniff && rules_ctx.protocol.is_none() {
+            return crate::router::rules::Decision::Sniff {
+                override_destination: ctx.inbound_sniff_override,
+            };
+        }
+
         // 2. Iterate composite rules
         for rule in &idx.rules {
             if rule.matches(&rules_ctx) {
