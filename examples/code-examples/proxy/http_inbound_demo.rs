@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     eprintln!("http inbound demo on {}", bind);

@@ -50,7 +50,18 @@ fn start_echo_server() -> Option<SocketAddr> {
 
 async fn start_http_inbound(listen: SocketAddr, router: RouterHandle, out: OutboundRegistryHandle) {
     let (tx, rx) = mpsc::channel(1);
-    let cfg = HttpProxyConfig { listen, router, outbounds: out };
+    let cfg = HttpProxyConfig {
+        tag: None,
+        listen,
+        router,
+        outbounds: out,
+        tls: None,
+        users: None,
+        set_system_proxy: false,
+        allow_private_network: true,
+        stats: None,
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    };
     tokio::spawn(async move { let _ = serve_http(cfg, rx).await; });
     tokio::time::sleep(Duration::from_millis(100)).await;
     drop(tx); // 不测试热更新

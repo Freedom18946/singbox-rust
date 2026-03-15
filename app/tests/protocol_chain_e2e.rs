@@ -425,6 +425,7 @@ async fn test_http_to_socks5_chain() {
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     tokio::spawn(async move {

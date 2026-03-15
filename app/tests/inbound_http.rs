@@ -62,6 +62,7 @@ async fn start_http_inbound(
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     tokio::spawn(async move {
