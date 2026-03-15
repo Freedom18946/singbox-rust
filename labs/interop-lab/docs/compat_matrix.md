@@ -86,10 +86,11 @@
 | `BHV-DP-008` | `Block outbound rejects connection` | `app/tests/direct_block_outbound_test.rs::test_block_outbound_always_fails` |
 | `BHV-DP-012` | `Domain rules match FQDN` | `app/tests/parity_spec_routing.rs::parity_spec_domain_rules_match_fqdn_before_default` |
 | `BHV-DP-013` | `IP-CIDR rules match addresses` | `app/tests/parity_spec_routing.rs::parity_spec_ip_cidr_rules_match_addresses_before_default` |
-| `BHV-DP-014` | `Sniff detects protocol from payload` | `app/tests/router_sniff_sni_alpn.rs`, `crates/sb-core/tests/tun_sni_routing.rs` |
+| `BHV-DP-014` | `Sniff detects protocol from payload` | `app/tests/router_sniff_sni_alpn.rs`, `crates/sb-core/tests/tun_sni_routing.rs`, `labs/interop-lab/cases/p1_sniff_rule_action_tls.yaml` |
 | `BHV-DP-016` | `FakeIP pool allocates addresses` | `labs/interop-lab/cases/p1_fakeip_dns_query_contract.yaml`, `crates/sb-core/tests/router_fakeip_integration.rs` |
 | `BHV-DP-017` | `FakeIP cache flush via API` | `labs/interop-lab/cases/p1_fakeip_cache_flush_contract.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_flush_fakeip_cache` |
 | `BHV-DP-018` | `DNS result caching and TTL` | `labs/interop-lab/cases/p1_dns_cache_ttl_via_socks.yaml`, `crates/sb-core/tests/dns_cache.rs`, `crates/sb-core/tests/dns_cache_basic.rs`, `crates/sb-core/tests/dns_steady.rs` |
+| `BHV-LC-005` | `Inbound hot-reload on config change` | `labs/interop-lab/cases/p1_inbound_hot_reload_sighup.yaml` |
 | `BHV-LC-006` | `State preservation across reload` | `labs/interop-lab/cases/p1_selector_switch_traffic_replay.yaml`, `crates/sb-core/tests/supervisor_reload_state.rs::selector_selection_survives_reload_via_cache_file` |
 | `BHV-LC-007` | `Graceful shutdown drains connections` | `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_waits_for_http_connection_to_drain` |
 | `BHV-LC-008` | `Connection close notification` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_closes_on_server_shutdown` |

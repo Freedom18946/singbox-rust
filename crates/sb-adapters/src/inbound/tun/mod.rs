@@ -46,6 +46,8 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
             Ok((RouteTarget::Kind(OutboundKind::Block), "block".to_string()))
         }
         Decision::Proxy(Some(tag)) => Ok((RouteTarget::Named(tag.clone()), tag.clone())),
+        // Sniff should have been resolved before calling this; safety net → direct
+        Decision::Sniff => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
         unsupported => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             format!(
@@ -482,29 +484,28 @@ impl TunInbound {
                                             use std::time::{Duration, Instant};
                                             let dst = Address::Ip(SocketAddr::new(ip, port));
 
-                                            // Sniffing
-                                            let sniff_host = if let Some(head) = &pkt.payload_head {
-                                                if port == 443 {
-                                                    if let Some(sni) = sb_core::router::sniff::extract_sni_from_tls_client_hello(head) {
+                                            // Sniffing: use full sniff_stream for better coverage
+                                            let sniff_outcome = if let Some(head) = &pkt.payload_head {
+                                                if !sb_core::router::sniff::skip_sniff(port) {
+                                                    let outcome = sb_core::router::sniff::sniff_stream(head);
+                                                    if outcome.protocol.is_some() {
                                                         SNI_OK.fetch_add(1, Ordering::Relaxed);
-                                                        Some(sni)
-                                                    } else {
-                                                        SNI_FAIL.fetch_add(1, Ordering::Relaxed);
-                                                        None
                                                     }
-                                                } else if port == 80 {
-                                                    sb_core::router::sniff::extract_http_host_from_request(head)
+                                                    Some(outcome)
                                                 } else {
                                                     None
                                                 }
                                             } else {
                                                 None
                                             };
+                                            let sniff_host = sniff_outcome.as_ref().and_then(|o| o.host.clone());
 
                                             let host_str = match sniff_host.as_ref() {
                                                 Some(s) if !s.is_empty() => s.clone(),
                                                 _ => format!("{}:{}", ip, port),
                                             };
+
+                                            let sniff_proto = sniff_outcome.as_ref().and_then(|o| o.protocol);
 
                                             let (wifi_ssid, wifi_bssid) = if let Some(info) =
                                                 sb_platform::wifi::get_wifi_info()
@@ -519,11 +520,26 @@ impl TunInbound {
                                                 ip: Some(ip),
                                                 port: Some(port),
                                                 transport: Transport::Tcp,
+                                                protocol: sniff_proto,
                                                 wifi_ssid: wifi_ssid.as_deref(),
                                                 wifi_bssid: wifi_bssid.as_deref(),
                                                 ..Default::default()
                                             };
-                                            let decision = self.router.decide(&route_ctx);
+                                            let mut decision = self.router.decide(&route_ctx);
+
+                                            // Handle Decision::Sniff: re-decide with sniffed metadata
+                                            if matches!(decision, Decision::Sniff) {
+                                                if sniff_proto.is_some() {
+                                                    // Already sniffed — re-decide should skip Sniff rules
+                                                    // The guard in engine.rs handles this via protocol.is_some()
+                                                    decision = self.router.decide(&route_ctx);
+                                                }
+                                                // Safety net
+                                                if matches!(decision, Decision::Sniff) {
+                                                    decision = Decision::Direct;
+                                                }
+                                            }
+
                                             let (selected_target, outbound_tag) =
                                                 match route_target_from_decision(&decision) {
                                                     Ok(route) => route,

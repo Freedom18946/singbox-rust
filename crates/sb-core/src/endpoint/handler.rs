@@ -87,12 +87,10 @@ impl EndpointConnectionHandler {
                 false,
             ),
             Decision::Proxy(Some(tag)) => (RouteTarget::Named(tag.clone()), tag, true),
-            Decision::Proxy(None) => (
-                RouteTarget::Kind(OutboundKind::Direct),
-                "direct".to_string(),
-                true,
-            ),
-            Decision::Hijack { .. } | Decision::Sniff | Decision::Resolve | Decision::HijackDns => {
+            Decision::Proxy(None) | Decision::Hijack { .. } | Decision::Sniff
+            | Decision::Resolve | Decision::HijackDns => {
+                // Sniff/Resolve/etc. are non-terminal and should have been resolved
+                // by callers. Safety net falls back to direct.
                 (
                     RouteTarget::Kind(OutboundKind::Direct),
                     "direct".to_string(),
@@ -162,7 +160,52 @@ impl ConnectionHandler for EndpointConnectionHandler {
 
         let transport = Transport::Tcp;
         let route_ctx = self.build_route_ctx(&metadata, &host, ip, port, transport);
-        let decision = self.router.decide(&route_ctx);
+        let mut decision = self.router.decide(&route_ctx);
+
+        // Handle Decision::Sniff: read initial bytes, sniff, re-decide
+        let mut sniff_prefix: Vec<u8> = Vec::new();
+        if matches!(decision, crate::router::rules::Decision::Sniff)
+            && !crate::router::sniff::skip_sniff(port)
+        {
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 4096];
+            let n = match tokio::time::timeout(
+                Duration::from_millis(300),
+                conn.read(&mut buf),
+            )
+            .await
+            {
+                Ok(Ok(n)) if n > 0 => n,
+                _ => 0,
+            };
+            buf.truncate(n);
+            if n > 0 {
+                let outcome = crate::router::sniff::sniff_stream(&buf);
+                let sniffed_host_owned: String;
+                let host_ref = if let Some(ref h) = outcome.host {
+                    sniffed_host_owned = h.clone();
+                    &sniffed_host_owned
+                } else {
+                    &host
+                };
+                let route_ctx2 = RouteCtx {
+                    host: Some(host_ref),
+                    ip,
+                    port: Some(port),
+                    transport,
+                    network: "tcp",
+                    protocol: outcome.protocol,
+                    inbound_tag: Some(metadata.inbound.as_str()),
+                    ..Default::default()
+                };
+                decision = self.router.decide(&route_ctx2);
+                sniff_prefix = buf;
+            }
+            if matches!(decision, crate::router::rules::Decision::Sniff) {
+                decision = crate::router::rules::Decision::Direct;
+            }
+        }
+
         let (target, outbound_tag, allowed) = self.decision_to_target(decision);
         if !allowed {
             if let Some(close) = on_close {
@@ -188,6 +231,18 @@ impl ConnectionHandler for EndpointConnectionHandler {
                 return;
             }
         };
+
+        // Replay sniffed prefix bytes to outbound before bidirectional copy
+        if !sniff_prefix.is_empty() {
+            use tokio::io::AsyncWriteExt;
+            if let Err(e) = outbound.write_all(&sniff_prefix).await {
+                warn!(error = %e, "endpoint: failed to replay sniff prefix");
+                if let Some(close) = on_close {
+                    close();
+                }
+                return;
+            }
+        }
 
         let result = crate::net::metered::copy_bidirectional_streaming_ctl(
             &mut conn,

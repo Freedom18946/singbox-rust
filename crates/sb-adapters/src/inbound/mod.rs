@@ -20,6 +20,8 @@ pub mod mixed;
 
 pub mod direct;
 
+pub(crate) mod sniff_util;
+
 #[cfg(any(feature = "trojan", feature = "adapter-anytls"))]
 pub(crate) mod tls;
 

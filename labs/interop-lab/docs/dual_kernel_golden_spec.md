@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 17 | 94.4% |
-| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 7 | 77.8% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 18 | 100.0% |
+| LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
 | SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **16** | **60** | **50** | **83.3%** |
+| **Total** | | **16** | **60** | **52** | **86.7%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
@@ -113,7 +113,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-011 | route.final handles unmatched | Traffic matching no rule | Dispatched to final outbound | Traffic | `p1_gui_full_session_replay` | `p1_rust_core_http_via_socks` | — |
 | BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | `p1_domain_rule_via_socks` | — | — |
 | BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | `p1_ip_cidr_rule_via_socks` | — | — |
-| BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | — | — | DIV-C-003 |
+| BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | `p1_sniff_rule_action_tls` | — | — |
 
 ### DP.4: DNS
 
@@ -137,7 +137,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict` | — | DIV-M-006 |
-| BHV-LC-005 | Inbound hot-reload on config change | Config file update + signal | Inbound rebind without restart | — | — | — | DIV-H-001 |
+| BHV-LC-005 | Inbound hot-reload on config change | Config file update + signal | Inbound rebind without restart | — | `p1_inbound_hot_reload_sighup` | — | — |
 | BHV-LC-006 | State preservation across reload | Reload signal | Connections/proxy state preserved | — | `p1_selector_switch_traffic_replay` | — | — |
 
 ### LC.3: Shutdown
@@ -203,13 +203,13 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 |--------|-----|-------------|--------------|---------------|
 | DIV-C-001 | INTENTIONAL | No implicit direct fallback — unresolvable destinations return error instead of silently falling back to direct. MIG-02 wave#200. | BHV-DP-005, BHV-DP-011 | `ignore_http_paths` for affected traffic test endpoints |
 | DIV-C-002 | KNOWN-GAP | SOCKS5 UDP ASSOCIATE defaults to off unless explicitly enabled on the Rust inbound. | BHV-DP-002 | Set `SB_SOCKS_UDP_ENABLE=1` for Rust strict both-mode cases |
-| DIV-C-003 | KNOWN-GAP | Sniff/Resolve/Hijack actions rejected on inbound path. Go allows them; Rust treats as config error. | BHV-DP-014 | Omit sniff-dependent routing rules from Go config |
+| DIV-C-003 | CLOSED | Sniff rule action now implemented: inbounds read initial bytes, run sniff_stream(), populate protocol/host, and re-decide. | BHV-DP-014 | — |
 
 ### High (Partial Scenario Failure)
 
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |
 |--------|-----|-------------|--------------|---------------|
-| DIV-H-001 | KNOWN-GAP | Inbound hot-reload not implemented. Restart required for port changes. | BHV-LC-005 | Do not test inbound rebind in both-mode |
+| DIV-H-001 | CLOSED | Inbound hot-reload validated: SIGHUP triggers reload and inbound rebinds on both kernels. | BHV-LC-005 | — |
 | DIV-H-002 | KNOWN-GAP | Redirect inbound IPv6 not supported. | BHV-DP-001 | Use IPv4 only in both-mode configs |
 | DIV-H-003 | KNOWN-GAP | Provider has no background update loop. Only responds to manual refresh. | BHV-CP-018, BHV-SV-005 | Ignore provider update timestamps in diff |
 | DIV-H-004 | KNOWN-GAP | Provider healthcheck always returns healthy (no actual probe). | BHV-SV-007 | Ignore healthcheck result field in diff |
@@ -304,6 +304,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 21 | `p1_mixed_inbound_dual_protocol` | both | E4 | BHV-DP-004 | Promoted on 2026-03-15 after fixing mixed inbound `peek()` → `read_exact()` bug (peek is non-destructive, causing PeekedStream to duplicate the first byte; SOCKS5 got 0x05 twice, HTTP got "CCONNECT" instead of "CONNECT") (`20260314T225307Z-621867dc-a773-486f-b629-8f373043f691`) |
 | 22 | `p1_graceful_shutdown_drain` | both | E3 | BHV-LC-007 | Promoted on 2026-03-15 with new `TcpDrainDuringShutdown` harness action; both kernels show identical SIGTERM behavior (fast exit, no extended drain) confirming parity (`20260314T231033Z-e8dc8539-58aa-4b7f-82ec-5d2e4d571073`) |
 | 23 | `p1_urltest_auto_select_replay` | both | E3 | BHV-DP-007 | Promoted on 2026-03-15 after fixing Rust `SelectorGroup::now()` to call `select_by_latency()` for URLTest mode and running initial health check immediately (Go parity: `PostStart` → `CheckOutbounds`); both kernels show `now: "direct"` and route traffic through the best outbound (`20260314T233646Z-536ab378-faec-4190-8a08-57827f1a97fa`) |
+| 24 | `p1_inbound_hot_reload_sighup` | both | E2 | BHV-LC-005 | Promoted on 2026-03-15: SIGHUP triggers full reload on both kernels; data-plane TCP traffic via SOCKS5 survives two consecutive reloads; DIV-H-001 closed (`20260315T013347Z-88281e77-ea4d-4109-b15c-71982b0a4703`) |
 
 ### T4: Long-term (+4 cases)
 
@@ -340,8 +341,8 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 36.8% (35/95) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 83.3% (50/60) |
+| Both-mode case ratio | both cases / total cases | 36.0% (36/100) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 86.7% (52/60) |
 | Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 70.0% (42/60) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |

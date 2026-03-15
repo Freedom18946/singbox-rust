@@ -3,7 +3,7 @@
 
 > **用途**：阶段划分 + 当前位置。S-tier，每次会话必读。
 > **纪律**：Phase 关闭后压缩为一行状态。本文件严格 ≤120 行。
-> **对比**：本文件管“在哪”；`active_context.md` 管“刚做了什么 / 下一步”。
+> **对比**：本文件管"在哪"；`active_context.md` 管"刚做了什么 / 下一步"。
 
 ---
 
@@ -30,10 +30,10 @@
 
 | 指标 | 当前值 |
 |------|--------|
-| `Both-Covered` | `50 / 60` |
-| 覆盖率 | `83.3%` |
-| strict both 覆盖 | `42 / 60` |
-| both-case ratio | `35 / 95` |
+| `Both-Covered` | `52 / 60` |
+| 覆盖率 | `86.7%` |
+| strict both 覆盖 | `43 / 60` |
+| both-case ratio | `36 / 100` |
 
 ## 本轮已真实新增的 both 覆盖
 
@@ -49,39 +49,27 @@
 | `p1_rust_core_http_via_socks` | `BHV-PF-001` | repeated HTTP via SOCKS5 p95 latency contract |
 | `p1_dns_cache_ttl_via_socks` | `BHV-DP-018` | TTL 内缓存命中、TTL 后重新查询 |
 | `p1_domain_rule_via_socks` | `BHV-DP-012` | 域名规则精确匹配 FQDN（修复 direct_connect IPv6-first bug） |
-| `p2_connections_ws_soak_dual_core` | `BHV-PF-004` | Spec 修正：leak_detected 断言覆盖线性内存增长检测 |
-| `p1_mixed_inbound_dual_protocol` | `BHV-DP-004` | 修复 mixed inbound peek→read_exact bug，SOCKS5+HTTP CONNECT 同端口检测 |
-| `p1_graceful_shutdown_drain` | `BHV-LC-007` | 新 TcpDrainDuringShutdown harness 原语，双核 SIGTERM 行为一致性验证 |
-| `p1_urltest_auto_select_replay` | `BHV-DP-007` | 修复 now() + 初始健康检查，URLTest 自动选择最低延迟出站 |
-
-## 本轮顺带补齐的产品 / harness 能力
-
-1. Rust Clash API `dns_resolver` 接线到运行时，`GET /dns/query` 不再天然 `503`
-2. Rust fakeip flush 接到 core fakeip state，而不是静态 stub
-4. Rust URLTest `now()` 修复为调用 `select_by_latency()` + 初始健康检查立即执行
-   - `command_start` / `command_wait` / `api_http`
-   - per-kernel `api_http` method/path/status override
-   - `eq_ref` / `ne_ref` 断言
+| `p2_connections_ws_soak_dual_core` | `BHV-PF-004` | leak_detected 断言覆盖线性内存增长检测 |
+| `p1_mixed_inbound_dual_protocol` | `BHV-DP-004` | 修复 mixed inbound peek→read_exact bug |
+| `p1_graceful_shutdown_drain` | `BHV-LC-007` | 双核 SIGTERM 行为一致性验证 |
+| `p1_urltest_auto_select_replay` | `BHV-DP-007` | 修复 now() + 初始健康检查 |
+| `p1_inbound_hot_reload_sighup` | `BHV-LC-005` | DIV-H-001 关闭：SIGHUP 热重载 |
+| `p1_sniff_rule_action_tls` | `BHV-DP-014` | DIV-C-003 关闭：sniff 规则动作集成 |
 
 ## 当前优先级
 
-1. `p1_service_failure_isolation`
-   - 确认不可行：Go 结构性 fail-fast，所有 service init 错误均 fatal abort
-   - Go `box.start()` → `adapter.Start()` → `service.Manager.Start()` → 首个错误立即返回
-   - 不可与 Rust 的 best-effort 隔离模型统一
-2. L22 实质性天花板：83.3%
-   - 剩余 10 个未覆盖 BHV：7 SV 结构性阻塞 + 2 KNOWN-GAP + 1 已确认不可行
-   - 无结构性产品变更时，不可能再提高覆盖率
+1. L22 天花板已达：86.7%（52/60）
+   - 剩余 8 个未覆盖 BHV：7 SV 结构性阻塞 + 1 已确认不可行
+   - 无更多 KNOWN-GAP 可关闭
+2. 可选 Sniff Phase B：QUIC SNI 提取（生产价值，不新增 BHV）
+3. 宣布 L22 完成 → 归档
 
 ## 明确不再重复的方向
 
 - `/connections` dual-core soak / trend gate / nightly 已有，不再当新增覆盖
-- `api_ws_soak` traffic action 已有，不再重复补
-- `p1_gui_connections_tracking` 已完成，不再回头做 active entry 可见性
-- `BHV-DP-012` domain-rule both-case 当前更像真实行为缺口，不要硬记
-- mixed inbound peek→read_exact bug 已修复，BHV-DP-004 已覆盖
-- `p1_urltest_auto_select_replay` 已完成，now() 修复已落地
 - `p1_service_failure_isolation` 已确认不可行，不再尝试
+- `p1_inbound_hot_reload_sighup` 已完成，DIV-H-001 已关闭
+- Sniff Phase A 已落地，DIV-C-003 已关闭
 
 ## 每次新增 both-case 的最小流程
 
@@ -92,12 +80,4 @@
 3. 更新：
    - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
    - `labs/interop-lab/docs/compat_matrix.md`
-   - `labs/interop-lab/docs/case_backlog.md`（必要时）
-   - `AGENTS.md`
    - `agents-only/active_context.md`
-
-## 当前入口
-
-- 当前工作包：`agents-only/planning/L22-DUAL-KERNEL-PARITY.md`
-- 当前状态快照：`agents-only/active_context.md`
-- parity 执行规则：`AGENTS.md`

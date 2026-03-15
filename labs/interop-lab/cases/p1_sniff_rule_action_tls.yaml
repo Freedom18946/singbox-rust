@@ -1,0 +1,62 @@
+id: p1_sniff_rule_action_tls
+title: sniff rule action detects TLS and routes via protocol match
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - dataplane
+  - sniff
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_sniff.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 15000
+    ready_path: /healthz
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_sniff.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+upstream_topology:
+  - name: tls_echo
+    kind: tcp_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  # Send a TLS ClientHello through the SOCKS5 proxy.
+  # With sniff rule + protocol=tls match, it should route to "direct" (not "block").
+  - kind: tcp_round_trip
+    name: tls_via_sniff
+    addr: "{{upstream.tls_echo}}"
+    payload_tls_client_hello: true
+    proxy: socks5://127.0.0.1:11801
+  # Send a plain HTTP request through the SOCKS5 proxy.
+  # With sniff rule + protocol=http match, it should route to "direct" (not "block").
+  - kind: tcp_round_trip
+    name: http_via_sniff
+    addr: "{{upstream.tls_echo}}"
+    payload: "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: traffic.tls_via_sniff.success
+    op: eq
+    expected: true
+  - key: traffic.http_via_sniff.success
+    op: eq
+    expected: true
+oracle:
+  tolerate_counter_jitter: true

@@ -154,6 +154,8 @@ pub struct RouteCtx<'a> {
     pub network_is_constrained: Option<bool>,
     pub ip_accept_any: Option<bool>,
     pub outbound_tag: Option<&'a str>,
+    /// Sniffed protocol (e.g. "tls", "http", "ssh"). Set after sniffing.
+    pub protocol: Option<&'a str>,
 }
 
 impl<'a> Default for RouteCtx<'a> {
@@ -182,6 +184,7 @@ impl<'a> Default for RouteCtx<'a> {
             network_is_constrained: None,
             ip_accept_any: None,
             outbound_tag: None,
+            protocol: None,
         }
     }
 }

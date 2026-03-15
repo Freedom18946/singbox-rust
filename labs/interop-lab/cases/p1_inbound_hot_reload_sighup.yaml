@@ -1,0 +1,146 @@
+id: p1_inbound_hot_reload_sighup
+title: inbound port survives SIGHUP reload on both kernels
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - lifecycle
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api.json
+      - run
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_dataplane.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence: []
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:0
+traffic_plan:
+  # 1. Baseline: verify data plane works before reload
+  - kind: tcp_round_trip
+    name: tcp_before_reload
+    addr: "{{upstream.local_tcp}}"
+    proxy: socks5://127.0.0.1:11801
+    payload: hot-reload-before
+
+  # 2. Verify API is up before reload
+  - kind: api_http
+    name: api_before_reload
+    method: GET
+    path: /version
+    expect_status: 200
+
+  # 3. Send SIGHUP reload to the current kernel
+  - kind: kernel_control
+    name: reload_kernel_rust
+    action: reload
+    target: rust
+    wait_ready_ms: 15000
+  - kind: kernel_control
+    name: reload_kernel_go
+    action: reload
+    target: go
+    wait_ready_ms: 15000
+
+  # 4. Brief settle time for inbound rebind
+  - kind: sleep
+    name: post_reload_settle
+    ms: 1500
+
+  # 5. Post-reload: verify data plane still works (inbound rebound)
+  - kind: tcp_round_trip
+    name: tcp_after_reload
+    addr: "{{upstream.local_tcp}}"
+    proxy: socks5://127.0.0.1:11801
+    payload: hot-reload-after
+
+  # 6. Post-reload: verify API still works
+  - kind: api_http
+    name: api_after_reload
+    method: GET
+    path: /version
+    expect_status: 200
+
+  # 7. Second reload to prove repeatability
+  - kind: kernel_control
+    name: reload2_kernel_rust
+    action: reload
+    target: rust
+    wait_ready_ms: 15000
+  - kind: kernel_control
+    name: reload2_kernel_go
+    action: reload
+    target: go
+    wait_ready_ms: 15000
+
+  - kind: sleep
+    name: post_reload2_settle
+    ms: 1500
+
+  # 8. Post-second-reload: data plane still works
+  - kind: tcp_round_trip
+    name: tcp_after_reload2
+    addr: "{{upstream.local_tcp}}"
+    proxy: socks5://127.0.0.1:11801
+    payload: hot-reload-twice
+
+assertions:
+  # Pre-reload baseline
+  - key: traffic.tcp_before_reload.success
+    op: eq
+    expected: true
+  - key: traffic.api_before_reload.success
+    op: eq
+    expected: true
+  # First reload success
+  - key: traffic.reload_kernel_rust.success
+    op: eq
+    expected: true
+  - key: traffic.reload_kernel_go.success
+    op: eq
+    expected: true
+  # Post-first-reload data plane
+  - key: traffic.tcp_after_reload.success
+    op: eq
+    expected: true
+  - key: traffic.api_after_reload.success
+    op: eq
+    expected: true
+  # Second reload success
+  - key: traffic.reload2_kernel_rust.success
+    op: eq
+    expected: true
+  - key: traffic.reload2_kernel_go.success
+    op: eq
+    expected: true
+  # Post-second-reload data plane
+  - key: traffic.tcp_after_reload2.success
+    op: eq
+    expected: true
+  # No errors throughout
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /version

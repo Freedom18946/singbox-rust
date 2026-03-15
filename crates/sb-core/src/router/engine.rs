@@ -794,8 +794,8 @@ impl RouterHandle {
             ip: ctx.ip,
             port: ctx.port,
             network: Some(ctx.network),
-            // NOTE: Protocol can be inferred from sniffing if needed (ctx.protocol)
-            protocol: None,
+            // Thread sniffed protocol from outer RouteCtx
+            protocol: ctx.protocol,
             user_agent: ctx.user_agent,
             geosite_codes: vec![],
             geoip_code: None,
@@ -862,6 +862,12 @@ impl RouterHandle {
         // 2. Iterate composite rules
         for rule in &idx.rules {
             if rule.matches(&rules_ctx) {
+                // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
+                if matches!(rule.decision, crate::router::rules::Decision::Sniff)
+                    && rules_ctx.protocol.is_some()
+                {
+                    continue;
+                }
                 return rule.decision.clone();
             }
         }
@@ -1359,7 +1365,7 @@ impl RouterHandle {
                 ip: ctx.ip,
                 port: ctx.port,
                 network: Some(ctx.network),
-                protocol: None,
+                protocol: ctx.protocol,
                 user_agent: ctx.user_agent,
                 geosite_codes: vec![],
                 geoip_code: None,
@@ -1416,6 +1422,12 @@ impl RouterHandle {
 
             for (i, rule) in idx.rules.iter().enumerate() {
                 if rule.matches(&rules_ctx) {
+                    // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
+                    if matches!(rule.decision, crate::router::rules::Decision::Sniff)
+                        && rules_ctx.protocol.is_some()
+                    {
+                        continue;
+                    }
                     return DecideWithMeta {
                         decision: rule.decision.clone(),
                         rule: Some(format!("rule#{i}")),

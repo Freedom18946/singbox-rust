@@ -419,8 +419,71 @@ where
         ..Default::default()
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
-    let rule: Option<String> = meta.rule;
-    let decision: RDecision = meta.decision;
+    let mut rule: Option<String> = meta.rule;
+    let mut decision: RDecision = meta.decision;
+
+    // Handle Decision::Sniff: send 200 early, read initial bytes, sniff, re-decide
+    let mut sniff_prefix: Vec<u8> = Vec::new();
+    let mut sniff_reply_sent = false;
+    if matches!(decision, RDecision::Sniff) {
+        if sb_core::router::sniff::skip_sniff(port) {
+            decision = RDecision::Direct;
+        } else {
+            // Send 200 Connection Established early so client starts sending data
+            let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+            cli.write_all(resp).await?;
+            cli.flush().await?;
+            sniff_reply_sent = true;
+
+            // Read initial bytes with 300ms timeout
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 4096];
+            let n = match tokio::time::timeout(
+                Duration::from_millis(300),
+                cli.read(&mut buf),
+            )
+            .await
+            {
+                Ok(Ok(n)) if n > 0 => n,
+                _ => 0,
+            };
+            buf.truncate(n);
+
+            if n > 0 {
+                let outcome = sb_core::router::sniff::sniff_stream(&buf);
+                tracing::debug!(
+                    protocol = ?outcome.protocol,
+                    host = ?outcome.host,
+                    "http: sniffed stream"
+                );
+                let sniffed_host_owned: String;
+                let host_for_ctx = if let Some(ref h) = outcome.host {
+                    sniffed_host_owned = h.clone();
+                    Some(sniffed_host_owned.as_str())
+                } else {
+                    Some(host)
+                };
+                let route_ctx2 = RouteCtx {
+                    host: host_for_ctx,
+                    ip: None,
+                    port: Some(port),
+                    transport: Transport::Tcp,
+                    network: "tcp",
+                    protocol: outcome.protocol,
+                    inbound_tag: cfg.tag.as_deref(),
+                    ..Default::default()
+                };
+                let meta2 = cfg.router.decide_with_meta(&route_ctx2);
+                decision = meta2.decision;
+                rule = meta2.rule;
+                sniff_prefix = buf;
+            }
+
+            if matches!(decision, RDecision::Sniff) {
+                decision = RDecision::Direct;
+            }
+        }
+    }
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
@@ -539,16 +602,19 @@ where
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            return Err(anyhow!(
-                "http inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
-            ));
+            // Sniff should have been handled above; safety net falls back to direct.
+            outbound_tag = Some("direct".to_string());
+            let s = direct_connect_hostport(host, port, &opts).await?;
+            Box::new(s)
         }
     };
     // Respond 200, then tunnel forwarding
     // 应答 200，然后做隧道转发
-    let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
-    cli.write_all(resp).await?;
-    cli.flush().await?;
+    if !sniff_reply_sent {
+        let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+        cli.write_all(resp).await?;
+        cli.flush().await?;
+    }
 
     // Tunnel forwarding (metered copy; label=http), unified read/write timeout (from env, optional)
     // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
@@ -582,17 +648,32 @@ where
         traffic,
     );
     let _guard = wiring.guard;
-    let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
-        &mut cli,
-        &mut upstream,
-        "http",
-        std::time::Duration::from_secs(1),
-        rt,
-        wt,
-        Some(wiring.cancel),
-        Some(wiring.traffic),
-    )
-    .await;
+    let copy_res = if sniff_prefix.is_empty() {
+        sb_core::net::metered::copy_bidirectional_streaming_ctl(
+            &mut cli,
+            &mut upstream,
+            "http",
+            std::time::Duration::from_secs(1),
+            rt,
+            wt,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    } else {
+        let mut sniffed = crate::inbound::sniff_util::SniffedStream::new(&mut cli, sniff_prefix);
+        sb_core::net::metered::copy_bidirectional_streaming_ctl(
+            &mut sniffed,
+            &mut upstream,
+            "http",
+            std::time::Duration::from_secs(1),
+            rt,
+            wt,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    };
     match copy_res {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}

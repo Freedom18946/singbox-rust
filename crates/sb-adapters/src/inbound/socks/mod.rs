@@ -537,8 +537,71 @@ where
         ..Default::default()
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
-    let rule: Option<String> = meta.rule;
-    let decision: RDecision = meta.decision;
+    let mut rule: Option<String> = meta.rule;
+    let mut decision: RDecision = meta.decision;
+
+    // Handle Decision::Sniff: send reply early, read initial bytes, sniff, re-decide
+    let mut sniff_prefix: Vec<u8> = Vec::new();
+    let mut sniff_reply_sent = false;
+    if matches!(decision, RDecision::Sniff) {
+        let dest_port = port_opt.unwrap_or(0);
+        if sb_core::router::sniff::skip_sniff(dest_port) {
+            decision = RDecision::Direct;
+        } else {
+            // Send SOCKS5 success reply early so client starts sending data
+            reply(cli, 0x00, None).await?;
+            sniff_reply_sent = true;
+
+            // Read initial bytes with 300ms timeout
+            let mut buf = vec![0u8; 4096];
+            let n = match tokio::time::timeout(
+                Duration::from_millis(300),
+                cli.read(&mut buf),
+            )
+            .await
+            {
+                Ok(Ok(n)) if n > 0 => n,
+                _ => 0,
+            };
+            buf.truncate(n);
+
+            if n > 0 {
+                let outcome = sb_core::router::sniff::sniff_stream(&buf);
+                tracing::debug!(
+                    protocol = ?outcome.protocol,
+                    host = ?outcome.host,
+                    "socks5: sniffed stream"
+                );
+                // Build new RouteCtx with sniffed protocol/host and re-decide
+                let sniffed_host_owned: String;
+                let host_for_ctx = if let Some(ref h) = outcome.host {
+                    sniffed_host_owned = h.clone();
+                    Some(sniffed_host_owned.as_str())
+                } else {
+                    host_opt
+                };
+                let route_ctx2 = RouteCtx {
+                    host: host_for_ctx,
+                    ip: ip_opt,
+                    port: port_opt,
+                    transport: Transport::Tcp,
+                    network: "tcp",
+                    protocol: outcome.protocol,
+                    inbound_tag: cfg.tag.as_deref(),
+                    ..Default::default()
+                };
+                let meta2 = cfg.router.decide_with_meta(&route_ctx2);
+                decision = meta2.decision;
+                rule = meta2.rule;
+                sniff_prefix = buf;
+            }
+
+            // Safety net: if still Sniff after re-decide, fall back to Direct
+            if matches!(decision, RDecision::Sniff) {
+                decision = RDecision::Direct;
+            }
+        }
+    }
 
     #[cfg(feature = "metrics")]
     {
@@ -588,6 +651,8 @@ where
     let outbound_tag: Option<String>;
 
     // Fast path: if router decided a named outbound, try OutboundRegistry first
+    // Skip fast-path when sniff already sent reply (fast-path sends its own reply)
+    if sniff_prefix.is_empty() {
     if let RDecision::Proxy(Some(name)) = &decision {
         let out_ep = match &endpoint {
             Endpoint::Domain(h, p) => OutEndpoint::Domain(h.clone(), *p),
@@ -676,6 +741,7 @@ where
             }
         }
     }
+    } // end skip fast-path when sniffed
 
     // 与上游建立连接（根据决策与默认代理）
     // Establish connection with upstream (based on decision and default proxy)
@@ -790,17 +856,26 @@ where
             return Err(io::Error::other("socks: rejected by rules"));
         }
         RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            tracing::warn!(
-                "socks5 inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
-            );
-            reply(cli, 0x01, None).await?; // General failure
-            return Ok(());
+            // Sniff should have been handled above; this is a safety net.
+            outbound_tag = Some("direct".to_string());
+            match &endpoint {
+                Endpoint::Domain(host, port) => {
+                    let s = direct_connect_hostport(host, *port, &opts).await?;
+                    Box::new(s)
+                }
+                Endpoint::Ip(sa) => {
+                    let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                    Box::new(s)
+                }
+            }
         }
     };
 
     // 成功：回复 0x00，BND=0.0.0.0:0
     // Success: reply 0x00, BND=0.0.0.0:0
-    reply(cli, 0x00, None).await?;
+    if !sniff_reply_sent {
+        reply(cli, 0x00, None).await?;
+    }
     debug!(peer=%peer, "socks connect established");
 
     // 双向转发 + 计量 + 读/写超时（可选，来自环境）
@@ -852,17 +927,32 @@ where
     );
     let _guard = wiring.guard;
 
-    let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
-        cli,
-        &mut srv,
-        "socks",
-        std::time::Duration::from_secs(1),
-        rt,
-        wt,
-        Some(wiring.cancel),
-        Some(wiring.traffic),
-    )
-    .await;
+    let copy_res = if sniff_prefix.is_empty() {
+        sb_core::net::metered::copy_bidirectional_streaming_ctl(
+            cli,
+            &mut srv,
+            "socks",
+            std::time::Duration::from_secs(1),
+            rt,
+            wt,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    } else {
+        let mut sniffed = crate::inbound::sniff_util::SniffedStream::new(cli, sniff_prefix);
+        sb_core::net::metered::copy_bidirectional_streaming_ctl(
+            &mut sniffed,
+            &mut srv,
+            "socks",
+            std::time::Duration::from_secs(1),
+            rt,
+            wt,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    };
     match copy_res {
         Ok(_) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(()),

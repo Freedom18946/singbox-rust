@@ -29,6 +29,13 @@ pub struct SniffOutcome {
     pub alpn: Option<String>,
 }
 
+/// Go parity: `common/sniff/sniff.go:Skip()` — skip sniffing for server-first protocols.
+/// SMTP (25, 465, 587), IMAP (143, 993), POP3 (110, 995) are server-initiated,
+/// so the first data from client won't be protocol-specific.
+pub fn skip_sniff(port: u16) -> bool {
+    matches!(port, 25 | 465 | 587 | 143 | 993 | 110 | 995)
+}
+
 /// Attempt to parse a TLS ClientHello from the provided buffer and extract
 /// SNI and ALPN. Returns `None` if the buffer does not look like a TLS
 /// ClientHello or if required fields are incomplete.
@@ -743,5 +750,21 @@ mod tests {
         ntp[0] = 0x1b;
         let sniffed = sniff_datagram(&ntp);
         assert_eq!(sniffed.protocol, Some("ntp"));
+    }
+
+    #[test]
+    fn skip_sniff_server_first_ports() {
+        // Server-first protocols: SMTP, IMAP, POP3
+        assert!(skip_sniff(25));
+        assert!(skip_sniff(465));
+        assert!(skip_sniff(587));
+        assert!(skip_sniff(143));
+        assert!(skip_sniff(993));
+        assert!(skip_sniff(110));
+        assert!(skip_sniff(995));
+        // Non-server-first
+        assert!(!skip_sniff(80));
+        assert!(!skip_sniff(443));
+        assert!(!skip_sniff(8080));
     }
 }
