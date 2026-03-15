@@ -293,6 +293,11 @@ pub fn sniff_datagram(buf: &[u8]) -> SniffOutcome {
         return out;
     }
 
+    // Try full QUIC SNI extraction first, fall back to detection-only
+    if let Some(outcome) = super::sniff_quic::sniff_quic_sni(buf) {
+        return outcome;
+    }
+
     if let Some(alpn) = sniff_quic_initial(buf) {
         out.protocol = Some("quic");
         out.alpn = Some(alpn.to_string());
@@ -541,54 +546,6 @@ fn is_stun_message(buf: &[u8]) -> bool {
     }
 
     true
-}
-
-/// Extended QUIC sniffing that attempts to extract SNI from QUIC Initial packets.
-/// This is a simplified implementation that detects QUIC but doesn't decrypt the payload.
-/// Full SNI extraction from QUIC requires decrypting the Initial packet payload.
-pub fn sniff_quic_initial_extended(buf: &[u8]) -> Option<SniffOutcome> {
-    // Minimal checks based on RFC 9000:
-    // - First bit (0x80) set indicates long header
-    // - Next two bits indicate fixed bit pattern; type 0x00 = Initial
-    if buf.len() < 7 {
-        return None;
-    }
-
-    let flags = buf[0];
-    let long = (flags & 0x80) != 0;
-    if !long {
-        return None;
-    }
-
-    // Version field follows (bytes 1..4). Non-zero typically indicates QUIC.
-    let version = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-    if version == 0 {
-        return None;
-    }
-
-    // Determine QUIC version for ALPN hint
-    let alpn = match version {
-        // QUIC v1 and v2 - typically HTTP/3
-        0x00000001 | 0x6b3343cf => "h3",
-        // Google QUIC versions
-        v if (v & 0xff000000) == 0x51000000 => "h3",
-        // Other QUIC versions
-        _ => "h3",
-    };
-
-    // NOTE: Full SNI extraction from QUIC, we would need to:
-    // 1. Parse DCID from header
-    // 2. Derive Initial secret using HKDF with version-specific salt
-    // 3. Decrypt QUIC packet payload
-    // 4. Find CRYPTO frame containing TLS ClientHello
-    // 5. Parse SNI from ClientHello
-    // This is complex and requires crypto dependencies; left for future enhancement.
-
-    Some(SniffOutcome {
-        protocol: Some("quic"),
-        host: None, // Would require decryption
-        alpn: Some(alpn.to_string()),
-    })
 }
 
 #[cfg(test)]

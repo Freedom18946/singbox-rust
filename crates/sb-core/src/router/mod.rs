@@ -30,6 +30,8 @@ pub mod rules;
 pub mod runtime;
 /// Protocol sniffing (stage 1: no-op stubs)
 pub mod sniff;
+/// QUIC Initial packet decryption for SNI extraction
+mod sniff_quic;
 // R13：导出 analyze（离线分析，不影响运行路径）
 pub mod analyze;
 /// Routing context population helpers for P1 parity.

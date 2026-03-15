@@ -61,7 +61,7 @@
 1. L22 天花板已达：86.7%（52/60）
    - 剩余 8 个未覆盖 BHV：7 SV 结构性阻塞 + 1 已确认不可行
    - 无更多 KNOWN-GAP 可关闭
-2. 可选 Sniff Phase B：QUIC SNI 提取（生产价值，不新增 BHV）
+2. Sniff Phase B 已落地：QUIC SNI 提取（生产价值，不新增 BHV）
 3. 宣布 L22 完成 → 归档
 
 ## 明确不再重复的方向
@@ -70,6 +70,7 @@
 - `p1_service_failure_isolation` 已确认不可行，不再尝试
 - `p1_inbound_hot_reload_sighup` 已完成，DIV-H-001 已关闭
 - Sniff Phase A 已落地，DIV-C-003 已关闭
+- Sniff Phase B 已落地：QUIC v1/v2/Draft-29 SNI 提取（Firefox/Safari/Chrome 验证通过）
 
 ## 每次新增 both-case 的最小流程
 
