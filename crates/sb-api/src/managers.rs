@@ -11,15 +11,24 @@
 use crate::{error::ApiResult, types::TrafficStats};
 use std::{
     collections::HashMap,
+    future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, watch};
 use uuid::Uuid;
+
+/// Async function type for fetching provider content from a URL.
+///
+/// Production code wraps `sb_subscribe::http::fetch_text`; tests use mocks.
+pub type FetchFn = Arc<
+    dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
+>;
 
 /// Represents an active network connection
 /// 表示一个活动的网络连接
@@ -482,18 +491,8 @@ impl Provider {
     }
 
     /// Mark provider as updated.
-    /// 标记提供者为已更新。
     pub fn mark_updated(&mut self) {
         self.last_update = Some(Instant::now());
-    }
-
-    /// Perform health check.
-    /// 执行健康检查。
-    pub async fn health_check(&mut self) -> ApiResult<bool> {
-        // Simple health check - in real implementation, this would
-        // ping the provider URL or validate content
-        self.healthy = true;
-        Ok(self.healthy)
     }
 }
 
@@ -508,24 +507,58 @@ impl Provider {
 ///
 /// 管理外部资源（订阅 URL、规则集）。它处理这些资源的获取、解析和更新，确保核心
 /// 拥有最新的路由数据，而不会阻塞主代理循环。
-#[derive(Debug)]
 pub struct ProviderManager {
     /// Proxy providers
-    /// 代理提供者
     proxy_providers: Arc<RwLock<HashMap<String, Provider>>>,
     /// Rule providers
-    /// 规则提供者
     rule_providers: Arc<RwLock<HashMap<String, Provider>>>,
+    /// Injected URL fetcher (production wraps sb_subscribe; tests use mocks)
+    fetch_fn: FetchFn,
+    /// Outbound registry for health-check TCP probes
+    outbound_registry: Option<Arc<sb_core::outbound::OutboundRegistryHandle>>,
+    /// Health-check probe target (default: RouteTarget::direct())
+    probe_target: sb_core::outbound::RouteTarget,
+    /// Health-check probe endpoint (default: www.gstatic.com:443)
+    probe_endpoint: sb_core::outbound::Endpoint,
+    /// Background sweep interval (default 60s, overridable for tests)
+    tick_interval: Duration,
+    /// Handle to the background update task
+    bg_task_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl ProviderManager {
-    /// Create a new provider manager.
-    /// 创建新的提供者管理器。
-    pub fn new() -> Self {
+    /// Create a new provider manager with an injected fetch function.
+    pub fn new(fetch_fn: FetchFn) -> Self {
         Self {
             proxy_providers: Arc::new(RwLock::new(HashMap::new())),
             rule_providers: Arc::new(RwLock::new(HashMap::new())),
+            fetch_fn,
+            outbound_registry: None,
+            probe_target: sb_core::outbound::RouteTarget::direct(),
+            probe_endpoint: sb_core::outbound::Endpoint::Domain(
+                "www.gstatic.com".into(),
+                443,
+            ),
+            tick_interval: Duration::from_secs(60),
+            bg_task_handle: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Set the outbound registry for health-check TCP probes.
+    #[must_use]
+    pub fn with_outbound_registry(
+        mut self,
+        registry: Arc<sb_core::outbound::OutboundRegistryHandle>,
+    ) -> Self {
+        self.outbound_registry = Some(registry);
+        self
+    }
+
+    /// Override the background tick interval (useful for tests).
+    #[must_use]
+    pub fn with_tick_interval(mut self, interval: Duration) -> Self {
+        self.tick_interval = interval;
+        self
     }
 
     /// Add a proxy provider.
@@ -572,51 +605,414 @@ impl ProviderManager {
         Ok(providers.get(name).cloned())
     }
 
-    /// Update provider (fetch new content).
-    /// 更新提供者（获取新内容）。
+    /// Update provider (fetch new content from its URL).
     pub async fn update_provider(&self, name: &str, is_proxy_provider: bool) -> ApiResult<bool> {
-        if is_proxy_provider {
-            let mut providers = self.proxy_providers.write().await;
-            if let Some(provider) = providers.get_mut(name) {
-                provider.mark_updated();
-                provider.healthy = true;
-                return Ok(true);
+        let providers = if is_proxy_provider {
+            &self.proxy_providers
+        } else {
+            &self.rule_providers
+        };
+
+        // Extract URL under read lock
+        let url = {
+            let lock = providers.read().await;
+            match lock.get(name) {
+                Some(p) => p.url.clone(),
+                None => return Ok(false),
+            }
+        };
+
+        if let Some(url) = url {
+            match (self.fetch_fn)(&url).await {
+                Ok(content) => {
+                    let mut lock = providers.write().await;
+                    if let Some(p) = lock.get_mut(name) {
+                        p.content = content;
+                        p.mark_updated();
+                        p.healthy = true;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch provider '{}' from {}: {}", name, url, e);
+                    let mut lock = providers.write().await;
+                    if let Some(p) = lock.get_mut(name) {
+                        p.healthy = false;
+                        p.mark_updated();
+                    }
+                }
             }
         } else {
-            let mut providers = self.rule_providers.write().await;
-            if let Some(provider) = providers.get_mut(name) {
-                provider.mark_updated();
-                provider.healthy = true;
-                return Ok(true);
+            // File-based provider — no URL to fetch, just stamp updated
+            let mut lock = providers.write().await;
+            if let Some(p) = lock.get_mut(name) {
+                p.mark_updated();
             }
         }
-        Ok(false)
+
+        Ok(true)
     }
 
-    /// Health check provider.
-    /// 健康检查提供者。
+    /// Health check provider via outbound TCP probe.
     pub async fn health_check_provider(
         &self,
         name: &str,
         is_proxy_provider: bool,
     ) -> ApiResult<bool> {
-        if is_proxy_provider {
-            let mut providers = self.proxy_providers.write().await;
-            if let Some(provider) = providers.get_mut(name) {
-                return provider.health_check().await;
-            }
+        let providers = if is_proxy_provider {
+            &self.proxy_providers
         } else {
-            let mut providers = self.rule_providers.write().await;
-            if let Some(provider) = providers.get_mut(name) {
-                return provider.health_check().await;
+            &self.rule_providers
+        };
+
+        // Check the provider exists
+        {
+            let lock = providers.read().await;
+            if !lock.contains_key(name) {
+                return Ok(false);
             }
         }
-        Ok(false)
+
+        let healthy = if let Some(ref registry) = self.outbound_registry {
+            let ep = self.probe_endpoint.clone();
+            let target = self.probe_target.clone();
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                registry.connect_tcp(&target, ep),
+            )
+            .await
+            {
+                Ok(Ok(_stream)) => true,
+                Ok(Err(e)) => {
+                    log::warn!("Health check for '{}' failed: {}", name, e);
+                    false
+                }
+                Err(_) => {
+                    log::warn!("Health check for '{}' timed out", name);
+                    false
+                }
+            }
+        } else {
+            // No registry — graceful degradation, assume healthy
+            true
+        };
+
+        {
+            let mut lock = providers.write().await;
+            if let Some(p) = lock.get_mut(name) {
+                p.healthy = healthy;
+            }
+        }
+
+        Ok(healthy)
+    }
+
+    /// Start the background update loop. Spawns a tokio task that sweeps
+    /// all providers on `self.tick_interval` and fetches stale ones.
+    pub fn start_background_updates(
+        self: &Arc<Self>,
+        mut shutdown_rx: watch::Receiver<bool>,
+    ) {
+        let weak = Arc::downgrade(self);
+        let interval = self.tick_interval;
+
+        let handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    result = shutdown_rx.changed() => {
+                        match result {
+                            Ok(()) if *shutdown_rx.borrow() => {
+                                log::info!("Provider background updater shutting down");
+                                return;
+                            }
+                            Err(_) => {
+                                log::info!("Provider shutdown channel closed");
+                                return;
+                            }
+                            _ => continue,
+                        }
+                    }
+                }
+
+                let Some(mgr) = weak.upgrade() else {
+                    log::debug!("ProviderManager dropped, stopping background updates");
+                    return;
+                };
+
+                mgr.tick_updates().await;
+            }
+        });
+
+        if let Ok(mut guard) = self.bg_task_handle.lock() {
+            *guard = Some(handle);
+        }
+    }
+
+    /// Single sweep: collect stale providers, fetch their URLs, update content.
+    async fn tick_updates(&self) {
+        // Collect stale proxy providers
+        let stale_proxy: Vec<(String, String)> = {
+            let lock = self.proxy_providers.read().await;
+            lock.iter()
+                .filter(|(_, p)| p.needs_update() && p.url.is_some())
+                .map(|(name, p)| (name.clone(), p.url.clone().unwrap_or_default()))
+                .collect()
+        };
+
+        // Collect stale rule providers
+        let stale_rule: Vec<(String, String)> = {
+            let lock = self.rule_providers.read().await;
+            lock.iter()
+                .filter(|(_, p)| p.needs_update() && p.url.is_some())
+                .map(|(name, p)| (name.clone(), p.url.clone().unwrap_or_default()))
+                .collect()
+        };
+
+        for (name, url) in &stale_proxy {
+            Self::fetch_and_update(&self.fetch_fn, &self.proxy_providers, name, url).await;
+        }
+        for (name, url) in &stale_rule {
+            Self::fetch_and_update(&self.fetch_fn, &self.rule_providers, name, url).await;
+        }
+    }
+
+    /// Fetch a URL and update the named provider in the given map.
+    async fn fetch_and_update(
+        fetch_fn: &FetchFn,
+        providers: &Arc<RwLock<HashMap<String, Provider>>>,
+        name: &str,
+        url: &str,
+    ) {
+        match fetch_fn(url).await {
+            Ok(content) => {
+                let mut lock = providers.write().await;
+                if let Some(p) = lock.get_mut(name) {
+                    log::info!("Background update: fetched provider '{}'", name);
+                    p.content = content;
+                    p.mark_updated();
+                    p.healthy = true;
+                }
+            }
+            Err(e) => {
+                log::warn!("Background update: failed to fetch '{}': {}", name, e);
+                let mut lock = providers.write().await;
+                if let Some(p) = lock.get_mut(name) {
+                    p.healthy = false;
+                    p.mark_updated();
+                }
+            }
+        }
     }
 }
 
 impl Default for ProviderManager {
     fn default() -> Self {
-        Self::new()
+        let noop_fetch: FetchFn = Arc::new(|_url| {
+            Box::pin(async { Err("no fetch function configured".to_string()) })
+        });
+        Self::new(noop_fetch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    fn mock_fetch(body: &'static str) -> FetchFn {
+        Arc::new(move |_url| Box::pin(async move { Ok(body.to_string()) }))
+    }
+
+    fn counting_fetch(body: &'static str) -> (FetchFn, Arc<AtomicUsize>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = count.clone();
+        let f: FetchFn = Arc::new(move |_url| {
+            c.fetch_add(1, Ordering::SeqCst);
+            let b = body;
+            Box::pin(async move { Ok(b.to_string()) })
+        });
+        (f, count)
+    }
+
+    fn failing_fetch() -> FetchFn {
+        Arc::new(|_url| Box::pin(async { Err("network error".to_string()) }))
+    }
+
+    fn make_provider(name: &str, url: Option<&str>) -> Provider {
+        let mut p = Provider::new(name.to_string(), "proxy".to_string());
+        p.url = url.map(|s| s.to_string());
+        p
+    }
+
+    // ── T4 tests ──
+
+    #[tokio::test]
+    async fn test_on_demand_update_fetches_url() {
+        let mgr = ProviderManager::new(mock_fetch("proxy-list-v2"));
+        let mut p = make_provider("sub1", Some("https://example.com/sub"));
+        p.content = "old-content".into();
+        mgr.add_proxy_provider(p).await.unwrap();
+
+        let found = mgr.update_provider("sub1", true).await.unwrap();
+        assert!(found);
+
+        let updated = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
+        assert_eq!(updated.content, "proxy-list-v2");
+        assert!(updated.healthy);
+        assert!(updated.last_update.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_on_demand_update_nonexistent_returns_false() {
+        let mgr = ProviderManager::default();
+        let found = mgr.update_provider("nope", true).await.unwrap();
+        assert!(!found);
+    }
+
+    #[tokio::test]
+    async fn test_on_demand_update_marks_unhealthy_on_failure() {
+        let mgr = ProviderManager::new(failing_fetch());
+        mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com/sub")))
+            .await
+            .unwrap();
+
+        let found = mgr.update_provider("sub1", true).await.unwrap();
+        assert!(found);
+
+        let p = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
+        assert!(!p.healthy);
+    }
+
+    #[tokio::test]
+    async fn test_on_demand_update_no_url_just_stamps() {
+        let mgr = ProviderManager::default();
+        mgr.add_proxy_provider(make_provider("local", None))
+            .await
+            .unwrap();
+
+        let found = mgr.update_provider("local", true).await.unwrap();
+        assert!(found);
+
+        let p = mgr.get_proxy_provider("local").await.unwrap().unwrap();
+        assert!(p.last_update.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_background_update_fetches_stale_providers() {
+        let (fetch, count) = counting_fetch("fresh-content");
+        let mgr = Arc::new(
+            ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)),
+        );
+
+        // Provider with no last_update → needs_update() == true
+        mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com")))
+            .await
+            .unwrap();
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        mgr.start_background_updates(shutdown_rx);
+
+        // Wait for at least one tick
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let _ = shutdown_tx.send(true);
+
+        assert!(count.load(Ordering::SeqCst) >= 1, "fetch should have been called");
+        let p = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
+        assert_eq!(p.content, "fresh-content");
+        assert!(p.healthy);
+    }
+
+    #[tokio::test]
+    async fn test_background_update_skips_non_stale_providers() {
+        let (fetch, count) = counting_fetch("should-not-appear");
+        let mgr = Arc::new(
+            ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)),
+        );
+
+        // Provider that was just updated → needs_update() == false
+        let mut p = make_provider("sub1", Some("https://example.com"));
+        p.mark_updated();
+        p.update_interval = 3600; // 1 hour
+        mgr.add_proxy_provider(p).await.unwrap();
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        mgr.start_background_updates(shutdown_rx);
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let _ = shutdown_tx.send(true);
+
+        assert_eq!(count.load(Ordering::SeqCst), 0, "fetch should NOT have been called");
+    }
+
+    #[tokio::test]
+    async fn test_background_update_marks_unhealthy_on_fetch_failure() {
+        let mgr = Arc::new(
+            ProviderManager::new(failing_fetch()).with_tick_interval(Duration::from_millis(50)),
+        );
+
+        mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com")))
+            .await
+            .unwrap();
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        mgr.start_background_updates(shutdown_rx);
+
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        let _ = shutdown_tx.send(true);
+
+        let p = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
+        assert!(!p.healthy);
+    }
+
+    // ── T5 tests ──
+
+    #[tokio::test]
+    async fn test_health_check_without_registry_returns_healthy() {
+        let mgr = ProviderManager::default();
+        mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com")))
+            .await
+            .unwrap();
+
+        let healthy = mgr.health_check_provider("sub1", true).await.unwrap();
+        assert!(healthy, "without registry, should gracefully return healthy");
+    }
+
+    #[tokio::test]
+    async fn test_health_check_nonexistent_returns_false() {
+        let mgr = ProviderManager::default();
+        let result = mgr.health_check_provider("nope", true).await.unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_health_check_with_block_outbound_marks_unhealthy() {
+        use sb_core::outbound::{
+            Endpoint, OutboundImpl, OutboundRegistry, OutboundRegistryHandle, RouteTarget,
+        };
+
+        // Register a "block-probe" outbound that always returns PermissionDenied
+        let mut reg = OutboundRegistry::default();
+        reg.insert("block-probe".into(), OutboundImpl::Block);
+        let handle = Arc::new(OutboundRegistryHandle::new(reg));
+
+        let noop_fetch: FetchFn = Arc::new(|_| {
+            Box::pin(async { Err("unused".into()) })
+        });
+        let mut mgr = ProviderManager::new(noop_fetch)
+            .with_outbound_registry(handle);
+        // Point the probe at the Named "block-probe" outbound
+        mgr.probe_target = RouteTarget::Named("block-probe".into());
+        mgr.probe_endpoint = Endpoint::Domain("www.gstatic.com".into(), 443);
+
+        mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com")))
+            .await
+            .unwrap();
+
+        let healthy = mgr.health_check_provider("sub1", true).await.unwrap();
+        assert!(!healthy, "Block outbound should make health check fail");
+
+        // Verify the provider was marked unhealthy
+        let p = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
+        assert!(!p.healthy);
     }
 }
