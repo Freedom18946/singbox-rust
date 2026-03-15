@@ -87,7 +87,7 @@ impl EndpointConnectionHandler {
                 false,
             ),
             Decision::Proxy(Some(tag)) => (RouteTarget::Named(tag.clone()), tag, true),
-            Decision::Proxy(None) | Decision::Hijack { .. } | Decision::Sniff
+            Decision::Proxy(None) | Decision::Hijack { .. } | Decision::Sniff { .. }
             | Decision::Resolve | Decision::HijackDns => {
                 // Sniff/Resolve/etc. are non-terminal and should have been resolved
                 // by callers. Safety net falls back to direct.
@@ -164,44 +164,54 @@ impl ConnectionHandler for EndpointConnectionHandler {
 
         // Handle Decision::Sniff: read initial bytes, sniff, re-decide
         let mut sniff_prefix: Vec<u8> = Vec::new();
-        if matches!(decision, crate::router::rules::Decision::Sniff)
-            && !crate::router::sniff::skip_sniff(port)
-        {
-            use tokio::io::AsyncReadExt;
-            let mut buf = vec![0u8; 4096];
-            let n = match tokio::time::timeout(
-                Duration::from_millis(300),
-                conn.read(&mut buf),
-            )
-            .await
-            {
-                Ok(Ok(n)) if n > 0 => n,
-                _ => 0,
-            };
-            buf.truncate(n);
-            if n > 0 {
-                let outcome = crate::router::sniff::sniff_stream(&buf);
-                let sniffed_host_owned: String;
-                let host_ref = if let Some(ref h) = outcome.host {
-                    sniffed_host_owned = h.clone();
-                    &sniffed_host_owned
-                } else {
-                    &host
+        if let crate::router::rules::Decision::Sniff { override_destination } = decision {
+            if !crate::router::sniff::skip_sniff(port) {
+                use tokio::io::AsyncReadExt;
+                let mut buf = vec![0u8; 4096];
+                let n = match tokio::time::timeout(
+                    Duration::from_millis(300),
+                    conn.read(&mut buf),
+                )
+                .await
+                {
+                    Ok(Ok(n)) if n > 0 => n,
+                    _ => 0,
                 };
-                let route_ctx2 = RouteCtx {
-                    host: Some(host_ref),
-                    ip,
-                    port: Some(port),
-                    transport,
-                    network: "tcp",
-                    protocol: outcome.protocol,
-                    inbound_tag: Some(metadata.inbound.as_str()),
-                    ..Default::default()
-                };
-                decision = self.router.decide(&route_ctx2);
-                sniff_prefix = buf;
+                buf.truncate(n);
+                if n > 0 {
+                    let outcome = crate::router::sniff::sniff_stream(&buf);
+                    let sniffed_host_owned: String;
+                    let host_ref = if let Some(ref h) = outcome.host {
+                        sniffed_host_owned = h.clone();
+                        &sniffed_host_owned
+                    } else {
+                        &host
+                    };
+                    let route_ctx2 = RouteCtx {
+                        host: Some(host_ref),
+                        ip,
+                        port: Some(port),
+                        transport,
+                        network: "tcp",
+                        protocol: outcome.protocol,
+                        inbound_tag: Some(metadata.inbound.as_str()),
+                        ..Default::default()
+                    };
+                    decision = self.router.decide(&route_ctx2);
+                    sniff_prefix = buf;
+
+                    // OverrideDestination: replace outbound target with sniffed domain
+                    if override_destination {
+                        if let Some(ref h) = outcome.host {
+                            if !h.is_empty() {
+                                // TODO: update endpoint with sniffed host when endpoint mutation is supported
+                                let _ = h;
+                            }
+                        }
+                    }
+                }
             }
-            if matches!(decision, crate::router::rules::Decision::Sniff) {
+            if matches!(decision, crate::router::rules::Decision::Sniff { .. }) {
                 decision = crate::router::rules::Decision::Direct;
             }
         }

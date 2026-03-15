@@ -47,7 +47,7 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
         }
         Decision::Proxy(Some(tag)) => Ok((RouteTarget::Named(tag.clone()), tag.clone())),
         // Sniff should have been resolved before calling this; safety net → direct
-        Decision::Sniff => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
+        Decision::Sniff { .. } => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
         unsupported => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             format!(
@@ -528,14 +528,14 @@ impl TunInbound {
                                             let mut decision = self.router.decide(&route_ctx);
 
                                             // Handle Decision::Sniff: re-decide with sniffed metadata
-                                            if matches!(decision, Decision::Sniff) {
+                                            if matches!(decision, Decision::Sniff { .. }) {
                                                 if sniff_proto.is_some() {
                                                     // Already sniffed — re-decide should skip Sniff rules
                                                     // The guard in engine.rs handles this via protocol.is_some()
                                                     decision = self.router.decide(&route_ctx);
                                                 }
                                                 // Safety net
-                                                if matches!(decision, Decision::Sniff) {
+                                                if matches!(decision, Decision::Sniff { .. }) {
                                                     decision = Decision::Direct;
                                                 }
                                             }
@@ -1632,13 +1632,19 @@ mod tests {
     }
 
     #[test]
+    fn sniff_decision_falls_back_to_direct() {
+        let (target, tag) = route_target_from_decision(&Decision::Sniff { override_destination: false })
+            .expect("Sniff should fall back to direct");
+        assert_eq!(target, RouteTarget::Kind(OutboundKind::Direct));
+        assert_eq!(tag, "direct");
+    }
+
+    #[test]
     fn unsupported_tun_routing_action_is_rejected_explicitly() {
-        let err = route_target_from_decision(&Decision::Sniff)
+        let err = route_target_from_decision(&Decision::Resolve)
             .expect_err("unsupported tun routing action should be rejected");
         assert_eq!(err.kind(), io::ErrorKind::Unsupported);
-        let msg = err.to_string();
-        assert!(msg.contains("routing action 'sniff' is unsupported"));
-        assert!(msg.contains("implicit direct fallback is disabled"));
+        assert!(err.to_string().contains("implicit direct fallback is disabled"));
     }
 
     #[test]

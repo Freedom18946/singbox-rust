@@ -548,7 +548,7 @@ async fn connect_via_router(
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("destination rejected by router"))
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
             return Err(anyhow!(
                 "anytls: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
             ));

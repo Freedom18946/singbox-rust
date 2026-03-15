@@ -90,6 +90,7 @@ fn hkdf_expand_label(secret: &[u8], label: &str, length: usize) -> Option<Vec<u8
 }
 
 /// CRYPTO frame fragment for reassembly.
+#[derive(Debug)]
 struct CryptoFragment {
     offset: u64,
     payload: Vec<u8>,
@@ -381,6 +382,402 @@ pub fn sniff_quic_sni(buf: &[u8]) -> Option<SniffOutcome> {
         protocol: Some("quic"),
         host: Some(sni),
         alpn: Some("h3".to_string()),
+    })
+}
+
+// --- Multi-packet QUIC reassembly ---
+
+/// Result of multi-packet QUIC SNI extraction.
+#[derive(Debug)]
+pub enum SniffQuicResult {
+    /// SNI successfully extracted.
+    Done(SniffOutcome),
+    /// Need more packets to complete ClientHello reassembly.
+    NeedMoreData(QuicReassembly),
+    /// Not a QUIC Initial packet.
+    NotQuic,
+}
+
+/// Accumulated state for multi-packet QUIC ClientHello reassembly.
+/// Chrome and some clients split large TLS ClientHello across multiple
+/// QUIC Initial packets. This struct holds the accumulated CRYPTO frame
+/// data and key material needed to decrypt subsequent packets.
+#[derive(Debug)]
+pub struct QuicReassembly {
+    /// Accumulated CRYPTO frame fragments across packets.
+    fragments: Vec<CryptoFragment>,
+    /// Expected total CRYPTO length from TLS ClientHello header (4 bytes in).
+    /// Set after we see the first CRYPTO data containing the handshake header.
+    expected_len: Option<usize>,
+    /// DCID from first packet (same key material for all Initial packets).
+    dcid: Vec<u8>,
+    /// QUIC version.
+    version: u32,
+    /// Derived client_secret (cached to avoid re-deriving per packet).
+    client_secret: Vec<u8>,
+}
+
+/// Decrypt a QUIC Initial packet and extract CRYPTO frame fragments.
+/// Returns the fragments or None if decryption fails.
+fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: &[u8]) -> Option<Vec<CryptoFragment>> {
+    if buf.len() < 6 {
+        return None;
+    }
+
+    let flags = buf[0];
+    if flags & 0x40 == 0 {
+        return None;
+    }
+
+    let pkt_version = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+    if pkt_version != version {
+        return None;
+    }
+
+    let packet_type = (flags & 0x30) >> 4;
+    if (packet_type == 0 && version == VERSION_2)
+        || (packet_type == 2 && version != VERSION_2)
+        || packet_type > 2
+    {
+        return None;
+    }
+
+    let mut pos = 5;
+
+    // DCID
+    if pos >= buf.len() { return None; }
+    let pkt_dcid_len = buf[pos] as usize;
+    pos += 1;
+    if pkt_dcid_len == 0 || pkt_dcid_len > 20 || pos + pkt_dcid_len > buf.len() {
+        return None;
+    }
+    let pkt_dcid = &buf[pos..pos + pkt_dcid_len];
+    pos += pkt_dcid_len;
+
+    // For multi-packet: verify DCID matches (same connection)
+    if pkt_dcid != dcid {
+        return None;
+    }
+
+    // SCID
+    if pos >= buf.len() { return None; }
+    let scid_len = buf[pos] as usize;
+    pos += 1;
+    if pos + scid_len > buf.len() { return None; }
+    pos += scid_len;
+
+    // Token length
+    let (token_len, vlen) = read_quic_varint(buf, pos)?;
+    pos += vlen;
+    if pos + token_len as usize > buf.len() { return None; }
+    pos += token_len as usize;
+
+    // Packet length
+    let (packet_len, vlen) = read_quic_varint(buf, pos)?;
+    pos += vlen;
+
+    let hdr_len = pos;
+    if hdr_len + packet_len as usize > buf.len() { return None; }
+    if hdr_len + 4 + 16 > buf.len() { return None; }
+
+    let sample = &buf[hdr_len + 4..hdr_len + 4 + 16];
+
+    // HP removal
+    let hp_label = match version {
+        VERSION_2 => "quicv2 hp",
+        _ => "quic hp",
+    };
+    let hp_key = hkdf_expand_label(client_secret, hp_label, 16)?;
+    let aes_cipher = Aes128::new_from_slice(&hp_key).ok()?;
+    let mut block = aes::Block::clone_from_slice(sample);
+    aes_cipher.encrypt_block(&mut block);
+    let mask = block;
+
+    let mut packet = buf.to_vec();
+    packet[0] ^= mask[0] & 0x0f;
+    for i in 0..4 {
+        packet[hdr_len + i] ^= mask[1 + i];
+    }
+
+    let pn_len = (packet[0] & 0x03) as usize + 1;
+    if hdr_len + pn_len > hdr_len + packet_len as usize { return None; }
+
+    let packet_number: u32 = match pn_len {
+        1 => packet[hdr_len] as u32,
+        2 => u16::from_be_bytes([packet[hdr_len], packet[hdr_len + 1]]) as u32,
+        3 => ((packet[hdr_len] as u32) << 16)
+            | ((packet[hdr_len + 1] as u32) << 8)
+            | (packet[hdr_len + 2] as u32),
+        4 => u32::from_be_bytes([
+            packet[hdr_len], packet[hdr_len + 1], packet[hdr_len + 2], packet[hdr_len + 3],
+        ]),
+        _ => return None,
+    };
+
+    let ext_hdr_len = hdr_len + pn_len;
+    let copy_end = hdr_len + 4;
+    if ext_hdr_len < copy_end {
+        packet[ext_hdr_len..copy_end].copy_from_slice(&buf[ext_hdr_len..copy_end]);
+    }
+
+    // Decrypt
+    let (key_label, iv_label) = match version {
+        VERSION_2 => ("quicv2 key", "quicv2 iv"),
+        _ => ("quic key", "quic iv"),
+    };
+    let key = hkdf_expand_label(client_secret, key_label, 16)?;
+    let iv = hkdf_expand_label(client_secret, iv_label, 12)?;
+
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&iv);
+    let pn_be = (packet_number as u64).to_be_bytes();
+    for i in 0..8 {
+        nonce[4 + i] ^= pn_be[i];
+    }
+
+    let payload_end = hdr_len + packet_len as usize;
+    if ext_hdr_len >= payload_end { return None; }
+
+    let aad = packet[..ext_hdr_len].to_vec();
+    let mut buffer = packet[ext_hdr_len..payload_end].to_vec();
+
+    let gcm_cipher = Aes128Gcm::new_from_slice(&key).ok()?;
+    gcm_cipher
+        .decrypt_in_place(Nonce::from_slice(&nonce), &aad, &mut buffer)
+        .ok()?;
+
+    // Parse frames for CRYPTO
+    let mut fragments: Vec<CryptoFragment> = Vec::new();
+    let mut fpos = 0;
+
+    while fpos < buffer.len() {
+        let frame_type = buffer[fpos];
+        fpos += 1;
+        match frame_type {
+            0x00 => continue,
+            0x01 => continue,
+            0x02 | 0x03 => {
+                let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (range_count, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                for _ in 0..range_count {
+                    let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                    fpos += vl;
+                    let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                    fpos += vl;
+                }
+                if frame_type == 0x03 {
+                    for _ in 0..3 {
+                        let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                        fpos += vl;
+                    }
+                }
+            }
+            0x06 => {
+                let (offset, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (length, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let length = length as usize;
+                if fpos + length > buffer.len() { return None; }
+                fragments.push(CryptoFragment {
+                    offset,
+                    payload: buffer[fpos..fpos + length].to_vec(),
+                });
+                fpos += length;
+            }
+            0x1c => {
+                let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (_, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                let (reason_len, vl) = read_quic_varint(&buffer, fpos)?;
+                fpos += vl;
+                fpos += reason_len as usize;
+            }
+            _ => return None,
+        }
+    }
+
+    Some(fragments)
+}
+
+/// Try to reassemble CRYPTO fragments into a TLS ClientHello and extract SNI.
+fn try_reassemble_sni(fragments: &[CryptoFragment]) -> Option<SniffOutcome> {
+    if fragments.is_empty() {
+        return None;
+    }
+
+    let total_len: u64 = fragments.iter().map(|f| f.payload.len() as u64).sum();
+    let mut tls_record = Vec::with_capacity(5 + total_len as usize);
+    tls_record.push(0x16);
+    tls_record.push(0x03);
+    tls_record.push(0x03);
+    tls_record.push((total_len >> 8) as u8);
+    tls_record.push(total_len as u8);
+
+    let mut index: u64 = 0;
+    loop {
+        let mut found = false;
+        for frag in fragments {
+            if frag.offset == index {
+                tls_record.extend_from_slice(&frag.payload);
+                index = frag.offset + frag.payload.len() as u64;
+                found = true;
+                break;
+            }
+        }
+        if !found { break; }
+    }
+
+    let tls_info = sniff_tls_client_hello(&tls_record)?;
+    let sni = tls_info.sni?;
+    Some(SniffOutcome {
+        protocol: Some("quic"),
+        host: Some(sni),
+        alpn: Some("h3".to_string()),
+    })
+}
+
+/// Determine expected TLS ClientHello length from accumulated CRYPTO data.
+/// The TLS handshake header is: [msg_type=1][length(3 bytes)].
+/// Returns the total expected length (handshake header + body).
+fn expected_crypto_len(fragments: &[CryptoFragment]) -> Option<usize> {
+    // We need at least the first 4 bytes (msg_type + 3-byte length)
+    // Find the fragment at offset 0
+    let first = fragments.iter().find(|f| f.offset == 0)?;
+    if first.payload.len() < 4 {
+        return None;
+    }
+    if first.payload[0] != 1 {
+        // Not ClientHello
+        return None;
+    }
+    let hs_len = ((first.payload[1] as usize) << 16)
+        | ((first.payload[2] as usize) << 8)
+        | (first.payload[3] as usize);
+    Some(4 + hs_len) // handshake header (4) + body
+}
+
+/// Multi-packet QUIC SNI extraction.
+///
+/// On first call, pass `state: None`. If the ClientHello spans multiple packets,
+/// returns `NeedMoreData` with accumulated state. Feed subsequent packets by
+/// calling again with the returned state.
+///
+/// Limits: max 5 accumulated packets to prevent unbounded accumulation.
+pub fn sniff_quic_sni_multi(buf: &[u8], state: Option<QuicReassembly>) -> SniffQuicResult {
+    const MAX_PACKETS: usize = 5;
+
+    if let Some(mut ctx) = state {
+        // Subsequent packet: decrypt and accumulate
+        if let Some(new_frags) = decrypt_initial_crypto(buf, &ctx.dcid, ctx.version, &ctx.client_secret) {
+            ctx.fragments.extend(new_frags);
+
+            // Check if we have enough data
+            if ctx.expected_len.is_none() {
+                ctx.expected_len = expected_crypto_len(&ctx.fragments);
+            }
+
+            if let Some(outcome) = try_reassemble_sni(&ctx.fragments) {
+                return SniffQuicResult::Done(outcome);
+            }
+
+            // Check limits
+            let accumulated_len: usize = ctx.fragments.iter().map(|f| f.payload.len()).sum();
+            if let Some(expected) = ctx.expected_len {
+                if accumulated_len >= expected {
+                    // We have enough data but reassembly failed — give up
+                    return SniffQuicResult::NotQuic;
+                }
+            }
+            if ctx.fragments.len() > MAX_PACKETS * 4 {
+                // Too many fragments, give up
+                return SniffQuicResult::NotQuic;
+            }
+
+            return SniffQuicResult::NeedMoreData(ctx);
+        }
+        // Decryption failed for subsequent packet — try with what we have
+        if let Some(outcome) = try_reassemble_sni(&ctx.fragments) {
+            return SniffQuicResult::Done(outcome);
+        }
+        return SniffQuicResult::NotQuic;
+    }
+
+    // First packet: try single-packet extraction first
+    if let Some(outcome) = sniff_quic_sni(buf) {
+        return SniffQuicResult::Done(outcome);
+    }
+
+    // Try to start multi-packet: parse header and derive keys
+    if buf.len() < 6 {
+        return SniffQuicResult::NotQuic;
+    }
+
+    let flags = buf[0];
+    if flags & 0x40 == 0 {
+        return SniffQuicResult::NotQuic;
+    }
+
+    let version = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+    if version != VERSION_DRAFT_29 && version != VERSION_1 && version != VERSION_2 {
+        return SniffQuicResult::NotQuic;
+    }
+
+    let packet_type = (flags & 0x30) >> 4;
+    if (packet_type == 0 && version == VERSION_2)
+        || (packet_type == 2 && version != VERSION_2)
+        || packet_type > 2
+    {
+        return SniffQuicResult::NotQuic;
+    }
+
+    let mut pos = 5;
+    if pos >= buf.len() { return SniffQuicResult::NotQuic; }
+    let dcid_len = buf[pos] as usize;
+    pos += 1;
+    if dcid_len == 0 || dcid_len > 20 || pos + dcid_len > buf.len() {
+        return SniffQuicResult::NotQuic;
+    }
+    let dcid = buf[pos..pos + dcid_len].to_vec();
+
+    // Derive client_secret
+    let salt: &[u8] = match version {
+        VERSION_1 => &SALT_V1,
+        VERSION_2 => &SALT_V2,
+        _ => &SALT_OLD,
+    };
+    let (initial_secret, _) = Hkdf::<Sha256>::extract(Some(salt), &dcid);
+    let client_secret = match hkdf_expand_label(initial_secret.as_slice(), "client in", 32) {
+        Some(s) => s,
+        None => return SniffQuicResult::NotQuic,
+    };
+
+    // Decrypt first packet
+    let fragments = match decrypt_initial_crypto(buf, &dcid, version, &client_secret) {
+        Some(f) if !f.is_empty() => f,
+        _ => return SniffQuicResult::NotQuic,
+    };
+
+    let expected_len = expected_crypto_len(&fragments);
+
+    // Check if we need more data
+    if let Some(outcome) = try_reassemble_sni(&fragments) {
+        return SniffQuicResult::Done(outcome);
+    }
+
+    SniffQuicResult::NeedMoreData(QuicReassembly {
+        fragments,
+        expected_len,
+        dcid,
+        version,
+        client_secret,
     })
 }
 

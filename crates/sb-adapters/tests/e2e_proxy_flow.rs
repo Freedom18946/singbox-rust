@@ -20,6 +20,8 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
+use std::sync::atomic::AtomicU64;
+
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
 use sb_core::outbound::{OutboundImpl, OutboundKind, OutboundRegistry, OutboundRegistryHandle};
@@ -143,6 +145,7 @@ async fn start_http_inbound(
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        active_connections: Arc::new(AtomicU64::new(0)),
     };
 
     tokio::spawn(async move {

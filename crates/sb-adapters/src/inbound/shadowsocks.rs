@@ -1455,7 +1455,7 @@ where
             ));
         }
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("ss: rejected by rules")),
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
             return Err(anyhow!(
                 "ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
             ));

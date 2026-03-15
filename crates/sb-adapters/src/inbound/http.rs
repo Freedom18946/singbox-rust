@@ -425,7 +425,8 @@ where
     // Handle Decision::Sniff: send 200 early, read initial bytes, sniff, re-decide
     let mut sniff_prefix: Vec<u8> = Vec::new();
     let mut sniff_reply_sent = false;
-    if matches!(decision, RDecision::Sniff) {
+    let mut override_host: Option<String> = None;
+    if let RDecision::Sniff { override_destination } = decision {
         if sb_core::router::sniff::skip_sniff(port) {
             decision = RDecision::Direct;
         } else {
@@ -477,13 +478,25 @@ where
                 decision = meta2.decision;
                 rule = meta2.rule;
                 sniff_prefix = buf;
+
+                // OverrideDestination: replace outbound target with sniffed domain
+                if override_destination {
+                    if let Some(ref h) = outcome.host {
+                        if !h.is_empty() {
+                            tracing::debug!(sniffed_host = %h, "http: override destination with sniffed host");
+                            override_host = Some(h.clone());
+                        }
+                    }
+                }
             }
 
-            if matches!(decision, RDecision::Sniff) {
+            if matches!(decision, RDecision::Sniff { .. }) {
                 decision = RDecision::Direct;
             }
         }
     }
+    // Apply sniff override: use sniffed domain as outbound target
+    let host: &str = if let Some(ref oh) = override_host { oh } else { host };
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
@@ -601,8 +614,8 @@ where
             // Should be filtered earlier; return explicit error to avoid panic paths.
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            // Sniff should have been handled above; safety net falls back to direct.
+        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+            tracing::warn!("http inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision");
             outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;
             Box::new(s)

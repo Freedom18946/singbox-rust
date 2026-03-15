@@ -39,7 +39,10 @@ pub enum Decision {
     },
     /// Trigger protocol sniffing before routing.
     /// 在路由前触发协议嗅探。
-    Sniff,
+    Sniff {
+        /// When true, replace routing destination with sniffed domain (Go parity: `override_destination`).
+        override_destination: bool,
+    },
     /// Require DNS resolution before continuing.
     /// 在继续前需要 DNS 解析。
     Resolve,
@@ -66,7 +69,7 @@ impl Decision {
             Decision::Reject => "reject",
             Decision::RejectDrop => "reject-drop",
             Decision::Hijack { .. } => "hijack",
-            Decision::Sniff => "sniff",
+            Decision::Sniff { .. } => "sniff",
             Decision::Resolve => "resolve",
             Decision::HijackDns => "hijack-dns",
         }
@@ -106,10 +109,10 @@ impl Decision {
                 port: override_port,
             },
             RuleAction::HijackDns => Decision::HijackDns,
-            RuleAction::Sniff => Decision::Sniff,
+            RuleAction::Sniff => Decision::Sniff { override_destination: false },
             RuleAction::Resolve => Decision::Resolve,
             RuleAction::RouteOptions => Self::from_outbound_or_unresolved(outbound.as_deref()),
-            RuleAction::SniffOverride => Decision::Sniff, // NOTE: SniffOverride defaults to Sniff
+            RuleAction::SniffOverride => Decision::Sniff { override_destination: true },
         }
     }
 }
@@ -1919,7 +1922,7 @@ fn decision_label(d: &Decision) -> &'static str {
         Decision::Reject => "reject",
         Decision::RejectDrop => "reject-drop",
         Decision::Hijack { .. } => "hijack",
-        Decision::Sniff => "sniff",
+        Decision::Sniff { .. } => "sniff",
         Decision::Resolve => "resolve",
         Decision::HijackDns => "hijack-dns",
     }

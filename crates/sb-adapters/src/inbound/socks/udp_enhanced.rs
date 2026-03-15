@@ -299,7 +299,7 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 continue;
             }
             RDecision::Direct => {}
-            RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
+            RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
                 tracing::warn!(
                     "socks5-udp(enhanced): unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped"
                 );

@@ -863,7 +863,7 @@ impl RouterHandle {
         for rule in &idx.rules {
             if rule.matches(&rules_ctx) {
                 // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
-                if matches!(rule.decision, crate::router::rules::Decision::Sniff)
+                if matches!(rule.decision, crate::router::rules::Decision::Sniff { .. })
                     && rules_ctx.protocol.is_some()
                 {
                     continue;
@@ -1423,7 +1423,7 @@ impl RouterHandle {
             for (i, rule) in idx.rules.iter().enumerate() {
                 if rule.matches(&rules_ctx) {
                     // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
-                    if matches!(rule.decision, crate::router::rules::Decision::Sniff)
+                    if matches!(rule.decision, crate::router::rules::Decision::Sniff { .. })
                         && rules_ctx.protocol.is_some()
                     {
                         continue;
@@ -1528,7 +1528,7 @@ fn decision_to_route_result(
             result.outbound = Some(format!("hijack:{}:{}", addr, p));
             result
         }
-        Decision::Sniff => RouteResult::new(Decision::Sniff),
+        Decision::Sniff { .. } => RouteResult::new(decision.clone()),
         Decision::Resolve => RouteResult::new(Decision::Resolve),
         Decision::HijackDns => RouteResult::new(Decision::HijackDns),
     }

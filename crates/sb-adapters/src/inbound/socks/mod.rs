@@ -543,7 +543,8 @@ where
     // Handle Decision::Sniff: send reply early, read initial bytes, sniff, re-decide
     let mut sniff_prefix: Vec<u8> = Vec::new();
     let mut sniff_reply_sent = false;
-    if matches!(decision, RDecision::Sniff) {
+    let mut override_host: Option<String> = None;
+    if let RDecision::Sniff { override_destination } = decision {
         let dest_port = port_opt.unwrap_or(0);
         if sb_core::router::sniff::skip_sniff(dest_port) {
             decision = RDecision::Direct;
@@ -594,12 +595,29 @@ where
                 decision = meta2.decision;
                 rule = meta2.rule;
                 sniff_prefix = buf;
+
+                // OverrideDestination: replace outbound target with sniffed domain
+                if override_destination {
+                    if let Some(ref h) = outcome.host {
+                        if !h.is_empty() {
+                            tracing::debug!(sniffed_host = %h, "socks5: override destination with sniffed host");
+                            override_host = Some(h.clone());
+                        }
+                    }
+                }
             }
 
             // Safety net: if still Sniff after re-decide, fall back to Direct
-            if matches!(decision, RDecision::Sniff) {
+            if matches!(decision, RDecision::Sniff { .. }) {
                 decision = RDecision::Direct;
             }
+        }
+    }
+
+    // Apply sniff override: use sniffed domain as outbound target
+    if let Some(ref oh) = override_host {
+        if let Some(p) = port_opt {
+            endpoint = Endpoint::Domain(oh.clone(), p);
         }
     }
 
@@ -855,8 +873,8 @@ where
             // Should have been filtered earlier; return explicit error to avoid panic.
             return Err(io::Error::other("socks: rejected by rules"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff | RDecision::Resolve | RDecision::HijackDns => {
-            // Sniff should have been handled above; this is a safety net.
+        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+            tracing::warn!("socks5 inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision");
             outbound_tag = Some("direct".to_string());
             match &endpoint {
                 Endpoint::Domain(host, port) => {

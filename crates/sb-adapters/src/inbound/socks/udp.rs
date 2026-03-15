@@ -327,8 +327,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 continue;
             }
         };
-        // 规则引擎（Reject），Proxy 暂不支持，显式丢弃（禁止 direct fallback）
-        // Rule engine (Reject), Proxy not supported yet, drop explicitly (no direct fallback)
+        // 规则引擎（含 Sniff 支持）
+        // Rule engine (with Sniff support)
         let mut rule: Option<String> = None;
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
@@ -347,8 +347,66 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 port,
                 ..Default::default()
             };
-            let (d, r) = eng.decide_with_meta(&ctx);
+            let (mut d, r) = eng.decide_with_meta(&ctx);
             rule = r;
+
+            // Handle Decision::Sniff: sniff UDP payload (with multi-packet QUIC support) and re-decide
+            if matches!(d, RDecision::Sniff { .. }) {
+                let payload = &buf[hdr_len..n];
+                let (mut outcome, mut quic_ctx) = sb_core::router::sniff::sniff_datagram_multi(payload);
+
+                // Multi-packet QUIC reassembly: read additional packets with timeout
+                if quic_ctx.is_some() {
+                    let mut extra_buf = vec![0u8; 64 * 1024];
+                    for _ in 0..4 {
+                        let ctx_val = match quic_ctx.take() {
+                            Some(c) => c,
+                            None => break,
+                        };
+                        match tokio::time::timeout(
+                            Duration::from_millis(300),
+                            sock.recv_from(&mut extra_buf),
+                        ).await {
+                            Ok(Ok((en, _epeer))) => {
+                                // Try to parse SOCKS5 UDP header from extra packet
+                                if let Ok((_edst, ehdr_len)) = parse_socks5_udp(&extra_buf[..en]) {
+                                    let epayload = &extra_buf[ehdr_len..en];
+                                    let (result, new_ctx) = sb_core::router::sniff::sniff_datagram_continue(epayload, ctx_val);
+                                    if let Some(final_outcome) = result {
+                                        outcome = final_outcome;
+                                        break;
+                                    }
+                                    quic_ctx = new_ctx;
+                                } else {
+                                    break;
+                                }
+                            }
+                            _ => break, // Timeout or error
+                        }
+                    }
+                }
+
+                tracing::debug!(
+                    protocol = ?outcome.protocol,
+                    host = ?outcome.host,
+                    "socks5-udp: sniffed datagram"
+                );
+                let sniffed_domain_owned: Option<String> = outcome.host;
+                let sniffed_dom_ref = sniffed_domain_owned.as_deref().or(dom);
+                let ctx2 = RouteCtx {
+                    domain: sniffed_dom_ref,
+                    ip,
+                    transport_udp: true,
+                    network: Some("udp"),
+                    port,
+                    protocol: outcome.protocol,
+                    ..Default::default()
+                };
+                let (d2, r2) = eng.decide_with_meta(&ctx2);
+                d = if matches!(d2, RDecision::Sniff { .. }) { RDecision::Direct } else { d2 };
+                rule = r2;
+            }
+
             #[cfg(feature = "metrics")]
             {
                 counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
@@ -1118,8 +1176,8 @@ pub async fn serve_udp_datagrams(
         let mut _decision_label = "direct".to_string();
         let mut rule: Option<String> = None;
 
-        // 规则引擎：UDP 硬裁决（Reject -> 丢弃）
-        // Rule engine: UDP hard decision (Reject -> Drop)
+        // 规则引擎（含 Sniff 支持）
+        // Rule engine (with Sniff support)
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
                 UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
@@ -1137,8 +1195,65 @@ pub async fn serve_udp_datagrams(
                 port,
                 ..Default::default()
             };
-            let (d, r) = eng.decide_with_meta(&ctx);
+            let (mut d, r) = eng.decide_with_meta(&ctx);
             rule = r;
+
+            // Handle Decision::Sniff: sniff UDP payload (with multi-packet QUIC support) and re-decide
+            if matches!(d, RDecision::Sniff { .. }) {
+                let payload = &buf[header_len..n];
+                let (mut outcome, mut quic_ctx) = sb_core::router::sniff::sniff_datagram_multi(payload);
+
+                // Multi-packet QUIC reassembly: read additional packets with timeout
+                if quic_ctx.is_some() {
+                    let mut extra_buf = vec![0u8; 64 * 1024];
+                    for _ in 0..4 {
+                        let ctx_val = match quic_ctx.take() {
+                            Some(c) => c,
+                            None => break,
+                        };
+                        match tokio::time::timeout(
+                            Duration::from_millis(300),
+                            sock.recv_from(&mut extra_buf),
+                        ).await {
+                            Ok(Ok((en, _epeer))) => {
+                                if let Ok((_edst, ehdr_len)) = parse_udp_datagram(&extra_buf[..en]) {
+                                    let epayload = &extra_buf[ehdr_len..en];
+                                    let (result, new_ctx) = sb_core::router::sniff::sniff_datagram_continue(epayload, ctx_val);
+                                    if let Some(final_outcome) = result {
+                                        outcome = final_outcome;
+                                        break;
+                                    }
+                                    quic_ctx = new_ctx;
+                                } else {
+                                    break;
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                }
+
+                tracing::debug!(
+                    protocol = ?outcome.protocol,
+                    host = ?outcome.host,
+                    "socks5-udp-balancer: sniffed datagram"
+                );
+                let sniffed_domain_owned: Option<String> = outcome.host;
+                let sniffed_dom_ref = sniffed_domain_owned.as_deref().or(dom);
+                let ctx2 = RouteCtx {
+                    domain: sniffed_dom_ref,
+                    ip,
+                    transport_udp: true,
+                    network: Some("udp"),
+                    port,
+                    protocol: outcome.protocol,
+                    ..Default::default()
+                };
+                let (d2, r2) = eng.decide_with_meta(&ctx2);
+                d = if matches!(d2, RDecision::Sniff { .. }) { RDecision::Direct } else { d2 };
+                rule = r2;
+            }
+
             #[cfg(feature = "metrics")]
             {
                 counter!("router_decide_total", "decision"=> match d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
@@ -1157,9 +1272,9 @@ pub async fn serve_udp_datagrams(
                 RDecision::Direct => {
                     _decision_label = "direct".to_string();
                 }
-                // Sniff/Resolve/Hijack not yet supported in UDP handlers.
+                // Resolve/Hijack not yet supported in UDP handlers.
                 RDecision::Hijack { .. }
-                | RDecision::Sniff
+                | RDecision::Sniff { .. }  // unreachable after sniff handling above
                 | RDecision::Resolve
                 | RDecision::HijackDns => {
                     tracing::warn!(

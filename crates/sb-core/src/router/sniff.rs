@@ -312,6 +312,70 @@ pub fn sniff_datagram(buf: &[u8]) -> SniffOutcome {
     out
 }
 
+/// Result of multi-packet datagram sniffing.
+pub use super::sniff_quic::{QuicReassembly, SniffQuicResult};
+
+/// Sniff a datagram with multi-packet QUIC reassembly support.
+///
+/// On first call, pass `quic_state: None`. If QUIC needs more packets,
+/// returns `(SniffOutcome::default(), Some(reassembly))`.
+/// Feed subsequent packets by calling `sniff_datagram_continue()`.
+///
+/// For non-QUIC protocols, returns the result immediately with `quic_state: None`.
+pub fn sniff_datagram_multi(buf: &[u8]) -> (SniffOutcome, Option<QuicReassembly>) {
+    let mut out = SniffOutcome::default();
+
+    // Non-QUIC protocols: return immediately
+    if let Some(dns_info) = sniff_dns_query(buf) {
+        out.protocol = Some("dns");
+        out.host = dns_info.domain;
+        return (out, None);
+    }
+    if is_dtls_record(buf) {
+        return (SniffOutcome { protocol: Some("dtls"), ..Default::default() }, None);
+    }
+    if is_stun_message(buf) {
+        return (SniffOutcome { protocol: Some("stun"), ..Default::default() }, None);
+    }
+    if is_bittorrent_utp(buf) || is_bittorrent_udp_tracker(buf) {
+        return (SniffOutcome { protocol: Some("bittorrent"), ..Default::default() }, None);
+    }
+    if is_ntp_protocol(buf) {
+        return (SniffOutcome { protocol: Some("ntp"), ..Default::default() }, None);
+    }
+
+    // QUIC: try multi-packet extraction
+    match super::sniff_quic::sniff_quic_sni_multi(buf, None) {
+        SniffQuicResult::Done(outcome) => (outcome, None),
+        SniffQuicResult::NeedMoreData(ctx) => {
+            // Return QUIC detection (h3 hint) but signal need for more data
+            out.protocol = Some("quic");
+            out.alpn = Some("h3".to_string());
+            (out, Some(ctx))
+        }
+        SniffQuicResult::NotQuic => {
+            // Fall back to detection-only
+            if let Some(alpn) = sniff_quic_initial(buf) {
+                out.protocol = Some("quic");
+                out.alpn = Some(alpn.to_string());
+            }
+            (out, None)
+        }
+    }
+}
+
+/// Continue multi-packet QUIC sniffing with an additional packet.
+/// Returns `Some(SniffOutcome)` when SNI is extracted, `None` if still need more data.
+/// The `ctx` is consumed; if `None` is returned, caller should read another packet
+/// and call again.
+pub fn sniff_datagram_continue(buf: &[u8], ctx: QuicReassembly) -> (Option<SniffOutcome>, Option<QuicReassembly>) {
+    match super::sniff_quic::sniff_quic_sni_multi(buf, Some(ctx)) {
+        SniffQuicResult::Done(outcome) => (Some(outcome), None),
+        SniffQuicResult::NeedMoreData(new_ctx) => (None, Some(new_ctx)),
+        SniffQuicResult::NotQuic => (None, None),
+    }
+}
+
 fn is_bittorrent_handshake(buf: &[u8]) -> bool {
     const HEADER: &[u8] = b"BitTorrent protocol";
     buf.len() > HEADER.len() && buf[0] == 19 && &buf[1..1 + HEADER.len()] == HEADER

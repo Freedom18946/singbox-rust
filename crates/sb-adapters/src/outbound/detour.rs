@@ -1,7 +1,10 @@
 use crate::outbound::prelude::*;
-use sb_core::outbound::{Endpoint, RouteTarget};
 use tokio::net::TcpStream;
 
+#[cfg(feature = "sb-transport")]
+use sb_core::outbound::{Endpoint, RouteTarget};
+
+#[cfg(feature = "sb-transport")]
 fn endpoint_for(host: &str, port: u16) -> Endpoint {
     match host.parse::<std::net::IpAddr>() {
         Ok(ip) => Endpoint::Ip(std::net::SocketAddr::new(ip, port)),
@@ -15,6 +18,7 @@ pub async fn connect_tcp_stream(
     detour: Option<&str>,
     timeout: std::time::Duration,
 ) -> Result<BoxedStream> {
+    #[cfg(feature = "sb-transport")]
     if let Some(tag) = detour.filter(|tag| !tag.trim().is_empty()) {
         let handle = sb_core::adapter::registry::runtime_outbounds().ok_or_else(|| {
             AdapterError::Other(
@@ -32,6 +36,13 @@ pub async fn connect_tcp_stream(
         return Ok(crate::traits::from_transport_stream(stream));
     }
 
+    #[cfg(not(feature = "sb-transport"))]
+    if detour.filter(|tag| !tag.trim().is_empty()).is_some() {
+        return Err(AdapterError::Other(
+            "detour dialing requires the sb-transport feature".to_string(),
+        ));
+    }
+
     let tcp_stream = tokio::time::timeout(timeout, TcpStream::connect((host, port)))
         .await
         .map_err(|_| AdapterError::Timeout(timeout))?
@@ -39,7 +50,7 @@ pub async fn connect_tcp_stream(
     Ok(Box::new(tcp_stream) as BoxedStream)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sb-transport"))]
 mod tests {
     use super::*;
     use async_trait::async_trait;
