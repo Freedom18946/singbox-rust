@@ -96,7 +96,7 @@ fn tcp_relay_throughput(c: &mut Criterion) {
                 let data = payload.clone();
                 b.to_async(&rt).iter(|| {
                     let d = data.clone();
-                    async move { black_box(bench_relay_throughput(&d, relay_buf).await) }
+                    async move { bench_relay_throughput(&d, relay_buf).await; black_box(()) }
                 });
             },
         );
@@ -113,7 +113,7 @@ fn tcp_relay_throughput(c: &mut Criterion) {
                 let data = payload.clone();
                 b.to_async(&rt).iter(|| {
                     let d = data.clone();
-                    async move { black_box(bench_relay_throughput(&d, 64 * 1024).await) }
+                    async move { bench_relay_throughput(&d, 64 * 1024).await; black_box(()) }
                 });
             },
         );

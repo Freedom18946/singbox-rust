@@ -3581,7 +3581,7 @@ impl InboundService for HttpInboundAdapter {
             .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().unwrap();
+            let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -3590,13 +3590,13 @@ impl InboundService for HttpInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap().take();
+        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         res
     }
 
     fn request_shutdown(&self) {
         eprintln!("HttpInboundAdapter::request_shutdown called");
-        let mut guard = self.stop_tx.lock().unwrap();
+        let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }
@@ -3678,7 +3678,7 @@ impl InboundService for MixedInboundAdapter {
             .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().unwrap();
+            let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -3687,12 +3687,12 @@ impl InboundService for MixedInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap().take();
+        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         res
     }
 
     fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
+        let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }
@@ -3743,7 +3743,7 @@ impl InboundService for RedirectInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().unwrap();
+            let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -3752,12 +3752,12 @@ impl InboundService for RedirectInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap().take();
+        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         res
     }
 
     fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
+        let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }
@@ -3806,7 +3806,7 @@ impl InboundService for TproxyInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().unwrap();
+            let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -3815,12 +3815,12 @@ impl InboundService for TproxyInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap().take();
+        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         res
     }
 
     fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
+        let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }

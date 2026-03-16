@@ -77,8 +77,7 @@ impl GeoMux {
     /// Create a new `GeoMux` instance
     pub fn new(strategy: LookupStrategy) -> Self {
         // SAFETY: 5000 is a non-zero constant; fallback to 1 on theoretical failure
-        let cap = std::num::NonZeroUsize::new(5000)
-            .unwrap_or(unsafe { std::num::NonZeroUsize::new_unchecked(1) });
+        let cap = std::num::NonZeroUsize::new(5000).unwrap();
         Self {
             providers: Vec::new(),
             strategy,

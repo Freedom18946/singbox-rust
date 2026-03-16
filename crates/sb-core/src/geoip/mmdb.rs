@@ -159,8 +159,7 @@ impl MmdbProvider {
     pub fn new() -> anyhow::Result<Self> {
         let reader = Arc::new(MmdbReader::new()?);
         // SAFETY: 10000 is a non-zero constant; unwrap_or fallback uses 1 which is non-zero
-        let cap = std::num::NonZeroUsize::new(10000)
-            .unwrap_or(unsafe { std::num::NonZeroUsize::new_unchecked(1) });
+        let cap = std::num::NonZeroUsize::new(10000).unwrap();
         let cache = std::sync::Mutex::new(lru::LruCache::new(cap));
 
         Ok(Self { reader, cache })
@@ -173,8 +172,7 @@ impl MmdbProvider {
     ) -> anyhow::Result<Self> {
         let reader = Arc::new(MmdbReader::from_paths(country_path, city_path, asn_path)?);
         // SAFETY: 10000 is a non-zero constant; unwrap_or fallback uses 1 which is non-zero
-        let cap = std::num::NonZeroUsize::new(10000)
-            .unwrap_or(unsafe { std::num::NonZeroUsize::new_unchecked(1) });
+        let cap = std::num::NonZeroUsize::new(10000).unwrap();
         let cache = std::sync::Mutex::new(lru::LruCache::new(cap));
 
         Ok(Self { reader, cache })
@@ -378,12 +376,10 @@ impl GeoIp {
             reader: Arc::new(mmdb_reader),
             cache: std::sync::Mutex::new(
                 // SAFETY: if cache_capacity is zero, fallback to 1024 (>0)
-                lru::LruCache::new(std::num::NonZeroUsize::new(cache_capacity).unwrap_or_else(
-                    || {
-                        // SAFETY: 1024 is a non-zero constant; NonZeroUsize::new_unchecked(1024) is sound
-                        unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
-                    },
-                )),
+                lru::LruCache::new(
+                    std::num::NonZeroUsize::new(cache_capacity)
+                        .unwrap_or(std::num::NonZeroUsize::new(1024).unwrap()),
+                ),
             ),
         };
 

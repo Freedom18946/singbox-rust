@@ -8,9 +8,11 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use super::DnsAnswer;
 
@@ -226,13 +228,7 @@ impl DnsCache {
 
     /// 从缓存获取 DNS 答案
     pub fn get(&self, key: &Key) -> Option<DnsAnswer> {
-        let mut cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on get");
-                return None;
-            }
-        };
+        let mut cache = self.cache.lock();
 
         if let Some(entry) = cache.get_mut(key) {
             // When disable_expire is true, skip the TTL expiry check entirely;
@@ -275,13 +271,7 @@ impl DnsCache {
         // 调整 TTL 到合理范围
         answer.ttl = answer.ttl.clamp(self.min_ttl, self.max_ttl);
 
-        let mut cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on put");
-                return;
-            }
-        };
+        let mut cache = self.cache.lock();
 
         // 如果缓存已满，执行 LRU 淘汰
         if cache.len() >= self.max_entries && !cache.contains_key(&key) {
@@ -308,13 +298,7 @@ impl DnsCache {
             Rcode::NxDomain,
         );
 
-        let mut cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on put_negative");
-                return;
-            }
-        };
+        let mut cache = self.cache.lock();
 
         // 如果缓存已满，执行 LRU 淘汰
         if cache.len() >= self.max_entries && !cache.contains_key(&key) {
@@ -341,13 +325,7 @@ impl DnsCache {
             return;
         }
 
-        let mut cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on cleanup_expired");
-                return;
-            }
-        };
+        let mut cache = self.cache.lock();
         let initial_size = cache.len();
 
         cache.retain(|_, entry| !entry.is_expired());
@@ -366,13 +344,7 @@ impl DnsCache {
 
     /// 清空缓存
     pub fn clear(&self) {
-        let mut cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on clear");
-                return;
-            }
-        };
+        let mut cache = self.cache.lock();
         let size = cache.len();
         cache.clear();
 
@@ -387,18 +359,7 @@ impl DnsCache {
 
     /// 获取缓存统计信息
     pub fn stats(&self) -> CacheStats {
-        let cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on stats");
-                return CacheStats {
-                    total_entries: 0,
-                    expired_entries: 0,
-                    negative_entries: 0,
-                    max_entries: self.max_entries,
-                };
-            }
-        };
+        let cache = self.cache.lock();
         let mut expired_count = 0;
         let mut negative_count = 0;
 
@@ -421,13 +382,7 @@ impl DnsCache {
 
     /// 查看指定域名的剩余TTL，不更新访问统计
     pub fn peek_remaining(&self, key: &Key) -> Option<Duration> {
-        let cache = match self.cache.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                tracing::error!(target: "sb_core::dns::cache", "cache lock poisoned on peek_remaining");
-                return None;
-            }
-        };
+        let cache = self.cache.lock();
 
         if let Some(entry) = cache.get(key) {
             if !self.disable_expire && entry.is_expired() {

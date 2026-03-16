@@ -57,7 +57,7 @@ fn get_config() -> LogConfig {
     CONFIG
         .get_or_init(|| RwLock::new(LogConfig::default()))
         .read()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .clone()
 }
 
@@ -73,7 +73,7 @@ pub fn configure(ir: &sb_config::ir::LogIR) {
     }
 
     let lock = CONFIG.get_or_init(|| RwLock::new(LogConfig::default()));
-    *lock.write().unwrap() = config;
+    *lock.write().unwrap_or_else(|e| e.into_inner()) = config;
 }
 
 fn parse_log_redact_env(value: Option<&str>) -> Result<bool, Arc<str>> {

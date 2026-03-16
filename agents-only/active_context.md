@@ -24,37 +24,32 @@
 
 ### B2 批次：性能热路径 + Benchmark — ✅ 核心已交付
 
-- ✅ T1-08: `suffix_match()` format!() 消除 → 零分配后缀检查 (`domain_matches_suffix()`)
-  - 同时修复 `router/ruleset/matcher.rs` (L153, L395) + `routing/matcher.rs` (L85) 的 format!()
-- ✅ T1-09: `matches_host()` to_string() 消除 → 快路径零分配（仅 uppercase 时 fallback 分配）
-  - `router/matcher.rs` 现已加入模块树 (`pub mod matcher` in router/mod.rs)
-  - `routing/matcher.rs` 域名预 lowercase 移至构建时
-- ✅ T1-12: 端到端 TCP relay benchmark (`benches/benches/tcp_relay_e2e.rs`)
-  - 基线: 16KB buf → 2.4 GiB/s, 64KB buf → 3.0 GiB/s (1MB payload, loopback)
-  - 额外: domain_match benchmark 验证优化效果
+- ✅ T1-08: `suffix_match()` format!() 消除 → 零分配后缀检查
+- ✅ T1-09: `matches_host()` to_string() 消除 → 快路径零分配
+- ✅ T1-12: TCP relay e2e benchmark (基线: 2.4-3.0 GiB/s) + domain_match benchmark
 
-### B2 待做（依赖 T1-12 已满足）
+### B3 批次：功能补全 + 错误处理 — ✅ 全部完成
+
+- ✅ T1-10: SOCKS5 outbound IPv6 — ATYP=0x04 + 16 字节地址 (`socks5.rs:138`)
+- ✅ T1-11: TUN IPv6 UDP 响应包 — `build_ipv6_udp()` + `ipv6_udp_checksum()` (`tun/udp.rs`)
+- ✅ T2-01: DNS cache `std::sync::Mutex` → `parking_lot::Mutex` — 7 处 match poison 模式消除
+- ✅ T2-02: `register.rs` 12x `.lock().unwrap()` → `.unwrap_or_else(|e| e.into_inner())`
+- ✅ T2-03: `log/mod.rs` RwLock poison-tolerant (`read`/`write` 均已修复)
+- ✅ T2-04: 5x `NonZeroUsize::new_unchecked()` unsafe → `NonZeroUsize::new(N).unwrap()`
+- ✅ 附带: `benches/tcp_relay_e2e.rs` 2x `unit_arg` clippy 错误修复
+
+### B2 仍 pending
 
 - T2-05: SS AEAD per-chunk aead_in_place 优化
 - T2-07: Benchmark 基线文档 + CI 集成
 - T2-09: TCP relay pump buffer 池化
 
-### 下一批次：B3（功能补全 + 错误处理）
-
-无前置依赖，可直接并行：
-- T1-10: SOCKS5 outbound IPv6 (ATYP=0x04) [S]
-- T1-11: TUN IPv6 UDP 响应包构建 [M]
-- T2-01: DNS cache Mutex async 化 [M]
-- T2-02: register.rs 12x unwrap defensive 化 [S]
-- T2-03: RwLock poison-tolerant 化 [S]
-- T2-04: NonZeroUsize unsafe 消除 [S]
-
-## 构建基线（2026-03-17）
+## 构建基线（2026-03-17，B3 交付后）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
+| `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
 | `cargo test -p sb-core --lib` | ✅ pass (509 tests) |
-| `cargo bench -p sb-benches --bench domain_match` | ✅ meaningful data |
-| `cargo bench -p sb-benches --bench tcp_relay_e2e` | ✅ meaningful data |
+| `cargo test -p sb-adapters` | ✅ pass |
 | `cargo +nightly fuzz build` | ✅ pass (20 targets) |

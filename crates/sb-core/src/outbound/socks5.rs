@@ -136,15 +136,16 @@ where
             msg.extend_from_slice(h.as_bytes());
             msg.extend_from_slice(&p.to_be_bytes());
         } else {
-            msg.push(0x01);
-            let oct = match port.ip() {
-                std::net::IpAddr::V4(v) => v.octets(),
-                std::net::IpAddr::V6(_) => {
-                    dialm::record_err("socks5", dialm::Phase::ProxyHandshake, t1, "ipv6_not_supported");
-                    return Err(anyhow!("socks5: ipv6 not implemented"));
+            match port.ip() {
+                std::net::IpAddr::V4(v) => {
+                    msg.push(0x01);
+                    msg.extend_from_slice(&v.octets());
                 }
-            };
-            msg.extend_from_slice(&oct);
+                std::net::IpAddr::V6(v) => {
+                    msg.push(0x04);
+                    msg.extend_from_slice(&v.octets());
+                }
+            }
             msg.extend_from_slice(&port.port().to_be_bytes());
         }
 

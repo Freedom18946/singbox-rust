@@ -319,10 +319,10 @@ impl RouterHandle {
             if use_cache {
                 Some(Mutex::new((
                     0u64,
-                    lru::LruCache::new(std::num::NonZeroUsize::new(cap).unwrap_or_else(|| {
-                        // SAFETY: 1024 is a non-zero constant; constructing NonZeroUsize is sound.
-                        unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
-                    })),
+                    lru::LruCache::new(
+                    std::num::NonZeroUsize::new(cap)
+                        .unwrap_or(std::num::NonZeroUsize::new(1024).unwrap()),
+                ),
                 )))
             } else {
                 None

@@ -7,7 +7,7 @@
 //! A background task per session relays responses back by constructing raw
 //! IP/UDP packets and writing them to the TUN file descriptor.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -185,9 +185,9 @@ fn build_udp_ip_packet(
 ) -> Vec<u8> {
     match (src_ip, dst_ip) {
         (IpAddr::V4(s), IpAddr::V4(d)) => build_ipv4_udp(s, src_port, d, dst_port, payload),
+        (IpAddr::V6(s), IpAddr::V6(d)) => build_ipv6_udp(s, src_port, d, dst_port, payload),
         _ => {
-            // IPv6 UDP response — not yet implemented
-            tracing::trace!("tun udp: IPv6 response not implemented");
+            tracing::trace!("tun udp: mismatched src/dst address families");
             Vec::new()
         }
     }
@@ -251,6 +251,82 @@ fn build_ipv4_udp(
     udp[8..8 + payload.len()].copy_from_slice(payload);
 
     pkt
+}
+
+/// Build IPv6/UDP packet with 4-byte AF_INET6 prefix (macOS utun / Linux TUN-PI format).
+fn build_ipv6_udp(
+    src: Ipv6Addr,
+    src_port: u16,
+    dst: Ipv6Addr,
+    dst_port: u16,
+    payload: &[u8],
+) -> Vec<u8> {
+    let udp_len = 8 + payload.len();
+    // 4 AF prefix + 40 IPv6 header + 8 UDP header + payload
+    let mut pkt = vec![0u8; 4 + 40 + udp_len];
+
+    // AF prefix
+    #[cfg(target_os = "macos")]
+    {
+        let af_inet6: u32 = 30; // AF_INET6 on macOS
+        pkt[0..4].copy_from_slice(&af_inet6.to_be_bytes());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        pkt[2..4].copy_from_slice(&0x86DDu16.to_be_bytes()); // ETH_P_IPV6
+    }
+
+    // IPv6 header (40 bytes, offset 4)
+    let hdr = &mut pkt[4..44];
+    hdr[0] = 0x60; // version=6, traffic class hi=0
+    // hdr[1..4] = 0: traffic class lo + flow label
+    hdr[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes()); // payload length
+    hdr[6] = 17; // next header: UDP
+    hdr[7] = 64; // hop limit
+    hdr[8..24].copy_from_slice(&src.octets());
+    hdr[24..40].copy_from_slice(&dst.octets());
+
+    // UDP header + payload (offset 44)
+    let udp_start = 44;
+    pkt[udp_start..udp_start + 2].copy_from_slice(&src_port.to_be_bytes());
+    pkt[udp_start + 2..udp_start + 4].copy_from_slice(&dst_port.to_be_bytes());
+    pkt[udp_start + 4..udp_start + 6].copy_from_slice(&(udp_len as u16).to_be_bytes());
+    // checksum placeholder — computed below
+    pkt[udp_start + 8..].copy_from_slice(payload);
+
+    // IPv6 UDP checksum is mandatory (RFC 2460 §8.1)
+    let cksum = ipv6_udp_checksum(&src, &dst, udp_len as u16, &pkt[udp_start..]);
+    pkt[udp_start + 6..udp_start + 8].copy_from_slice(&cksum.to_be_bytes());
+
+    pkt
+}
+
+/// Compute UDP checksum over IPv6 pseudo-header (RFC 2460 §8.1 + RFC 768).
+fn ipv6_udp_checksum(src: &Ipv6Addr, dst: &Ipv6Addr, udp_len: u16, udp_segment: &[u8]) -> u16 {
+    let mut sum: u32 = 0;
+    // Pseudo-header: src(16) + dst(16) + UDP-length(4, upper half = 0) + zeros(3) + next-header(1)
+    for chunk in src.octets().chunks(2) {
+        sum += u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
+    }
+    for chunk in dst.octets().chunks(2) {
+        sum += u16::from_be_bytes([chunk[0], chunk[1]]) as u32;
+    }
+    sum += udp_len as u32;
+    sum += 17u32; // next header = UDP
+    // UDP segment (header + payload)
+    let mut i = 0;
+    while i + 1 < udp_segment.len() {
+        sum += u16::from_be_bytes([udp_segment[i], udp_segment[i + 1]]) as u32;
+        i += 2;
+    }
+    if i < udp_segment.len() {
+        sum += (udp_segment[i] as u32) << 8;
+    }
+    while sum > 0xFFFF {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    let r = !(sum as u16);
+    if r == 0 { 0xFFFF } else { r } // RFC 768: 0 transmitted as 0xFFFF for IPv6
 }
 
 /// Compute IPv4 header checksum (RFC 1071).

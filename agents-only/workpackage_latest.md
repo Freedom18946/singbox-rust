@@ -41,7 +41,7 @@
 |------|------|------|
 | B1 | 安全修复 + Fuzz 基础设施 (T1-01~06, T2-08,10) | ✅ done |
 | B2 | 性能热路径 + Benchmark (T1-08,09,12, T2-05,07,09) | 🟡 T1-08,09,12 done; T2-05,07,09 pending |
-| B3 | 功能补全 + 错误处理 (T1-10,11, T2-01~04,06) | 🔲 pending |
+| B3 | 功能补全 + 错误处理 (T1-10,11, T2-01~04) | ✅ done |
 | B4 | T3 按需 | 🔲 pending |
 
 ### 已交付任务清单
@@ -53,6 +53,12 @@
 | T1-08 | domain suffix 零分配匹配 (3 处 format!() 消除) | 2026-03-17 |
 | T1-09 | matches_host 零分配快路径 + 域名预 lowercase | 2026-03-17 |
 | T1-12 | TCP relay e2e benchmark + domain_match benchmark | 2026-03-17 |
+| T1-10 | SOCKS5 outbound IPv6 (ATYP=0x04) | 2026-03-17 |
+| T1-11 | TUN IPv6 UDP 响应包 build_ipv6_udp() + ipv6_udp_checksum() | 2026-03-17 |
+| T2-01 | DNS cache parking_lot::Mutex (7 poison 模式消除) | 2026-03-17 |
+| T2-02 | register.rs 12x unwrap_or_else poison-tolerant | 2026-03-17 |
+| T2-03 | log/mod.rs RwLock read/write poison-tolerant | 2026-03-17 |
+| T2-04 | 5x NonZeroUsize::new_unchecked unsafe 消除 | 2026-03-17 |
 
 ### 构建基线（2026-03-17）
 
