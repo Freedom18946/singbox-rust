@@ -524,7 +524,7 @@ impl TailscaleControlPlane for DaemonControlPlane {
 /// Tailscale endpoint that acts as a Tailnet node.
 pub struct TailscaleEndpoint {
     config: TailscaleEndpointConfig,
-    state: AtomicU8,
+    state: Arc<AtomicU8>,
     /// Control plane provider.
     control_plane: parking_lot::RwLock<Option<Arc<dyn TailscaleControlPlane>>>,
     /// Our Tailscale IPs once assigned.
@@ -563,7 +563,7 @@ impl TailscaleEndpoint {
     ) -> Self {
         Self {
             config,
-            state: AtomicU8::new(TailscaleState::Stopped as u8),
+            state: Arc::new(AtomicU8::new(TailscaleState::Stopped as u8)),
             control_plane: parking_lot::RwLock::new(None),
             local_addresses: Arc::new(parking_lot::RwLock::new(vec![])),
             connection_handler: parking_lot::RwLock::new(None),
@@ -738,7 +738,7 @@ impl Endpoint for TailscaleEndpoint {
                     let tag = self.config.tag.clone();
                     let err_slot = self.last_error.clone();
                     let local_addrs = self.local_addresses.clone();
-                    let state_ptr = &self.state as *const AtomicU8 as usize;
+                    let state_arc = self.state.clone();
 
                     let handle = tokio::spawn(async move {
                         match control_plane.start().await {
@@ -753,16 +753,14 @@ impl Endpoint for TailscaleEndpoint {
                                     })
                                     .collect();
                                 *local_addrs.write() = nets;
-                                let state = unsafe { &*(state_ptr as *const AtomicU8) };
-                                state.store(TailscaleState::Running as u8, Ordering::Relaxed);
+                                state_arc.store(TailscaleState::Running as u8, Ordering::Relaxed);
                                 info!(tag = %tag, "Tailscale control plane started");
                             }
                             Err(e) => {
                                 let msg = format!("Control plane start failed: {}", e);
                                 warn!(tag = %tag, "{}", msg);
                                 *err_slot.write() = Some(msg);
-                                let state = unsafe { &*(state_ptr as *const AtomicU8) };
-                                state.store(TailscaleState::Stopped as u8, Ordering::Relaxed);
+                                state_arc.store(TailscaleState::Stopped as u8, Ordering::Relaxed);
                             }
                         }
                     });

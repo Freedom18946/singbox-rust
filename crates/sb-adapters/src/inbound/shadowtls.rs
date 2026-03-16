@@ -136,10 +136,82 @@ async fn handle_conn(
     match cfg.version {
         2 => handle_v2(cfg, stream, peer).await,
         3 => handle_v3(cfg, stream, peer).await,
-        1 => Err(anyhow!(
-            "shadowtls inbound version 1 runtime remodel is not implemented; use version 2/3 detour mode"
-        )),
+        1 => handle_v1(cfg, stream, peer).await,
         other => Err(anyhow!("unsupported shadowtls inbound version {other}")),
+    }
+}
+
+// ── ShadowTLS v1 ─────────────────────────────────────────────────────────────
+//
+// V1 is the original, unauthenticated variant. The server simply relays a TLS
+// handshake with a shadow server for camouflage; no password/HMAC is involved.
+// After the client sends the first Application Data record the handshake phase
+// is over and the payload is forwarded to the detour inbound verbatim (with TLS
+// record framing stripped/added by the same bridge used for v2).
+
+async fn handle_v1(
+    cfg: ShadowTlsInboundConfig,
+    mut stream: TcpStream,
+    peer: SocketAddr,
+) -> Result<()> {
+    let client_hello = extract_frame(&mut stream).await?;
+    let server_name = extract_server_name(&client_hello).ok();
+    let handshake = select_v2_handshake(&cfg, server_name.as_deref())?;
+    let handshake_conn = dial_handshake_target(&handshake).await?;
+
+    let (cli_read, cli_write) = split(stream);
+    let (hs_read, mut hs_write) = split(handshake_conn);
+    let mut client_reader = PrefixStream::new(client_hello, cli_read);
+    let (stop_tx, stop_rx) = oneshot::channel();
+    let server_task =
+        tokio::spawn(relay_server_to_client_passthrough(hs_read, cli_write, stop_rx));
+
+    let first_payload =
+        copy_until_v1_handshake_finished(&mut client_reader, &mut hs_write).await?;
+    let _ = stop_tx.send(());
+    let (_hs_read, cli_write) = await_server_task(server_task).await?;
+    // Reuse the v2 bridge — identical TLS record stripping / wrapping, no HMAC tags.
+    let local = spawn_v2_bridge(client_reader.into_inner(), cli_write, first_payload);
+    dispatch_detour_stream(&cfg.detour, local, peer).await
+}
+
+/// Relay handshake-server → client verbatim (no hash tracking).
+async fn relay_server_to_client_passthrough(
+    mut hs_read: ReadHalf<TcpStream>,
+    mut cli_write: WriteHalf<TcpStream>,
+    mut stop_rx: oneshot::Receiver<()>,
+) -> std_io::Result<(ReadHalf<TcpStream>, WriteHalf<TcpStream>)> {
+    let mut buf = [0u8; 16 * 1024];
+    loop {
+        select! {
+            _ = &mut stop_rx => return Ok((hs_read, cli_write)),
+            read = hs_read.read(&mut buf) => {
+                let n = read?;
+                if n == 0 {
+                    return Ok((hs_read, cli_write));
+                }
+                cli_write.write_all(&buf[..n]).await?;
+            }
+        }
+    }
+}
+
+/// Forward non-Application-Data TLS frames to the handshake server. Return the
+/// payload of the first Application Data frame from the client (signals handshake done).
+async fn copy_until_v1_handshake_finished<R, W>(
+    client_reader: &mut R,
+    server_writer: &mut W,
+) -> std_io::Result<Vec<u8>>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    loop {
+        let frame = read_tls_frame(client_reader).await?;
+        if frame[0] == APPLICATION_DATA {
+            return Ok(frame[TLS_HEADER_SIZE..].to_vec());
+        }
+        server_writer.write_all(&frame).await?;
     }
 }
 

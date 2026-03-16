@@ -178,6 +178,91 @@ pub struct HttpProxyConfig {
     pub sniff_override_destination: bool,
 }
 
+// ── macOS system proxy ────────────────────────────────────────────────────────
+//
+// Uses `networksetup` (available on all macOS versions) to register this
+// HTTP CONNECT listener as the system HTTP proxy.  The guard clears the proxy
+// when dropped, so proxy state is always restored when the inbound stops.
+
+#[cfg(target_os = "macos")]
+struct MacOsSystemProxyGuard {
+    services: Vec<String>,
+    port: u16,
+}
+
+#[cfg(target_os = "macos")]
+impl MacOsSystemProxyGuard {
+    fn new(port: u16) -> Self {
+        let services = macos_set_http_proxy("127.0.0.1", port);
+        Self { services, port }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for MacOsSystemProxyGuard {
+    fn drop(&mut self) {
+        macos_clear_http_proxy(&self.services, self.port);
+    }
+}
+
+/// Set macOS HTTP + HTTPS proxy on all active network services.
+/// Returns the list of services that were modified.
+#[cfg(target_os = "macos")]
+fn macos_set_http_proxy(host: &str, port: u16) -> Vec<String> {
+    let port_str = port.to_string();
+    let Ok(out) = std::process::Command::new("networksetup")
+        .arg("-listallnetworkservices")
+        .output()
+    else {
+        warn!("http: failed to list network services for system proxy");
+        return vec![];
+    };
+    let mut services = Vec::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines().skip(1) {
+        let service = line.trim().trim_start_matches('*').trim();
+        if service.is_empty() {
+            continue;
+        }
+        for (subcmd, state_cmd) in [
+            ("-setwebproxy", "-setwebproxystate"),
+            ("-setsecurewebproxy", "-setsecurewebproxystate"),
+        ] {
+            let _ = std::process::Command::new("networksetup")
+                .args([subcmd, service, host, &port_str])
+                .output();
+            let _ = std::process::Command::new("networksetup")
+                .args([state_cmd, service, "on"])
+                .output();
+        }
+        services.push(service.to_string());
+    }
+    info!(
+        "http: macOS system proxy set to {}:{} on {} service(s)",
+        host,
+        port,
+        services.len()
+    );
+    services
+}
+
+/// Disable HTTP + HTTPS proxy for each previously modified service.
+#[cfg(target_os = "macos")]
+fn macos_clear_http_proxy(services: &[String], _port: u16) {
+    for service in services {
+        for state_cmd in ["-setwebproxystate", "-setsecurewebproxystate"] {
+            let _ = std::process::Command::new("networksetup")
+                .args([state_cmd, service, "off"])
+                .output();
+        }
+    }
+    if !services.is_empty() {
+        info!(
+            "http: macOS system proxy cleared ({} service(s))",
+            services.len()
+        );
+    }
+}
+
 /// Ready signal notifier - sends when socket binding completes
 /// 就绪信号通知器 - 当 socket 绑定完成时发送
 pub async fn serve_http(
@@ -192,8 +277,13 @@ pub async fn serve_http(
         let _ = tx.send(());
     }
 
+    #[cfg(target_os = "macos")]
+    let _system_proxy_guard = cfg
+        .set_system_proxy
+        .then(|| MacOsSystemProxyGuard::new(actual.port()));
+    #[cfg(not(target_os = "macos"))]
     if cfg.set_system_proxy {
-        warn!("http: system proxy setting requested but not implemented");
+        warn!("http: system proxy setting not supported on this platform");
     }
 
     // Add watcher task for accept loop heartbeat

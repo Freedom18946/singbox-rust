@@ -79,6 +79,46 @@ impl DialOpts {
 /// Boxed async stream for connections (temporary abstraction)
 pub type BoxedStream = Box<dyn AsyncStream>;
 
+/// Connected UDP socket exposed as an `AsyncRead`/`AsyncWrite` stream.
+///
+/// Each `read` call receives one datagram; each `write` call sends one datagram.
+/// The socket MUST be in connected (peer-bound) mode before being wrapped.
+struct ConnectedUdpStream(tokio::net::UdpSocket);
+
+impl tokio::io::AsyncRead for ConnectedUdpStream {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        self.get_mut().0.poll_recv(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for ConnectedUdpStream {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        self.get_mut().0.poll_send(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 /// Combined trait for async read + write + unpin + send
 pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
@@ -362,19 +402,42 @@ impl SwitchboardBuilder {
                         target: Target,
                         opts: DialOpts,
                     ) -> AdapterResult<BoxedStream> {
-                        if target.kind != TransportKind::Tcp {
-                            return Err(AdapterError::UnsupportedProtocol(
-                                "Direct outbound UDP is not implemented in switchboard".into(),
-                            ));
+                        if target.kind == TransportKind::Tcp {
+                            let stream = tokio::time::timeout(
+                                opts.connect_timeout,
+                                crate::outbound::connect(&target.host, target.port),
+                            )
+                            .await
+                            .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
+                            .map_err(AdapterError::Io)?;
+                            return Ok(Box::new(stream));
                         }
-                        let stream = tokio::time::timeout(
-                            opts.connect_timeout,
-                            crate::outbound::connect(&target.host, target.port),
-                        )
-                        .await
-                        .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
-                        .map_err(AdapterError::Io)?;
-                        Ok(Box::new(stream))
+
+                        // UDP: resolve host, bind an ephemeral socket, connect to peer.
+                        let addrs: Vec<std::net::SocketAddr> =
+                            tokio::net::lookup_host(format!("{}:{}", target.host, target.port))
+                                .await
+                                .map_err(AdapterError::Io)?
+                                .collect();
+                        let dst = addrs.first().copied().ok_or_else(|| {
+                            AdapterError::Io(std::io::Error::new(
+                                std::io::ErrorKind::AddrNotAvailable,
+                                format!("could not resolve {}", target.host),
+                            ))
+                        })?;
+                        let bind_addr: std::net::SocketAddr = if dst.is_ipv6() {
+                            "[::]:0".parse().unwrap()
+                        } else {
+                            "0.0.0.0:0".parse().unwrap()
+                        };
+                        let socket = tokio::net::UdpSocket::bind(bind_addr)
+                            .await
+                            .map_err(AdapterError::Io)?;
+                        tokio::time::timeout(opts.connect_timeout, socket.connect(dst))
+                            .await
+                            .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
+                            .map_err(AdapterError::Io)?;
+                        Ok(Box::new(ConnectedUdpStream(socket)))
                     }
 
                     fn name(&self) -> &'static str {

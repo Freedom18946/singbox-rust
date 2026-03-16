@@ -162,7 +162,7 @@ error-v2           = []
 explain            = []
 fuzzing            = []
 handshake_alpha    = []
-http_exporter      = []
+http_exporter      = []  # Reserved: metrics HTTP exporter endpoint (see app/observe_full)
 # Inbound features
 in_tun             = ["router", "sb-platform/tun"]
 in_socks           = []
@@ -172,10 +172,7 @@ in_direct          = []
 # Outbound features
 out_socks          = []
 out_http           = []
-labels             = []
 metrics            = []
-minijson           = []
-obs                = []
 out_hysteria       = ["out_quic", "tls_rustls"]
 out_hysteria2      = ["out_quic", "tls_rustls"]
 out_naive          = ["dep:hyper"]
@@ -195,7 +192,6 @@ out_tailscale      = ["dep:snow"]
 # note: out_trojan, out_vmess, out_vless, out_ss now depend on this feature
 legacy_protocols   = []
 platform           = []
-preview            = []
 preview_route      = []
 router             = []
 routing            = ["router"]  # routing as alias for router

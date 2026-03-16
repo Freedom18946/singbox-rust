@@ -127,10 +127,15 @@ impl ContextData {
 #[cfg(target_os = "linux")]
 fn get_user_name(uid: u32) -> Option<String> {
     use std::ffi::CStr;
+    // SAFETY: getpwuid_r is the thread-safe reentrant version; we provide our own
+    // storage buffer so there is no shared global state.
     unsafe {
-        let pwd = libc::getpwuid(uid);
-        if !pwd.is_null() {
-            let name = CStr::from_ptr((*pwd).pw_name);
+        let mut pwd: libc::passwd = std::mem::zeroed();
+        let mut buf = vec![0i8; 4096];
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let ret = libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut result);
+        if ret == 0 && !result.is_null() {
+            let name = CStr::from_ptr((*result).pw_name);
             return name.to_str().ok().map(String::from);
         }
     }
@@ -141,10 +146,15 @@ fn get_user_name(uid: u32) -> Option<String> {
 #[cfg(target_os = "linux")]
 fn get_group_name(gid: u32) -> Option<String> {
     use std::ffi::CStr;
+    // SAFETY: getgrgid_r is the thread-safe reentrant version; we provide our own
+    // storage buffer so there is no shared global state.
     unsafe {
-        let grp = libc::getgrgid(gid);
-        if !grp.is_null() {
-            let name = CStr::from_ptr((*grp).gr_name);
+        let mut grp: libc::group = std::mem::zeroed();
+        let mut buf = vec![0i8; 4096];
+        let mut result: *mut libc::group = std::ptr::null_mut();
+        let ret = libc::getgrgid_r(gid, &mut grp, buf.as_mut_ptr(), buf.len(), &mut result);
+        if ret == 0 && !result.is_null() {
+            let name = CStr::from_ptr((*result).gr_name);
             return name.to_str().ok().map(String::from);
         }
     }

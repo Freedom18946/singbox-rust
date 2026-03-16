@@ -144,7 +144,7 @@ impl ConnectionHandler for EndpointConnectionHandler {
         metadata: InboundContext,
         on_close: Option<CloseHandler>,
     ) {
-        let (endpoint, host, ip, port) = match Self::extract_destination(&metadata) {
+        let (mut endpoint, host, ip, port) = match Self::extract_destination(&metadata) {
             Some(v) => v,
             None => {
                 warn!(
@@ -204,8 +204,7 @@ impl ConnectionHandler for EndpointConnectionHandler {
                     if override_destination {
                         if let Some(ref h) = outcome.host {
                             if !h.is_empty() {
-                                // TODO: update endpoint with sniffed host when endpoint mutation is supported
-                                let _ = h;
+                                endpoint = OutEndpoint::Domain(h.clone(), port);
                             }
                         }
                     }
