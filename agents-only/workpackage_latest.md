@@ -56,6 +56,15 @@
 | SV.1 重分类 | BHV-SV-001..004 确认为 harness-only，移出分母，T3 CLOSED | ✅ done |
 | Parity | 52/56 = 92.9%（旧 52/60 = 86.7%） | ✅ updated |
 
+### T4 — Protocol Suite 双核扩展 ✅ 完成（2026-03-16）
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| T4-VLESS | `VlessInbound` upstream + configs + `p2_vless_dual_dataplane_local` (both) | ✅ done |
+| T4-VMess | `VmessInbound` upstream + configs + `p2_vmess_dual_dataplane_local` (both) | ✅ done |
+| T4-ShadowTLS | `p2_shadowtls_dual_dataplane_local` 已为 both-mode | ✅ pre-existing |
+| T4-UDP | VLESS/VMess UDP round-trip | ❌ NOT FEASIBLE (inbounds TCP-only) |
+
 ### 构建基线（2026-03-16 更新）
 
 | 构建 | 状态 |

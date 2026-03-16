@@ -8,7 +8,7 @@
 
 ## 战略状态
 
-**当前阶段**: **L23 Closure** → T4 Protocol Suite 推进中
+**当前阶段**: **L23 Closure** → T4 Protocol Suite 完成
 **历史阶段**: L1-L22 + L23 全部 Closed
 **Parity**: 92.9% (52/56) — SV.1 (4 BHVs) 已重分类为 harness-only 并移出分母
 
@@ -22,15 +22,15 @@ BHV-SV-001..004（subscription parsing）被确认为 harness 侧功能，非内
 - 所有 8 个 subscription case 移入 Non-Promotable 列表
 - Golden spec S1/S2/S3/S5/S6 + compat_matrix 已更新
 
-## T4 Protocol Suite 侦察（2026-03-16）
+## T4 Protocol Suite 完成（2026-03-16）
 
-关键发现：
-- `p2_trojan_dual_dataplane_local` + `p2_shadowsocks_dual_dataplane_local` **已存在且为 both-mode**
-- Go 完整支持 trojan/ss/vless/vmess inbound + outbound
-- Rust 完整支持所有四种协议 inbound + outbound
-- Harness 已有 `TrojanInbound` + `ShadowsocksInbound` upstream kinds
-- **缺 `VlessInbound` + `VmessInbound`** upstream kinds（需加到 case_spec.rs + upstream.rs）
-- 缺 VLESS/VMess 双核 config 和 case YAML
+已交付：
+- `VlessInbound` + `VmessInbound` upstream kinds 加入 case_spec.rs + upstream.rs
+- 4 个内核配置：protocol_{vless,vmess}_{rust,go}.json
+- 2 个 both-mode case：`p2_vless_dual_dataplane_local` + `p2_vmess_dual_dataplane_local`
+- `p2_shadowtls_dual_dataplane_local` 已存在且为 both-mode（无需额外工作）
+- interop-lab 29 tests pass，cargo check + clippy clean
+- UDP round-trip 不可行：VLESS/VMess inbound 均为纯 TCP 实现
 
 ## 构建基线（2026-03-16）
 
@@ -38,3 +38,4 @@ BHV-SV-001..004（subscription parsing）被确认为 harness 侧功能，非内
 |------|------|
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
 | `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
+| `cargo test -p interop-lab` | ✅ pass (29 tests) |

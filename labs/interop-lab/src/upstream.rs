@@ -810,7 +810,6 @@ async fn start_single_upstream(
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
-                #[cfg(feature = "tls_reality")]
                 reality: None,
                 multiplex: None,
                 transport_layer: None,

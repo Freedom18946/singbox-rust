@@ -268,7 +268,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
 | T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
 | T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
-| T4 Long-term | Protocol suites + perf | +3 | 36 / 92 | coverage-neutral (no new BHVs) |
+| T4 Long-term | Protocol suites + perf | +3 | 36 / 92 | coverage-neutral (no new BHVs) — VLESS/VMess done |
 
 ### T1: Immediate (5 cases, all E2-E3)
 
@@ -321,14 +321,18 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 24 | `p1_inbound_hot_reload_sighup` | both | E2 | BHV-LC-005 | Promoted on 2026-03-15: SIGHUP triggers full reload on both kernels; data-plane TCP traffic via SOCKS5 survives two consecutive reloads; DIV-H-001 closed (`20260315T013347Z-88281e77-ea4d-4109-b15c-71982b0a4703`) |
 | 25 | `p1_clash_api_auth_enforcement` | both | E2 | BHV-CP-012…017 | Promoted on 2026-03-16 with Go config at port 18907/9090; strict auth coverage (no-auth→401, correct→200, wrong→401) |
 | 26 | `p1_gui_group_delay_replay` | both | E2 | BHV-CP-005 (group variant) | Promoted on 2026-03-16 reusing `l18_gui_go.json`; `ignore_http_paths` for timing-sensitive group delay path (DIV-M-009 pattern) |
+| 27 | `p2_vless_dual_dataplane_local` | both | E3 | BHV-DP-001 (VLESS variant) | New on 2026-03-16: VlessInbound upstream kind + Rust/Go configs (port 12083); TCP round-trip with UUID auth (ok/bad). No UDP (inbound TCP-only). |
+| 28 | `p2_vmess_dual_dataplane_local` | both | E3 | BHV-DP-001 (VMess variant) | New on 2026-03-16: VmessInbound upstream kind + Rust/Go configs (port 12084); TCP round-trip with UUID auth + aes-128-gcm encryption. No UDP (inbound TCP-only). |
 
-### T4: Long-term (+4 cases)
+### T4: Long-term (+4 cases) — Partially Delivered
 
-| # | Case ID | Effort | New BHVs Covered |
-|---|---------|--------|------------------|
-| 1 | `p2_trojan_protocol_suite` | E4 | BHV-DP-001 (Trojan variant) |
-| 2 | `p2_shadowsocks_protocol_suite` | E4 | BHV-DP-001 (SS variant) |
-| 3 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) |
+| # | Case ID | Effort | New BHVs Covered | Status |
+|---|---------|--------|------------------|--------|
+| 1 | `p2_trojan_dual_dataplane_local` | E4 | BHV-DP-001 (Trojan variant) | ✅ pre-existing both |
+| 2 | `p2_shadowsocks_dual_dataplane_local` | E4 | BHV-DP-001 (SS variant) | ✅ pre-existing both |
+| 3 | `p2_vless_dual_dataplane_local` | E3 | BHV-DP-001 (VLESS variant) | ✅ delivered 2026-03-16 |
+| 4 | `p2_vmess_dual_dataplane_local` | E3 | BHV-DP-001 (VMess variant) | ✅ delivered 2026-03-16 |
+| 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) | pending |
 
 ### Non-Promotable Cases (11)
 
@@ -364,7 +368,7 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 36.0% (36/100) |
+| Both-mode case ratio | both cases / total cases | 37.3% (38/102) |
 | Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 92.9% (52/56) |
 | Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 75.0% (42/56) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |

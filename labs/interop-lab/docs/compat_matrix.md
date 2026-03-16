@@ -70,8 +70,11 @@
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
 | WS 稳定性 | concurrency | soak | trend gate | dual-core diff | `p2_connections_ws_concurrency_suite` `p2_connections_ws_soak_suite` `p2_connections_ws_soak_dual_core` |
-| Trojan 协议 | suite | auth fault | recovery/restart | — | `p2_trojan_*` |
-| Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` |
+| Trojan 协议 | suite | auth fault | recovery/restart | — | `p2_trojan_*` (both) |
+| Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` (both) |
+| ShadowTLS 协议 | wrapper-chain | cert mismatch | — | — | `p2_shadowtls_dual_dataplane_local` (both) |
+| VLESS 协议 | TCP suite | UUID auth fault | — | — | `p2_vless_dual_dataplane_local` (both) |
+| VMess 协议 | TCP suite | UUID auth fault | — | — | `p2_vmess_dual_dataplane_local` (both) |
 | Large TCP (128KB) | yes | — | — | — | `p1_dataplane_large_payload_tcp` |
 | Large UDP (8KB) | yes | — | — | — | `p1_dataplane_large_payload_udp` |
 | Large HTTP (256KB) | yes | — | — | — | `p1_dataplane_large_payload_http` |
