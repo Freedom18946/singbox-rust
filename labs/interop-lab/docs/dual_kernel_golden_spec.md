@@ -13,12 +13,20 @@
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
 | DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 18 | 100.0% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
-| SV | Services | 2 (Subscription / Provider) | 7 | 0 | 0% |
+| SV | Services | 1 (Provider) | 3 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **16** | **60** | **52** | **86.7%** |
+| **Total** | | **15** | **56** | **52** | **92.9%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
-> Coverage gaps still cluster in DP/SV, but both domains now have an initial strict dual-kernel foothold.
+> Coverage gaps still cluster in SV (structural) and LC (1 infeasible).
+>
+> **SV.1 Reclassification (2026-03-16)**: 4 subscription-parsing BHVs (BHV-SV-001…004) removed from
+> the dual-kernel parity denominator. These behaviors test the interop-lab harness's own subscription
+> parser (`labs/interop-lab/src/subscription.rs`), not kernel behavior. Neither Go nor Rust kernel
+> performs subscription parsing — it is a GUI-layer function handled externally by GUI.for.SingBox.
+> Promoting these cases to `kernel_mode: both` would produce trivially clean diffs (same harness code
+> parsing the same input twice) without adding any parity evidence. The 8 subscription case YAMLs
+> remain as Rust-only harness validation tests.
 
 ---
 
@@ -30,7 +38,11 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 |----------------|---------------------|----------|-----------------|-----------------|
 | HTTP | `http_mismatches` | status + body_hash per endpoint | BHV-CP-001 … 007, 018 … 021 | `ignore_http_paths` |
 | WebSocket | `ws_mismatches` | frame_count + frame_hash per stream | BHV-CP-008 … 011 | `ignore_ws_paths` |
-| Subscription | `subscription_mismatches` | format + node_count | BHV-SV-001 … 004 | — |
+| Subscription | `subscription_mismatches` | format + node_count | ~~BHV-SV-001 … 004~~ | — |
+
+> **Subscription dimension deprecated (2026-03-16)**: BHV-SV-001…004 reclassified as harness-only.
+> The subscription diff dimension remains functional in the harness but does not contribute to
+> dual-kernel parity scoring. See S1 reclassification note.
 | Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 017, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
@@ -148,14 +160,20 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-LC-008 | Connection close notification | Shutdown initiated | WS /connections notified | WS | `p1_gui_ws_reconnect_behavior` | — | — |
 | BHV-LC-009 | Resource cleanup on exit | Process exit | FDs/sockets released, no leak | Memory | `p1_lifecycle_restart_reload_replay` | — | — |
 
-### SV.1: Subscription Parsing
+### SV.1: Subscription Parsing — NOT-APPLICABLE for Dual-Kernel Parity
+
+> **Reclassified 2026-03-16**: These BHVs test the interop-lab harness's own subscription parser
+> (`labs/interop-lab/src/subscription.rs`), not kernel behavior. Neither Go nor Rust kernel performs
+> subscription parsing — the GUI handles it externally. The `subscription_parse` gui_sequence step
+> runs harness-side code against inline content without involving the kernel process.
+> These BHVs are excluded from the S1 denominator and S6 coverage formulas.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-SV-001 | JSON outbounds parsing | JSON subscription blob | Parsed nodes with protocol types | Sub | — | `p0_subscription_json` | — |
-| BHV-SV-002 | YAML proxies parsing | YAML subscription blob | Parsed nodes with protocol types | Sub | — | `p0_subscription_yaml` | — |
-| BHV-SV-003 | Base64 auto-decode | Base64-encoded subscription | Decoded then parsed | Sub | — | `p0_subscription_base64` | — |
-| BHV-SV-004 | URL fetch and parse | HTTP URL to subscription | Fetched, decoded, parsed | Sub | — | `p1_subscription_file_urls` | — |
+| ~~BHV-SV-001~~ | JSON outbounds parsing | JSON subscription blob | Parsed nodes with protocol types | Sub | N/A | `p0_subscription_json` (harness-only) | N/A |
+| ~~BHV-SV-002~~ | YAML proxies parsing | YAML subscription blob | Parsed nodes with protocol types | Sub | N/A | `p0_subscription_yaml` (harness-only) | N/A |
+| ~~BHV-SV-003~~ | Base64 auto-decode | Base64-encoded subscription | Decoded then parsed | Sub | N/A | `p0_subscription_base64` (harness-only) | N/A |
+| ~~BHV-SV-004~~ | URL fetch and parse | HTTP URL to subscription | Fetched, decoded, parsed | Sub | N/A | `p1_subscription_file_urls` (harness-only) | N/A |
 
 ### SV.2: Provider
 
@@ -246,11 +264,11 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Baseline | 32 | 32 / 95 | 78.3% (47/60 BHV) |
-| T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 75.0% (45/60 BHV) |
-| T2 Near-term | Coverage-neutral strict promotions | +3 | 30 / 92 | ~61.7% (37/60 BHV) |
-| T3 Planned | Subscription both-cases | +2 | 32 / 92 | ~65.0% (39/60 BHV) |
-| T4 Long-term | Protocol suites + perf | +4 | 36 / 92 | ~68.3% (41/60 BHV) |
+| Current | Baseline (SV.1 excluded) | 32 | 32 / 95 | 92.9% (52/56 BHV) |
+| T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
+| T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
+| T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
+| T4 Long-term | Protocol suites + perf | +3 | 36 / 92 | coverage-neutral (no new BHVs) |
 
 ### T1: Immediate (5 cases, all E2-E3)
 
@@ -268,12 +286,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 
 (Promoted — see Recent Promotions below)
 
-### T3: Planned (+2 cases)
+### T3: ~~Planned~~ CLOSED (2026-03-16)
 
-| # | Case ID | Effort | New BHVs Covered |
-|---|---------|--------|------------------|
-| 1 | `p0_subscription_json` | E2 | BHV-SV-001 |
-| 2 | `p0_subscription_yaml` | E2 | BHV-SV-002 |
+> SV.1 subscription BHVs reclassified as harness-only (not kernel behavior). See S1 note.
+> No cases to promote — removed from roadmap.
 
 ### Recent Promotions
 
@@ -313,7 +329,6 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 1 | `p2_trojan_protocol_suite` | E4 | BHV-DP-001 (Trojan variant) |
 | 2 | `p2_shadowsocks_protocol_suite` | E4 | BHV-DP-001 (SS variant) |
 | 3 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) |
-| 4 | `p0_subscription_base64` | E2 | BHV-SV-003 |
 
 ### Non-Promotable Cases (11)
 
@@ -332,6 +347,14 @@ These cases should **never** be promoted to `kernel_mode: both`:
 | `p2_protocol_unit_shadowsocks` | Rust cargo test wrapper |
 | `p2_protocol_unit_vmess` | Rust cargo test wrapper |
 | `p1_tls_fragment_wiring` | Rust TLS implementation detail |
+| `p0_subscription_json` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p0_subscription_yaml` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p0_subscription_base64` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p1_subscription_file_urls` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p2_subscription_malformed_json` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p2_subscription_truncated_base64` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p2_subscription_empty_input` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
+| `p2_subscription_unknown_protocol` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
 
 ---
 
@@ -342,14 +365,14 @@ These cases should **never** be promoted to `kernel_mode: both`:
 | Metric | Formula | Value |
 |--------|---------|-------|
 | Both-mode case ratio | both cases / total cases | 36.0% (36/100) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 86.7% (52/60) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 70.0% (42/60) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 92.9% (52/56) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 75.0% (42/56) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
 
-> **Note**: strict both-mode coverage is no longer the main bottleneck.
-> The remaining parity gap is concentrated in routing, lifecycle, and service behaviors that still need product fixes or richer dual-kernel scenarios.
+> **Note**: SV.1 (4 subscription BHVs) excluded from denominator since 2026-03-16.
+> See S1 reclassification note. Remaining gaps: 3 SV.2 (STRUCTURAL) + 1 LC (NOT-FEASIBLE).
 
 ### Projected Coverage by Tier
 

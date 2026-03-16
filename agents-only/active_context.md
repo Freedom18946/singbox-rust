@@ -8,28 +8,29 @@
 
 ## 战略状态
 
-**当前阶段**: **L23 — TUN / Sniff 运行时补全** (Closure)
-**历史阶段**: L1-L22 + 后 L22 补丁 全部 Closed
-**工作区状态**: Tier 1-3 全部完成
+**当前阶段**: **L23 Closure** → T4 Protocol Suite 推进中
+**历史阶段**: L1-L22 + L23 全部 Closed
+**Parity**: 92.9% (52/56) — SV.1 (4 BHVs) 已重分类为 harness-only 并移出分母
 
-## L23 Closure（2026-03-16）
+## SV.1 重分类（2026-03-16）
 
-### L23-T7: Redirect IPv6 ✅
-- `get_original_dst()` in `redirect.rs` now branches on peer address family
-- IPv6: `SOL_IPV6` + `IP6T_SO_ORIGINAL_DST` (=80) + `sockaddr_in6`
-- Also fixes tproxy IPv6 (shares `get_original_dst()`)
-- **DIV-H-002 → CLOSED**
+BHV-SV-001..004（subscription parsing）被确认为 harness 侧功能，非内核行为：
+- `subscription_parse` gui_sequence 由 `interop-lab/src/subscription.rs` 执行
+- 不启动任何内核进程，不涉及 Go/Rust 行为对比
+- 升级到 both-mode 只是同一段代码解析同一份输入两次，diff 必然 clean
+- Go 内核完全没有 subscription 解析能力（由 GUI 外部处理）
+- 所有 8 个 subscription case 移入 Non-Promotable 列表
+- Golden spec S1/S2/S3/S5/S6 + compat_matrix 已更新
 
-### DIV-C-002: SOCKS5 UDP default ON ✅
-- Changed all defaults from `false` to `true` (Go parity)
-- `socks_udp_enabled()`, `run()`, `socks_udp_should_start()` — all `.unwrap_or(true)`
-- `bind_udp_from_env_or_any()` binds `0.0.0.0:0` when no explicit config
-- Removed `SB_SOCKS_UDP_ENABLE: "1"` from 10 case YAMLs
-- **DIV-C-002 → CLOSED**
+## T4 Protocol Suite 侦察（2026-03-16）
 
-### Case Promotions ✅
-- `p1_clash_api_auth_enforcement` → `kernel_mode: both` (BHV-CP-012..017)
-- `p1_gui_group_delay_replay` → `kernel_mode: both` (BHV-CP-005 group variant)
+关键发现：
+- `p2_trojan_dual_dataplane_local` + `p2_shadowsocks_dual_dataplane_local` **已存在且为 both-mode**
+- Go 完整支持 trojan/ss/vless/vmess inbound + outbound
+- Rust 完整支持所有四种协议 inbound + outbound
+- Harness 已有 `TrojanInbound` + `ShadowsocksInbound` upstream kinds
+- **缺 `VlessInbound` + `VmessInbound`** upstream kinds（需加到 case_spec.rs + upstream.rs）
+- 缺 VLESS/VMess 双核 config 和 case YAML
 
 ## 构建基线（2026-03-16）
 
@@ -37,13 +38,3 @@
 |------|------|
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
 | `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
-
-## 关键文件速查
-
-| 内容 | 路径 |
-|------|------|
-| Redirect IPv6 | `crates/sb-adapters/src/inbound/redirect.rs` |
-| SOCKS5 UDP | `crates/sb-adapters/src/inbound/socks/udp.rs`, `mod.rs` |
-| UDP start gate | `app/src/inbound_starter.rs` |
-| Go auth config | `labs/interop-lab/configs/go_core_clash_api_auth.json` |
-| Golden spec | `labs/interop-lab/docs/dual_kernel_golden_spec.md` |

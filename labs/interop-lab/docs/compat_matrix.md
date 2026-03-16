@@ -35,16 +35,19 @@
 
 ## 订阅解析契约矩阵
 
+> **注意 (2026-03-16)**: 订阅解析是 harness 侧功能，不涉及内核行为。这些 case 不参与双核对齐评分。
+> 详见 golden spec S1 SV.1 重分类说明。
+
 | 输入类型 | 目标语义 | Case ID | Env Class | 状态 |
 | --- | --- | --- | --- | --- |
-| JSON `outbounds` | 解析节点与协议类型 | `p0_subscription_json` | `strict` | implemented |
-| YAML `proxies` | 解析节点与协议类型 | `p0_subscription_yaml` | `strict` | implemented |
-| Base64 | 自动解码后复用解析链 | `p0_subscription_base64` | `strict` | implemented |
-| URL 文件输入 | 样本治理与环境归因 | `p1_subscription_file_urls` | `env_limited` | implemented |
-| Malformed JSON | 恶意输入优雅报错 | `p2_subscription_malformed_json` | `strict` | implemented |
-| Truncated Base64 | 截断编码处理 | `p2_subscription_truncated_base64` | `strict` | implemented |
-| Empty input | 空输入报错 | `p2_subscription_empty_input` | `strict` | implemented |
-| Unknown protocol | 未知协议链接提取 | `p2_subscription_unknown_protocol` | `strict` | implemented |
+| JSON `outbounds` | 解析节点与协议类型 | `p0_subscription_json` | `strict` | implemented (harness-only) |
+| YAML `proxies` | 解析节点与协议类型 | `p0_subscription_yaml` | `strict` | implemented (harness-only) |
+| Base64 | 自动解码后复用解析链 | `p0_subscription_base64` | `strict` | implemented (harness-only) |
+| URL 文件输入 | 样本治理与环境归因 | `p1_subscription_file_urls` | `env_limited` | implemented (harness-only) |
+| Malformed JSON | 恶意输入优雅报错 | `p2_subscription_malformed_json` | `strict` | implemented (harness-only) |
+| Truncated Base64 | 截断编码处理 | `p2_subscription_truncated_base64` | `strict` | implemented (harness-only) |
+| Empty input | 空输入报错 | `p2_subscription_empty_input` | `strict` | implemented (harness-only) |
+| Unknown protocol | 未知协议链接提取 | `p2_subscription_unknown_protocol` | `strict` | implemented (harness-only) |
 
 ## 数据面覆盖矩阵（协议 × 故障/恢复）
 
@@ -109,7 +112,7 @@
 | --- | --- | --- | --- |
 | HTTP status + body_hash | 端点状态码 + 内容摘要 | `ignore_http_paths` | implemented |
 | WS frame_count + frame_hash | 帧数 + 帧内容摘要 | `ignore_ws_paths` | implemented |
-| Subscription format + node_count | 解析格式 + 节点数 | — | implemented |
+| Subscription format + node_count | 解析格式 + 节点数 | — | implemented (harness-only, 不计入双核对齐) |
 | Traffic action success | 流量动作成功率 | — | implemented |
 | Connections count + totals | 连接数 + 上下行总量 | `tolerate_counter_jitter` | implemented |
 | Memory peak ratio | 内存峰值比率（>2x 报警） | — | implemented |

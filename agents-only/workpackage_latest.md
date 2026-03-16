@@ -53,6 +53,8 @@
 | DIV-C-002 | SOCKS5 UDP default ON (Go parity) | ✅ done (DIV-C-002 → CLOSED) |
 | Case promo | `p1_clash_api_auth_enforcement` → both | ✅ done |
 | Case promo | `p1_gui_group_delay_replay` → both | ✅ done |
+| SV.1 重分类 | BHV-SV-001..004 确认为 harness-only，移出分母，T3 CLOSED | ✅ done |
+| Parity | 52/56 = 92.9%（旧 52/60 = 86.7%） | ✅ updated |
 
 ### 构建基线（2026-03-16 更新）
 
