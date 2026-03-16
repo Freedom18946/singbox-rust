@@ -1,0 +1,56 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-ok",
+      "server": "127.0.0.1",
+      "server_port": 12083,
+      "uuid": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "type": "vless",
+      "tag": "vless-bad",
+      "server": "127.0.0.1",
+      "server_port": 12083,
+      "uuid": "00000000-0000-0000-0000-000000000099"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": [
+          18102
+        ],
+        "outbound": "vless-bad"
+      },
+      {
+        "port": [
+          18101
+        ],
+        "outbound": "vless-ok"
+      }
+    ],
+    "final": "direct"
+  }
+}

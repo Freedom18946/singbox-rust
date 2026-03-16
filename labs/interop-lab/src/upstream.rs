@@ -17,6 +17,8 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use sb_adapters::inbound::shadowsocks::{serve as serve_shadowsocks, ShadowsocksInboundConfig};
 use sb_adapters::inbound::shadowtls::{serve as serve_shadowtls, ShadowTlsInboundConfig};
 use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig};
+use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
+use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
 use serde_json::json;
@@ -781,6 +783,108 @@ async fn start_single_upstream(
             harness.endpoints.insert(
                 spec.name.clone(),
                 format!("shadowtls://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::VlessInbound => {
+            ensure_protocol_upstream_rules();
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding vless upstream {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "vless local_addr")?;
+            drop(listener);
+
+            let router = std::sync::Arc::new(RouterHandle::new_mock());
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let (tx, mut rx) = oneshot::channel::<()>();
+
+            let cfg = VlessInboundConfig {
+                listen: addr,
+                uuid: uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+                router,
+                tag: Some(spec.name.clone()),
+                stats: None,
+                #[cfg(feature = "tls_reality")]
+                reality: None,
+                multiplex: None,
+                transport_layer: None,
+                fallback: None,
+                fallback_for_alpn: HashMap::new(),
+                flow: None,
+            };
+
+            let join = tokio::spawn(async move {
+                let serve = serve_vless(cfg, stop_rx);
+                tokio::pin!(serve);
+                tokio::select! {
+                    _ = &mut rx => {
+                        let _ = stop_tx.send(()).await;
+                        let _ = serve.await;
+                    }
+                    _ = &mut serve => {}
+                }
+            });
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("vless://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::VmessInbound => {
+            ensure_protocol_upstream_rules();
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding vmess upstream {}", spec.bind))?;
+            let addr = listener.local_addr().with_context(|| "vmess local_addr")?;
+            drop(listener);
+
+            let router = std::sync::Arc::new(RouterHandle::new_mock());
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+            let (tx, mut rx) = oneshot::channel::<()>();
+
+            let cfg = VmessInboundConfig {
+                listen: addr,
+                uuid: uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+                security: "aes-128-gcm".to_string(),
+                router,
+                tag: Some(spec.name.clone()),
+                stats: None,
+                multiplex: None,
+                transport_layer: None,
+                fallback: None,
+                fallback_for_alpn: HashMap::new(),
+            };
+
+            let join = tokio::spawn(async move {
+                let serve = serve_vmess(cfg, stop_rx);
+                tokio::pin!(serve);
+                tokio::select! {
+                    _ = &mut rx => {
+                        let _ = stop_tx.send(()).await;
+                        let _ = serve.await;
+                    }
+                    _ = &mut serve => {}
+                }
+            });
+
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("vmess://{}:{}", addr.ip(), addr.port()),
             );
             harness.insert_handle(
                 spec.name.clone(),

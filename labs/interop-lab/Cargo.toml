@@ -33,7 +33,7 @@ rcgen = "0.12"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 regex = "1"
 webpki-roots = "0.26"
-sb-adapters = { path = "../../crates/sb-adapters", features = ["adapter-shadowsocks", "shadowsocks", "adapter-trojan", "trojan", "adapter-shadowtls", "router", "tls_reality"] }
+sb-adapters = { path = "../../crates/sb-adapters", features = ["adapter-shadowsocks", "shadowsocks", "adapter-trojan", "trojan", "adapter-shadowtls", "adapter-vless", "adapter-vmess", "router", "tls_reality"] }
 sb-core = { path = "../../crates/sb-core", features = ["router"] }
 sb-transport = { path = "../../crates/sb-transport" }
 

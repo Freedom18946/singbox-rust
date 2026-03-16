@@ -194,6 +194,8 @@ pub enum UpstreamKind {
     TrojanInbound,
     ShadowsocksInbound,
     ShadowTlsInbound,
+    VlessInbound,
+    VmessInbound,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

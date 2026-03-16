@@ -1,0 +1,58 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19191",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 11801
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vmess",
+      "name": "vmess-ok",
+      "server": "127.0.0.1",
+      "port": 12084,
+      "uuid": "00000000-0000-0000-0000-000000000002",
+      "security": "aes-128-gcm"
+    },
+    {
+      "type": "vmess",
+      "name": "vmess-bad",
+      "server": "127.0.0.1",
+      "port": 12084,
+      "uuid": "00000000-0000-0000-0000-000000000099",
+      "security": "aes-128-gcm"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": [
+          "18112"
+        ],
+        "outbound": "vmess-bad"
+      },
+      {
+        "port": [
+          "18111"
+        ],
+        "outbound": "vmess-ok"
+      }
+    ],
+    "default": "direct"
+  }
+}
