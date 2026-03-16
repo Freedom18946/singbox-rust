@@ -99,9 +99,9 @@
 | `BHV-PF-001` | `HTTP proxy p95 latency` | `labs/interop-lab/cases/p1_rust_core_http_via_socks.yaml`, `benches/benches/socks5_throughput.rs` |
 | `BHV-PF-002` | `API response p95 latency` | `labs/interop-lab/cases/p0_clash_api_contract_strict.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxies_p95_latency` |
 | `BHV-PF-004` | `WS connection memory stable` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_memory_remains_bounded_over_time` |
-| `BHV-SV-005` | `Proxy provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxy_providers` |
-| `BHV-SV-006` | `Rule provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_rule_providers` |
-| `BHV-SV-007` | `Provider healthcheck via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_healthcheck_proxy_provider` |
+| `BHV-SV-005` | `Proxy provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxy_providers`, `test_get_proxy_providers_with_data` (DIV-H-005: Go structural block) |
+| `BHV-SV-006` | `Rule provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_rule_providers`, `test_get_rule_providers_with_data` (DIV-H-005: Go structural block) |
+| `BHV-SV-007` | `Provider healthcheck via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_healthcheck_proxy_provider`, `test_healthcheck_proxy_provider_with_data` (DIV-H-005: Go structural block) |
 
 ## 双核差分维度矩阵（L10.2.1）
 

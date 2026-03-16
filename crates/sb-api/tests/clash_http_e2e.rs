@@ -7,7 +7,7 @@
 //! Coverage: 37 endpoints across 11 categories
 
 use reqwest::{Client, StatusCode};
-use sb_api::{clash::ClashApiServer, types::ApiConfig};
+use sb_api::{clash::ClashApiServer, clash::server::ApiState, managers::Provider as ManagerProvider, types::ApiConfig};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -47,6 +47,7 @@ struct TestServer {
     base_url: String,
     client: Client,
     _handle: tokio::task::JoinHandle<()>,
+    state: ApiState,
 }
 
 impl TestServer {
@@ -64,6 +65,7 @@ impl TestServer {
         };
 
         let server = ClashApiServer::new(config)?;
+        let api_state = server.state().clone();
 
         // Get the actual bound address
         let listener =
@@ -94,6 +96,7 @@ impl TestServer {
             base_url,
             client,
             _handle: handle,
+            state: api_state,
         }))
     }
 
@@ -502,11 +505,8 @@ async fn test_get_proxy_provider_not_found() -> anyhow::Result<()> {
     };
     let response = server.get("/providers/proxies/nonexistent").await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found
-    assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    // Provider manager is always wired; non-existent provider returns 404
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 
@@ -520,11 +520,8 @@ async fn test_update_proxy_provider() -> anyhow::Result<()> {
         .put("/providers/proxies/test-provider", serde_json::json!({}))
         .await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found
-    assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    // Provider manager is always wired; non-existent provider returns 404
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 
@@ -541,14 +538,8 @@ async fn test_healthcheck_proxy_provider() -> anyhow::Result<()> {
         )
         .await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found,
-    // 204 when healthy, and 200 for compatible implementations.
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NO_CONTENT
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    // Provider manager is always wired; non-existent provider returns 404
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 
@@ -575,11 +566,8 @@ async fn test_get_rule_provider_not_found() -> anyhow::Result<()> {
     };
     let response = server.get("/providers/rules/nonexistent").await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found
-    assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    // Provider manager is always wired; non-existent provider returns 404
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 
@@ -593,10 +581,93 @@ async fn test_update_rule_provider() -> anyhow::Result<()> {
         .put("/providers/rules/test-provider", serde_json::json!({}))
         .await?;
 
-    // Returns 503 when provider manager not available, 404 if provider not found
+    // Provider manager is always wired; non-existent provider returns 404
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+/// Test GET /providers/proxies with injected provider data (BHV-SV-005)
+#[tokio::test]
+async fn test_get_proxy_providers_with_data() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    // Inject a test provider via the wired ProviderManager
+    let pm = server.state.provider_manager.as_ref().unwrap();
+    let mut provider = ManagerProvider::new("test-sub".into(), "proxy".into());
+    provider.url = Some("https://example.com/sub".into());
+    pm.add_proxy_provider(provider).await?;
+
+    let response = server.get("/providers/proxies").await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+
+    let providers = json
+        .get("providers")
+        .and_then(|v| v.as_object())
+        .expect("providers should be an object");
     assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
+        providers.contains_key("test-sub"),
+        "injected provider should appear in response"
+    );
+    let entry = &providers["test-sub"];
+    assert_eq!(
+        entry.get("name").and_then(|v| v.as_str()),
+        Some("test-sub")
+    );
+    assert_eq!(
+        entry.get("vehicleType").and_then(|v| v.as_str()),
+        Some("HTTP")
+    );
+    Ok(())
+}
+
+/// Test POST /providers/proxies/:name/healthcheck with injected provider (BHV-SV-007)
+#[tokio::test]
+async fn test_healthcheck_proxy_provider_with_data() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let pm = server.state.provider_manager.as_ref().unwrap();
+    pm.add_proxy_provider(ManagerProvider::new("test-sub".into(), "proxy".into()))
+        .await?;
+
+    let response = server
+        .post(
+            "/providers/proxies/test-sub/healthcheck",
+            serde_json::json!({}),
+        )
+        .await?;
+
+    // No outbound registry → graceful healthy → 204
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    Ok(())
+}
+
+/// Test GET /providers/rules with injected rule provider data (BHV-SV-006)
+#[tokio::test]
+async fn test_get_rule_providers_with_data() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let pm = server.state.provider_manager.as_ref().unwrap();
+    pm.add_rule_provider(ManagerProvider::new("test-rules".into(), "rule".into()))
+        .await?;
+
+    let response = server.get("/providers/rules").await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+
+    let providers = json
+        .get("providers")
+        .and_then(|v| v.as_object())
+        .expect("providers should be an object");
+    assert!(
+        providers.contains_key("test-rules"),
+        "injected rule provider should appear in response"
     );
     Ok(())
 }
@@ -934,7 +1005,7 @@ fn test_http_e2e_coverage_summary() {
         ("Proxy Management", 3), // GET /proxies, PUT /proxies/:name, GET /proxies/:name/delay
         ("Connection Management", 3), // GET /connections, DELETE /connections, DELETE /connections/:id
         ("Rules", 1),                 // GET /rules
-        ("Provider Management", 7),   // All 7 provider endpoints
+        ("Provider Management", 10),  // 7 existing + 3 with-data tests (BHV-SV-005/006/007)
         ("Cache Management", 2),      // FakeIP + DNS flush
         ("DNS Query", 2),             // Valid query + error case
         ("Meta Endpoints", 5),        // All 5 Meta endpoints
@@ -952,7 +1023,7 @@ fn test_http_e2e_coverage_summary() {
     println!("   Endpoints Covered: 37/37 (100%)");
 
     assert_eq!(
-        total_tests, 41,
-        "Expected 41 HTTP E2E tests (37 endpoints + error cases)"
+        total_tests, 44,
+        "Expected 44 HTTP E2E tests (37 endpoints + error cases + provider-with-data tests)"
     );
 }

@@ -161,9 +161,9 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-SV-005 | Proxy provider list via API | GET /providers/proxies | Provider entries with nodes | HTTP | — | — | DIV-H-003 |
-| BHV-SV-006 | Rule provider list via API | GET /providers/rules | Rule provider entries | HTTP | — | — | — |
-| BHV-SV-007 | Provider healthcheck via API | POST /providers/proxies/{name}/healthcheck | Health status response | HTTP | — | — | DIV-H-004 |
+| BHV-SV-005 | Proxy provider list via API | GET /providers/proxies | Provider entries with nodes | HTTP | — | `test_get_proxy_providers_with_data` | DIV-H-005 |
+| BHV-SV-006 | Rule provider list via API | GET /providers/rules | Rule provider entries | HTTP | — | `test_get_rule_providers_with_data` | DIV-H-005 |
+| BHV-SV-007 | Provider healthcheck via API | POST /providers/proxies/{name}/healthcheck | Health status response | HTTP | — | `test_healthcheck_proxy_provider_with_data` | DIV-H-005 |
 
 ### PF.1: Latency
 
@@ -211,8 +211,9 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 |--------|-----|-------------|--------------|---------------|
 | DIV-H-001 | CLOSED | Inbound hot-reload validated: SIGHUP triggers reload and inbound rebinds on both kernels. | BHV-LC-005 | — |
 | DIV-H-002 | KNOWN-GAP | Redirect inbound IPv6 not supported. | BHV-DP-001 | Use IPv4 only in both-mode configs |
-| DIV-H-003 | KNOWN-GAP | Provider has no background update loop. Only responds to manual refresh. | BHV-CP-018, BHV-SV-005 | Ignore provider update timestamps in diff |
-| DIV-H-004 | KNOWN-GAP | Provider healthcheck always returns healthy (no actual probe). | BHV-SV-007 | Ignore healthcheck result field in diff |
+| DIV-H-003 | CLOSED | Provider background update loop implemented (L23-T4). ProviderManager now sweeps stale providers on a configurable tick interval. | BHV-CP-018, BHV-SV-005 | — |
+| DIV-H-004 | CLOSED | Provider healthcheck now performs real TCP probe via outbound registry (L23-T5). Falls back to healthy when no registry configured. | BHV-SV-007 | — |
+| DIV-H-005 | STRUCTURAL | Go provider endpoints return empty stubs (empty map / 404 for all provider routes). SV.2 BHVs cannot be dual-kernel tested. | BHV-SV-005, BHV-SV-006, BHV-SV-007 | Rust-only e2e coverage via `clash_http_e2e.rs` |
 
 ### Cosmetic (Format Differences)
 
