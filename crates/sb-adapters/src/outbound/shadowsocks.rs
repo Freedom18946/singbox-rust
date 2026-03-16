@@ -19,7 +19,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
 // Crypto imports
-use aes_gcm::aead::{generic_array::GenericArray, Aead};
+use aes_gcm::aead::{generic_array::GenericArray, AeadInPlace};
 use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit, Nonce};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce as ChaNonce};
 use rand::RngCore;
@@ -481,78 +481,96 @@ fn hkdf_subkey(master_key: &[u8], salt: &[u8], out_len: usize) -> Result<Vec<u8>
     Ok(okm)
 }
 
+/// Encrypt `plaintext` into `buf` in-place (buf is cleared, then plaintext + 16-byte tag).
+/// Reusing `buf` across calls avoids per-chunk heap allocation.
 #[cfg(feature = "adapter-shadowsocks")]
-fn aead_encrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
+fn aead_encrypt_into(
+    cipher: &CipherMethod,
+    key: &[u8],
+    nonce_ctr: u64,
+    plaintext: &[u8],
+    buf: &mut Vec<u8>,
+) -> Result<()> {
     let nonce = ss_nonce(nonce_ctr);
+    buf.clear();
+    buf.extend_from_slice(plaintext);
     match cipher {
         CipherMethod::Aes128Gcm => {
             let aead = Aes128Gcm::new(GenericArray::from_slice(key));
-            aead.encrypt(Nonce::from_slice(&nonce), data)
+            aead.encrypt_in_place(Nonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("AES-GCM encrypt failed".to_string()))
         }
         CipherMethod::Aes256Gcm => {
             let aead = Aes256Gcm::new(GenericArray::from_slice(key));
-            aead.encrypt(Nonce::from_slice(&nonce), data)
+            aead.encrypt_in_place(Nonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("AES-GCM encrypt failed".to_string()))
         }
         CipherMethod::ChaCha20Poly1305 => {
             let aead = ChaCha20Poly1305::new(Key::from_slice(key));
-            aead.encrypt(ChaNonce::from_slice(&nonce), data)
+            aead.encrypt_in_place(ChaNonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("ChaCha20 encrypt failed".to_string()))
         }
     }
 }
 
+/// Decrypt `buf` in-place (ciphertext + tag → plaintext, tag stripped).
 #[cfg(feature = "adapter-shadowsocks")]
-fn aead_decrypt(cipher: &CipherMethod, key: &[u8], nonce_ctr: u64, data: &[u8]) -> Result<Vec<u8>> {
+fn aead_decrypt_in_place(
+    cipher: &CipherMethod,
+    key: &[u8],
+    nonce_ctr: u64,
+    buf: &mut Vec<u8>,
+) -> Result<()> {
     let nonce = ss_nonce(nonce_ctr);
     match cipher {
         CipherMethod::Aes128Gcm => {
             let aead = Aes128Gcm::new(GenericArray::from_slice(key));
-            aead.decrypt(Nonce::from_slice(&nonce), data)
+            aead.decrypt_in_place(Nonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("AES-GCM decrypt failed".to_string()))
         }
         CipherMethod::Aes256Gcm => {
             let aead = Aes256Gcm::new(GenericArray::from_slice(key));
-            aead.decrypt(Nonce::from_slice(&nonce), data)
+            aead.decrypt_in_place(Nonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("AES-GCM decrypt failed".to_string()))
         }
         CipherMethod::ChaCha20Poly1305 => {
             let aead = ChaCha20Poly1305::new(Key::from_slice(key));
-            aead.decrypt(ChaNonce::from_slice(&nonce), data)
+            aead.decrypt_in_place(ChaNonce::from_slice(&nonce), b"", buf)
                 .map_err(|_| AdapterError::Protocol("ChaCha20 decrypt failed".to_string()))
         }
     }
 }
 
-#[cfg(feature = "adapter-shadowsocks")]
-async fn read_exact_n(r: &mut (impl tokio::io::AsyncRead + Unpin), n: usize) -> Result<Vec<u8>> {
-    let mut buf = vec![0u8; n];
-    r.read_exact(&mut buf).await.map_err(AdapterError::Io)?;
-    Ok(buf)
-}
-
+/// Read and decrypt one AEAD chunk into `buf` (zero extra allocation when buf is reused).
+/// On success `buf` contains the plaintext payload.
 #[cfg(feature = "adapter-shadowsocks")]
 async fn read_aead_chunk(
     cipher: &CipherMethod,
     key: &[u8],
     nonce_ctr: &mut u64,
     r: &mut (impl tokio::io::AsyncRead + Unpin),
-) -> Result<Vec<u8>> {
-    let tag = 16usize;
-    let enc_len = read_exact_n(r, 2 + tag).await?;
-    let len_plain = aead_decrypt(cipher, key, *nonce_ctr, &enc_len)?;
+    buf: &mut Vec<u8>,
+) -> Result<()> {
+    const TAG: usize = 16;
+    // Read and decrypt the 2-byte length field (2 + TAG bytes on the wire).
+    buf.resize(2 + TAG, 0);
+    r.read_exact(buf).await.map_err(AdapterError::Io)?;
+    aead_decrypt_in_place(cipher, key, *nonce_ctr, buf)?;
     *nonce_ctr += 1;
-    if len_plain.len() != 2 {
+    if buf.len() != 2 {
         return Err(AdapterError::Protocol("bad len".to_string()));
     }
-    let plen = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
-    let enc_payload = read_exact_n(r, plen + tag).await?;
-    let payload = aead_decrypt(cipher, key, *nonce_ctr, &enc_payload)?;
+    let plen = u16::from_be_bytes([buf[0], buf[1]]) as usize;
+    // Read and decrypt the payload (plen + TAG bytes on the wire).
+    buf.resize(plen + TAG, 0);
+    r.read_exact(buf).await.map_err(AdapterError::Io)?;
+    aead_decrypt_in_place(cipher, key, *nonce_ctr, buf)?;
     *nonce_ctr += 1;
-    Ok(payload)
+    Ok(()) // buf now holds the plaintext payload
 }
 
+/// Write one or more AEAD chunks for `data` using `enc_buf` as the reusable scratch buffer.
+/// Passing `enc_buf` across calls avoids per-chunk heap allocation.
 #[cfg(feature = "adapter-shadowsocks")]
 async fn write_aead_chunk(
     cipher: &CipherMethod,
@@ -560,15 +578,15 @@ async fn write_aead_chunk(
     nonce_ctr: &mut u64,
     w: &mut (impl tokio::io::AsyncWrite + Unpin),
     data: &[u8],
+    enc_buf: &mut Vec<u8>,
 ) -> Result<()> {
     if data.is_empty() {
-        let len_be = 0u16.to_be_bytes();
-        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        aead_encrypt_into(cipher, key, *nonce_ctr, &0u16.to_be_bytes(), enc_buf)?;
         *nonce_ctr += 1;
-        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, &[])?;
+        w.write_all(enc_buf).await.map_err(AdapterError::Io)?;
+        aead_encrypt_into(cipher, key, *nonce_ctr, &[], enc_buf)?;
         *nonce_ctr += 1;
-        w.write_all(&enc_len).await.map_err(AdapterError::Io)?;
-        w.write_all(&enc_payload).await.map_err(AdapterError::Io)?;
+        w.write_all(enc_buf).await.map_err(AdapterError::Io)?;
         return Ok(());
     }
 
@@ -577,12 +595,12 @@ async fn write_aead_chunk(
         let end = (offset + u16::MAX as usize).min(data.len());
         let chunk = &data[offset..end];
         let len_be = (chunk.len() as u16).to_be_bytes();
-        let enc_len = aead_encrypt(cipher, key, *nonce_ctr, &len_be)?;
+        aead_encrypt_into(cipher, key, *nonce_ctr, &len_be, enc_buf)?;
         *nonce_ctr += 1;
-        let enc_payload = aead_encrypt(cipher, key, *nonce_ctr, chunk)?;
+        w.write_all(enc_buf).await.map_err(AdapterError::Io)?;
+        aead_encrypt_into(cipher, key, *nonce_ctr, chunk, enc_buf)?;
         *nonce_ctr += 1;
-        w.write_all(&enc_len).await.map_err(AdapterError::Io)?;
-        w.write_all(&enc_payload).await.map_err(AdapterError::Io)?;
+        w.write_all(enc_buf).await.map_err(AdapterError::Io)?;
         offset = end;
     }
     Ok(())
@@ -613,7 +631,8 @@ impl ShadowsocksTunnelStream {
 
         // Write one empty chunk to ensure the server proceeds and sends back server salt.
         let mut wnonce = 0u64;
-        write_aead_chunk(&cipher, &c_subkey, &mut wnonce, &mut stream, &[]).await?;
+        let mut tmp_buf = Vec::with_capacity(32);
+        write_aead_chunk(&cipher, &c_subkey, &mut wnonce, &mut stream, &[], &mut tmp_buf).await?;
         debug_assert_eq!(wnonce, 2);
 
         // Server salt + subkey (server -> client)
@@ -632,10 +651,9 @@ impl ShadowsocksTunnelStream {
         let key_read = s_subkey.clone();
         let task_decrypt = tokio::spawn(async move {
             let mut rnonce = 0u64;
-            while let Ok(payload) =
-                read_aead_chunk(&cipher_read, &key_read, &mut rnonce, &mut tcp_r).await
-            {
-                if clear_w.write_all(&payload).await.is_err() {
+            let mut chunk_buf = Vec::with_capacity(65536 + 16);
+            while read_aead_chunk(&cipher_read, &key_read, &mut rnonce, &mut tcp_r, &mut chunk_buf).await.is_ok() {
+                if clear_w.write_all(&chunk_buf).await.is_err() {
                     break;
                 }
             }
@@ -645,9 +663,10 @@ impl ShadowsocksTunnelStream {
         let key_write = c_subkey.clone();
         let task_encrypt = tokio::spawn(async move {
             let mut wnonce = 2u64;
-            let mut buf = vec![0u8; 65536];
+            let mut read_buf = vec![0u8; 65536];
+            let mut enc_buf = Vec::with_capacity(65536 + 16);
             loop {
-                match clear_r.read(&mut buf).await {
+                match clear_r.read(&mut read_buf).await {
                     Ok(0) => break,
                     Ok(n) => {
                         if write_aead_chunk(
@@ -655,7 +674,8 @@ impl ShadowsocksTunnelStream {
                             &key_write,
                             &mut wnonce,
                             &mut tcp_w,
-                            &buf[..n],
+                            &read_buf[..n],
+                            &mut enc_buf,
                         )
                         .await
                         .is_err()
@@ -892,13 +912,14 @@ impl ShadowsocksUdpSocket {
 
         // Derive subkey for this packet and encrypt with nonce=0.
         let subkey = hkdf_subkey(&self.master_key, &salt, self.cipher_method.key_size())?;
-        let ciphertext = aead_encrypt(&self.cipher_method, &subkey, 0, &payload)?;
+        let mut enc_buf = Vec::with_capacity(payload.len() + 16);
+        aead_encrypt_into(&self.cipher_method, &subkey, 0, &payload, &mut enc_buf)?;
 
         // Combine: salt + ciphertext (includes tag)
         // 组合：salt + 密文（包含 tag）
-        let mut packet = Vec::with_capacity(salt.len() + ciphertext.len());
+        let mut packet = Vec::with_capacity(salt.len() + enc_buf.len());
         packet.extend_from_slice(&salt);
-        packet.extend_from_slice(&ciphertext);
+        packet.extend_from_slice(&enc_buf);
 
         Ok(packet)
     }
@@ -917,7 +938,8 @@ impl ShadowsocksUdpSocket {
         let ciphertext = &packet[salt_len..];
 
         let subkey = hkdf_subkey(&self.master_key, salt, self.cipher_method.key_size())?;
-        let plaintext = aead_decrypt(&self.cipher_method, &subkey, 0, ciphertext)?;
+        let mut plaintext = ciphertext.to_vec();
+        aead_decrypt_in_place(&self.cipher_method, &subkey, 0, &mut plaintext)?;
 
         // Skip address header (ATYP + ADDR + PORT) and return data
         // 跳过地址头部 (ATYP + ADDR + PORT) 并返回数据

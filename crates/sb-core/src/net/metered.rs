@@ -1,11 +1,59 @@
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+// ─── Relay buffer pool ───────────────────────────────────────────────────────
+// Avoids per-connection heap allocation at high concurrency; buffers are
+// returned to the pool automatically when the pump() future completes or drops.
+
+/// Buffer size for TCP relay (64 KiB — benchmark-proven optimum).
+const RELAY_BUF_SIZE: usize = 64 * 1024;
+/// Maximum number of idle buffers to retain in the pool.
+const RELAY_BUF_POOL_CAP: usize = 128;
+
+static RELAY_BUF_POOL: OnceLock<parking_lot::Mutex<Vec<Vec<u8>>>> = OnceLock::new();
+
+fn relay_buf_acquire() -> RelayBuf {
+    let buf = RELAY_BUF_POOL
+        .get_or_init(|| parking_lot::Mutex::new(Vec::with_capacity(16)))
+        .lock()
+        .pop()
+        .unwrap_or_else(|| vec![0u8; RELAY_BUF_SIZE]);
+    RelayBuf(buf)
+}
+
+/// RAII wrapper: returns the buffer to the pool on drop.
+struct RelayBuf(Vec<u8>);
+
+impl Drop for RelayBuf {
+    fn drop(&mut self) {
+        if self.0.capacity() > RELAY_BUF_SIZE * 4 {
+            return; // discard unexpectedly large buffers
+        }
+        if self.0.len() != RELAY_BUF_SIZE {
+            self.0.resize(RELAY_BUF_SIZE, 0);
+        }
+        let pool = RELAY_BUF_POOL.get_or_init(|| parking_lot::Mutex::new(Vec::with_capacity(16)));
+        let mut guard = pool.lock();
+        if guard.len() < RELAY_BUF_POOL_CAP {
+            guard.push(std::mem::take(&mut self.0));
+        }
+    }
+}
+
+impl std::ops::Deref for RelayBuf {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] { &self.0 }
+}
+
+impl std::ops::DerefMut for RelayBuf {
+    fn deref_mut(&mut self) -> &mut [u8] { &mut self.0 }
+}
 
 /// Optional traffic recorder for per-connection byte accounting (e.g. V2Ray stats).
 pub trait TrafficRecorder: Send + Sync {
@@ -151,7 +199,7 @@ where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let mut buf = vec![0u8; 16 * 1024];
+        let mut buf = relay_buf_acquire();
         let mut total = 0u64;
         loop {
             let n = {

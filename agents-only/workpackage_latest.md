@@ -40,7 +40,7 @@
 | 批次 | 内容 | 状态 |
 |------|------|------|
 | B1 | 安全修复 + Fuzz 基础设施 (T1-01~06, T2-08,10) | ✅ done |
-| B2 | 性能热路径 + Benchmark (T1-08,09,12, T2-05,07,09) | 🟡 T1-08,09,12 done; T2-05,07,09 pending |
+| B2 | 性能热路径 + Benchmark (T1-08,09,12, T2-05,07,09) | ✅ done |
 | B3 | 功能补全 + 错误处理 (T1-10,11, T2-01~04) | ✅ done |
 | B4 | T3 按需 | 🔲 pending |
 
@@ -59,6 +59,9 @@
 | T2-02 | register.rs 12x unwrap_or_else poison-tolerant | 2026-03-17 |
 | T2-03 | log/mod.rs RwLock read/write poison-tolerant | 2026-03-17 |
 | T2-04 | 5x NonZeroUsize::new_unchecked unsafe 消除 | 2026-03-17 |
+| T2-05 | SS AEAD encrypt/decrypt_in_place + reusable buf (4-6 alloc/chunk 消除) | 2026-03-17 |
+| T2-07 | benchmark-baseline.md + baseline.json 12 条目填充 | 2026-03-17 |
+| T2-09 | pump() 16KB→64KB + RelayBuf RAII pool (128 entry cap) | 2026-03-17 |
 
 ### 构建基线（2026-03-17）
 

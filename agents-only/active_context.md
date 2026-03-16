@@ -38,11 +38,14 @@
 - ✅ T2-04: 5x `NonZeroUsize::new_unchecked()` unsafe → `NonZeroUsize::new(N).unwrap()`
 - ✅ 附带: `benches/tcp_relay_e2e.rs` 2x `unit_arg` clippy 错误修复
 
-### B2 仍 pending
+### B2 — ✅ 全部完成
 
-- T2-05: SS AEAD per-chunk aead_in_place 优化
-- T2-07: Benchmark 基线文档 + CI 集成
-- T2-09: TCP relay pump buffer 池化
+- ✅ T2-05: SS AEAD `encrypt_in_place`/`decrypt_in_place` + reusable `enc_buf`/`chunk_buf`
+  - 消除每个 chunk 4-6 次 Vec 分配；UDP 路径同步升级
+- ✅ T2-07: `docs/benchmark-baseline.md` + `reports/benchmarks/baseline.json` 数据填充
+  - domain_match 12 条目基线；CI gate 已在 `bench-regression.yml`
+- ✅ T2-09: `metered.rs` pump() 16KB→64KB，全局 `RELAY_BUF_POOL`（128 entry cap）
+  - RAII `RelayBuf` drop 自动归还；Deref/DerefMut → `[u8]` 透明兼容
 
 ## 构建基线（2026-03-17，B3 交付后）
 

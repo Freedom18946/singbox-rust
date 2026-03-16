@@ -1,9 +1,29 @@
 {
-  "generated": "2026-02-13T11:20:57.527971+00:00",
+  "generated": "2026-03-17T00:00:00+00:00",
+  "platform": "macOS 25.3.0 (darwin arm64)",
   "bench_suite": {
     "package": "sb-benches",
-    "estimate_files": 0,
-    "compilation": "verified"
+    "rust_channel": "stable",
+    "profile": "release"
   },
-  "benchmarks": {}
+  "benchmarks": {
+    "domain_suffix_match/hit/10":      { "mean_ns": 30.615 },
+    "domain_suffix_match/miss/10":     { "mean_ns": 111.94 },
+    "domain_suffix_match/exact/10":    { "mean_ns": 18.489 },
+    "domain_suffix_match/keyword/10":  { "mean_ns": 105.10 },
+    "domain_suffix_match/hit/100":     { "mean_ns": 176.25 },
+    "domain_suffix_match/miss/100":    { "mean_ns": 419.09 },
+    "domain_suffix_match/exact/100":   { "mean_ns": 18.502 },
+    "domain_suffix_match/keyword/100": { "mean_ns": 426.91 },
+    "domain_suffix_match/hit/1000":     { "mean_ns": 1568.9 },
+    "domain_suffix_match/miss/1000":    { "mean_ns": 3409.5 },
+    "domain_suffix_match/exact/1000":   { "mean_ns": 18.691 },
+    "domain_suffix_match/keyword/1000": { "mean_ns": 3546.5 }
+  },
+  "notes": {
+    "tcp_relay_buf_16k_gib_s": 2.4,
+    "tcp_relay_buf_64k_gib_s": 3.0,
+    "tcp_relay_payload_mb": 1,
+    "tcp_relay_method": "loopback, criterion throughput measurement"
+  }
 }
