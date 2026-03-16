@@ -8,52 +8,42 @@
 
 ## 战略状态
 
-**当前阶段**: **L23 — TUN / Sniff 运行时补全**
+**当前阶段**: **L23 — TUN / Sniff 运行时补全** (Closure)
 **历史阶段**: L1-L22 + 后 L22 补丁 全部 Closed
-**工作区状态**: Tier 1 全部完成，Tier 2 全部完成
+**工作区状态**: Tier 1-3 全部完成
 
-## L23 Tier 2 完成摘要（2026-03-16）
+## L23 Closure（2026-03-16）
 
-### T4: Provider 后台更新循环 ✅
-- `ProviderManager::start_background_updates()` — 可配置 tick interval 定时扫描 stale providers
-- `tick_updates()` 收集过期 proxy/rule providers → `fetch_and_update()` 获取最新内容
-- `watch::Receiver<bool>` shutdown 信号优雅退出
-- **DIV-H-003 → CLOSED**
+### L23-T7: Redirect IPv6 ✅
+- `get_original_dst()` in `redirect.rs` now branches on peer address family
+- IPv6: `SOL_IPV6` + `IP6T_SO_ORIGINAL_DST` (=80) + `sockaddr_in6`
+- Also fixes tproxy IPv6 (shares `get_original_dst()`)
+- **DIV-H-002 → CLOSED**
 
-### T5: Provider 健康检查探针 ✅
-- `ProviderManager::health_check_provider()` — 通过 `OutboundRegistryHandle::connect_tcp()` 执行真实 TCP 探测
-- 5 秒超时，无 registry 时优雅降级为 healthy
-- **DIV-H-004 → CLOSED**
+### DIV-C-002: SOCKS5 UDP default ON ✅
+- Changed all defaults from `false` to `true` (Go parity)
+- `socks_udp_enabled()`, `run()`, `socks_udp_should_start()` — all `.unwrap_or(true)`
+- `bind_udp_from_env_or_any()` binds `0.0.0.0:0` when no explicit config
+- Removed `SB_SOCKS_UDP_ENABLE: "1"` from 10 case YAMLs
+- **DIV-C-002 → CLOSED**
 
-### T6: SV 域 7 BHV — Provider 连接 + 偏差关闭 ✅
-- `ApiState::new()` / `with_monitoring()` → `provider_manager: Some(Arc::new(ProviderManager::default()))`
-- Provider endpoints 不再返回 503；空 ProviderManager 返回正确的空响应
-- 3 个新 e2e 测试: `test_get_proxy_providers_with_data`, `test_healthcheck_proxy_provider_with_data`, `test_get_rule_providers_with_data`
-- DIV-H-003/004 CLOSED, DIV-H-005 STRUCTURAL 新增（Go provider endpoints 全部 stub）
-- **BHV-SV-005/006/007 现有 Rust-only e2e 覆盖**
+### Case Promotions ✅
+- `p1_clash_api_auth_enforcement` → `kernel_mode: both` (BHV-CP-012..017)
+- `p1_gui_group_delay_replay` → `kernel_mode: both` (BHV-CP-005 group variant)
 
 ## 构建基线（2026-03-16）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
-| `cargo clippy -p sb-api --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-api --lib` | ✅ 28 passed |
-| `cargo test -p sb-api --test clash_http_e2e` | ✅ 47 passed |
-| `cargo test -p sb-core --lib` | ✅ 504 passed |
-
-## 下一步：L23 Tier 3
-
-| 任务 | 描述 | 状态 |
-|------|------|------|
-| L23-T7 | Redirect IPv6 (DIV-H-002) — 平台限制，有限影响 | deferred |
+| `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
 
 ## 关键文件速查
 
 | 内容 | 路径 |
 |------|------|
-| ProviderManager | `crates/sb-api/src/managers.rs` |
-| Clash API server | `crates/sb-api/src/clash/server.rs` |
-| Provider handlers | `crates/sb-api/src/clash/handlers.rs` |
-| Provider e2e tests | `crates/sb-api/tests/clash_http_e2e.rs` |
+| Redirect IPv6 | `crates/sb-adapters/src/inbound/redirect.rs` |
+| SOCKS5 UDP | `crates/sb-adapters/src/inbound/socks/udp.rs`, `mod.rs` |
+| UDP start gate | `app/src/inbound_starter.rs` |
+| Go auth config | `labs/interop-lab/configs/go_core_clash_api_auth.json` |
 | Golden spec | `labs/interop-lab/docs/dual_kernel_golden_spec.md` |

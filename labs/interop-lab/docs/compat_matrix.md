@@ -10,7 +10,7 @@
 | `GET /proxies` (repeated p95) | 重复 API 调用响应延迟 p95 合约 | `p0_clash_api_contract_strict` | `strict` | implemented (`kernel_mode: both`) |
 | `PUT /proxies/{group}` | selector 切换 + reload 后保持选中态 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
 | `GET /proxies/{name}/delay` | 延迟探测 | `p0_clash_api_contract` / `p1_gui_proxy_delay_replay` | `env_limited`/`strict` | implemented (`p1_gui_proxy_delay_replay` = both) |
-| `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented |
+| `GET /meta/group/{name}/delay` | 组延迟探测 | `p1_gui_group_delay_replay` | `strict` | implemented (`p1_gui_group_delay_replay` = both) |
 | `GET /connections` | 连接面板快照 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_connections_tracking` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_connections_tracking` = both, `p1_gui_full_session_replay` = both) |
 | `DELETE /connections/{id}` | 关闭连接可观测 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
 | `GET /version` | 版本信息可读 | `p1_version_endpoint_contract` | `strict` | implemented (`p1_version_endpoint_contract` = both) |
@@ -130,9 +130,9 @@
 
 | 安全能力 | 检测目标 | Case ID | 状态 |
 | --- | --- | --- | --- |
-| Clash API Bearer auth | token 为空→跳过; 正确→200; 错误→401; 缺失→401 | `p1_clash_api_auth_enforcement` | implemented |
+| Clash API Bearer auth | token 为空→跳过; 正确→200; 错误→401; 缺失→401 | `p1_clash_api_auth_enforcement` | implemented (`p1_clash_api_auth_enforcement` = both) |
 | SSMAPI Bearer auth | ServiceIR.auth_token 独立鉴权 | — (单元测试覆盖) | implemented |
-| WS ?token= auth | WebSocket 升级请求 query param 鉴权 | `p1_clash_api_auth_enforcement` | implemented |
+| WS ?token= auth | WebSocket 升级请求 query param 鉴权 | `p1_clash_api_auth_enforcement` | implemented (`p1_clash_api_auth_enforcement` = both) |
 | 非 localhost 绑定警告 | 0.0.0.0 绑定 + 无 secret → InsecureBinding | — (单元测试覆盖) | implemented |
 | 服务故障隔离 | 单服务启动失败不阻塞其他服务 | `p1_service_failure_isolation` | implemented |
 | 健康 API 端点 | GET /services/health 聚合状态 | `p1_service_failure_isolation` | implemented |

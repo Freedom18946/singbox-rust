@@ -53,7 +53,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-CP-002 | PATCH /configs updates mode | PATCH /configs `{"mode":"rule"}` | 204 No Content | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
 | BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-007 |
 | BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | DIV-M-007 |
-| BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay` | — | DIV-M-009 |
+| BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay`, `p1_gui_group_delay_replay` | — | DIV-M-009 |
 | BHV-CP-006 | GET /connections lists active conns | GET /connections | 200 + `{connections[], downloadTotal, uploadTotal}` | HTTP, Conn | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_connections_tracking` | — | DIV-M-008 |
 | BHV-CP-007 | DELETE /connections/{id} closes conn | DELETE /connections/{id} | 204 or 404 | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
 
@@ -70,12 +70,12 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-CP-012 | Valid Bearer token → HTTP 200 | `Authorization: Bearer {secret}` | 200 on protected endpoints | HTTP | `p0_clash_api_contract` | `p1_clash_api_auth_enforcement` | — |
-| BHV-CP-013 | Wrong Bearer token → HTTP 401 | `Authorization: Bearer wrong` | 401 Unauthorized | HTTP | `p1_auth_negative_wrong_token` | `p1_clash_api_auth_enforcement` | — |
-| BHV-CP-014 | Missing Bearer token → HTTP 401 | No Authorization header | 401 Unauthorized | HTTP | `p1_auth_negative_missing_token` | `p1_clash_api_auth_enforcement` | — |
-| BHV-CP-015 | Valid WS ?token= → connected | WS upgrade with `?token={secret}` | Connection accepted, frames flow | WS | `p0_clash_api_contract` | `p1_clash_api_auth_enforcement` | — |
-| BHV-CP-016 | Wrong WS ?token= → rejected | WS upgrade with `?token=wrong` | Connection rejected (401/close) | WS | `p1_auth_negative_wrong_token` | `p1_clash_api_auth_enforcement` | — |
-| BHV-CP-017 | Missing WS ?token= → rejected | WS upgrade without token param | Connection rejected (401/close) | WS | `p1_auth_negative_missing_token` | `p1_clash_api_auth_enforcement` | — |
+| BHV-CP-012 | Valid Bearer token → HTTP 200 | `Authorization: Bearer {secret}` | 200 on protected endpoints | HTTP | `p0_clash_api_contract`, `p1_clash_api_auth_enforcement` | — | — |
+| BHV-CP-013 | Wrong Bearer token → HTTP 401 | `Authorization: Bearer wrong` | 401 Unauthorized | HTTP | `p1_auth_negative_wrong_token`, `p1_clash_api_auth_enforcement` | — | — |
+| BHV-CP-014 | Missing Bearer token → HTTP 401 | No Authorization header | 401 Unauthorized | HTTP | `p1_auth_negative_missing_token`, `p1_clash_api_auth_enforcement` | — | — |
+| BHV-CP-015 | Valid WS ?token= → connected | WS upgrade with `?token={secret}` | Connection accepted, frames flow | WS | `p0_clash_api_contract`, `p1_clash_api_auth_enforcement` | — | — |
+| BHV-CP-016 | Wrong WS ?token= → rejected | WS upgrade with `?token=wrong` | Connection rejected (401/close) | WS | `p1_auth_negative_wrong_token`, `p1_clash_api_auth_enforcement` | — | — |
+| BHV-CP-017 | Missing WS ?token= → rejected | WS upgrade without token param | Connection rejected (401/close) | WS | `p1_auth_negative_missing_token`, `p1_clash_api_auth_enforcement` | — | — |
 
 ### CP.4: Non-GUI Endpoints
 
@@ -202,7 +202,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |
 |--------|-----|-------------|--------------|---------------|
 | DIV-C-001 | INTENTIONAL | No implicit direct fallback — unresolvable destinations return error instead of silently falling back to direct. MIG-02 wave#200. | BHV-DP-005, BHV-DP-011 | `ignore_http_paths` for affected traffic test endpoints |
-| DIV-C-002 | KNOWN-GAP | SOCKS5 UDP ASSOCIATE defaults to off unless explicitly enabled on the Rust inbound. | BHV-DP-002 | Set `SB_SOCKS_UDP_ENABLE=1` for Rust strict both-mode cases |
+| DIV-C-002 | CLOSED | SOCKS5 UDP ASSOCIATE now defaults to ON (Go parity). Opt-out with `SB_SOCKS_UDP_ENABLE=0`. | BHV-DP-002 | — |
 | DIV-C-003 | CLOSED | Sniff rule action now implemented: inbounds read initial bytes, run sniff_stream(), populate protocol/host, and re-decide. | BHV-DP-014 | — |
 
 ### High (Partial Scenario Failure)
@@ -210,7 +210,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |
 |--------|-----|-------------|--------------|---------------|
 | DIV-H-001 | CLOSED | Inbound hot-reload validated: SIGHUP triggers reload and inbound rebinds on both kernels. | BHV-LC-005 | — |
-| DIV-H-002 | KNOWN-GAP | Redirect inbound IPv6 not supported. | BHV-DP-001 | Use IPv4 only in both-mode configs |
+| DIV-H-002 | CLOSED | Redirect inbound now supports IPv6 via `IP6T_SO_ORIGINAL_DST`. | BHV-DP-001 | — |
 | DIV-H-003 | CLOSED | Provider background update loop implemented (L23-T4). ProviderManager now sweeps stale providers on a configurable tick interval. | BHV-CP-018, BHV-SV-005 | — |
 | DIV-H-004 | CLOSED | Provider healthcheck now performs real TCP probe via outbound registry (L23-T5). Falls back to healthy when no registry configured. | BHV-SV-007 | — |
 | DIV-H-005 | STRUCTURAL | Go provider endpoints return empty stubs (empty map / 404 for all provider routes). SV.2 BHVs cannot be dual-kernel tested. | BHV-SV-005, BHV-SV-006, BHV-SV-007 | Rust-only e2e coverage via `clash_http_e2e.rs` |
@@ -266,10 +266,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 
 ### T2: Near-term (+2 cases)
 
-| # | Case ID | Effort | New BHVs Covered |
-|---|---------|--------|------------------|
-| 1 | `p1_clash_api_auth_enforcement` | E2 | BHV-CP-012…017 (strict auth coverage) |
-| 2 | `p1_gui_group_delay_replay` | E2 | BHV-CP-005 (group variant) |
+(Promoted — see Recent Promotions below)
 
 ### T3: Planned (+2 cases)
 
@@ -285,7 +282,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 1 | `p1_rust_core_tcp_via_socks` | both | E2 | BHV-DP-001 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
 | 2 | `p1_rust_core_http_via_socks` | both | E2 | BHV-DP-005, BHV-PF-001 | Promoted on 2026-03-12 after replacing curl-only SOCKS traffic with `reqwest+socks` and `/version` oracle ignore; re-verified on 2026-03-14 with repeated HTTP GET p95 latency through SOCKS5 |
 | 3 | `p1_rust_core_dns_via_socks` | both | E2 | BHV-DP-015 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap + `/version` oracle ignore |
-| 4 | `p1_rust_core_udp_via_socks` | both | E2 | BHV-DP-002 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap, `SB_SOCKS_UDP_ENABLE=1`, and `/version` oracle ignore |
+| 4 | `p1_rust_core_udp_via_socks` | both | E2 | BHV-DP-002 | Promoted on 2026-03-12 with shared self-managed Clash API bootstrap and `/version` oracle ignore; `SB_SOCKS_UDP_ENABLE` env removed after DIV-C-002 CLOSED (default ON) |
 | 5 | `p1_http_connect_via_http_proxy` | both | E3 | BHV-DP-003 | Promoted on 2026-03-12 after adding HTTP CONNECT proxy support to `tcp_round_trip` harness |
 | 6 | `p1_selector_switch_traffic_replay` | both | E3 | BHV-DP-006 | Promoted on 2026-03-12 with selector defaulting to `block`, then switching to `direct` via PUT API |
 | 7 | `p1_dns_query_endpoint_contract` | both | E1 | BHV-CP-021 | Promoted on 2026-03-12 after wiring Rust Clash API `dns_resolver` into managed runtime startup |
@@ -306,6 +303,8 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 22 | `p1_graceful_shutdown_drain` | both | E3 | BHV-LC-007 | Promoted on 2026-03-15 with new `TcpDrainDuringShutdown` harness action; both kernels show identical SIGTERM behavior (fast exit, no extended drain) confirming parity (`20260314T231033Z-e8dc8539-58aa-4b7f-82ec-5d2e4d571073`) |
 | 23 | `p1_urltest_auto_select_replay` | both | E3 | BHV-DP-007 | Promoted on 2026-03-15 after fixing Rust `SelectorGroup::now()` to call `select_by_latency()` for URLTest mode and running initial health check immediately (Go parity: `PostStart` → `CheckOutbounds`); both kernels show `now: "direct"` and route traffic through the best outbound (`20260314T233646Z-536ab378-faec-4190-8a08-57827f1a97fa`) |
 | 24 | `p1_inbound_hot_reload_sighup` | both | E2 | BHV-LC-005 | Promoted on 2026-03-15: SIGHUP triggers full reload on both kernels; data-plane TCP traffic via SOCKS5 survives two consecutive reloads; DIV-H-001 closed (`20260315T013347Z-88281e77-ea4d-4109-b15c-71982b0a4703`) |
+| 25 | `p1_clash_api_auth_enforcement` | both | E2 | BHV-CP-012…017 | Promoted on 2026-03-16 with Go config at port 18907/9090; strict auth coverage (no-auth→401, correct→200, wrong→401) |
+| 26 | `p1_gui_group_delay_replay` | both | E2 | BHV-CP-005 (group variant) | Promoted on 2026-03-16 reusing `l18_gui_go.json`; `ignore_http_paths` for timing-sensitive group delay path (DIV-M-009 pattern) |
 
 ### T4: Long-term (+4 cases)
 

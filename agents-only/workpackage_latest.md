@@ -39,12 +39,20 @@
 | L23-T5 | **Provider 健康检查探针** — 实现实际探测代替 always-healthy | DIV-H-004 → CLOSED | ✅ done |
 | L23-T6 | **SV 域 7 BHV** — Wire ProviderManager into ApiState + e2e tests + DIV-H-005 | DIV-H-005 STRUCTURAL | ✅ done |
 
-### Tier 3 — 低优先级 / 结构性阻塞
+### Tier 3 — 低优先级 / 结构性阻塞 ✅ 全部完成（2026-03-16）
 
 | 任务 | 描述 | 状态 |
 |------|------|------|
 | L23-T6 | **SV 域 7 BHV** — Go/Rust 都 stub provider endpoint，结构性不可测 | ✅ done (Rust-side wired; Go structural block documented as DIV-H-005) |
-| L23-T7 | **Redirect IPv6** (DIV-H-002) — 平台限制，有限影响 | deferred |
+| L23-T7 | **Redirect IPv6** (DIV-H-002) — IPv6 branch via IP6T_SO_ORIGINAL_DST | ✅ done (DIV-H-002 → CLOSED) |
+
+### Closure — L23 收口（2026-03-16）
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| DIV-C-002 | SOCKS5 UDP default ON (Go parity) | ✅ done (DIV-C-002 → CLOSED) |
+| Case promo | `p1_clash_api_auth_enforcement` → both | ✅ done |
+| Case promo | `p1_gui_group_delay_replay` → both | ✅ done |
 
 ### 构建基线（2026-03-16 更新）
 

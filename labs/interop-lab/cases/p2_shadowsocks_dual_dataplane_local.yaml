@@ -10,8 +10,6 @@ tags:
   - shadowsocks
 bootstrap:
   rust:
-    env:
-      SB_SOCKS_UDP_ENABLE: "1"
     command: ./target/debug/app
     args:
       - -c

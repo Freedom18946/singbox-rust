@@ -162,14 +162,10 @@ fn parse_optional_inbound_uuid(
 
 #[cfg(feature = "adapters")]
 fn socks_udp_should_start() -> bool {
-    // 显式开关优先；其次只要配置了监听地址也启动
-    let enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    enabled
-        || std::env::var("SB_SOCKS_UDP_LISTEN")
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false)
+    // Default ON (Go parity); opt-out with SB_SOCKS_UDP_ENABLE=0
+    std::env::var("SB_SOCKS_UDP_ENABLE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(true)
 }
 
 #[cfg(feature = "adapters")]

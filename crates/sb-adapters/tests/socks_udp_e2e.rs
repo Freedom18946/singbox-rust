@@ -101,7 +101,7 @@ async fn socks_udp_service_starts_with_env() {
 
 #[tokio::test]
 #[serial] // 与本文件中其他改 env 的测试串行化，避免进程级环境变量竞争
-async fn socks_udp_service_disabled_by_default() {
+async fn socks_udp_service_disabled_by_env() {
     // 明确关闭（比 remove_var 更稳妥；避免并发测试遗留的 "1" 污染）
     std::env::set_var("SB_SOCKS_UDP_ENABLE", "0");
     // 直接调用服务入口：现在应当快速返回；再加 300ms 超时，防回归

@@ -161,10 +161,10 @@ async fn serve_socks_internal(
 /// Compatibility alias - run SOCKS5 proxy
 /// 兼容性别名 - 运行 SOCKS5 代理
 pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
-    // Enable UDP Associate if configured or enabled via env
+    // Enable UDP Associate by default (Go parity); opt-out with SB_SOCKS_UDP_ENABLE=0
     let udp_enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     let udp_addr = if udp_enabled {
         // Bind UDP socket

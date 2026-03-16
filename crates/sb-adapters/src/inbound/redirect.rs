@@ -1,6 +1,6 @@
 //! Linux REDIRECT inbound (transparent proxy via iptables REDIRECT)
 //!
-//! - TCP only (IPv4). Retrieves original destination using SO_ORIGINAL_DST.
+//! - TCP (IPv4 + IPv6). Retrieves original destination using SO_ORIGINAL_DST / IP6T_SO_ORIGINAL_DST.
 //! - Routes via sb-core router and connects using outbounds registry.
 //!
 //! Usage:
@@ -18,7 +18,7 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::services::v2ray_api::StatsManager;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -72,7 +72,7 @@ pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Resu
 }
 
 async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
-    // Obtain original destination (IPv4 only)
+    // Obtain original destination (IPv4 + IPv6)
     let orig = get_original_dst(&cli)?;
     info!(%peer, ?orig, "redirect: original destination");
 
@@ -227,31 +227,50 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
     Ok(())
 }
 
+/// Linux netfilter constant for retrieving original IPv6 destination.
+const IP6T_SO_ORIGINAL_DST: libc::c_int = 80;
+
 pub(crate) fn get_original_dst(s: &TcpStream) -> std::io::Result<SocketAddr> {
-    // SAFETY: Linux-only; get SO_ORIGINAL_DST (IPv4)
     let fd = s.as_raw_fd();
-    unsafe {
-        // sockaddr_in
-        let mut addr: libc::sockaddr_in = std::mem::zeroed();
-        let mut len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-        let ret = libc::getsockopt(
-            fd,
-            libc::SOL_IP,
-            libc::SO_ORIGINAL_DST,
-            &mut addr as *mut _ as *mut libc::c_void,
-            &mut len,
-        );
-        if ret != 0 {
-            return Err(std::io::Error::last_os_error());
+    let peer = s.peer_addr()?;
+
+    if peer.is_ipv6() {
+        // SAFETY: Linux-only; get IP6T_SO_ORIGINAL_DST (IPv6)
+        unsafe {
+            let mut addr: libc::sockaddr_in6 = std::mem::zeroed();
+            let mut len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
+            let ret = libc::getsockopt(
+                fd,
+                libc::SOL_IPV6,
+                IP6T_SO_ORIGINAL_DST,
+                &mut addr as *mut _ as *mut libc::c_void,
+                &mut len,
+            );
+            if ret != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let ip = IpAddr::V6(Ipv6Addr::from(addr.sin6_addr.s6_addr));
+            let port = u16::from_be(addr.sin6_port);
+            Ok(SocketAddr::new(ip, port))
         }
-        if addr.sin_family != libc::AF_INET as u16 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "redirect: non-IPv4 original dst",
-            ));
+    } else {
+        // SAFETY: Linux-only; get SO_ORIGINAL_DST (IPv4)
+        unsafe {
+            let mut addr: libc::sockaddr_in = std::mem::zeroed();
+            let mut len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+            let ret = libc::getsockopt(
+                fd,
+                libc::SOL_IP,
+                libc::SO_ORIGINAL_DST,
+                &mut addr as *mut _ as *mut libc::c_void,
+                &mut len,
+            );
+            if ret != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let ip = IpAddr::V4(Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr)));
+            let port = u16::from_be(addr.sin_port);
+            Ok(SocketAddr::new(ip, port))
         }
-        let ip = IpAddr::V4(Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr)));
-        let port = u16::from_be(addr.sin_port);
-        Ok(SocketAddr::new(ip, port))
     }
 }

@@ -1,12 +1,13 @@
 id: p1_clash_api_auth_enforcement
 title: clash api authentication enforcement with secret configured
 priority: p1
-kernel_mode: rust
+kernel_mode: both
 env_class: strict
 tags:
   - auth
   - clash-api
   - security
+  - dual_core
 owner: L13
 bootstrap:
   rust:
@@ -21,6 +22,17 @@ bootstrap:
     ready_path: /
     api:
       base_url: "http://127.0.0.1:19290"
+      secret: "test123"
+  go:
+    command: go_fork_source/sing-box-1.12.14/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_auth.json
+    startup_timeout_ms: 15000
+    ready_path: /
+    api:
+      base_url: "http://127.0.0.1:9090"
       secret: "test123"
 gui_sequence:
   - kind: http

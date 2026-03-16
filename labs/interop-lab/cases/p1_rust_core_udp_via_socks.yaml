@@ -9,8 +9,6 @@ tags:
 bootstrap:
   rust:
     command: ./target/debug/app
-    env:
-      SB_SOCKS_UDP_ENABLE: "1"
     args:
       - -c
       - labs/interop-lab/configs/rust_core_clash_api.json

@@ -1,5 +1,5 @@
-//! SOCKS5 UDP Associate 真转发（behind env：SB_SOCKS_UDP_ENABLE=1）
-//! SOCKS5 UDP Associate real forwarding (behind env: SB_SOCKS_UDP_ENABLE=1)
+//! SOCKS5 UDP Associate 真转发（默认开启，Go parity；SB_SOCKS_UDP_ENABLE=0 可关闭）
+//! SOCKS5 UDP Associate real forwarding (default ON for Go parity; opt-out with SB_SOCKS_UDP_ENABLE=0)
 #![allow(dead_code)]
 
 // Re-export types & helpers for integration tests/examples
@@ -71,7 +71,7 @@ fn upstream_timeout_ms() -> u64 {
 fn socks_udp_enabled() -> bool {
     env::var("SB_SOCKS_UDP_ENABLE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 fn max_entries() -> usize {
@@ -977,10 +977,10 @@ pub async fn bind_udp_from_env_or_any() -> Result<Vec<Arc<UdpSocket>>> {
         .unwrap_or_default();
     let list = list.trim();
 
-    // 没有任何配置 → 默认关闭（返回空列表）
-    // No config -> Default disabled (return empty list)
+    // No explicit listen config → bind any port (default ON for Go parity)
     if list.is_empty() {
-        return Ok(Vec::new());
+        let s = UdpSocket::bind("0.0.0.0:0").await?;
+        return Ok(vec![Arc::new(s)]);
     }
 
     // 有配置则逐个绑定；支持逗号或空白分隔
