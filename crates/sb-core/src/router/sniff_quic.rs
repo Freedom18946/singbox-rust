@@ -68,7 +68,7 @@ fn read_quic_varint(buf: &[u8], pos: usize) -> Option<(u64, usize)> {
                 | (buf[pos + 6] as u64) << 8
                 | buf[pos + 7] as u64
         }
-        _ => unreachable!(),
+        _ => return None,
     };
     Some((val, len))
 }

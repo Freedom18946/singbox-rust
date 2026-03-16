@@ -131,7 +131,9 @@ fn parse_include_path(line: &str) -> Result<String, String> {
         .ok_or("非法 include 语句")?
         .trim();
     if rest.starts_with('"') || rest.starts_with('\'') {
-        let q = rest.chars().next().unwrap();
+        let Some(q) = rest.chars().next() else {
+            return Err("include 路径为空".into());
+        };
         let mut s = String::new();
         let mut closed = false;
         for ch in rest.chars().skip(1) {
@@ -178,4 +180,117 @@ fn to_abs_path(p: &str, cwd: Option<&PathBuf>) -> PathBuf {
 
 fn canonicalize_soft(p: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(p).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_input_returns_ok_empty() {
+        let result = expand_dsl_plus("", None).unwrap();
+        assert!(result.is_empty(), "expected empty output, got: {result:?}");
+    }
+
+    #[test]
+    fn whitespace_only_returns_ok_empty() {
+        let result = expand_dsl_plus("   ", None).unwrap();
+        assert!(result.is_empty(), "expected empty output, got: {result:?}");
+    }
+
+    #[test]
+    fn comment_only_returns_ok_empty() {
+        let result = expand_dsl_plus("# just a comment\n  # another", None).unwrap();
+        assert!(result.is_empty(), "expected empty output, got: {result:?}");
+    }
+
+    #[test]
+    fn blank_lines_and_comments_filtered() {
+        let input = "\n\n# comment\n   \nexact:example.com\n# trailing\n";
+        let result = expand_dsl_plus(input, None).unwrap();
+        assert_eq!(result, "exact:example.com");
+    }
+
+    #[test]
+    fn include_missing_path_is_error() {
+        // When the line "include " is trimmed by expand_into, it becomes "include"
+        // which doesn't match the "include " prefix. Test parse_include_path directly.
+        let result = parse_include_path("include ");
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("缺少路径"),
+            "should report missing path"
+        );
+    }
+
+    #[test]
+    fn include_unclosed_quote_is_error() {
+        let result = expand_dsl_plus("include \"no-close", None);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("引号未闭合"),
+            "should report unclosed quote"
+        );
+    }
+
+    #[test]
+    fn parse_include_path_double_quote() {
+        let path = parse_include_path("include \"some/path.dsl\"").unwrap();
+        assert_eq!(path, "some/path.dsl");
+    }
+
+    #[test]
+    fn parse_include_path_single_quote() {
+        let path = parse_include_path("include 'some/path.dsl'").unwrap();
+        assert_eq!(path, "some/path.dsl");
+    }
+
+    #[test]
+    fn parse_include_path_bare() {
+        let path = parse_include_path("include bare/path.dsl").unwrap();
+        assert_eq!(path, "bare/path.dsl");
+    }
+
+    #[test]
+    fn parse_include_path_empty_is_error() {
+        let result = parse_include_path("include ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn use_undefined_macro_is_error() {
+        let result = expand_dsl_plus("use NOPE", None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("未定义的宏"));
+    }
+
+    #[test]
+    fn use_without_name_becomes_plain_line() {
+        // expand_into trims lines, so "use " becomes "use" which doesn't match
+        // the "use " prefix in the second pass. It passes through as a plain DSL line.
+        let result = expand_dsl_plus("use ", None).unwrap();
+        assert_eq!(result, "use");
+    }
+
+    #[test]
+    fn macro_define_and_use() {
+        let input = "@macro BLOCK {\nexact:foo.com\nexact:bar.com\n}\nuse BLOCK";
+        let result = expand_dsl_plus(input, None).unwrap();
+        assert_eq!(result, "exact:foo.com\nexact:bar.com");
+    }
+
+    #[test]
+    fn unclosed_macro_is_error() {
+        let input = "@macro BROKEN {\nexact:foo.com\n";
+        let result = expand_dsl_plus(input, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("未正确闭合"));
+    }
+
+    #[test]
+    fn plain_dsl_lines_preserved() {
+        let input = "exact:a.com\nsuffix:b.org\ndefault:direct";
+        let result = expand_dsl_plus(input, None).unwrap();
+        assert_eq!(result, "exact:a.com\nsuffix:b.org\ndefault:direct");
+    }
 }

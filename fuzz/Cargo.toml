@@ -18,9 +18,17 @@ proptest = { version = "1.0", optional = true }
 # singbox-rust crates
 sb-core = { path = "../crates/sb-core", features = [
     "fuzzing",
+    "router",
 ], default-features = false }
+serde_json = "1.0"
 sb-api = { path = "../crates/sb-api", default-features = false }
-sb-adapters = { path = "../crates/sb-adapters", default-features = false }
+sb-adapters = { path = "../crates/sb-adapters", default-features = false, features = [
+    "shadowsocks",
+    "trojan",
+    "socks",
+    "mixed",
+    "sb-transport",
+] }
 sb-config = { path = "../crates/sb-config", default-features = false }
 sb-tls = { path = "../crates/sb-tls", default-features = false, optional = true }
 sb-transport = { path = "../crates/sb-transport", default-features = false, optional = true }
@@ -105,7 +113,33 @@ name = "fuzz_v2ray_api"
 path = "targets/api/fuzz_v2ray_api.rs"
 required-features = ["basic"]
 
+# Sniff parser dedicated fuzz targets
+[[bin]]
+name = "fuzz_sniff_tls"
+path = "targets/core/fuzz_sniff_tls.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_sniff_http"
+path = "targets/core/fuzz_sniff_http.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_sniff_quic"
+path = "targets/core/fuzz_sniff_quic.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_sniff_stream"
+path = "targets/core/fuzz_sniff_stream.rs"
+required-features = ["basic"]
+
 # Advanced structured fuzz targets
+[[bin]]
+name = "fuzz_route_decide"
+path = "targets/core/fuzz_route_decide.rs"
+required-features = ["basic"]
+
 [[bin]]
 name = "fuzz_vmess_structured"
 path = "targets/protocols/fuzz_vmess_structured.rs"

@@ -45,6 +45,14 @@ harness = false
 name = "trojan_throughput"
 harness = false
 
+[[bench]]
+name = "tcp_relay_e2e"
+harness = false
+
+[[bench]]
+name = "domain_match"
+harness = false
+
 [dependencies]
 # Core dependencies
 sb-core = { path = "../crates/sb-core", features = ["router", "dns_udp", "dns_doh", "dns_dot", "dns_doq"] }

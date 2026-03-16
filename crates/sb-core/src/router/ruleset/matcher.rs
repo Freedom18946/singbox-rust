@@ -150,7 +150,7 @@ impl RuleMatcher {
                 let matched = rule
                     .domain_suffix
                     .iter()
-                    .any(|suffix| domain == suffix || domain.ends_with(&format!(".{}", suffix)));
+                    .any(|suffix| domain_matches_suffix(domain, suffix));
                 if !matched {
                     return false;
                 }
@@ -392,7 +392,7 @@ impl RuleMatcher {
                     self.ruleset
                         .domain_suffixes
                         .iter()
-                        .any(|suffix| domain == suffix || domain.ends_with(&format!(".{}", suffix)))
+                        .any(|suffix| domain_matches_suffix(domain, suffix))
                 }
             }
             DomainRule::Keyword(keyword) => domain.contains(keyword),
@@ -446,6 +446,15 @@ impl RuleMatcher {
             }
         }
     }
+}
+
+/// Zero-allocation domain suffix match: "a.example.com" matches suffix "example.com"
+#[inline]
+fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
+    domain == suffix
+        || (domain.len() > suffix.len()
+            && domain.as_bytes()[domain.len() - suffix.len() - 1] == b'.'
+            && domain.ends_with(suffix))
 }
 
 fn is_private_ip(ip: &IpAddr) -> bool {

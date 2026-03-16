@@ -16,61 +16,49 @@
 | L18 Phase 1-4 | 认证替换、证据模型收口、GUI gate 复验、长跑恢复决策门 | 2026-03-11 |
 | L22 | dual-kernel parity 52/60 (86.7%)，16 个 both-case，Sniff Phase A+B | 2026-03-15 |
 | 后 L22 补丁 | QUIC 多包重组、OverrideDestination、UDP datagram sniff、编译修复 | 2026-03-15 |
+| L23 | TUN/Sniff 运行时补全、Provider wiring、T4 Protocol Suite (VLESS/VMess)、parity 92.9% | 2026-03-16 |
 
 ---
 
-## 当前活跃：L23 — TUN / Sniff 运行时补全
+## 当前活跃：L24 — 性能 / 安全 / 质量 / 功能补全
 
-**目标**: 补全 TUN UDP 转发、废弃 sniff 字段自动注入、TUN override_destination，消除剩余已知偏差。
+**目标**: 从"功能完整"推向"生产就绪"。覆盖安全加固、Fuzz 基础设施、代码质量、热路径性能优化、功能补全。
 
-### Tier 1 — 高价值 / 必做 ✅ 全部完成（2026-03-16）
+**详细工作包**: `agents-only/planning/L24-workpackage.md`
 
-| 任务 | 描述 | 状态 |
+### 任务总览
+
+| Tier | 任务数 | S | M | L | 领域分布 |
+|------|--------|---|---|---|----------|
+| T1（必做） | 12 | 5 | 5 | 2 | 安全×1, Fuzz×3, 质量×3, 性能×2, 功能×2, Bench×1 |
+| T2（中价值）| 10 | 3 | 5 | 2 | 性能×3, 质量×3, Fuzz×2, 功能×1, CI×1 |
+| T3（可选） | 8 | 2 | 5 | 1 | 质量×4, 功能×4 |
+| **合计** | **30** | **10** | **15** | **5** | |
+
+### 执行批次
+
+| 批次 | 内容 | 状态 |
 |------|------|------|
-| L23-T3 | **TUN sniff `override_destination`** — `if let` 解构 + `Endpoint::Domain` 覆盖 | ✅ done |
-| L23-T2 | **`sniff: true` 自动注入** — `RouteCtx` → `engine.rs` 前置注入 `Decision::Sniff` | ✅ done |
-| L23-T1 | **TUN UDP 转发** — `tun/udp.rs` UDP NAT 表 + macOS 主循环集成 + 反向 relay | ✅ done |
+| B1 | 安全修复 + Fuzz 基础设施 (T1-01~06, T2-08,10) | ✅ done |
+| B2 | 性能热路径 + Benchmark (T1-08,09,12, T2-05,07,09) | 🟡 T1-08,09,12 done; T2-05,07,09 pending |
+| B3 | 功能补全 + 错误处理 (T1-10,11, T2-01~04,06) | 🔲 pending |
+| B4 | T3 按需 | 🔲 pending |
 
-### Tier 2 — 中价值 / 偏差消除 ✅ 全部完成（2026-03-16）
+### 已交付任务清单
 
-| 任务 | 描述 | DIV | 状态 |
-|------|------|-----|------|
-| L23-T4 | **Provider 后台更新循环** — 实现定时轮询更新 | DIV-H-003 → CLOSED | ✅ done |
-| L23-T5 | **Provider 健康检查探针** — 实现实际探测代替 always-healthy | DIV-H-004 → CLOSED | ✅ done |
-| L23-T6 | **SV 域 7 BHV** — Wire ProviderManager into ApiState + e2e tests + DIV-H-005 | DIV-H-005 STRUCTURAL | ✅ done |
-
-### Tier 3 — 低优先级 / 结构性阻塞 ✅ 全部完成（2026-03-16）
-
-| 任务 | 描述 | 状态 |
+| 任务 | 交付 | 日期 |
 |------|------|------|
-| L23-T6 | **SV 域 7 BHV** — Go/Rust 都 stub provider endpoint，结构性不可测 | ✅ done (Rust-side wired; Go structural block documented as DIV-H-005) |
-| L23-T7 | **Redirect IPv6** (DIV-H-002) — IPv6 branch via IP6T_SO_ORIGINAL_DST | ✅ done (DIV-H-002 → CLOSED) |
+| T1-01~06 | 安全修复 + fuzz targets 真实化 | 2026-03-16 |
+| T2-08 | 114 seed corpus + regression framework | 2026-03-17 |
+| T1-08 | domain suffix 零分配匹配 (3 处 format!() 消除) | 2026-03-17 |
+| T1-09 | matches_host 零分配快路径 + 域名预 lowercase | 2026-03-17 |
+| T1-12 | TCP relay e2e benchmark + domain_match benchmark | 2026-03-17 |
 
-### Closure — L23 收口（2026-03-16）
-
-| 任务 | 描述 | 状态 |
-|------|------|------|
-| DIV-C-002 | SOCKS5 UDP default ON (Go parity) | ✅ done (DIV-C-002 → CLOSED) |
-| Case promo | `p1_clash_api_auth_enforcement` → both | ✅ done |
-| Case promo | `p1_gui_group_delay_replay` → both | ✅ done |
-| SV.1 重分类 | BHV-SV-001..004 确认为 harness-only，移出分母，T3 CLOSED | ✅ done |
-| Parity | 52/56 = 92.9%（旧 52/60 = 86.7%） | ✅ updated |
-
-### T4 — Protocol Suite 双核扩展 ✅ 完成（2026-03-16）
-
-| 任务 | 描述 | 状态 |
-|------|------|------|
-| T4-VLESS | `VlessInbound` upstream + configs + `p2_vless_dual_dataplane_local` (both) | ✅ done |
-| T4-VMess | `VmessInbound` upstream + configs + `p2_vmess_dual_dataplane_local` (both) | ✅ done |
-| T4-ShadowTLS | `p2_shadowtls_dual_dataplane_local` 已为 both-mode | ✅ pre-existing |
-| T4-UDP | VLESS/VMess UDP round-trip | ❌ NOT FEASIBLE (inbounds TCP-only) |
-
-### 构建基线（2026-03-16 更新）
+### 构建基线（2026-03-17）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
-| `cargo clippy -p sb-api --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-core --lib` | ✅ pass (504 tests) |
-| `cargo test -p sb-api --lib` | ✅ pass (28 tests) |
-| `cargo test -p sb-api --test clash_http_e2e` | ✅ pass (47 tests) |
+| `cargo test -p sb-core --lib` | ✅ pass (509 tests) |
+| `cargo bench -p sb-benches --bench tcp_relay_e2e` | ✅ 2.4-3.0 GiB/s |
+| `cargo +nightly fuzz build` | ✅ pass (20 targets) |

@@ -35,7 +35,7 @@ fuzz_target!(|data: &[u8]| {
                     // IP address parsed successfully
                     let _ = addr;
                 }
-                sb_adapters::inbound::socks::udp::UdpTargetAddr::Domain(domain, port) => {
+                sb_adapters::inbound::socks::udp::UdpTargetAddr::Domain { host: domain, port } => {
                     // Domain parsed successfully
                     // Validate domain is valid UTF-8 (should already be checked)
                     assert!(!domain.is_empty() || port > 0, "Invalid domain/port combination");

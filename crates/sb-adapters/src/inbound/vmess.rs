@@ -208,14 +208,18 @@ async fn handle_conn(
         }
     }
 
-    let timestamp = u64::from_be_bytes(auth_header[..8].try_into().unwrap());
+    let timestamp = u64::from_be_bytes(
+        auth_header[..8]
+            .try_into()
+            .map_err(|_| anyhow!("vmess: invalid auth header length"))?,
+    );
     let received_hmac = &auth_header[8..];
 
     // Validate timestamp (within 2 minutes)
     // 验证时间戳 (2 分钟内)
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .map_err(|_| anyhow!("vmess: system clock before Unix epoch"))?
         .as_secs();
     if timestamp.abs_diff(now) > 120 {
         if let Some(fallback_addr) = cfg.fallback {

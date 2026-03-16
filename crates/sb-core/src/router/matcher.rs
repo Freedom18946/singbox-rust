@@ -37,7 +37,10 @@ impl DomainRuleSet {
             .collect();
         let suffix: BTreeSet<String> = suffix
             .into_iter()
-            .map(Self::normalize)
+            .map(|s| {
+                let n = Self::normalize(s);
+                format!(".{n}")
+            })
             .collect();
         let keyword: HashSet<String> = keyword
             .into_iter()
@@ -63,12 +66,14 @@ impl DomainRuleSet {
             if let Some(rest) = r.strip_prefix("full:") {
                 exact.insert(Self::normalize(rest.to_string()));
             } else if let Some(rest) = r.strip_prefix("suffix:") {
-                suffix.insert(Self::normalize(rest.to_string()));
+                let n = Self::normalize(rest.to_string());
+                suffix.insert(format!(".{n}"));
             } else if let Some(rest) = r.strip_prefix("keyword:") {
                 keyword.insert(rest.to_lowercase());
             } else {
                 // 默认作为 suffix
-                suffix.insert(Self::normalize(r));
+                let n = Self::normalize(r);
+                suffix.insert(format!(".{n}"));
             }
         }
         Self { exact, suffix, keyword }
@@ -76,26 +81,41 @@ impl DomainRuleSet {
 
     /// 判断 host 是否匹配集合（匹配顺序：exact > suffix > keyword）
     pub fn matches_host(&self, host: &str) -> bool {
-        let h = Self::normalize(host.to_string());
-        if self.exact.contains(&h) {
+        let h = host.strip_prefix('.').unwrap_or(host);
+        // Fast path: host already lowercase (common for SNI/DNS)
+        if self.exact.contains(h) || self.suffix_match(h) || self.keyword_match(h) {
             return true;
         }
-        if self.suffix_match(&h) {
-            return true;
+        // Slow path: allocate lowercase copy only if host has uppercase
+        if h.bytes().any(|b| b.is_ascii_uppercase()) {
+            let lower = h.to_ascii_lowercase();
+            return self.exact.contains(lower.as_str())
+                || self.suffix_match(&lower)
+                || self.keyword_match(&lower);
         }
-        self.keyword_match(&h)
+        false
     }
 
     /// 获取命中类型（用于上层打点/调试）
     pub fn match_kind(&self, host: &str) -> Option<&'static str> {
-        let h = Self::normalize(host.to_string());
-        if self.exact.contains(&h) {
+        let h = host.strip_prefix('.').unwrap_or(host);
+        if let Some(kind) = self.match_kind_inner(h) {
+            return Some(kind);
+        }
+        if h.bytes().any(|b| b.is_ascii_uppercase()) {
+            return self.match_kind_inner(&h.to_ascii_lowercase());
+        }
+        None
+    }
+
+    fn match_kind_inner(&self, h: &str) -> Option<&'static str> {
+        if self.exact.contains(h) {
             return Some("exact");
         }
-        if self.suffix_match(&h) {
+        if self.suffix_match(h) {
             return Some("suffix");
         }
-        if self.keyword_match(&h) {
+        if self.keyword_match(h) {
             return Some("keyword");
         }
         None
@@ -112,10 +132,11 @@ impl DomainRuleSet {
     }
 
     fn suffix_match(&self, host: &str) -> bool {
-        // 直接后缀匹配：`a.b.example.com` 命中 `example.com`
-        // 由于 BTreeSet 有序，从短到长扫描效率尚可（后续可做倒排索引/Trie）
+        // Suffix entries stored as ".example.com" (with leading dot, pre-computed at load time)
         for suf in self.suffix.iter() {
-            if host == suf || host.ends_with(&format!(".{suf}")) {
+            // Subdomain match: "a.b.example.com".ends_with(".example.com")
+            // Exact domain match: "example.com" == &".example.com"[1..]
+            if host.ends_with(suf.as_str()) || &suf[1..] == host {
                 return true;
             }
         }

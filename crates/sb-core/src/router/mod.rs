@@ -13,6 +13,8 @@
 pub mod builder;
 /// Connection manager (Go parity: route/conn.go)
 pub mod conn;
+/// Domain/IP rule matching primitives (suffix, keyword, exact, CIDR)
+pub mod matcher;
 pub mod dns;
 pub mod dns_bridge;
 pub mod dns_integration;

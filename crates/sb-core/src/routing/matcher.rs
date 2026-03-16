@@ -31,7 +31,7 @@ impl CompiledRule {
         }
         Self {
             outbound: r.outbound.clone(),
-            domains: r.domain.clone(),
+            domains: r.domain.iter().map(|d| d.to_ascii_lowercase()).collect(),
             ipcidr: cidrs,
             ports,
             networks: r.network.clone(),
@@ -81,8 +81,11 @@ impl CompiledRule {
                 let h_lc = h.to_ascii_lowercase();
                 let mut ok = false;
                 for d in &self.domains {
-                    let d = d.to_ascii_lowercase();
-                    if h_lc == d || h_lc.ends_with(&format!(".{d}")) {
+                    if h_lc == *d
+                        || (h_lc.len() > d.len()
+                            && h_lc.as_bytes()[h_lc.len() - d.len() - 1] == b'.'
+                            && h_lc.ends_with(d.as_str()))
+                    {
                         ok = true;
                         break;
                     }
