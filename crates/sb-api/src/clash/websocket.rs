@@ -306,7 +306,29 @@ fn get_process_memory() -> u64 {
         }
         0
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        // Use mach task_info to get resident memory (phys_footprint).
+        // This mirrors Go's runtime.MemStats.Sys approximation.
+        #[allow(deprecated)] // libc::mach_task_self deprecated in favor of mach2 crate
+        unsafe {
+            let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
+            let mut count = (std::mem::size_of::<libc::mach_task_basic_info_data_t>()
+                / std::mem::size_of::<libc::natural_t>()) as libc::mach_msg_type_number_t;
+            let kr = libc::task_info(
+                libc::mach_task_self(),
+                libc::MACH_TASK_BASIC_INFO,
+                (&raw mut info).cast(),
+                &raw mut count,
+            );
+            if kr == libc::KERN_SUCCESS {
+                info.resident_size as u64
+            } else {
+                0
+            }
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         0
     }

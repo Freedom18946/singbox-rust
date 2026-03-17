@@ -162,7 +162,7 @@ error-v2           = []
 explain            = []
 fuzzing            = []
 handshake_alpha    = []
-http_exporter      = []  # Reserved: metrics HTTP exporter endpoint (see app/observe_full)
+http_exporter      = ["metrics"]  # Activates metrics + HTTP exporter (see app/observe_full)
 # Inbound features
 in_tun             = ["router", "sb-platform/tun"]
 in_socks           = []
@@ -172,7 +172,7 @@ in_direct          = []
 # Outbound features
 out_socks          = []
 out_http           = []
-metrics            = []
+metrics            = []  # Marker feature: gates #[cfg(feature="metrics")] instrumentation paths
 out_hysteria       = ["out_quic", "tls_rustls"]
 out_hysteria2      = ["out_quic", "tls_rustls"]
 out_naive          = ["dep:hyper"]

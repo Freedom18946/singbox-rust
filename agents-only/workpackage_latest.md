@@ -42,7 +42,7 @@
 | B1 | 安全修复 + Fuzz 基础设施 (T1-01~06, T2-08,10) | ✅ done |
 | B2 | 性能热路径 + Benchmark (T1-08,09,12, T2-05,07,09) | ✅ done |
 | B3 | 功能补全 + 错误处理 (T1-10,11, T2-01~04) | ✅ done |
-| B4 | T3 按需 | 🔲 pending |
+| B4 | T3 按需 (T3-01~08) | ✅ done |
 
 ### 已交付任务清单
 
@@ -62,6 +62,14 @@
 | T2-05 | SS AEAD encrypt/decrypt_in_place + reusable buf (4-6 alloc/chunk 消除) | 2026-03-17 |
 | T2-07 | benchmark-baseline.md + baseline.json 12 条目填充 | 2026-03-17 |
 | T2-09 | pump() 16KB→64KB + RelayBuf RAII pool (128 entry cap) | 2026-03-17 |
+| T3-05 | endpoint sniff host mutation (override_destination 真正更新 endpoint) | 2026-03-17 |
+| T3-08 | getpwuid/getgrgid → _r thread-safe (context_pop.rs) | 2026-03-17 |
+| T3-07 | tailscale.rs Arc<AtomicU8>，消除 2 个 unsafe raw pointer cast | 2026-03-17 |
+| T3-06 | ShadowTLS v1 inbound 实现 | 2026-03-17 |
+| T3-04 | macOS 系统代理 MacOsSystemProxyGuard via networksetup | 2026-03-17 |
+| T3-03 | Switchboard direct UDP ConnectedUdpStream wrapper | 2026-03-17 |
+| T3-01 | 删除 4 个死亡空 feature flag (labels, minijson, obs, preview) | 2026-03-17 |
+| T3-02 | sb-types doc comments 已完整 (零警告) | 2026-03-17 |
 
 ### 构建基线（2026-03-17）
 
@@ -70,4 +78,8 @@
 | `cargo check --workspace --all-features --all-targets` | ✅ pass |
 | `cargo test -p sb-core --lib` | ✅ pass (509 tests) |
 | `cargo bench -p sb-benches --bench tcp_relay_e2e` | ✅ 2.4-3.0 GiB/s |
+
+### L24 完结
+
+全部 30 任务交付完毕 (B1+B2+B3+B4)。L24 Closed。
 | `cargo +nightly fuzz build` | ✅ pass (20 targets) |

@@ -695,6 +695,7 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     if let Some(ref addr) = opts.prom_listen {
         let addr_clone = addr.clone();
         std::thread::spawn(move || {
+            #[allow(deprecated)]
             let _ = sb_core::metrics::http_exporter::run_exporter(&addr_clone);
         });
     }

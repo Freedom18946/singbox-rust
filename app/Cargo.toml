@@ -59,7 +59,7 @@ jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用�
 
 ## 路由/运行期与观测能力
 router  = ["sb-core", "sb-core/router", "sb-core/legacy_protocols", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport", "reqwest"]
-observe = ["router", "sb-metrics"]
+observe = ["router", "sb-metrics", "sb-core/metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
 ssh = ["sb-adapters/ssh"]
