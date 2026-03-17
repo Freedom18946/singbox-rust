@@ -194,17 +194,14 @@ impl std::fmt::Debug for DohClient {
 pub fn query(name: &str) -> std::io::Result<Vec<IpAddr>> {
     // Build a one-shot tokio runtime and query.
     let rt = tokio::runtime::Handle::try_current().map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("no tokio runtime: {e}"),
-        )
+        std::io::Error::other(format!("no tokio runtime: {e}"))
     })?;
 
     let client = DohClient::new("https://cloudflare-dns.com/dns-query")
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let (ips, _ttl) = rt.block_on(client.query(name, 1)).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+        std::io::Error::other(e.to_string())
     })?;
 
     Ok(ips)

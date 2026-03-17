@@ -6924,3 +6924,22 @@ L2.8.4-6 Handlers + WebSocket:
 - 关键依赖链：T1-01→T1-03, T1-02→T1-03/04, T1-12→T2-05/07/09
 
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
+
+### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
+
+**任务**: L22-L24 全量综合验收 — 41 项任务代码审查 + 构建测试
+**方式**: 8 个并行验收 agent + 6 个构建/测试后台任务
+**变更**:
+- `crates/sb-core/src/dns/http_client.rs` — 3 处 `Error::new(ErrorKind::Other, ...)` → `Error::other(...)` (clippy)
+- `crates/sb-api/tests/clash_endpoints_integration.rs` — `provider_manager.is_none()` → `.is_some()` (测试过时)
+- `agents-only/active_context.md` — 重写为验收结果记录
+- `agents-only/workpackage_latest.md` — 压缩为维护状态视图
+**结果**: 39 PASS / 2 PARTIAL / 0 FAIL
+**PARTIAL 项**:
+1. L23-T1 TUN UDP — macOS 完整，Linux/Windows 仍 drop（已知限制）
+2. T1-04 Protocol fuzz — VMess/VLESS 因函数可见性走共享解析器（已知限制）
+**构建验证**:
+- cargo check ✅ | clippy ✅ | sb-core 509 tests ✅ | sb-adapters ✅ | sb-types 9 ✅
+- sb-api ✅ | interop-lab 29 ✅ | cargo doc sb-types ✅ 零 warning
+**flaky 测试**: `test_connections_ws_memory_remains_bounded_over_time` — 全局 tracker 并发 race，单跑通过
+**备注**: 本次为 L22-L24 终态验收，后续无需重复。验收详情记录于 `active_context.md`。

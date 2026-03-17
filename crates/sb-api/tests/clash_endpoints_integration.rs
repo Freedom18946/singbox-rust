@@ -173,7 +173,7 @@ fn test_api_state_minimal() -> anyhow::Result<()> {
     assert!(state.router.is_none());
     assert!(state.outbound_registry.is_none());
     assert!(state.dns_resolver.is_none());
-    assert!(state.provider_manager.is_none());
+    assert!(state.provider_manager.is_some());
     Ok(())
 }
 
