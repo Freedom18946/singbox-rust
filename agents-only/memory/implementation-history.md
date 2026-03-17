@@ -5,6 +5,21 @@
 
 ---
 
+## L24 T2-06 RFC 8484 DoH Client（2026-03-17）
+
+**范围**：`crates/sb-core/src/dns/http_client.rs` + `crates/sb-core/Cargo.toml`
+
+**变更**：
+- `http_client.rs`: 7 行 stub → ~200 行 `DohClient` struct（reqwest, HTTP/2, 连接池）
+  - `exchange_post()` / `exchange_get()`: RFC 8484 §4.1 adaptive POST/GET
+  - `query(name, qtype)`: 高级 API，复用 `dns::udp::build_query()` / `parse_answers()`
+  - 向后兼容 `query()` 自由函数
+- `Cargo.toml`: `dns_http` feature `[]` → `["dns_udp", "dep:reqwest"]`
+
+**测试**：6 个（3 offline pass + 3 network `#[ignore]`）
+
+---
+
 ## MIG-02 验收通过 ACCEPTED（2026-03-07）
 
 **范围**：L21 wave#1-202，202 波，541 V7 assertions

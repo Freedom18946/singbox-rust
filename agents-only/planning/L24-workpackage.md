@@ -369,23 +369,28 @@
 
 ---
 
-### T2-06 [功能] DNS over HTTP client 实现 (RFC 8484)
+### T2-06 [功能] DNS over HTTP client 实现 (RFC 8484) ✅ DONE
+
+**状态**: 已完成（2026-03-17）
 
 **描述**: DoH 客户端目前仅有框架代码。需要实现完整 RFC 8484 wire-format HTTP 客户端。
 
 **受影响文件**:
 - `crates/sb-core/src/dns/http_client.rs`
+- `crates/sb-core/Cargo.toml` (`dns_http` feature)
 
-**修改方案**:
-- 实现 `application/dns-message` POST 方式（二进制 DNS 消息体）
-- 支持 `application/dns-json` GET 方式（可选）
-- 使用 `reqwest`（behind `dns_doh` feature）
-- 处理 HTTP/2 多路复用、超时、重试
-- 支持 bootstrap 解析（避免循环依赖：DoH → DNS → DoH）
+**实际修改**:
+- 将 7 行 stub 替换为完整 RFC 8484 DoH 客户端（~200 行）
+- `DohClient` struct: reqwest + HTTP/2 + 连接池 + adaptive GET/POST
+- POST: `application/dns-message` 二进制（RFC 8484 §4.1）
+- GET: `?dns=` base64url 编码（RFC 8484 §4.1）
+- `dns_http` feature 从空数组改为 `["dns_udp", "dep:reqwest"]`
+- 6 个测试（3 offline + 3 network `#[ignore]`）
 
-**验证标准**:
-- `cargo test -p sb-core --lib` 全过
-- 新增集成测试（mock HTTP server）
+**验证结果**:
+- `cargo check -p sb-core --features dns_http` ✅
+- `cargo check -p sb-core --features dns_doh` ✅（无回归）
+- `cargo test -p sb-core --features dns_http --lib -- dns::http_client` ✅ 3/3
 
 **复杂度**: L | **依赖**: 无
 

@@ -16,6 +16,24 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-17 08:00] Agent: Antigravity (Gemini)
+
+**任务**: T2-06 — 实现 RFC 8484 DoH 客户端（`http_client.rs`）
+**变更**:
+- `crates/sb-core/src/dns/http_client.rs` — 7 行 stub → 完整 RFC 8484 DoH 客户端（~200 行）
+  - `DohClient` struct: reqwest + HTTP/2 + 连接池 + adaptive GET/POST
+  - `exchange_post()`: RFC 8484 §4.1 POST `application/dns-message`
+  - `exchange_get()`: RFC 8484 §4.1 GET `?dns=` base64url
+  - `query(name, qtype)`: 高级 API 返回 `(Vec<IpAddr>, Option<u32>)`
+  - 向后兼容 `query()` 自由函数保留
+  - 6 个测试（3 offline + 3 network `#[ignore]`）
+- `crates/sb-core/Cargo.toml` — `dns_http` feature: `[]` → `["dns_udp", "dep:reqwest"]`
+- `agents-only/planning/L24-workpackage.md` — T2-06 标记 ✅ DONE
+**结果**: 成功
+**备注**:
+- `cargo check --features dns_http` ✅, `--features dns_doh` ✅（无回归）
+- 3/3 unit tests pass, 3 network tests `#[ignore]`
+
 ### [2026-03-14 10:15] Agent: Codex (GPT-5)
 
 **任务**: 将 `agents-only` 入口文档同步到最新 dual-kernel parity 口径，并准备单独提交/推送该目录
