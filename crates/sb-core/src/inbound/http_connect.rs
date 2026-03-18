@@ -18,11 +18,10 @@ use crate::net::metered;
 use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
 use sb_platform::process::{ConnectionInfo, Protocol};
 
-// Unified engine alias with lifetime for both router and stub modes
 #[cfg(feature = "router")]
-type EngineX<'a> = RouterEngine<'a>;
+type EngineX = RouterEngine;
 #[cfg(not(feature = "router"))]
-type EngineX<'a> = Engine;
+type EngineX = Engine;
 
 #[cfg(not(feature = "router"))]
 #[derive(Debug)]
@@ -120,7 +119,7 @@ fn basic_ok(headers: &[(String, String)], user: &str, pass: &str) -> bool {
 
 pub(crate) async fn handle(
     mut cli: TcpStream,
-    eng: &EngineX<'_>,
+    eng: &EngineX,
     br: &Bridge,
     auth: Option<(String, String)>,
     sniff_enabled: bool,
@@ -393,7 +392,7 @@ pub struct HttpConnect {
     listen: String,
     port: u16,
     #[cfg(feature = "router")]
-    engine: Option<EngineX<'static>>,
+    engine: Option<EngineX>,
     #[cfg(not(feature = "router"))]
     engine: Option<Engine>,
     bridge: Option<Arc<Bridge>>,
@@ -418,7 +417,7 @@ impl HttpConnect {
     }
 
     #[cfg(feature = "router")]
-    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self {
+    pub fn with_engine(mut self, eng: EngineX) -> Self {
         self.engine = Some(eng);
         self
     }
@@ -447,7 +446,7 @@ impl HttpConnect {
         self
     }
 
-    async fn do_serve_async(&self, eng: EngineX<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
+    async fn do_serve_async(&self, eng: EngineX, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
         let listener = TcpListener::bind(&addr).await?;
         crate::log::log(
@@ -495,8 +494,8 @@ impl InboundService for HttpConnect {
 
         #[cfg(feature = "router")]
         let eng = {
-            // For router feature, use Box::leak for static lifetime
-            let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
+            // Use Arc-based Engine, no more Box::leak
+            let cfg = std::sync::Arc::new(sb_config::ir::ConfigIR::default());
             self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
         let br = self

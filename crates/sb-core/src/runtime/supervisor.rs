@@ -36,6 +36,17 @@ use tokio_util::sync::CancellationToken;
 pub enum ReloadMsg {
     /// Apply new configuration with hot reload
     Apply(Box<sb_config::ir::ConfigIR>),
+    /// Update providers: merge new outbounds and rule entries into current config.
+    /// This takes the current ConfigIR, patches it with the provider data, and
+    /// performs a full reload via the same path as `Apply`.
+    UpdateProviders {
+        /// New outbound proxies from proxy providers (replace provider-sourced outbounds).
+        outbounds: Vec<sb_config::ir::OutboundIR>,
+        /// New rule entries from rule providers (plain rule strings like "DOMAIN,example.com").
+        rules: Vec<String>,
+        /// Provider name (for logging).
+        provider_name: String,
+    },
     /// Begin graceful shutdown with deadline
     Shutdown { deadline: Instant },
 }
@@ -44,7 +55,7 @@ pub enum ReloadMsg {
 #[cfg(feature = "router")]
 #[derive(Debug)]
 pub struct State {
-    pub engine: Engine<'static>,
+    pub engine: Engine,
     pub bridge: Arc<Bridge>,
     pub context: Context,
     pub health: Option<tokio::task::JoinHandle<()>>,
@@ -87,7 +98,7 @@ pub struct SupervisorHandle {
 #[cfg(feature = "router")]
 impl State {
     pub fn new(
-        engine: Engine<'static>,
+        engine: Engine,
         bridge: Bridge,
         context: Context,
         ir: sb_config::ir::ConfigIR,
@@ -151,7 +162,7 @@ impl Supervisor {
 
         // Build initial engine and bridge
         let engine = Engine::from_ir(&ir).context("failed to build engine from initial config")?;
-        let engine_static = engine.clone_as_static();
+        let engine_for_state = engine.clone();
 
         // Create runtime context and wire experimental sidecars from IR
         let context = build_context_from_ir(&ir);
@@ -180,7 +191,7 @@ impl Supervisor {
         // Apply TLS certificate configuration (global trust augmentation)
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
-        let initial_state = State::new(engine_static, bridge, context, ir);
+        let initial_state = State::new(engine_for_state, bridge, context, ir);
         populate_bridge_managers(&initial_state.context, &initial_state.bridge).await.map_err(|e| {
             tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration, rolling back");
             shutdown_context(&initial_state.context);
@@ -262,6 +273,12 @@ impl Supervisor {
                     ReloadMsg::Apply(new_ir) => {
                         if let Err(e) = Self::handle_reload(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
+                        }
+                    }
+                    ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
+                        let merged_ir = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
+                        if let Err(e) = Self::handle_reload(&state_clone, merged_ir).await {
+                            tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
                         }
                     }
                     ReloadMsg::Shutdown { deadline } => {
@@ -403,6 +420,12 @@ impl Supervisor {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         }
                     }
+                    ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
+                        let merged_ir = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
+                        if let Err(e) = Self::handle_reload_no_router(&state_clone, merged_ir).await {
+                            tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
+                        }
+                    }
                     ReloadMsg::Shutdown { deadline } => {
                         cancel_ev.cancel();
                         Self::handle_shutdown(&state_clone, deadline).await;
@@ -523,7 +546,7 @@ impl Supervisor {
 
         // Build new engine and bridge
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
-        let new_engine_static = new_engine.clone_as_static();
+        let new_engine_for_state = new_engine.clone();
 
         // Build new context from new IR (supports dynamic service reconfiguration)
         let new_context = build_context_from_ir(&new_ir);
@@ -593,7 +616,7 @@ impl Supervisor {
             }
 
             // Replace engine, bridge, context, and current IR
-            state_guard.engine = new_engine_static;
+            state_guard.engine = new_engine_for_state;
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
@@ -735,6 +758,66 @@ impl Supervisor {
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
         Ok(())
+    }
+
+    /// Merge provider-supplied outbounds and rules into the current ConfigIR.
+    /// 将提供者提供的出站和规则合并到当前 ConfigIR 中。
+    ///
+    /// Strategy:
+    /// - Provider outbounds are **appended** to the current outbound list (duplicates by name
+    ///   are replaced to avoid conflicts).
+    /// - Provider rules are appended as domain rules to the route's rule list.
+    /// - The merged IR is then applied via the standard reload path.
+    async fn merge_provider_updates(
+        state: &Arc<RwLock<State>>,
+        outbounds: Vec<sb_config::ir::OutboundIR>,
+        rules: Vec<String>,
+        provider_name: &str,
+    ) -> sb_config::ir::ConfigIR {
+        let state_guard = state.read().await;
+        let mut ir = state_guard.current_ir.clone();
+        drop(state_guard);
+
+        let ob_count = outbounds.len();
+        let rule_count = rules.len();
+
+        // Merge outbounds: replace existing by name, append new ones
+        for new_ob in outbounds {
+            let name = new_ob.name.as_deref().unwrap_or("");
+            if !name.is_empty() {
+                // Remove existing outbound with same name (if any)
+                ir.outbounds.retain(|existing| {
+                    existing.name.as_deref() != Some(name)
+                });
+            }
+            ir.outbounds.push(new_ob);
+        }
+
+        // Merge rules: parse simple rule strings and append as RuleIR entries.
+        // Format: "TYPE,VALUE" → creates a RuleIR with the appropriate field set.
+        // Unrecognized formats are logged and skipped.
+        for rule_str in &rules {
+            if let Some(rule_ir) = parse_simple_rule(rule_str) {
+                ir.route.rules.push(rule_ir);
+            } else {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    "provider '{}': skipping unrecognized rule: {}",
+                    provider_name,
+                    rule_str
+                );
+            }
+        }
+
+        tracing::info!(
+            target: "sb_core::runtime",
+            "provider '{}': merged {} outbounds and {} rules",
+            provider_name,
+            ob_count,
+            rule_count
+        );
+
+        ir
     }
 
     // Internal: handle graceful shutdown
@@ -881,6 +964,49 @@ impl SupervisorHandle {
 }
 
 // Helper functions for supervisor
+
+/// Parse a simple rule string (e.g. "DOMAIN,example.com") into a RuleIR.
+/// 将简单规则字符串（如 "DOMAIN,example.com"）解析为 RuleIR。
+///
+/// Supported formats:
+/// - `DOMAIN,value` → domain exact match
+/// - `DOMAIN-SUFFIX,value` → domain suffix match
+/// - `DOMAIN-KEYWORD,value` → domain keyword match
+/// - `IP-CIDR,value` → source IP CIDR match
+/// - `GEOIP,value` → GeoIP match
+/// - `GEOSITE,value` → treated as domain keyword (best-effort)
+///
+/// All parsed rules get `outbound: "direct"` as default (providers
+/// typically supply the outbound context separately).
+fn parse_simple_rule(rule_str: &str) -> Option<sb_config::ir::RuleIR> {
+    let rule_str = rule_str.trim();
+    if rule_str.is_empty() || rule_str.starts_with('#') {
+        return None;
+    }
+
+    let (rule_type, value) = rule_str.split_once(',')?;
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut rule = sb_config::ir::RuleIR {
+        outbound: Some("direct".to_string()),
+        ..Default::default()
+    };
+
+    match rule_type.trim().to_uppercase().as_str() {
+        "DOMAIN" => rule.domain = vec![value],
+        "DOMAIN-SUFFIX" => rule.domain_suffix = vec![value],
+        "DOMAIN-KEYWORD" => rule.domain_keyword = vec![value],
+        "IP-CIDR" | "IP-CIDR6" => rule.ipcidr = vec![value],
+        "GEOIP" => rule.geoip = vec![value],
+        "GEOSITE" => rule.geosite = vec![value],
+        _ => return None,
+    }
+
+    Some(rule)
+}
 
 /// Placeholder async health task spawning function
 pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationToken) {
@@ -1368,12 +1494,10 @@ pub(crate) fn stop_services(services: &[Arc<dyn Service>]) {
 }
 
 #[cfg(feature = "router")]
-impl Engine<'_> {
+impl Engine {
     /// Create engine from IR configuration
-    pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Engine<'static>> {
-        // This should use existing engine construction logic
-        // For now, create a minimal engine
-        Ok(Engine::new(Box::leak(Box::new(ir.clone()))))
+    pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Engine> {
+        Ok(Engine::new(std::sync::Arc::new(ir.clone())))
     }
 }
 

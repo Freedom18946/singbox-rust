@@ -193,7 +193,10 @@ fn build_udp_ip_packet(
     }
 }
 
-/// Build IPv4/UDP packet with 4-byte AF_INET prefix (macOS utun format).
+/// Build IPv4/UDP packet with platform-appropriate framing.
+/// - macOS utun: 4-byte AF_INET prefix + raw IP packet
+/// - Linux (IFF_NO_PI): raw IP packet, no prefix
+/// - Windows (wintun): raw IP packet, no prefix
 fn build_ipv4_udp(
     src: Ipv4Addr,
     src_port: u16,
@@ -204,24 +207,22 @@ fn build_ipv4_udp(
     let udp_len = 8 + payload.len();
     let ip_total = 20 + udp_len;
 
-    // 4 bytes AF prefix + 20 bytes IP header + 8 bytes UDP header + payload
-    let mut pkt = vec![0u8; 4 + ip_total];
+    // Determine prefix size based on platform
+    #[cfg(target_os = "macos")]
+    let prefix_len: usize = 4;
+    #[cfg(not(target_os = "macos"))]
+    let prefix_len: usize = 0;
 
-    // AF_INET prefix (macOS utun)
+    let mut pkt = vec![0u8; prefix_len + ip_total];
+
+    // AF_INET prefix (macOS utun only)
     #[cfg(target_os = "macos")]
     {
         let af_inet: u32 = 2; // AF_INET
         pkt[0..4].copy_from_slice(&af_inet.to_be_bytes());
     }
-    #[cfg(target_os = "linux")]
-    {
-        // Linux TUN has no AF prefix in TUN_NO_PI mode, but we add PI header
-        // For IFF_NO_PI mode, no prefix needed — adjust offset logic accordingly
-        // For now, keep the 4 byte prefix as flags(2) + proto(2)
-        pkt[2..4].copy_from_slice(&0x0800u16.to_be_bytes()); // ETH_P_IP
-    }
 
-    let ip = &mut pkt[4..];
+    let ip = &mut pkt[prefix_len..];
 
     // IPv4 header (20 bytes, no options)
     ip[0] = 0x45; // version=4, IHL=5
@@ -253,7 +254,9 @@ fn build_ipv4_udp(
     pkt
 }
 
-/// Build IPv6/UDP packet with 4-byte AF_INET6 prefix (macOS utun / Linux TUN-PI format).
+/// Build IPv6/UDP packet with platform-appropriate framing.
+/// - macOS utun: 4-byte AF_INET6 prefix + raw IP packet
+/// - Linux (IFF_NO_PI) / Windows (wintun): raw IP packet, no prefix
 fn build_ipv6_udp(
     src: Ipv6Addr,
     src_port: u16,
@@ -262,22 +265,23 @@ fn build_ipv6_udp(
     payload: &[u8],
 ) -> Vec<u8> {
     let udp_len = 8 + payload.len();
-    // 4 AF prefix + 40 IPv6 header + 8 UDP header + payload
-    let mut pkt = vec![0u8; 4 + 40 + udp_len];
 
-    // AF prefix
+    #[cfg(target_os = "macos")]
+    let prefix_len: usize = 4;
+    #[cfg(not(target_os = "macos"))]
+    let prefix_len: usize = 0;
+
+    let mut pkt = vec![0u8; prefix_len + 40 + udp_len];
+
+    // AF prefix (macOS utun only)
     #[cfg(target_os = "macos")]
     {
         let af_inet6: u32 = 30; // AF_INET6 on macOS
         pkt[0..4].copy_from_slice(&af_inet6.to_be_bytes());
     }
-    #[cfg(target_os = "linux")]
-    {
-        pkt[2..4].copy_from_slice(&0x86DDu16.to_be_bytes()); // ETH_P_IPV6
-    }
 
-    // IPv6 header (40 bytes, offset 4)
-    let hdr = &mut pkt[4..44];
+    // IPv6 header (40 bytes)
+    let hdr = &mut pkt[prefix_len..prefix_len + 40];
     hdr[0] = 0x60; // version=6, traffic class hi=0
     // hdr[1..4] = 0: traffic class lo + flow label
     hdr[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes()); // payload length
@@ -286,8 +290,8 @@ fn build_ipv6_udp(
     hdr[8..24].copy_from_slice(&src.octets());
     hdr[24..40].copy_from_slice(&dst.octets());
 
-    // UDP header + payload (offset 44)
-    let udp_start = 44;
+    // UDP header + payload
+    let udp_start = prefix_len + 40;
     pkt[udp_start..udp_start + 2].copy_from_slice(&src_port.to_be_bytes());
     pkt[udp_start + 2..udp_start + 4].copy_from_slice(&dst_port.to_be_bytes());
     pkt[udp_start + 4..udp_start + 6].copy_from_slice(&(udp_len as u16).to_be_bytes());
@@ -379,13 +383,59 @@ mod tests {
             b"hello",
         );
 
-        // 4 AF prefix + 20 IP + 8 UDP + 5 payload = 37
-        assert_eq!(pkt.len(), 37);
+        // Platform-specific prefix size
+        #[cfg(target_os = "macos")]
+        let prefix: usize = 4;
+        #[cfg(not(target_os = "macos"))]
+        let prefix: usize = 0;
+
+        // prefix + 20 IP + 8 UDP + 5 payload
+        assert_eq!(pkt.len(), prefix + 20 + 8 + 5);
 
         // Verify IP protocol is UDP (17)
-        assert_eq!(pkt[4 + 9], 17);
+        assert_eq!(pkt[prefix + 9], 17);
 
         // Verify UDP payload
-        assert_eq!(&pkt[4 + 20 + 8..], b"hello");
+        assert_eq!(&pkt[prefix + 20 + 8..], b"hello");
+
+        // Verify IP header checksum is valid
+        let ip_hdr = &pkt[prefix..prefix + 20];
+        let mut check_buf = ip_hdr.to_vec();
+        // Re-checksum should give 0 when checksum field is already set
+        assert_eq!(ip_checksum(&check_buf), 0);
+    }
+
+    #[test]
+    fn test_build_ipv6_udp_packet() {
+        let src = "fd00::1".parse::<Ipv6Addr>().unwrap();
+        let dst = "fd00::2".parse::<Ipv6Addr>().unwrap();
+        let pkt = build_ipv6_udp(src, 5353, dst, 53, b"query");
+
+        #[cfg(target_os = "macos")]
+        let prefix: usize = 4;
+        #[cfg(not(target_os = "macos"))]
+        let prefix: usize = 0;
+
+        // prefix + 40 IPv6 + 8 UDP + 5 payload
+        assert_eq!(pkt.len(), prefix + 40 + 8 + 5);
+
+        // Verify next header is UDP (17)
+        assert_eq!(pkt[prefix + 6], 17);
+
+        // Verify payload
+        assert_eq!(&pkt[prefix + 40 + 8..], b"query");
+    }
+
+    #[test]
+    fn test_build_udp_ip_packet_dispatches_correctly() {
+        let src4 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let dst4 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+        let pkt = build_udp_ip_packet(src4, 1234, dst4, 53, b"test");
+        assert!(!pkt.is_empty());
+
+        // Mismatched address families should return empty
+        let src6 = IpAddr::V6("::1".parse().unwrap());
+        let pkt_bad = build_udp_ip_packet(src6, 1234, dst4, 53, b"test");
+        assert!(pkt_bad.is_empty());
     }
 }

@@ -284,7 +284,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "serial_test",
+ "serial_test 2.0.0",
  "sha2",
  "subtle",
  "tempfile",
@@ -6463,7 +6463,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
- "serial_test",
+ "serial_test 2.0.0",
  "sha1",
  "sha2",
  "smoltcp",
@@ -6511,8 +6511,10 @@ dependencies = [
  "sb-common",
  "sb-config",
  "sb-core",
+ "sb-subscribe",
  "serde",
  "serde_json",
+ "serial_test 3.4.0",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
@@ -6751,10 +6753,12 @@ dependencies = [
 name = "sb-subscribe"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "jsonschema 0.17.1",
  "reqwest 0.12.28",
  "sb-common",
+ "sb-config",
  "sb-core",
  "serde",
  "serde_json",
@@ -6863,6 +6867,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scc"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6917,6 +6930,12 @@ dependencies = [
  "salsa20",
  "sha2",
 ]
+
+[[package]]
+name = "sdd"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "sec1"
@@ -7150,7 +7169,22 @@ dependencies = [
  "lazy_static",
  "log",
  "parking_lot 0.12.5",
- "serial_test_derive",
+ "serial_test_derive 2.0.0",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911bd979bf1070a3f3aa7b691a3b3e9968f339ceeec89e08c280a8a22207a32f"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "scc",
+ "serial_test_derive 3.4.0",
 ]
 
 [[package]]
@@ -7158,6 +7192,17 @@ name = "serial_test_derive"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91d129178576168c589c9ec973feedf7d3126c01ac2bf08795109aa35b69fb8f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.112",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7d91949b85b0d2fb687445e448b40d322b6b3e4af6b44a29b21d9a5f33e6d9"
 dependencies = [
  "proc-macro2",
  "quote",

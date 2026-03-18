@@ -856,7 +856,7 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
 }
 
-fn parse_request_line(line: &[u8]) -> Result<(String, String, String)> {
+pub fn parse_request_line(line: &[u8]) -> Result<(String, String, String)> {
     let line =
         std::str::from_utf8(trim_cr(line)).map_err(|_| anyhow!("bad utf8 in request line"))?;
     let mut parts = line.split_whitespace();

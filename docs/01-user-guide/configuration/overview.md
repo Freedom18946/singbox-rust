@@ -51,9 +51,11 @@ route:
 
 ## Related
 
+- [Configuration Reference](config-reference.md) — complete field reference for all config sections
 - [Inbounds](inbounds.md)
 - [Outbounds](outbounds.md)
 - [Routing](routing.md)
 - [DNS](dns.md)
 - [TLS](tls.md)
-- [Schema Migration](schema-migration.md)
+- [Schema Migration](schema-migration.md) — Go V1 to Rust V2 migration guide
+- [FAQ](../faq.md) — frequently asked questions

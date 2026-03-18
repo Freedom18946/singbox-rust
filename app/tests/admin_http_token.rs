@@ -66,11 +66,11 @@ fn admin_requires_token_when_configured() {
         },
         ..Default::default()
     };
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng.clone(), Context::new());
     let th = match spawn_admin(
         &h,
-        eng.clone_as_static(),
+        eng.clone(),
         std::sync::Arc::new(br),
         Some("sekret".into()),
         None,

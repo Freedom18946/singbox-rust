@@ -59,12 +59,12 @@ fn admin_health_and_explain() {
         },
         ..Default::default()
     };
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng.clone(), Context::new());
     // Try to spawn admin server; sandboxed CI (macOS seatbelt) may deny binding
     let h = match spawn_admin(
         &admin,
-        eng.clone_as_static(),
+        eng.clone(),
         std::sync::Arc::new(br),
         None,
         None,

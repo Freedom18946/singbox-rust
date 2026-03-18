@@ -55,6 +55,12 @@ jobs:
             arch: x86_64
             archive: zip
             bin_name: run.exe
+          - target: aarch64-pc-windows-msvc
+            runner: windows-latest
+            os_name: windows
+            arch: aarch64
+            archive: zip
+            bin_name: run.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -81,8 +87,20 @@ jobs:
             target
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p app --features parity --bin run
+      - name: Install cargo-auditable (SBOM)
+        run: cargo install cargo-auditable
+
+      - name: Build release binary (with embedded SBOM)
+        run: cargo auditable build --release --target ${{ matrix.target }} -p app --features parity --bin run
+
+      - name: Smoke test — verify binary runs
+        # Skip cross-compiled targets that cannot execute on the runner
+        if: matrix.target != 'aarch64-unknown-linux-musl' && matrix.target != 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          binary="target/${{ matrix.target }}/release/${{ matrix.bin_name }}"
+          echo "Smoke test: $binary version"
+          "$binary" version
 
       - name: Package release artifact
         shell: bash

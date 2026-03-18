@@ -5,7 +5,6 @@ use sb_adapters::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnecto
 use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
 
 #[tokio::test]
-#[ignore]
 async fn shadowtls_standalone_leaf_dial_is_rejected() {
     // ShadowTLS is intentionally blocked as a standalone leaf until it is
     // reintroduced with transport-wrapper semantics.

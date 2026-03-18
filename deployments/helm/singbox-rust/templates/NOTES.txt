@@ -1,0 +1,12 @@
+singbox-rust has been deployed.
+
+1. Get the application URL by running:
+{{- range .Values.service.ports }}
+  kubectl port-forward svc/{{ include "singbox-rust.fullname" $ }} {{ .port }}:{{ .port }}
+{{- end }}
+
+2. Check the deployment status:
+  kubectl get pods -l "app.kubernetes.io/name={{ include "singbox-rust.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+3. View logs:
+  kubectl logs -l "app.kubernetes.io/name={{ include "singbox-rust.name" . }}" -f

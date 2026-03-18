@@ -238,7 +238,7 @@ async fn config_bridge_builds_shadowtls_detour_chain_for_shadowsocks() {
         ..Default::default()
     };
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let _bridge = build_bridge(&ir, engine, sb_core::context::Context::default());
     let outbounds = runtime_outbounds().expect("runtime outbounds should be installed");
 

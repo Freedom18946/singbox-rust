@@ -496,7 +496,7 @@ fn decrypt_request(security: &SecurityMethod, key: &[u8; 16], data: &[u8]) -> Re
     }
 }
 
-fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
+pub fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
     if data.len() < 10 {
         return Err(anyhow!("request too short"));
     }

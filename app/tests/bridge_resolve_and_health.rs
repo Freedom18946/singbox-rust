@@ -65,7 +65,7 @@ fn rule_selects_named_outbound() {
         }
     });
     let ir: ConfigIR = to_ir_v1(&config);
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     // 桥里应该能找到 direct
     assert!(br.find_outbound("direct").is_some());

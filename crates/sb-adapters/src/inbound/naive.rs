@@ -328,7 +328,7 @@ async fn handle_stream(
 }
 
 /// Parse CONNECT target (host:port)
-fn parse_target(target: &str) -> Result<(String, u16)> {
+pub fn parse_target(target: &str) -> Result<(String, u16)> {
     let (host, port_str) = target
         .rsplit_once(':')
         .ok_or_else(|| anyhow!("Invalid target format: {}", target))?;

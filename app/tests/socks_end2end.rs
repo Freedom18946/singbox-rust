@@ -139,7 +139,7 @@ fn end_to_end_echo() {
     });
 
     let ir: ConfigIR = to_ir_v1(&config);
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
 

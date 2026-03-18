@@ -5,6 +5,7 @@ use crate::routing::trace::{canonicalize_rule_text, sha8, Step, Trace};
 use sb_config::ir::{ConfigIR, RuleIR};
 use serde::Serialize;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 // 供 Engine 等处使用的回调类型（确保可跨线程共享）
 pub type ClassifyIpFn = dyn Fn(IpAddr) -> Option<&'static str> + Send + Sync;
@@ -66,13 +67,13 @@ pub struct Input<'a> {
     pub group_id: Option<u32>,
 }
 
-pub struct Engine<'a> {
-    pub cfg: &'a ConfigIR,
-    geoip: Option<&'a ClassifyIpFn>,  // reserved for future
-    geosite: Option<&'a MatchHostFn>, // reserved for future
+pub struct Engine {
+    pub cfg: Arc<ConfigIR>,
+    geoip: Option<Arc<ClassifyIpFn>>,  // reserved for future
+    geosite: Option<Arc<MatchHostFn>>, // reserved for future
 }
 
-impl<'a> std::fmt::Debug for Engine<'a> {
+impl std::fmt::Debug for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Engine")
             .field("cfg", &self.cfg)
@@ -82,18 +83,18 @@ impl<'a> std::fmt::Debug for Engine<'a> {
     }
 }
 
-impl<'a> Clone for Engine<'a> {
+impl Clone for Engine {
     fn clone(&self) -> Self {
         Self {
-            cfg: self.cfg,
-            geoip: self.geoip,
-            geosite: self.geosite,
+            cfg: Arc::clone(&self.cfg),
+            geoip: self.geoip.clone(),
+            geosite: self.geosite.clone(),
         }
     }
 }
 
-impl<'a> Engine<'a> {
-    pub fn new(cfg: &'a ConfigIR) -> Self {
+impl Engine {
+    pub fn new(cfg: Arc<ConfigIR>) -> Self {
         Self {
             cfg,
             geoip: None,
@@ -848,7 +849,7 @@ mod tests {
 
     #[test]
     fn domain_and_not_port() {
-        let cfg = ConfigIR {
+        let cfg = Arc::new(ConfigIR {
             route: RouteIR {
                 rules: vec![RuleIR {
                     domain: vec!["example.com".into()],
@@ -860,8 +861,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        let eng = Engine::new(&cfg);
+        });
+        let eng = Engine::new(cfg);
         let ok = eng.decide(
             &Input {
                 host: "www.example.com",
@@ -888,7 +889,7 @@ mod tests {
 
     #[test]
     fn matches_on_sniffed_protocol() {
-        let cfg = ConfigIR {
+        let cfg = Arc::new(ConfigIR {
             route: RouteIR {
                 rules: vec![RuleIR {
                     protocol: vec!["bittorrent".into()],
@@ -899,8 +900,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        let eng = Engine::new(&cfg);
+        });
+        let eng = Engine::new(cfg);
         let decision = eng.decide(
             &Input {
                 host: "example.com",
@@ -917,7 +918,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_base_protocol_when_sniff_differs() {
-        let cfg = ConfigIR {
+        let cfg = Arc::new(ConfigIR {
             route: RouteIR {
                 rules: vec![RuleIR {
                     protocol: vec!["socks".into()],
@@ -928,8 +929,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        let eng = Engine::new(&cfg);
+        });
+        let eng = Engine::new(cfg);
         let decision = eng.decide(
             &Input {
                 host: "example.com",

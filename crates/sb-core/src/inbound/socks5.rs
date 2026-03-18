@@ -15,9 +15,9 @@ use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
 use sb_platform::process::{ConnectionInfo, Protocol};
 
 #[cfg(feature = "router")]
-type EngineX<'a> = RouterEngine<'a>;
+type EngineX = RouterEngine;
 #[cfg(not(feature = "router"))]
-type EngineX<'a> = Engine;
+type EngineX = Engine;
 
 #[cfg(not(feature = "router"))]
 #[derive(Debug)]
@@ -84,7 +84,7 @@ impl Input {
 
 pub(crate) async fn handle_conn(
     mut cli: TcpStream,
-    eng: &EngineX<'static>,
+    eng: &EngineX,
     bridge: &Bridge,
     sniff_enabled: bool,
 ) -> std::io::Result<()> {
@@ -689,7 +689,7 @@ pub struct Socks5 {
     listen: String,
     port: u16,
     #[cfg(feature = "router")]
-    engine: Option<EngineX<'static>>,
+    engine: Option<EngineX>,
     #[cfg(not(feature = "router"))]
     engine: Option<Engine>,
     bridge: Option<Arc<Bridge>>,
@@ -719,7 +719,7 @@ impl Socks5 {
     }
 
     #[cfg(feature = "router")]
-    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self {
+    pub fn with_engine(mut self, eng: EngineX) -> Self {
         self.engine = Some(eng);
         self
     }
@@ -742,7 +742,7 @@ impl Socks5 {
         self
     }
 
-    async fn do_serve_async(&self, eng: EngineX<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
+    async fn do_serve_async(&self, eng: EngineX, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
         let listener = TcpListener::bind(&addr).await?;
         log::log(Level::Info, "socks5 listening (async)", &[("addr", &addr)]);
@@ -805,8 +805,8 @@ impl InboundService for Socks5 {
 
         #[cfg(feature = "router")]
         let eng = {
-            // For router feature, use Box::leak for static lifetime
-            let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
+            // Use Arc-based Engine, no more Box::leak
+            let cfg = std::sync::Arc::new(sb_config::ir::ConfigIR::default());
             self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
         let br = self.bridge.clone().unwrap_or_else(|| {

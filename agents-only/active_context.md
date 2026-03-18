@@ -8,46 +8,44 @@
 
 ## 战略状态
 
-**当前阶段**: 维护状态（L1-L24 全部 Closed）
-**Parity**: 92.9% (52/56) — SV.1 (4 BHVs) 已重分类为 harness-only 并移出分母
+**当前阶段**: **L25 CLOSED — 生产加固 + 跨平台补全 + 文档完善**
+**历史阶段**: L1-L25 全部 Closed
+**Parity**: 92.9% (52/56)
 
-## 综合验收（2026-03-17）
+## L25 完成总结（2026-03-17）
 
-**范围**: L22 + L23 + L24 全部已完成任务，共 41 项
-**方式**: 8 个并行验收 agent 逐项审查代码 + 全套构建/测试
+**10/10 任务完成，4 批次全部交付**
 
-### 验收结果
+| 批次 | 任务 | 状态 |
+|------|------|------|
+| B1 | T2 VMess fuzz 可见性, T3 WS 测试隔离, T6 TUN 栈评估 | ✅ |
+| B2 | T4 消除 transmute+Box::leak, T5 sb-adapters 集成测试 | ✅ |
+| B3 | T1 TUN UDP Linux/Windows, T7 Provider 热更新 | ✅ |
+| B4 | T8 跨平台发布, T9 用户文档, T10 CI 增强 | ✅ |
 
-| 统计 | 数量 |
-|------|------|
-| 验收总数 | 41 |
-| ✅ PASS | 39 |
-| ⚠️ PARTIAL | 2 |
-| ❌ FAIL | 0 |
+### 关键交付物
 
-### 2 个 PARTIAL（已知限制，非 bug）
+- **T1**: Linux/Windows TUN UDP 转发实现（`parse_raw_udp` + `LinuxTunWriter` + `WintunTunWriter`）
+- **T2**: VMess/HTTP/Naive parsers 暴露为 `pub`，fuzz target 直接调用真实解析器
+- **T3**: `serial_test` 注解消除 WS e2e 全局 tracker race
+- **T4**: `Engine<'a>` → `Engine` (Arc<ConfigIR>)，移除 1 transmute + 5 Box::leak + 1 unsafe ptr
+- **T5**: sb-adapters 集成测试 1 → 144 non-ignored
+- **T6**: TUN 栈评估文档 → `agents-only/planning/L25-tun-stack-eval.md`
+- **T7**: Provider 热更新管线：增强 HTTP fetcher + 内容解析 + `ReloadMsg::UpdateProviders`
+- **T8**: ARM Windows target + Helm chart + SBOM (cargo-auditable) + smoke test
+- **T9**: schema-migration.md (398 行) + config-reference.md (891 行) + faq.md (291 行)
+- **T10**: fuzz-nightly.yml + coverage.yml + bench-regression 增强
 
-1. **L23-T1 TUN UDP** — macOS 完整实现（NAT 表 + relay + IPv4/IPv6 包构建），Linux/Windows 仍 drop
-2. **T1-04 Protocol fuzz** — SS/Trojan/SOCKS5 真实调用，VMess/VLESS 因 `parse_vmess_request()` 为 private 走共享 `parse_ss_addr()`
-
-### 验收期间修复（已提交）
-
-1. `http_client.rs` 3 处 clippy `Error::new(ErrorKind::Other, ...)` → `Error::other(...)`
-2. `clash_endpoints_integration.rs` 测试断言 `provider_manager.is_none()` → `.is_some()`（默认初始化变更后测试过时）
-
-### 已知 flaky 测试
-
-- `test_connections_ws_memory_remains_bounded_over_time`：并发执行时全局 tracker race，单跑稳定通过。非产品 bug。
-
-## 构建基线（2026-03-17，综合验收后）
+## 构建基线（2026-03-17，L25 后）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo check --workspace --all-features --all-targets` | ✅ pass |
 | `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
 | `cargo test -p sb-core --lib` | ✅ 509 passed |
-| `cargo test -p sb-adapters` | ✅ pass |
-| `cargo test -p sb-types` | ✅ 9 passed |
-| `cargo test -p sb-api` | ✅ pass（含 clash_endpoints + websocket e2e） |
-| `cargo test -p interop-lab` | ✅ 29 passed |
-| `cargo doc -p sb-types --no-deps` | ✅ 零 warning |
+| `cargo test -p sb-api` | ✅ pass |
+| `cargo test -p sb-subscribe --all-features --lib` | ✅ 16 passed |
+
+## 已知 PARTIAL 项：全部解决
+
+1. ~~L23-T1 TUN UDP~~ → ✅ T1 实现 Linux/Windows UDP 转发
+2. ~~T1-04 Protocol fuzz~~ → ✅ T2 暴露 VMess 真实解析器

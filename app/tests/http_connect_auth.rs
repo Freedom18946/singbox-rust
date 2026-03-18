@@ -107,7 +107,7 @@ fn http_inbound_basic_auth_required() {
         dns: None,
         ..Default::default()
     };
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let switchboard = OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, switchboard).start();

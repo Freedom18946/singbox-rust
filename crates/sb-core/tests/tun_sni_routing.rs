@@ -96,7 +96,7 @@ fn sni_drives_routing_decision() {
         ..Default::default()
     };
 
-    let eng = Engine::new(&cfg);
+    let eng = Engine::new(std::sync::Arc::new(cfg));
     let dec = eng.decide(
         &Input {
             host: &got,

@@ -57,7 +57,7 @@ mod t_scaffold {
             dns: None,
             ..Default::default()
         };
-        let eng = Engine::new(&ir);
+        let eng = Engine::new(std::sync::Arc::new(ir.clone()));
         std::env::set_var("ADAPTER_FORCE", "scaffold");
         let br = build_bridge(&ir, eng, sb_core::context::Context::default());
         for ib in &br.inbounds {
@@ -116,7 +116,7 @@ mod t_scaffold {
             dns: None,
             ..Default::default()
         };
-        let eng = Engine::new(&ir);
+        let eng = Engine::new(std::sync::Arc::new(ir.clone()));
         std::env::set_var("ADAPTER_FORCE", "scaffold");
         let br = build_bridge(&ir, eng, sb_core::context::Context::default());
         assert!(

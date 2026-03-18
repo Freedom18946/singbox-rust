@@ -7,6 +7,13 @@ on:
       - 'crates/**'
       - 'benches/**'
       - 'app/**'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'benches/**'
+      - 'app/**'
+  workflow_dispatch:
 
 jobs:
   bench-regression:
@@ -28,6 +35,14 @@ jobs:
           key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
+
+      - name: Restore criterion baseline
+        uses: actions/cache@v4
+        with:
+          path: target/criterion
+          key: criterion-baseline-${{ runner.os }}-${{ github.base_ref || 'main' }}
+          restore-keys: |
+            criterion-baseline-${{ runner.os }}-main
 
       - name: Run subset benchmarks
         run: |
@@ -51,6 +66,13 @@ jobs:
           fi
           set -e
         continue-on-error: true
+
+      - name: Update criterion baseline (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: target/criterion
+          key: criterion-baseline-${{ runner.os }}-main
 
       - name: Write bench gate summary
         if: always()

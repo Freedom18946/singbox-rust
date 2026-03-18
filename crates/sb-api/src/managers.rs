@@ -524,6 +524,9 @@ pub struct ProviderManager {
     tick_interval: Duration,
     /// Handle to the background update task
     bg_task_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Optional channel to send reload messages to the Supervisor for hot-reload.
+    /// When set, successful fetches parse content and send `UpdateProviders`.
+    reload_tx: Option<tokio::sync::mpsc::Sender<sb_core::runtime::supervisor::ReloadMsg>>,
 }
 
 impl ProviderManager {
@@ -541,6 +544,7 @@ impl ProviderManager {
             ),
             tick_interval: Duration::from_secs(60),
             bg_task_handle: std::sync::Mutex::new(None),
+            reload_tx: None,
         }
     }
 
@@ -551,6 +555,18 @@ impl ProviderManager {
         registry: Arc<sb_core::outbound::OutboundRegistryHandle>,
     ) -> Self {
         self.outbound_registry = Some(registry);
+        self
+    }
+
+    /// Set the reload channel for provider hot-reload.
+    /// When set, successful provider fetches will parse the content and
+    /// send `ReloadMsg::UpdateProviders` to the Supervisor.
+    #[must_use]
+    pub fn with_reload_channel(
+        mut self,
+        tx: tokio::sync::mpsc::Sender<sb_core::runtime::supervisor::ReloadMsg>,
+    ) -> Self {
+        self.reload_tx = Some(tx);
         self
     }
 
@@ -606,6 +622,8 @@ impl ProviderManager {
     }
 
     /// Update provider (fetch new content from its URL).
+    /// If the `provider-reload` feature is enabled and a reload channel is set,
+    /// successful fetches with changed content will trigger a hot-reload.
     pub async fn update_provider(&self, name: &str, is_proxy_provider: bool) -> ApiResult<bool> {
         let providers = if is_proxy_provider {
             &self.proxy_providers
@@ -613,11 +631,11 @@ impl ProviderManager {
             &self.rule_providers
         };
 
-        // Extract URL under read lock
-        let url = {
+        // Extract URL and old content under read lock
+        let (url, old_content) = {
             let lock = providers.read().await;
             match lock.get(name) {
-                Some(p) => p.url.clone(),
+                Some(p) => (p.url.clone(), p.content.clone()),
                 None => return Ok(false),
             }
         };
@@ -625,11 +643,20 @@ impl ProviderManager {
         if let Some(url) = url {
             match (self.fetch_fn)(&url).await {
                 Ok(content) => {
+                    let content_changed = old_content != content;
                     let mut lock = providers.write().await;
                     if let Some(p) = lock.get_mut(name) {
-                        p.content = content;
+                        p.content = content.clone();
                         p.mark_updated();
                         p.healthy = true;
+                    }
+                    drop(lock);
+
+                    // Trigger hot-reload if content changed
+                    if content_changed {
+                        if let Some(ref tx) = self.reload_tx {
+                            Self::try_send_provider_reload(tx, name, &content, is_proxy_provider).await;
+                        }
                     }
                 }
                 Err(e) => {
@@ -768,29 +795,43 @@ impl ProviderManager {
                 .collect()
         };
 
+        let reload_tx = self.reload_tx.as_ref();
+
         for (name, url) in &stale_proxy {
-            Self::fetch_and_update(&self.fetch_fn, &self.proxy_providers, name, url).await;
+            Self::fetch_and_update(&self.fetch_fn, &self.proxy_providers, name, url, true, reload_tx).await;
         }
         for (name, url) in &stale_rule {
-            Self::fetch_and_update(&self.fetch_fn, &self.rule_providers, name, url).await;
+            Self::fetch_and_update(&self.fetch_fn, &self.rule_providers, name, url, false, reload_tx).await;
         }
     }
 
     /// Fetch a URL and update the named provider in the given map.
+    /// When `reload_tx` is available and `provider-reload` feature is enabled,
+    /// parses the fetched content and sends a hot-reload message to the Supervisor.
     async fn fetch_and_update(
         fetch_fn: &FetchFn,
         providers: &Arc<RwLock<HashMap<String, Provider>>>,
         name: &str,
         url: &str,
+        is_proxy: bool,
+        reload_tx: Option<&tokio::sync::mpsc::Sender<sb_core::runtime::supervisor::ReloadMsg>>,
     ) {
         match fetch_fn(url).await {
             Ok(content) => {
                 let mut lock = providers.write().await;
                 if let Some(p) = lock.get_mut(name) {
+                    let content_changed = p.content != content;
                     log::info!("Background update: fetched provider '{}'", name);
-                    p.content = content;
+                    p.content = content.clone();
                     p.mark_updated();
                     p.healthy = true;
+
+                    // If content changed and reload channel available, parse and send update
+                    if content_changed {
+                        if let Some(tx) = reload_tx {
+                            Self::try_send_provider_reload(tx, name, &content, is_proxy).await;
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -802,6 +843,96 @@ impl ProviderManager {
                 }
             }
         }
+    }
+
+    /// Parse fetched provider content and send a `ReloadMsg::UpdateProviders`
+    /// to the Supervisor. Requires the `provider-reload` feature.
+    #[cfg(feature = "provider-reload")]
+    async fn try_send_provider_reload(
+        tx: &tokio::sync::mpsc::Sender<sb_core::runtime::supervisor::ReloadMsg>,
+        name: &str,
+        content: &str,
+        is_proxy: bool,
+    ) {
+        use sb_core::runtime::supervisor::ReloadMsg;
+
+        let (outbounds, rules) = if is_proxy {
+            match sb_subscribe::provider_parse::parse_proxy_content(content) {
+                Ok(obs) => {
+                    log::info!(
+                        "Provider '{}': parsed {} outbound(s) for hot-reload",
+                        name,
+                        obs.len()
+                    );
+                    (obs, Vec::new())
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Provider '{}': failed to parse proxy content: {}",
+                        name,
+                        e
+                    );
+                    return;
+                }
+            }
+        } else {
+            match sb_subscribe::provider_parse::parse_rule_content(content) {
+                Ok(rules) => {
+                    log::info!(
+                        "Provider '{}': parsed {} rule(s) for hot-reload",
+                        name,
+                        rules.len()
+                    );
+                    (Vec::new(), rules)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Provider '{}': failed to parse rule content: {}",
+                        name,
+                        e
+                    );
+                    return;
+                }
+            }
+        };
+
+        if outbounds.is_empty() && rules.is_empty() {
+            return;
+        }
+
+        let msg = ReloadMsg::UpdateProviders {
+            outbounds,
+            rules,
+            provider_name: name.to_string(),
+        };
+
+        if let Err(e) = tx.send(msg).await {
+            log::error!(
+                "Provider '{}': failed to send reload message: {}",
+                name,
+                e
+            );
+        }
+    }
+
+    /// No-op when `provider-reload` feature is not enabled.
+    #[cfg(not(feature = "provider-reload"))]
+    async fn try_send_provider_reload(
+        _tx: &tokio::sync::mpsc::Sender<sb_core::runtime::supervisor::ReloadMsg>,
+        _name: &str,
+        _content: &str,
+        _is_proxy: bool,
+    ) {
+        // Feature not enabled — skip parsing and reload
+    }
+}
+
+impl std::fmt::Debug for ProviderManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderManager")
+            .field("tick_interval", &self.tick_interval)
+            .field("has_reload_tx", &self.reload_tx.is_some())
+            .finish_non_exhaustive()
     }
 }
 

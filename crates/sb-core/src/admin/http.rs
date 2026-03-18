@@ -875,7 +875,7 @@ fn handle_reload(
 
 pub fn spawn_admin(
     listen: &str,
-    #[cfg(feature = "router")] engine: Engine<'static>,
+    #[cfg(feature = "router")] engine: Engine,
     #[cfg(not(feature = "router"))] _engine: (),
     bridge: Arc<Bridge>,
     admin_token: Option<String>,
@@ -911,7 +911,7 @@ pub fn spawn_admin(
                         None => None,
                     };
                     #[cfg(feature = "router")]
-                    let eng = Engine::new(engine.cfg);
+                    let eng = engine.clone();
                     #[cfg(not(feature = "router"))]
                     let eng = ();
                     let brc = bridge.clone();

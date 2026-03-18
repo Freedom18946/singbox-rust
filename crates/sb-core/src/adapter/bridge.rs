@@ -512,7 +512,7 @@ fn to_outbound_param(ob: &OutboundIR) -> anyhow::Result<(String, OutboundParam)>
 /// Supplies adapter builders with runtime context (engine/bridge) so they can wire routing.
 fn try_adapter_inbound(
     p: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     if let Some(builder) = registry::get_inbound(&p.kind) {
         return builder(p, ctx);
@@ -740,9 +740,9 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
 }
 
 #[cfg(feature = "router")]
-pub fn build_bridge<'a>(
-    cfg: &'a ConfigIR,
-    engine: crate::routing::engine::Engine<'a>,
+pub fn build_bridge(
+    cfg: &ConfigIR,
+    engine: crate::routing::engine::Engine,
     context: Context,
 ) -> Bridge {
     crate::endpoint::register_builtins();
@@ -922,7 +922,6 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
             // NOTE: DNS router integration available via with_dns_router() builder
             dns_router: None,
             context: ctx_registry.clone(),
-            _phantom: std::marker::PhantomData,
         };
 
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {

@@ -19,10 +19,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// Context passed to inbound adapter builders so they can access runtime components.
-#[cfg_attr(not(feature = "router"), allow(unused_lifetimes))]
-pub struct AdapterInboundContext<'a> {
+pub struct AdapterInboundContext {
     #[cfg(feature = "router")]
-    pub engine: crate::routing::engine::Engine<'a>,
+    pub engine: crate::routing::engine::Engine,
     pub bridge: Arc<Bridge>,
     pub outbounds: Arc<OutboundRegistryHandle>,
     #[cfg(feature = "router")]
@@ -35,8 +34,6 @@ pub struct AdapterInboundContext<'a> {
     #[cfg(feature = "router")]
     pub connection_manager: Option<Arc<RouteConnectionManager>>,
     pub context: ContextRegistry,
-    #[cfg(not(feature = "router"))]
-    pub _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 /// Context passed to outbound adapter builders so they can access the bridge (for Selector/URLTest).
@@ -46,7 +43,7 @@ pub struct AdapterOutboundContext {
 }
 
 pub type InboundBuilder =
-    fn(&InboundParam, &AdapterInboundContext<'_>) -> Option<Arc<dyn InboundService>>;
+    fn(&InboundParam, &AdapterInboundContext) -> Option<Arc<dyn InboundService>>;
 pub type OutboundBuilder = fn(
     &OutboundParam,
     &sb_config::ir::OutboundIR,

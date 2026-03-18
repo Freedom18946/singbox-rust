@@ -16,6 +16,8 @@ Configuration accepts a small set of Go-compatible aliases; see the configuratio
 - **[DNS Configuration](configuration/dns.md)** - DNS resolution and FakeIP
 - **[TLS Configuration](configuration/tls.md)** - TLS, REALITY, ECH configuration
 - **[Schema Migration](configuration/schema-migration.md)** - V1 → V2 migration
+- **[Configuration Reference](configuration/config-reference.md)** - Complete field reference
+- **[FAQ](faq.md)** - Frequently asked questions
 - **[Basic Configuration](../00-getting-started/basic-configuration.md)** - Minimal working config
 - **[Your First Proxy](../00-getting-started/first-proxy.md)** - Single outbound setup
 

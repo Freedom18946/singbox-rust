@@ -45,6 +45,8 @@ pub mod parse_singbox;
 pub mod preview_plan;
 #[cfg(feature = "subs_ruleset_cache")]
 pub mod providers;
+#[cfg(feature = "subs_provider_parse")]
+pub mod provider_parse;
 
 /// Read-only merge statistics helper (can be connected to metrics later).
 /// [Chinese] 只读合并辅助计数（可后续接 metrics）。

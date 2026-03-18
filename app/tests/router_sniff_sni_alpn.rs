@@ -115,7 +115,7 @@ fn test_sni_based_routing() {
         ..Default::default()
     };
 
-    let eng = Engine::new(&cfg);
+    let eng = Engine::new(std::sync::Arc::new(cfg.clone()));
 
     // Test 1: SNI matches rule -> proxy
     let dec = eng.decide(
@@ -181,7 +181,7 @@ fn test_alpn_based_routing() {
         ..Default::default()
     };
 
-    let eng = Engine::new(&cfg);
+    let eng = Engine::new(std::sync::Arc::new(cfg.clone()));
 
     // Test: ALPN h2 -> http2_proxy
     let dec = eng.decide(
@@ -225,7 +225,7 @@ fn test_combined_sni_and_alpn_routing() {
         ..Default::default()
     };
 
-    let eng = Engine::new(&cfg);
+    let eng = Engine::new(std::sync::Arc::new(cfg.clone()));
 
     // Test: Both SNI and ALPN match -> fast_proxy
     let dec = eng.decide(

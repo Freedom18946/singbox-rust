@@ -81,7 +81,7 @@ fn test_selector_adapter_instantiation() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -124,7 +124,7 @@ fn test_urltest_adapter_instantiation() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -161,7 +161,7 @@ fn test_selector_resolves_all_members() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -204,7 +204,7 @@ fn test_urltest_custom_health_check_params() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -239,7 +239,7 @@ fn test_selector_udp_factory_support() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -279,7 +279,7 @@ fn test_urltest_udp_factory_support() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -333,7 +333,7 @@ fn test_nested_selectors() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -368,7 +368,7 @@ fn test_selector_with_missing_member() {
 
     let ir = to_ir_v1(&cfg);
 
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -572,7 +572,7 @@ fn test_selector_invalid_config() {
     let result = std::panic::catch_unwind(|| to_ir_v1(&cfg));
 
     if let Ok(ir) = result {
-        let engine = Engine::new(&ir);
+        let engine = Engine::new(std::sync::Arc::new(ir.clone()));
         let bridge = sb_core::adapter::bridge::build_bridge(
             &ir,
             engine,
@@ -617,7 +617,7 @@ fn test_urltest_invalid_config() {
     let result = std::panic::catch_unwind(|| to_ir_v1(&cfg));
 
     if let Ok(ir) = result {
-        let engine = Engine::new(&ir);
+        let engine = Engine::new(std::sync::Arc::new(ir.clone()));
         let bridge = sb_core::adapter::bridge::build_bridge(
             &ir,
             engine,
@@ -653,7 +653,7 @@ fn test_selector_empty_outbounds() {
     });
 
     let ir = to_ir_v1(&cfg);
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
@@ -688,7 +688,7 @@ fn test_urltest_default_values() {
     });
 
     let ir = to_ir_v1(&cfg);
-    let engine = Engine::new(&ir);
+    let engine = Engine::new(std::sync::Arc::new(ir.clone()));
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 

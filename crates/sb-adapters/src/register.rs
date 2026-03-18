@@ -1228,7 +1228,7 @@ fn build_vless_outbound(
 #[allow(dead_code)]
 fn build_http_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::http::HttpProxyConfig;
 
@@ -1254,7 +1254,7 @@ fn build_http_inbound(
 #[allow(dead_code)]
 fn build_shadowsocks_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::shadowsocks::{
         ShadowsocksInboundAdapter, ShadowsocksInboundConfig, ShadowsocksUser,
@@ -1453,7 +1453,7 @@ fn build_multiplex_config_client(
 #[allow(dead_code)]
 fn build_vmess_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::vmess::{VmessInboundAdapter, VmessInboundConfig};
     use std::net::SocketAddr;
@@ -1513,7 +1513,7 @@ fn build_vmess_inbound(
 #[allow(dead_code)]
 fn build_vless_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::vless::{VlessInboundAdapter, VlessInboundConfig};
     use std::net::SocketAddr;
@@ -1569,7 +1569,7 @@ fn build_vless_inbound(
 #[allow(dead_code)]
 fn build_trojan_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::trojan::{TrojanInboundConfig, TrojanUser};
     use std::net::SocketAddr;
@@ -1674,7 +1674,7 @@ fn build_trojan_inbound(
 #[allow(dead_code)]
 fn build_socks_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::socks::{DomainStrategy, SocksInboundConfig};
 
@@ -1721,7 +1721,7 @@ fn build_socks_inbound(
 #[allow(dead_code)]
 fn build_mixed_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::mixed::MixedInboundConfig;
     use crate::inbound::socks::DomainStrategy;
@@ -1761,7 +1761,7 @@ fn build_mixed_inbound(
 
 fn build_naive_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-naive")]
     {
@@ -1785,7 +1785,7 @@ fn build_naive_inbound(
 
 fn build_shadowtls_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-shadowtls")]
     {
@@ -1915,7 +1915,7 @@ fn build_shadowtls_inbound(
 #[allow(unused_variables)]
 fn build_hysteria_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    _ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-hysteria")]
     {
@@ -2034,7 +2034,7 @@ fn build_hysteria_inbound(
 
 fn build_hysteria2_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-hysteria2")]
     {
@@ -2186,7 +2186,7 @@ fn build_hysteria2_inbound(
 #[cfg(feature = "adapter-tuic")]
 fn build_tuic_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::tuic::{TuicInboundConfig, TuicUser};
     use std::net::SocketAddr;
@@ -2288,7 +2288,7 @@ fn build_tuic_inbound(
 #[cfg(not(feature = "adapter-tuic"))]
 fn build_tuic_inbound(
     _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    _ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     stub_inbound("tuic");
     None
@@ -2296,7 +2296,7 @@ fn build_tuic_inbound(
 
 fn build_anytls_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-anytls")]
     {
@@ -2320,7 +2320,7 @@ fn build_anytls_inbound(
 #[allow(dead_code)]
 fn build_direct_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::direct::DirectInboundAdapter;
 
@@ -2337,7 +2337,7 @@ fn build_direct_inbound(
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 fn build_tun_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::tun::{TunInbound, TunInboundConfig};
 
@@ -2371,7 +2371,7 @@ fn stub_inbound(kind: &str) {
 #[cfg(feature = "dns")]
 fn build_dns_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::dns::DnsInboundAdapter;
 
@@ -2388,7 +2388,7 @@ fn build_dns_inbound(
 #[cfg(feature = "ssh")]
 fn build_ssh_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    _ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::ssh::SshInboundAdapter;
 
@@ -3707,7 +3707,7 @@ impl InboundService for MixedInboundAdapter {
 #[allow(dead_code)]
 fn build_redirect_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::redirect::RedirectConfig;
 
@@ -3770,7 +3770,7 @@ impl InboundService for RedirectInboundAdapter {
 #[allow(dead_code)]
 fn build_tproxy_inbound(
     param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::tproxy::TproxyConfig;
 

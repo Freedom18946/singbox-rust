@@ -163,7 +163,7 @@ fn http_connect_end2end_direct() {
         }
     });
     let ir: ConfigIR = to_ir_v1(&config);
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = sb_core::runtime::switchboard::OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, sb).start();

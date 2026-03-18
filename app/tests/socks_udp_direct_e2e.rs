@@ -141,11 +141,10 @@ fn socks_udp_via_direct_nat_echo() {
         udp: true, // Explicitly set to true, as Default::default() would set it to false
         ..Default::default()
     });
-    let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
-    let eng = Engine::new(ir_static);
+    let eng = Engine::new(std::sync::Arc::new(ir));
     thread::spawn(move || {
         let srv =
-            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
+            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone());
         let _ = srv.serve();
     });
     thread::sleep(Duration::from_millis(150));

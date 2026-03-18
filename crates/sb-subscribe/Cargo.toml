@@ -21,6 +21,7 @@ subs_preview_plan = ["subs_full","subs_lint","dep:sb-core","sb-core/router"]  # 
 subs_preview_apply = ["subs_preview_plan"]                      # R118：dry-run 应用（开关桩）
 subs_preview_batch = ["subs_full"]                             # R139：批量预演
 subs_ruleset_cache = []                                   # R140：Provider 缓存
+subs_provider_parse = ["dep:base64", "dep:sb-config"]     # T7：Provider content parsing
 subs_lint = ["dep:sb-core","sb-core/router"]                     # R108: 订阅 Lint（需要 rules_normalize）
 subs_lint_patch = ["subs_lint"]    # R109: 生成 CLI patch 建议（作用于 DSL 文本）
 subs_schema = ["dep:jsonschema"]   # JSON Schema validation for subscriptions
@@ -35,4 +36,6 @@ tokio = { workspace = true, features = ["rt", "macros"], optional = true }
 blake3 = { version = "1.5", optional = true }
 jsonschema = { version = "0.17", optional = true }
 sb-core = { path = "../sb-core", optional = true }
+sb-config = { path = "../sb-config", optional = true }
+base64 = { version = "0.22", optional = true }
 sb-common = { path = "../sb-common" }

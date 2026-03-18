@@ -11,6 +11,7 @@ use reqwest::Client;
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
 use sb_common::conntrack::{global_tracker, ConnMetadata, Network};
 use serde_json::Value;
+use serial_test::serial;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -227,6 +228,7 @@ fn register_test_connection() -> sb_common::conntrack::ConnId {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
     let _ = global_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
@@ -253,6 +255,7 @@ async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_connections_ws_reflects_close_all_updates() -> anyhow::Result<()> {
     let tracker = global_tracker();
     let _ = tracker.close_all();
@@ -301,6 +304,7 @@ async fn test_connections_ws_reflects_close_all_updates() -> anyhow::Result<()> 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
 async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
     let _ = global_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
@@ -332,6 +336,7 @@ async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
 async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
     let _ = global_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
@@ -379,6 +384,7 @@ async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
 #[ignore = "long-running soak; run explicitly in interop/nightly"]
 async fn test_connections_ws_long_running_soak() -> anyhow::Result<()> {
     let _ = global_tracker().close_all();
@@ -426,6 +432,7 @@ async fn test_connections_ws_long_running_soak() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_connections_ws_closes_on_server_shutdown() -> anyhow::Result<()> {
     let _ = global_tracker().close_all();
     let Some(server) = ShutdownTestServer::start().await? else {
@@ -464,6 +471,7 @@ async fn test_connections_ws_closes_on_server_shutdown() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_connections_ws_memory_remains_bounded_over_time() -> anyhow::Result<()> {
     let tracker = global_tracker();
     let _ = tracker.close_all();

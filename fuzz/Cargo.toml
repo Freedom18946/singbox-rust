@@ -27,6 +27,7 @@ sb-adapters = { path = "../crates/sb-adapters", default-features = false, featur
     "trojan",
     "socks",
     "mixed",
+    "vmess",
     "sb-transport",
 ] }
 sb-config = { path = "../crates/sb-config", default-features = false }

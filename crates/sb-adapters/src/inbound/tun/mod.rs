@@ -35,13 +35,112 @@ use udp::{UdpFourTuple, UdpNatTable};
 pub mod platform;
 use platform::{TunPlatformConfig, TunPlatformHook};
 
-// 2.3e: 轻量指标（无需依赖）
+// 2.3e: 轻量指标（無需依赖）
 use std::sync::atomic::{AtomicU64, Ordering};
 static PACKETS_SEEN: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_OK: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_FAIL: AtomicU64 = AtomicU64::new(0);
 static SNI_OK: AtomicU64 = AtomicU64::new(0);
 static SNI_FAIL: AtomicU64 = AtomicU64::new(0);
+
+/// Layer-4 protocol identifier shared across all platforms.
+#[cfg(feature = "tun")]
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum L4 {
+    Tcp,
+    Udp,
+    Other(u8),
+}
+
+/// Parsed UDP packet info from a raw IP packet (no AF prefix).
+/// Used by Linux (IFF_NO_PI) and Windows (wintun) where packets are raw IP.
+#[cfg(feature = "tun")]
+#[derive(Debug)]
+struct ParsedUdp {
+    src_ip: IpAddr,
+    src_port: u16,
+    dst_ip: IpAddr,
+    dst_port: u16,
+    /// Byte offset of the UDP payload within the original buffer.
+    payload_offset: usize,
+    /// Length of the UDP payload.
+    payload_len: usize,
+}
+
+/// Parse a raw IP packet (no AF prefix) to extract full UDP 5-tuple + payload location.
+/// Returns `None` if the packet is not UDP or is malformed.
+#[cfg(feature = "tun")]
+fn parse_raw_udp(pkt: &[u8]) -> Option<ParsedUdp> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    if pkt.is_empty() {
+        return None;
+    }
+
+    let version = (pkt[0] >> 4) & 0xF;
+    match version {
+        4 => {
+            if pkt.len() < 20 {
+                return None;
+            }
+            let proto = pkt[9];
+            if proto != 17 {
+                return None; // not UDP
+            }
+            let ihl = ((pkt[0] & 0x0F) as usize) * 4;
+            if pkt.len() < ihl + 8 {
+                return None; // too short for UDP header
+            }
+            let src_ip = IpAddr::V4(Ipv4Addr::new(pkt[12], pkt[13], pkt[14], pkt[15]));
+            let dst_ip = IpAddr::V4(Ipv4Addr::new(pkt[16], pkt[17], pkt[18], pkt[19]));
+            let src_port = u16::from_be_bytes([pkt[ihl], pkt[ihl + 1]]);
+            let dst_port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
+            let payload_offset = ihl + 8;
+            let payload_len = pkt.len().saturating_sub(payload_offset);
+            Some(ParsedUdp {
+                src_ip,
+                src_port,
+                dst_ip,
+                dst_port,
+                payload_offset,
+                payload_len,
+            })
+        }
+        6 => {
+            if pkt.len() < 48 {
+                return None; // 40 IPv6 header + 8 UDP header
+            }
+            let next_header = pkt[6];
+            if next_header != 17 {
+                return None; // not UDP (ignoring extension headers for now)
+            }
+            let src_ip = {
+                let mut a = [0u8; 16];
+                a.copy_from_slice(&pkt[8..24]);
+                IpAddr::V6(Ipv6Addr::from(a))
+            };
+            let dst_ip = {
+                let mut a = [0u8; 16];
+                a.copy_from_slice(&pkt[24..40]);
+                IpAddr::V6(Ipv6Addr::from(a))
+            };
+            let src_port = u16::from_be_bytes([pkt[40], pkt[41]]);
+            let dst_port = u16::from_be_bytes([pkt[42], pkt[43]]);
+            let payload_offset = 48;
+            let payload_len = pkt.len().saturating_sub(payload_offset);
+            Some(ParsedUdp {
+                src_ip,
+                src_port,
+                dst_ip,
+                dst_port,
+                payload_offset,
+                payload_len,
+            })
+        }
+        _ => None,
+    }
+}
 
 fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, String)> {
     match decision {
@@ -651,6 +750,14 @@ impl TunInbound {
                                                 } else {
                                                     None
                                                 }
+                                            } else if ip_version == 6 {
+                                                // IPv6: fixed 40-byte header + 8-byte UDP header
+                                                let payload_offset = ip_start + 40 + 8;
+                                                if payload_offset <= readn {
+                                                    Some(&buf[payload_offset..readn])
+                                                } else {
+                                                    None
+                                                }
                                             } else {
                                                 None
                                             }
@@ -708,9 +815,7 @@ impl TunInbound {
             );
             #[cfg(feature = "tun")]
             {
-                use sb_core::net::Address;
-                use sb_core::session::ConnectParams;
-                use std::os::unix::io::AsRawFd;
+                use std::os::unix::io::{AsRawFd, FromRawFd};
                 use tokio::io::unix::AsyncFd;
                 use tokio::io::Interest;
 
@@ -719,8 +824,23 @@ impl TunInbound {
                         let mut buf = vec![0u8; 65536];
                         let router = Arc::clone(&self.router);
 
+                        // Clone the fd for writing before moving device into AsyncFd
+                        use std::os::unix::io::AsRawFd;
+                        let raw_fd = device.as_raw_fd();
+                        // SAFETY: We duplicate the fd; the original is owned by `device`.
+                        // The dup'd fd is wrapped in File which will close it on drop.
+                        let writer_file = unsafe {
+                            let dup_fd = libc::dup(raw_fd);
+                            if dup_fd < 0 {
+                                return Err(io::Error::last_os_error());
+                            }
+                            std::fs::File::from_raw_fd(dup_fd)
+                        };
+                        let writer: Arc<dyn TunWriter> = Arc::new(LinuxTunWriter {
+                            fd: Arc::new(parking_lot::Mutex::new(writer_file)),
+                        });
+
                         // Wrap the file descriptor in AsyncFd for async operations
-                        let fd = device.as_raw_fd();
                         let async_fd = AsyncFd::with_interest(device, Interest::READABLE)
                             .map_err(io::Error::other)?;
 
@@ -742,28 +862,42 @@ impl TunInbound {
                                 {
                                     match (l4, dst_ip, dst_port) {
                                         (L4::Tcp, Some(ip), Some(port)) => {
-                                            let addr = Address::SocketAddress(
-                                                std::net::SocketAddr::new(ip, port),
-                                            );
-                                            let params = ConnectParams {
-                                                address: addr,
-                                                inbound_tag: Some(self.cfg.name.clone()),
-                                            };
-                                            let meta = RequestMeta {
-                                                destination: format!("{}:{}", ip, port),
-                                                network: "tcp".to_string(),
-                                                source_addr: None,
-                                            };
-                                            let _out = router.select(&meta);
                                             tracing::trace!(
-                                                "tun: TCP -> {}:{} via {:?}",
+                                                "tun: TCP -> {}:{} (linux, routing stub)",
                                                 ip,
-                                                port,
-                                                params.inbound_tag
+                                                port
                                             );
                                         }
-                                        (L4::Udp, Some(ip), Some(port)) => {
-                                            tracing::trace!("tun: UDP -> {}:{} (drop)", ip, port);
+                                        (L4::Udp, Some(_ip), Some(_port)) => {
+                                            // Parse full UDP 5-tuple + payload from raw IP packet
+                                            if let Some(parsed) = parse_raw_udp(&buf[..n]) {
+                                                let key = UdpFourTuple {
+                                                    src_ip: parsed.src_ip,
+                                                    src_port: parsed.src_port,
+                                                    dst_ip: parsed.dst_ip,
+                                                    dst_port: parsed.dst_port,
+                                                };
+                                                let payload = &buf[parsed.payload_offset
+                                                    ..parsed.payload_offset + parsed.payload_len];
+                                                tracing::trace!(
+                                                    "tun udp {}:{} -> {}:{} len={}",
+                                                    parsed.src_ip,
+                                                    parsed.src_port,
+                                                    parsed.dst_ip,
+                                                    parsed.dst_port,
+                                                    payload.len()
+                                                );
+                                                if let Err(e) = self
+                                                    .udp_nat
+                                                    .forward(key, payload, writer.clone())
+                                                    .await
+                                                {
+                                                    tracing::trace!(
+                                                        "tun udp forward error: {}",
+                                                        e
+                                                    );
+                                                }
+                                            }
                                         }
                                         _ => {
                                             tracing::trace!("tun: other/short packet");
@@ -793,22 +927,22 @@ impl TunInbound {
             );
             #[cfg(feature = "tun")]
             {
-                use sb_core::net::Address;
-                use sb_core::session::ConnectParams;
-
                 sys_windows::probe()?;
 
                 match sys_windows::open_wintun_adapter(&self.cfg.name, self.cfg.mtu) {
                     Ok(adapter) => {
                         let session = match adapter.start_session(wintun::MAX_RING_CAPACITY) {
-                            Ok(s) => s,
+                            Ok(s) => Arc::new(s),
                             Err(e) => {
                                 tracing::error!("Failed to start wintun session: {}", e);
                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                             }
                         };
 
-                        let router = Arc::clone(&self.router);
+                        // Create TUN writer for UDP response packets
+                        let writer: Arc<dyn TunWriter> = Arc::new(WintunTunWriter {
+                            session: Arc::clone(&session),
+                        });
 
                         loop {
                             match session.receive_blocking() {
@@ -819,32 +953,43 @@ impl TunInbound {
                                     {
                                         match (l4, dst_ip, dst_port) {
                                             (L4::Tcp, Some(ip), Some(port)) => {
-                                                let addr = Address::SocketAddress(
-                                                    std::net::SocketAddr::new(ip, port),
-                                                );
-                                                let params = ConnectParams {
-                                                    address: addr,
-                                                    inbound_tag: Some(self.cfg.name.clone()),
-                                                };
-                                                let meta = RequestMeta {
-                                                    destination: format!("{}:{}", ip, port),
-                                                    network: "tcp".to_string(),
-                                                    source_addr: None,
-                                                };
-                                                let _out = router.select(&meta);
                                                 tracing::trace!(
-                                                    "tun: TCP -> {}:{} via {:?}",
-                                                    ip,
-                                                    port,
-                                                    params.inbound_tag
-                                                );
-                                            }
-                                            (L4::Udp, Some(ip), Some(port)) => {
-                                                tracing::trace!(
-                                                    "tun: UDP -> {}:{} (drop)",
+                                                    "tun: TCP -> {}:{} (windows, routing stub)",
                                                     ip,
                                                     port
                                                 );
+                                            }
+                                            (L4::Udp, Some(_ip), Some(_port)) => {
+                                                // Parse full UDP 5-tuple + payload from raw IP packet
+                                                if let Some(parsed) = parse_raw_udp(bytes) {
+                                                    let key = UdpFourTuple {
+                                                        src_ip: parsed.src_ip,
+                                                        src_port: parsed.src_port,
+                                                        dst_ip: parsed.dst_ip,
+                                                        dst_port: parsed.dst_port,
+                                                    };
+                                                    let payload = &bytes[parsed.payload_offset
+                                                        ..parsed.payload_offset
+                                                            + parsed.payload_len];
+                                                    tracing::trace!(
+                                                        "tun udp {}:{} -> {}:{} len={}",
+                                                        parsed.src_ip,
+                                                        parsed.src_port,
+                                                        parsed.dst_ip,
+                                                        parsed.dst_port,
+                                                        payload.len()
+                                                    );
+                                                    if let Err(e) = self
+                                                        .udp_nat
+                                                        .forward(key, payload, writer.clone())
+                                                        .await
+                                                    {
+                                                        tracing::trace!(
+                                                            "tun udp forward error: {}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
                                             }
                                             _ => {
                                                 tracing::trace!("tun: other/short packet");
@@ -1058,6 +1203,72 @@ impl TunWriter for MacOsTunWriter {
 }
 
 // -------------------
+// Linux TunWriter implementation
+// -------------------
+// Linux TUN in IFF_NO_PI mode: packets are raw IP, no prefix.
+// The writer wraps the TUN device fd and writes raw IP packets directly.
+#[cfg(all(target_os = "linux", feature = "tun"))]
+struct LinuxTunWriter {
+    fd: Arc<parking_lot::Mutex<std::fs::File>>,
+}
+
+#[cfg(all(target_os = "linux", feature = "tun"))]
+#[async_trait::async_trait]
+impl TunWriter for LinuxTunWriter {
+    async fn write_packet(&self, packet: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+
+        let fd = Arc::clone(&self.fd);
+        let packet_owned = packet.to_vec();
+
+        tokio::task::spawn_blocking(move || {
+            let mut file = fd.lock();
+            file.write_all(&packet_owned)?;
+            file.flush()?;
+            Ok::<_, std::io::Error>(())
+        })
+        .await
+        .map_err(std::io::Error::other)?
+    }
+}
+
+// -------------------
+// Windows TunWriter implementation
+// -------------------
+// Wintun: packets are raw IP, no prefix.
+// The writer allocates a send packet from the wintun session and copies data into it.
+#[cfg(all(target_os = "windows", feature = "tun"))]
+struct WintunTunWriter {
+    session: Arc<wintun::Session>,
+}
+
+#[cfg(all(target_os = "windows", feature = "tun"))]
+#[async_trait::async_trait]
+impl TunWriter for WintunTunWriter {
+    async fn write_packet(&self, packet: &[u8]) -> std::io::Result<()> {
+        let session = Arc::clone(&self.session);
+        let packet_owned = packet.to_vec();
+
+        // wintun::Session methods are blocking, use spawn_blocking
+        tokio::task::spawn_blocking(move || {
+            let mut send_packet = session
+                .allocate_send_packet(packet_owned.len() as u16)
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("wintun allocate_send_packet failed: {}", e),
+                    )
+                })?;
+            send_packet.bytes_mut().copy_from_slice(&packet_owned);
+            session.send_packet(send_packet);
+            Ok::<_, std::io::Error>(())
+        })
+        .await
+        .map_err(std::io::Error::other)?
+    }
+}
+
+// -------------------
 // Platform stubs
 // -------------------
 #[cfg(target_os = "macos")]
@@ -1208,16 +1419,9 @@ mod sys_macos {
     }
 
     // ====== 解析 ======
-    /// 简化后的 L4 协议枚举（无扩展头处理）
+    // L4 is now defined at the parent module level; re-export for backward compat.
     #[cfg(feature = "tun")]
-    #[derive(Debug, Clone, Copy)]
-    // 枚举用作协议标识占位，暂不读取 u8 具体值；保持信息位，不为"未读字段"而改类型
-    #[allow(dead_code)]
-    pub enum L4 {
-        Tcp,
-        Udp,
-        Other(u8),
-    }
+    pub(crate) use super::L4;
 
     /// 从 utun 帧解析出的摘要（仅目标地址和端口）
     #[cfg(feature = "tun")]
@@ -1732,6 +1936,102 @@ mod tests {
             .expect("named proxy should be preserved");
         assert_eq!(target, RouteTarget::Named("proxy-a".into()));
         assert_eq!(tag, "proxy-a");
+    }
+
+    #[cfg(feature = "tun")]
+    #[test]
+    fn parse_raw_udp_ipv4_valid() {
+        // Construct a minimal IPv4/UDP packet (no AF prefix, raw IP)
+        let src_ip: std::net::Ipv4Addr = "10.0.0.1".parse().unwrap();
+        let dst_ip: std::net::Ipv4Addr = "10.0.0.2".parse().unwrap();
+        let src_port: u16 = 12345;
+        let dst_port: u16 = 53;
+        let payload = b"test-query";
+
+        let udp_len = 8 + payload.len();
+        let ip_total = 20 + udp_len;
+        let mut pkt = vec![0u8; ip_total];
+
+        // IPv4 header
+        pkt[0] = 0x45; // ver=4, IHL=5
+        pkt[2..4].copy_from_slice(&(ip_total as u16).to_be_bytes());
+        pkt[8] = 64; // TTL
+        pkt[9] = 17; // protocol: UDP
+        pkt[12..16].copy_from_slice(&src_ip.octets());
+        pkt[16..20].copy_from_slice(&dst_ip.octets());
+
+        // UDP header
+        pkt[20..22].copy_from_slice(&src_port.to_be_bytes());
+        pkt[22..24].copy_from_slice(&dst_port.to_be_bytes());
+        pkt[24..26].copy_from_slice(&(udp_len as u16).to_be_bytes());
+        pkt[28..28 + payload.len()].copy_from_slice(payload);
+
+        let parsed = parse_raw_udp(&pkt).expect("should parse IPv4 UDP");
+        assert_eq!(parsed.src_ip, IpAddr::V4(src_ip));
+        assert_eq!(parsed.src_port, src_port);
+        assert_eq!(parsed.dst_ip, IpAddr::V4(dst_ip));
+        assert_eq!(parsed.dst_port, dst_port);
+        assert_eq!(parsed.payload_offset, 28);
+        assert_eq!(parsed.payload_len, payload.len());
+        assert_eq!(&pkt[parsed.payload_offset..parsed.payload_offset + parsed.payload_len], &payload[..]);
+    }
+
+    #[cfg(feature = "tun")]
+    #[test]
+    fn parse_raw_udp_ipv6_valid() {
+        let src_ip: std::net::Ipv6Addr = "fd00::1".parse().unwrap();
+        let dst_ip: std::net::Ipv6Addr = "fd00::2".parse().unwrap();
+        let src_port: u16 = 5353;
+        let dst_port: u16 = 53;
+        let payload = b"v6query";
+
+        let udp_len = 8 + payload.len();
+        let mut pkt = vec![0u8; 40 + udp_len];
+
+        // IPv6 header
+        pkt[0] = 0x60; // ver=6
+        pkt[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes());
+        pkt[6] = 17; // next header: UDP
+        pkt[7] = 64; // hop limit
+        pkt[8..24].copy_from_slice(&src_ip.octets());
+        pkt[24..40].copy_from_slice(&dst_ip.octets());
+
+        // UDP header
+        pkt[40..42].copy_from_slice(&src_port.to_be_bytes());
+        pkt[42..44].copy_from_slice(&dst_port.to_be_bytes());
+        pkt[44..46].copy_from_slice(&(udp_len as u16).to_be_bytes());
+        pkt[48..48 + payload.len()].copy_from_slice(payload);
+
+        let parsed = parse_raw_udp(&pkt).expect("should parse IPv6 UDP");
+        assert_eq!(parsed.src_ip, IpAddr::V6(src_ip));
+        assert_eq!(parsed.src_port, src_port);
+        assert_eq!(parsed.dst_ip, IpAddr::V6(dst_ip));
+        assert_eq!(parsed.dst_port, dst_port);
+        assert_eq!(parsed.payload_offset, 48);
+        assert_eq!(parsed.payload_len, payload.len());
+    }
+
+    #[cfg(feature = "tun")]
+    #[test]
+    fn parse_raw_udp_rejects_tcp() {
+        // TCP packet (protocol=6) should return None
+        let mut pkt = vec![0u8; 40];
+        pkt[0] = 0x45;
+        pkt[9] = 6; // TCP
+        assert!(parse_raw_udp(&pkt).is_none());
+    }
+
+    #[cfg(feature = "tun")]
+    #[test]
+    fn parse_raw_udp_rejects_short() {
+        // Too short for IPv4 header
+        assert!(parse_raw_udp(&[0x45, 0x00]).is_none());
+        // Too short for IPv6 header
+        assert!(parse_raw_udp(&[0x60]).is_none());
+        // Empty
+        assert!(parse_raw_udp(&[]).is_none());
+        // Unknown version
+        assert!(parse_raw_udp(&[0x30, 0x00, 0x00, 0x00]).is_none());
     }
 }
 

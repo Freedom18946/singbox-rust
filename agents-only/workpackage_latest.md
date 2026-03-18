@@ -16,26 +16,22 @@
 | L18 Phase 1-4 | 认证替换、证据模型收口、GUI gate 复验、长跑恢复决策门 | 2026-03-11 |
 | L22 | dual-kernel parity 52/60 (86.7%)，16 个 both-case，Sniff Phase A+B | 2026-03-15 |
 | 后 L22 补丁 | QUIC 多包重组、OverrideDestination、UDP datagram sniff、编译修复 | 2026-03-15 |
-| L23 | TUN/Sniff 运行时补全、Provider wiring、T4 Protocol Suite (VLESS/VMess)、parity 92.9% | 2026-03-16 |
-| L24 | 性能/安全/质量/功能补全，30 任务 (B1-B4) | 2026-03-17 |
+| L23 | TUN/Sniff 运行时补全、Provider wiring、T4 Protocol Suite、parity 92.9% | 2026-03-16 |
+| L24 | 性能/安全/质量/功能补全，30 任务 (B1-B4)，综合验收 39/41 PASS | 2026-03-17 |
+| L25 | 生产加固 + 跨平台补全 + 文档完善，10/10 任务，4 批次全部交付 | 2026-03-17 |
 
 ---
 
-## 当前状态：维护模式
+## 当前状态：维护模式（L1-L25 全部 Closed）
 
-**L22-L24 综合验收已完成**（2026-03-17）：41 项任务全量代码审查 + 构建/测试通过。
-- 39 PASS / 2 PARTIAL（已知限制） / 0 FAIL
-- 详见 `active_context.md` 验收结果节
+**全部阶段关闭**。项目进入稳定维护。
 
-### 构建基线（2026-03-17，综合验收后）
+### 构建基线（2026-03-17，L25 后）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo check --workspace --all-features --all-targets` | ✅ pass |
 | `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
 | `cargo test -p sb-core --lib` | ✅ 509 passed |
-| `cargo test -p sb-adapters` | ✅ pass |
-| `cargo test -p sb-types` | ✅ 9 passed |
 | `cargo test -p sb-api` | ✅ pass |
-| `cargo test -p interop-lab` | ✅ 29 passed |
-| `cargo doc -p sb-types --no-deps` | ✅ 零 warning |
+| `cargo test -p sb-subscribe --all-features --lib` | ✅ 16 passed |
+| `cargo test -p sb-adapters` | ✅ 144 non-ignored passed |

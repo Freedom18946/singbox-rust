@@ -6943,3 +6943,30 @@ L2.8.4-6 Handlers + WebSocket:
 - sb-api ✅ | interop-lab 29 ✅ | cargo doc sb-types ✅ 零 warning
 **flaky 测试**: `test_connections_ws_memory_remains_bounded_over_time` — 全局 tracker 并发 race，单跑通过
 **备注**: 本次为 L22-L24 终态验收，后续无需重复。验收详情记录于 `active_context.md`。
+
+### [2026-03-18] Agent: Claude Opus (L25 全量交付)
+
+**任务**: L25 生产加固 + 跨平台补全 + 文档完善 — 10 任务 4 批次
+**方式**: 批次内并行 agent，批次间串行
+
+**B1 (T2, T3, T6)**:
+- T2: VMess/HTTP/Naive parsers → `pub`，fuzz target 直接调用真实解析器，4 seed corpus
+- T3: `serial_test = "3"`，7 WS e2e 测试 `#[serial]` 注解
+- T6: TUN 栈评估文档 `agents-only/planning/L25-tun-stack-eval.md`
+
+**B2 (T4, T5)**:
+- T4: `Engine<'a>` → `Engine`（Arc<ConfigIR>），移除 1 transmute + 5 Box::leak + 1 unsafe ptr
+- T5: sb-adapters 集成测试 1 → 144 non-ignored
+
+**B3 (T1, T7)**:
+- T1: `parse_raw_udp()` + `LinuxTunWriter` + `WintunTunWriter`，平台感知 UDP 包构建
+- T7: HTTP fetcher 增强 + provider 内容解析 + `ReloadMsg::UpdateProviders` Supervisor 通道
+
+**B4 (T8, T9, T10)**:
+- T8: ARM Windows target + Helm chart + cargo-auditable SBOM + release smoke test
+- T9: schema-migration.md 398 行 + config-reference.md 891 行 + faq.md 291 行
+- T10: fuzz-nightly.yml + coverage.yml + bench-regression 基线缓存
+
+**构建验证**: clippy ✅ | sb-core 509 ✅ | sb-api ✅ | sb-subscribe 16 ✅
+**变更统计**: 56 files, +4653 -499 lines
+**L25 状态**: CLOSED — 10/10 完成，两个 L22-L24 PARTIAL 项全部解决

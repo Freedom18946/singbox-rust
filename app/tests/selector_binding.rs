@@ -49,7 +49,7 @@ fn selector_is_bound_to_members() {
         dns: None,
         ..Default::default()
     };
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     // List all registered outbounds
     eprintln!("Registered outbounds:");

@@ -18,8 +18,8 @@ pub mod transport;
 pub use supervisor::{Supervisor, SupervisorHandle};
 
 #[cfg(feature = "router")]
-pub struct Runtime<'a> {
-    pub engine: Engine<'a>,
+pub struct Runtime {
+    pub engine: Engine,
     pub bridge: Arc<Bridge>,
     pub switchboard: Arc<switchboard::OutboundSwitchboard>,
     workers: Vec<ThreadJoinHandle<()>>,
@@ -28,8 +28,7 @@ pub struct Runtime<'a> {
 }
 
 #[cfg(not(feature = "router"))]
-pub struct Runtime<'a> {
-    _phantom: std::marker::PhantomData<&'a ()>,
+pub struct Runtime {
     pub bridge: Arc<Bridge>,
     pub switchboard: Arc<switchboard::OutboundSwitchboard>,
     workers: Vec<ThreadJoinHandle<()>>,
@@ -38,9 +37,9 @@ pub struct Runtime<'a> {
 }
 
 #[cfg(feature = "router")]
-impl<'a> Runtime<'a> {
+impl Runtime {
     pub fn new(
-        engine: Engine<'a>,
+        engine: Engine,
         bridge: Bridge,
         switchboard: switchboard::OutboundSwitchboard,
     ) -> Self {
@@ -56,8 +55,8 @@ impl<'a> Runtime<'a> {
 
     /// Create runtime from configuration IR.
     /// 从配置 IR 创建运行时。
-    pub fn from_config_ir(ir: &'a ConfigIR) -> crate::error::SbResult<Self> {
-        let engine = Engine::new(ir);
+    pub fn from_config_ir(ir: &ConfigIR) -> crate::error::SbResult<Self> {
+        let engine = Engine::new(Arc::new(ir.clone()));
         let bridge = Bridge::new_from_config(ir, crate::context::Context::new()).map_err(|e| {
             crate::error::SbError::config(
                 sb_types::IssueCode::SchemaInvalid,
@@ -71,10 +70,9 @@ impl<'a> Runtime<'a> {
 }
 
 #[cfg(not(feature = "router"))]
-impl Runtime<'_> {
+impl Runtime {
     pub fn new(_engine: (), bridge: Bridge, switchboard: switchboard::OutboundSwitchboard) -> Self {
         Self {
-            _phantom: std::marker::PhantomData,
             bridge: Arc::new(bridge),
             switchboard: Arc::new(switchboard),
             workers: vec![],
@@ -84,7 +82,7 @@ impl Runtime<'_> {
     }
 }
 
-impl<'a> Runtime<'a> {
+impl Runtime {
     /// Start all inbounds (constructed in bridge).
     /// 启动所有入站（bridge 中已构造）。
     pub fn start(mut self) -> Self {
@@ -137,7 +135,7 @@ impl<'a> Runtime<'a> {
     }
     /// Helper: clone engine as 'static view (for admin thread usage).
     #[cfg(feature = "router")]
-    pub fn engine(&self) -> &Engine<'a> {
+    pub fn engine(&self) -> &Engine {
         &self.engine
     }
 
@@ -167,10 +165,10 @@ impl<'a> Runtime<'a> {
 
     /// Create dummy engine for admin compatibility
     #[cfg(feature = "router")]
-    pub fn dummy_engine() -> Engine<'static> {
+    pub fn dummy_engine() -> Engine {
         use sb_config::ir::ConfigIR;
-        let empty_ir = ConfigIR::default();
-        Engine::new(Box::leak(Box::new(empty_ir)))
+        let empty_ir = Arc::new(ConfigIR::default());
+        Engine::new(empty_ir)
     }
 
     #[cfg(not(feature = "router"))]
@@ -189,26 +187,3 @@ impl<'a> Runtime<'a> {
     }
 }
 
-#[cfg(feature = "router")]
-impl<'a> Engine<'a> {
-    /// Produce an Engine<'static> that references the same config (safe because config lives for process lifetime).
-    /// 生成引用相同配置的 Engine<'static>（安全，因为配置在进程生命周期内存在）。
-    ///
-    /// # Safety
-    /// This is safe because the configuration is guaranteed to live for the entire process lifetime.
-    /// The caller must ensure that the referenced ConfigIR outlives the returned Engine<'static>.
-    /// 这是安全的，因为配置保证在整个进程生命周期内存在。
-    /// 调用者必须确保引用的 ConfigIR 的生命周期长于返回的 Engine<'static>。
-    pub fn clone_as_static(&self) -> Engine<'static> {
-        // SAFETY:
-        // - Invariant: self.cfg points to valid ConfigIR, designed to have process lifetime.
-        // - Concurrency/Aliasing: Caller must ensure ConfigIR outlives returned Engine<'static>.
-        // - FFI/Platform Contract: Lifetime transmutation based on design guarantee, no memory layout change.
-        // 安全性：
-        // - 不变量：self.cfg 指向有效的 ConfigIR，设计上具有进程生命周期
-        // - 并发/别名：调用者必须确保 ConfigIR 的生命周期长于返回的 Engine<'static>
-        // - FFI/平台契约：生命周期转换基于设计保证，不涉及内存布局变更
-        let static_cfg: &'static ConfigIR = unsafe { std::mem::transmute(self.cfg) };
-        Engine::new(static_cfg)
-    }
-}

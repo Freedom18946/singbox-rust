@@ -18,7 +18,7 @@ fn main() {
     let raw = fs::read(&args.config).unwrap_or_else(|_| b"{}".to_vec());
     let val: serde_json::Value = serde_json::from_slice(&raw).unwrap_or(serde_json::json!({}));
     let ir = to_ir_v1(&val);
-    let eng = Engine::new(&ir);
+    let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     let inbound_cnt = br.inbounds.len();
     let outbounds = br.outbounds_snapshot();

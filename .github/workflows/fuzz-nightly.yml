@@ -1,0 +1,153 @@
+name: Fuzz Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # Core targets
+          - fuzz_config
+          - fuzz_dns_message
+          - fuzz_sniff_tls
+          - fuzz_sniff_http
+          - fuzz_sniff_quic
+          - fuzz_sniff_stream
+          - fuzz_route_decide
+          # Protocol targets
+          - fuzz_vmess
+          - fuzz_vless
+          - fuzz_trojan
+          - fuzz_shadowsocks
+          - fuzz_hysteria
+          - fuzz_tuic
+          - fuzz_socks5
+          - fuzz_http_connect
+          # Network targets
+          - fuzz_tun_packet
+          - fuzz_mixed_protocol
+          # API targets
+          - fuzz_v2ray_api
+          # Advanced structured targets
+          - fuzz_vmess_structured
+          - fuzz_config_structured
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fuzz-
+
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
+
+      - name: Determine seed corpus directory
+        id: corpus
+        run: |
+          # Map fuzz target name to seed corpus directory
+          target="${{ matrix.target }}"
+          seed_name="${target#fuzz_}"
+          # Handle structured variants
+          seed_name="${seed_name%_structured}"
+          seed_dir="fuzz/corpus/seeds/${seed_name}"
+          if [ -d "$seed_dir" ]; then
+            echo "seed_dir=${seed_dir}" >> "$GITHUB_OUTPUT"
+            echo "has_seeds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_seeds=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run fuzz target (60s)
+        id: fuzz_run
+        working-directory: fuzz
+        run: |
+          set +e
+          if [ "${{ steps.corpus.outputs.has_seeds }}" = "true" ]; then
+            cargo +nightly fuzz run ${{ matrix.target }} \
+              ../${{ steps.corpus.outputs.seed_dir }}/ \
+              -- -max_total_time=60 2>&1 | tee fuzz_output.txt
+          else
+            cargo +nightly fuzz run ${{ matrix.target }} \
+              -- -max_total_time=60 2>&1 | tee fuzz_output.txt
+          fi
+          CODE=$?
+          echo "exit_code=${CODE}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Check for crashes
+        id: crash_check
+        working-directory: fuzz
+        run: |
+          crash_dir="artifacts/${{ matrix.target }}"
+          if [ -d "$crash_dir" ] && [ "$(ls -A "$crash_dir" 2>/dev/null)" ]; then
+            echo "has_crash=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Fuzz crash found in ${{ matrix.target }}"
+            ls -la "$crash_dir"
+          else
+            echo "has_crash=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload crash artifacts
+        if: steps.crash_check.outputs.has_crash == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}-${{ github.run_id }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}/
+            fuzz/fuzz_output.txt
+          retention-days: 90
+
+      - name: Create issue on crash
+        if: steps.crash_check.outputs.has_crash == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let output = '';
+            try {
+              output = fs.readFileSync('fuzz/fuzz_output.txt', 'utf8').slice(-2000);
+            } catch (e) {
+              output = 'Could not read fuzz output';
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Fuzz crash: ${{ matrix.target }}`,
+              body: [
+                '## Fuzz Crash Report',
+                '',
+                `**Target:** \`${{ matrix.target }}\``,
+                `**Run:** [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                `**Date:** ${new Date().toISOString()}`,
+                '',
+                '### Output (last 2000 chars)',
+                '```',
+                output,
+                '```',
+                '',
+                'Crash artifacts are attached to the workflow run.',
+              ].join('\n'),
+              labels: ['bug', 'fuzz'],
+            });
