@@ -33,7 +33,7 @@ YAML
 
   # 启动上游实例（必要时带 metrics 可另配，不强制）
   echo "[DEBUG] Starting upstream instance on ${up_socks}"
-  RUST_LOG=${RUST_LOG:-warn} "${root}/target/debug/singbox-rust" --config "${up_cfg}" > "${up_log}" 2>&1 &
+  RUST_LOG=${RUST_LOG:-warn} "${RUN_BIN:-${root}/target/debug/run}" --config "${up_cfg}" > "${up_log}" 2>&1 &
   up_pid=$!
 
   # 等上游 socks 口就绪

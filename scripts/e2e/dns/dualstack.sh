@@ -9,17 +9,17 @@ export SB_METRICS_ADDR=${SB_METRICS_ADDR:-127.0.0.1:9090}
 host=${HOST:-example.com}
 
 echo "[STEP] first query (may be miss) - auto mode"
-cargo run -q --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
 echo "[STEP] second query (expect pos/coalesced hit)"
-cargo run -q --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
 
 echo "[STEP] A-only query"
 export SB_DNS_QTYPE=a
-cargo run -q --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
 
 echo "[STEP] AAAA-only query"
 export SB_DNS_QTYPE=aaaa
-cargo run -q --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp,dns_cache" -- ${host} 80 >/dev/null
 
 echo "[SCRAPE] /metrics (optional)"
 set +e

@@ -1,7 +1,12 @@
-# Feature Verification Record
+# Historical Feature Verification Record
+
+> WARNING: This file is a stale historical snapshot. It contains mixed-date entries, stale "production ready" wording, and partial rerun notes from different checkpoints.
+>
+> Do not use this document alone as current parity or release evidence. For current status, start with `labs/interop-lab/docs/dual_kernel_golden_spec.md`, `agents-only/active_context.md`, and `agents-only/workpackage_latest.md`.
 
 **Baseline**: Go `sing-box` 1.12.14  
 **Project**: `singbox-rust`  
+**Status**: Historical / stale snapshot  
 **Last Updated**: 2025-12-08 18:59:11 +08:00  
 **Note**: Baseline labels updated on 2026-01-18; QA run data remains from 2025-12-08.  
 

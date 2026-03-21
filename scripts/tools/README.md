@@ -191,25 +191,25 @@ Runs:
 
 ## Python Utilities
 
-### `probe_http.py`
+### `probe-http.py`
 HTTP proxy probe.
 
 ```bash
-python3 scripts/tools/probe_http.py http://proxy:port
+python3 scripts/tools/probe-http.py 127.0.0.1:18081 1710000000
 ```
 
-### `probe_http_multi.py`
+### `probe-http-multi.py`
 Multi-target HTTP probe.
 
 ```bash
-python3 scripts/tools/probe_http_multi.py targets.txt
+python3 scripts/tools/probe-http-multi.py 127.0.0.1:18081 10
 ```
 
-### `probe_socks.py`
+### `probe-socks.py`
 SOCKS5 proxy probe.
 
 ```bash
-python3 scripts/tools/probe_socks.py socks5://proxy:port
+python3 scripts/tools/probe-socks.py 127.0.0.1:11080 1710000000
 ```
 
 ## Usage Patterns

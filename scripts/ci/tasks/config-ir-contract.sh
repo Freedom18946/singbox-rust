@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 cd "$ROOT"
 
 changed="$(git status --porcelain || true)"
 
 echo "[1/6] fmt/clippy/build/tests..."
 cargo fmt --all
-cargo clippy --all-targets --all-features -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 cargo build --bins --tests
 cargo test --all --tests
 

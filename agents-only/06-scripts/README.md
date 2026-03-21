@@ -1,6 +1,7 @@
 # 脚本索引（Scripts Index）
 
-> 此目录包含重构辅助脚本
+> 此目录只包含 AI / boundary governance 辅助脚本。
+> 仓库业务脚本、E2E、CI、本地 release 入口位于顶层 `scripts/`，其最新导航见 `agents-only/reference/SCRIPTS-MAP.md`。
 
 ---
 

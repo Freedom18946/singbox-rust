@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 cd "$ROOT"
 
 changed="$(git status --porcelain || true)"
+cleanup() {
+  kill "${PID:-}" >/dev/null 2>&1 || true
+  rm -f "${cfg:-}"
+}
+trap cleanup EXIT
 
 echo "[1/5] fmt/clippy/build/tests..."
 cargo fmt --all
-cargo clippy --all-targets --all-features -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 cargo build --bins --tests
 cargo test --all --tests
 
@@ -39,4 +44,4 @@ cat <<EOF
 EOF
 
 echo "[5/5] teardown..."
-kill $PID >/dev/null 2>&1 || true
+kill "${PID:-}" >/dev/null 2>&1 || true

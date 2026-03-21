@@ -4,10 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(cd "$ROOT" && pwd)
 
-RUST_BIN="${PROJECT_ROOT}/target/debug/singbox-rust"
-if [[ ! -x "$RUST_BIN" ]]; then
-  RUST_BIN="${PROJECT_ROOT}/target/debug/app"
-fi
+RUST_BIN="${PROJECT_ROOT}/target/debug/app"
 
 GO_BIN="${GO_SINGBOX_BIN:-}"
 CFG="${PROJECT_ROOT}/minimal.yaml"
@@ -63,4 +60,3 @@ if [[ -n "$R_UDP" && -n "$G_UDP" ]]; then
 fi
 
 exit $fail
-

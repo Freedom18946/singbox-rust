@@ -8,7 +8,9 @@ export SB_SOCKS_UDP_ENABLE=1
 export SB_SOCKS_UDP_LISTEN=${SB_SOCKS_UDP_LISTEN:-127.0.0.1:11080}
 
 echo "[INFO] send a few UDP packets to $SB_SOCKS_UDP_LISTEN"
-RUSTFLAGS="" cargo run -q --example udp_blast -- ${SB_SOCKS_UDP_LISTEN%:*} ${SB_SOCKS_UDP_LISTEN#*:} 50
+for i in $(seq 1 5); do
+  cargo run -q --manifest-path crates/sb-core/Cargo.toml --example socks5_udp_probe -- "${SB_SOCKS_UDP_LISTEN}" 1.1.1.1:53 example.com >/dev/null 2>&1 || true
+done
 
 echo "[INFO] scrape metrics"
 curl -s "http://$SB_METRICS_ADDR/metrics" | grep -E 'udp_pkts_in_total|udp_pkts_out_total|udp_bytes_' || {

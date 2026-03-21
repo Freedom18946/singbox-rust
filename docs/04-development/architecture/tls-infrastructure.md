@@ -12,7 +12,7 @@ Overview of the TLS stack including REALITY and ECH wiring.
 
 - TLS config: `../../01-user-guide/configuration/tls.md`
 - TLS decisions: `../../../TLS_DECISION.md`
-- Next steps/limits: `../../../NEXT_STEPS.md`
+- Workpackage status: `../../../agents-only/workpackage_latest.md`
 
 ## Status
 

@@ -110,11 +110,11 @@ agents-only/
 ├── workpackage_latest.md     # S-tier: 阶段地图 / 全局位置（≤120行）
 ├── init.md                   # S-tier: 启动检查清单
 ├── log.md                    # C-tier: 终极流水帐（持续写入，不主动读取）
-├── planning/                 # S-tier: 仅当前 phase 活跃规划（当前为空）
-│   └── (empty)
+├── planning/                 # S-tier: 仅当前 phase 活跃规划（维护模式，为空）
 ├── reference/                # A-tier: 稳定参考
 │   ├── GO_PARITY_MATRIX.md
 │   ├── PROJECT-STRUCTURE.md
+│   ├── SCRIPTS-MAP.md
 │   ├── ARCHITECTURE-SPEC.md
 │   ├── ACCEPTANCE-CRITERIA.md
 │   └── GO-DESIGN-REFERENCE.md
@@ -130,6 +130,9 @@ agents-only/
     ├── L12-L17/
     ├── L19-L21-MIG/
     ├── L22/                  # dual-kernel parity 收口归档
+    ├── L23/
+    ├── L24/
+    ├── L25/
     ├── analysis/
     ├── logs/                 # workpackage_latest.md 历史快照
     ├── workflows/
@@ -146,6 +149,7 @@ agents-only/
 | 事件细节（刚做了什么） | `agents-only/active_context.md` | S |
 | L22 归档 | `agents-only/archive/L22/` | C |
 | Go/GUI/API 参考 | `scripts/l18/REFERENCE.md` | A |
+| 脚本地图 | `agents-only/reference/SCRIPTS-MAP.md` | A |
 | Parity 矩阵 | `agents-only/reference/GO_PARITY_MATRIX.md` | A |
 | 架构 Spec | `agents-only/reference/ARCHITECTURE-SPEC.md` | A |
 | 经验模式 | `agents-only/memory/LEARNED-PATTERNS.md` | A |

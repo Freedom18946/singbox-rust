@@ -516,7 +516,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 
 - **Project Documentation:** [docs/](../)
 - **Go Compatibility Matrix:** [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md)
-- **Next Steps:** [NEXT_STEPS.md](../NEXT_STEPS.md)
+- **Workpackage Status:** [workpackage_latest.md](../agents-only/workpackage_latest.md)
 - **Rust-Only Enhancements:** [RUST_ENHANCEMENTS.md](RUST_ENHANCEMENTS.md)
 - **Tailscale Research:** [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md)
 - **WireGuard Guides:**

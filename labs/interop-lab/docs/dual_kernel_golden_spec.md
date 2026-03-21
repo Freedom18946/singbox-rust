@@ -142,7 +142,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-LC-001 | Config validate and parse | JSON config file | Parse success or structured error | — | `p1_lifecycle_restart_reload_replay` | `p1_deprecated_v1_style_config` | — |
 | BHV-LC-002 | API ready signal on startup | Process start | GET /version returns 200 | HTTP | `p1_gui_full_session_replay`, `p1_lifecycle_restart_reload_replay` | — | — |
-| BHV-LC-003 | Concurrent service initialization | Multiple services configured | All services started, failures isolated | — | — | `p1_service_failure_isolation` | — |
+| BHV-LC-003 | Concurrent service initialization | Multiple services configured | All services started, failures isolated | — | — | `p1_service_failure_isolation` | DIV-H-006 |
 
 ### LC.2: Reload
 
@@ -232,6 +232,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV-H-003 | CLOSED | Provider background update loop implemented (L23-T4). ProviderManager now sweeps stale providers on a configurable tick interval. | BHV-CP-018, BHV-SV-005 | — |
 | DIV-H-004 | CLOSED | Provider healthcheck now performs real TCP probe via outbound registry (L23-T5). Falls back to healthy when no registry configured. | BHV-SV-007 | — |
 | DIV-H-005 | STRUCTURAL | Go provider endpoints return empty stubs (empty map / 404 for all provider routes). SV.2 BHVs cannot be dual-kernel tested. | BHV-SV-005, BHV-SV-006, BHV-SV-007 | Rust-only e2e coverage via `clash_http_e2e.rs` |
+| DIV-H-006 | STRUCTURAL | `p1_service_failure_isolation` is not an honest dual-kernel model today: the Rust case config contains no broken service, and Rust `GET /services/health` still returns a static stub instead of runtime service state. BHV-LC-003 must remain uncovered until both the harness and runtime health plumbing are real. | BHV-LC-003 | Keep Rust-only diagnostic coverage; do not promote to `kernel_mode: both` |
 
 ### Cosmetic (Format Differences)
 
@@ -334,7 +335,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 4 | `p2_vmess_dual_dataplane_local` | E3 | BHV-DP-001 (VMess variant) | ✅ delivered 2026-03-16 |
 | 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) | pending |
 
-### Non-Promotable Cases (11)
+### Non-Promotable Cases
 
 These cases should **never** be promoted to `kernel_mode: both`:
 
@@ -351,6 +352,7 @@ These cases should **never** be promoted to `kernel_mode: both`:
 | `p2_protocol_unit_shadowsocks` | Rust cargo test wrapper |
 | `p2_protocol_unit_vmess` | Rust cargo test wrapper |
 | `p1_tls_fragment_wiring` | Rust TLS implementation detail |
+| `p1_service_failure_isolation` | Not promotable with current harness/API model: no honest broken-service dual-kernel setup, and `/services/health` is still a static stub on Rust |
 | `p0_subscription_json` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
 | `p0_subscription_yaml` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
 | `p0_subscription_base64` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |

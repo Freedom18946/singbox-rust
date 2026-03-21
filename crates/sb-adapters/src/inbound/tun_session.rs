@@ -10,11 +10,14 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use sb_core::net::metered::TrafficRecorder;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TryRecvError;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace, warn};
 
 /// Four-tuple identifying a unique TCP connection
@@ -48,6 +51,7 @@ impl FourTuple {
 }
 
 /// Active TCP session state
+#[derive(Debug)]
 pub struct TcpSession {
     /// Four-tuple identifying this session
     pub tuple: FourTuple,
@@ -57,6 +61,14 @@ pub struct TcpSession {
     pub to_outbound_tx: mpsc::Sender<Bytes>,
     /// Outbound connection (kept for reference/cleanup)
     pub outbound_addr: SocketAddr,
+    /// Next sequence number expected from the TUN-side peer
+    client_next_seq: AtomicU32,
+    /// Next sequence number to use for synthetic server-side packets
+    server_next_seq: AtomicU32,
+    /// Highest server-side sequence acknowledged by the TUN-side peer
+    server_acked_seq: AtomicU32,
+    /// Signal for actively shutting down the outbound relay
+    shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl TcpSession {
@@ -64,9 +76,80 @@ impl TcpSession {
     pub async fn send_to_outbound(&self, data: Bytes) -> Result<(), mpsc::error::SendError<Bytes>> {
         self.to_outbound_tx.send(data).await
     }
+
+    pub fn observe_client_segment(&self, next_seq: u32) {
+        let mut current = self.client_next_seq.load(Ordering::Relaxed);
+        while tcp_seq_is_newer(next_seq, current) {
+            match self.client_next_seq.compare_exchange_weak(
+                current,
+                next_seq,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    pub fn client_next_seq(&self) -> u32 {
+        self.client_next_seq.load(Ordering::Relaxed)
+    }
+
+    pub fn server_next_seq(&self) -> u32 {
+        self.server_next_seq.load(Ordering::Relaxed)
+    }
+
+    pub fn observe_server_ack(&self, ack: u32) {
+        let capped_ack = if tcp_seq_is_newer(ack, self.server_next_seq()) {
+            self.server_next_seq()
+        } else {
+            ack
+        };
+        let mut current = self.server_acked_seq.load(Ordering::Relaxed);
+        while tcp_seq_is_newer(capped_ack, current) {
+            match self.server_acked_seq.compare_exchange_weak(
+                current,
+                capped_ack,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    pub fn server_acked_seq(&self) -> u32 {
+        self.server_acked_seq.load(Ordering::Relaxed)
+    }
+
+    pub fn reserve_server_seq(&self, consumed: u32) -> u32 {
+        if consumed == 0 {
+            self.server_next_seq()
+        } else {
+            self.server_next_seq.fetch_add(consumed, Ordering::Relaxed)
+        }
+    }
+
+    pub fn initiate_close(&self) {
+        if let Some(tx) = self
+            .shutdown_tx
+            .lock()
+            .expect("lock shutdown_tx")
+            .take()
+        {
+            let _ = tx.send(());
+        }
+    }
+}
+
+fn tcp_seq_is_newer(candidate: u32, current: u32) -> bool {
+    candidate != current && candidate.wrapping_sub(current) < (1 << 31)
 }
 
 /// Manager for all active TCP sessions
+#[derive(Debug)]
 pub struct TcpSessionManager {
     /// Active sessions indexed by four-tuple
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
@@ -92,7 +175,20 @@ impl TcpSessionManager {
         tun_writer: Arc<dyn TunWriter + Send + Sync>,
         traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> Arc<TcpSession> {
+        self.create_session_with_state(tuple, outbound, tun_writer, traffic, 1000, 1000)
+    }
+
+    pub fn create_session_with_state(
+        &self,
+        tuple: FourTuple,
+        outbound: TcpStream,
+        tun_writer: Arc<dyn TunWriter + Send + Sync>,
+        traffic: Option<Arc<dyn TrafficRecorder>>,
+        client_next_seq: u32,
+        server_next_seq: u32,
+    ) -> Arc<TcpSession> {
         let (to_outbound_tx, to_outbound_rx) = mpsc::channel::<Bytes>(64);
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         let outbound_addr = outbound
             .peer_addr()
@@ -103,6 +199,10 @@ impl TcpSessionManager {
             created_at: Instant::now(),
             to_outbound_tx,
             outbound_addr,
+            client_next_seq: AtomicU32::new(client_next_seq),
+            server_next_seq: AtomicU32::new(server_next_seq),
+            server_acked_seq: AtomicU32::new(server_next_seq),
+            shutdown_tx: Mutex::new(Some(shutdown_tx)),
         });
 
         // Spawn relay tasks
@@ -113,7 +213,9 @@ impl TcpSessionManager {
         // TUN -> Outbound relay
         tokio::spawn(relay_tun_to_outbound(
             to_outbound_rx,
+            shutdown_rx,
             outbound,
+            Arc::clone(&session),
             tuple_copy,
             Arc::clone(&tun_writer),
             Arc::clone(&sessions),
@@ -156,7 +258,9 @@ impl Default for TcpSessionManager {
 /// Relay data from TUN to outbound (and spawn outbound->TUN relay)
 async fn relay_tun_to_outbound(
     mut to_outbound_rx: mpsc::Receiver<Bytes>,
+    mut shutdown_rx: oneshot::Receiver<()>,
     outbound: TcpStream,
+    session: Arc<TcpSession>,
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
@@ -175,6 +279,7 @@ async fn relay_tun_to_outbound(
     tokio::spawn(async move {
         relay_outbound_to_tun(
             &mut outbound_read,
+            session,
             tuple_copy,
             tun_writer_copy,
             sessions_copy,
@@ -184,25 +289,62 @@ async fn relay_tun_to_outbound(
     });
 
     // TUN -> Outbound relay (this task)
-    while let Some(chunk) = to_outbound_rx.recv().await {
-        if let Err(e) = outbound_write.write_all(&chunk).await {
-            warn!(
-                "TCP session {}:{} -> {}:{} write error: {}",
-                tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port, e
-            );
-            break;
+    let mut closing = false;
+    loop {
+        if closing {
+            match to_outbound_rx.try_recv() {
+                Ok(chunk) => {
+                    if let Err(e) = outbound_write.write_all(&chunk).await {
+                        warn!(
+                            "TCP session {}:{} -> {}:{} write error during shutdown drain: {}",
+                            tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port, e
+                        );
+                        break;
+                    }
+                    if let Some(ref recorder) = traffic {
+                        recorder.record_up(chunk.len() as u64);
+                    }
+                    continue;
+                }
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => {
+                    let _ = outbound_write.shutdown().await;
+                    break;
+                }
+            }
         }
-        if let Some(ref recorder) = traffic {
-            recorder.record_up(chunk.len() as u64);
+
+        tokio::select! {
+            _ = &mut shutdown_rx => {
+                debug!(
+                    "TCP session shutdown requested: {}:{} -> {}:{}",
+                    tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
+                );
+                closing = true;
+            }
+            maybe_chunk = to_outbound_rx.recv() => {
+                let Some(chunk) = maybe_chunk else {
+                    break;
+                };
+                if let Err(e) = outbound_write.write_all(&chunk).await {
+                    warn!(
+                        "TCP session {}:{} -> {}:{} write error: {}",
+                        tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port, e
+                    );
+                    break;
+                }
+                if let Some(ref recorder) = traffic {
+                    recorder.record_up(chunk.len() as u64);
+                }
+                trace!(
+                    "TUN->Outbound: {} bytes for {}:{} -> {}:{}",
+                    chunk.len(),
+                    tuple.src_ip,
+                    tuple.src_port,
+                    tuple.dst_ip,
+                    tuple.dst_port
+                );
+            }
         }
-        trace!(
-            "TUN->Outbound: {} bytes for {}:{} -> {}:{}",
-            chunk.len(),
-            tuple.src_ip,
-            tuple.src_port,
-            tuple.dst_ip,
-            tuple.dst_port
-        );
     }
 
     // Cleanup on connection close
@@ -216,14 +358,13 @@ async fn relay_tun_to_outbound(
 /// Relay data from outbound to TUN
 async fn relay_outbound_to_tun(
     outbound_read: &mut tokio::net::tcp::OwnedReadHalf,
+    session: Arc<TcpSession>,
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
     let mut buf = vec![0u8; 8192];
-    let mut seq = 1000u32; // Simplified: real impl should track actual seq
-    let mut ack = 1000u32;
 
     loop {
         match outbound_read.read(&mut buf).await {
@@ -235,9 +376,9 @@ async fn relay_outbound_to_tun(
                 );
 
                 // Send FIN packet
-                if let Ok(fin_packet) =
-                    build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11)
-                {
+                let seq = session.reserve_server_seq(1);
+                let ack = session.client_next_seq();
+                if let Ok(fin_packet) = build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11) {
                     let _ = tun_writer.write_packet(&fin_packet).await;
                 }
                 break;
@@ -253,6 +394,8 @@ async fn relay_outbound_to_tun(
                 );
 
                 // Build response packet (reversed tuple for reply direction)
+                let seq = session.reserve_server_seq(n as u32);
+                let ack = session.client_next_seq();
                 match build_tcp_response_packet(tuple.reverse(), &buf[..n], seq, ack, 0x18) {
                     Ok(packet) => {
                         if let Err(e) = tun_writer.write_packet(&packet).await {
@@ -265,7 +408,6 @@ async fn relay_outbound_to_tun(
                         if let Some(ref recorder) = traffic {
                             recorder.record_down(n as u64);
                         }
-                        seq = seq.wrapping_add(n as u32);
                     }
                     Err(e) => {
                         warn!("Failed to build TCP packet: {}", e);
@@ -359,6 +501,55 @@ mod tests {
 
         // Session creation requires actual TcpStream, skip in unit test
         // Integration test will cover this
+    }
+
+    #[test]
+    fn test_observe_client_segment_never_regresses_sequence() {
+        let session = TcpSession {
+            tuple: FourTuple::new(
+                "192.168.1.2".parse().unwrap(),
+                12345,
+                "93.184.216.34".parse().unwrap(),
+                80,
+            ),
+            created_at: Instant::now(),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1000),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: Mutex::new(None),
+        };
+
+        session.observe_client_segment(120);
+        session.observe_client_segment(110);
+
+        assert_eq!(session.client_next_seq(), 120);
+    }
+
+    #[test]
+    fn test_observe_server_ack_is_monotonic_and_capped() {
+        let session = TcpSession {
+            tuple: FourTuple::new(
+                "192.168.1.2".parse().unwrap(),
+                12345,
+                "93.184.216.34".parse().unwrap(),
+                80,
+            ),
+            created_at: Instant::now(),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1010),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: Mutex::new(None),
+        };
+
+        session.observe_server_ack(1005);
+        session.observe_server_ack(1003);
+        session.observe_server_ack(1024);
+
+        assert_eq!(session.server_acked_seq(), 1010);
     }
 
     #[test]

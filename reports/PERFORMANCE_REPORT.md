@@ -1,7 +1,12 @@
-# Performance Benchmarking Framework -# Performance Report
+# Performance Report (Historical / Stale Snapshot)
+
+> WARNING: This file is not a current source of truth for benchmark status.
+>
+> It contains historical benchmark notes, placeholder coverage, and obsolete workflow references. In particular, any GitHub Actions or CI workflow statements in this file are stale and must not be treated as current repository behavior because workflow automation is disabled in this repository.
 
 **Baseline**: Go sing-box 1.12.14  
 **Comparison**: Rust singbox-rust  
+**Status**: Historical / stale snapshot  
 **Last Updated**: 2026-01-18  
 **Test Environment**: Apple M1 Pro, macOS 14.5
 

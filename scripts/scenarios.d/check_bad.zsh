@@ -20,7 +20,7 @@ route:
 dns:
   mode: bad
 YAML
-  if "${BIN}" check -c "${target}/check_bad.yaml" >/dev/null 2>&1; then
+  if "${APP_BIN}" check -c "${target}/check_bad.yaml" >/dev/null 2>&1; then
     echo '{"name":"check_bad","ok":0,"msg":"bad config unexpectedly passed"}'
   else
     echo '{"name":"check_bad","ok":1,"msg":"bad config rejected"}'

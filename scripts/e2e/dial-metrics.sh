@@ -3,15 +3,16 @@ set -euo pipefail
 echo "[INFO] e2e: outbound dial metrics (direct)"
 
 export SB_METRICS_ADDR=${SB_METRICS_ADDR:-127.0.0.1:9090}
+export HTTP_PROXY_ADDR=${HTTP_PROXY_ADDR:-127.0.0.1:18081}
 
 cnt=${CNT:-5}
 host=${HOST:-example.com}
 port=${PORT:-80}
 
-echo "[RUN] $cnt direct connects to $host:$port"
+echo "[RUN] $cnt proxied connects to $host:$port via $HTTP_PROXY_ADDR"
 for i in $(seq 1 $cnt); do
   echo "  [$i/$cnt] Connecting..."
-  cargo run -q --example tcp_connect --features metrics -- $host $port || true
+  curl -fsS -m 5 -I -x "http://${HTTP_PROXY_ADDR}" "http://${host}:${port}/" >/dev/null || true
 done
 
 echo "[SCRAPE] /metrics from $SB_METRICS_ADDR"

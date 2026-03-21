@@ -12,4 +12,4 @@ Principles for backward-compatible changes.
 ## Related
 
 - ../../CHANGELOG.md
-- ../../NEXT_STEPS.md
+- ../../agents-only/workpackage_latest.md

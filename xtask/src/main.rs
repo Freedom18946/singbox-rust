@@ -1,7 +1,7 @@
 //! xtask: 开发者任务自动化工具
 //!
 //! 基于 cargo-xtask 模式的项目自动化工具集。
-//! MSRV = 1.90; 使用 blocking HTTP 避免引入 async runtime 依赖。
+//! MSRV = 1.92; 使用 blocking HTTP 避免引入 async runtime 依赖。
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::env;

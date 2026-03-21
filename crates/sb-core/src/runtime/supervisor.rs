@@ -24,6 +24,7 @@ use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 use crate::routing::engine::Engine;
 use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
+use std::collections::HashMap;
 use sb_config::ir::diff::Diff;
 use std::path::Path;
 use std::sync::Arc;
@@ -51,6 +52,12 @@ pub enum ReloadMsg {
     Shutdown { deadline: Instant },
 }
 
+#[derive(Debug, Clone, Default)]
+struct ProviderOverlayState {
+    outbounds_by_provider: HashMap<String, Vec<String>>,
+    rules_by_provider: HashMap<String, Vec<sb_config::ir::RuleIR>>,
+}
+
 /// Runtime state managed by supervisor
 #[cfg(feature = "router")]
 #[derive(Debug)]
@@ -64,6 +71,7 @@ pub struct State {
     pub started_at: Instant,
     /// Current configuration IR for diff computation during reload
     pub current_ir: sb_config::ir::ConfigIR,
+    provider_overlay: ProviderOverlayState,
 }
 
 #[cfg(not(feature = "router"))]
@@ -77,6 +85,7 @@ pub struct State {
     pub started_at: Instant,
     /// Current configuration IR for diff computation during reload
     pub current_ir: sb_config::ir::ConfigIR,
+    provider_overlay: ProviderOverlayState,
 }
 
 /// Supervisor manages runtime state and hot reload/shutdown
@@ -112,6 +121,7 @@ impl State {
             ntp: None,
             started_at: Instant::now(),
             current_ir: ir,
+            provider_overlay: ProviderOverlayState::default(),
         }
     }
 }
@@ -127,6 +137,7 @@ impl State {
             ntp: None,
             started_at: Instant::now(),
             current_ir: ir,
+            provider_overlay: ProviderOverlayState::default(),
         }
     }
 }
@@ -273,12 +284,16 @@ impl Supervisor {
                     ReloadMsg::Apply(new_ir) => {
                         if let Err(e) = Self::handle_reload(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
+                        } else {
+                            state_clone.write().await.provider_overlay = ProviderOverlayState::default();
                         }
                     }
                     ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
-                        let merged_ir = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
+                        let (merged_ir, overlay) = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
                         if let Err(e) = Self::handle_reload(&state_clone, merged_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
+                        } else {
+                            state_clone.write().await.provider_overlay = overlay;
                         }
                     }
                     ReloadMsg::Shutdown { deadline } => {
@@ -418,12 +433,16 @@ impl Supervisor {
                     ReloadMsg::Apply(new_ir) => {
                         if let Err(e) = Self::handle_reload_no_router(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
+                        } else {
+                            state_clone.write().await.provider_overlay = ProviderOverlayState::default();
                         }
                     }
                     ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
-                        let merged_ir = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
+                        let (merged_ir, overlay) = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
                         if let Err(e) = Self::handle_reload_no_router(&state_clone, merged_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
+                        } else {
+                            state_clone.write().await.provider_overlay = overlay;
                         }
                     }
                     ReloadMsg::Shutdown { deadline } => {
@@ -773,15 +792,39 @@ impl Supervisor {
         outbounds: Vec<sb_config::ir::OutboundIR>,
         rules: Vec<String>,
         provider_name: &str,
-    ) -> sb_config::ir::ConfigIR {
+    ) -> (sb_config::ir::ConfigIR, ProviderOverlayState) {
         let state_guard = state.read().await;
         let mut ir = state_guard.current_ir.clone();
+        let mut overlay = state_guard.provider_overlay.clone();
         drop(state_guard);
 
         let ob_count = outbounds.len();
         let rule_count = rules.len();
+        let previous_outbounds = overlay
+            .outbounds_by_provider
+            .remove(provider_name)
+            .unwrap_or_default();
+        let previous_rules = overlay
+            .rules_by_provider
+            .remove(provider_name)
+            .unwrap_or_default();
+
+        if !previous_outbounds.is_empty() {
+            ir.outbounds.retain(|existing| {
+                existing
+                    .name
+                    .as_deref()
+                    .is_none_or(|name| !previous_outbounds.iter().any(|prev| prev == name))
+            });
+        }
+        if !previous_rules.is_empty() {
+            ir.route
+                .rules
+                .retain(|existing| !previous_rules.iter().any(|prev| prev == existing));
+        }
 
         // Merge outbounds: replace existing by name, append new ones
+        let mut injected_outbound_names = Vec::new();
         for new_ob in outbounds {
             let name = new_ob.name.as_deref().unwrap_or("");
             if !name.is_empty() {
@@ -789,6 +832,7 @@ impl Supervisor {
                 ir.outbounds.retain(|existing| {
                     existing.name.as_deref() != Some(name)
                 });
+                injected_outbound_names.push(name.to_string());
             }
             ir.outbounds.push(new_ob);
         }
@@ -796,8 +840,10 @@ impl Supervisor {
         // Merge rules: parse simple rule strings and append as RuleIR entries.
         // Format: "TYPE,VALUE" → creates a RuleIR with the appropriate field set.
         // Unrecognized formats are logged and skipped.
+        let mut injected_rules = Vec::new();
         for rule_str in &rules {
             if let Some(rule_ir) = parse_simple_rule(rule_str) {
+                injected_rules.push(rule_ir.clone());
                 ir.route.rules.push(rule_ir);
             } else {
                 tracing::warn!(
@@ -817,7 +863,14 @@ impl Supervisor {
             rule_count
         );
 
-        ir
+        overlay
+            .outbounds_by_provider
+            .insert(provider_name.to_string(), injected_outbound_names);
+        overlay
+            .rules_by_provider
+            .insert(provider_name.to_string(), injected_rules);
+
+        (ir, overlay)
     }
 
     // Internal: handle graceful shutdown
@@ -917,6 +970,10 @@ impl Supervisor {
 }
 
 impl SupervisorHandle {
+    pub fn reload_sender(&self) -> mpsc::Sender<ReloadMsg> {
+        self.tx.clone()
+    }
+
     /// Begin graceful shutdown via handle (doesn't require ownership)
     pub async fn shutdown_graceful(&self, dur: Duration) -> Result<()> {
         let _ = &self.cancel;

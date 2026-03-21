@@ -3,10 +3,22 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 cd "$ROOT"; mkdir -p .e2e/logs .e2e/reports .e2e/pids .e2e/visualizations .e2e/artifacts target
 J='{}'
-FEATS=${FEATS:-"explain,selector_p3,metrics,pprof,panic_log,hardening,chaos,config_guard,tools"}
+FEATS=${FEATS:-"acceptance,explain,pprof,panic_log,hardening"}
 echo "[accept] build: $FEATS"
-cargo build --features "$FEATS"
+cargo build -q -p app --features "$FEATS" --bin run --bin sb-explaind --bin sb-udp-echo
 J=$(jq '.compile.ok=true|.compile.features=$f' --arg f "$FEATS" <<<"$J")
+
+require_bin() {
+  local path="$1"
+  if [ ! -x "$path" ]; then
+    echo "[accept] missing required binary: $path" >&2
+    exit 1
+  fi
+}
+
+require_bin target/debug/run
+require_bin target/debug/sb-explaind
+require_bin target/debug/sb-udp-echo
 
 cleanup(){
   set +e
@@ -36,7 +48,7 @@ Y
 
 echo "[accept] spin singbox-rust"
 SB_METRICS_ADDR=127.0.0.1:9090 \
-target/debug/singbox-rust run --config .e2e/config.yaml >.e2e/logs/sb.log 2>&1 & echo $! > .e2e/pids/sb.pid
+target/debug/run --config .e2e/config.yaml >.e2e/logs/sb.log 2>&1 & echo $! > .e2e/pids/sb.pid
 sleep 2
 
 echo "[accept] spin sb-explaind"
@@ -107,11 +119,11 @@ else
 fi
 
 echo "[accept] inbound errors (udp parse)"
-IE_JSON="$( scripts/ci/tasks/inbound-errors.sh )"
+IE_JSON="$( bash scripts/ci/tasks/inbound-errors.sh )"
 J=$(jq --argjson ie "$IE_JSON" '.inbound_errors=$ie' <<<"$J")
 
 echo "[accept] release matrix"
-scripts/release-matrix || true
+bash scripts/tools/release/release-matrix.sh || true
 lines=$(test -f dist/manifest.txt && wc -l < dist/manifest.txt | tr -d ' ' || echo 0)
 J=$(jq '.release_matrix.sha256_lines=$n' --argjson n "$lines" <<<"$J")
 

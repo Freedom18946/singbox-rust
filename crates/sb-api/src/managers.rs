@@ -30,6 +30,18 @@ pub type FetchFn = Arc<
     dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
 >;
 
+#[cfg(feature = "provider-reload")]
+fn production_fetch() -> FetchFn {
+    Arc::new(|url| {
+        let url = url.to_string();
+        Box::pin(async move {
+            sb_subscribe::http::fetch_text(&url)
+                .await
+                .map_err(|err| err.to_string())
+        })
+    })
+}
+
 /// Represents an active network connection
 /// 表示一个活动的网络连接
 ///
@@ -938,10 +950,19 @@ impl std::fmt::Debug for ProviderManager {
 
 impl Default for ProviderManager {
     fn default() -> Self {
+        #[cfg(feature = "provider-reload")]
+        {
+            return Self::new(production_fetch());
+        }
+
+        #[cfg(not(feature = "provider-reload"))]
         let noop_fetch: FetchFn = Arc::new(|_url| {
             Box::pin(async { Err("no fetch function configured".to_string()) })
         });
-        Self::new(noop_fetch)
+        #[cfg(not(feature = "provider-reload"))]
+        {
+            Self::new(noop_fetch)
+        }
     }
 }
 

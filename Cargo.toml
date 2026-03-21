@@ -32,12 +32,8 @@ default-members = ["app"]
 [workspace.package]
 rust-version = "1.92"
 license = "Apache-2.0"
-repository = "https://example.com/your/repo"
-homepage = "https://example.com/your/home"
+repository = "https://github.com/Freedom18946/singbox-rust.git"
 readme = "README.md"
-
-[workspace.metadata.check-cfg]
-# Empty shell declaration to avoid unexpected cfg noise; actua usage defined by crate features
 
 [workspace.lints.rust]
 warnings = { level = "deny", priority = -1 }

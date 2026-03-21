@@ -20,14 +20,14 @@ Contributing to singbox-rust: architecture, code style, testing, and build syste
 - **[Code Style](contributing/code-style.md)** - Rust conventions and patterns
 - **[Testing Guide](contributing/testing-guide.md)** - Writing tests
 - **[Documentation](contributing/documentation.md)** - Docs contribution guide
-- **[Pull Requests](contributing/pull-requests.md)** - PR workflow and review process
+- **[Pull Requests](contributing/pull-requests.md)** - PR review process
 
 ### Build System
 
 - **[Overview](build-system/overview.md)** - Cargo workspace and build configuration
 - **[Feature Flags](build-system/feature-flags.md)** - Available features and combinations
 - **[Cross Compilation](build-system/cross-compilation.md)** - Building for different targets
-- **[CI Matrix](build-system/ci-matrix.md)** - CI/CD scripts and tasks
+- **[CI Matrix](build-system/ci-matrix.md)** - Local verification scripts and task layout
 
 ### Quality Gates
 
@@ -86,7 +86,7 @@ cargo clippy -- -D warnings
 # 3. Format code
 cargo fmt
 
-# 4. Run full CI locally
+# 4. Run full local verification
 bash scripts/ci/local.sh
 
 # 5. Commit and push
@@ -291,18 +291,18 @@ cargo clippy --workspace -- -D warnings
 cargo test --workspace
 ```
 
-### CI Pipeline
+### Local Verification
 
-GitHub Actions CI runs:
+GitHub Actions is permanently disabled in this repository. Run checks locally instead:
 
 1. **Lint**: `cargo fmt --check`, `cargo clippy`
-2. **Test**: Unit + integration tests on Linux/macOS/Windows
-3. **Build**: Release builds for all targets
+2. **Test**: Unit + integration tests
+3. **Build**: Targeted `cargo build` / `cargo check`
 4. **Bench**: Performance regression detection
-5. **Coverage**: Code coverage reporting
-6. **Security**: `cargo audit`, `cargo deny`
+5. **Coverage**: On-demand local coverage runs
+6. **Security**: Optional local `cargo audit`, `cargo deny`
 
-See [CI Matrix](build-system/ci-matrix.md).
+See [CI Matrix](build-system/ci-matrix.md) for task grouping and command mapping.
 
 ### Performance Baseline
 
@@ -312,7 +312,7 @@ Prevent performance regressions:
 # Record baseline
 scripts/test/bench/guard.sh record
 
-# Check for regressions (CI)
+# Check for regressions
 scripts/test/bench/guard.sh check
 
 # Adjust tolerance
@@ -336,7 +336,7 @@ Exit codes:
 3. **Add feature flag** in `Cargo.toml`
 4. **Write tests**: Unit, integration, E2E
 5. **Update documentation**: User guide + examples
-6. **Add CI tests**: Enable in CI matrix
+6. **Add local verification coverage**: Ensure the relevant local checks exist and are documented
 
 ```rust
 // crates/sb-adapters/src/outbound/my_protocol.rs

@@ -169,6 +169,12 @@ impl ClashApiServer {
         self
     }
 
+    /// Override the provider manager wiring.
+    pub fn with_provider_manager(mut self, provider_manager: Arc<ProviderManager>) -> Self {
+        self.state.provider_manager = Some(provider_manager);
+        self
+    }
+
     /// Set DNS resolver for `/dns/query` and cache management endpoints.
     pub fn with_dns_resolver(mut self, resolver: Arc<DnsResolver>) -> Self {
         self.state.dns_resolver = Some(resolver);

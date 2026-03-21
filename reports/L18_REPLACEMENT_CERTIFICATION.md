@@ -1,4 +1,8 @@
-# L18 Replacement Certification Report
+# L18 Replacement Certification - UNVERIFIED Draft
+
+> WARNING: This report does not certify current replacement closure.
+>
+> The local workspace is a slim snapshot. Missing evidence packages are treated as `UNVERIFIED`, and the only retained local capstone status in this snapshot is `overall=FAIL`. Read this file as historical provenance plus gap documentation, not as an active PASS certificate.
 
 ## Scope
 

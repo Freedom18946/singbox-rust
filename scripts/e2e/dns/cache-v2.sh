@@ -11,14 +11,14 @@ export SB_METRICS_ADDR=${SB_METRICS_ADDR:-127.0.0.1:9090}
 
 host=${HOST:-example.com}
 echo "[STEP] first query (miss)"
-cargo run -q --example dns_cache_show --features "dns_cache,dns_udp" -- ${host} >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_cache_show --features "dns_cache,dns_udp" -- ${host} >/dev/null
 echo "[STEP] second query (pos hit/coalesced)"
-cargo run -q --example dns_cache_show --features "dns_cache,dns_udp" -- ${host} >/dev/null
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_cache_show --features "dns_cache,dns_udp" -- ${host} >/dev/null
 
 echo "[STEP] negative cache (expect empty; not error)"
 BAD="nonexistent.zzzinvalid."
-cargo run -q --example dns_query --features "dns_udp" -- ${BAD} 80 || true
-cargo run -q --example dns_query --features "dns_cache,dns_udp" -- ${BAD} 80 || true
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp" -- ${BAD} 80 || true
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_cache,dns_udp" -- ${BAD} 80 || true
 
 echo "[SCRAPE] /metrics (optional)"
 set +e

@@ -25,9 +25,9 @@ fi
 # Build Rust binary
 echo "[e2e-diff] Building Rust sing-box..."
 cd "$ROOT_DIR"
-cargo build --release --bin singbox-rust
+cargo build --release -p app --bin app
 
-RUST_BIN="$ROOT_DIR/target/release/singbox-rust"
+RUST_BIN="$ROOT_DIR/target/release/app"
 if [ ! -x "$RUST_BIN" ]; then
     echo "[e2e-diff] Failed to build Rust binary"
     exit 1

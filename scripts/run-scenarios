@@ -31,7 +31,9 @@ prom_safe_exec() {
 TARGET="${ROOT}/target/e2e"
 REPORT="${TARGET}/CLEAN_REPORT.json"
 LOG="${TARGET}/sing.log"
-BIN="${ROOT}/target/debug/singbox-rust"
+APP_BIN="${ROOT}/target/debug/app"
+RUN_BIN="${ROOT}/target/debug/run"
+SCENARIO_FEATS="${SCENARIO_FEATS:-acceptance,adapters}"
 METRICS_ADDR="${SB_METRICS_ADDR:-127.0.0.1:9090}"
 NEED_METRICS="${NEED_METRICS:-auto}"  # auto: SB_METRICS_ADDR 存在则等待；1: 强等；0: 不等
 SB_SCENARIO_GATES="${SB_SCENARIO_GATES:-loose}" # loose: 仅 gate=1；strict: 全 gate
@@ -62,7 +64,7 @@ rm -f "${REPORT}" "${LOG}"
 
 # Build binary first
 echo "[STEP] 构建二进制"
-cargo build -q --bin singbox-rust
+cargo build -q -p app --features "${SCENARIO_FEATS}" --bin app --bin run
 
 # Prepare a minimal runtime config with fixed listen ports (stable smoke test)
 cat > "${TARGET}/runtime.yaml" <<YAML
@@ -129,7 +131,7 @@ if [[ "${SB_PREFLIGHT_CHECK}" == "1" ]]; then
   PF_ARGS=(check -c "${TARGET}/runtime.yaml" --fingerprint --format json)
   [[ "${SB_PREFLIGHT_SCHEMA}" == "1" ]] && PF_ARGS+=(--schema)
   [[ "${SB_PREFLIGHT_REFS}" == "1"   ]] && PF_ARGS+=(--check-refs --max-ref-size "${MAX_REF_SIZE:-262144}")
-  PF_JSON="$("${BIN}" "${PF_ARGS[@]}" || true)"
+  PF_JSON="$("${APP_BIN}" "${PF_ARGS[@]}" || true)"
   PF_OK="$(echo "$PF_JSON" | jq -r '.ok' 2>/dev/null || echo 0)"
   FP=$(jq -r '.fingerprint // empty' <<<"$PF_JSON")
   # 指纹 gate（可选）
@@ -150,10 +152,10 @@ if [[ "${SB_PREFLIGHT_CHECK}" == "1" ]]; then
 fi
 
 function start_bin() {
-  echo "[STEP] 启动 singbox-rust"
+  echo "[STEP] 启动 run"
   RUST_LOG=${RUST_LOG:-info} \
   SB_METRICS_ADDR="${SB_METRICS_ADDR:-}" \
-  "${BIN}" --config "${TARGET}/runtime.yaml" > "${LOG}" 2>&1 &
+  "${RUN_BIN}" --config "${TARGET}/runtime.yaml" > "${LOG}" 2>&1 &
   PID=$!
   sleep 2
   echo "[INFO] pid=${PID}"
@@ -405,9 +407,9 @@ function slice_metrics() {
 function get_build_info() {
   local build_ts
   build_ts=$(date +%s)
-  local bin_v="$(${BIN} --version 2>/dev/null || echo "unknown")"
+  local bin_v="$(${APP_BIN} --version 2>/dev/null || echo "unknown")"
   local kernel="$(uname -s || true)"; local arch="$(uname -m || true)"
-  echo "{\"ts\":${build_ts},\"bin\":\"${BIN}\",\"version\":\"${bin_v}\",\"platform\":{\"os\":\"${kernel}\",\"arch\":\"${arch}\"},\"git_commit\":\"$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')\"}"
+  echo "{\"ts\":${build_ts},\"bin\":\"${APP_BIN}\",\"version\":\"${bin_v}\",\"platform\":{\"os\":\"${kernel}\",\"arch\":\"${arch}\"},\"git_commit\":\"$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')\"}"
 }
 
 start_bin
@@ -484,7 +486,7 @@ if [[ "${DURATION_SEC}" -gt 0 ]]; then
   t_end=$(( $(date +%s) + DURATION_SEC ))
   while [[ $(date +%s) -lt $t_end ]]; do
     for s in "${SCENES[@]}"; do
-      export ROOT METRICS_ADDR HTTP SOCKS
+      export ROOT METRICS_ADDR HTTP SOCKS APP_BIN RUN_BIN
       R="$("${ROOT}/scripts/scenarios.d/${s}.zsh")"
       ok=$(echo "$R" | sed -n 's/.*"ok":\([01]\).*/\1/p')
       [[ "$ok" == "1" ]] || S_OK=0
@@ -494,7 +496,7 @@ if [[ "${DURATION_SEC}" -gt 0 ]]; then
   done
 else
   for s in "${SCENES[@]}"; do
-    export ROOT METRICS_ADDR HTTP SOCKS BIN
+    export ROOT METRICS_ADDR HTTP SOCKS APP_BIN RUN_BIN
     R="$("${ROOT}/scripts/scenarios.d/${s}.zsh")"
     ok=$(echo "$R" | sed -n 's/.*"ok":\([01]\).*/\1/p')
     [[ "$ok" == "1" ]] || S_OK=0
@@ -947,7 +949,7 @@ if command -v jq >/dev/null 2>&1 && [[ "${BASH_COMPAT_MODE:-0}" != "1" ]]; then
   # 额外：label 校验（可选）
   LABEL_ASSERT='{"enabled":0}'
   if [[ "$SB_VALIDATE_LABELS" == "1" && "$HAS_MET" == "1" ]]; then
-    OUT="$("${ROOT}/scripts/validate-metrics.sh" "${METRICS_ADDR}" || true)"
+    OUT="$("${ROOT}/scripts/tools/validation/validate-metrics.sh" "${METRICS_ADDR}" || true)"
     ok=$(echo "$OUT" | jq -r '.ok' 2>/dev/null || echo 1)
     LABEL_ASSERT=$(jq -c --argjson ok "$ok" --argjson raw "$OUT" '{enabled:1, ok:$ok, detail:$raw}')
     if [[ "$ok" != "1" ]]; then
@@ -1048,274 +1050,3 @@ fi
     tar -rzf "${tar}" -C "${ROOT}" docs/metrics-labels-allowlist.json >/dev/null 2>&1 || true
     echo "[OK] 归档：${tar}"
   fi
-else
-  # 无 jq：退化为旧行为（顶层 asserts），以保持向后兼容
-  ASSERTS=()
-  gates="${SB_SCENARIO_GATES}"
-  while IFS= read -r line; do :; done < /dev/null # noop to keep shellcheck quiet
-  HAS_MET=0; echo "$AFTER" | grep -qE '^[a-zA-Z_][a-zA-Z0-9_]*({.*})?\ [0-9eE.+-]+$' && HAS_MET=1
-  for s in "${SCENES[@]}"; do
-    scene_file="${ROOT}/scripts/scenarios.d/${s}.zsh"; scene_name="$s"
-    while IFS= read -r line; do
-      case "$line" in
-        "# METRIC "*)
-          key=$(echo "$line"  | sed -n "s/^# METRIC key=\([^[:space:]]\+\).*/\1/p")
-          lbl=$(echo "$line"  | sed -n "s/^# METRIC .*label='\([^']*\)'.*/\1/p")
-          min=$(echo "$line"  | sed -n "s/^# METRIC .* min=\([0-9]\+\).*/\1/p")
-          gate=$(echo "$line" | sed -n "s/^# METRIC .* gate=\([01]\).*/\1/p")
-          [[ -z "$key" || -z "$min" || -z "$gate" ]] && continue
-          before_sum=0; after_sum=0; delta=0; aok=1
-          if [[ "$HAS_MET" == "1" ]]; then
-            before_sum=$(metric_sum_label "$BEFORE" "$key" "$lbl")
-            after_sum=$(metric_sum_label  "$AFTER"  "$key" "$lbl")
-            delta=$(awk -v b="$before_sum" -v a="$after_sum" 'BEGIN{printf "%.0f", a-b}')
-            [[ "$delta" =~ ^- ]] && delta=0
-            if (( delta < min )); then aok=0; fi
-            if [[ "$aok" == "0" ]]; then
-              if [[ "$gates" == "strict" || "$gate" == "1" ]]; then S_OK=0; fi
-            fi
-            ASSERTS+=("{\"scene\":\"${scene_name}\",\"name\":\"metric:${key}\",\"label\":\"${lbl//\"/\\\"}\",\"before\":${before_sum},\"after\":${after_sum},\"delta\":${delta},\"min\":${min},\"ok\":${aok}}")
-          else
-            ASSERTS+=("{\"scene\":\"${scene_name}\",\"name\":\"metric:${key}\",\"label\":\"${lbl//\"/\\\"}\",\"note\":\"metrics disabled\",\"ok\":1}")
-          fi
-          ;;
-        "# PROM "*)
-          # Parse PROM DSL: # PROM expr='rate(metric[30])' op='>' value='0' gate=1 owner=xxx severity=error gate_group=1
-          expr=$(echo "$line" | sed -n "s/^# PROM .*expr='\([^']*\)'.*/\1/p")
-          op=$(echo "$line" | sed -n "s/^# PROM .*op='\([^']*\)'.*/\1/p")
-          val=$(echo "$line" | sed -n "s/^# PROM .*value='\([^']*\)'.*/\1/p")
-          gate=$(echo "$line" | sed -n "s/^# PROM .*gate=\([01]\).*/\1/p")
-          owner=$(echo "$line" | sed -n "s/^# PROM .*owner=\([^[:space:]]*\).*/\1/p")
-          severity=$(echo "$line" | sed -n "s/^# PROM .*severity=\([^[:space:]]*\).*/\1/p")
-          gate_group=$(echo "$line" | sed -n "s/^# PROM .*gate_group=\([01]\).*/\1/p")
-          [[ -z "$expr" || -z "$op" || -z "$val" ]] && continue
-
-          # Execute PromQL-like assertion
-          aok=1; cur="0"
-          if [[ "$HAS_MET" == "1" && "${SB_PROM_OFF:-0}" != "1" ]]; then
-            # Enhanced Prometheus query with diagnostic reporting
-            goto_eval=0
-            SOURCE="offline"
-            
-            if [[ -n "${SB_PROM_HTTP:-}" ]]; then
-              # 真查询：只支持 sum/rate/increase/absent/sum by(...) 的原生 PromQL 写法
-              resp="$(bash "${ROOT}/scripts/lib/prom_http.sh" "${expr}" 2>/dev/null || echo "__PROM_HTTP_FAIL__")"
-              if [[ "$resp" != "__PROM_HTTP_DISABLED__" && "$resp" != __PROM_HTTP_FAIL__* ]]; then
-                cur="$(jq -r '.data.result[]?.value[1]' <<<"$resp" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
-                SOURCE="http"
-                # 对 sum by(...) 逐组 gate：取 .metric 中的 by labels 组合为 key
-                if [[ "${gate_group:-0}" == "1" ]]; then
-                  lines="$(jq -r '.data.result[] | "\(.metric|to_entries|map("\(.key)=\(.value)")|join(",")) \(.value[1])"' <<<"$resp" 2>/dev/null || echo "")"
-                  # 复用已有 group 判断路径
-                  if [[ -n "$lines" ]]; then
-                    # 逐组 gate：任一组未满足即失败，并记录最小失败定位
-                    cur=0; aok=1; failkeys=""
-                    while read -r kv; do
-                      [[ -z "$kv" ]] && continue
-                      key="${kv% *}"; vv="${kv##* }"
-                      cur=$(awk -v c="$cur" -v v="$vv" 'BEGIN{print c+v}')
-                      gok=1
-                      case "$op" in
-                        ">")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || gok=0 ;;
-                        ">=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || gok=0 ;;
-                        "<")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || gok=0 ;;
-                        "<=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || gok=0 ;;
-                        "==") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || gok=0 ;;
-                      esac
-                      [[ "$gok" == "0" ]] && { aok=0; failkeys="${failkeys}${key},"; }
-                    done <<<"$lines"
-                    goto_eval=1
-                  fi
-                fi
-                goto_eval=1
-              elif [[ "$resp" == __PROM_HTTP_FAIL__* ]]; then
-                # HTTP query failed - record failure reason and continue with offline
-                SOURCE="$resp"
-                echo "[WARN] Prometheus HTTP query failed: $resp, falling back to offline"
-              fi
-            fi
-            # 若 HTTP 未启用/失败 → 继续离线快照解析
-            if [[ "$goto_eval" == "0" ]]; then
-              export PROM_BEFORE="${MET_BEFORE_FILE}"
-              export PROM_AFTER="${MET_AFTER_FILE}"
-              # Parse and execute simplified PromQL
-              if [[ "$expr" =~ ^rate\(([^[]+)\[([0-9]+)\]\)$ ]]; then
-                # rate(metric[seconds])
-                metric="${BASH_REMATCH[1]}"
-                sec="${BASH_REMATCH[2]}"
-                cur=$(prom_safe_exec rate "$metric" "" "$sec" 2>/dev/null || echo "0")
-              elif [[ "$expr" =~ ^increase\(([^[]+)\[([0-9]+)\]\)$ ]]; then
-                # increase(metric[seconds])
-                metric="${BASH_REMATCH[1]}"
-                sec="${BASH_REMATCH[2]}"
-                cur=$(prom_safe_exec increase "$metric" "" "$sec" 2>/dev/null || echo "0")
-              elif [[ "$expr" =~ ^sum\ by\(([a-zA-Z0-9_,\ ]+)\)\(([^{]+)\{([^}]*)\}\)$ ]]; then
-                # sum by(label1,label2)(metric{filter})
-                by="${BASH_REMATCH[1]}"
-                metric="${BASH_REMATCH[2]}"
-                labels="${BASH_REMATCH[3]}"
-                # Group results multi-line "key value"; sum total for comparison
-                lines="$(prom_safe_exec sum_by "$metric" "$labels" "$by" 2>/dev/null || echo "")"
-                if [[ "${gate_group:-0}" == "1" ]]; then
-                  # 逐组 gate：任一组未满足即失败，并记录最小失败定位
-                  cur=0; aok=1; failkeys=""
-                  while read -r kv; do
-                    [[ -z "$kv" ]] && continue
-                    key="${kv% *}"; vv="${kv##* }"
-                    cur=$(awk -v c="$cur" -v v="$vv" 'BEGIN{print c+v}')
-                    gok=1
-                    case "$op" in
-                      ">")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || gok=0 ;;
-                      ">=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || gok=0 ;;
-                      "<")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || gok=0 ;;
-                      "<=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || gok=0 ;;
-                      "==") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || gok=0 ;;
-                    esac
-                    [[ "$gok" == "0" ]] && { aok=0; failkeys="${failkeys}${key},"; }
-                  done <<<"$lines"
-                  if [[ "${SB_SCENARIO_GATES}" == "strict-failfast" && "$aok" == "0" ]]; then
-                    echo "[FAILFAST] Prom gate failure: $expr in $scene_name"
-                    kill "$PID" 2>/dev/null || true; exit 1
-                  fi
-                  # Enhanced assertion with diagnostic information for grouped queries
-                  timestamp=$(date +%s)
-                  ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"by\":\"${by}\",\"groups\":\"${lines//\"/\\\"}\",\"fail\":\"${failkeys%,}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
-                  continue
-                fi
-                # 默认路径：仍按总和判定，向后兼容
-                cur=$(awk '{s+=$NF} END{print s+0}' <<<"$lines")
-              elif [[ "$expr" =~ ^sum\ by\(([a-zA-Z0-9_,\ ]+)\)\(([^)]+)\)$ ]]; then
-                # sum by(label1,label2)(metric)
-                by="${BASH_REMATCH[1]}"
-                metric="${BASH_REMATCH[2]}"
-                lines="$(prom_safe_exec sum_by "$metric" "" "$by" 2>/dev/null || echo "")"
-                if [[ "${gate_group:-0}" == "1" ]]; then
-                  # 逐组 gate：任一组未满足即失败，并记录最小失败定位
-                  cur=0; aok=1; failkeys=""
-                  while read -r kv; do
-                    [[ -z "$kv" ]] && continue
-                    key="$(awk '{print $1}' <<<"$kv")"; v="$(awk '{print $2}' <<<"$kv")"
-                    res=$(awk -v c="$v" -v o="$op" -v e="$val" 'BEGIN{r=(o==">")?(c>e):(o==">=")?(c>=e):(o=="==")?(c==e):(o=="<")?(c<e):(c<=e); print r?1:0}')
-                    if [[ "$res" == "0" ]]; then aok=0; failkeys="${failkeys}${key},"; fi
-                    cur=$(awk -v a="$cur" -v b="$v" 'BEGIN{print a+b}')
-                  done <<< "$lines"
-                  if [[ "$gates" == "strict" || "$gate" == "1" ]] && [[ "$aok" == "0" ]]; then S_OK=0; fi
-                  if [[ "$gates" == "strict-failfast" && "$gate" == "1" && "$aok" == "0" ]]; then
-                    echo "[FAILFAST] ${scene_name}/PROM sum by: ${expr} failed groups=${failkeys%,} [$owner][$severity]"
-                    kill "$PID" 2>/dev/null || true; exit 1
-                  fi
-                  # Enhanced assertion with diagnostic information for grouped queries
-                  timestamp=$(date +%s)
-                  ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"by\":\"${by}\",\"groups\":\"${lines//\"/\\\"}\",\"fail\":\"${failkeys%,}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
-                  continue
-                fi
-                # 默认路径：仍按总和判定，向后兼容
-                cur=$(awk '{s+=$NF} END{print s+0}' <<<"$lines")
-              elif [[ "$expr" =~ ^absent\(([^{]+)\{([^}]*)\}\)$ ]]; then
-                # absent(metric{label="value"})
-                metric="${BASH_REMATCH[1]}"
-                labels="${BASH_REMATCH[2]}"
-                cur=$(prom_safe_exec absent "$metric" "$labels" 2>/dev/null || echo "0")
-              elif [[ "$expr" =~ ^absent\(([^)]+)\)$ ]]; then
-                # absent(metric)
-                metric="${BASH_REMATCH[1]}"
-                cur=$(prom_safe_exec absent "$metric" "" 2>/dev/null || echo "0")
-              elif [[ "$expr" =~ ^sum\(([^{]+)\{([^}]*)\}\)$ ]]; then
-                # sum(metric{label="value"})
-                metric="${BASH_REMATCH[1]}"
-                labels="${BASH_REMATCH[2]}"
-                cur=$(prom_safe_exec sum "$metric" "$labels" 2>/dev/null || echo "0")
-              elif [[ "$expr" =~ ^sum\((.+)\)$ ]]; then
-                # sum(metric)
-                metric="${BASH_REMATCH[1]}"
-                cur=$(prom_safe_exec sum "$metric" "" 2>/dev/null || echo "0")
-              fi
-            fi
-
-            # Compare with expected value (for both HTTP and offline modes)
-            if [[ "$goto_eval" == "0" ]]; then
-              case "$op" in
-                ">")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || aok=0 ;;
-                ">=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || aok=0 ;;
-                "==") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || aok=0 ;;
-                "<")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || aok=0 ;;
-                "<=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || aok=0 ;;
-              esac
-
-              if [[ "$aok" == "0" ]]; then
-                if [[ "$gates" == "strict" || "$gate" == "1" ]]; then S_OK=0; fi
-                if [[ "$gates" == "strict-failfast" && "$gate" == "1" ]]; then
-                  echo "[FAILFAST] ${scene_name}/PROM ${expr}: cur=${cur} ${op} ${val} [${owner}][${severity}]"
-                  kill "$PID" 2>/dev/null || true
-                  exit 1
-                fi
-              fi
-            fi
-
-            # Enhanced assertion with diagnostic information
-            timestamp=$(date +%s)
-            ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
-          else
-            # Enhanced assertion with diagnostic information for disabled case
-            timestamp=$(date +%s)
-            ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"disabled\",\"note\":\"metrics/prom disabled\",\"ok\":1,\"timestamp\":${timestamp}}")
-          fi
-          ;;
-      esac
-    done < "$scene_file"
-  done
-  ASS="[$(IFS=,; echo "${ASSERTS[*]-}")]"
-
-  PASSED=$(echo "$res" | jq -r '[ .[].ok ] | map(select(.==1)) | length' 2>/dev/null || echo 0)
-  TOTAL=$(echo "$res" | jq -r 'length' 2>/dev/null || echo 0)
-  FAILED=$(( TOTAL - PASSED ))
-  cat > "${REPORT}" <<EOF
-{
-  "build": ${BUILD_INFO},
-  "scenarios": ${res},
-  "metrics": {"slice": "${MET_SLICE}"},
-  "asserts": ${ASS},
-  "proc": {
-    "snap": ${PROC_SNAP:-{}},
-    "max": ${PROC_MAX:-{}}
-  },
-  "report": { "total": ${TOTAL}, "passed": ${PASSED}, "failed": ${FAILED} },
-  "ok": ${S_OK},
-  "log_tail": "${LOG_TAIL}",
-  "timestamp": $(date +%s)
-}
-EOF
-
-  if [[ "${S_OK}" == "1" ]]; then
-    echo "[OK] 报告就绪：${REPORT}"
-  else
-    echo "[ERR] 存在失败用例或指标断言未通过，详见 ${REPORT}"
-    exit 1
-  fi
-
-  # 可选打包：SB_E2E_ARCHIVE=1 生成归档
-  if [[ "${SB_E2E_ARCHIVE:-0}" == "1" ]]; then
-    local ts=$(date +%s)
-    local tar="${TARGET}/report-${ts}.tar.gz"
-    # Base archive with report and runtime config
-    tar -czf "${tar}" -C "${TARGET}" CLEAN_REPORT.json runtime.yaml >/dev/null 2>&1 || true
-    # Add fingerprint and canonical config if available
-    if [[ -n "${FP:-}" ]]; then
-      mkdir -p "${TARGET}/archive"
-      jq '.canonical' <<<"$PF_JSON" > "${TARGET}/archive/config.canonical.json" 2>/dev/null || true
-      echo "${FP}" > "${TARGET}/archive/fingerprint.txt"
-      if [[ -n "${SB_FP_BASE}" ]]; then
-        echo "base=${SB_FP_BASE}" > "${TARGET}/archive/fp.compare.txt"
-        echo "actual=sha256:${FP}" >> "${TARGET}/archive/fp.compare.txt"
-        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt fp.compare.txt >/dev/null 2>&1 || true
-      else
-        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt >/dev/null 2>&1 || true
-      fi
-    fi
-    # Add Grafana dashboards
-    tar -rzf "${tar}" -C "${ROOT}" grafana/dns.json grafana/proxy.json grafana/udp.json grafana/route.json >/dev/null 2>&1 || true
-    # Add metrics allowlist
-    tar -rzf "${tar}" -C "${ROOT}" docs/metrics-labels-allowlist.json >/dev/null 2>&1 || true
-    echo "[OK] 归档：${tar}"
-  fi
-fi

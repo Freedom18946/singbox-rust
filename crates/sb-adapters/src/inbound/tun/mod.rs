@@ -24,6 +24,8 @@ use sb_core::router::rules::Decision;
 use sb_core::router::{RouteCtx, RouterHandle};
 use sb_core::services::v2ray_api::StatsManager;
 
+use crate::inbound::tun_enhanced::EnhancedTunInbound;
+
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
 
@@ -156,6 +158,33 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
             format!(
                 "tun: routing action '{}' is unsupported in inbound connect path; implicit direct fallback is disabled; provide explicit direct/block/proxy routing",
                 unsupported.as_str()
+            ),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TunBackendKind {
+    Manual,
+    Smoltcp,
+}
+
+fn parse_stack_backend(stack: Option<&str>) -> io::Result<TunBackendKind> {
+    let normalized = stack.map(str::trim).filter(|value| !value.is_empty());
+    match normalized {
+        None => Ok(TunBackendKind::Manual),
+        Some(value)
+            if value.eq_ignore_ascii_case("manual")
+                || value.eq_ignore_ascii_case("system")
+                || value.eq_ignore_ascii_case("default") =>
+        {
+            Ok(TunBackendKind::Manual)
+        }
+        Some(value) if value.eq_ignore_ascii_case("smoltcp") => Ok(TunBackendKind::Smoltcp),
+        Some(value) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "tun: unsupported stack backend '{value}'; supported values are manual/system/default and smoltcp"
             ),
         )),
     }
@@ -437,6 +466,18 @@ impl TunInbound {
     }
 
     pub(crate) async fn run(&self) -> io::Result<()> {
+        match parse_stack_backend(self.cfg.stack.as_deref())? {
+            TunBackendKind::Manual => {}
+            TunBackendKind::Smoltcp => {
+                let backend = EnhancedTunInbound::from_tun_config(
+                    &self.cfg,
+                    Arc::clone(&self.outbounds),
+                    Some(Arc::clone(&self.router)),
+                );
+                return backend.start().await;
+            }
+        }
+
         let _span = tracing::info_span!("tun_run").entered();
         tracing::info!(
             "tun inbound starting: platform={}, name={}, mtu={}, auto_route={}, auto_redirect={}",
@@ -1936,6 +1977,31 @@ mod tests {
             .expect("named proxy should be preserved");
         assert_eq!(target, RouteTarget::Named("proxy-a".into()));
         assert_eq!(tag, "proxy-a");
+    }
+
+    #[test]
+    fn tun_stack_backend_defaults_to_manual() {
+        assert_eq!(parse_stack_backend(None).unwrap(), TunBackendKind::Manual);
+        assert_eq!(parse_stack_backend(Some("")).unwrap(), TunBackendKind::Manual);
+        assert_eq!(
+            parse_stack_backend(Some("system")).unwrap(),
+            TunBackendKind::Manual
+        );
+    }
+
+    #[test]
+    fn tun_stack_backend_recognizes_smoltcp() {
+        assert_eq!(
+            parse_stack_backend(Some("smoltcp")).unwrap(),
+            TunBackendKind::Smoltcp
+        );
+    }
+
+    #[test]
+    fn tun_stack_backend_rejects_unknown_values() {
+        let err = parse_stack_backend(Some("netstack-smoltcp")).expect_err("unknown backend");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("unsupported stack backend"));
     }
 
     #[cfg(feature = "tun")]

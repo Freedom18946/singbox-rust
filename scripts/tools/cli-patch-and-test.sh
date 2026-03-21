@@ -26,23 +26,23 @@ ok "patch generated at out/http-405-bundle.patch"
 
 # 3) 编译
 info "cargo build"
-cargo build -q --features "http,socks,metrics" --bin singbox-rust || { err "build failed"; exit 2; }
+cargo build -q -p app --features "acceptance,adapters" --bin run || { err "build failed"; exit 2; }
 
-# 4) 清理残留并跑 run_and_test.zsh
+# 4) 清理残留并跑 run-and-test.sh
 info "kill leftovers and run script"
-pkill -f singbox-rust >/dev/null 2>&1 || true
+pkill -f "${ROOT}/target/debug/run" >/dev/null 2>&1 || true
 sleep 1
 for p in 18081 11080 9900; do
   lsof -nP -iTCP:$p -sTCP:LISTEN -t 2>/dev/null | xargs -I{} kill -9 {} 2>/dev/null || true
 done
 
-chmod +x scripts/run_and_test.zsh || true
+chmod +x scripts/tools/run-and-test.sh || true
 set +e
-scripts/run_and_test.zsh
+scripts/tools/run-and-test.sh
 RC=$?
 set -e
 if [[ $RC -ne 0 ]]; then
-  err "run_and_test failed with $RC"
+  err "run-and-test failed with $RC"
   tail -n 120 .e2e/sing.log || true
   exit $RC
 fi
@@ -55,8 +55,8 @@ ok "resolved HTTP=127.0.0.1:${HTTP_ACTUAL} SOCKS=127.0.0.1:${SOCKS_ACTUAL}"
 
 # 6) 启动临时实例，做 10 连发（避免打断主实例与脚本内部的 curl/探针）
 info "spawn ephemeral instance for multi-probe"
-pkill -f singbox-rust >/dev/null 2>&1 || true
-SB_HTTP_DISABLE_STOP=1 RUST_LOG=info ./target/debug/singbox-rust --config ./config.yaml > .e2e/sing.multi.log 2>&1 &
+pkill -f "${ROOT}/target/debug/run" >/dev/null 2>&1 || true
+SB_HTTP_DISABLE_STOP=1 RUST_LOG=info ./target/debug/run --config ./config.yaml > .e2e/sing.multi.log 2>&1 &
 EPH_PID=$!
 trap 'kill -9 $EPH_PID >/dev/null 2>&1 || true' EXIT
 
@@ -69,7 +69,7 @@ while [[ $(date +%s) -lt $deadline ]]; do
 done
 [[ -z "$HTTP_MULTI" ]] && { err "cannot resolve HTTP port from .e2e/sing.multi.log"; tail -n 80 .e2e/sing.multi.log || true; exit 4; }
 
-python3 scripts/probe_http_multi.py "127.0.0.1:${HTTP_MULTI}" 10 || { err "multi probe not all 405"; exit 5; }
+python3 scripts/tools/probe-http-multi.py "127.0.0.1:${HTTP_MULTI}" 10 || { err "multi probe not all 405"; exit 5; }
 
 # 收尾
 kill -9 $EPH_PID >/dev/null 2>&1 || true

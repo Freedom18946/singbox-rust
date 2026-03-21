@@ -4,6 +4,14 @@
 **Audit Window**: 2026-02-12T17:29:38Z  
 **Policy Baseline**: L17 (block only `HIGH` / `CRITICAL`; track `MEDIUM` and `unmaintained`)
 
+## Related Artifacts
+
+Supporting TLS/ECH artifacts for this audit live under `reports/security/`:
+
+- `reports/security/tls_fingerprint_baseline.json`
+- `reports/security/ech_interop_minimal.json`
+- `reports/security/ech_interop_minimal_logs/`
+
 ## 1) Dependency Security
 
 ### 1.1 `cargo audit`

@@ -11,7 +11,7 @@ run() {
 inbounds: { type: socks }    # 非数组，Schema 应报错
 outbounds: [ { type: direct } ]
 YAML
-  if "${BIN}" check -c "${target}/bad_schema.yaml" --format json --schema >/dev/null 2>&1; then
+  if "${APP_BIN}" check -c "${target}/bad_schema.yaml" --format json --schema >/dev/null 2>&1; then
     echo '{"name":"check_schema_bad","ok":0,"msg":"schema should fail"}'
   else
     echo '{"name":"check_schema_bad","ok":1,"msg":"schema failed as expected"}'

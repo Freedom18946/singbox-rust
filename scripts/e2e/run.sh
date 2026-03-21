@@ -10,6 +10,16 @@ echo "[e2e] Preparing… (GO_SINGBOX_BIN=${GO_SINGBOX_BIN:-})"
 export RUST_BACKTRACE=1
 cargo build -q --bins
 
+resolve_cli_bin() {
+  if [[ -x "${ROOT}/target/debug/app" ]]; then
+    printf '%s\n' "${ROOT}/target/debug/app"
+  elif [[ -x "${ROOT}/target/debug/singbox-rust" ]]; then
+    printf '%s\n' "${ROOT}/target/debug/singbox-rust"
+  else
+    return 1
+  fi
+}
+
 # 1) Run cargo tests tagged as e2e (non-blocking)
 set +e
 cargo test -q --tests e2e -- --nocapture
@@ -19,9 +29,7 @@ set -e
 # 2) Optional golden compare via CLI (subset) to produce a stable summary
 COMPAT="skipped"
 if [[ -n "${GO_SINGBOX_BIN:-}" && -x "${GO_SINGBOX_BIN}" ]]; then
-  RBIN="${ROOT}/target/debug/singbox-rust"
-  if [[ ! -x "$RBIN" ]]; then RBIN="${ROOT}/target/debug/app"; fi
-  if [[ -x "$RBIN" ]]; then
+  if RBIN="$(resolve_cli_bin)"; then
     CFG="${ROOT}/minimal.yaml"
     GO_JSON=$("${GO_SINGBOX_BIN}" route --config "$CFG" --dest example.com:443 --explain --format json 2>/dev/null || true)
     RS_JSON=$("${RBIN}" route --config "$CFG" --dest example.com:443 --explain --format json 2>/dev/null || true)
@@ -51,7 +59,7 @@ fi
 
 # 3) Bench JSON histogram presence (dev-only feature may be missing)
 BENCH="skipped"
-if "${ROOT}/target/debug/${BIN:-singbox-rust}" bench io --url http://example.com --requests 0 --concurrency 1 --json --hist-buckets 1,5,10 >"$OUT/reports/bench.json" 2>/dev/null; then
+if CLI_BIN="$(resolve_cli_bin)" && "${CLI_BIN}" bench io --url http://example.com --requests 0 --concurrency 1 --json --hist-buckets 1,5,10 >"$OUT/reports/bench.json" 2>/dev/null; then
   if grep -q '"histogram"' "$OUT/reports/bench.json"; then BENCH="ok"; else BENCH="bad_json"; fi
 fi
 
@@ -74,7 +82,7 @@ ACCEPTANCE_RESULTS+=("A1:$A1_STATUS")
 
 # A2: Schema v2 validation
 echo "[e2e] A2: Schema v2 validation"
-if bash "${ROOT}/scripts/A2_schema_v2_acceptance.sh" >/dev/null 2>&1; then
+if bash "${ROOT}/scripts/test/acceptance/schema-v2.sh" >/dev/null 2>&1; then
   A2_STATUS="pass"
 else
   case $? in
@@ -86,7 +94,7 @@ ACCEPTANCE_RESULTS+=("A2:$A2_STATUS")
 
 # A3: UDP stress and metrics
 echo "[e2e] A3: UDP stress testing"
-if bash "${ROOT}/scripts/A3_udp_stress_metrics.sh" >/dev/null 2>&1; then
+if bash "${ROOT}/scripts/test/acceptance/udp-stress-metrics.sh" >/dev/null 2>&1; then
   A3_STATUS="pass"
 else
   case $? in
@@ -98,7 +106,7 @@ ACCEPTANCE_RESULTS+=("A3:$A3_STATUS")
 
 # A4: Prometheus noise reduction
 echo "[e2e] A4: Prometheus noise reduction"
-if bash "${ROOT}/scripts/A4_prom_noise_regression.sh" >/dev/null 2>&1; then
+if bash "${ROOT}/scripts/test/acceptance/prom-noise-regression.sh" >/dev/null 2>&1; then
   A4_STATUS="pass"
 else
   case $? in
@@ -110,7 +118,7 @@ ACCEPTANCE_RESULTS+=("A4:$A4_STATUS")
 
 # A5: RC package verification
 echo "[e2e] A5: RC package verification"
-if bash "${ROOT}/scripts/A5_rc_package_verification.sh" >/dev/null 2>&1; then
+if bash "${ROOT}/scripts/test/acceptance/rc-package-verify.sh" >/dev/null 2>&1; then
   A5_STATUS="pass"
 else
   case $? in

@@ -36,13 +36,17 @@ archives/**
 
 # Specific generated files that might appear in root
 *.json
-!config.yaml
+bench_udp.csv*
 *.svg
 *.dot
 *.sha256
 *.sha1
 *.pid
 *.log
+
+# One-time migration artifacts (content preserved in git history)
+GIT_COMMIT_MESSAGE.txt
+MIGRATION_SUMMARY.txt
 
 # Keep configuration and documentation
 !README.md

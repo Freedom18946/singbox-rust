@@ -13,7 +13,7 @@ test:
 
 # Lint
 clippy:
-	cargo clippy --workspace -- -D warnings
+	cargo clippy --workspace --all-features --all-targets -- -D warnings
 
 # 依赖边界检查（严格模式，失败则阻断）
 boundaries:

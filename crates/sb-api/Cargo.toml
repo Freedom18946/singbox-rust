@@ -43,7 +43,7 @@ http = "1.0"
 sb-core = { path = "../sb-core", features = ["router"] }
 sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
-sb-subscribe = { path = "../sb-subscribe", features = ["subs_provider_parse"], optional = true }
+sb-subscribe = { path = "../sb-subscribe", features = ["subs_provider_parse", "subs_http"], optional = true }
 
 [features]
 default = ["clash-api"]

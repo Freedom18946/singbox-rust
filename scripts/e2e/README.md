@@ -211,13 +211,14 @@ cat .e2e/pids/*.pid | xargs ps
 RUST_BACKTRACE=full ./scripts/e2e/dns/backends.sh
 ```
 
-## CI Integration
+## Local CI Usage
 
-E2E tests run in GitHub Actions:
+Use the local verification entrypoints instead of GitHub Actions:
 
-```yaml
-- name: Run E2E Tests
-  run: ./scripts/e2e/run.sh
+```bash
+./scripts/e2e/run.sh
+./scripts/ci/accept.sh
+./scripts/ci/strict.sh
 ```
 
 ## Dependencies

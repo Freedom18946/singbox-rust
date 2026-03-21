@@ -24,6 +24,7 @@ libc = "0.2"
 scopeguard = "1.2"
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 futures = "0.3"
+humantime = "2.1"
 
 # VMess protocol dependencies
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -118,7 +119,7 @@ legacy_shadowsocksr = ["adapter-shadowsocks"]
 # Tailscale outbound (Go has Tailscale endpoint only, no outbound)
 legacy_tailscale_outbound = ["adapter-tailscale"]
 http = []
-socks = []
+socks = ["dep:sb-transport"]
 mixed = ["http", "socks"]
 tun = ["dep:sb-platform"]
 # macOS transparent proxy support via tun2socks
@@ -156,7 +157,7 @@ dns_udp = []
 dns_doh = ["sb-core/dns_doh"]
 dns_dot = []
 dns_doq = ["sb-core/dns_doq"]
-e2e = []
+e2e = ["socks"]
 # TUIC protocol support
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile"]
 # Router-aware adapters rely on sb-core routing infrastructure

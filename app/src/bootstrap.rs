@@ -1001,8 +1001,10 @@ fn start_clash_api_server(
 
     match sb_api::clash::ClashApiServer::new(config) {
         Ok(server) => {
+            let provider_manager = Arc::new(sb_api::managers::ProviderManager::default());
             let mut server = server
                 .with_dns_resolver(Arc::new(sb_api::managers::DnsResolver::new()))
+                .with_provider_manager(provider_manager)
                 .with_outbound_registry(outbounds)
                 .with_config_ir(config_ir);
 

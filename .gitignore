@@ -138,7 +138,6 @@ $RECYCLE.BIN/
 .idea_modules/
 
 # Emacs
-*~
 \#*\#
 /.emacs.desktop
 /.emacs.desktop.lock
@@ -149,7 +148,6 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 *.swn
-*.bak
 [._]*.s[a-v][a-z]
 [._]*.sw[a-p]
 Session.vim
@@ -201,7 +199,6 @@ instruction/
 
 # Local environment files
 .env.local
-.env.*.local
 *.local.json
 *.local.yaml
 
@@ -269,7 +266,6 @@ credentials/
 # Core dumps
 core
 core.*
-vgcore.*
 
 # SQLite databases (if used for testing)
 *.db
@@ -282,5 +278,6 @@ vgcore.*
 *.dmp
 *.mdmp
 
-# Local reports / meeting notes
-reports/
+# Local reports / meeting notes (fine-grained rules above cover reports/stress-tests/ and reports/l18/)
+reports/*
+!reports/stress-tests/

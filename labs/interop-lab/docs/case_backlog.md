@@ -104,7 +104,7 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p1_clash_api_auth_enforcement` | Clash API auth enforcement: 无 token→401, Bearer→200, 错误→401 | `strict` | implemented |
-| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented (not yet an honest both-case; real broken-service dual-kernel model still missing) |
+| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented (Rust-only diagnostic; not promotable with current harness/API model: no real broken-service config and `/services/health` is still static) |
 
 ### TLS 高级能力（L14）
 

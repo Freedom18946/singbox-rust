@@ -13,7 +13,7 @@ outbounds: [ { type: direct, name: "direct" } ]
 route: { rules: [ { to: "direct" } ] }
 rules_text: "rules/nonexist.txt"
 YAML
-  if "${BIN}" check -c "${target}/bad_ref.yaml" --check-refs --rules-dir "${target}" >/dev/null 2>&1; then
+  if "${APP_BIN}" check -c "${target}/bad_ref.yaml" --check-refs --rules-dir "${target}" >/dev/null 2>&1; then
     echo '{"name":"check_ref_missing","ok":0,"msg":"missing ref should fail"}'
   else
     echo '{"name":"check_ref_missing","ok":1,"msg":"ref missing detected"}'

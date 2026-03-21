@@ -419,8 +419,14 @@ async fn start_clash_api_from_supervisor(
         server = server.with_router(router);
     }
 
+    let provider_manager = Arc::new(
+        sb_api::managers::ProviderManager::default()
+            .with_reload_channel(supervisor.handle().reload_sender()),
+    );
+
     server = server
         .with_dns_resolver(Arc::new(sb_api::managers::DnsResolver::new()))
+        .with_provider_manager(provider_manager)
         .with_outbound_registry(build_outbound_registry_handle(&state_guard.bridge))
         .with_config_ir(Arc::new(state_guard.current_ir.clone()));
 

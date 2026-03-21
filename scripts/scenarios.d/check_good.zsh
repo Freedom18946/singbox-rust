@@ -18,7 +18,7 @@ route:
 dns:
   mode: system
 YAML
-  if "${BIN}" check -c "${target}/check_good.yaml" >/dev/null 2>&1; then
+  if "${APP_BIN}" check -c "${target}/check_good.yaml" >/dev/null 2>&1; then
     echo '{"name":"check_good","ok":1,"msg":"good config ok"}'
   else
     echo '{"name":"check_good","ok":0,"msg":"good config should pass"}'

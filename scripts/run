@@ -55,7 +55,7 @@ list_scripts() {
     echo "  release/     - Release preparation"
     echo "  validation/  - Code validation"
     echo "  explain/     - Router explain utilities"
-    find "${SCRIPTS_DIR}/tools" -name "*.sh" -o -name "*.py" -type f | sed 's|.*/tools/||' | sort
+    find "${SCRIPTS_DIR}/tools" -type f \( -name "*.sh" -o -name "*.py" \) | sed 's|.*/tools/||' | sort
     echo ""
 
     echo "=== Libraries (scripts/lib/) ==="

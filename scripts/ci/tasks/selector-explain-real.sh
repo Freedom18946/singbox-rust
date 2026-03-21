@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 cd "$ROOT"
 
 changed="$(git status --porcelain || true)"
@@ -13,11 +13,17 @@ cargo test --all --tests
 
 echo "[2/6] explain (with trace)..."
 cfg="$(mktemp)"; echo '{"inbounds":[{"type":"socks","listen":"127.0.0.1","port":1080}]}' > "$cfg"
-explain_json="$( EXPLAIN_REAL=1 target/debug/singbox-rust route -c "$cfg" --dest example.com:443 --explain --trace --format json )"
+explain_json="$( EXPLAIN_REAL=1 target/debug/app route -c "$cfg" --dest example.com:443 --explain --trace --format json )"
 rm -f "$cfg"
 
 echo "[3/6] selector simulation..."
-cat > /tmp/selector_sim.rs <<'RS'
+tmpdir="$(mktemp -d)"
+cleanup() {
+  kill "${pid:-}" >/dev/null 2>&1 || true
+  rm -rf "$tmpdir"
+}
+trap cleanup EXIT
+cat > "$tmpdir/src_main.rs" <<'RS'
 use sb_core::outbound::p3_selector::{P3Selector, PickerConfig};
 fn main(){
     let mut s = P3Selector::new(vec!["a".into(),"b".into(),"c".into()], PickerConfig::default());
@@ -32,23 +38,22 @@ fn main(){
     println!("{{\"pick\":\"{}\"}}", p);
 }
 RS
-cat > /tmp/Cargo.toml <<'TOML'
+cat > "$tmpdir/Cargo.toml" <<TOML
 [package]
 name = "selector_sim"
 version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-sb-core = { path = "../crates/sb-core" }
-sb-metrics = { path = "../crates/sb-metrics" }
+sb-core = { path = "${ROOT}/crates/sb-core" }
+sb-metrics = { path = "${ROOT}/crates/sb-metrics" }
 TOML
-rm -rf /tmp/selector_sim && mkdir -p /tmp/selector_sim/src
-mv /tmp/selector_sim.rs /tmp/selector_sim/src/main.rs
-mv /tmp/Cargo.toml /tmp/selector_sim/Cargo.toml
-pushd /tmp/selector_sim >/dev/null
-cargo run --quiet > /tmp/selector_pick.json
+mkdir -p "$tmpdir/src"
+mv "$tmpdir/src_main.rs" "$tmpdir/src/main.rs"
+pushd "$tmpdir" >/dev/null
+cargo run --quiet > "$tmpdir/selector_pick.json"
 popd >/dev/null
-selector_out="$(cat /tmp/selector_pick.json)"
+selector_out="$(cat "$tmpdir/selector_pick.json")"
 
 echo "[4/6] metrics sanity (selector metrics present optional)..."
 # 若启用过 selector/pick，指标会产生；此处仅收集头部文本做日志

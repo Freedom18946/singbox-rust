@@ -1,11 +1,11 @@
-# CI/CD Scripts
+# Local Verification Scripts
 
-Continuous Integration and Deployment scripts for singbox-rust.
+Local verification and release-prep scripts for singbox-rust.
 
 ## Overview
 
-This directory contains all CI-related automation, including:
-- CI task scripts that run in GitHub Actions
+This directory contains verification scripts, including:
+- Local task scripts that can be run before committing or releasing
 - Local CI execution scripts
 - Acceptance testing
 - Build verification
@@ -95,19 +95,14 @@ for task in scripts/ci/tasks/*.sh; do
 done
 ```
 
-### In GitHub Actions
-
-```yaml
-- name: Run CI Task
-  run: ./scripts/ci/tasks/adapter-bridge.sh
-```
+GitHub Actions is permanently disabled for this repository. Invoke these scripts directly from a local shell instead.
 
 ## Environment Variables
 
 Common environment variables used:
 - `FEATS` - Feature flags to enable
 - `RUST_BACKTRACE` - Enable backtraces (default: 1)
-- `CI` - Set to "true" in CI environments
+- `CI` - Optional compatibility flag for scripts that check CI-like mode
 - `CARGO_TERM_COLOR` - Cargo output coloring
 
 ## Exit Codes

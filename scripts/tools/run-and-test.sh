@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
-# scripts/run_and_test.zsh
+# scripts/tools/run-and-test.sh
 set -euo pipefail
 
-BIN=${BIN:-"./target/debug/singbox-rust"}
+BIN=${BIN:-"./target/debug/run"}
 CONFIG=${CONFIG:-"./config.yaml"}
 HTTP_PROXY_ADDR=${HTTP_PROXY_ADDR:-"127.0.0.1:18081"}
 SOCKS_PROXY_ADDR=${SOCKS_PROXY_ADDR:-"127.0.0.1:11080"}
@@ -96,14 +96,14 @@ fi
 
 # HTTP 入站协议就绪检查（405）
 echo "[STEP] HTTP 入站协议就绪检查（405） ${HTTP_PROXY_ADDR}…"
-python3 scripts/probe_http.py "${HTTP_PROXY_ADDR}" "$(( $(date +%s) + 6 ))" || {
+python3 scripts/tools/probe-http.py "${HTTP_PROXY_ADDR}" "$(( $(date +%s) + 6 ))" || {
   echo "[ERR] HTTP 协议就绪探测失败"; exit 1;
 }
 
 # ---------- SOCKS method 探活（独立脚本） ----------
 step "SOCKS5 入站协议就绪检查（NO_AUTH） ${SOCKS_PROXY_ADDR}…"
 deadline=$(( $(date +%s) + WAIT_PROTO_TIMEOUT ))
-python3 "scripts/probe_socks.py" "${SOCKS_PROXY_ADDR}" "${deadline}"
+python3 "scripts/tools/probe-socks.py" "${SOCKS_PROXY_ADDR}" "${deadline}"
 
 # ---------- 功能验证 ----------
 step "curl 验证（HTTP CONNECT / SOCKS5）"

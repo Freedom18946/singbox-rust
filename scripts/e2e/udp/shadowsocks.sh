@@ -15,7 +15,7 @@ set -euo pipefail
 # Configuration
 SCRIPT_DIR="${0:A:h}"
 PROJECT_ROOT="${SCRIPT_DIR}/.."
-BINARY_PATH="${PROJECT_ROOT}/target/release/singbox-rust"
+BINARY_PATH="${PROJECT_ROOT}/target/release/run"
 TEST_CONFIG="/tmp/ss_udp_test_config.json"
 TEST_PID_FILE="/tmp/ss_udp_test.pid"
 METRICS_PORT=8080
@@ -87,19 +87,20 @@ create_test_config() {
   "outbounds": [
     {
       "type": "shadowsocks",
+      "name": "ss-out",
       "server": "127.0.0.1",
-      "server_port": ${SS_SERVER_PORT},
+      "port": ${SS_SERVER_PORT},
       "method": "chacha20-poly1305",
       "password": "test-password-for-e2e",
       "udp": true
+    },
+    {
+      "type": "direct",
+      "name": "direct"
     }
   ],
   "route": {
-    "rules": [
-      {
-        "outbound": "shadowsocks"
-      }
-    ]
+    "default": "ss-out"
   }
 }
 EOF
@@ -111,7 +112,7 @@ build_binary() {
     log "Building singbox-rust with required features..."
 
     cd "$PROJECT_ROOT"
-    cargo build --release --features "out_ss,metrics,explain" || {
+    cargo build --release -p app --features "observe,adapters" --bin run || {
         log_error "Failed to build singbox-rust"
         return 1
     }
@@ -128,7 +129,7 @@ start_test_server() {
     log "Starting singbox-rust with Shadowsocks UDP configuration..."
 
     # Start the server in background
-    "$BINARY_PATH" -c "$TEST_CONFIG" &
+    "$BINARY_PATH" -c "$TEST_CONFIG" --prom-listen "127.0.0.1:${METRICS_PORT}" &
     local pid=$!
     echo "$pid" > "$TEST_PID_FILE"
 

@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 cd "$ROOT"
 
 changed="$(git status --porcelain || true)"
+cleanup() {
+  kill "${RUN_PID:-}" >/dev/null 2>&1 || true
+  kill "${ECHO_PID:-}" >/dev/null 2>&1 || true
+  rm -f "${cfg:-}"
+}
+trap cleanup EXIT
 
 echo "[1/6] fmt/clippy/build/tests..."
 cargo fmt --all
-cargo clippy --all-targets --all-features -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 cargo build --bins --tests
 cargo test --all --tests
 
 echo "[2/6] start echo..."
-python - <<'PY' &
+ECHO_PORT="${ECHO_PORT:-19079}"
+ECHO_PORT="$ECHO_PORT" python - <<'PY' &
 import socket, threading
-s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(128)
-print(s.getsockname()[1], flush=True)
+import os
+port=int(os.environ["ECHO_PORT"])
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", port)); s.listen(128)
 def h(c):
     try:
         while True:
@@ -32,9 +40,6 @@ loop()
 PY
 ECHO_PID=$!
 sleep 0.1
-ECHO_PORT="$(jobs -p >/dev/null 2>&1; true)" # fallback
-ECHO_PORT="$(ps --no-headers -o pid,command -p $ECHO_PID | awk '{print $2}' || true)"
-# 简化：如上行不可靠，下面改为扫描 10000..20000 端口寻找回显；实际 CI 使用 Rust 测试更稳。
 
 echo "[3/6] start run with socks inbound..."
 cfg="$(mktemp)"
@@ -45,10 +50,11 @@ target/debug/run -c "$cfg" --format json >/tmp/run_started.json & RUN_PID=$!
 sleep 0.3
 
 echo "[4/6] probe through socks..."
-python - <<'PY' > /tmp/socks_probe.json
+ECHO_PORT="$ECHO_PORT" python - <<'PY' > /tmp/socks_probe.json
 import socket, struct, json, time
+import os
 SOCKS=("127.0.0.1",19080)
-TARGET=("127.0.0.1", 9)  # 9端口可能闭塞；这里仅演示连通性失败分类，实际端到端由 Rust 测试覆盖
+TARGET=("127.0.0.1", int(os.environ["ECHO_PORT"]))
 s=socket.socket(); s.settimeout(0.4); s.connect(SOCKS)
 s.sendall(b"\x05\x01\x00"); s.recv(2)
 req=b"\x05\x01\x00\x01"+socket.inet_aton(TARGET[0])+struct.pack("!H",TARGET[1])
@@ -69,5 +75,5 @@ cat <<EOF
   "socks_probe": $(cat /tmp/socks_probe.json 2>/dev/null || echo '{"ok":false}')
 }
 EOF
-kill $RUN_PID >/dev/null 2>&1 || true
-kill $ECHO_PID >/dev/null 2>&1 || true
+kill "${RUN_PID:-}" >/dev/null 2>&1 || true
+kill "${ECHO_PID:-}" >/dev/null 2>&1 || true

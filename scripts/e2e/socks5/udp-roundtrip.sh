@@ -7,7 +7,7 @@ export SB_SOCKS_UDP_NAT_TTL_MS=${SB_SOCKS_UDP_NAT_TTL_MS:-30000}
 export SB_METRICS_ADDR=${SB_METRICS_ADDR:-127.0.0.1:9090}
 
 echo "[RUN] probe"
-cargo run -q --example socks5_udp_probe -- ${SB_SOCKS_UDP_LISTEN} 1.1.1.1:53 example.com
+cargo run -q --manifest-path crates/sb-core/Cargo.toml --example socks5_udp_probe -- ${SB_SOCKS_UDP_LISTEN} 1.1.1.1:53 example.com
 
 echo "[SCRAPE] /metrics (optional)"
 set +e

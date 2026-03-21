@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
 export RUST_BACKTRACE=1
 
 changed_files="$(git status --porcelain || true)"
 
 echo "[1/6] fmt & clippy..."
 cargo fmt --all
-cargo clippy --all-targets --all-features -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 
 echo "[2/6] build bins..."
 cargo build --bins

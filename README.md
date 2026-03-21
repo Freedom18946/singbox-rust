@@ -2,9 +2,7 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **Acceptance Closure**: currently under Phase 4 evidence review. In this slim snapshot, prior closure narratives are `UNVERIFIED (slim snapshot)`.
-> Capability facts, evidence, and claim mapping are defined in **[docs/capabilities.md](docs/capabilities.md)** (`reports/capabilities.json`).
-> See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for matrix context and [NEXT_STEPS.md](NEXT_STEPS.md) for milestones.
+> **Status**: Maintenance mode (L1-L25 Closed). Parity 92.9% (52/56). See [docs/capabilities.md](docs/capabilities.md) for capability details.
 
 ---
 
@@ -27,7 +25,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 | [`reference/ARCHITECTURE-SPEC.md`](./agents-only/reference/ARCHITECTURE-SPEC.md) | 架构规范 |
 | [`reference/GO_PARITY_MATRIX.md`](./agents-only/reference/GO_PARITY_MATRIX.md) | Go 对照矩阵（历史 + 当前审议口径） |
 | [`reference/PROJECT-STRUCTURE.md`](./agents-only/reference/PROJECT-STRUCTURE.md) | 项目结构权威导航 |
-| [`planning/L18-PHASE4.md`](./agents-only/planning/L18-PHASE4.md) | 当前执行工作包 |
+| [`workpackage_latest.md`](./agents-only/workpackage_latest.md) | 阶段总览 |
 | [`memory/README.md`](./agents-only/memory/README.md) | 长期记忆索引 |
 
 ---
@@ -63,7 +61,7 @@ Visit our comprehensive documentation portal at **[docs/](docs/)**:
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues & fixes
 
 ### 💻 [Development](docs/04-development/)
-- **[Development Guide](docs/04-development/README.md)** - Development notes and workflows
+- **[Development Guide](docs/04-development/README.md)** - Development notes and local verification
 - **[Transport Defaults](docs/04-development/transport-defaults.md)** - Transport inference behavior
 - **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Go to Rust migration details
 
@@ -74,7 +72,7 @@ Visit our comprehensive documentation portal at **[docs/](docs/)**:
 Build the full-featured binary:
 
 ```bash
-cargo +1.90 build -p app --features "acceptance,manpage" --release
+cargo build -p app --features "acceptance,manpage" --release
 ./target/release/app version
 ```
 
@@ -133,9 +131,9 @@ TUN/redirect/tproxy are tracked via tri-state capabilities, not unconditional co
 ## Community & Support
 
 - **[Project Status](docs/STATUS.md)**: Check current version and roadmap.
-- **[Issues](https://github.com/your-repo/issues)**: Report bugs.
-- **[Discussions](https://github.com/your-repo/discussions)**: Ask questions and share configs.
+- **[Issues](https://github.com/Freedom18946/singbox-rust/issues)**: Report bugs.
+- **[Discussions](https://github.com/Freedom18946/singbox-rust/discussions)**: Ask questions and share configs.
 
 ---
 
-*For detailed navigation of the project structure, see [PROJECT_STRUCTURE_NAVIGATION.md](PROJECT_STRUCTURE_NAVIGATION.md).*
+*For detailed navigation of the project structure, see [agents-only/reference/PROJECT-STRUCTURE.md](agents-only/reference/PROJECT-STRUCTURE.md).*

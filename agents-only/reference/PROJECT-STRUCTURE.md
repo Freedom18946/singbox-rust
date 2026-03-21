@@ -17,7 +17,7 @@ singbox-rust/
 ├── 📁 .cargo/           # Cargo configuration (build parameters, aliases, etc.)
 ├── 📁 .claude/          # Local assistant artifacts (gitignored)
 ├── 📁 .e2e/             # E2E test artifacts and summaries
-├── 📁 .github/          # GitHub workflows and templates
+├── 📁 .github/          # Repository GitHub metadata (workflows permanently disabled)
 ├── 📁 app/              # Main application and multi-bin CLI (feature gated)
 ├── 📁 benches/          # Benchmark workspace
 ├── 📁 benchmark_results/# Benchmark results
@@ -40,8 +40,8 @@ singbox-rust/
 │   ├── 📁 stress-tests
 │   ├── 📄 TEST_COVERAGE.md
 │   └── 📄 VERIFICATION_RECORD.md
-├── 📁 scripts/          # CI, tools, scenario scripts
-├── 📁 tools/            # Internal tooling (depcheck, deny)
+├── 📁 scripts/          # CI, tools, scenario scripts (see `agents-only/reference/SCRIPTS-MAP.md`)
+├── 📁 tools/            # Internal tooling (deny)
 ├── 📁 target/           # Local build output (gitignored)
 ├── 📁 tests/            # Tests (Integration/E2E/Configs/Data etc.)
 ├── 📁 vendor/           # Vendor dependency overrides (e.g., tun2socks)
@@ -301,17 +301,23 @@ examples/
 
 ### 🛠️ Script Classification
 
+See also: `agents-only/reference/SCRIPTS-MAP.md` for the authoritative post-cleanup script entrypoint map.
+
 ```
 scripts/
-├── ci/          # CI related scripts
+├── capabilities/# Capability report helpers
+├── ci/          # Local CI replacement / verification
 ├── dev/         # Local development helpers
 ├── e2e/         # E2E test orchestration
+├── l18/         # Historical certification scripts (still referenced)
+├── l19/         # Historical capability contract scripts (still referenced)
 ├── lib/         # Script shared libraries
 ├── lint/        # Quality gates/Static checks
+├── soak/        # Long-running soak entrypoint
 ├── test/        # Benchmark/Regression guardians etc.
-├── tools/       # Tools and visualization scripts
-├── run          # Single entrypoint runner (multi-scenario)
-├── run-scenarios# Pre-defined scenario batch runner
+├── tools/       # Preflight / release / validation / probe helpers
+├── run          # Human-friendly command dispatcher
+├── run-scenarios# Scenario batch runner + metrics/assert integration
 └── scenarios.d/ # Scenario definition collection
 ```
 

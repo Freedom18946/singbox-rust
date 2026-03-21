@@ -18,5 +18,5 @@ curl -s "http://$SB_METRICS_ADDR/metrics" | grep -E 'dns_query_total|dns_resolve
 set -e
 
 echo "[TIP] 你也可以手动对比 'time'："
-echo "  SB_DNS_CACHE_ENABLE=1  cargo run -q --example dns_lookup example.com"
-echo "  SB_DNS_CACHE_ENABLE=0  cargo run -q --example dns_lookup example.com"
+echo "  SB_DNS_CACHE_ENABLE=1  cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features 'dns_udp,dns_cache' -- example.com 80"
+echo "  SB_DNS_CACHE_ENABLE=0  cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features 'dns_udp' -- example.com 80"

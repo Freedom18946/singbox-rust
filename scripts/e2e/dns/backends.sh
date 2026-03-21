@@ -6,7 +6,7 @@ export SB_METRICS_ADDR=${SB_METRICS_ADDR:-127.0.0.1:9090}
 run_mode () {
   local mode=$1
   echo "[RUN] mode=$mode"
-  SB_DNS_MODE=$mode cargo run -q --example dns_query --features "dns_udp,dns_dot,dns_doh,tls_rustls" -- example.com 80 || true
+  SB_DNS_MODE=$mode cargo run -q --manifest-path crates/sb-core/Cargo.toml --example dns_query --features "dns_udp,dns_dot,dns_doh,tls_rustls" -- example.com 80 || true
 }
 
 run_mode system
