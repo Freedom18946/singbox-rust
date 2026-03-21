@@ -36,5 +36,5 @@ providers:
 #
 # For Docker:
 #   volumes:
-#     - ./grafana/provisioning:/etc/grafana/provisioning
-#     - ./grafana/dashboards:/var/lib/grafana/dashboards/singbox-rust
+#     - ./grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/singbox-rust.yml:ro
+#     - ./grafana/dashboards:/var/lib/grafana/dashboards/singbox-rust:ro

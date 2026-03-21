@@ -135,8 +135,9 @@ rate(bytes_sent_total[5m])
 
 1. Access Grafana: http://localhost:3000
 2. Login: admin/admin
-3. Add Prometheus data source: http://prometheus:9090
-4. Import dashboard or create custom panels
+3. Prometheus is already reachable at `http://prometheus:9090`
+4. Dashboards from `grafana/dashboards/` are auto-provisioned into Grafana
+5. Alert rules can be imported from `grafana/alerts/rules.yml`
 
 ## Security Best Practices
 

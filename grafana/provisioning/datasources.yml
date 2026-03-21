@@ -41,7 +41,7 @@ datasources:
 #     grafana:
 #       image: grafana/grafana:latest
 #       volumes:
-#         - ./grafana/provisioning:/etc/grafana/provisioning
+#         - ./grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
 #
 # Alternative URLs:
 #   - Docker Compose: http://prometheus:9090

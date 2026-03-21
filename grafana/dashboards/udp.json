@@ -1,11 +1,11 @@
 {
   "uid": "singbox-udp",
   "title": "SingBox-Rust · UDP & NAT",
-  "description": "UDP relay performance, NAT table monitoring, and session tracking for singbox-rust",
+  "description": "Current UDP upstream and NAT observability metrics",
   "tags": ["singbox-rust", "udp", "nat"],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-1h",
@@ -23,24 +23,26 @@
     {
       "type": "row",
       "id": 1,
-      "title": "UDP Traffic",
+      "title": "Traffic",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "collapsed": false
     },
     {
       "type": "timeseries",
       "id": 2,
-      "title": "Upstream Packet Rate (in)",
+      "title": "Upstream Packet Rate",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(udp_upstream_pkts_in_total[1m])",
+          "expr": "rate(udp_upstream_pkts_in_total[5m])",
           "legendFormat": "Packets In",
           "refId": "A"
+        },
+        {
+          "expr": "rate(udp_upstream_pkts_out_total[5m])",
+          "legendFormat": "Packets Out",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -50,8 +52,7 @@
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "fillOpacity": 20,
-            "showPoints": "never"
+            "fillOpacity": 20
           }
         }
       },
@@ -60,28 +61,24 @@
           "displayMode": "list",
           "placement": "bottom",
           "calcs": ["last", "mean", "max"]
-        },
-        "tooltip": { "mode": "single" }
+        }
       }
     },
     {
       "type": "timeseries",
       "id": 3,
-      "title": "Upstream Byte Rate (in)",
+      "title": "UDP Flow Bytes",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(udp_flow_bytes_in_total[1m])",
-          "legendFormat": "Bytes In",
+          "expr": "rate(udp_flow_bytes_in_total[5m])",
+          "legendFormat": "Flow Bytes In",
           "refId": "A"
         },
         {
-          "expr": "rate(udp_flow_bytes_out_total[1m])",
-          "legendFormat": "Bytes Out",
+          "expr": "rate(udp_flow_bytes_out_total[5m])",
+          "legendFormat": "Flow Bytes Out",
           "refId": "B"
         }
       ],
@@ -107,23 +104,19 @@
     {
       "type": "stat",
       "id": 4,
-      "title": "Total Bytes Transferred (1h)",
+      "title": "Total Packets (1h)",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 9 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(increase(udp_flow_bytes_in_total[1h])) + sum(increase(udp_flow_bytes_out_total[1h]))",
+          "expr": "sum(increase(udp_upstream_pkts_in_total[1h])) + sum(increase(udp_upstream_pkts_out_total[1h]))",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "decbytes",
-          "color": { "mode": "value" },
-          "decimals": 2
+          "unit": "short",
+          "color": { "mode": "value" }
         }
       },
       "options": {
@@ -134,28 +127,78 @@
     {
       "type": "stat",
       "id": 5,
-      "title": "Total Packets (1h)",
+      "title": "Total Flow Bytes (1h)",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 9 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(increase(udp_upstream_pkts_in_total[1h]))",
+          "expr": "sum(increase(udp_flow_bytes_in_total[1h])) + sum(increase(udp_flow_bytes_out_total[1h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "color": { "mode": "value" }
+        }
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 6,
+      "title": "Upstream Map Size",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "udp_upstream_map_size",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "value" },
-          "decimals": 0
+          "color": { "mode": "value" }
         }
       },
       "options": {
-        "graphMode": "area",
-        "colorMode": "value"
+        "graphMode": "none",
+        "colorMode": "background"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 7,
+      "title": "Gen Mismatches",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "udp_nat_gen_mismatch_total",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 100, "color": "yellow" },
+              { "value": 1000, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "graphMode": "none",
+        "colorMode": "background"
       }
     },
     {
@@ -170,10 +213,7 @@
       "id": 11,
       "title": "NAT Map Size",
       "gridPos": { "h": 8, "w": 6, "x": 0, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "udp_nat_size",
@@ -202,16 +242,13 @@
     {
       "type": "timeseries",
       "id": 12,
-      "title": "NAT Map Size Over Time",
-      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "title": "NAT Size vs Heap Length",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "udp_nat_size",
-          "legendFormat": "Sessions",
+          "legendFormat": "NAT Size",
           "refId": "A"
         },
         {
@@ -233,78 +270,16 @@
       },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
           "calcs": ["last", "mean", "max"]
         }
       }
     },
     {
-      "type": "stat",
-      "id": 13,
-      "title": "Active Sessions",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "expr": "udp_upstream_map_size",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "value" },
-          "decimals": 0
-        }
-      },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background"
-      }
-    },
-    {
-      "type": "stat",
-      "id": 14,
-      "title": "Gen Mismatches",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 18 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "expr": "udp_nat_gen_mismatch_total",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 100, "color": "yellow" },
-              { "value": 1000, "color": "red" }
-            ]
-          },
-          "decimals": 0
-        }
-      },
-      "options": {
-        "graphMode": "none",
-        "colorMode": "background"
-      }
-    },
-    {
       "type": "row",
       "id": 20,
-      "title": "NAT Eviction & TTL",
+      "title": "Eviction & TTL",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
       "collapsed": false
     },
@@ -313,13 +288,10 @@
       "id": 21,
       "title": "Eviction Rate by Reason",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum by (reason) (rate(udp_nat_evicted_total[1m]))",
+          "expr": "sum by (reason) (rate(udp_nat_evicted_total[5m]))",
           "legendFormat": "{{reason}}",
           "refId": "A"
         }
@@ -348,10 +320,7 @@
       "id": 22,
       "title": "Session TTL Distribution",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum(rate(udp_nat_ttl_seconds_bucket[5m])) by (le))",
@@ -391,21 +360,17 @@
       "id": 23,
       "title": "Total Evictions (1h)",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 31 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(increase(udp_nat_evicted_total[1h]))",
+          "expr": "sum(increase(udp_nat_evicted_total[1h])) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "value" },
-          "decimals": 0
+          "color": { "mode": "value" }
         }
       },
       "options": {
@@ -416,22 +381,19 @@
     {
       "type": "row",
       "id": 30,
-      "title": "Errors & Failures",
+      "title": "Failures",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
       "collapsed": false
     },
     {
       "type": "timeseries",
       "id": 31,
-      "title": "Failure Rate by Class",
+      "title": "Upstream Failures by Class",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum by (class) (rate(udp_upstream_fail_total[1m]))",
+          "expr": "sum by (class) (rate(udp_upstream_fail_total[5m]))",
           "legendFormat": "{{class}}",
           "refId": "A"
         }
@@ -458,15 +420,12 @@
     {
       "type": "timeseries",
       "id": 32,
-      "title": "Error Rate by Class",
+      "title": "Upstream Errors by Class",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum by (class) (rate(udp_upstream_error_total[1m]))",
+          "expr": "sum by (class) (rate(udp_upstream_error_total[5m]))",
           "legendFormat": "{{class}}",
           "refId": "A"
         }
@@ -495,13 +454,10 @@
       "id": 33,
       "title": "Total Failures (1h)",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(increase(udp_upstream_fail_total[1h]))",
+          "expr": "sum(increase(udp_upstream_fail_total[1h])) or on() vector(0)",
           "refId": "A"
         }
       ],
@@ -516,8 +472,7 @@
               { "value": 10, "color": "yellow" },
               { "value": 100, "color": "red" }
             ]
-          },
-          "decimals": 0
+          }
         }
       },
       "options": {
@@ -530,13 +485,10 @@
       "id": 34,
       "title": "Total Errors (1h)",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 44 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(increase(udp_upstream_error_total[1h]))",
+          "expr": "sum(increase(udp_upstream_error_total[1h])) or on() vector(0)",
           "refId": "A"
         }
       ],
@@ -551,8 +503,7 @@
               { "value": 10, "color": "yellow" },
               { "value": 100, "color": "red" }
             ]
-          },
-          "decimals": 0
+          }
         }
       },
       "options": {

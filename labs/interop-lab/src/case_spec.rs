@@ -606,6 +606,21 @@ pub fn load_cases(cases_dir: &Path) -> Result<Vec<CaseSpec>> {
 }
 
 pub fn load_case_by_id(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
+    // Fast path: try loading {id}.yaml / {id}.yml directly.
+    for ext in &["yaml", "yml"] {
+        let path = cases_dir.join(format!("{id}.{ext}"));
+        if path.is_file() {
+            let raw = fs::read_to_string(&path)
+                .with_context(|| format!("reading case file {}", path.display()))?;
+            let case: CaseSpec = serde_yaml::from_str(&raw)
+                .with_context(|| format!("parsing yaml {}", path.display()))?;
+            if case.id == id {
+                return Ok(case);
+            }
+        }
+    }
+
+    // Fallback: scan all cases (file name may not match id).
     let cases = load_cases(cases_dir)?;
     cases
         .into_iter()

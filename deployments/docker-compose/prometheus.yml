@@ -9,23 +9,23 @@ scrape_configs:
   # Trojan Server Metrics
   - job_name: 'trojan-server'
     static_configs:
-      - targets: ['trojan-server:9090']
+      - targets: ['trojan-server:18088']
         labels:
           service: 'trojan'
           protocol: 'trojan'
     
-    metrics_path: '/metrics'
+    metrics_path: '/__metrics'
     scrape_interval: 10s
 
   # Shadowsocks Server Metrics
   - job_name: 'shadowsocks-server'
     static_configs:
-      - targets: ['shadowsocks-server:9090']
+      - targets: ['shadowsocks-server:18088']
         labels:
           service: 'shadowsocks'
           protocol: 'shadowsocks'
     
-    metrics_path: '/metrics'
+    metrics_path: '/__metrics'
     scrape_interval: 10s
 
   # Prometheus Self-Monitoring

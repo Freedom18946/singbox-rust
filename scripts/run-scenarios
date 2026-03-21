@@ -1045,7 +1045,12 @@ fi
       fi
     fi
     # Add Grafana dashboards
-    tar -rzf "${tar}" -C "${ROOT}" grafana/dns.json grafana/proxy.json grafana/udp.json grafana/route.json >/dev/null 2>&1 || true
+    tar -rzf "${tar}" -C "${ROOT}" \
+      grafana/dashboards/overview.json \
+      grafana/dashboards/dns.json \
+      grafana/dashboards/proxy.json \
+      grafana/dashboards/udp.json \
+      grafana/dashboards/route.json >/dev/null 2>&1 || true
     # Add metrics allowlist
     tar -rzf "${tar}" -C "${ROOT}" docs/metrics-labels-allowlist.json >/dev/null 2>&1 || true
     echo "[OK] 归档：${tar}"

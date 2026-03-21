@@ -1,11 +1,11 @@
 {
   "uid": "singbox-overview",
   "title": "SingBox-Rust · Overview",
-  "description": "Comprehensive overview of singbox-rust system health, performance, and key metrics",
-  "tags": ["singbox-rust", "overview", "dashboard"],
+  "description": "Current implementation overview for singbox-rust metrics",
+  "tags": ["singbox-rust", "overview", "metrics"],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-6h",
@@ -56,16 +56,13 @@
       "type": "stat",
       "id": 2,
       "title": "Build Info",
-      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "sb_build_info",
-          "refId": "A",
-          "legendFormat": "{{version}}"
+          "legendFormat": "{{version}}",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -85,14 +82,11 @@
       "type": "stat",
       "id": 3,
       "title": "Uptime",
-      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "time() - process_start_time_seconds",
+          "expr": "sb_uptime_seconds",
           "refId": "A"
         }
       ],
@@ -110,118 +104,100 @@
     {
       "type": "stat",
       "id": 4,
-      "title": "Memory Usage",
-      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "title": "Prom Export Failures (15m)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "process_resident_memory_bytes",
+          "expr": "sum(increase(prom_http_fail_total[15m])) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "decbytes",
-          "color": { "mode": "thresholds" },
+          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "value": 0, "color": "green" },
-              { "value": 524288000, "color": "yellow" },
-              { "value": 1073741824, "color": "red" }
+              { "value": 1, "color": "yellow" },
+              { "value": 5, "color": "red" }
             ]
-          }
+          },
+          "color": { "mode": "thresholds" }
         }
       },
       "options": {
-        "graphMode": "area",
-        "colorMode": "value"
+        "graphMode": "none",
+        "colorMode": "background"
       }
     },
     {
       "type": "stat",
       "id": 5,
-      "title": "CPU Usage",
-      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 1 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "title": "Healthy Proxies",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(process_cpu_seconds_total[1m]) * 100",
+          "expr": "count(proxy_up == 1) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "value": 0, "color": "green" },
-              { "value": 60, "color": "yellow" },
-              { "value": 80, "color": "red" }
-            ]
-          }
+          "unit": "short",
+          "color": { "mode": "value" }
         }
       },
       "options": {
-        "graphMode": "area",
+        "graphMode": "none",
         "colorMode": "value"
       }
     },
     {
       "type": "row",
       "id": 10,
-      "title": "Traffic Overview",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 },
+      "title": "Traffic & Success",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "collapsed": false
     },
     {
       "type": "timeseries",
       "id": 11,
-      "title": "Overall QPS (DNS + HTTP + Outbound)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "title": "Overall Request Rates",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(rate(dns_query_total[1m]))",
-          "legendFormat": "DNS Queries",
+          "expr": "sum(rate(dns_query_total[5m]))",
+          "legendFormat": "DNS",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(http_respond_total[1m]))",
-          "legendFormat": "HTTP Responses",
+          "expr": "sum(rate(http_respond_total[5m]))",
+          "legendFormat": "HTTP",
           "refId": "B"
         },
         {
-          "expr": "sum(rate(outbound_connect_total[1m]))",
-          "legendFormat": "Outbound Connections",
+          "expr": "sum(rate(outbound_connect_total[5m]))",
+          "legendFormat": "Outbound",
           "refId": "C"
         },
         {
-          "expr": "sum(rate(proxy_select_total[1m]))",
-          "legendFormat": "Proxy Selections",
+          "expr": "sum(rate(proxy_select_total[5m]))",
+          "legendFormat": "Proxy Select",
           "refId": "D"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
+          "unit": "ops",
           "color": { "mode": "palette-classic" },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "fillOpacity": 10,
-            "showPoints": "never"
+            "fillOpacity": 10
           }
         }
       },
@@ -235,24 +211,14 @@
       }
     },
     {
-      "type": "row",
-      "id": 20,
-      "title": "Success Rates & Health",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
-      "collapsed": false
-    },
-    {
       "type": "stat",
-      "id": 21,
+      "id": 12,
       "title": "DNS Success Rate",
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "100 * sum(rate(dns_success_total[5m])) / (sum(rate(dns_success_total[5m])) + sum(rate(dns_failed_total[5m])))",
+          "expr": "100 * sum(rate(dns_success_total[5m])) / clamp_min(sum(rate(dns_success_total[5m])) + sum(rate(dns_failed_total[5m])), 1e-9)",
           "refId": "A"
         }
       ],
@@ -277,16 +243,13 @@
     },
     {
       "type": "stat",
-      "id": 22,
+      "id": 13,
       "title": "HTTP Success Rate",
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "100 * sum(rate(http_respond_total{code=~\"2..|3..\"}[5m])) / sum(rate(http_respond_total[5m]))",
+          "expr": "100 * sum(rate(http_respond_total{code=~\"2..|3..\"}[5m])) / clamp_min(sum(rate(http_respond_total[5m])), 1e-9)",
           "refId": "A"
         }
       ],
@@ -311,64 +274,20 @@
     },
     {
       "type": "stat",
-      "id": 23,
-      "title": "Outbound Success Rate",
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "id": 14,
+      "title": "HTTP Active Connections",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "100 * sum(rate(outbound_connect_total{result=\"success\"}[5m])) / sum(rate(outbound_connect_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "value": 0, "color": "red" },
-              { "value": 80, "color": "yellow" },
-              { "value": 95, "color": "green" }
-            ]
-          }
-        }
-      },
-      "options": {
-        "graphMode": "area",
-        "colorMode": "value"
-      }
-    },
-    {
-      "type": "stat",
-      "id": 24,
-      "title": "Proxies Up",
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 14 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "expr": "count(proxy_up == 1) OR on() vector(0)",
+          "expr": "http_active_connections",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "value": 0, "color": "red" },
-              { "value": 1, "color": "green" }
-            ]
-          }
+          "color": { "mode": "value" }
         }
       },
       "options": {
@@ -378,20 +297,17 @@
     },
     {
       "type": "row",
-      "id": 30,
-      "title": "Resource Utilization",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "id": 20,
+      "title": "Resources & Errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "collapsed": false
     },
     {
       "type": "stat",
-      "id": 31,
-      "title": "UDP NAT Sessions",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 21 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "id": 21,
+      "title": "UDP NAT Size",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "udp_nat_size",
@@ -419,13 +335,10 @@
     },
     {
       "type": "stat",
-      "id": 32,
+      "id": 22,
       "title": "DNS Cache Size",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 21 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "dns_cache_size",
@@ -445,16 +358,13 @@
     },
     {
       "type": "stat",
-      "id": 33,
-      "title": "HTTP Active Connections",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 21 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "id": 23,
+      "title": "Route Explain Calls (1h)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "http_active_connections",
+          "expr": "sum(increase(route_explain_total[1h])) or on() vector(0)",
           "refId": "A"
         }
       ],
@@ -471,29 +381,26 @@
     },
     {
       "type": "stat",
-      "id": 34,
-      "title": "DNS Cache Hit Rate",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 21 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "id": 24,
+      "title": "Adapter Retries (1h)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "100 * sum(rate(dns_cache_hit_total[1m])) / (sum(rate(dns_cache_hit_total[1m])) + sum(rate(dns_cache_miss_total[1m])))",
+          "expr": "sum(increase(adapter_retries_total[1h])) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
+          "unit": "short",
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "red" },
-              { "value": 50, "color": "yellow" },
-              { "value": 80, "color": "green" }
+              { "value": 0, "color": "green" },
+              { "value": 10, "color": "yellow" },
+              { "value": 100, "color": "red" }
             ]
           }
         }
@@ -504,39 +411,29 @@
       }
     },
     {
-      "type": "row",
-      "id": 40,
-      "title": "Error Trends",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
-      "collapsed": false
-    },
-    {
       "type": "timeseries",
-      "id": 41,
+      "id": 25,
       "title": "Error Rates by Component",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(rate(dns_error_total[1m]))",
-          "legendFormat": "DNS Errors",
+          "expr": "sum(rate(dns_error_total[5m]))",
+          "legendFormat": "DNS",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(http_errors_total[1m]))",
-          "legendFormat": "HTTP Errors",
+          "expr": "sum(rate(http_errors_total[5m]))",
+          "legendFormat": "HTTP",
           "refId": "B"
         },
         {
-          "expr": "sum(rate(outbound_connect_error_total[1m]))",
-          "legendFormat": "Outbound Errors",
+          "expr": "(sum(rate(outbound_connect_error_total[5m])) or on() vector(0)) + (sum(rate(outbound_error_total[5m])) or on() vector(0))",
+          "legendFormat": "Outbound",
           "refId": "C"
         },
         {
-          "expr": "sum(rate(udp_upstream_fail_total[1m]))",
+          "expr": "sum(rate(udp_upstream_fail_total[5m]))",
           "legendFormat": "UDP Failures",
           "refId": "D"
         }
@@ -557,7 +454,8 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": ["last", "mean", "max"]
-        }
+        },
+        "tooltip": { "mode": "multi" }
       }
     }
   ],

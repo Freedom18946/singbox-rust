@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Comprehensive fuzz testing suite for singbox-rust"
 authors = ["singbox-rust team"]
-license = "MIT"
+license = "Apache-2.0"
 
 [package.metadata]
 cargo-fuzz = true
