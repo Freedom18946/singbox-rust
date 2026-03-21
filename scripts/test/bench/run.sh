@@ -9,7 +9,7 @@ summary=target/bench/summary.csv
 echo "bench,metric,value" > "$summary"
 
 echo "[bench] running criterion benches (dev-only)"
-cargo bench --package sb-benches --bench socks5_throughput --bench dns_performance --quiet
+cargo bench --package sb-benches --bench socks5_throughput --quiet
 
 parse_estimates() {
   local file="$1"; local name="$2"; local key="$3"

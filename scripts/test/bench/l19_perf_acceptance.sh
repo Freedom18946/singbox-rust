@@ -329,27 +329,15 @@ run_baseline_layer() {
     : >"$cmd_index_file"
     : >"$artifact_index_file"
 
-    local sample_size="30"
-    local measure_time_sec="5"
-    if [[ "$QUICK" -eq 1 ]]; then
-        sample_size="10"
-        measure_time_sec="2"
-    fi
-
     local status="PASS"
     local reason="all commands succeeded"
 
     local cmd1="bash scripts/test/bench/run.sh"
-    local cmd2="cargo bench -p sb-benches --bench protocol_comprehensive -- --sample-size ${sample_size} --measurement-time ${measure_time_sec}"
-    printf '%s\n%s\n' "$cmd1" "$cmd2" >>"$cmd_index_file"
+    printf '%s\n' "$cmd1" >>"$cmd_index_file"
 
     if ! run_cmd "$cmd1" "$layer_log"; then
         status="ENV_LIMITED"
         reason="baseline step failed: run.sh"
-    fi
-    if ! run_cmd "$cmd2" "$layer_log"; then
-        status="ENV_LIMITED"
-        reason="baseline step failed: protocol_comprehensive"
     fi
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -361,7 +349,6 @@ run_baseline_layer() {
     fi
 
     snapshot_artifact "$layer" "bench_summary" "$PROJECT_ROOT/target/bench/summary.csv" "$artifact_index_file"
-    snapshot_artifact "$layer" "protocol_percentiles" "$PROJECT_ROOT/reports/benchmarks/latency_percentiles.json" "$artifact_index_file"
     emit_layer_json "$layer" "$status" "$reason" "$layer_log" "$cmd_index_file" "$artifact_index_file"
 }
 

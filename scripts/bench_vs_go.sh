@@ -43,11 +43,10 @@ fi
 declare -A RUST_BENCHES=(
     [socks5]=socks5_throughput
     [shadowsocks]=shadowsocks_throughput
-    [vmess]=vmess_throughput
     [trojan]=trojan_throughput
 )
 
-for protocol in socks5 shadowsocks vmess trojan; do
+for protocol in socks5 shadowsocks trojan; do
     bench="${RUST_BENCHES[$protocol]}"
     log_file="$OUTPUT_DIR/rust_${protocol}.log"
     echo "[bench-vs-go] running Rust bench: $bench"
@@ -95,7 +94,7 @@ go_status = os.environ["GO_STATUS"]
 go_reason = os.environ["GO_REASON"]
 timestamp = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-protocols = ["socks5", "shadowsocks", "vmess", "trojan"]
+protocols = ["socks5", "shadowsocks", "trojan"]
 
 def to_ms(val, unit):
     unit = unit.lower()

@@ -27,19 +27,27 @@ cargo bench --package sb-benches --bench socks5_throughput
    - Data throughput (1KB, 64KB, 1MB)
 
 2. **Shadowsocks** (`benches/shadowsocks_throughput.rs`)
-   - Encryption performance (AES-256-GCM, ChaCha20-Poly1305)
-   - Decryption performance
+   - Real E2E throughput through a local Shadowsocks server + connector
    - Different payload sizes
+   - Reconnect/drop counters for env-limited runs
 
-3. **VMess** (`benches/vmess_throughput.rs`)
-   - Header encoding
-   - AEAD encryption/decryption
-   - Throughput across payload sizes
+3. **AEAD Crypto** (`benches/aead_crypto.rs`)
+   - Real AES-256-GCM and ChaCha20-Poly1305 encryption/decryption
+   - Encryption overhead vs baseline copy
+   - Realistic packet size scenarios
 
-4. **DNS** (`benches/dns_performance.rs`)
-   - Query parsing
-   - Response building
-   - Cache lookup performance
+4. **Trojan** (`benches/trojan_throughput.rs`)
+   - E2E throughput through real Trojan server (TLS 1.3)
+   - Handshake overhead
+
+5. **TCP Relay** (`benches/tcp_relay_e2e.rs`)
+   - E2E relay throughput with different buffer sizes (16KB, 64KB)
+
+6. **Domain Match** (`benches/domain_match.rs`)
+   - DomainRuleSet matching performance (hit/miss/exact/keyword)
+
+7. **Rate Limiting** (`benches/rate_limit_bench.rs`)
+   - TcpRateLimiter per-connection overhead, QPS limiting, auth tracking
 
 ## Benchmark Output
 
@@ -47,7 +55,8 @@ Results are saved in multiple formats:
 
 - **HTML Reports**: `target/criterion/` - Interactive charts and detailed analysis
 - **Console Output**: Real-time progress during benchmark runs
-- **Comparison Report**: `bench_results/comparison_report.md` (when using script)
+- **Bench Logs**: `bench_results/` (when using `./scripts/bench_vs_go.sh`)
+- **Comparison CSV**: `reports/benchmarks/go_vs_rust_throughput.csv`
 
 ## Interpreting Results
 
@@ -105,14 +114,12 @@ Target performance relative to Go sing-box 1.12.14:
 - **Memory**: Lower or equal allocation rates
 - **CPU**: Comparable or better efficiency
 
-## Continuous Monitoring
+## Regression Tracking
 
-Set up CI to run benchmarks:
-- On every push to main (quick mode)
-- Weekly full benchmark run
-- PR comments with performance impact
+Workflow automation is disabled in this repository. Run benchmark comparisons locally:
 
-See `.github/workflows/benchmark.yml` (to be added)
+- `./scripts/bench_vs_go.sh` for Rust-vs-Go throughput snapshots
+- `scripts/bench_compare.sh` against `reports/benchmarks/baseline.json` for baseline checks
 
 ## Troubleshooting
 

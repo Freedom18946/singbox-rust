@@ -15,11 +15,14 @@ cargo bench -p sb-benches --bench tcp_relay_e2e
 cargo bench -p sb-benches
 ```
 
-## CI regression gate
+## Local regression gate
 
-The `bench-regression.yml` workflow runs on every PR touching `crates/`, `benches/`, or
-`app/`. It compares the PR's measurements against `reports/benchmarks/baseline.json` and
-emits a warning if any benchmark regresses by >5% or >10%.
+Workflow automation is disabled in this repository. Use local benchmark comparison against
+`reports/benchmarks/baseline.json` instead:
+
+```bash
+scripts/bench_compare.sh target/criterion reports/benchmarks/baseline.json
+```
 
 To update the baseline after a confirmed performance improvement:
 1. Run `cargo bench -p sb-benches -- --save-baseline main`
