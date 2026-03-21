@@ -16,7 +16,6 @@ singbox-rust/
 ├── agents-only/         # AI/agent 专用参考、上下文、阶段地图
 ├── app/                 # CLI、组合根、运行入口
 ├── benches/             # 基准工作区
-├── benchmark_results/   # 已跟踪基准输出摘要
 ├── configs/             # 配置与测试配置
 ├── crates/              # 主要 crate 工作区
 ├── deployments/         # 部署模板、示例与清单
