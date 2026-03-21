@@ -1,5 +1,5 @@
 <!-- tier: A -->
-# Go-Rust Parity Matrix (2026-01-31 Baseline + 2026-02-10 Recalibration)
+# Go-Rust Parity Matrix (2026-01-31 Baseline + 2026-02-24 Closure Decision)
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.14` for functional, type, API, comment, and directory parity.
 
@@ -18,9 +18,11 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | Metric | Value |
 |------|------|
 | **Total Target** | **209** |
-| **Closed（含 Accepted Limitation / Won't Fix 决策项）** | **209** |
+| **Fully Aligned Baseline** | **183** |
+| **Additional Closed Items** | **26** |
+| **Closed（含 Accepted Limitation / Won't Fix / de-scoped / Rust-only closure 决策项）** | **209** |
 | **Remaining** | **0** |
-| **Current Parity** | **100% (209/209, acceptance baseline, includes accepted limitations)** |
+| **Closure Status** | **209/209 closed (acceptance baseline; not equivalent to 209 behavior-aligned items)** |
 
 ### Recalibration Scope
 
@@ -35,7 +37,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 ### Evidence Chain（可复算）
 
-- 阶段收口记录：`agents-only/07-memory/implementation-history.md`（L2 关闭与 M2.4 完成段落）
+- 阶段收口记录：`agents-only/memory/implementation-history.md`（L2 关闭与 M2.4 完成段落）
 - 当前执行上下文：`agents-only/active_context.md`
 - 工作包状态：`agents-only/workpackage_latest.md`
 - L4 质量复验：`reports/L4_QUALITY_RECHECK_2026-02-10.md`
@@ -465,8 +467,8 @@ Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-c
 
 **Actions**:
 1. [x] Add a single `parity` feature alias (or enable parity features by default in parity builds).
-2. [x] Document the parity feature set in `docs/STATUS.md` and `NEXT_STEPS.md`.
-3. [x] Ensure CI parity build uses `--features parity` and blocks stub fallback regressions.
+2. [x] Document the parity feature set in `docs/STATUS.md` and active capability/parity docs.
+3. [x] Ensure parity-focused local build verification uses `--features parity` and blocks stub fallback regressions.
 
 ### Priority 2: TLS Fragmentation
 
@@ -483,7 +485,7 @@ Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-c
 **Actions**:
 1. [x] Document UDP listen as unsupported without TUN (userspace transport).
 2. [x] Document reserved bytes as unsupported with boringtun transport.
-3. [x] Document kernel vs userspace parity limits (see NEXT_STEPS limitations + endpoint errors).
+3. [x] Document kernel vs userspace parity limits in active docs and endpoint errors.
 
 ### Priority 4: Tailscale Endpoint (De-scoped)
 
@@ -571,4 +573,4 @@ Parity achieved via `sb_platform::network::get_interface_mac()` + Windows `GetAd
 | PX-012 | `experimental/v2rayapi/{server.go,stats.go,stats.proto}` + `option/experimental.go` | `crates/sb-core/src/services/v2ray_api.rs` + `crates/sb-config/src/ir/experimental.rs` + `crates/sb-core/src/context.rs` | PARTIAL | PARTIAL | PARTIAL | None | `go_fork_source/sing-box-1.12.14/experimental/v2rayapi/server.go#L32` `go_fork_source/sing-box-1.12.14/experimental/v2rayapi/stats.go#L29` `go_fork_source/sing-box-1.12.14/experimental/v2rayapi/stats.go#L121` `go_fork_source/sing-box-1.12.14/experimental/v2rayapi/stats.go#L137` `go_fork_source/sing-box-1.12.14/experimental/v2rayapi/stats.go#L191` `go_fork_source/sing-box-1.12.14/option/experimental.go#L44` `crates/sb-core/src/services/v2ray_api.rs#L154` `crates/sb-core/src/services/v2ray_api.rs#L219` `crates/sb-config/src/ir/experimental.rs#L47` | gRPC StatsService + patterns/regexp implemented; config list parity added. TCP/UDP tracking wired incl. TUN + endpoint flows; router-wide ConnectionTracker parity missing; HTTP JSON endpoints remain. | Implement router-level tracker; decide whether to keep or gate HTTP endpoints; add parity tests for query/reset/sys stats. |
 | PX-013 | `experimental/cachefile/{cache.go,fakeip.go,rdrc.go}` + `adapter/experimental.go` + `option/experimental.go` | `crates/sb-core/src/services/cache_file.rs` + `crates/sb-config/src/ir/experimental.rs` + `crates/sb-core/src/context.rs` | MAJOR_DIFF | FAIL | FAIL | None | `go_fork_source/sing-box-1.12.14/experimental/cachefile/cache.go#L63` `go_fork_source/sing-box-1.12.14/experimental/cachefile/cache.go#L104` `go_fork_source/sing-box-1.12.14/experimental/cachefile/cache.go#L176` `go_fork_source/sing-box-1.12.14/experimental/cachefile/fakeip.go#L24` `go_fork_source/sing-box-1.12.14/experimental/cachefile/rdrc.go#L22` `go_fork_source/sing-box-1.12.14/adapter/experimental.go#L38` `go_fork_source/sing-box-1.12.14/option/experimental.go#L12` `crates/sb-core/src/services/cache_file.rs#L59` `crates/sb-core/src/context.rs#L651` `crates/sb-config/src/ir/experimental.rs#L15` | Rust cache is JSON-only and lacks BoltDB buckets/cache_id scoping, mode/selected/group_expand/rule_set storage, FakeIP metadata/async paths, and Go RDRC reject-cache semantics; CacheFile trait is empty so no adapter integration. | Implement full CacheFile interface with BoltDB + cache_id, mode/selected/expand/rule_set persistence, FakeIP metadata + RDRC reject cache, and wire into adapter/selector/router. |
 | PX-014 | `service/derp/service.go` + `option/tailscale.go` | `crates/sb-core/src/services/derp/{server.rs,mesh_test.rs}` + `crates/sb-config/src/ir/mod.rs` + `crates/sb-core/src/service.rs` + `crates/sb-transport/src/dialer.rs` | PARTIAL | PASS | PARTIAL | `CARGO_TARGET_DIR=target-alt cargo test -p sb-config` `CARGO_TARGET_DIR=target-alt cargo test -p sb-core --features service_derp` | `go_fork_source/sing-box-1.12.14/service/derp/service.go` `go_fork_source/sing-box-1.12.14/option/tailscale.go` `crates/sb-core/src/services/derp/server.rs` `crates/sb-config/src/ir/mod.rs` | DERP config schema + key runtime semantics aligned: `verify_client_url` supports string/object + per-URL dialer (hyper POST); `mesh_with` supports per-peer Dial/TLS + PostStart mesh; `verify_client_endpoint` is tailscale endpoint tag resolved at PostStart; STUN enable/defaults aligned; ListenOptions honored for TCP/UDP bind; `/bootstrap-dns` uses injected DNSRouter (no global dependency). | Optional follow-ups: expand `domain_resolver` strategy coverage (currently first-IP minimal); revalidate HTTP/2/h2c parity vs Go derphttp if required; clean remaining warnings. |
-| PX-015 | `service/resolved/{service.go,resolve1.go,transport.go,stub.go}` + `option/resolved.go` | `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}` + `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}` + `crates/sb-core/src/dns/{rule_engine.rs,upstream.rs,message.rs}` + `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` | PARTIAL | PASS | PARTIAL | `cargo test -p sb-core` `cargo test -p sb-config` `cargo test -p sb-adapters` | Go refs: `go_fork_source/sing-box-1.12.14/service/resolved/{service.go,resolve1.go,stub.go,transport.go}` `go_fork_source/sing-box-1.12.14/option/resolved.go` Rust refs: `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}` `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}` `crates/sb-core/src/dns/{dns_router.rs,rule_engine.rs,upstream.rs,message.rs}` `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` | Implemented strict Go-style resolved replacement model (system bus + DoNotQueue name; Exists fails), DNS stub UDP+TCP routing via DNSRouter.exchange (wire-format), full Resolve* method family with best-effort sender process metadata, non-A/AAAA qtype raw passthrough (PTR/SRV/TXT etc) via upstream.exchange, config wiring for dns server `type:\"resolved\"`, and ResolvedTransport bind_interface best-effort + parallel fqdn racer + defaults aligned (`accept_default_resolvers=false`). L4 阶段新增补证记录：`reports/PX015_LINUX_VALIDATION_2026-02-10.md`；当前主机非 Linux，项目决策为 Accepted Limitation，不再追踪 Linux 实机补证。 | accepted limitation (linux runtime evidence de-scoped) | no further tracking required (historical workflow kept for optional manual validation). |
+| PX-015 | `service/resolved/{service.go,resolve1.go,transport.go,stub.go}` + `option/resolved.go` | `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}` + `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}` + `crates/sb-core/src/dns/{rule_engine.rs,upstream.rs,message.rs}` + `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` | PARTIAL | PASS | PARTIAL | `cargo test -p sb-core` `cargo test -p sb-config` `cargo test -p sb-adapters` | Go refs: `go_fork_source/sing-box-1.12.14/service/resolved/{service.go,resolve1.go,stub.go,transport.go}` `go_fork_source/sing-box-1.12.14/option/resolved.go` Rust refs: `crates/sb-adapters/src/service/{resolved_impl.rs,resolve1.rs}` `crates/sb-core/src/dns/transport/{resolved.rs,dot.rs}` `crates/sb-core/src/dns/{dns_router.rs,rule_engine.rs,upstream.rs,message.rs}` `crates/sb-config/src/{ir/mod.rs,validator/v2.rs}` | Implemented strict Go-style resolved replacement model (system bus + DoNotQueue name; Exists fails), DNS stub UDP+TCP routing via DNSRouter.exchange (wire-format), full Resolve* method family with best-effort sender process metadata, non-A/AAAA qtype raw passthrough (PTR/SRV/TXT etc) via upstream.exchange, config wiring for dns server `type:\"resolved\"`, and ResolvedTransport bind_interface best-effort + parallel fqdn racer + defaults aligned (`accept_default_resolvers=false`). L4 阶段新增补证记录：`reports/PX015_LINUX_VALIDATION_2026-02-10.md`；当前主机非 Linux，项目决策为 Accepted Limitation，不再追踪 Linux 实机补证。 | accepted limitation (linux runtime evidence de-scoped) | no further tracking required; historical manual validation notes retained only as context. |

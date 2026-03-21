@@ -272,16 +272,16 @@ pub struct InboundContext {
 
 | 命令 | 功能 | Rust 实现位置 |
 |------|------|--------------|
-| `run` | 运行服务 | `app/src/bin/run.rs` |
-| `check` | 检查配置 | `app/src/bin/check.rs` |
-| `format` | 格式化配置 | `app/src/bin/format.rs` |
-| `version` | 版本信息 | `app/src/bin/version.rs` |
-| `merge` | 合并配置 | `app/src/bin/merge.rs` |
-| `geoip` | GeoIP 工具 | `app/src/bin/geoip.rs` |
-| `geosite` | GeoSite 工具 | `app/src/bin/geosite.rs` |
-| `rule-set` | 规则集工具 | `app/src/bin/ruleset.rs` |
-| `generate` | 生成工具 | `app/src/bin/generate.rs` |
-| `tools` | 调试工具 | `app/src/bin/tools.rs` |
+| `run` | 运行服务 | `app/src/bin/run.rs` + `app/src/cli/run.rs` |
+| `check` | 检查配置 | `app/src/bin/check.rs` + `app/src/cli/check/run.rs` |
+| `format` | 格式化配置 | `app/src/bin/format.rs` + `app/src/cli/format.rs` |
+| `version` | 版本信息 | `app/src/bin/version.rs` + `app/src/cli/version.rs` |
+| `merge` | 合并配置 | `app/src/bin/merge.rs` + `app/src/cli/merge.rs` |
+| `geoip` | GeoIP 工具 | `app/src/bin/geoip.rs` + `app/src/cli/geoip.rs` |
+| `geosite` | GeoSite 工具 | `app/src/bin/geosite.rs` + `app/src/cli/geosite.rs` |
+| `rule-set` | 规则集工具 | `app/src/bin/ruleset.rs` + `app/src/cli/ruleset.rs` |
+| `generate` | 生成工具 | `app/src/cli/generate.rs` |
+| `tools` | 调试工具 | `app/src/bin/tools.rs` + `app/src/cli/tools.rs` |
 
 ### 5.2 run 命令行为
 
@@ -438,7 +438,7 @@ protocol/
 
 | Go 协议 | Rust 位置 | 状态 |
 |---------|----------|------|
-| direct/block | `sb-core/` | ✅ |
+| direct/block | `sb-core/` + `sb-adapters/`（当前存在重叠实现） | ✅ |
 | shadowsocks | `sb-adapters/outbound/` | ✅ |
 | trojan | `sb-adapters/outbound/` | ✅ |
 | vmess/vless | `sb-adapters/outbound/` | ✅ |
@@ -447,6 +447,8 @@ protocol/
 | socks/http | `sb-adapters/inbound/` | ✅ |
 | tun | `sb-adapters/inbound/` | ✅ |
 | group | `sb-core/outbound/` | ✅ |
+
+说明：`direct/block` 当前不能再写成单一归属。仓库中同时存在 `sb-core` 与 `sb-adapters` 路径，具体保留关系受迁移状态和边界门禁约束。
 
 ---
 

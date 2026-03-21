@@ -225,4 +225,4 @@ singbox-rust/
 
 ---
 
-*下一步：阅读 [04-IMPLEMENTATION-GUIDE.md](./04-IMPLEMENTATION-GUIDE.md) 了解实现指南*
+*下一步：结合 `PROJECT-STRUCTURE.md` 与 `ACCEPTANCE-CRITERIA.md` 阅读当前结构和验收口径。*

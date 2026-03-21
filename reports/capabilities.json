@@ -1,7 +1,7 @@
 {
   "schema_version": "1.1.0",
-  "generated_at": "2026-03-09T12:21:30.654548Z",
-  "source_commit": "64a8c86",
+  "generated_at": "2026-03-21T06:09:04Z",
+  "source_commit": "c36d29d3",
   "profile": "docs-only",
   "acceptance_closure": {
     "status": "snapshot_unverified",
@@ -10,14 +10,14 @@
     "evidence": [
       {
         "kind": "doc",
-        "path": "agents-only/planning/L18-PHASE4.md",
-        "line": 17,
-        "note": "Phase 4 explicitly separates closure narrative from per-capability facts."
+        "path": "docs/capabilities.md",
+        "line": 74,
+        "note": "Capability docs explicitly separate acceptance closure from per-capability facts."
       },
       {
         "kind": "doc",
         "path": "reports/L18_REPLACEMENT_CERTIFICATION.md",
-        "line": 82,
+        "line": 5,
         "note": "Replacement-certification report now treats missing batch artifacts as unverified."
       }
     ]

@@ -2,7 +2,7 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **Status**: Maintenance mode (L1-L25 Closed). Parity 92.9% (52/56). See [docs/capabilities.md](docs/capabilities.md) for capability details.
+> **Status**: Maintenance mode (L1-L25 Closed). Closure, capability state, and behavior evidence are tracked separately. See [docs/STATUS.md](docs/STATUS.md), [docs/capabilities.md](docs/capabilities.md), and [agents-only/reference/GO_PARITY_MATRIX.md](agents-only/reference/GO_PARITY_MATRIX.md).
 
 ---
 
@@ -10,7 +10,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 
 > **如果你是 AI 助手、Agent、LLM 或 CLI 工具**：必须首先查阅 [`agents-only/`](./agents-only/) 目录。
 >
-> 该目录包含整合后的需求分析、验收标准和架构规范，是 AI 工作的**唯一真相来源**。
+> 该目录是 AI 工作的主导航入口；具体状态仍应按 `labs/interop-lab/docs/dual_kernel_golden_spec.md`、`agents-only/active_context.md`、`agents-only/workpackage_latest.md` 与 `agents-only/reference/` 中的当前文档链路交叉确认。
 
 ### 🚨 强制执行
 | 文档 | 要求 |

@@ -1,5 +1,9 @@
 # L3 审计修复复验报告（2026-02-10）
 
+> WARNING: This is a historical re-audit snapshot.
+>
+> PASS conclusions in this file were recorded in the original environment and may include `PASS` with environment-limited `SKIP` semantics. Treat it as historical remediation context, not as current live acceptance evidence.
+
 > **口径更新（2026-02-10 晚）**：
 > 本报告中的“放弃 Linux L3.3 验收”属于当时会话决策，已被 L4 最新策略覆盖。
 > 当前权威口径：`PX-015` 继续闭环，见 `reports/PX015_LINUX_VALIDATION_2026-02-10.md` 与 `agents-only/workpackage_latest.md`。
