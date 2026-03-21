@@ -76,6 +76,7 @@ criterion/
 # Benchmark data files
 bench-*.json
 bench-*.txt
+benchmark_results/
 
 # ------------------------------------------------------------------------------
 # Development & Debug
@@ -201,6 +202,10 @@ instruction/
 .env.local
 *.local.json
 *.local.yaml
+
+# User-specific config overrides (prevent credential leaks)
+configs/private/
+configs/*.private.*
 
 # TUN device test artifacts
 *.tun

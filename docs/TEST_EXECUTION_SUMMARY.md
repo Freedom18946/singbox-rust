@@ -135,8 +135,14 @@ cargo bench --features bench -- --save-baseline m1-baseline
 cd go_fork_source/sing-box-1.12.14
 go build -o sing-box-go ./cmd/sing-box
 
-# Start Go Trojan server
-./sing-box-go run -c configs/trojan-server.json &
+# Start Go Trojan server (Go sing-box requires JSON config)
+# Prepare a Go-compatible JSON config, e.g.:
+#   { "inbounds": [{ "type": "trojan", "tag": "trojan-in",
+#     "listen": "0.0.0.0", "listen_port": 443,
+#     "password": "test123",
+#     "tls": { "enabled": true, "cert_path": "...", "key_path": "..." }
+#   }], "outbounds": [{ "type": "direct", "tag": "direct" }] }
+./sing-box-go run -c go-trojan-server.json &
 
 # Start Rust Trojan client
 cd ../../

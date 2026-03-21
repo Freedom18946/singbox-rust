@@ -14,9 +14,9 @@
         {
             "type": "trojan",
             "tag": "hk-01",
-            "server": "lmnode-ixd2fh5v0uq1v7z-lmhk.lma1b2.com",
-            "port": 53401,
-            "password": "e1e2acb6-1805-4376-9f48-edefe83a259a"
+            "server": "your-trojan-server.example.com",
+            "port": 443,
+            "password": "CHANGEME_USE_STRONG_PASSWORD_HERE"
         },
         {
             "type": "direct",
