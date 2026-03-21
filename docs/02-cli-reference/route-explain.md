@@ -1,19 +1,17 @@
 # `route` Command
 
-Explain routing decisions for a destination.
+This page keeps its historical filename, but the live command is `route`.
 
-## Usage
+Example:
 
 ```bash
-singbox-rust route -c config.yaml --dest example.com:443 --explain
+cargo run -p app -- route -c examples/quick-start/explain_minimal.yaml --dest example.com:443 --explain --with-trace
 ```
 
-## Common Options
+Important options:
 
-- `--dest <ADDR>`: destination host:port
-- `--explain`: include rule match details
-- `--format <text|json>`: output format
-
-## Related
-
-- [User Guide](../01-user-guide/README.md)
+- `--dest <DEST>`
+- `--udp`
+- `--format <human|json|sarif>`
+- `--explain`
+- `--with-trace`

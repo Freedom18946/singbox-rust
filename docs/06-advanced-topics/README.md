@@ -223,7 +223,7 @@ domain_keyword(youtube) => proxy
 **Compile to rule-set**:
 
 ```bash
-singbox-rust rule-set compile dsl-rules.txt --out rules.srs
+cargo run -p app -- ruleset compile dsl-rules.txt --out rules.srs
 ```
 
 **Use in config**:

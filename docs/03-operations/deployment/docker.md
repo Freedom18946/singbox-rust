@@ -1,26 +1,15 @@
-# Docker Deployment
+# Docker
 
-## Overview
+Two maintained Docker entry points exist:
 
-Container deployment for singbox-rust.
+- `deployments/docker/`
+  Local image build from this repository.
+- `deployments/docker-compose/`
+  Multi-service deployment samples using published images.
 
-## Quick start
+Both use the same runtime contract:
 
-```bash
-docker build -t singbox-rust:latest -f deployments/docker/Dockerfile .
-
-docker run -d \
-  --name singbox-rust \
-  -v /etc/singbox/config.yaml:/etc/singbox/config.yaml:ro \
-  -p 1080:1080 -p 18088:18088 \
-  singbox-rust:latest run -c /etc/singbox/config.yaml
-```
-
-## Notes
-
-- Sample compose files live in `deployments/docker-compose/`.
-- Use read-only config mounts for safety.
-
-## Related
-
-- [Deployment Guide](../../DEPLOYMENT_GUIDE.md)
+- command: `app run -c /etc/singbox/config.json`
+- admin env: `ADMIN_LISTEN`, `ADMIN_TOKEN`
+- health path: `GET /healthz`
+- metrics path: `GET /metricsz`

@@ -1,11 +1,3 @@
-version: '3.8'
-
-# Validation chain (manual):
-# 1) docker compose -f deployments/docker/docker-compose.yml build singbox-rust
-# 2) docker image inspect singbox-rust --format '{{ .Size }}' | awk '{mb=$1/1024/1024; printf "image_size_mb=%.2f\n", mb; exit(mb<50?0:1)}'
-# 3) docker compose -f deployments/docker/docker-compose.yml up -d singbox-rust
-# 4) docker inspect --format='{{json .State.Health}}' singbox-rust
-
 services:
   singbox-rust:
     build:
@@ -15,18 +7,17 @@ services:
         BUILD_FEATURES: "parity"
     container_name: singbox-rust
     restart: unless-stopped
-    user: "1000:1000"
+    command: ["app", "run", "-c", "/etc/singbox/config.json"]
     ports:
       - "1080:1080"
-      - "8080:8080"
-      - "9090:9090"
     volumes:
       - ./config:/etc/singbox:ro
       - singbox-data:/var/lib/singbox
     environment:
-      - RUST_LOG=info
+      RUST_LOG: info
+      ADMIN_LISTEN: 0.0.0.0:19090
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:9090/services/health"]
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:19090/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

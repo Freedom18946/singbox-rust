@@ -5,7 +5,7 @@ Validate configuration files and optionally migrate V1 → V2.
 ## Usage
 
 ```bash
-singbox-rust check -c config.yaml
+cargo run -p app -- check -c config.yaml
 ```
 
 ## Common Options
@@ -18,8 +18,8 @@ singbox-rust check -c config.yaml
 ## Examples
 
 ```bash
-singbox-rust check -c config.yaml
-singbox-rust check -c old.json --migrate --write-normalized --out config.v2.yaml
+cargo run -p app -- check -c config.yaml
+cargo run -p app -- check -c old.json --migrate --write-normalized --out config.v2.yaml
 ```
 
 ## Related

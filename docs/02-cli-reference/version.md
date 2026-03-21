@@ -5,6 +5,6 @@ Show build metadata and enabled features.
 ## Usage
 
 ```bash
-singbox-rust version
-singbox-rust version --format json
+cargo run -p app -- version
+cargo run -p app -- version --format json
 ```

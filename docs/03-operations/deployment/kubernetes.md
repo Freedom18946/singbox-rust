@@ -1,20 +1,12 @@
-# Kubernetes Deployment
+# Kubernetes
 
-## Overview
+The maintained manifest lives at `deployments/kubernetes/deployment.yaml`.
 
-Kubernetes deployment notes and pointers.
+Conventions used there:
 
-## Quick start
+- config mounted at `/etc/singbox/config.json`
+- process started as `app run -c /etc/singbox/config.json`
+- admin port `19090`
+- liveness and readiness probes use `GET /healthz`
 
-```bash
-kubectl apply -f deployments/kubernetes/deployment.yaml
-```
-
-## Notes
-
-- Use ConfigMaps or Secrets for config and credentials.
-- Add probes for `/metrics` if admin API is enabled.
-
-## Related
-
-- [Deployment Guide](../../DEPLOYMENT_GUIDE.md)
+For Helm users, see `deployments/helm/singbox-rust/`.

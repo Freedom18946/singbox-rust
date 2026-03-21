@@ -1,15 +1,12 @@
 # Zero Breakage
 
-## Overview
+Compatibility guidance for maintenance work:
 
-Principles for backward-compatible changes.
+- prefer additive schema and CLI changes
+- document migrations when behavior changes
+- validate examples against the live `app` CLI before updating docs
 
-## Key points
+Related:
 
-- Prefer additive changes to config and API.
-- Document migration steps and parity gaps.
-
-## Related
-
-- ../../CHANGELOG.md
-- ../../agents-only/workpackage_latest.md
+- `../migration-from-go.md`
+- `../../agents-only/workpackage_latest.md`

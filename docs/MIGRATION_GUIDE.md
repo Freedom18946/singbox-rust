@@ -124,7 +124,7 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone singbox-rust
-git clone https://github.com/yourusername/singbox-rust.git
+git clone https://github.com/Freedom18946/singbox-rust.git
 cd singbox-rust
 
 # Build with full features

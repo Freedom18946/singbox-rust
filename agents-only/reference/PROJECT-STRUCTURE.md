@@ -19,8 +19,7 @@ singbox-rust/
 ├── benchmark_results/   # 已跟踪基准输出摘要
 ├── configs/             # 配置与测试配置
 ├── crates/              # 主要 crate 工作区
-├── deployment/          # 部署脚本与配置
-├── deployments/         # 部署示例
+├── deployments/         # 部署模板、示例与清单
 ├── docs/                # 用户/开发/运维文档
 ├── examples/            # 示例与样例配置
 ├── fuzz/                # fuzz 相关内容

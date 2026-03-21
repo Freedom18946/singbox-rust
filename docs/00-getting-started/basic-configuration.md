@@ -48,7 +48,7 @@ schema_version: 2
 **Migration**: If you have a V1 (Go sing-box) config:
 
 ```bash
-singbox-rust check -c old-config.json --migrate --write-normalized --out new-config.yaml
+cargo run -p app -- check -c old-config.json --migrate --write-normalized --out new-config.yaml
 ```
 
 ### 2. Logging
@@ -65,7 +65,7 @@ log:
 **Environment variable override**:
 
 ```bash
-RUST_LOG=debug singbox-rust run -c config.yaml
+RUST_LOG=debug cargo run -p app -- run -c config.yaml
 ```
 
 ### 3. Inbounds
@@ -267,7 +267,7 @@ route:
 **Save as `config.yaml` and run**:
 
 ```bash
-singbox-rust run -c config.yaml
+cargo run -p app -- run -c config.yaml
 ```
 
 **Test with curl**:
@@ -287,16 +287,16 @@ Always validate before running:
 
 ```bash
 # Basic validation
-singbox-rust check -c config.yaml
+cargo run -p app -- check -c config.yaml
 
 # Detailed JSON output
-singbox-rust check -c config.yaml --format json
+cargo run -p app -- check -c config.yaml --format json
 
-# Check specific outbound
-singbox-rust check -c config.yaml --outbound proxy
+# Print a one-line summary
+cargo run -p app -- check -c config.yaml --summary
 
 # Test routing decision
-singbox-rust route -c config.yaml --dest google.com:443 --explain
+cargo run -p app -- route -c config.yaml --dest google.com:443 --explain
 ```
 
 **Exit codes**:
@@ -382,20 +382,19 @@ Override configuration via environment:
 
 ```bash
 # Enable debug logging
-RUST_LOG=debug singbox-rust run -c config.yaml
+RUST_LOG=debug cargo run -p app -- run -c config.yaml
 
 # Print env snapshot at startup
-SB_PRINT_ENV=1 singbox-rust run -c config.yaml
+SB_PRINT_ENV=1 cargo run -p app -- run -c config.yaml
 
 # DNS settings
 SB_DNS_ENABLE=1 \
 SB_DNS_MODE=doh \
-singbox-rust run -c config.yaml
+cargo run -p app -- run -c config.yaml
 
 # Admin API
-SB_ADMIN_ENABLE=1 \
-SB_ADMIN_LISTEN=127.0.0.1:18088 \
-singbox-rust run -c config.yaml
+ADMIN_LISTEN=127.0.0.1:19090 \
+cargo run -p app -- run -c config.yaml
 ```
 
 See [Environment Variables](../02-cli-reference/environment-variables.md) for all options.
@@ -445,7 +444,7 @@ Then:
 
 ```bash
 export SS_PASSWORD=your-secret-password
-singbox-rust run -c config.yaml
+cargo run -p app -- run -c config.yaml
 ```
 
 ### 4. Use JSON Schema for Validation

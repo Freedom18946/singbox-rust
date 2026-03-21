@@ -5,8 +5,8 @@ Format and normalize configuration files.
 ## Usage
 
 ```bash
-singbox-rust format -c config.yaml
-singbox-rust format -c config.yaml -w
+cargo run -p app -- format -c config.yaml
+cargo run -p app -- format -c config.yaml -w
 ```
 
 ## Common Options

@@ -53,4 +53,4 @@ Pinned Example (manual dispatch)
 
 Notes
 - Source format version is kept in JSON (`version` field). When compiling, you can force a target version with `--version`.
-- Rule-set conversion/merge/upgrade are available via `app rule-set ...` CLI for ad-hoc tasks.
+- Rule-set conversion, merge, and upgrade are available via `app ruleset ...` for ad-hoc tasks.

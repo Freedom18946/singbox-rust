@@ -1,59 +1,74 @@
 {
-    "log": {
-        "level": "info"
-    },
-    "inbounds": [
-        {
-            "type": "socks",
-            "tag": "socks-in",
-            "listen": "127.0.0.1",
-            "listen_port": 1080
-        }
-    ],
-    "outbounds": [
-        {
-            "type": "shadowsocks",
-            "tag": "ss-proxy",
-            "server": "your-server.com",
-            "server_port": 8388,
-            "method": "chacha20-poly1305",
-            "password": "YOUR_PASSWORD"
-        },
-        {
-            "type": "trojan",
-            "tag": "trojan-backup",
-            "server": "backup-server.com",
-            "server_port": 443,
-            "password": "YOUR_TROJAN_PASSWORD",
-            "tls": {
-                "enabled": true,
-                "server_name": "backup-server.com",
-                "alpn": [
-                    "h2",
-                    "http/1.1"
-                ]
-            }
-        },
-        {
-            "type": "direct",
-            "tag": "direct"
-        }
-    ],
-    "route": {
-        "rules": [
-            {
-                "geoip": "private",
-                "outbound": "direct"
-            },
-            {
-                "geosite": "cn",
-                "outbound": "direct"
-            },
-            {
-                "geosite": "category-ads-all",
-                "outbound": "block"
-            }
-        ],
-        "final": "ss-proxy"
+  "schema_version": 2,
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1:1080"
     }
+  ],
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "name": "ss-primary",
+      "server": "primary.example.com",
+      "port": 8388,
+      "method": "chacha20-poly1305",
+      "password": "CHANGE_THIS_PASSWORD"
+    },
+    {
+      "type": "trojan",
+      "name": "trojan-backup",
+      "server": "backup.example.com",
+      "port": 443,
+      "password": "CHANGE_THIS_TROJAN_PASSWORD",
+      "transport": [
+        "tls",
+        "grpc"
+      ],
+      "tls_sni": "backup.example.com",
+      "grpc_service": "proxy.Service"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "suffix": [
+            "lan.example",
+            "internal.example"
+          ]
+        },
+        "to": "direct"
+      },
+      {
+        "when": {
+          "suffix": [
+            "backup.example.com"
+          ]
+        },
+        "to": "trojan-backup"
+      },
+      {
+        "when": {
+          "suffix": [
+            "ads.example.com"
+          ]
+        },
+        "to": "block"
+      }
+    ],
+    "default": "ss-primary"
+  }
 }

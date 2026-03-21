@@ -1,40 +1,33 @@
 {
-  "// description": "Trojan outbound with gRPC transport",
-  "// usage": "cargo run -p app --features 'sb-core/out_trojan,sb-core/v2ray_transport' -- run -c examples/configs/outbounds/trojan-grpc.json",
-
+  "schema_version": 2,
   "inbounds": [
     {
-      "type": "mixed",
-      "name": "mixed-in",
+      "type": "socks",
+      "name": "socks-in",
       "listen": "127.0.0.1",
-      "port": 1080
+      "port": 1082
     }
   ],
-
   "outbounds": [
     {
       "type": "trojan",
-      "name": "trojan-out",
-      "server": "your-server.com",
+      "name": "trojan-grpc",
+      "server": "example.com",
       "port": 443,
-      "password": "your-secure-password-here",
-      "transport": {
-        "type": "grpc",
-        "service_name": "TrojanService"
-      },
-      "tls": {
-        "enabled": true,
-        "server_name": "your-server.com",
-        "alpn": ["h2"]
-      }
+      "password": "change-me",
+      "transport": [
+        "tls",
+        "grpc"
+      ],
+      "tls_sni": "example.com",
+      "grpc_service": "proxy.Service"
     },
     {
       "type": "direct",
       "name": "direct"
     }
   ],
-
   "route": {
-    "default": "trojan-out"
+    "default": "trojan-grpc"
   }
 }

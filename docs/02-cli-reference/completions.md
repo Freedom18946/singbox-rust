@@ -1,10 +1,16 @@
-# `gen-completions` Command
+# `completion` Command
 
-Generate shell completion scripts.
+The current command name is `completion`, not `gen-completions`.
 
-## Usage
+Examples:
 
 ```bash
-singbox-rust gen-completions --all --dir completions/
-singbox-rust gen-completions --shell bash --dir completions/
+cargo run -p app -- completion --shell bash
+cargo run -p app -- completion --all --dir ./completions
 ```
+
+Important options:
+
+- `--shell <bash|zsh|fish|power-shell|elvish>`
+- `--dir <DIR>`
+- `--all`

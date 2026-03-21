@@ -4,9 +4,8 @@ metadata:
   name: singbox-rust
   labels:
     app: singbox-rust
-    version: v1.0.0
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: singbox-rust
@@ -14,7 +13,6 @@ spec:
     metadata:
       labels:
         app: singbox-rust
-        version: v1.0.0
     spec:
       securityContext:
         runAsNonRoot: true
@@ -22,78 +20,54 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      
       containers:
-      - name: singbox-rust
-        image: ghcr.io/freedom18946/singbox-rust:v1.0.0
-        imagePullPolicy: IfNotPresent
-        
-        ports:
-        - name: socks
-          containerPort: 1080
-          protocol: TCP
-        - name: http
-          containerPort: 8080
-          protocol: TCP
-        - name: https
-          containerPort: 443
-          protocol: TCP
-        
-        env:
-        - name: SB_LOG_LEVEL
-          value: "info"
-        - name: SB_INBOUND_RATE_LIMIT_PER_IP
-          value: "100"
-        - name: SB_INBOUND_RATE_LIMIT_WINDOW_SEC
-          value: "10"
-        
-        volumeMounts:
-        - name: config
-          mountPath: /etc/singbox
-          readOnly: true
-        
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "1000m"
-        
-        livenessProbe:
-          exec:
-            command:
-            - singbox-rust
-            - version
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          timeoutSeconds: 5
-          failureThreshold: 3
-        
-        readinessProbe:
-          tcpSocket:
-            port: 1080
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 3
-        
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 1000
-          capabilities:
-            drop:
-            - ALL
-            add:
-            - NET_BIND_SERVICE
-      
+        - name: singbox-rust
+          image: ghcr.io/freedom18946/singbox-rust:latest
+          imagePullPolicy: IfNotPresent
+          command: ["app", "run", "-c", "/etc/singbox/config.json"]
+          env:
+            - name: RUST_LOG
+              value: info
+            - name: ADMIN_LISTEN
+              value: 0.0.0.0:19090
+          ports:
+            - name: socks
+              containerPort: 1080
+              protocol: TCP
+            - name: admin
+              containerPort: 19090
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/singbox/config.json
+              subPath: config.json
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
       volumes:
-      - name: config
-        configMap:
-          name: singbox-rust-config
-
+        - name: config
+          configMap:
+            name: singbox-rust-config
 ---
 apiVersion: v1
 kind: Service
@@ -106,19 +80,14 @@ spec:
   selector:
     app: singbox-rust
   ports:
-  - name: socks
-    port: 1080
-    targetPort: 1080
-    protocol: TCP
-  - name: http
-    port: 8080
-    targetPort: 8080
-    protocol: TCP
-  - name: https
-    port: 443
-    targetPort: 443
-    protocol: TCP
-
+    - name: socks
+      port: 1080
+      targetPort: socks
+      protocol: TCP
+    - name: admin
+      port: 19090
+      targetPort: admin
+      protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -127,19 +96,24 @@ metadata:
 data:
   config.json: |
     {
+      "schema_version": 2,
       "log": {
         "level": "info"
       },
       "inbounds": [
         {
-          "type": "socks",
-          "listen": "0.0.0.0",
-          "port": 1080
+          "type": "mixed",
+          "name": "mixed-in",
+          "listen": "0.0.0.0:1080"
         }
       ],
       "outbounds": [
         {
-          "type": "direct"
+          "type": "direct",
+          "name": "direct"
         }
-      ]
+      ],
+      "route": {
+        "default": "direct"
+      }
     }

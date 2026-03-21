@@ -1,22 +1,22 @@
 {
+  "schema_version": 2,
   "log": {
     "level": "info"
   },
   "inbounds": [
     {
       "type": "mixed",
-      "tag": "mixed-in",
-      "listen": "127.0.0.1",
-      "listen_port": 1080
+      "name": "mixed-in",
+      "listen": "0.0.0.0:1080"
     }
   ],
   "outbounds": [
     {
       "type": "direct",
-      "tag": "direct"
+      "name": "direct"
     }
   ],
   "route": {
-    "final": "direct"
+    "default": "direct"
   }
 }

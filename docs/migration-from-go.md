@@ -1,50 +1,22 @@
-# Migration From Go sing-box (L17 Entry)
+# Migration From Go
 
-This entry file provides the current migration path from Go `sing-box 1.12.14` to `singbox-rust` and links to detailed compatibility references.
+Use the current Rust CLI and validator as the migration oracle.
 
-## Current Parity Baseline
-
-- Baseline date: 2026-03-09
-- Acceptance closure in this slim snapshot: `UNVERIFIED (slim snapshot)`
-- Current review stage: `L18 Phase 4 evidence review`
-- Authority: `agents-only/reference/GO_PARITY_MATRIX.md`
-
-## Migration Checklist
-
-1. Validate existing config:
+## Verify A Migrated Config
 
 ```bash
 cargo run -p app -- check -c ./config.json
 ```
 
-2. Normalize config format:
+## Explain A Route Decision
 
 ```bash
-cargo run -p app -- format -c ./config.json -w
+cargo run -p app -- route -c ./config.json --dest example.com:443 --explain --with-trace
 ```
 
-3. Verify route behavior:
+## Important Differences Called Out In Live Docs
 
-```bash
-cargo run -p app -- route-explain -c ./config.json --dest example.com:443
-```
-
-4. Run parity feature build:
-
-```bash
-cargo check -p app --features parity
-```
-
-## Accepted Limitations (Must Know)
-
-- Linux `systemd-resolved` runtime/system-bus real-machine evidence (`PX-015`) is accepted as non-blocking and no longer tracked as an open gap.
-- Tailscale endpoint remains de-scoped in Rust path (documented limitation).
-- WireGuard endpoint userspace behavior differs from Go's full stack in some platform/runtime details.
-- Chrome certificate store mode currently uses `webpki-roots` equivalence path.
-
-## Detailed References
-
-- Existing full guide: `docs/MIGRATION_GUIDE.md`
-- Schema migration: `docs/01-user-guide/configuration/schema-migration.md`
-- Tailscale decision: `docs/TAILSCALE_LIMITATIONS.md`
-- TLS decisions: `docs/TLS_DECISION.md`
+- The maintained command is `completion`, not `gen-completions`.
+- The maintained route command is `route`, not `route-explain`.
+- Admin exposure is configured with `--admin-listen` / `--admin-token` or `ADMIN_LISTEN` / `ADMIN_TOKEN`.
+- A top-level `admin:` section is not accepted by the current validator.

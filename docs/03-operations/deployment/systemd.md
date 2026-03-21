@@ -1,26 +1,15 @@
-# Systemd Deployment
+# systemd
 
-## Overview
+Use `deployments/systemd/singbox-rust.service` as the maintained unit file.
 
-Use systemd for long-running service management on Linux.
-
-## Quick start
+The unit starts:
 
 ```bash
-sudo install -m 0755 target/release/app /usr/local/bin/singbox-rust
-sudo install -d /etc/singbox
-sudo install -m 0644 config.yaml /etc/singbox/config.yaml
-sudo install -m 0644 deployments/systemd/singbox-rust.service /etc/systemd/system/singbox-rust.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now singbox-rust
+/usr/local/bin/app run -c /etc/singbox/config.json
 ```
 
-## Notes
+It also uses:
 
-- See `deployments/systemd/singbox-rust.service` for a baseline unit.
-- Use `Environment=` or drop-in files for secrets.
-
-## Related
-
-- [Deployment Guide](../../DEPLOYMENT_GUIDE.md)
-- [Deployment Checklist](../../DEPLOYMENT_CHECKLIST.md)
+- `ADMIN_LISTEN=127.0.0.1:19090`
+- optional `ADMIN_TOKEN`
+- health endpoint `http://127.0.0.1:19090/healthz`

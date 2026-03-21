@@ -1,19 +1,17 @@
 # Breaking Changes
 
-## Overview
+Track incompatible CLI, config, or runtime changes here.
 
-This file tracks breaking changes across releases. Add entries when config, CLI, or API behavior changes incompatibly.
+Template:
 
-## Template
-
-```
+```text
 - Version: vX.Y.Z
   Area: config|cli|api|runtime
-  Change: <short summary>
+  Change: <summary>
   Migration: <steps>
 ```
 
-## Related
+Related:
 
-- [CHANGELOG](../../CHANGELOG.md)
-- [Migration Guide](../MIGRATION_GUIDE.md)
+- `../MIGRATION_GUIDE.md`
+- `../migration-from-go.md`

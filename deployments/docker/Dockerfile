@@ -1,12 +1,8 @@
-# Production Dockerfile for singbox-rust
-# Validation hints:
-#   docker build -f deployments/docker/Dockerfile -t singbox-rust:local .
-#   docker image inspect singbox-rust:local --format '{{ .Size }}' | awk '{mb=$1/1024/1024; printf "image_size_mb=%.2f\n", mb; exit(mb<50?0:1)}'
+# Production Dockerfile for the current repository CLI.
 
 ARG RUST_VERSION=1.92
 ARG ALPINE_VERSION=3.20
 
-# Stage 1: build
 FROM rust:${RUST_VERSION}-alpine AS builder
 
 ARG BUILD_FEATURES="parity"
@@ -29,36 +25,37 @@ COPY xtask ./xtask
 
 RUN cargo build --locked --release --package app \
     --features "${BUILD_FEATURES}" \
-    --bin run \
-    && strip /build/target/release/run
+    --bin app \
+    && strip /build/target/release/app
 
-# Stage 2: runtime
 FROM alpine:${ALPINE_VERSION}
 
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
-    tini
+    tini \
+    wget
 
 RUN addgroup -S singbox && adduser -S singbox -G singbox
 
-COPY --from=builder /build/target/release/run /usr/local/bin/singbox-rust
+COPY --from=builder /build/target/release/app /usr/local/bin/app
+RUN ln -s /usr/local/bin/app /usr/local/bin/singbox-rust
 
 RUN mkdir -p /etc/singbox /var/lib/singbox /var/log/singbox \
     && chown -R singbox:singbox /etc/singbox /var/lib/singbox /var/log/singbox
+
+ENV ADMIN_LISTEN=0.0.0.0:19090
 
 ENTRYPOINT ["/sbin/tini", "--"]
 USER singbox
 WORKDIR /etc/singbox
 
-CMD ["singbox-rust", "run", "--config", "/etc/singbox/config.json"]
+CMD ["app", "run", "-c", "/etc/singbox/config.json"]
 
-# busybox wget is available in alpine base image
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -T 3 -O /dev/null http://127.0.0.1:9090/services/health || exit 1
+  CMD wget -q -T 3 -O /dev/null http://127.0.0.1:19090/healthz || exit 1
 
-LABEL maintainer="singbox-rust team"
-LABEL org.opencontainers.image.source="https://github.com/nicekid1/singbox-rust"
-LABEL org.opencontainers.image.description="singbox-rust: Rust implementation of sing-box proxy platform"
+LABEL org.opencontainers.image.source="https://github.com/Freedom18946/singbox-rust"
+LABEL org.opencontainers.image.description="singbox-rust current app CLI image"
 
-EXPOSE 1080 8080 443 9090
+EXPOSE 1080 19090

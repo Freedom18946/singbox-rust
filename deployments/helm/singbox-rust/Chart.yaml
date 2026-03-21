@@ -1,13 +1,13 @@
 apiVersion: v2
 name: singbox-rust
-description: A Helm chart for singbox-rust proxy
+description: A Helm chart for the current singbox-rust app CLI
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 keywords:
   - proxy
   - singbox
   - network
-home: https://github.com/freedom18946/singbox-rust
+home: https://github.com/Freedom18946/singbox-rust
 maintainers:
   - name: singbox-rust maintainers

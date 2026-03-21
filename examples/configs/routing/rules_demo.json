@@ -1,14 +1,49 @@
 {
+  "schema_version": 2,
   "inbounds": [
-    { "type": "http",  "listen": "127.0.0.1", "listen_port": 28090 },
-    { "type": "socks", "listen": "127.0.0.1", "listen_port": 28091 }
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
   ],
   "route": {
     "rules": [
-      { "host_suffix": "static.example.org", "outbound": "direct" },
-      { "host_suffix": [".tracking", ".analytics"], "outbound": "block" },
-      { "inbound": "corp-http", "outbound": "direct" }
+      {
+        "when": {
+          "suffix": [
+            "ads.example.com",
+            "tracker.example.com"
+          ]
+        },
+        "to": "block"
+      },
+      {
+        "when": {
+          "domain": [
+            "example.com"
+          ]
+        },
+        "to": "direct"
+      },
+      {
+        "when": {
+          "transport": "udp",
+          "port": 53
+        },
+        "to": "direct"
+      }
     ],
-    "final": "direct"
+    "default": "direct"
   }
 }

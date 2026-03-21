@@ -6,7 +6,7 @@ Connect singbox-rust to an upstream proxy server.
 
 ## Prerequisites
 
-- singbox-rust installed ([Installation Guide](README.md#installation))
+- repository checked out and `cargo build -p app` completed
 - Basic understanding of [configuration files](basic-configuration.md)
 - An upstream proxy server (Shadowsocks, VMess, VLESS, Trojan, etc.)
 
@@ -175,7 +175,7 @@ route:
 **Generate REALITY keypair**:
 
 ```bash
-singbox-rust generate reality-keypair
+cargo run -p app -- generate reality-keypair
 ```
 
 See [TLS Configuration](../01-user-guide/configuration/tls.md) for REALITY details.
@@ -257,7 +257,7 @@ route:
 ## Step 3: Validate Configuration
 
 ```bash
-singbox-rust check -c config.yaml
+cargo run -p app -- check -c config.yaml
 ```
 
 **Expected output**:
@@ -276,13 +276,13 @@ singbox-rust check -c config.yaml
 ### Start the Proxy
 
 ```bash
-singbox-rust run -c config.yaml
+cargo run -p app -- run -c config.yaml
 ```
 
 **Expected output**:
 
 ```
-[INFO] Starting singbox-rust v0.2.0
+[INFO] Starting app
 [INFO] Listening on socks://127.0.0.1:1080
 [INFO] Routing to ss-proxy (shadowsocks)
 ```
@@ -301,7 +301,7 @@ curl -x socks5h://127.0.0.1:1080 https://ifconfig.me
 ### Test Routing Decision
 
 ```bash
-singbox-rust route -c config.yaml --dest google.com:443 --explain
+cargo run -p app -- route -c config.yaml --dest google.com:443 --explain
 ```
 
 ---
@@ -462,7 +462,7 @@ See [Examples Index](../08-examples/README.md).
 2. Check encryption method matches server
 3. Enable debug logging:
    ```bash
-   RUST_LOG=debug singbox-rust run -c config.yaml
+   RUST_LOG=debug cargo run -p app -- run -c config.yaml
    ```
 
 ### TLS Handshake Failed

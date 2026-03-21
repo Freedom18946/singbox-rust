@@ -1,8 +1,12 @@
 # Deployment
 
-Deployment subtopics.
+The live deployment root is `deployments/`. The old `deployment/` directory was removed.
 
-- [Systemd](systemd.md)
-- [Docker](docker.md)
-- [Kubernetes](kubernetes.md)
-- [Windows Service](windows-service.md)
+Available templates:
+
+- `deployments/systemd/singbox-rust.service`
+- `deployments/docker/Dockerfile`
+- `deployments/docker/docker-compose.yml`
+- `deployments/docker-compose/docker-compose.yml`
+- `deployments/kubernetes/deployment.yaml`
+- `deployments/helm/singbox-rust/`

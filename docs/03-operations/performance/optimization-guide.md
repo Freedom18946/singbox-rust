@@ -13,7 +13,7 @@ A short list of performance levers for production.
 ## Example tuning (UDP NAT)
 
 ```bash
-SB_UDP_NAT_MAX=10000 singbox-rust run -c config.yaml
+SB_UDP_NAT_MAX=10000 cargo run -p app -- run -c config.yaml
 ```
 
 ## Related

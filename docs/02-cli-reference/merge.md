@@ -5,7 +5,7 @@ Merge multiple configuration files into one.
 ## Usage
 
 ```bash
-singbox-rust merge -c base.yaml -c override.yaml output.yaml
+cargo run -p app -- merge -c base.yaml -c override.yaml output.yaml
 ```
 
 ## Notes

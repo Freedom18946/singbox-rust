@@ -1,29 +1,26 @@
-# Prometheus Metrics
+# Metrics
 
-## Overview
-
-singbox-rust exposes Prometheus metrics via the admin HTTP server.
-
-## Endpoint
-
-- Default: `http://127.0.0.1:18088/__metrics`
-
-## Enable metrics
+Expose the admin HTTP surface before scraping metrics.
 
 ```bash
-SB_ADMIN_ENABLE=1 SB_ADMIN_LISTEN=127.0.0.1:18088 singbox-rust run -c config.yaml
+ADMIN_LISTEN=0.0.0.0:19090 \
+cargo run -p app -- run -c /etc/singbox/config.json
 ```
 
-## Example scrape config
+Then scrape:
 
-```yaml
-scrape_configs:
-  - job_name: "singbox-rust"
-    static_configs:
-      - targets: ["127.0.0.1:18088"]
+```bash
+curl http://127.0.0.1:19090/metricsz
 ```
 
-## Related
+Health check:
 
-- [Grafana Dashboards](grafana-dashboards.md)
-- [Metrics Catalog](../../METRICS_CATALOG.md)
+```bash
+curl http://127.0.0.1:19090/healthz
+```
+
+If you configured `ADMIN_TOKEN`, include:
+
+```bash
+curl -H 'X-Admin-Token: change-me' http://127.0.0.1:19090/metricsz
+```

@@ -1,27 +1,28 @@
 # `run` Command
 
-Start the proxy server with a configuration file.
-
-## Usage
+Current help summary:
 
 ```bash
-singbox-rust run -c config.yaml
+cargo run -p app -- run --help
 ```
 
-## Common Options
+Important options:
 
-- `-c, --config <FILE>`: configuration file path
-- `--admin-impl <IMPL>`: `core` or `debug`
-- `--admin-listen <ADDR>`: admin API listen address
+- `-c, --config <CONFIG>`
+- `-C, --config-directory <CONFIG_DIRECTORY>`
+- `-i, --import <IMPORT_PATH>`
+- `-D, --directory <DIRECTORY>`
+- `-w, --watch`
+- `--check`
+- `--http <HTTP_LISTEN>`
+- `--admin-listen <ADMIN_LISTEN>`
+- `--admin-token <ADMIN_TOKEN>`
+- `--no-banner`
+- `--disable-color`
 
-## Examples
+Example:
 
 ```bash
-singbox-rust run -c config.yaml
-RUST_LOG=info SB_ADMIN_ENABLE=1 singbox-rust run -c config.yaml
+ADMIN_LISTEN=127.0.0.1:19090 \
+cargo run -p app -- run -c examples/quick-start/01-minimal.yaml
 ```
-
-## Related
-
-- [Environment Variables](environment-variables.md)
-- [Exit Codes](exit-codes.md)

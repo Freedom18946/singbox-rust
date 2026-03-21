@@ -72,11 +72,7 @@ keyword:ads=reject
 default:proxyB
 ```
 
-**Usage**:
-
-```bash
-cargo run -p app -- run --dsl-rules examples/dsl/basic-routing.dsl
-```
+Use these files as DSL reference material and test inputs for the DSL tooling in this repository.
 
 ---
 
@@ -209,7 +205,7 @@ default:proxy
 
 ## 📖 Related Documentation
 
-- [Router Rules](../../docs/ROUTER_RULES.md)
+- [DSL Rules](../../docs/06-advanced-topics/dsl-rules.md)
 - [Configuration Examples](../configs/)
 - [Routing Examples](../configs/routing/)
 
