@@ -40,7 +40,6 @@ CRITICAL_SCRIPTS=(
     "scripts/test/bench/run.sh"
     "scripts/test/bench/guard.sh"
     "scripts/test/stress/run.sh"
-    "scripts/test/fuzz/analysis.sh"
     "scripts/test/cov.sh"
     "scripts/test/mutants-smoke.sh"
 

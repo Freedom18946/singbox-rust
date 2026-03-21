@@ -160,37 +160,17 @@ Real-time stress test monitoring.
 
 ## Fuzz Tests (`fuzz/`)
 
-Fuzzing test infrastructure.
+Fuzzing is maintained directly through the dedicated workspace under `fuzz/`.
 
-### `analysis.sh`
-Fuzz coverage analysis and status reporting.
-
-```bash
-# Show current fuzz coverage
-./scripts/test/fuzz/analysis.sh status
-
-# Run quick fuzz test (30s each)
-./scripts/test/fuzz/analysis.sh quick
-
-# Run specific target
-./scripts/test/fuzz/analysis.sh run fuzz_dns_message
-
-# List all targets
-./scripts/test/fuzz/analysis.sh list
-```
-
-### `smoke.sh`
-Quick fuzz smoke test.
+Canonical commands:
 
 ```bash
-./scripts/test/fuzz/smoke.sh
-```
-
-### `generate-corpus.sh`
-Generate fuzz corpus seeds.
-
-```bash
-./scripts/test/fuzz/generate-corpus.sh
+make -f Makefile.fuzz fuzz-list
+make -f Makefile.fuzz fuzz-build
+make -f Makefile.fuzz fuzz-quick
+make -f Makefile.fuzz fuzz-corpus
+./fuzz/run_regression.sh --seeds-only
+./fuzz/generate_seeds.sh
 ```
 
 ## Other Tests
@@ -290,10 +270,11 @@ done
 ./scripts/test/stress/run.sh
 ```
 
-### Run Fuzz Analysis
+### Run Fuzz Smoke / Replay
 
 ```bash
-./scripts/test/fuzz/analysis.sh status
+make -f Makefile.fuzz fuzz-quick
+./fuzz/run_regression.sh --seeds-only
 ```
 
 ## Environment Variables
@@ -328,23 +309,10 @@ Standard exit codes:
 5. Return standard exit codes
 6. Generate reports in standard locations
 
-## CI Integration
+## Local Integration
 
-Tests run in GitHub Actions:
-
-```yaml
-- name: Acceptance Tests
-  run: |
-    for test in scripts/test/acceptance/*.sh; do
-      "$test"
-    done
-
-- name: Benchmarks
-  run: ./scripts/test/bench/run.sh
-
-- name: Fuzz Smoke
-  run: ./scripts/test/fuzz/smoke.sh
-```
+GitHub Actions are disabled in this repository. Run the documented shell
+scripts and cargo commands locally instead.
 
 ## Dependencies
 

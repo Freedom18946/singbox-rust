@@ -168,9 +168,9 @@ printf '\xaa\xbb\x81\x83\x00\x01\x00\x00\x00\x00\x00\x00\x0anotthere\x03com\x00\
 # ========== v2ray_api (6 seeds) ==========
 mkdir -p "$SEEDS/v2ray_api"
 
-printf '{"type":"StatsService","method":"GetStats","request":{"name":"user>>>test@example.com>>>traffic>>>uplink","reset":false}}' > "$SEEDS/v2ray_api/stats_request.json"
+printf '{"name":"user>>>test@example.com>>>traffic>>>uplink","reset":false}' > "$SEEDS/v2ray_api/stats_request.json"
 
-printf '{"type":"StatsService","method":"QueryStats","request":{"pattern":"","reset":false}}' > "$SEEDS/v2ray_api/query_stats.json"
+printf '{"pattern":"","reset":false}' > "$SEEDS/v2ray_api/query_stats.json"
 
 printf '{}' > "$SEEDS/v2ray_api/empty_object.json"
 printf '[]' > "$SEEDS/v2ray_api/empty_array.json"
@@ -203,5 +203,19 @@ printf '\x00\x50hello' >> "$SEEDS/http_connect/socks5_udp.bin"
 
 # Empty
 > "$SEEDS/http_connect/empty.bin"
+
+# ========== tun (6 seeds) ==========
+mkdir -p "$SEEDS/tun"
+
+# Raw IPv4 packet (IFF_NO_PI input model)
+printf '\x45\x00\x00\x14\x00\x00\x40\x00\x40\x01\x00\x00\x7f\x00\x00\x01\x7f\x00\x00\x01' > "$SEEDS/tun/ipv4.bin"
+
+# Raw IPv6 packet (IFF_NO_PI input model)
+printf '\x60\x00\x00\x00\x00\x08\x3a\x40\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01' > "$SEEDS/tun/ipv6.bin"
+
+head -c 1 /dev/zero > "$SEEDS/tun/single_byte.bin"
+head -c 1000 /dev/zero > "$SEEDS/tun/large.bin"
+head -c 10000 /dev/zero > "$SEEDS/tun/very_large.bin"
+> "$SEEDS/tun/empty.bin"
 
 echo "All seed files created successfully."

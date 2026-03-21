@@ -1,8 +1,7 @@
 #![no_main]
 //! VLESS protocol parsing fuzzer
 //!
-//! Exercises real production parsing code from sb-adapters:
-//! - `parse_ss_addr()` for SOCKS5-style address parsing (VLESS uses the same format)
+//! Exercises the shared address-parsing surface used by VLESS requests.
 //!
 //! The VLESS inbound's `parse_vless_address()` is async and requires a tokio AsyncRead
 //! stream, so we cannot call it directly from the synchronous fuzz harness. Instead we
@@ -37,7 +36,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = sb_adapters::inbound::shadowsocks::parse_ss_addr(&data[19..]);
     }
 
-    // Test 4: Trojan also uses the same address format; exercise parse_trojan_request
-    // to get cross-protocol coverage from the same fuzz corpus
+    // Exercise a neighboring parser that uses the same address family to increase
+    // coverage of shared validation logic without claiming direct VLESS coverage.
     let _ = sb_adapters::inbound::trojan::parse_trojan_request(data);
 });

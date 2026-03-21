@@ -2,6 +2,8 @@
 //! TUN packet parsing fuzzer
 //!
 //! Exercises IP packet parsing logic used by TUN inbound handlers.
+//! The production TUN setup uses `IFF_NO_PI`, so the fuzz input contract is a
+//! raw IPv4 or IPv6 packet without a 4-byte packet information header.
 //! Tests IPv4/IPv6 header parsing, protocol identification, and boundary checks.
 
 use libfuzzer_sys::fuzz_target;

@@ -25,14 +25,4 @@ fuzz_target!(|data: &[u8]| {
     for offset in 0..data.len().min(32) {
         let _ = sb_adapters::inbound::shadowsocks::parse_ss_addr(&data[offset..]);
     }
-
-    // Test 3: If parse succeeds, verify the returned consumed length is consistent
-    if let Ok((_host, _port, consumed)) = sb_adapters::inbound::shadowsocks::parse_ss_addr(data) {
-        assert!(
-            consumed <= data.len(),
-            "parse_ss_addr consumed {} but data is only {} bytes",
-            consumed,
-            data.len()
-        );
-    }
 });

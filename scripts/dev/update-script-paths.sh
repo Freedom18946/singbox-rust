@@ -20,10 +20,8 @@ declare -A PATH_MAPPINGS=(
     ["scripts/e2e-diff.sh"]="scripts/e2e/diff.sh"
     ["scripts/guard_no_unwrap.sh"]="scripts/tools/validation/guard-no-unwrap.sh"
     ["scripts/sbom.sh"]="scripts/tools/sbom.sh"
-    ["scripts/fuzz-smoke.sh"]="scripts/test/fuzz/smoke.sh"
     ["scripts/cov.sh"]="scripts/test/cov.sh"
     ["scripts/mutants-smoke.sh"]="scripts/test/mutants-smoke.sh"
-    ["scripts/generate_corpus.sh"]="scripts/test/fuzz/generate-corpus.sh"
     ["scripts/preflight.sh"]="scripts/tools/preflight.sh"
     ["scripts/audit_features.sh"]="scripts/tools/validation/audit-features.sh"
     ["scripts/bench-guard.sh"]="scripts/test/bench/guard.sh"
@@ -40,15 +38,6 @@ declare -A PATH_MAPPINGS=(
 
 # Files to update
 FILES_TO_UPDATE=(
-    ".github/workflows/ci.yml"
-    ".github/workflows/e2e.yml"
-    ".github/workflows/repro.yml"
-    ".github/workflows/fuzz-smoke.yml"
-    ".github/workflows/cov.yml"
-    ".github/workflows/fuzz-extended.yml"
-    ".github/workflows/preflight.yml"
-    ".github/workflows/feature-audit.yml"
-    ".github/workflows/release.yml"
     "README.md"
     "docs/04-development/README.md"
     "reports/README.md"

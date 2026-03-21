@@ -1,1 +1,1 @@
-{"type":"StatsService","method":"GetStats","request":{"name":"user>>>test@example.com>>>traffic>>>uplink","reset":false}}
+{"name":"user>>>test@example.com>>>traffic>>>uplink","reset":false}

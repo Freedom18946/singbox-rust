@@ -1,34 +1,22 @@
 # Fuzz Testing Makefile for singbox-rust
 # Usage: make -f Makefile.fuzz <target>
-#
-# Quick start:
-#   make -f Makefile.fuzz fuzz-list        # List all available targets
-#   make -f Makefile.fuzz fuzz-quick       # Quick smoke test (30s each)
-#   make -f Makefile.fuzz fuzz-all         # Run all targets (5min each)
-#   make -f Makefile.fuzz fuzz-corpus      # Generate corpus seeds
 
-.PHONY: fuzz-all fuzz-quick fuzz-clean fuzz-corpus fuzz-list fuzz-help fuzz-build fuzz-check
+.PHONY: fuzz-all fuzz-quick fuzz-sanity fuzz-build fuzz-check fuzz-list fuzz-help
 .PHONY: fuzz-core fuzz-protocols fuzz-network fuzz-api
-.PHONY: fuzz-vmess fuzz-vless fuzz-trojan fuzz-shadowsocks fuzz-hysteria fuzz-tuic fuzz-socks5 fuzz-http
+.PHONY: fuzz-corpus fuzz-with-corpus fuzz-regression fuzz-clean fuzz-clean-all
+.PHONY: fuzz-vmess fuzz-vless fuzz-trojan fuzz-shadowsocks fuzz-hysteria fuzz-tuic fuzz-socks5 fuzz-http fuzz-v2ray-api
 .PHONY: fuzz-tun fuzz-mixed fuzz-config fuzz-dns
 
-# All available fuzz targets (grouped by category)
-CORE_TARGETS := fuzz_config fuzz_config_structured fuzz_dns_message fuzz_route_decide
+CORE_TARGETS := fuzz_config fuzz_config_structured fuzz_dns_message fuzz_route_decide fuzz_sniff_tls fuzz_sniff_http fuzz_sniff_quic fuzz_sniff_stream
 PROTOCOL_TARGETS := fuzz_vmess fuzz_vmess_structured fuzz_vless fuzz_trojan fuzz_shadowsocks fuzz_hysteria fuzz_tuic fuzz_socks5 fuzz_http_connect
-NETWORK_TARGETS := fuzz_tun_packet fuzz_mixed_protocol fuzz_sniff_http fuzz_sniff_quic fuzz_sniff_stream fuzz_sniff_tls
+NETWORK_TARGETS := fuzz_tun_packet fuzz_mixed_protocol
 API_TARGETS := fuzz_v2ray_api
 ALL_TARGETS := $(CORE_TARGETS) $(PROTOCOL_TARGETS) $(NETWORK_TARGETS) $(API_TARGETS)
 
-# Fuzz duration settings
-FUZZ_DURATION_LONG := 300    # 5 minutes
-FUZZ_DURATION_SHORT := 30    # 30 seconds
-FUZZ_DURATION_QUICK := 10    # 10 seconds
+FUZZ_DURATION_LONG := 300
+FUZZ_DURATION_SHORT := 30
+FUZZ_DURATION_QUICK := 10
 
-#############
-# Main Targets
-#############
-
-# Run all fuzz targets (5 minutes each)
 fuzz-all:
 	@echo "🚀 Running all fuzz targets ($(FUZZ_DURATION_LONG)s each)..."
 	@for target in $(ALL_TARGETS); do \
@@ -38,29 +26,22 @@ fuzz-all:
 	done
 	@echo "✅ All fuzz targets completed"
 
-# Quick smoke test (30 seconds each, subset of targets)
 fuzz-quick:
 	@echo "⚡ Running quick fuzz tests ($(FUZZ_DURATION_SHORT)s each)..."
-	@for target in fuzz_config fuzz_vmess fuzz_vless fuzz_trojan fuzz_http_connect; do \
+	@for target in fuzz_config fuzz_dns_message fuzz_socks5 fuzz_tun_packet fuzz_v2ray_api; do \
 		echo "📦 Quick fuzzing $$target..."; \
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_SHORT) || true; \
 	done
 	@echo "✅ Quick fuzz tests completed"
 
-# Very quick sanity check (10 seconds each)
 fuzz-sanity:
 	@echo "🔍 Running sanity check ($(FUZZ_DURATION_QUICK)s each)..."
-	@for target in fuzz_config fuzz_vmess fuzz_http_connect; do \
+	@for target in fuzz_config fuzz_socks5 fuzz_v2ray_api; do \
 		echo "📦 Sanity checking $$target..."; \
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_QUICK) || true; \
 	done
 	@echo "✅ Sanity check completed"
 
-#############
-# Category Targets
-#############
-
-# Fuzz core functionality (config, DNS)
 fuzz-core:
 	@echo "🔧 Fuzzing core targets..."
 	@for target in $(CORE_TARGETS); do \
@@ -68,7 +49,6 @@ fuzz-core:
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
 	done
 
-# Fuzz all protocol parsers
 fuzz-protocols:
 	@echo "🔐 Fuzzing protocol targets..."
 	@for target in $(PROTOCOL_TARGETS); do \
@@ -76,7 +56,6 @@ fuzz-protocols:
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
 	done
 
-# Fuzz network layer (TUN, mixed protocol detection)
 fuzz-network:
 	@echo "🌐 Fuzzing network targets..."
 	@for target in $(NETWORK_TARGETS); do \
@@ -84,17 +63,12 @@ fuzz-network:
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
 	done
 
-# Fuzz API endpoints
 fuzz-api:
 	@echo "📡 Fuzzing API targets..."
 	@for target in $(API_TARGETS); do \
 		echo "📦 Fuzzing $$target..."; \
 		cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
 	done
-
-#############
-# Individual Protocol Targets
-#############
 
 fuzz-vmess:
 	@echo "📦 Fuzzing VMess protocol..."
@@ -128,9 +102,9 @@ fuzz-http:
 	@echo "📦 Fuzzing HTTP CONNECT..."
 	cargo +nightly fuzz run fuzz_http_connect
 
-#############
-# Network Targets
-#############
+fuzz-v2ray-api:
+	@echo "📦 Fuzzing V2Ray API requests..."
+	cargo +nightly fuzz run fuzz_v2ray_api
 
 fuzz-tun:
 	@echo "📦 Fuzzing TUN packet parsing..."
@@ -140,10 +114,6 @@ fuzz-mixed:
 	@echo "📦 Fuzzing mixed protocol detection..."
 	cargo +nightly fuzz run fuzz_mixed_protocol
 
-#############
-# Core Targets
-#############
-
 fuzz-config:
 	@echo "📦 Fuzzing config parser..."
 	cargo +nightly fuzz run fuzz_config
@@ -152,76 +122,49 @@ fuzz-dns:
 	@echo "📦 Fuzzing DNS message parser..."
 	cargo +nightly fuzz run fuzz_dns_message
 
-#############
-# Utility Targets
-#############
-
-# Generate corpus seeds for all targets
 fuzz-corpus:
-	@echo "🌱 Generating fuzz corpus seeds..."
-	@if [ -f fuzz/scripts/generate_corpus.sh ]; then \
-		cd fuzz && bash scripts/generate_corpus.sh; \
-	else \
-		echo "⚠️  Warning: corpus generation script not found at fuzz/scripts/generate_corpus.sh"; \
-		echo "Skipping corpus generation."; \
-	fi
+	@echo "🌱 Generating deterministic fuzz seeds..."
+	@./fuzz/generate_seeds.sh
 
-# Run fuzz with existing corpus
 fuzz-with-corpus:
-	@echo "🌱 Running fuzz with corpus seeds..."
-	@for target in $(ALL_TARGETS); do \
-		if [ -d "fuzz/corpus/$$target" ]; then \
-			echo "📦 Fuzzing $$target with corpus..."; \
-			cargo +nightly fuzz run $$target fuzz/corpus/$$target/ -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
-		else \
-			echo "⚠️  No corpus found for $$target, running without corpus..."; \
-			cargo +nightly fuzz run $$target -- -max_total_time=$(FUZZ_DURATION_LONG) || true; \
-		fi; \
-	done
+	@echo "🌱 Replaying maintained seed corpus..."
+	@./fuzz/run_regression.sh --seeds-only
 
-# Build all fuzz targets (check for compilation errors)
+fuzz-regression:
+	@./fuzz/run_regression.sh
+
 fuzz-build:
 	@echo "🔨 Building all fuzz targets..."
 	cargo +nightly fuzz build
 
-# Check all fuzz targets can compile
 fuzz-check:
 	@echo "✅ Checking all fuzz targets..."
 	@cd fuzz && cargo +nightly check --all-targets
 
-# List all available fuzz targets
 fuzz-list:
 	@echo "📋 Available fuzz targets:"
 	@cargo +nightly fuzz list
 
-# Clean fuzz artifacts and corpus
 fuzz-clean:
 	@echo "🧹 Cleaning fuzz artifacts..."
 	rm -rf fuzz/artifacts/*
 	@echo "✅ Cleaned fuzz artifacts"
 
-# Clean everything (artifacts + corpus)
 fuzz-clean-all:
 	@echo "🧹 Cleaning fuzz artifacts and corpus..."
 	rm -rf fuzz/artifacts/*
 	rm -rf fuzz/corpus/*
 	@echo "✅ Cleaned fuzz artifacts and corpus"
 
-# Show coverage for a specific target
 fuzz-coverage-%:
 	@echo "📊 Generating coverage for $*..."
 	cargo +nightly fuzz coverage $*
 	@echo "✅ Coverage report generated at fuzz/coverage/$*/"
 
-# Minimize corpus for a specific target
 fuzz-minimize-%:
 	@echo "🗜️  Minimizing corpus for $*..."
 	cargo +nightly fuzz cmin $*
 	@echo "✅ Corpus minimized for $*"
-
-#############
-# Help
-#############
 
 fuzz-help:
 	@echo "════════════════════════════════════════════════════════════════"
@@ -229,49 +172,33 @@ fuzz-help:
 	@echo "════════════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "Main Commands:"
-	@echo "  fuzz-all          - Run ALL fuzz targets (5 min each)"
-	@echo "  fuzz-quick        - Quick test (30s each, subset)"
-	@echo "  fuzz-sanity       - Very quick sanity check (10s each)"
+	@echo "  fuzz-all          - Run all fuzz targets (5 min each)"
+	@echo "  fuzz-quick        - Quick smoke subset (30s each)"
+	@echo "  fuzz-sanity       - Very quick sanity subset (10s each)"
 	@echo "  fuzz-build        - Build all fuzz targets"
 	@echo "  fuzz-check        - Check all targets compile"
 	@echo "  fuzz-list         - List available targets"
 	@echo ""
 	@echo "Category Commands:"
-	@echo "  fuzz-core         - Fuzz core targets (config, DNS)"
-	@echo "  fuzz-protocols    - Fuzz all protocol parsers"
-	@echo "  fuzz-network      - Fuzz network layer (TUN, mixed)"
-	@echo "  fuzz-api          - Fuzz API endpoints"
+	@echo "  fuzz-core         - Fuzz core targets"
+	@echo "  fuzz-protocols    - Fuzz protocol targets"
+	@echo "  fuzz-network      - Fuzz network targets"
+	@echo "  fuzz-api          - Fuzz API targets"
 	@echo ""
-	@echo "Individual Protocol Commands:"
-	@echo "  fuzz-vmess        - VMess protocol"
-	@echo "  fuzz-vless        - VLESS protocol"
-	@echo "  fuzz-trojan       - Trojan protocol"
-	@echo "  fuzz-shadowsocks  - Shadowsocks protocol"
-	@echo "  fuzz-hysteria     - Hysteria protocol"
-	@echo "  fuzz-tuic         - TUIC protocol"
-	@echo "  fuzz-socks5       - SOCKS5 protocol"
+	@echo "Individual Commands:"
+	@echo "  fuzz-vmess        - VMess"
+	@echo "  fuzz-vless        - VLESS"
+	@echo "  fuzz-trojan       - Trojan"
+	@echo "  fuzz-shadowsocks  - Shadowsocks"
+	@echo "  fuzz-hysteria     - Hysteria"
+	@echo "  fuzz-tuic         - TUIC"
+	@echo "  fuzz-socks5       - SOCKS5"
 	@echo "  fuzz-http         - HTTP CONNECT"
-	@echo ""
-	@echo "Network Commands:"
+	@echo "  fuzz-v2ray-api    - V2Ray API requests"
 	@echo "  fuzz-tun          - TUN packet parsing"
 	@echo "  fuzz-mixed        - Mixed protocol detection"
 	@echo ""
 	@echo "Utility Commands:"
-	@echo "  fuzz-corpus       - Generate corpus seeds"
-	@echo "  fuzz-with-corpus  - Run with corpus seeds"
-	@echo "  fuzz-clean        - Clean artifacts"
-	@echo "  fuzz-clean-all    - Clean artifacts + corpus"
-	@echo ""
-	@echo "Advanced Commands:"
-	@echo "  fuzz-coverage-TARGET    - Generate coverage for TARGET"
-	@echo "  fuzz-minimize-TARGET    - Minimize corpus for TARGET"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make -f Makefile.fuzz fuzz-quick"
-	@echo "  make -f Makefile.fuzz fuzz-vmess"
-	@echo "  make -f Makefile.fuzz fuzz-coverage-fuzz_vmess"
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════"
-
-# Default target: show help
-.DEFAULT_GOAL := fuzz-help
+	@echo "  fuzz-corpus       - Generate deterministic seeds"
+	@echo "  fuzz-with-corpus  - Replay maintained seeds"
+	@echo "  fuzz-regression   - Replay seeds and regressions"

@@ -13,6 +13,9 @@
 //! - QUIC handshake and authentication
 //! - Hysteria-specific frame parsing (requires quinn::RecvStream)
 //! - Speed/bandwidth negotiation
+//!
+//! This target therefore provides indirect coverage through shared address parsing
+//! and adjacent request parsers only.
 
 use libfuzzer_sys::fuzz_target;
 

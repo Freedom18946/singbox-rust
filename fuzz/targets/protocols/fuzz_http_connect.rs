@@ -19,6 +19,9 @@
 //!
 //! To enable direct fuzzing of HTTP parsing, these functions would need to be
 //! exposed via `pub` (or `#[cfg(fuzzing)] pub`) visibility.
+//!
+//! Until then, this target only provides indirect coverage via adjacent parsers
+//! that validate related address and request components.
 
 use libfuzzer_sys::fuzz_target;
 

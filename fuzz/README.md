@@ -1,265 +1,171 @@
 # Fuzz Testing for singbox-rust
 
-This directory contains comprehensive fuzz testing infrastructure for the singbox-rust project, targeting protocol parsers, network layers, and core functionality.
+This directory contains the maintained `cargo-fuzz` workspace for singbox-rust.
+It is the source of truth for current fuzz targets, deterministic seed fixtures,
+and regression replay entrypoints.
 
-## Quick Start
+## Canonical Entry Points
 
-```bash
-# From project root
-make -f Makefile.fuzz fuzz-help        # Show all available commands
-make -f Makefile.fuzz fuzz-list        # List all fuzz targets
-make -f Makefile.fuzz fuzz-corpus      # Generate corpus seeds
-make -f Makefile.fuzz fuzz-quick       # Quick smoke test (30s each)
-make -f Makefile.fuzz fuzz-all         # Run all targets (5min each)
-```
-
-## Fuzz Targets (15 total)
-
-### Core Functionality (3 targets)
-- **fuzz_config** - Configuration file parsing (JSON/YAML)
-- **fuzz_config_structured** - Structured config fuzzing with arbitrary
-- **fuzz_dns_message** - DNS message parsing
-
-### Protocol Parsers (9 targets)
-- **fuzz_vmess** - VMess protocol parsing (simulated)
-- **fuzz_vmess_structured** - Structured VMess fuzzing with arbitrary
-- **fuzz_vless** - VLESS protocol parsing (simulated)
-- **fuzz_trojan** - Trojan protocol parsing (simulated)
-- **fuzz_shadowsocks** - Shadowsocks AEAD packet parsing (simulated)
-- **fuzz_hysteria** - Hysteria protocol parsing (simulated)
-- **fuzz_tuic** - TUIC protocol parsing (simulated)
-- **fuzz_socks5** - SOCKS5 UDP datagram parsing ✅ (uses real production code)
-- **fuzz_http_connect** - HTTP CONNECT request parsing (simulated)
-
-### Network Layer (2 targets)
-- **fuzz_tun_packet** - TUN packet parsing (IPv4/IPv6, simulated)
-- **fuzz_mixed_protocol** - Mixed protocol detection (TLS/SOCKS5/HTTP, simulated)
-
-### API (1 target)
-- **fuzz_v2ray_api** - V2Ray API request parsing (simulated)
-
-## Implementation Status
-
-### ✅ Using Real Production Code
-- **SOCKS5 UDP**: Uses `sb_adapters::inbound::socks::udp::parse_udp_datagram()` and `encode_udp_datagram()`
-- Includes roundtrip encoding/decoding tests
-- Full boundary testing for all address types (IPv4, domain, IPv6)
-
-### ⚠️ Using Simulated Parsing Logic
-Most other protocol targets currently use **simulated parsing logic** that mimics the protocol structure but doesn't call the actual production code. This is because:
-
-1. **Async-only interfaces**: Most protocol handlers are embedded in `async fn serve()` functions without exposing synchronous parsing functions
-2. **Stream-based design**: Parsers often read from `TcpStream` directly rather than accepting byte slices
-3. **Private functions**: Key parsing logic is not exposed via `pub fn`
-
-**Example (VMess):**
-- Current: Hand-coded protocol structure simulation
-- Ideal: Call `sb_adapters::inbound::vmess::parse_request(data)` (doesn't exist as pub fn)
-
-## Future Improvements
-
-### Priority 1: Expose Parsing Functions
-To improve fuzz testing effectiveness, the following functions should be exposed:
-
-```rust
-// Recommended additions to sb-adapters
-
-// VMess
-pub fn parse_vmess_auth_header(data: &[u8]) -> Result<AuthHeader>;
-pub fn parse_vmess_request(data: &[u8]) -> Result<VMessRequest>;
-
-// VLESS
-pub fn parse_vless_header(data: &[u8]) -> Result<VlessHeader>;
-
-// Trojan
-pub fn parse_trojan_request(data: &[u8]) -> Result<TrojanRequest>;
-pub fn validate_trojan_password_hash(hash: &[u8]) -> bool;
-
-// Shadowsocks
-pub fn parse_shadowsocks_aead_packet(data: &[u8]) -> Result<(Vec<u8>, Tag)>;
-
-// HTTP
-pub fn parse_http_request_line(data: &[u8]) -> Result<(Method, Target)>;
-pub fn parse_host_port(target: &str) -> Result<(Host, Port)>;
-
-// TUN
-pub fn parse_tun_frame(data: &[u8]) -> Result<IpPacket>;
-pub fn parse_ipv4_packet(data: &[u8]) -> Result<Ipv4Packet>;
-pub fn parse_ipv6_packet(data: &[u8]) -> Result<Ipv6Packet>;
-```
-
-### Priority 2: Structured Fuzzing
-Use the `arbitrary` crate for structured fuzzing:
-
-```rust
-#[derive(Arbitrary, Debug)]
-struct VMessRequest {
-    version: u8,
-    iv: [u8; 16],
-    key: [u8; 16],
-    // ...
-}
-
-fuzz_target!(|req: VMessRequest| {
-    let data = req.to_bytes();
-    let _ = sb_adapters::inbound::vmess::parse_request(&data);
-});
-```
-
-### Priority 3: Coverage Tracking
-Add coverage reporting to identify untested code paths:
+From the project root:
 
 ```bash
-cargo +nightly fuzz coverage fuzz_vmess
-cargo cov -- export ... -format=lcov > coverage.lcov
+make -f Makefile.fuzz fuzz-list
+make -f Makefile.fuzz fuzz-build
+make -f Makefile.fuzz fuzz-corpus
+./fuzz/run_regression.sh --seeds-only
 ```
 
-## Directory Structure
+The maintained fuzz entrypoints are:
 
-```
-fuzz/
-├── Cargo.toml                 # Fuzz workspace configuration
-├── targets/                   # Fuzz targets organized by category
-│   ├── core/                  # Core functionality (config, DNS)
-│   ├── protocols/             # Protocol parsers (VMess, VLESS, etc.)
-│   ├── network/               # Network layer (TUN, mixed protocol)
-│   └── api/                   # API endpoints
-├── corpus/                    # Seed data for fuzzing
-│   ├── seeds/                 # Protocol-specific seeds
-│   └── generated/             # Auto-generated edge cases
-├── scripts/
-│   └── generate_corpus.sh     # Corpus generation script
-└── README.md                  # This file
-```
+- `Makefile.fuzz`
+- `fuzz/generate_seeds.sh`
+- `fuzz/run_regression.sh`
 
-## Corpus Statistics
+Older wrapper scripts are no longer maintained.
 
-The corpus includes **79 files (11MB)** covering:
+## Fuzz Targets
 
-| Protocol      | Files | Size  | Coverage                          |
-|---------------|-------|-------|-----------------------------------|
-| VMess         | 6     | 28KB  | Auth headers, IPv4/IPv6/domain    |
-| VLESS         | 5     | 24KB  | Version, UUID, address types      |
-| Trojan        | 5     | 24KB  | Password hash, command parsing    |
-| Shadowsocks   | 6     | 28KB  | AEAD packets, address encoding    |
-| Hysteria      | 6     | 28KB  | v1/v2 handshake                   |
-| TUIC          | 5     | 24KB  | Handshake, commands               |
-| SOCKS5        | 6     | 28KB  | UDP datagrams, all address types  |
-| HTTP          | 6     | 28KB  | CONNECT, GET requests             |
-| TUN           | 6     | 28KB  | IPv4/IPv6 packets                 |
-| Mixed         | 7     | 32KB  | TLS, SOCKS5, HTTP detection       |
-| Config        | 6     | 28KB  | JSON/YAML configs                 |
-| Edge Cases    | 15    | 10MB  | Empty, large, malformed data      |
+`cargo +nightly fuzz list` currently reports 20 targets.
 
-## Testing Categories
+### Core Targets (8)
 
-### Quick Smoke Test (30s each)
+- `fuzz_config` - config parsing pipeline from raw JSON values into validated config
+- `fuzz_config_structured` - structured config generation with `arbitrary`
+- `fuzz_dns_message` - DNS wire-format parsing and response helpers
+- `fuzz_route_decide` - top-level router sniff helpers
+- `fuzz_sniff_tls` - TLS ClientHello and SNI extraction
+- `fuzz_sniff_http` - HTTP Host extraction
+- `fuzz_sniff_quic` - QUIC Initial detection and reassembly helpers
+- `fuzz_sniff_stream` - top-level stream/datagram sniff entrypoints
+
+### Protocol Targets (9)
+
+- `fuzz_vmess` - real VMess request parsing plus related shared address parsing
+- `fuzz_vmess_structured` - structured VMess request generation with `arbitrary`
+- `fuzz_vless` - indirect VLESS coverage through the shared SOCKS5-style address parser
+- `fuzz_trojan` - real Trojan request parsing plus related shared address parsing
+- `fuzz_shadowsocks` - real Shadowsocks address parsing
+- `fuzz_hysteria` - indirect Hysteria coverage through shared address parsing
+- `fuzz_tuic` - indirect TUIC coverage through shared address parsing
+- `fuzz_socks5` - real SOCKS5 UDP datagram parsing and encode/decode replay
+- `fuzz_http_connect` - indirect HTTP CONNECT coverage through adjacent parsers
+
+### Network Targets (2)
+
+- `fuzz_tun_packet` - raw IPv4/IPv6 packet parsing for the current `IFF_NO_PI` TUN model
+- `fuzz_mixed_protocol` - mixed inbound protocol detectors (`detect_tls`, `detect_socks5`, `detect_http`)
+
+### API Targets (1)
+
+- `fuzz_v2ray_api` - deserialization of real `sb_api::v2ray::simple` request structs
+
+## Coverage Notes
+
+### Direct production parser coverage
+
+These targets call real production parsing helpers directly:
+
+- `fuzz_config`
+- `fuzz_config_structured`
+- `fuzz_dns_message`
+- `fuzz_route_decide`
+- `fuzz_sniff_tls`
+- `fuzz_sniff_http`
+- `fuzz_sniff_quic`
+- `fuzz_sniff_stream`
+- `fuzz_vmess`
+- `fuzz_trojan`
+- `fuzz_shadowsocks`
+- `fuzz_socks5`
+- `fuzz_mixed_protocol`
+- `fuzz_v2ray_api`
+
+### Indirect/shared-surface coverage
+
+These targets remain useful, but they do not directly fuzz the full protocol
+state machine named by the target:
+
+- `fuzz_vless`
+- `fuzz_hysteria`
+- `fuzz_tuic`
+- `fuzz_http_connect`
+- `fuzz_tun_packet` uses a lightweight packet harness rather than a dedicated public TUN parser API
+
+The main reason is interface shape: several protocol parsers are private or
+async and do not expose a byte-slice entrypoint that the synchronous fuzz
+harness can call directly.
+
+## Seed Corpus
+
+The maintained corpus lives under `fuzz/corpus/seeds/`.
+
+- Seeds are deterministic fixtures generated by `./fuzz/generate_seeds.sh`
+- They are intended for smoke replay and regression coverage
+- `fuzz_tun_packet` seeds are raw IP packets without a 4-byte PI header
+- `fuzz_v2ray_api` seeds match the real simplified request structs:
+  - `{"name":"...","reset":false}`
+  - `{"pattern":"","reset":false}`
+
+Regenerate seeds with:
+
 ```bash
+./fuzz/generate_seeds.sh
+```
+
+## Regression and Replay
+
+Run the maintained seed replay and regression script with:
+
+```bash
+./fuzz/run_regression.sh
+./fuzz/run_regression.sh --seeds-only
+./fuzz/run_regression.sh --target fuzz_socks5
+```
+
+The script:
+
+- builds all fuzz targets first
+- replays deterministic seeds with `-runs=0`
+- optionally replays saved regression inputs from `fuzz/regression/`
+
+## Useful Commands
+
+```bash
+make -f Makefile.fuzz fuzz-list
+make -f Makefile.fuzz fuzz-build
 make -f Makefile.fuzz fuzz-quick
-```
-Tests: config, vmess, vless, trojan, http_connect
-
-### Category-Specific
-```bash
-make -f Makefile.fuzz fuzz-core        # Core functionality
-make -f Makefile.fuzz fuzz-protocols   # All protocols
-make -f Makefile.fuzz fuzz-network     # Network layer
-make -f Makefile.fuzz fuzz-api         # API endpoints
-```
-
-### Individual Protocols
-```bash
-make -f Makefile.fuzz fuzz-vmess
+make -f Makefile.fuzz fuzz-corpus
+make -f Makefile.fuzz fuzz-with-corpus
+make -f Makefile.fuzz fuzz-v2ray-api
 make -f Makefile.fuzz fuzz-socks5
-make -f Makefile.fuzz fuzz-http
-# ... etc
+make -f Makefile.fuzz fuzz-tun
 ```
 
-## Expected Results
+Representative direct runs:
 
-### Security Benefits
-- **Buffer overflow detection**: Find bounds-checking issues
-- **Panic prevention**: Discover unwrap/expect failures
-- **Authentication bypass**: Test edge cases in auth logic
-- **Resource exhaustion**: Identify allocation issues
-
-### Known Limitations
-1. **Not testing real code paths**: Most targets simulate protocols rather than calling actual parsers
-2. **No async testing**: Current fuzzing doesn't test async state machines
-3. **Limited integration**: Individual component fuzzing, not full protocol flows
-4. **No stateful fuzzing**: Each fuzz iteration is independent
-
-## CI Integration
-
-### Current
-- Basic smoke test in `.github/workflows/fuzz-smoke.yml`
-- Runs on push/PR
-- Limited duration (quick sanity check)
-
-### Recommended Enhancement
-```yaml
-# .github/workflows/fuzz-extended.yml
-name: Extended Fuzz Testing
-on:
-  schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM
-  workflow_dispatch:
-
-jobs:
-  fuzz:
-    strategy:
-      matrix:
-        target: [fuzz_vmess, fuzz_vless, fuzz_trojan, ...]
-    steps:
-      - run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
-      - uses: actions/upload-artifact@v3
-        if: failure()
-        with:
-          name: fuzz-crashes-${{ matrix.target }}
-          path: fuzz/artifacts/${{ matrix.target }}/
+```bash
+cargo +nightly fuzz run fuzz_v2ray_api fuzz/corpus/seeds/v2ray_api -- -runs=0
+cargo +nightly fuzz run fuzz_tun_packet fuzz/corpus/seeds/tun -- -runs=0
+cargo +nightly fuzz run fuzz_mixed_protocol fuzz/corpus/seeds/mixed -- -runs=0
 ```
+
+## Maintenance Rules
+
+- Do not add or restore `.github/workflows/*`; GitHub Actions are disabled in this repository
+- Prefer deterministic seeds over random corpus generators in repo-tracked scripts
+- If a target only reaches shared parsing helpers indirectly, document that clearly
+- Prefer real production entrypoints over simulated protocol logic when public APIs exist
+- Keep `Makefile.fuzz`, `fuzz/generate_seeds.sh`, and `fuzz/run_regression.sh` aligned
 
 ## Troubleshooting
 
-### Build Errors
 ```bash
-# Ensure nightly toolchain is installed
 rustup install nightly
-rustup component add llvm-tools-preview --toolchain nightly
-
-# Install cargo-fuzz
 cargo install cargo-fuzz
 ```
 
-### Missing Corpus
-```bash
-# Regenerate corpus seeds
-make -f Makefile.fuzz fuzz-corpus
-```
+If a target fails on a saved seed replay:
 
-### Slow Fuzzing
-```bash
-# Use fewer iterations for quick testing
-cargo +nightly fuzz run TARGET -- -max_total_time=30 -runs=10000
-```
-
-## References
-
-- [Rust Fuzz Book](https://rust-fuzz.github.io/book/)
-- [cargo-fuzz Documentation](https://github.com/rust-fuzz/cargo-fuzz)
-- [LibFuzzer Tutorial](https://llvm.org/docs/LibFuzzer.html)
-- [Protocol Fuzzing Best Practices](https://github.com/google/fuzzing/blob/master/docs/good-fuzz-target.md)
-
-## Contributing
-
-When adding new fuzz targets:
-
-1. **Use real code**: Prefer calling actual parsing functions over simulated logic
-2. **Document limitations**: If using simulated logic, add a note explaining what should be exposed
-3. **Generate corpus**: Add appropriate seeds to `scripts/test/fuzz/generate-corpus.sh`
-4. **Update Makefile**: Add the new target to `Makefile.fuzz`
-5. **Test compilation**: Run `make -f Makefile.fuzz fuzz-build` to verify
-
-## License
-
-Same as parent project (GPL-3.0).
+- inspect `fuzz/artifacts/<target>/`
+- add the minimized reproducer under `fuzz/regression/<category>/`
+- confirm `./fuzz/run_regression.sh --target <target>` reproduces it

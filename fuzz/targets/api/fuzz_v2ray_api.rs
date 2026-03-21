@@ -1,18 +1,20 @@
 #![no_main]
 //! V2Ray API request parsing fuzzer
 //!
-//! Exercises JSON deserialization of V2Ray API request types
-//! to ensure malformed input never causes a panic.
+//! Exercises deserialization of the real simplified V2Ray API request types
+//! used by `sb_api::v2ray::simple`.
 
 use libfuzzer_sys::fuzz_target;
+use sb_api::v2ray::simple::{SimpleQueryStatsRequest, SimpleStatsRequest};
 
 fuzz_target!(|data: &[u8]| {
-    // Try to interpret as JSON for v2ray API request types
-    if let Ok(s) = std::str::from_utf8(data) {
-        // Exercise serde_json parsing with arbitrary strings
-        let _ = serde_json::from_str::<serde_json::Value>(s);
-    }
+    // Exercise the real request structs from arbitrary JSON bytes.
+    let _ = serde_json::from_slice::<SimpleStatsRequest>(data);
+    let _ = serde_json::from_slice::<SimpleQueryStatsRequest>(data);
 
-    // Also exercise raw JSON parsing from bytes
-    let _ = serde_json::from_slice::<serde_json::Value>(data);
+    // Also exercise the string-based path for the same request structs.
+    if let Ok(s) = std::str::from_utf8(data) {
+        let _ = serde_json::from_str::<SimpleStatsRequest>(s);
+        let _ = serde_json::from_str::<SimpleQueryStatsRequest>(s);
+    }
 });

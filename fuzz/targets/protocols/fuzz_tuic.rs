@@ -17,6 +17,9 @@
 //! - TUIC v5 authentication packet parsing
 //! - TUIC connect/packet command parsing
 //! - UDP-over-stream encode/decode (behind adapter-tuic feature)
+//!
+//! This target therefore provides indirect coverage through shared address parsing
+//! and related parsers, not direct TUIC frame parsing.
 
 use libfuzzer_sys::fuzz_target;
 
