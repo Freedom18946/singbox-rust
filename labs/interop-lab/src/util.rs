@@ -97,3 +97,39 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 pub fn canonicalize_or(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
+
+/// Normalize a WebSocket message into a JSON `Value` for snapshot storage.
+///
+/// Shared by gui_replay and go_collector.
+pub fn normalize_ws_message(msg: tokio_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use serde_json::json;
+    use tokio_tungstenite::tungstenite::Message;
+
+    match msg {
+        Message::Text(text) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .or_else(|| Some(json!({ "text": text }))),
+        Message::Binary(data) => serde_json::from_slice::<serde_json::Value>(&data)
+            .ok()
+            .or_else(|| Some(json!({ "binary_b64": STANDARD.encode(data) }))),
+        Message::Ping(payload) => Some(json!({ "ping": STANDARD.encode(payload) })),
+        Message::Pong(payload) => Some(json!({ "pong": STANDARD.encode(payload) })),
+        Message::Close(frame) => Some(json!({ "close": frame.map(|f| f.code.to_string()) })),
+        Message::Frame(_) => None,
+    }
+}
+
+/// Compute the given percentile from a slice of microsecond samples.
+///
+/// Shared by orchestrator and upstream.
+pub fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
+    if samples.is_empty() {
+        return 0;
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
+    sorted[rank.min(sorted.len() - 1)]
+}

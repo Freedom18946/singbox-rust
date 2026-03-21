@@ -9,7 +9,9 @@ use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
 use crate::leak_detector::detect_memory_leak;
 use crate::snapshot::{HttpResult, KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
 use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
-use crate::util::{ensure_dir, resolve_command_with_fallback, resolve_with_env, sha256_hex};
+use crate::util::{
+    ensure_dir, percentile_us, resolve_command_with_fallback, resolve_with_env, sha256_hex,
+};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use futures_util::StreamExt;
@@ -1088,16 +1090,6 @@ async fn execute_api_http_latency_action(
             "avg_ms": avg_ms,
         }),
     }
-}
-
-fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
-    if samples.is_empty() {
-        return 0;
-    }
-    let mut sorted = samples.to_vec();
-    sorted.sort_unstable();
-    let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
-    sorted[rank.min(sorted.len() - 1)]
 }
 
 async fn cleanup_background_commands(

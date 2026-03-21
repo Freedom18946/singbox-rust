@@ -1,6 +1,6 @@
 use crate::case_spec::{FaultSpec, TrafficAction, UpstreamKind, UpstreamServiceSpec};
 use crate::snapshot::TrafficResult;
-use crate::util::{resolve_command_with_fallback, resolve_with_env, sha256_hex};
+use crate::util::{percentile_us, resolve_command_with_fallback, resolve_with_env, sha256_hex};
 use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
 use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
@@ -37,6 +37,14 @@ use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
 
 const TCP_ROUNDTRIP_TIMEOUT_MS: u64 = 10_000;
+
+// --- Test harness constants (NOT production credentials) ---
+const INTEROP_PASSWORD: &str = "interop-password";
+const INTEROP_VLESS_UUID: &str = "00000000-0000-0000-0000-000000000001";
+const INTEROP_VMESS_UUID: &str = "00000000-0000-0000-0000-000000000002";
+const INTEROP_CERT_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt";
+const INTEROP_KEY_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.key";
+
 static PROTOCOL_UPSTREAM_RULES_INIT: Once = Once::new();
 
 fn ensure_protocol_upstream_rules() {
@@ -617,10 +625,10 @@ async fn start_single_upstream(
             let cfg = TrojanInboundConfig {
                 listen: addr,
                 #[allow(deprecated)]
-                password: Some("interop-password".to_string()),
+                password: Some(INTEROP_PASSWORD.to_string()),
                 users: vec![],
-                cert_path: "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
-                key_path: "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
+                cert_path: INTEROP_CERT_PATH.to_string(),
+                key_path: INTEROP_KEY_PATH.to_string(),
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
@@ -674,7 +682,7 @@ async fn start_single_upstream(
                 listen: addr,
                 method: "aes-256-gcm".to_string(),
                 #[allow(deprecated)]
-                password: Some("interop-password".to_string()),
+                password: Some(INTEROP_PASSWORD.to_string()),
                 users: vec![],
                 router,
                 tag: Some(spec.name.clone()),
@@ -753,12 +761,8 @@ async fn start_single_upstream(
                         server_name: Some("localhost".to_string()),
                         alpn: vec!["http/1.1".to_string()],
                         insecure: false,
-                        cert_path: Some(
-                            "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt".to_string(),
-                        ),
-                        key_path: Some(
-                            "vendor/anytls-rs/examples/singbox/certs/anytls.local.key".to_string(),
-                        ),
+                        cert_path: Some(INTEROP_CERT_PATH.to_string()),
+                        key_path: Some(INTEROP_KEY_PATH.to_string()),
                         cert_pem: None,
                         key_pem: None,
                     },
@@ -806,7 +810,7 @@ async fn start_single_upstream(
 
             let cfg = VlessInboundConfig {
                 listen: addr,
-                uuid: uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+                uuid: uuid::Uuid::parse_str(INTEROP_VLESS_UUID).unwrap(),
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
@@ -857,7 +861,7 @@ async fn start_single_upstream(
 
             let cfg = VmessInboundConfig {
                 listen: addr,
-                uuid: uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+                uuid: uuid::Uuid::parse_str(INTEROP_VMESS_UUID).unwrap(),
                 security: "aes-128-gcm".to_string(),
                 router,
                 tag: Some(spec.name.clone()),
@@ -1554,16 +1558,6 @@ fn compute_jitter_delay(target: &str, base_ms: u64, jitter_ms: u64, ratio: f64) 
     let bucket = (hash % 1000) as f64 / 1000.0;
     let scaled_jitter = (jitter_ms as f64 * ratio * bucket).round() as u64;
     base_ms.saturating_add(scaled_jitter)
-}
-
-fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
-    if samples.is_empty() {
-        return 0;
-    }
-    let mut sorted = samples.to_vec();
-    sorted.sort_unstable();
-    let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
-    sorted[rank.min(sorted.len() - 1)]
 }
 
 /// Resolve the effective payload bytes: if `payload_size` is set, generate

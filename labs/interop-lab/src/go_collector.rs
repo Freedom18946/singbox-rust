@@ -7,17 +7,14 @@
 use crate::snapshot::{
     HttpResult, MemoryPoint, NormalizedError, NormalizedSnapshot, TrafficCounters, WsFrameCapture,
 };
-use crate::util::sha256_hex;
+use crate::util::{normalize_ws_message, sha256_hex};
 use anyhow::{Context, Result};
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use chrono::Utc;
 use futures_util::StreamExt;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::Instant;
-use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 /// Default WS sample duration (seconds).
@@ -186,21 +183,6 @@ fn build_ws_url(api_base: &str, path: &str, token: Option<&str>) -> String {
     }
 }
 
-fn normalize_ws_message(msg: Message) -> Option<Value> {
-    match msg {
-        Message::Text(text) => serde_json::from_str::<Value>(&text)
-            .ok()
-            .or_else(|| Some(json!({ "text": text }))),
-        Message::Binary(data) => serde_json::from_slice::<Value>(&data)
-            .ok()
-            .or_else(|| Some(json!({ "binary_b64": STANDARD.encode(data) }))),
-        Message::Ping(payload) => Some(json!({ "ping": STANDARD.encode(payload) })),
-        Message::Pong(payload) => Some(json!({ "pong": STANDARD.encode(payload) })),
-        Message::Close(frame) => Some(json!({ "close": frame.map(|f| f.code.to_string()) })),
-        Message::Frame(_) => None,
-    }
-}
-
 fn ingest_series(path: &str, frame: &Value, snapshot: &mut NormalizedSnapshot) {
     if path.contains("/memory") {
         let inuse = frame.get("inuse").and_then(Value::as_i64).unwrap_or(0);
@@ -222,6 +204,7 @@ fn ingest_series(path: &str, frame: &Value, snapshot: &mut NormalizedSnapshot) {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use tokio_tungstenite::tungstenite::Message;
 
     #[test]
     fn build_ws_url_with_token() {

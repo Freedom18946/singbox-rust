@@ -56,6 +56,9 @@ pub fn classify_env_limited_failures(snapshot: &NormalizedSnapshot) -> Vec<Attri
     results
 }
 
+/// NOTE: The classification rules here are mirrored in shell script
+/// `scripts/lib_env_classify.sh::_classify_env_limited_category()`.
+/// If you change the rules here, update the shell version to stay in sync.
 fn classify_detail(detail: &str) -> FailureCategory {
     // Rate limit patterns
     if detail.contains("\"status\":403")

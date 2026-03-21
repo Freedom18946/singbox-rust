@@ -3,16 +3,13 @@ use crate::snapshot::{
     HttpResult, MemoryPoint, NormalizedError, NormalizedSnapshot, TrafficCounters, WsFrameCapture,
 };
 use crate::subscription::parse_subscription;
-use crate::util::{resolve_with_env, sha256_hex};
+use crate::util::{normalize_ws_message, resolve_with_env, sha256_hex};
 use anyhow::{Context, Result};
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use futures_util::StreamExt;
 use reqwest::Method;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
-use tokio_tungstenite::tungstenite::Message;
 
 pub async fn run_gui_sequence(
     case: &CaseSpec,
@@ -300,21 +297,6 @@ fn build_ws_url(api: &ApiAccess, path: &str, token_override: Option<&str>) -> St
     } else {
         let delimiter = if path.contains('?') { '&' } else { '?' };
         format!("{base}{path}{delimiter}{token}")
-    }
-}
-
-fn normalize_ws_message(msg: Message) -> Option<Value> {
-    match msg {
-        Message::Text(text) => serde_json::from_str::<Value>(&text)
-            .ok()
-            .or_else(|| Some(json!({ "text": text }))),
-        Message::Binary(data) => serde_json::from_slice::<Value>(&data)
-            .ok()
-            .or_else(|| Some(json!({ "binary_b64": STANDARD.encode(data) }))),
-        Message::Ping(payload) => Some(json!({ "ping": STANDARD.encode(payload) })),
-        Message::Pong(payload) => Some(json!({ "pong": STANDARD.encode(payload) })),
-        Message::Close(frame) => Some(json!({ "close": frame.map(|f| f.code.to_string()) })),
-        Message::Frame(_) => None,
     }
 }
 
