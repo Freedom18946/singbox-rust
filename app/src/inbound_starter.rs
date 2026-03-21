@@ -36,7 +36,7 @@ use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig, TrojanUser};
-#[cfg(all(feature = "tun", feature = "adapters"))]
+#[cfg(all(feature = "adapter-tun", feature = "adapters"))]
 use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
@@ -235,7 +235,7 @@ pub fn start_inbounds_from_ir(
                 warn!("mixed inbound requires 'adapters' feature; skipping");
             }
             InboundType::Tun => {
-                #[cfg(all(feature = "tun", feature = "adapters"))]
+                #[cfg(all(feature = "adapter-tun", feature = "adapters"))]
                 if let Some(handle) = start_tun_inbound(
                     ib,
                     #[cfg(feature = "router")]
@@ -244,8 +244,8 @@ pub fn start_inbounds_from_ir(
                 ) {
                     handles.push(handle);
                 }
-                #[cfg(any(not(feature = "tun"), not(feature = "adapters")))]
-                warn!("config includes tun inbound, but feature 'tun' is disabled; skipping");
+                #[cfg(any(not(feature = "adapter-tun"), not(feature = "adapters")))]
+                warn!("config includes tun inbound, but feature 'adapter-tun' is disabled; skipping");
             }
             InboundType::Direct => {
                 #[cfg(feature = "router")]
@@ -529,13 +529,25 @@ fn start_mixed_inbound(
     )
 }
 
-#[cfg(all(feature = "tun", feature = "adapters"))]
+#[cfg(all(feature = "adapter-tun", feature = "adapters"))]
 fn start_tun_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
 ) -> Option<InboundHandle> {
-    let cfg = TunInboundConfig::default();
+    let cfg = match ib.tun.as_ref() {
+        Some(tun) => match serde_json::to_value(tun)
+            .ok()
+            .and_then(|value| serde_json::from_value::<TunInboundConfig>(value).ok())
+        {
+            Some(cfg) => cfg,
+            None => {
+                warn!("tun inbound: invalid tun options; refusing to start");
+                return None;
+            }
+        },
+        None => TunInboundConfig::default(),
+    };
     let inbound = TunInbound::new(
         cfg,
         {
@@ -551,9 +563,11 @@ fn start_tun_inbound(
         outbounds,
         ib.tag.clone(),
         None,
+        ib.sniff,
+        ib.sniff_override_destination,
     );
     let join = tokio::spawn(async move {
-        if let Err(e) = inbound.serve().await {
+        if let Err(e) = inbound.serve() {
             warn!(error=%e, "tun inbound failed");
         }
     });
