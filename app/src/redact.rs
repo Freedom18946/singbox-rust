@@ -2,58 +2,57 @@
 //!
 //! Intent: provide a lightweight, opt-in API to scrub secrets before they
 //! appear in logs. Prefer structured logs and avoid logging secrets entirely.
-use lazy_static::lazy_static;
 use regex::Regex;
 
-lazy_static! {
-    // key=value patterns (querystrings, form bodies, env-style)
-    static ref KV_RE: Regex = Regex::new(
-        r#"(?i)\b(password|token|secret|api[_-]?key|authorization|cookie)=([^&\s;]+)"#
-    ).unwrap();
-
-    // JSON-style fields: "key": "value"
-    static ref JSON_RE: Regex = Regex::new(
-        r#"(?i)"(password|token|secret|api[_-]?key|authorization|cookie)"\s*:\s*"([^"]*)""#
-    ).unwrap();
-
-    // Basic auth in URLs: https://user:pass@host
-    static ref URL_AUTH_RE: Regex = Regex::new(
-        r#"(?i)\b(https?://)([^:@/]+):([^@/]+)@"#
-    ).unwrap();
-
-    // Bearer tokens
-    static ref BEARER_RE: Regex = Regex::new(
-        r#"(?i)\bBearer\s+[A-Za-z0-9._\-]+"#
-    ).unwrap();
+#[derive(Debug)]
+pub struct Redactor {
+    kv_re: Regex,
+    json_re: Regex,
+    url_auth_re: Regex,
+    bearer_re: Regex,
 }
 
-/// Redact common secret patterns from a free-form text.
-#[must_use]
-pub fn redact_str(input: &str) -> String {
-    let mut s = input.to_string();
-    // key=value
-    s = KV_RE
-        .replace_all(&s, |caps: &regex::Captures| {
-            let redacted = redact_kv(&caps[1], &caps[2]);
-            format!("{}={}", &caps[1], redacted)
+impl Redactor {
+    /// Build a reusable redactor instance for the process runtime.
+    pub fn new() -> Result<Self, regex::Error> {
+        Ok(Self {
+            kv_re: Regex::new(
+                r#"(?i)\b(password|token|secret|api[_-]?key|authorization|cookie)=([^&\s;]+)"#,
+            )?,
+            json_re: Regex::new(
+                r#"(?i)"(password|token|secret|api[_-]?key|authorization|cookie)"\s*:\s*"([^"]*)""#,
+            )?,
+            url_auth_re: Regex::new(r#"(?i)\b(https?://)([^:@/]+):([^@/]+)@"#)?,
+            bearer_re: Regex::new(r#"(?i)\bBearer\s+[A-Za-z0-9._\-]+"#)?,
         })
-        .into_owned();
-    // JSON fields
-    s = JSON_RE
-        .replace_all(&s, |caps: &regex::Captures| {
-            let redacted = redact_kv(&caps[1], &caps[2]);
-            format!("\"{}\": \"{}\"", &caps[1], redacted)
-        })
-        .into_owned();
-    // URL basic auth
-    s = URL_AUTH_RE
-        .replace_all(&s, |caps: &regex::Captures| {
-            format!("{}{}:{}@", &caps[1], &caps[2], "***")
-        })
-        .into_owned();
-    // Bearer
-    s = BEARER_RE.replace_all(&s, "Bearer ***").into_owned();
-    s
+    }
+
+    /// Redact common secret patterns from a free-form text.
+    #[must_use]
+    pub fn redact_str(&self, input: &str) -> String {
+        let mut s = input.to_string();
+        s = self
+            .kv_re
+            .replace_all(&s, |caps: &regex::Captures| {
+                let redacted = redact_kv(&caps[1], &caps[2]);
+                format!("{}={}", &caps[1], redacted)
+            })
+            .into_owned();
+        s = self
+            .json_re
+            .replace_all(&s, |caps: &regex::Captures| {
+                let redacted = redact_kv(&caps[1], &caps[2]);
+                format!("\"{}\": \"{}\"", &caps[1], redacted)
+            })
+            .into_owned();
+        s = self
+            .url_auth_re
+            .replace_all(&s, |caps: &regex::Captures| {
+                format!("{}{}:{}@", &caps[1], &caps[2], "***")
+            })
+            .into_owned();
+        self.bearer_re.replace_all(&s, "Bearer ***").into_owned()
+    }
 }
 
 /// Redact a value when the key suggests sensitivity.
@@ -83,10 +82,14 @@ pub fn redact_kv(key: &str, value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn redactor() -> Redactor {
+        Redactor::new().expect("test regexes compile")
+    }
+
     #[test]
     fn redact_kv_pairs() {
         let s = "password=hunter2&token=abc.def&name=alice";
-        let r = redact_str(s);
+        let r = redactor().redact_str(s);
         assert!(r.contains("password=***"));
         assert!(r.contains("token=***"));
         assert!(r.contains("name=alice"));
@@ -95,7 +98,7 @@ mod tests {
     #[test]
     fn redact_json_fields() {
         let s = r#"{"token":"abcd","user":"bob"}"#;
-        let r = redact_str(s);
+        let r = redactor().redact_str(s);
         assert!(r.contains("\"token\": \"***\""));
         assert!(r.contains("\"user\":\"bob\""));
     }
@@ -103,14 +106,14 @@ mod tests {
     #[test]
     fn redact_url_basic_auth() {
         let s = "https://user:pass@example.com/path";
-        let r = redact_str(s);
+        let r = redactor().redact_str(s);
         assert!(r.contains("https://user:***@example.com"));
     }
 
     #[test]
     fn redact_bearer() {
         let s = "Authorization: Bearer abc.xyz";
-        let r = redact_str(s);
+        let r = redactor().redact_str(s);
         assert!(r.contains("Bearer ***"));
     }
 }

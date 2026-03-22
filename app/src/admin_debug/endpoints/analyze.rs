@@ -2,14 +2,13 @@ use crate::admin_debug::http_util::{
     parse_query, respond, respond_json_error, supported_patch_kinds, validate_decoded_size,
     validate_inline_size_estimate,
 };
-#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-use crate::analyze::registry::{build_by_kind, build_by_kind_async, supported_kinds};
 use base64::Engine;
 use tokio::io::AsyncWriteExt;
 
 /// Build a single patch based on kind, prioritizing async, delegating to registry
 #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 async fn build_single_patch_json_async(
+    registry: &crate::analyze::registry::AnalyzeRegistry,
     kind: &str,
     report: &sb_core::router::analyze::Report,
     text: &str,
@@ -24,9 +23,9 @@ async fn build_single_patch_json_async(
     });
 
     // Try async first, fallback to sync
-    match build_by_kind_async(kind, &input).await {
+    match registry.build_by_kind_async(kind, &input).await {
         Ok(result) => Ok((result, true)),
-        Err(_) => match build_by_kind(kind, &input) {
+        Err(_) => match registry.build_by_kind(kind, &input) {
             Ok(result) => Ok((result, false)),
             Err(e) => Err(e),
         },
@@ -44,7 +43,11 @@ fn build_single_patch_json(
     anyhow::bail!("registry not available, kind: {}", kind);
 }
 
-pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
+pub async fn handle(
+    path_q: &str,
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    state: &crate::admin_debug::AdminDebugState,
+) -> std::io::Result<()> {
     if !path_q.starts_with("/router/analyze") {
         return Ok(());
     }
@@ -156,7 +159,15 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
             let report = sb_core::router::analyze::analyze(&text);
 
-            match build_single_patch_json_async(&kind, &report, &text, Some("rules.conf")).await {
+            match build_single_patch_json_async(
+                &state.analyze_registry,
+                &kind,
+                &report,
+                &text,
+                Some("rules.conf"),
+            )
+            .await
+            {
                 Ok((patch_json, used_async)) => {
                     let response = serde_json::json!({
                         "ok": patch_json.get("error").is_none(),
@@ -169,7 +180,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     respond(sock, 200, "application/json", &body).await
                 }
                 Err(e) => {
-                    let supported_list = supported_kinds().join(", ");
+                    let supported_list = state.analyze_registry.supported_kinds().join(", ");
                     let hint = format!("supported kinds: [{supported_list}]");
                     respond_json_error(sock, 400, &format!("patch build failed: {e}"), Some(&hint))
                         .await

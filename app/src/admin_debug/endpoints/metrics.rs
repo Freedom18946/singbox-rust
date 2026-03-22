@@ -1,19 +1,5 @@
-use crate::admin_debug::security_metrics as sm;
 use std::fmt::Write as _;
 use tokio::io::AsyncWriteExt;
-
-use prometheus::{register_int_gauge, IntGauge};
-
-#[allow(clippy::expect_used)]
-static PREFETCH_QUEUE_DEPTH: std::sync::LazyLock<IntGauge> = std::sync::LazyLock::new(|| {
-    register_int_gauge!("sb_prefetch_queue_depth", "Prefetch queue depth")
-        .expect("Failed to register PREFETCH_QUEUE_DEPTH metric")
-});
-
-/// 供 `security_metrics` 调用，更新 Prom Gauge
-pub fn update_prefetch_depth(v: i64) {
-    PREFETCH_QUEUE_DEPTH.set(v);
-}
 
 fn line(k: &str, v: u64) -> String {
     format!("{k} {v}\n")
@@ -21,8 +7,22 @@ fn line(k: &str, v: u64) -> String {
 
 /// # Errors
 /// Returns an IO error if metrics cannot be written to the socket
-pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
-    let h = sm::snapshot();
+pub async fn handle(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    state: &crate::admin_debug::AdminDebugState,
+) -> std::io::Result<()> {
+    let h = match state.security_metrics.snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(err) => {
+            return crate::admin_debug::http_util::respond_json_error(
+                sock,
+                500,
+                "failed to collect metrics snapshot",
+                Some(&err.to_string()),
+            )
+            .await;
+        }
+    };
     let mut buf = String::new();
     buf.push_str("# HELP sb_subs_requests_total total subs fetch requests\n# TYPE sb_subs_requests_total counter\n");
     buf.push_str(&line("sb_subs_requests_total", h.total_requests));
@@ -194,7 +194,7 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
     let _ = writeln!(
         buf,
         "sb_prefetch_queue_high_watermark {}",
-        crate::admin_debug::security_metrics::get_prefetch_queue_high_watermark()
+        state.security_metrics.get_prefetch_queue_high_watermark()
     );
 
     buf.push_str("# HELP sb_prefetch_jobs_total Prefetch job events\n# TYPE sb_prefetch_jobs_total counter\n");

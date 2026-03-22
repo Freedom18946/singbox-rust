@@ -11,7 +11,7 @@ use httparse;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
@@ -134,8 +134,6 @@ impl AuthConf {
         }
     }
 }
-
-pub static START: OnceLock<std::time::Instant> = OnceLock::new();
 
 #[must_use]
 pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
@@ -561,8 +559,7 @@ async fn read_request_head<R: AsyncRead + Unpin>(
 
     let mut headers = [httparse::EMPTY_HEADER; 64]; // 64 header limit
     let mut req = httparse::Request::new(&mut headers);
-    let _ = req
-        .parse(&buf)
+    req.parse(&buf)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad header"))?;
 
     let method = req.method.unwrap_or("GET").to_string();
@@ -618,7 +615,10 @@ async fn read_request_body<R: AsyncRead + Unpin>(
     Ok(bytes::Bytes::from(body))
 }
 
-pub async fn serve(addr: &str) -> std::io::Result<()> {
+pub async fn serve(
+    addr: &str,
+    state: Arc<crate::admin_debug::AdminDebugState>,
+) -> std::io::Result<()> {
     let use_mtls = std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1");
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
@@ -644,6 +644,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let tls = tls_acceptor.clone();
+        let state = Arc::clone(&state);
         tokio::spawn(async move {
             let res = async {
                 // Upgrade to TLS if enabled
@@ -691,8 +692,8 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
 
                 // Route to endpoints
                 match (method.as_str(), path.as_str()) {
-                    ("GET", "/__health") => endpoints::handle_health(&mut s).await?,
-                    ("GET", "/__metrics") => endpoints::metrics::handle(&mut s).await?,
+                    ("GET", "/__health") => endpoints::handle_health(&mut s, &state).await?,
+                    ("GET", "/__metrics") => endpoints::metrics::handle(&mut s, &state).await?,
                     ("GET", "/__config") => endpoints::handle_config_get(&mut s).await?,
                     ("PUT", "/__config") => {
                         let body = read_request_body(&mut s, &headers).await?;
@@ -731,7 +732,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                     (_, p) if p.starts_with("/router/analyze") => {
                         #[cfg(feature = "sbcore_rules_tool")]
                         {
-                            endpoints::handle_analyze(p, &mut s).await?;
+                            endpoints::handle_analyze(p, &mut s, &state).await?;
                         }
                         #[cfg(not(feature = "sbcore_rules_tool"))]
                         {
@@ -779,10 +780,11 @@ pub fn spawn(
     addr: std::net::SocketAddr,
     tls: Option<TlsConf>,
     auth: AuthConf,
+    state: Arc<crate::admin_debug::AdminDebugState>,
 ) -> std::io::Result<()> {
     let addr_str = addr.to_string();
     tokio::spawn(async move {
-        if let Err(e) = serve_with_config(&addr_str, tls, auth).await {
+        if let Err(e) = serve_with_config(&addr_str, tls, auth, state).await {
             tracing::error!(error = %e, "admin debug server failed");
         }
     });
@@ -793,6 +795,7 @@ async fn serve_with_config(
     addr: &str,
     tls_conf: Option<TlsConf>,
     auth_conf: AuthConf,
+    state: Arc<crate::admin_debug::AdminDebugState>,
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
@@ -839,6 +842,7 @@ async fn serve_with_config(
         let tls = tls_acceptor.clone();
         let auth = auth_conf.clone();
         let middleware_chain = Arc::clone(&middleware_chain);
+        let state = Arc::clone(&state);
         tokio::spawn(async move {
             let res = async {
                 // Upgrade to TLS if enabled
@@ -886,8 +890,8 @@ async fn serve_with_config(
 
                 // Route to endpoints with middleware-processed context
                 match (method.as_str(), path.as_str()) {
-                    ("GET", "/__health") => endpoints::handle_health(&mut s).await?,
-                    ("GET", "/__metrics") => endpoints::metrics::handle(&mut s).await?,
+                    ("GET", "/__health") => endpoints::handle_health(&mut s, &state).await?,
+                    ("GET", "/__metrics") => endpoints::metrics::handle(&mut s, &state).await?,
                     ("GET", "/__config") => endpoints::handle_config_get(&mut s).await?,
                     ("PUT", "/__config") => {
                         let body = read_request_body(&mut s, &headers).await?;
@@ -926,7 +930,7 @@ async fn serve_with_config(
                     (_, p) if p.starts_with("/router/analyze") => {
                         #[cfg(feature = "sbcore_rules_tool")]
                         {
-                            endpoints::handle_analyze(p, &mut s).await?;
+                            endpoints::handle_analyze(p, &mut s, &state).await?;
                         }
                         #[cfg(not(feature = "sbcore_rules_tool"))]
                         {
@@ -969,7 +973,10 @@ async fn serve_with_config(
     }
 }
 
-pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
+pub async fn serve_plain(
+    addr: &str,
+    state: Arc<crate::admin_debug::AdminDebugState>,
+) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     tracing::info!(addr = %actual_addr, "admin debug HTTP server listening");
@@ -996,8 +1003,9 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let middleware_chain = Arc::clone(&middleware_chain);
+        let state = Arc::clone(&state);
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, middleware_chain).await {
+            if let Err(e) = handle_connection(stream, middleware_chain, state).await {
                 tracing::warn!(error = %e, "admin debug connection error");
             }
         });
@@ -1007,8 +1015,8 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
 async fn handle_connection(
     mut stream: TcpStream,
     middleware_chain: Arc<MiddlewareChain>,
+    state: Arc<crate::admin_debug::AdminDebugState>,
 ) -> std::io::Result<()> {
-    START.get_or_init(std::time::Instant::now);
     let mut reader = BufReader::new(&mut stream);
     let mut request_line = String::new();
 
@@ -1060,8 +1068,8 @@ async fn handle_connection(
 
         // Handle the specific protected endpoint
         match path_q {
-            "/__health" => endpoints::handle_health(&mut stream).await?,
-            "/__metrics" => endpoints::metrics::handle(&mut stream).await?,
+            "/__health" => endpoints::handle_health(&mut stream, &state).await?,
+            "/__metrics" => endpoints::metrics::handle(&mut stream, &state).await?,
             _ => {
                 // This should not happen given the condition above, but handle gracefully
                 let error_envelope = sb_admin_contract::ResponseEnvelope::<()>::err(
@@ -1101,7 +1109,7 @@ async fn handle_connection(
     } else if path_q.starts_with("/router/analyze") {
         #[cfg(feature = "sbcore_rules_tool")]
         {
-            endpoints::handle_analyze(path_q, &mut stream).await?;
+            endpoints::handle_analyze(path_q, &mut stream, &state).await?;
         }
         #[cfg(not(feature = "sbcore_rules_tool"))]
         {

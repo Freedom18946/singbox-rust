@@ -16,6 +16,7 @@
 #[cfg(feature = "observe")]
 mod imp {
     use anyhow::Result;
+    use std::sync::Arc;
 
     #[must_use]
     pub fn next_trace_id() -> String {
@@ -25,25 +26,35 @@ mod imp {
         format!("{:016x}", n ^ fastrand::u64(..))
     }
 
-    pub fn init_tracing() {
+    pub fn init_tracing(deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
         #[cfg(feature = "dev-cli")]
-        crate::tracing_init::init_tracing_once();
-    }
-
-    /// Initialize metrics exporter.
-    ///
-    /// # Errors
-    /// Currently never fails, but returns `Result` for future extensibility.
-    pub fn init_metrics_exporter() -> Result<()> {
-        #[cfg(feature = "dev-cli")]
-        crate::tracing_init::init_metrics_exporter_once();
+        {
+            crate::tracing_init::init_tracing_once()?;
+        }
+        #[cfg(not(feature = "dev-cli"))]
+        {
+            let _ = deps;
+        }
         Ok(())
     }
 
-    pub fn init_and_listen() {
+    /// Initialize metrics exporter.
+    pub fn init_metrics_exporter(deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
+        #[cfg(feature = "dev-cli")]
+        {
+            crate::tracing_init::init_metrics_exporter_once(deps.metrics_registry())
+        }
+        #[cfg(not(feature = "dev-cli"))]
+        {
+            let _ = deps;
+            Ok(())
+        }
+    }
+
+    pub fn init_and_listen(deps: &crate::runtime_deps::AppRuntimeDeps) {
         // Metrics exporter integration point - admin_debug provides HTTP metrics endpoint
         #[cfg(feature = "admin_debug")]
-        crate::admin_debug::init(None);
+        crate::admin_debug::init(None, Arc::clone(&deps.admin_state()));
     }
 }
 
@@ -56,20 +67,18 @@ mod imp {
         String::new()
     }
 
-    pub const fn init_tracing() {
-        // NOP for minimal
-    }
-
-    /// Initialize metrics exporter.
-    ///
-    /// # Errors
-    /// Currently never fails, but returns `Result` for future extensibility.
-    pub const fn init_metrics_exporter() -> Result<()> {
+    pub const fn init_tracing(_deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
         // NOP for minimal
         Ok(())
     }
 
-    pub fn init_and_listen() {
+    /// Initialize metrics exporter.
+    pub const fn init_metrics_exporter(_deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
+        // NOP for minimal
+        Ok(())
+    }
+
+    pub fn init_and_listen(_deps: &crate::runtime_deps::AppRuntimeDeps) {
         // NOP for minimal
     }
 }

@@ -20,7 +20,7 @@
 use anyhow::{self, Result};
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
@@ -134,7 +134,7 @@ impl LoggingConfig {
 }
 
 /// Initialize the logging system with environment-based configuration
-pub fn init_logging() -> Result<()> {
+pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
     let config = LoggingConfig::from_env();
     LOGGING_CONFIG
         .set(config.clone())
@@ -157,7 +157,7 @@ pub fn init_logging() -> Result<()> {
                     .json()
                     .with_target(true)
                     .with_ansi(config.color)
-                    .with_writer(make_writer(config.redact))
+                    .with_writer(make_writer(config.redact, Arc::clone(&redactor)))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
                     tracing_subscriber::registry()
@@ -173,7 +173,7 @@ pub fn init_logging() -> Result<()> {
                     .without_time()
                     .with_target(true)
                     .with_ansi(config.color)
-                    .with_writer(make_writer(config.redact))
+                    .with_writer(make_writer(config.redact, Arc::clone(&redactor)))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
                     tracing_subscriber::registry()
@@ -192,7 +192,7 @@ pub fn init_logging() -> Result<()> {
                     .compact()
                     .with_target(true)
                     .with_ansi(config.color)
-                    .with_writer(make_writer(config.redact))
+                    .with_writer(make_writer(config.redact, Arc::clone(&redactor)))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
                     tracing_subscriber::registry()
@@ -208,7 +208,7 @@ pub fn init_logging() -> Result<()> {
                     .without_time()
                     .with_target(true)
                     .with_ansi(config.color)
-                    .with_writer(make_writer(config.redact))
+                    .with_writer(make_writer(config.redact, Arc::clone(&redactor)))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
                     tracing_subscriber::registry()
@@ -237,12 +237,13 @@ pub fn init_logging() -> Result<()> {
 }
 
 /// Create a writer (possibly redacting) for tracing-subscriber fmt layer
-fn make_writer(redact: bool) -> fmt::writer::BoxMakeWriter {
+fn make_writer(redact: bool, redactor: Arc<app::redact::Redactor>) -> fmt::writer::BoxMakeWriter {
     fmt::writer::BoxMakeWriter::new(move || {
         if redact {
             Box::new(RedactingWriter {
                 buf: Vec::with_capacity(256),
                 inner: io::stderr(),
+                redactor: Arc::clone(&redactor),
             }) as Box<dyn Write + Send>
         } else {
             Box::new(io::stderr()) as Box<dyn Write + Send>
@@ -254,6 +255,7 @@ fn make_writer(redact: bool) -> fmt::writer::BoxMakeWriter {
 struct RedactingWriter {
     buf: Vec<u8>,
     inner: io::Stderr,
+    redactor: Arc<app::redact::Redactor>,
 }
 
 impl Write for RedactingWriter {
@@ -268,14 +270,17 @@ impl Write for RedactingWriter {
 
 impl Drop for RedactingWriter {
     fn drop(&mut self) {
-        use crate::redact::redact_str;
         if self.buf.is_empty() {
             return;
         }
         let s = String::from_utf8_lossy(&self.buf);
-        let redacted = redact_str(&s);
-        let _ = self.inner.write_all(redacted.as_bytes());
-        let _ = self.inner.flush();
+        let redacted = self.redactor.redact_str(&s);
+        if let Err(err) = self.inner.write_all(redacted.as_bytes()) {
+            eprintln!("logging redaction write failed: {err}");
+        }
+        if let Err(err) = self.inner.flush() {
+            eprintln!("logging redaction flush failed: {err}");
+        }
     }
 }
 

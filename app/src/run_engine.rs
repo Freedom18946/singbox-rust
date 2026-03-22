@@ -304,8 +304,12 @@ struct WatchHandle {
 #[cfg(feature = "router")]
 impl WatchHandle {
     async fn shutdown(self) {
-        let _ = self.stop.send(());
-        let _ = self.join.await;
+        if self.stop.send(()).is_err() {
+            tracing::debug!("watch stop signal dropped before shutdown");
+        }
+        if let Err(error) = self.join.await {
+            tracing::warn!(%error, "watch task join failed during shutdown");
+        }
     }
 }
 
@@ -332,8 +336,12 @@ impl CloseMonitor {
     }
 
     async fn shutdown(self) {
-        let _ = self.stop.send(());
-        let _ = self.join.await;
+        if self.stop.send(()).is_err() {
+            tracing::debug!("close monitor stop signal dropped before shutdown");
+        }
+        if let Err(error) = self.join.await {
+            tracing::warn!(%error, "close monitor join failed during shutdown");
+        }
     }
 }
 
@@ -347,8 +355,12 @@ struct ClashApiHandle {
 #[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashApiHandle {
     async fn shutdown(self) {
-        let _ = self.shutdown.send(());
-        let _ = self.join.await;
+        if self.shutdown.send(()).is_err() {
+            tracing::debug!("clash api shutdown signal dropped before shutdown");
+        }
+        if let Err(error) = self.join.await {
+            tracing::warn!(%error, "clash api join failed during shutdown");
+        }
     }
 }
 
@@ -697,15 +709,15 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
         std::env::set_var("SB_HEALTH_ENABLE", "1");
     }
 
+    let runtime_deps =
+        app::runtime_deps::AppRuntimeDeps::new().context("failed to build runtime deps")?;
+
     // 1) Optional Prom exporter
     if let Some(ref addr) = opts.prom_listen {
         #[cfg(feature = "sb-metrics")]
         match addr.parse() {
             Ok(sa) => {
-                let _jh = sb_metrics::spawn_http_exporter(
-                    sb_metrics::MetricsRegistryHandle::global(),
-                    sa,
-                );
+                let _jh = sb_metrics::spawn_http_exporter(runtime_deps.metrics_registry(), sa);
             }
             Err(err) => {
                 tracing::warn!(addr = %addr, error = %err, "invalid prom exporter listen addr");
@@ -751,7 +763,8 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
 
     // 2.0) Rustls crypto provider decision (single-point).
     // Must happen before transport/runtime startup to avoid provider race and hidden fallback.
-    let tls_provider = app::tls_provider::ensure_default_provider();
+    let tls_provider = app::tls_provider::ensure_default_provider()
+        .context("failed to select/install rustls crypto provider")?;
 
     // 2.0) Capability probe (startup-static).
     // Emits structured logs and can optionally write probe JSON for capability ledger aggregation.
@@ -979,7 +992,12 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                         None
                     };
 
-                    app::admin_debug::http_server::spawn(socket_addr, tls_opt, auth_conf)
+                    app::admin_debug::http_server::spawn(
+                        socket_addr,
+                        tls_opt,
+                        auth_conf,
+                        runtime_deps.admin_state(),
+                    )
                         .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {e}"))?;
                     info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
                 }

@@ -1,5 +1,5 @@
 use crate::analyze::builders::wrap_patch_text;
-use crate::analyze::registry::register;
+use crate::analyze::registry::AnalyzeRegistry;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
@@ -64,9 +64,9 @@ fn lint_autofix(input: &Value) -> Result<Value> {
     Ok(wrap_patch_text(patch_text))
 }
 
-pub fn register_core_adapters() {
-    register("portrange_merge", portrange_merge as _);
-    register("suffix_shadow_cleanup", suffix_shadow_cleanup as _);
-    register("port_aggregate", port_aggregate as _);
-    register("lint_autofix", lint_autofix as _);
+pub fn register_core_adapters(registry: &AnalyzeRegistry) {
+    registry.register("portrange_merge", portrange_merge as _);
+    registry.register("suffix_shadow_cleanup", suffix_shadow_cleanup as _);
+    registry.register("port_aggregate", port_aggregate as _);
+    registry.register("lint_autofix", lint_autofix as _);
 }

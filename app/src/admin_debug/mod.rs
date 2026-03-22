@@ -66,11 +66,22 @@ pub mod auth;
 
 pub mod middleware;
 
+use std::sync::Arc;
+use std::time::Instant;
+
+#[derive(Clone)]
+pub struct AdminDebugState {
+    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+    pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
+    pub security_metrics: Arc<security_metrics::SecurityMetricsState>,
+    pub started_at: Instant,
+}
+
 // Note: http_server contains the plain HTTP admin server functionality
 // while http/ contains redirect policies and other HTTP utilities
 
 /// Initialize admin debug server if enabled
-pub fn init(addr: Option<&str>) {
+pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) {
     let bind_addr = match addr {
         Some(a) => a.to_string(),
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
@@ -80,7 +91,7 @@ pub fn init(addr: Option<&str>) {
     reloadable::init_signal_handler();
 
     tokio::spawn(async move {
-        if let Err(e) = http_server::serve_plain(&bind_addr).await {
+        if let Err(e) = http_server::serve_plain(&bind_addr, state).await {
             tracing::error!(error = %e, "failed to start admin debug server");
         }
     });

@@ -65,7 +65,9 @@ pub mod http_util;
 pub mod panic;
 #[cfg(feature = "router")]
 pub mod reqwest_http;
+pub mod redact;
 pub mod run_engine;
+pub mod runtime_deps;
 pub mod telemetry;
 pub mod tls_provider;
 #[cfg(feature = "dev-cli")]

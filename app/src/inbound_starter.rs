@@ -61,17 +61,25 @@ impl InboundHandle {
     pub async fn shutdown(self) {
         match self.stop {
             InboundStop::Channel(tx) => {
-                let _ = tx.send(()).await;
-                let _ = self.join.await;
+                if let Err(error) = tx.send(()).await {
+                    warn!(%error, inbound = %self.name, "inbound shutdown signal dropped");
+                }
+                if let Err(error) = self.join.await {
+                    warn!(%error, inbound = %self.name, "inbound task join failed");
+                }
             }
             #[cfg(feature = "router")]
             InboundStop::Direct(forward) => {
                 forward.request_shutdown();
-                let _ = self.join.await;
+                if let Err(error) = self.join.await {
+                    warn!(%error, inbound = %self.name, "direct inbound join failed");
+                }
             }
             InboundStop::Abort => {
                 self.join.abort();
-                let _ = self.join.await;
+                if let Err(error) = self.join.await {
+                    warn!(%error, inbound = %self.name, "aborted inbound join failed");
+                }
             }
         }
     }
@@ -553,12 +561,14 @@ fn start_tun_inbound(
 ) -> Option<InboundHandle> {
     let cfg = match ib.tun.as_ref() {
         Some(tun) => match serde_json::to_value(tun)
-            .ok()
-            .and_then(|value| serde_json::from_value::<TunInboundConfig>(value).ok())
-        {
-            Some(cfg) => cfg,
-            None => {
-                warn!("tun inbound: invalid tun options; refusing to start");
+            .context("serialize tun inbound config")
+            .and_then(|value| {
+                serde_json::from_value::<TunInboundConfig>(value)
+                    .context("decode TunInboundConfig from inbound.tun")
+            }) {
+            Ok(cfg) => cfg,
+            Err(error) => {
+                warn!(%error, "tun inbound: invalid tun options; refusing to start");
                 return None;
             }
         },
@@ -620,7 +630,9 @@ fn start_direct_inbound(ib: &InboundIR) -> Option<InboundHandle> {
             ));
             let forward_spawn = Arc::clone(&forward);
             let join = tokio::task::spawn_blocking(move || {
-                let _ = forward_spawn.serve();
+                if let Err(error) = forward_spawn.serve() {
+                    warn!(%error, "direct inbound failed");
+                }
             });
             info!(addr=%listen_str, dst=%f_dst, "direct inbound spawned");
             Some(InboundHandle {

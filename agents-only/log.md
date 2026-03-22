@@ -16,6 +16,82 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 20:05] Agent: Codex (GPT-5)
+
+**任务**: 执行 `app/` Layer 1 / 2 首轮修复，并同步 `agents-only` 跟踪
+**变更**:
+- `app/src/runtime_deps.rs`
+  - 新增 `AppRuntimeDeps`，统一承载 `Redactor` / `AnalyzeRegistry` / `SecurityMetricsState` / `started_at`
+- `app/src/redact.rs`
+  - 改为 `Redactor` 实例化初始化，移除生产路径 `lazy_static!` 与 regex `unwrap()`
+- `app/src/tracing_init.rs`
+  - 改为显式返回 `Result` 的 tracing / metrics 初始化入口
+- `app/src/tls_provider.rs`
+  - 移除 `OnceLock` 决策缓存
+  - 将 provider 安装失败改为真实错误传播
+- `app/src/analyze/registry.rs`
+  - 改为 `AnalyzeRegistry` 对象与显式 builder 注册
+- `app/src/admin_debug/security_metrics.rs`
+  - 改为 `SecurityMetricsState` 实例
+  - `snapshot()` 改为显式 `Result`
+  - 保留 `DEFAULT_STATE` 兼容壳承接旧调用面
+- `app/src/admin_debug/mod.rs`
+  - 新增 `AdminDebugState`
+  - `init(...)` 改为接收显式状态
+- `app/src/admin_debug/http_server.rs`
+  - 将 `started_at` / analyze / metrics 状态沿 server->connection->endpoint 显式传递
+- `app/src/admin_debug/endpoints/health.rs`
+  - 改用显式 `AdminDebugState`
+  - uptime 不再依赖 `START: OnceLock<_>`
+- `app/src/admin_debug/endpoints/metrics.rs`
+  - 移除 `PREFETCH_QUEUE_DEPTH: LazyLock<_>`
+  - 统一从 `SecurityMetricsState` 快照导出
+- `app/src/admin_debug/endpoints/analyze.rs`
+  - 改为使用显式 `AnalyzeRegistry`
+- `app/src/cli/run.rs`
+  - 显式构造 runtime deps 并启动 metrics/admin debug
+- `app/src/main.rs`
+  - 用 runtime deps 构造 `Redactor` 后初始化 logging
+- `app/src/run_engine.rs`
+  - 显式构造 runtime deps
+  - prom exporter 改走显式 registry handle
+  - debug admin 启动改传 `AdminDebugState`
+  - 补充 watch/close-monitor/clash-api shutdown failure surfacing
+- `app/src/inbound_starter.rs`
+  - TUN 配置转换保留错误上下文
+  - shutdown/direct inbound 改为具名 warn 记录
+- `agents-only/planning/2026-03-22-app-layer12-review-workpackage.md`
+  - 追加执行进展、验证结果与剩余尾项
+- `agents-only/active_context.md`
+  - 同步当前 `app` Layer 1 / 2 执行状态
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo check -p app` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e` ✅
+**备注**:
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli adapters"` 被现有工作树中的 `sb-adapters` 未完成 `conn_tracker` 补线阻塞；本轮未回退这些外部改动
+- 维护态口径不变：上述验证仅说明 Layer 1 / 2 维护收敛，不表述为 dual-kernel parity 完成
+
+### [2026-03-22 18:04] Agent: Codex (GPT-5)
+
+**任务**: 按 `Rust_spec_v2.md` 的 Layer 1 / 2 规则审议 `app/`，并建立独立跟踪文档
+**变更**:
+- `agents-only/planning/2026-03-22-app-layer12-review-workpackage.md`
+  - 新建 `app/` Layer 1 / 2 审议跟踪文档
+  - 记录本轮范围、约束、审议结论与 6 条首轮发现
+- `agents-only/active_context.md`
+  - 将 `app/` Layer 1 / 2 审议状态补入“当前维护动作”
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 本轮以 `app/src` 生产路径为主，`app/src/bin` 只做快速补扫；`tests/`、`benches/` 未纳入正式发现
+- 继续保持 maintenance mode 口径；本次仅为审议与记录，不表述为 dual-kernel parity 完成
+
 ### [2026-03-22 17:19] Agent: Codex (GPT-5)
 
 **任务**: 继续执行 `crates/` Layer 1 / 2 维护收尾，完成 `sb-metrics` registry 显式化尾项并启动首批 `Batch D` 机械 sweep

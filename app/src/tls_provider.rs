@@ -1,5 +1,5 @@
+use anyhow::Result;
 use rustls::crypto::{self, CryptoProvider};
-use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TlsProviderKind {
@@ -26,21 +26,11 @@ pub struct TlsProviderDecision {
     pub fallback_reason: Option<String>,
 }
 
-pub fn ensure_default_provider() -> TlsProviderDecision {
-    static DECISION: OnceLock<TlsProviderDecision> = OnceLock::new();
-    DECISION.get_or_init(decide_and_install).clone()
-}
-
-#[must_use]
-pub const fn aws_lc_compiled() -> bool {
-    cfg!(feature = "tls-provider-aws-lc")
-}
-
-fn decide_and_install() -> TlsProviderDecision {
+pub fn ensure_default_provider() -> Result<TlsProviderDecision> {
     let requested = std::env::var("SB_TLS_PROVIDER").unwrap_or_else(|_| "auto".to_string());
     let requested_norm = requested.trim().to_ascii_lowercase();
 
-    let mut fallback_reason: Option<String> = None;
+    let mut fallback_reason = None;
     let (provider, source) = match requested_norm.as_str() {
         "ring" => (TlsProviderKind::Ring, "env"),
         "aws-lc" | "awslc" | "aws_lc" | "aws_lc_rs" => {
@@ -62,22 +52,30 @@ fn decide_and_install() -> TlsProviderDecision {
         }
     };
 
-    let already_present = CryptoProvider::get_default().is_some();
-    let install_result = if already_present {
+    let install_result = if CryptoProvider::get_default().is_some() {
         "already_present"
-    } else if install_provider(provider).is_ok() {
-        "installed"
     } else {
-        "already_present"
+        install_provider(provider).map_err(|_| {
+            anyhow::anyhow!(
+                "failed to install TLS provider '{}'; another provider was installed first",
+                provider.as_str()
+            )
+        })?;
+        "installed"
     };
 
-    TlsProviderDecision {
+    Ok(TlsProviderDecision {
         provider,
         requested: requested_norm,
         source,
         install_result,
         fallback_reason,
-    }
+    })
+}
+
+#[must_use]
+pub const fn aws_lc_compiled() -> bool {
+    cfg!(feature = "tls-provider-aws-lc")
 }
 
 fn install_provider(provider: TlsProviderKind) -> Result<(), ArcProvider> {
@@ -94,7 +92,7 @@ fn install_aws_lc() -> Result<(), ArcProvider> {
 
 #[cfg(not(feature = "tls-provider-aws-lc"))]
 fn install_aws_lc() -> Result<(), ArcProvider> {
-    CryptoProvider::install_default(crypto::ring::default_provider())
+    Err(std::sync::Arc::new(crypto::ring::default_provider()))
 }
 
 type ArcProvider = std::sync::Arc<CryptoProvider>;

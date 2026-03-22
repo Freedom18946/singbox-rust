@@ -74,9 +74,12 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
         info!("singbox-rust booting…");
     }
 
-    // Initialize observability (tracing + metrics) once
-    #[cfg(feature = "dev-cli")]
-    crate::tracing_init::init_observability_once();
+    // Initialize optional metrics exporter explicitly from the runtime deps.
+    #[cfg(all(feature = "dev-cli", feature = "observe"))]
+    {
+        let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
+        crate::tracing_init::init_metrics_exporter_once(runtime_deps.metrics_registry())?;
+    }
 
     // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
     #[cfg(feature = "dev-cli")]
@@ -84,7 +87,10 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
 
     // Initialize admin debug server if enabled (separate from core admin)
     #[cfg(all(feature = "observe", feature = "admin_debug"))]
-    crate::admin_debug::init(None);
+    {
+        let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
+        app::admin_debug::init(None, runtime_deps.admin_state());
+    }
 
     // Build ConfigInputs (entries collected dynamically in run_supervisor)
     let config_inputs = app::run_engine::ConfigInputs {
