@@ -121,6 +121,7 @@ mod tuic_tests {
             outbounds,
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
 
         tokio::spawn(async move {

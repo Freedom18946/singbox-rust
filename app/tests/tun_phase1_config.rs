@@ -1,5 +1,5 @@
 #![allow(unexpected_cfgs)]
-#![cfg(all(feature = "dev-cli", feature = "tun_phase1_DISABLED"))]
+#![cfg(all(feature = "dev-cli", feature = "tun_phase1_DISABLED", any()))]
 use anyhow::Result;
 use sb_config::inbound::InboundDef;
 use sb_core::pipeline::Inbound; // 使 .serve() 在作用域内

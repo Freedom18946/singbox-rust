@@ -290,21 +290,21 @@ fn diff_http(
     let mut out = Vec::new();
     let mut ignored = 0usize;
 
-    let rust_map: BTreeMap<String, (&u16, Option<&String>)> = rust_http
+    let rust_map: BTreeMap<String, (&u16, Option<&str>)> = rust_http
         .iter()
         .map(|item| {
             (
                 format!("{} {}", item.method, item.path),
-                (&item.status, item.body_hash.as_ref()),
+                (&item.status, item.body_hash.as_deref()),
             )
         })
         .collect();
-    let go_map: BTreeMap<String, (&u16, Option<&String>)> = go_http
+    let go_map: BTreeMap<String, (&u16, Option<&str>)> = go_http
         .iter()
         .map(|item| {
             (
                 format!("{} {}", item.method, item.path),
-                (&item.status, item.body_hash.as_ref()),
+                (&item.status, item.body_hash.as_deref()),
             )
         })
         .collect();

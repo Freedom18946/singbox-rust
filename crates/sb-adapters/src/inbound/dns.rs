@@ -239,6 +239,7 @@ impl DnsInboundAdapter {
     }
 
     /// Handle a single UDP DNS query
+    #[allow(clippy::too_many_arguments)]
     async fn handle_udp_query(
         socket: &Arc<UdpSocket>,
         src: SocketAddr,
@@ -638,6 +639,7 @@ impl InboundService for DnsInboundAdapter {
         let tcp_enabled = self.tcp_enabled;
         let resolver = self.resolver.clone();
         let dns_router = self.dns_router.clone();
+        let conn_tracker = self.conn_tracker.clone();
 
         rt.block_on(async move {
             info!(addr = ?listen, tcp = tcp_enabled, "DNS inbound starting");
@@ -649,6 +651,7 @@ impl InboundService for DnsInboundAdapter {
                 dns_router: dns_router.clone(),
                 tag: None,
                 stats: None,
+                conn_tracker: conn_tracker.clone(),
                 shutdown: shutdown.clone(),
                 shutdown_notify: shutdown_notify.clone(),
                 active_queries,
@@ -663,6 +666,7 @@ impl InboundService for DnsInboundAdapter {
                     dns_router: dns_router.clone(),
                     tag: None,
                     stats: None,
+                    conn_tracker: conn_tracker.clone(),
                     shutdown: shutdown.clone(),
                     shutdown_notify: shutdown_notify.clone(),
                     active_queries: adapter.active_queries.clone(),
@@ -711,6 +715,7 @@ mod tests {
             dns_router: None,
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
 
         let adapter = DnsInboundAdapter::new(config).unwrap();

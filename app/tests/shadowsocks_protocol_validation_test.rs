@@ -91,6 +91,7 @@ async fn test_shadowsocks_aes_256_gcm_config() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -117,6 +118,7 @@ async fn test_shadowsocks_aes_128_gcm_config() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -143,6 +145,7 @@ async fn test_shadowsocks_chacha20_poly1305_config() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -170,6 +173,7 @@ async fn test_shadowsocks_all_supported_ciphers() {
             router: router.clone(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
             multiplex: None,
             transport_layer: None,
         };
@@ -318,6 +322,7 @@ async fn test_password_based_authentication() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -346,6 +351,7 @@ async fn test_multi_user_different_passwords() {
         router: router.clone(),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -361,6 +367,7 @@ async fn test_multi_user_different_passwords() {
         router: router.clone(),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };

@@ -215,7 +215,7 @@ impl SecurityMetricsState {
         self.dns_cache_miss.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn init_prefetch_metrics(&self) {
+    pub const fn init_prefetch_metrics(&self) {
         let _ = &self.prefetch_run_counts;
     }
 
@@ -660,6 +660,12 @@ pub fn set_prefetch_queue_depth(depth: u64) {
         state.set_prefetch_queue_depth(depth);
     }
 }
+#[must_use]
+pub fn get_prefetch_queue_depth() -> u64 {
+    current()
+        .map(|state| state.prefetch_queue_depth.load(Ordering::Relaxed))
+        .unwrap_or_default()
+}
 pub fn set_prefetch_queue_high_watermark(watermark: u64) {
     if let Ok(state) = current() {
         state.set_prefetch_queue_high_watermark(watermark);
@@ -681,6 +687,12 @@ pub fn add_prefetch_bytes(bytes: u64) {
     if let Ok(state) = current() {
         state.add_prefetch_bytes(bytes);
     }
+}
+#[must_use]
+pub fn get_prefetch_session_duration_ms() -> u64 {
+    current()
+        .map(|state| state.get_prefetch_session_duration_ms())
+        .unwrap_or_default()
 }
 #[must_use]
 pub fn get_prefetch_total_bytes() -> u64 {

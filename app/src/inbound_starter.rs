@@ -193,7 +193,11 @@ fn parse_udp_bind_from_env() -> Option<SocketAddr> {
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 #[cfg(feature = "router")]
-#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines
+)]
 pub fn start_inbounds_from_ir(
     inbounds: &[InboundIR],
     #[cfg(feature = "router")] router: &Arc<RouterHandle>,
@@ -439,6 +443,7 @@ fn start_socks_inbound(
             sniff_override_destination: ib.sniff_override_destination,
             conn_tracker,
         };
+        let udp_conn_tracker = cfg.conn_tracker.clone();
         let listen_str_log = listen_str.clone();
         let join = tokio::spawn(async move {
             if let Err(e) = serve_socks(cfg, rx, None).await {
@@ -452,7 +457,7 @@ fn start_socks_inbound(
         });
         // start UDP association service if config or env enables
         if ib.udp || socks_udp_should_start() {
-            let conn_tracker = cfg.conn_tracker.clone();
+            let conn_tracker = udp_conn_tracker;
             let join = tokio::spawn(async move {
                 if let Err(e) = serve_socks5_udp_service(conn_tracker).await {
                     warn!(error=%e, "socks udp service failed");

@@ -53,6 +53,7 @@ pub struct TunMacosRuntime {
 
 impl TunMacosRuntime {
     /// Bootstrap the runtime.
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         config: &ProcessAwareTunConfig,
         outbound: Arc<dyn OutboundConnector>,

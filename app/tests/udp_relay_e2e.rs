@@ -86,6 +86,7 @@ async fn start_shadowsocks_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -127,6 +128,7 @@ async fn start_vless_server() -> Option<(SocketAddr, Uuid, mpsc::Sender<()>)> {
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,

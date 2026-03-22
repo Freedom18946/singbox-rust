@@ -16,6 +16,7 @@ use sb_admin_contract::{ErrorKind, ResponseEnvelope};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -83,6 +84,14 @@ async fn start_test_server(
 
     config.port = addr.port();
     let addr_string = addr.to_string();
+    let state = Arc::new(app::admin_debug::AdminDebugState {
+        #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+        analyze_registry: Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
+        security_metrics: app::admin_debug::security_metrics::install_default(Arc::new(
+            app::admin_debug::security_metrics::SecurityMetricsState::new(),
+        )),
+        started_at: std::time::Instant::now(),
+    });
 
     let handle = tokio::spawn(async move {
         // Create auth and TLS configuration
@@ -90,7 +99,7 @@ async fn start_test_server(
         let _tls_conf: Option<app::admin_debug::http_server::TlsConf> = None;
 
         // Start the server using public API
-        if let Err(e) = app::admin_debug::http_server::serve_plain(&addr_string).await {
+        if let Err(e) = app::admin_debug::http_server::serve_plain(&addr_string, state).await {
             eprintln!("Server error: {}", e);
         }
     });

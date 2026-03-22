@@ -2,6 +2,7 @@
 use serial_test::serial;
 use std::collections::HashSet;
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -48,6 +49,19 @@ fn should_skip_local_network_tests() -> bool {
         }
         Err(err) => panic!("Failed to bind test listener: {}", err),
     }
+}
+
+fn admin_debug_state() -> Arc<app::admin_debug::AdminDebugState> {
+    let security_metrics = app::admin_debug::security_metrics::install_default(Arc::new(
+        app::admin_debug::security_metrics::SecurityMetricsState::new(),
+    ));
+
+    Arc::new(app::admin_debug::AdminDebugState {
+        #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+        analyze_registry: Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
+        security_metrics,
+        started_at: std::time::Instant::now(),
+    })
 }
 
 struct EnvGuard {
@@ -424,9 +438,10 @@ async fn metrics_endpoint_prometheus_format() {
         use std::io::Cursor;
         let mut buf = Vec::new();
         let mut cursor = Cursor::new(&mut buf);
+        let state = admin_debug_state();
 
         // Call the metrics handler
-        app::admin_debug::endpoints::metrics::handle(&mut cursor)
+        app::admin_debug::endpoints::metrics::handle(&mut cursor, state.as_ref())
             .await
             .unwrap();
         let output = String::from_utf8(buf).unwrap();
@@ -448,6 +463,7 @@ async fn security_metrics_error_ringbuffer() {
     }
     #[cfg(feature = "subs_http")]
     {
+        let _state = admin_debug_state();
         // Generate some errors to populate the ring buffer
         for i in 0..5 {
             app::admin_debug::security_metrics::set_last_error_with_url(
@@ -457,7 +473,7 @@ async fn security_metrics_error_ringbuffer() {
             );
         }
 
-        let snapshot = app::admin_debug::security_metrics::snapshot();
+        let snapshot = app::admin_debug::security_metrics::snapshot().unwrap();
         assert!(!snapshot.last_errors.is_empty());
         assert!(snapshot.last_errors.len() <= 32); // MAX_ERRORS = 32
 
@@ -479,6 +495,7 @@ async fn subs_rate_limiting_concurrency() {
     }
     #[cfg(feature = "subs_http")]
     {
+        let _state = admin_debug_state();
         let _env = subs_env_guard(&[
             ("SB_SUBS_MAX_CONCURRENCY", Some("2")),
             ("SB_SUBS_RPS", Some("10")),
@@ -730,7 +747,7 @@ async fn comprehensive_security_integration() {
         expect_err_contains(result, "private");
 
         // Verify metrics were updated
-        let snapshot = app::admin_debug::security_metrics::snapshot();
+        let snapshot = app::admin_debug::security_metrics::snapshot().unwrap();
         assert!(snapshot.total_requests > 0);
         assert!(snapshot.subs_block_private_ip > 0);
     }

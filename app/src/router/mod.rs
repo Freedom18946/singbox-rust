@@ -188,7 +188,7 @@ pub mod analyze {
 pub mod explain_index {
     #[allow(dead_code)]
     pub const fn rebuild_periodic(
-        _router: super::engine::RouterHandle,
+        _router: crate::router::engine::RouterHandle,
         _interval: std::time::Duration,
     ) {
         // No-op
@@ -275,7 +275,7 @@ pub mod routing {
             pub matched_rule: String,
             pub chain: Vec<String>,
             pub outbound: String,
-            pub trace: Option<super::trace::Trace>,
+            pub trace: Option<crate::router::trace::Trace>,
         }
     }
 

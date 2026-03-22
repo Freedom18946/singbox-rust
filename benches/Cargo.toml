@@ -51,6 +51,7 @@ sb-adapters = { path = "../crates/sb-adapters", default-features = false, featur
     "socks",
     "vmess"
 ] }
+sb-common = { path = "../crates/sb-common" }
 sb-config = { path = "../crates/sb-config" }
 sb-types = { path = "../crates/sb-types" }
 

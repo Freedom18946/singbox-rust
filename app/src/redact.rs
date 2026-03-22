@@ -1,9 +1,12 @@
+#![allow(dead_code)]
+
 //! Simple sensitive data redaction utilities for logging.
 //!
 //! Intent: provide a lightweight, opt-in API to scrub secrets before they
 //! appear in logs. Prefer structured logs and avoid logging secrets entirely.
 use regex::Regex;
 
+#[allow(clippy::struct_field_names)]
 #[derive(Debug)]
 pub struct Redactor {
     kv_re: Regex,
@@ -14,16 +17,21 @@ pub struct Redactor {
 
 impl Redactor {
     /// Build a reusable redactor instance for the process runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns the regex compilation error if one of the built-in redaction
+    /// patterns is invalid.
     pub fn new() -> Result<Self, regex::Error> {
         Ok(Self {
             kv_re: Regex::new(
-                r#"(?i)\b(password|token|secret|api[_-]?key|authorization|cookie)=([^&\s;]+)"#,
+                r"(?i)\b(password|token|secret|api[_-]?key|authorization|cookie)=([^&\s;]+)",
             )?,
             json_re: Regex::new(
                 r#"(?i)"(password|token|secret|api[_-]?key|authorization|cookie)"\s*:\s*"([^"]*)""#,
             )?,
-            url_auth_re: Regex::new(r#"(?i)\b(https?://)([^:@/]+):([^@/]+)@"#)?,
-            bearer_re: Regex::new(r#"(?i)\bBearer\s+[A-Za-z0-9._\-]+"#)?,
+            url_auth_re: Regex::new(r"(?i)\b(https?://)([^:@/]+):([^@/]+)@")?,
+            bearer_re: Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._\-]+")?,
         })
     }
 

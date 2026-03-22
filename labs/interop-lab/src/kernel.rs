@@ -3,6 +3,7 @@ use crate::snapshot::KernelKind;
 use crate::util::{resolve_command_with_fallback, resolve_with_env};
 use anyhow::{anyhow, Context, Result};
 use reqwest::StatusCode;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -16,17 +17,42 @@ pub struct KernelSession {
     pub stderr_task: Option<tokio::task::JoinHandle<()>>,
 }
 
+async fn terminate_child(child: &mut Child, context: &str) -> Result<()> {
+    match child.kill().await {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::InvalidInput => {}
+        Err(err) => {
+            return Err(err).with_context(|| format!("killing kernel child during {context}"));
+        }
+    }
+
+    child
+        .wait()
+        .await
+        .with_context(|| format!("waiting kernel child during {context}"))?;
+    Ok(())
+}
+
+async fn join_log_task(
+    task: tokio::task::JoinHandle<()>,
+    stream_name: &str,
+    context: &str,
+) -> Result<()> {
+    task.await
+        .with_context(|| format!("joining {stream_name} log task during {context}"))?;
+    Ok(())
+}
+
 impl KernelSession {
     pub async fn shutdown(&mut self) -> Result<()> {
         if let Some(child) = self.child.as_mut() {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            terminate_child(child, "session shutdown").await?;
         }
         if let Some(task) = self.stdout_task.take() {
-            let _ = task.await;
+            join_log_task(task, "stdout", "session shutdown").await?;
         }
         if let Some(task) = self.stderr_task.take() {
-            let _ = task.await;
+            join_log_task(task, "stderr", "session shutdown").await?;
         }
         Ok(())
     }
@@ -92,8 +118,12 @@ pub async fn launch_kernel(
                 let mut reader = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let payload = format!("{line}\n");
-                    let _ =
-                        tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await;
+                    if let Err(err) =
+                        tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await
+                    {
+                        eprintln!("kernel stdout log write failed: {err}");
+                        break;
+                    }
                 }
             }
         })
@@ -106,21 +136,24 @@ pub async fn launch_kernel(
                 let mut reader = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
                     let payload = format!("{line}\n");
-                    let _ =
-                        tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await;
+                    if let Err(err) =
+                        tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await
+                    {
+                        eprintln!("kernel stderr log write failed: {err}");
+                        break;
+                    }
                 }
             }
         })
     });
 
     if let Err(err) = wait_until_ready(&api, &spec.ready_path, spec.startup_timeout_ms).await {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
+        terminate_child(&mut child, "readiness cleanup").await?;
         if let Some(task) = stdout_task.take() {
-            let _ = task.await;
+            join_log_task(task, "stdout", "readiness cleanup").await?;
         }
         if let Some(task) = stderr_task.take() {
-            let _ = task.await;
+            join_log_task(task, "stderr", "readiness cleanup").await?;
         }
         return Err(err);
     }

@@ -5,10 +5,6 @@
 #[cfg(all(feature = "http", feature = "socks"))]
 #[tokio::test]
 async fn test_mixed_inbound_protocol_detection() {
-    use std::io::Write as _;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-
     // This test validates that the Mixed inbound can handle both protocols
     // For a full test, we would:
     // 1. Start a Mixed inbound server
@@ -48,8 +44,8 @@ fn test_protocol_detection_boundary_conditions() {
     assert!(b'G'.is_ascii_alphabetic(), "GET starts with letter");
 
     // Non-protocol bytes
-    assert!(!0x00.is_ascii_alphabetic());
-    assert!(!0xFF.is_ascii_alphabetic());
+    assert!(!0x00_u8.is_ascii_alphabetic());
+    assert!(!0xFF_u8.is_ascii_alphabetic());
 }
 
 /// Documentation test showing how to use Mixed inbound

@@ -186,6 +186,12 @@ impl MetricsRegistryHandle {
     }
 
     /// Register a cloned collector into this registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns the `prometheus` registration error when the collector cannot be
+    /// registered, for example because a metric with the same descriptor was
+    /// already installed.
     pub fn register_cloned<C>(&self, metric: &str, collector: &C) -> Result<(), prometheus::Error>
     where
         C: Collector + Clone + 'static,
@@ -205,6 +211,11 @@ impl MetricsRegistryHandle {
     }
 
     /// Encode the current registry into Prometheus text exposition format.
+    ///
+    /// # Errors
+    ///
+    /// Returns the encoder error if `prometheus` fails to serialize the current
+    /// metric families into text format.
     pub fn encode_text(&self) -> Result<Vec<u8>, prometheus::Error> {
         let metric_families = self.gather();
         let mut buf = Vec::new();
@@ -888,33 +899,34 @@ pub fn inc_proxy_select(proxy: &str) {
     legacy::PROXY_SELECT_TOTAL.with_label_values(&[proxy]).inc();
 }
 
-async fn metrics_http_with_registry(
+fn metrics_http_with_registry(
     registry: MetricsRegistryHandle,
-    req: Request<Body>,
-) -> Result<Response<Body>, Infallible> {
+    req: &Request<Body>,
+) -> Response<Body> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/metrics") => {
             let encoder = TextEncoder::new();
             let Ok(buf) = registry.encode_text() else {
-                return Ok(Response::builder()
+                return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("encoding error"))
-                    .unwrap_or_default());
+                    .unwrap_or_default();
             };
-            Ok(Response::builder()
+            Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, encoder.format_type())
                 .body(Body::from(buf))
-                .unwrap_or_default())
+                .unwrap_or_default()
         }
-        _ => Ok(Response::builder()
+        _ => Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from("not found"))
-            .unwrap_or_default()),
+            .unwrap_or_default(),
     }
 }
 
 /// Spawn the metrics HTTP exporter for a specific registry handle.
+#[must_use]
 pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) -> JoinHandle<()> {
     tokio::spawn(async move {
         // 手工监听 + 逐连接 serve，避免不同 hyper 版本的 Server API 差异
@@ -938,7 +950,9 @@ pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) ->
                 if let Err(e) = Http::new()
                     .serve_connection(
                         stream,
-                        service_fn(move |req| metrics_http_with_registry(registry, req)),
+                        service_fn(move |req| async move {
+                            Ok::<_, Infallible>(metrics_http_with_registry(registry, &req))
+                        }),
                     )
                     .await
                 {
@@ -961,6 +975,7 @@ pub fn spawn_http_exporter_from_env(registry: MetricsRegistryHandle) -> Option<J
     Some(spawn_http_exporter(registry, sa))
 }
 
+#[must_use]
 pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
     spawn_http_exporter_from_env(shared_registry())
 }
@@ -979,6 +994,7 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
 /// Panics if encoding fails (should never happen in practice) or if the output
 /// contains invalid UTF-8.
 #[allow(clippy::expect_used)] // Test utility function, panic is acceptable
+#[must_use]
 pub fn export_prometheus() -> String {
     let buf = shared_registry()
         .encode_text()
@@ -999,9 +1015,7 @@ mod tests {
             .uri("/metrics")
             .body(Body::empty())
             .unwrap();
-        let resp = metrics_http_with_registry(shared_registry(), req)
-            .await
-            .unwrap();
+        let resp = metrics_http_with_registry(shared_registry(), &req);
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Exercise non-/metrics path
@@ -1010,9 +1024,7 @@ mod tests {
             .uri("/not-found")
             .body(Body::empty())
             .unwrap();
-        let resp2 = metrics_http_with_registry(shared_registry(), req2)
-            .await
-            .unwrap();
+        let resp2 = metrics_http_with_registry(shared_registry(), &req2);
         assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
     }
 

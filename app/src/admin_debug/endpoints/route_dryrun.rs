@@ -1,4 +1,5 @@
 use crate::admin_debug::http_util::{parse_query, respond, respond_json_error};
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
@@ -19,7 +20,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
     #[cfg(feature = "route_sandbox")]
     {
-        let q = path_q.splitn(2, '?').nth(1).unwrap_or("");
+        let q = path_q.split_once('?').map_or("", |(_, query)| query);
         let params = parse_query(q);
 
         // Check if network connection is allowed
@@ -54,7 +55,10 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         }
 
         // Enhanced implementation for testing routing decisions
-        let protocol = params.get("protocol").map(|s| s.as_str()).unwrap_or("auto");
+        let protocol = params
+            .get("protocol")
+            .map(std::string::String::as_str)
+            .unwrap_or("auto");
 
         let port = params
             .get("port")
@@ -76,7 +80,6 @@ async fn perform_route_analysis(
     test_connect: bool,
 ) -> String {
     use std::net::ToSocketAddrs;
-    use std::time::{Duration, Instant};
 
     let start_time = Instant::now();
     let mut analysis = serde_json::json!({
@@ -104,7 +107,7 @@ async fn perform_route_analysis(
         })
     } else {
         let dns_start = Instant::now();
-        match format!("{}:{}", target, port).to_socket_addrs() {
+        match format!("{target}:{port}").to_socket_addrs() {
             Ok(addrs) => {
                 let ips: Vec<String> = addrs.map(|addr| addr.ip().to_string()).collect();
                 serde_json::json!({
@@ -138,13 +141,10 @@ async fn perform_route_analysis(
     let protocol_analysis = analyze_protocol_compatibility(protocol, port);
     analysis["protocol_analysis"] = protocol_analysis;
 
-    analysis["analysis_time_ms"] = start_time.elapsed().as_millis();
+    analysis["analysis_time_ms"] = serde_json::json!(start_time.elapsed().as_millis());
 
     serde_json::to_string_pretty(&analysis).unwrap_or_else(|_| {
-        format!(
-            r#"{{"error":"failed to serialize analysis","target":"{}"}}"#,
-            target
-        )
+        format!(r#"{{"error":"failed to serialize analysis","target":"{target}"}}"#)
     })
 }
 
@@ -199,7 +199,7 @@ async fn test_connectivity(target: &str, port: u16, _protocol: &str) -> serde_js
 
     match timeout(
         connect_timeout,
-        TcpStream::connect(format!("{}:{}", target, port)),
+        TcpStream::connect(format!("{target}:{port}")),
     )
     .await
     {
@@ -268,7 +268,7 @@ fn analyze_protocol_compatibility(protocol: &str, port: u16) -> serde_json::Valu
             notes.push("Connection will be rejected".to_string());
         }
         _ => {
-            notes.push(format!("Unknown protocol: {}", protocol));
+            notes.push(format!("Unknown protocol: {protocol}"));
         }
     }
 
@@ -280,7 +280,7 @@ fn analyze_protocol_compatibility(protocol: &str, port: u16) -> serde_json::Valu
 }
 
 /// Categorize port based on common usage
-fn categorize_port(port: u16) -> &'static str {
+const fn categorize_port(port: u16) -> &'static str {
     match port {
         80 | 8080 | 8000 => "http",
         443 | 8443 => "https",

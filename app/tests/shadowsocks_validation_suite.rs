@@ -119,6 +119,7 @@ async fn start_ss_server(method: &str, password: &str) -> Option<(SocketAddr, mp
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };

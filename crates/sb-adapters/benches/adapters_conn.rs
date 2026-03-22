@@ -139,7 +139,10 @@ mod bench_impl {
 
             // Wait for all connections
             for handle in handles {
-                let _ = handle.await.map_err(Into::into)??;
+                let stream = handle
+                    .await
+                    .map_err(|err| sb_adapters::AdapterError::Io(std::io::Error::other(err)))??;
+                drop(stream);
             }
         }
 
@@ -175,7 +178,10 @@ mod bench_impl {
 
             // Wait for all connections
             for handle in handles {
-                let _ = handle.await.map_err(Into::into)??;
+                let stream = handle
+                    .await
+                    .map_err(|err| sb_adapters::AdapterError::Io(std::io::Error::other(err)))??;
+                drop(stream);
             }
         }
 
@@ -183,7 +189,7 @@ mod bench_impl {
     }
 
     /// Criterion benchmark for SOCKS5 connections
-    fn socks_connect_bench(c: &mut Criterion) {
+    pub(crate) fn socks_connect_bench(c: &mut Criterion) {
         let Ok(rt) = Runtime::new() else {
             return;
         };
@@ -238,7 +244,7 @@ mod bench_impl {
     }
 
     /// Criterion benchmark for HTTP connections
-    fn http_connect_bench(c: &mut Criterion) {
+    pub(crate) fn http_connect_bench(c: &mut Criterion) {
         let Ok(rt) = Runtime::new() else {
             return;
         };
@@ -293,7 +299,7 @@ mod bench_impl {
     }
 
     /// Performance comparison benchmark
-    fn adapter_comparison_bench(c: &mut Criterion) {
+    pub(crate) fn adapter_comparison_bench(c: &mut Criterion) {
         let Ok(rt) = Runtime::new() else {
             return;
         };

@@ -1294,6 +1294,7 @@ impl InboundService for ShadowsocksInboundAdapter {
         {
             let shared = RuntimeShared {
                 user_keys: self.user_keys.clone(),
+                conn_tracker: self.config.conn_tracker.clone(),
                 tracker: self.tracker.clone(),
                 udp_sessions_seen: self.udp_sessions_seen.clone(),
             };
@@ -1559,6 +1560,7 @@ mod tests {
             router,
             tag: Some("ss-in".to_string()),
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
             multiplex: None,
             transport_layer: None,
         };

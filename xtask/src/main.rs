@@ -172,7 +172,8 @@ fn cmd_feature_matrix() -> Result<()> {
 
     // Write report
     let report_dir = Path::new("reports");
-    let _ = std::fs::create_dir_all(report_dir);
+    std::fs::create_dir_all(report_dir)
+        .with_context(|| format!("创建报告目录失败: {}", report_dir.display()))?;
     let passed_count = results.iter().filter(|r| r.2).count();
     let mut report = format!(
         "Feature Matrix Report\nTotal: {} cases\nPassed: {}\nFailed: {}\n\n",
@@ -190,7 +191,8 @@ fn cmd_feature_matrix() -> Result<()> {
         ));
     }
     let report_path = report_dir.join("feature_matrix_report.txt");
-    let _ = std::fs::write(&report_path, &report);
+    std::fs::write(&report_path, &report)
+        .with_context(|| format!("写入报告失败: {}", report_path.display()))?;
     info(&format!("报告已写入: {}", report_path.display()));
 
     if failures.is_empty() {
@@ -933,20 +935,29 @@ impl Drop for ChildGuard {
             #[cfg(unix)]
             {
                 // SAFETY: c.id() 是有效的进程 ID，SIGTERM 信号不会引发未定义行为
-                let _ = unsafe { libc::kill(c.id() as i32, libc::SIGTERM) };
+                let kill_status = unsafe { libc::kill(c.id() as i32, libc::SIGTERM) };
+                if kill_status != 0 {
+                    eprintln!("failed to send SIGTERM to child {}", c.id());
+                }
                 thread::sleep(Duration::from_millis(100));
                 match c.try_wait() {
                     Ok(Some(_)) => {}
                     _ => {
-                        let _ = c.kill();
+                        if let Err(err) = c.kill() {
+                            eprintln!("failed to force-kill child {}: {err}", c.id());
+                        }
                     }
                 }
             }
             #[cfg(not(unix))]
             {
-                let _ = c.kill();
+                if let Err(err) = c.kill() {
+                    eprintln!("failed to kill child {}: {err}", c.id());
+                }
             }
-            let _ = c.wait();
+            if let Err(err) = c.wait() {
+                eprintln!("failed to wait child {}: {err}", c.id());
+            }
         }
     }
 }

@@ -92,6 +92,7 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
     let (stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
     let cfg = MixedInboundConfig {
+        tag: None,
         listen: mixed_addr,
         router,
         outbounds,
@@ -99,6 +100,13 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
         tls: None,
         users: Some(vec![]),
         set_system_proxy: false,
+        allow_private_network: false,
+        udp_timeout: None,
+        domain_strategy: None,
+        stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+        sniff: false,
+        sniff_override_destination: false,
     };
 
     tokio::spawn(async move {
@@ -107,7 +115,7 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
 
     ready_rx
         .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "mixed ready failed"))?;
+        .map_err(|_| std::io::Error::other("mixed ready failed"))?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     Ok((mixed_addr, stop_tx))
@@ -139,6 +147,7 @@ async fn start_ss_server(
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };
@@ -172,6 +181,7 @@ async fn start_vmess_server(
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
         fallback: None,
@@ -306,6 +316,7 @@ async fn test_socks5_to_direct_chain() {
         domain_strategy: None,
         udp_timeout: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         sniff: false,
         sniff_override_destination: false,
     };
@@ -427,6 +438,7 @@ async fn test_http_to_socks5_chain() {
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         sniff: false,
         sniff_override_destination: false,

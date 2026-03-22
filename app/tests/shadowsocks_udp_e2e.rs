@@ -62,6 +62,9 @@ async fn shadowsocks_udp_roundtrip() {
             "test-password".to_string(),
         )],
         router: Arc::new(RouterHandle::new_mock()),
+        tag: None,
+        stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };

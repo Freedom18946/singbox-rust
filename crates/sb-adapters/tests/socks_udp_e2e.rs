@@ -117,6 +117,7 @@ async fn socks_udp_service_disabled_by_env() {
         return;
     };
     let sock = std::sync::Arc::new(sock);
+    let conn_tracker = sb_common::conntrack::shared_tracker();
     let res = tokio::time::timeout(
         Duration::from_millis(300),
         sb_adapters::inbound::socks::udp::serve_socks5_udp(sock, conn_tracker),

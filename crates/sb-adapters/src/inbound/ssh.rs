@@ -549,6 +549,7 @@ impl InboundService for SshInboundAdapter {
         let host_key_path = self.host_key_path.clone();
         let authorized_keys = self.authorized_keys.clone();
         let passwords = self.passwords.clone();
+        let conn_tracker = self.conn_tracker.clone();
 
         rt.block_on(async move {
             info!(addr = ?listen, "SSH inbound starting");
@@ -558,6 +559,7 @@ impl InboundService for SshInboundAdapter {
                 host_key_path,
                 authorized_keys,
                 passwords,
+                conn_tracker,
                 shutdown,
                 shutdown_notify,
                 active_connections,

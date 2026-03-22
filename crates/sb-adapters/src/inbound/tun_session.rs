@@ -251,6 +251,7 @@ impl Default for TcpSessionManager {
 }
 
 /// Relay data from TUN to outbound (and spawn outbound->TUN relay)
+#[allow(clippy::too_many_arguments)]
 async fn relay_tun_to_outbound(
     mut to_outbound_rx: mpsc::Receiver<Bytes>,
     mut shutdown_rx: oneshot::Receiver<()>,

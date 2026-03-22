@@ -80,6 +80,7 @@ async fn tuic_udp_roundtrip() {
         outbounds: outbounds.clone(),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
     };
     tokio::spawn(async move {
         let _ = tuic_serve(cfg, stop_rx).await;

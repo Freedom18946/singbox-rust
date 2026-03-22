@@ -485,6 +485,7 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
 }
 
 /// Flush all pending logs and wait for completion
+#[allow(dead_code)]
 pub async fn flush_logs() {
     let Some(runtime) = ACTIVE_RUNTIME.get().cloned() else {
         tracing::debug!("flush_logs called before logging runtime initialization");

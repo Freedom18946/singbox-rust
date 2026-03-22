@@ -184,6 +184,7 @@ async fn start_trojan_server_with_certs(
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         transport_layer: None,
         multiplex: None,
         #[cfg(feature = "tls_reality")]

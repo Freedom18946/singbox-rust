@@ -21,6 +21,7 @@ use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
 use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
+use sb_common::conntrack::ConnTracker;
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
@@ -52,6 +53,10 @@ fn ensure_protocol_upstream_rules() {
         let rules = parse_rules("default=direct");
         install_global_rules(Engine::build(rules));
     });
+}
+
+fn new_conn_tracker() -> Arc<ConnTracker> {
+    Arc::new(ConnTracker::new())
 }
 
 async fn copy_until_handshake_finished<R, W>(dst: &mut W, src: &mut R) -> std::io::Result<()>
@@ -105,15 +110,33 @@ struct UpstreamHandle {
     join: JoinHandle<()>,
 }
 
+fn signal_upstream_shutdown(tx: oneshot::Sender<()>, context: &str) {
+    if tx.send(()).is_err() {
+        eprintln!("upstream shutdown signal skipped during {context}: receiver already closed");
+    }
+}
+
+async fn await_upstream_join(join: JoinHandle<()>, context: &str) {
+    match tokio::time::timeout(Duration::from_secs(5), join).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            eprintln!("upstream task join failed during {context}: {err}");
+        }
+        Err(_) => {
+            eprintln!("upstream task join timed out during {context}");
+        }
+    }
+}
+
 impl UpstreamHarness {
     pub async fn shutdown(mut self) {
         for handle in self.handles.values_mut() {
             if let Some(tx) = handle.shutdown.take() {
-                let _ = tx.send(());
+                signal_upstream_shutdown(tx, "harness shutdown");
             }
         }
         for (_name, handle) in self.handles {
-            let _ = tokio::time::timeout(Duration::from_secs(5), handle.join).await;
+            await_upstream_join(handle.join, "harness shutdown").await;
         }
     }
 
@@ -149,18 +172,22 @@ impl UpstreamHarness {
             .remove(target)
             .ok_or_else(|| anyhow!("fault disconnect target not found: {target}"))?;
         if let Some(tx) = handle.shutdown.take() {
-            let _ = tx.send(());
+            signal_upstream_shutdown(tx, "disconnect target");
         }
-        let _ = handle.join.await;
+        if let Err(err) = handle.join.await {
+            eprintln!("upstream disconnect join failed for {target}: {err}");
+        }
         Ok(())
     }
 
     pub async fn reconnect_target(&mut self, target: &str) -> Result<()> {
         if let Some(mut existing) = self.handles.remove(target) {
             if let Some(tx) = existing.shutdown.take() {
-                let _ = tx.send(());
+                signal_upstream_shutdown(tx, "reconnect target");
             }
-            let _ = existing.join.await;
+            if let Err(err) = existing.join.await {
+                eprintln!("upstream reconnect join failed for {target}: {err}");
+            }
         }
         let spec = self
             .specs
@@ -220,11 +247,16 @@ async fn start_single_upstream(
             let (tx, rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let shutdown = async move {
-                    let _ = rx.await;
+                    if rx.await.is_err() {
+                        eprintln!("http echo shutdown channel closed before signal");
+                    }
                 };
-                let _ = axum::serve(listener, app)
+                if let Err(err) = axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown)
-                    .await;
+                    .await
+                {
+                    eprintln!("http echo upstream serve failed: {err}");
+                }
             });
             harness.endpoints.insert(
                 spec.name.clone(),
@@ -251,11 +283,16 @@ async fn start_single_upstream(
             let (tx, rx) = oneshot::channel::<()>();
             let join = tokio::spawn(async move {
                 let shutdown = async move {
-                    let _ = rx.await;
+                    if rx.await.is_err() {
+                        eprintln!("ws echo shutdown channel closed before signal");
+                    }
                 };
-                let _ = axum::serve(listener, app)
+                if let Err(err) = axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown)
-                    .await;
+                    .await
+                {
+                    eprintln!("ws echo upstream serve failed: {err}");
+                }
             });
             harness.endpoints.insert(
                 spec.name.clone(),
@@ -632,6 +669,7 @@ async fn start_single_upstream(
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
+                conn_tracker: new_conn_tracker(),
                 reality: None,
                 multiplex: None,
                 transport_layer: None,
@@ -644,8 +682,12 @@ async fn start_single_upstream(
                 tokio::pin!(serve);
                 tokio::select! {
                     _ = &mut rx => {
-                        let _ = stop_tx.send(()).await;
-                        let _ = serve.await;
+                        if stop_tx.send(()).await.is_err() {
+                            eprintln!("trojan upstream stop channel already closed");
+                        }
+                        if let Err(err) = serve.await {
+                            eprintln!("trojan upstream serve failed during shutdown: {err}");
+                        }
                     }
                     _ = &mut serve => {}
                 }
@@ -687,6 +729,7 @@ async fn start_single_upstream(
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
+                conn_tracker: new_conn_tracker(),
                 multiplex: None,
                 transport_layer: None,
             };
@@ -696,8 +739,12 @@ async fn start_single_upstream(
                 tokio::pin!(serve);
                 tokio::select! {
                     _ = &mut rx => {
-                        let _ = stop_tx.send(()).await;
-                        let _ = serve.await;
+                        if stop_tx.send(()).await.is_err() {
+                            eprintln!("shadowsocks upstream stop channel already closed");
+                        }
+                        if let Err(err) = serve.await {
+                            eprintln!("shadowsocks upstream serve failed during shutdown: {err}");
+                        }
                     }
                     _ = &mut serve => {}
                 }
@@ -776,8 +823,12 @@ async fn start_single_upstream(
                 tokio::pin!(serve);
                 tokio::select! {
                     _ = &mut rx => {
-                        let _ = stop_tx.send(()).await;
-                        let _ = serve.await;
+                        if stop_tx.send(()).await.is_err() {
+                            eprintln!("shadowtls upstream stop channel already closed");
+                        }
+                        if let Err(err) = serve.await {
+                            eprintln!("shadowtls upstream serve failed during shutdown: {err}");
+                        }
                     }
                     _ = &mut serve => {}
                 }
@@ -810,10 +861,12 @@ async fn start_single_upstream(
 
             let cfg = VlessInboundConfig {
                 listen: addr,
-                uuid: uuid::Uuid::parse_str(INTEROP_VLESS_UUID).unwrap(),
+                uuid: uuid::Uuid::parse_str(INTEROP_VLESS_UUID)
+                    .with_context(|| "parsing interop VLESS UUID")?,
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
+                conn_tracker: new_conn_tracker(),
                 reality: None,
                 multiplex: None,
                 transport_layer: None,
@@ -827,8 +880,12 @@ async fn start_single_upstream(
                 tokio::pin!(serve);
                 tokio::select! {
                     _ = &mut rx => {
-                        let _ = stop_tx.send(()).await;
-                        let _ = serve.await;
+                        if stop_tx.send(()).await.is_err() {
+                            eprintln!("vless upstream stop channel already closed");
+                        }
+                        if let Err(err) = serve.await {
+                            eprintln!("vless upstream serve failed during shutdown: {err}");
+                        }
                     }
                     _ = &mut serve => {}
                 }
@@ -861,11 +918,13 @@ async fn start_single_upstream(
 
             let cfg = VmessInboundConfig {
                 listen: addr,
-                uuid: uuid::Uuid::parse_str(INTEROP_VMESS_UUID).unwrap(),
+                uuid: uuid::Uuid::parse_str(INTEROP_VMESS_UUID)
+                    .with_context(|| "parsing interop VMess UUID")?,
                 security: "aes-128-gcm".to_string(),
                 router,
                 tag: Some(spec.name.clone()),
                 stats: None,
+                conn_tracker: new_conn_tracker(),
                 multiplex: None,
                 transport_layer: None,
                 fallback: None,
@@ -877,8 +936,12 @@ async fn start_single_upstream(
                 tokio::pin!(serve);
                 tokio::select! {
                     _ = &mut rx => {
-                        let _ = stop_tx.send(()).await;
-                        let _ = serve.await;
+                        if stop_tx.send(()).await.is_err() {
+                            eprintln!("vmess upstream stop channel already closed");
+                        }
+                        if let Err(err) = serve.await {
+                            eprintln!("vmess upstream serve failed during shutdown: {err}");
+                        }
                     }
                     _ = &mut serve => {}
                 }
@@ -1572,15 +1635,21 @@ fn resolve_payload(payload: &str, payload_size: Option<usize>) -> Vec<u8> {
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
-    static CLIENT: std::sync::LazyLock<reqwest::Client> =
-        std::sync::LazyLock::new(reqwest::Client::new);
-    let response = CLIENT
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .with_context(|| format!("building reqwest client for {url}"))?;
+    let response = client
         .get(url)
         .send()
         .await
         .with_context(|| format!("http get {url}"))?;
     let status = response.status().as_u16();
-    let body = response.text().await.unwrap_or_default();
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("reading response body for {url}"))?;
     Ok((status, body))
 }
 
@@ -2117,7 +2186,9 @@ async fn ws_roundtrip(
         match next {
             Ok(Some(Ok(WsMessage::Text(text)))) => {
                 if text == payload {
-                    let _ = stream.close(None).await;
+                    if let Err(err) = stream.close(None).await {
+                        eprintln!("ws roundtrip close failed: {err}");
+                    }
                     return Ok(text);
                 }
             }
@@ -2196,7 +2267,7 @@ pub(crate) async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Resul
         return Err(anyhow!("socks5 connect rejected: {}", resp_head[1]));
     }
 
-    let _ = read_socks5_addr_port(&mut stream, resp_head[3]).await?;
+    let _bound_addr = read_socks5_addr_port(&mut stream, resp_head[3]).await?;
 
     Ok(stream)
 }

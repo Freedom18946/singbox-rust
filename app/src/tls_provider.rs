@@ -26,6 +26,12 @@ pub struct TlsProviderDecision {
     pub fallback_reason: Option<String>,
 }
 
+/// Ensure a default Rustls crypto provider is selected and installed.
+///
+/// # Errors
+///
+/// Returns an error when provider installation fails after the provider choice
+/// has been resolved.
 pub fn ensure_default_provider() -> Result<TlsProviderDecision> {
     let requested = std::env::var("SB_TLS_PROVIDER").unwrap_or_else(|_| "auto".to_string());
     let requested_norm = requested.trim().to_ascii_lowercase();

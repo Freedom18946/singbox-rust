@@ -54,6 +54,7 @@ async fn test_trojan_inbound_with_grpc_transport() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::Grpc(grpc_config)),
@@ -87,6 +88,7 @@ async fn test_trojan_inbound_tcp_fallback() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP
@@ -159,6 +161,7 @@ async fn test_trojan_grpc_with_reality_tls() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None, // Would contain RealityServerConfig in real scenario
         multiplex: None,
         transport_layer: Some(TransportConfig::Grpc(grpc_config)),

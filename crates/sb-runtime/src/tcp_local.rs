@@ -138,7 +138,7 @@ pub async fn spawn_echo_once(bind: SocketAddr, xor_key: Option<u8>) -> Result<So
                     xor_inplace(&mut out, k);
                 }
                 if let Err(err) = s.write_all(&out).await {
-                    tracing::debug!(error = %err, "tcp_local echo write failed");
+                    eprintln!("tcp_local echo write failed: {err}");
                 }
             }
         }

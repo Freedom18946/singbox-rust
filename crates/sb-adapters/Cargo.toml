@@ -152,6 +152,7 @@ tuic_server = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile"]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
 clap = ["dep:clap"]
+bench = []
 dns = []
 ssh = ["dep:russh", "dep:russh-keys", "dep:ssh-key"]
 dns_udp = []

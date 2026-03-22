@@ -993,6 +993,7 @@ mod tests {
         to_outbound_param,
     };
     use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
+    use std::sync::Arc;
 
     #[test]
     fn invalid_inbound_duration_is_rejected_explicitly() {

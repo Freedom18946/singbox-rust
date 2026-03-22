@@ -62,6 +62,7 @@ async fn start_http_inbound(
         set_system_proxy: false,
         allow_private_network: true,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         sniff: false,
         sniff_override_destination: false,

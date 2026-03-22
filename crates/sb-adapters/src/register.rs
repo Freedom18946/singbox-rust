@@ -1,28 +1,6 @@
 //! Adapter registration functions for integrating with sb-core.
 
-#[cfg(any(
-    all(feature = "adapter-http", feature = "http", feature = "router"),
-    all(feature = "adapter-socks", feature = "socks", feature = "router"),
-    all(
-        feature = "adapter-http",
-        feature = "adapter-socks",
-        feature = "mixed",
-        feature = "router"
-    )
-))]
-use std::io;
 use std::net::{IpAddr, SocketAddr};
-#[cfg(any(
-    all(feature = "adapter-http", feature = "http", feature = "router"),
-    all(feature = "adapter-socks", feature = "socks", feature = "router"),
-    all(
-        feature = "adapter-http",
-        feature = "adapter-socks",
-        feature = "mixed",
-        feature = "router"
-    )
-))]
-use std::sync::Mutex;
 use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
@@ -3575,7 +3553,7 @@ mod migration_tests {
 #[derive(Debug)]
 struct HttpInboundAdapter {
     cfg: crate::inbound::http::HttpProxyConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
@@ -3583,18 +3561,18 @@ impl HttpInboundAdapter {
     fn new(cfg: crate::inbound::http::HttpProxyConfig) -> Self {
         Self {
             cfg,
-            stop_tx: Mutex::new(None),
+            stop_tx: std::sync::Mutex::new(None),
         }
     }
 }
 
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
 impl InboundService for HttpInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
+    fn serve(&self) -> std::io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(io::Error::other)?;
+            .map_err(std::io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
@@ -3604,7 +3582,7 @@ impl InboundService for HttpInboundAdapter {
         let res = rt.block_on(async {
             crate::inbound::http::serve_http(cfg, rx, None)
                 .await
-                .map_err(io::Error::other)
+                .map_err(std::io::Error::other)
         });
         let _ = self
             .stop_tx
@@ -3666,7 +3644,7 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
 #[derive(Debug)]
 struct MixedInboundAdapter {
     cfg: crate::inbound::mixed::MixedInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(
@@ -3679,7 +3657,7 @@ impl MixedInboundAdapter {
     fn new(cfg: crate::inbound::mixed::MixedInboundConfig) -> Self {
         Self {
             cfg,
-            stop_tx: Mutex::new(None),
+            stop_tx: std::sync::Mutex::new(None),
         }
     }
 }
@@ -3691,11 +3669,11 @@ impl MixedInboundAdapter {
     feature = "router"
 ))]
 impl InboundService for MixedInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
+    fn serve(&self) -> std::io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(io::Error::other)?;
+            .map_err(std::io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
@@ -3705,7 +3683,7 @@ impl InboundService for MixedInboundAdapter {
         let res = rt.block_on(async {
             crate::inbound::mixed::serve_mixed(cfg, rx, None)
                 .await
-                .map_err(io::Error::other)
+                .map_err(std::io::Error::other)
         });
         let _ = self
             .stop_tx
@@ -3749,7 +3727,7 @@ fn build_redirect_inbound(
 #[derive(Debug)]
 struct RedirectInboundAdapter {
     cfg: crate::inbound::redirect::RedirectConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
@@ -3757,15 +3735,15 @@ impl RedirectInboundAdapter {
     fn new(cfg: crate::inbound::redirect::RedirectConfig) -> Self {
         Self {
             cfg,
-            stop_tx: Mutex::new(None),
+            stop_tx: std::sync::Mutex::new(None),
         }
     }
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
 impl InboundService for RedirectInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
+    fn serve(&self) -> std::io::Result<()> {
+        let rt = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
@@ -3775,7 +3753,7 @@ impl InboundService for RedirectInboundAdapter {
         let res = rt.block_on(async {
             crate::inbound::redirect::serve(cfg, rx)
                 .await
-                .map_err(io::Error::other)
+                .map_err(std::io::Error::other)
         });
         let _ = self
             .stop_tx
@@ -3817,7 +3795,7 @@ fn build_tproxy_inbound(
 #[derive(Debug)]
 struct TproxyInboundAdapter {
     cfg: crate::inbound::tproxy::TproxyConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
@@ -3825,15 +3803,15 @@ impl TproxyInboundAdapter {
     fn new(cfg: crate::inbound::tproxy::TproxyConfig) -> Self {
         Self {
             cfg,
-            stop_tx: Mutex::new(None),
+            stop_tx: std::sync::Mutex::new(None),
         }
     }
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
 impl InboundService for TproxyInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
+    fn serve(&self) -> std::io::Result<()> {
+        let rt = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
@@ -3843,7 +3821,7 @@ impl InboundService for TproxyInboundAdapter {
         let res = rt.block_on(async {
             crate::inbound::tproxy::serve(cfg, rx)
                 .await
-                .map_err(io::Error::other)
+                .map_err(std::io::Error::other)
         });
         let _ = self
             .stop_tx

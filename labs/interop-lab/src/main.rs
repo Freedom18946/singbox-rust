@@ -50,11 +50,19 @@ async fn main() -> Result<()> {
 fn init_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
-    let _ = tracing_subscriber::fmt()
+    match tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
         .with_ansi(false)
-        .try_init();
+        .try_init()
+    {
+        Ok(()) => {}
+        Err(err) => {
+            if !err.to_string().contains("already been set") {
+                eprintln!("interop tracing init skipped: {err}");
+            }
+        }
+    }
 }
 
 async fn handle_case_command(

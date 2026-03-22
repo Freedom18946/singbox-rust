@@ -96,6 +96,7 @@ async fn start_vmess_tls_server(
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: Some(TransportConfig::Tcp),
         fallback: None,

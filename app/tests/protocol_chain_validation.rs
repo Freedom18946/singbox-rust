@@ -108,6 +108,7 @@ async fn start_trojan_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         transport_layer: None,
         multiplex: None,
         fallback: None,
@@ -160,6 +161,7 @@ async fn start_ss_server() -> Option<(SocketAddr, mpsc::Sender<()>)> {
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };

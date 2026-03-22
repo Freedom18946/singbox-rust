@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Builder registry for analyze tool.
 
 use anyhow::{bail, Result};
@@ -41,8 +43,11 @@ impl AnalyzeRegistry {
     /// # Errors
     /// Returns an error if the requested kind has not been registered.
     pub fn build_by_kind(&self, kind: &str, input: &Value) -> Result<Value> {
-        let registry = self.registry.lock();
-        let Some(builder) = registry.get(kind) else {
+        let builder = {
+            let registry = self.registry.lock();
+            registry.get(kind).copied()
+        };
+        let Some(builder) = builder else {
             bail!("unsupported kind: {kind}");
         };
         builder(input)

@@ -113,6 +113,7 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
         router: Arc::new(RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: multiplex_config,
         transport_layer: None,
         fallback: None,

@@ -940,7 +940,7 @@ impl Default for ProviderManager {
     fn default() -> Self {
         #[cfg(feature = "provider-reload")]
         {
-            return Self::new(production_fetch());
+            Self::new(production_fetch())
         }
 
         #[cfg(not(feature = "provider-reload"))]

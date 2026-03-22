@@ -107,6 +107,7 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
         domain_strategy: None,
         udp_timeout: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         sniff: false,
         sniff_override_destination: false,
     };

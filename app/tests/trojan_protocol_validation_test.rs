@@ -78,6 +78,7 @@ fn trojan_config(
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None,
         multiplex: None,
         transport_layer: None,

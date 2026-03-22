@@ -176,6 +176,7 @@ async fn start_shadowsocks_inbound(
         router: Arc::new(sb_core::router::engine::RouterHandle::new_mock()),
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None,
     };

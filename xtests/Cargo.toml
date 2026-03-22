@@ -17,6 +17,7 @@ adapter-hysteria = ["sb-core/out_hysteria"]
 adapter-hysteria2 = ["sb-core/out_hysteria2"]
 adapter-ssh = ["sb-core/out_ssh"]
 adapter-tuic = ["sb-core/out_tuic"]
+sbcore_analyze_json = []
 
 [dev-dependencies]
 assert_cmd = "2"

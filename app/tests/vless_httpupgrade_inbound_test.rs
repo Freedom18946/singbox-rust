@@ -46,6 +46,7 @@ async fn test_vless_inbound_with_httpupgrade_transport() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),
@@ -74,6 +75,7 @@ async fn test_vless_inbound_tcp_fallback() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP
@@ -135,6 +137,7 @@ async fn test_vless_httpupgrade_with_reality_tls() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         reality: None, // Would contain RealityServerConfig in real scenario
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),

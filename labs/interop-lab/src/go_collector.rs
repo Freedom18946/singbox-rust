@@ -67,7 +67,17 @@ pub async fn collect_go_snapshot(
             Ok(response) => {
                 let status = response.status().as_u16();
                 let bytes = response.bytes().await.unwrap_or_default();
-                let parsed = serde_json::from_slice::<Value>(&bytes).ok();
+                let parsed = match serde_json::from_slice::<Value>(&bytes) {
+                    Ok(value) => Some(value),
+                    Err(_) if bytes.is_empty() => None,
+                    Err(err) => {
+                        snapshot.errors.push(NormalizedError {
+                            stage: format!("go_http:{name}:parse"),
+                            message: err.to_string(),
+                        });
+                        None
+                    }
+                };
                 let body_hash = if bytes.is_empty() {
                     None
                 } else {
@@ -126,7 +136,12 @@ pub async fn collect_go_snapshot(
                         Err(_) => {} // timeout, try again
                     }
                 }
-                let _ = stream.close(None).await;
+                if let Err(err) = stream.close(None).await {
+                    snapshot.errors.push(NormalizedError {
+                        stage: format!("go_ws:{name}:close"),
+                        message: err.to_string(),
+                    });
+                }
             }
             Err(err) => {
                 snapshot.errors.push(NormalizedError {

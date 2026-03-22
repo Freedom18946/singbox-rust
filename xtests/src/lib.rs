@@ -19,10 +19,9 @@ pub fn workspace_bin(name: &str) -> PathBuf {
     }
     let mut path = workspace_root();
     path.push("target");
-    let profile = std::env::var("CARGO_PROFILE")
-        .ok()
-        .or_else(|| std::env::var("PROFILE").ok())
-        .unwrap_or_else(|| "debug".into());
+    let profile = std::env::var("CARGO_PROFILE").unwrap_or_else(|_| {
+        std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string())
+    });
     path.push(profile);
     path.push(name);
     if cfg!(windows) {
@@ -64,7 +63,9 @@ pub fn run_with_timeout(cmd: &mut Command, timeout: Duration) -> std::io::Result
             return child.wait_with_output();
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
+            if let Err(err) = child.kill() {
+                eprintln!("timed out command kill failed: {err}");
+            }
             let output = child.wait_with_output()?;
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,

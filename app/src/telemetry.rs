@@ -26,19 +26,25 @@ mod imp {
         format!("{:016x}", n ^ fastrand::u64(..))
     }
 
-    pub fn init_tracing(deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
+    /// Initialize tracing for the current runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns the subscriber installation error when tracing setup fails.
+    pub fn init_tracing(_deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
         #[cfg(feature = "dev-cli")]
         {
             crate::tracing_init::init_tracing_once()?;
-        }
-        #[cfg(not(feature = "dev-cli"))]
-        {
-            let _ = deps;
         }
         Ok(())
     }
 
     /// Initialize metrics exporter.
+    /// Initialize the metrics exporter for the current runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns any exporter startup error from the explicit metrics bootstrap.
     pub fn init_metrics_exporter(deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
         #[cfg(feature = "dev-cli")]
         {

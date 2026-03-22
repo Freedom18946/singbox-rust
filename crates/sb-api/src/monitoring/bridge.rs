@@ -266,7 +266,7 @@ impl MetricsBridge {
         // Collect outbound metrics from registry if available
         #[cfg(feature = "metrics")]
         {
-            use prometheus::{core::Collector, Registry};
+            use prometheus::Registry;
             let registry = Registry::new();
 
             // Gather metrics from prometheus registry
@@ -274,15 +274,16 @@ impl MetricsBridge {
             let mut total_down = 0_u64;
 
             for mf in registry.gather() {
+                let metric_name = mf.name();
                 for m in mf.get_metric() {
                     // Extract upload/download counters
-                    if mf.get_name().contains("uplink") {
-                        if let Some(counter) = m.get_counter() {
-                            total_up += counter.get_value() as u64;
+                    if metric_name.contains("uplink") {
+                        if let Some(counter) = m.counter.as_ref() {
+                            total_up += counter.value() as u64;
                         }
-                    } else if mf.get_name().contains("downlink") {
-                        if let Some(counter) = m.get_counter() {
-                            total_down += counter.get_value() as u64;
+                    } else if metric_name.contains("downlink") {
+                        if let Some(counter) = m.counter.as_ref() {
+                            total_down += counter.value() as u64;
                         }
                     }
                 }
@@ -309,6 +310,7 @@ impl MetricsBridge {
     }
 
     /// Simulate metrics collection (for demonstration)
+    #[allow(dead_code)]
     async fn simulate_metrics_collection(&self) {
         // Simulate outbound metrics
         let direct_metrics = OutboundMetrics {
@@ -338,6 +340,7 @@ impl MetricsBridge {
     }
 
     /// Add simulated connections for demonstration
+    #[allow(dead_code)]
     async fn add_simulated_connections(&self) {
         let simulated_connections = vec![
             Connection {

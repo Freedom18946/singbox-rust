@@ -875,6 +875,7 @@ mod tests {
             outbounds: Arc::new(outbounds),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
 
         let (mut stream, _, _, _) = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())

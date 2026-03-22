@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::analyze::builders::wrap_patch_text;
 use crate::analyze::registry::AnalyzeRegistry;
 use anyhow::{Context, Result};

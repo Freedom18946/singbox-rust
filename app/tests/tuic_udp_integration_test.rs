@@ -50,6 +50,7 @@ mod tuic_tests {
             outbounds: outbounds.clone(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
 
         // Verify configuration
@@ -79,6 +80,7 @@ mod tuic_tests {
             outbounds: outbounds.clone(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
         assert_eq!(config_cubic.congestion_control.as_ref().unwrap(), "cubic");
 
@@ -93,6 +95,7 @@ mod tuic_tests {
             outbounds: outbounds.clone(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
         assert_eq!(config_bbr.congestion_control.as_ref().unwrap(), "bbr");
 
@@ -107,6 +110,7 @@ mod tuic_tests {
             outbounds: outbounds.clone(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
         assert_eq!(
             config_new_reno.congestion_control.as_ref().unwrap(),
@@ -124,6 +128,7 @@ mod tuic_tests {
             outbounds,
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
         assert!(config_default.congestion_control.is_none());
     }

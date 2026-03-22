@@ -15,6 +15,12 @@ pub struct AppRuntimeDeps {
 }
 
 impl AppRuntimeDeps {
+    /// Build the explicit runtime dependency container for the current process.
+    ///
+    /// # Errors
+    ///
+    /// Returns any startup-time initialization error, currently limited to
+    /// `Redactor` construction failures.
     pub fn new() -> Result<Self> {
         let started_at = Instant::now();
         let redactor = Arc::new(crate::redact::Redactor::new()?);

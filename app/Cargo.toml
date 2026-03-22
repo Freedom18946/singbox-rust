@@ -99,6 +99,18 @@ metrics-support = ["metrics"]
 bench = ["hdrhistogram", "hickory-proto"]
 strict_warnings = []
 config_schema = ["jsonschema"]
+route_sandbox = []
+sbcore_analyze_json = []
+proto_trojan_dry = []
+proto_ss2022_min = []
+http = ["adapter-http"]
+socks = ["sb-adapters/adapter-socks", "sb-adapters/socks"]
+metrics = ["dep:metrics"]
+reqwest = ["dep:reqwest"]
+transport_ech = ["sb-adapters/transport_ech"]
+transport_reality = ["sb-adapters/transport_reality"]
+tun = ["adapter-tun"]
+tun_phase1_DISABLED = []
 tls-rustls = []
 dns-proto = ["hickory-proto"]
 adapter-hysteria = ["sb-adapters/adapter-hysteria"]
@@ -351,6 +363,7 @@ rcgen = "0.12"
 
 sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
 sb-adapters = { path = "../crates/sb-adapters", optional = true }
+sb-common   = { path = "../crates/sb-common" }
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }
 sb-metrics  = { path = "../crates/sb-metrics", optional = true }
 sb-subscribe = { path = "../crates/sb-subscribe", optional = true }

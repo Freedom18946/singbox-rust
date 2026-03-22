@@ -55,6 +55,7 @@ async fn test_shadowsocks_inbound_with_websocket_transport() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: Some(TransportConfig::WebSocket(ws_config)),
     };
@@ -84,6 +85,7 @@ async fn test_shadowsocks_inbound_tcp_fallback() {
         router,
         tag: None,
         stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         multiplex: None,
         transport_layer: None, // No transport specified - should default to TCP
     };

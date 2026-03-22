@@ -11,6 +11,16 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
 
+fn parse_http_method(method: &str) -> Method {
+    match method.parse::<Method>() {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("invalid GUI replay HTTP method {method:?}, defaulting to GET: {err}");
+            Method::GET
+        }
+    }
+}
+
 pub async fn run_gui_sequence(
     case: &CaseSpec,
     api: &ApiAccess,
@@ -33,7 +43,7 @@ pub async fn run_gui_sequence(
                 expect_status,
             } => {
                 let status_expected = *expect_status;
-                let method = method.parse::<Method>().unwrap_or(Method::GET);
+                let method = parse_http_method(method);
                 let url = format!("{}{}", api.base_url.trim_end_matches('/'), path);
                 let mut req = client.request(method.clone(), url);
                 let step_secret = if *no_auth {
@@ -55,7 +65,17 @@ pub async fn run_gui_sequence(
                     Ok(response) => {
                         let status = response.status().as_u16();
                         let bytes = response.bytes().await.unwrap_or_default();
-                        let parsed = serde_json::from_slice::<Value>(&bytes).ok();
+                        let parsed = match serde_json::from_slice::<Value>(&bytes) {
+                            Ok(value) => Some(value),
+                            Err(_) if bytes.is_empty() => None,
+                            Err(err) => {
+                                snapshot.errors.push(NormalizedError {
+                                    stage: format!("http:{name}:parse"),
+                                    message: err.to_string(),
+                                });
+                                None
+                            }
+                        };
                         let body_hash = if bytes.is_empty() {
                             None
                         } else {
@@ -132,7 +152,12 @@ pub async fn run_gui_sequence(
                                 Err(_) => {}
                             }
                         }
-                        let _ = stream.close(None).await;
+                        if let Err(err) = stream.close(None).await {
+                            snapshot.errors.push(NormalizedError {
+                                stage: format!("ws:{name}:close"),
+                                message: err.to_string(),
+                            });
+                        }
                     }
                     Err(err) => {
                         snapshot.errors.push(NormalizedError {
@@ -232,7 +257,9 @@ async fn run_ws_parallel(
                             Err(_) => {}
                         }
                     }
-                    let _ = stream.close(None).await;
+                    if let Err(err) = stream.close(None).await {
+                        eprintln!("parallel websocket close failed for {stream_name}: {err}");
+                    }
                     (stream_name, path, frames, None)
                 }
                 Err(err) => (stream_name, path, frames, Some(err.to_string())),
@@ -276,11 +303,23 @@ async fn request_json(api: &ApiAccess, path: &str) -> Option<Value> {
         req = req.bearer_auth(secret);
     }
 
-    let response = req.send().await.ok()?;
+    let response = match req.send().await {
+        Ok(response) => response,
+        Err(err) => {
+            eprintln!("request_json send failed for {path}: {err}");
+            return None;
+        }
+    };
     if !response.status().is_success() {
         return None;
     }
-    response.json::<Value>().await.ok()
+    match response.json::<Value>().await {
+        Ok(value) => Some(value),
+        Err(err) => {
+            eprintln!("request_json decode failed for {path}: {err}");
+            None
+        }
+    }
 }
 
 fn build_ws_url(api: &ApiAccess, path: &str, token_override: Option<&str>) -> String {

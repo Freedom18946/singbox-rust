@@ -19,6 +19,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::io::ErrorKind;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -55,6 +56,27 @@ struct BackgroundCommandProcess {
     args: Vec<String>,
     env: BTreeMap<String, String>,
     workdir: Option<String>,
+}
+
+async fn terminate_background_process(
+    process: &mut BackgroundCommandProcess,
+    context: &str,
+) -> Result<()> {
+    match process.child.kill().await {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::InvalidInput => {}
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("killing background command during {context}"));
+        }
+    }
+
+    process
+        .child
+        .wait()
+        .await
+        .with_context(|| format!("waiting background command during {context}"))?;
+    Ok(())
 }
 
 impl RunOutput {
@@ -289,7 +311,12 @@ pub async fn run_case(
 
                 evaluate_assertions(case, &mut snapshot);
 
-                let _ = session.shutdown().await;
+                if let Err(err) = session.shutdown().await {
+                    snapshot.errors.push(NormalizedError {
+                        stage: "shutdown_kernel".to_string(),
+                        message: err.to_string(),
+                    });
+                }
             }
             Err(err) => {
                 snapshot.errors.push(NormalizedError {
@@ -420,7 +447,7 @@ async fn run_traffic_plan_with_kernel_control(
                     command,
                     args,
                     env,
-                    workdir.as_ref(),
+                    workdir.as_deref(),
                     harness,
                     &mut background_commands,
                 )
@@ -666,7 +693,7 @@ async fn execute_command_start_action(
     command: &str,
     args: &[String],
     env: &BTreeMap<String, String>,
-    workdir: Option<&PathBuf>,
+    workdir: Option<&Path>,
     harness: &crate::upstream::UpstreamHarness,
     background_commands: &mut HashMap<String, BackgroundCommandProcess>,
 ) -> TrafficResult {
@@ -692,7 +719,7 @@ async fn execute_command_start_action(
         .iter()
         .map(|(k, v)| (k.clone(), resolve_with_env(&harness.resolve_templates(v))))
         .collect();
-    let resolved_workdir = workdir.as_ref().map(|dir| {
+    let resolved_workdir = workdir.map(|dir| {
         let raw = dir.to_string_lossy();
         PathBuf::from(resolve_with_env(&harness.resolve_templates(&raw)))
     });
@@ -818,8 +845,10 @@ async fn execute_command_wait_action(
             }),
         },
         Err(_) => {
-            let _ = process.child.kill().await;
-            let _ = process.child.wait().await;
+            let cleanup_error = terminate_background_process(&mut process, "command wait timeout")
+                .await
+                .err()
+                .map(|err| err.to_string());
             TrafficResult {
                 name: name.to_string(),
                 success: false,
@@ -833,6 +862,7 @@ async fn execute_command_wait_action(
                     "elapsed_ms": process.started_at.elapsed().as_millis() as u64,
                     "timeout_ms": timeout_ms,
                     "killed": true,
+                    "cleanup_error": cleanup_error,
                 }),
             }
         }
@@ -894,7 +924,17 @@ async fn execute_api_http_action(
             let status_code = response.status();
             let status = status_code.as_u16();
             let bytes = response.bytes().await.unwrap_or_default();
-            let parsed_body = serde_json::from_slice::<Value>(&bytes).ok();
+            let parsed_body = match serde_json::from_slice::<Value>(&bytes) {
+                Ok(value) => Some(value),
+                Err(_) if bytes.is_empty() => None,
+                Err(err) => {
+                    snapshot.errors.push(NormalizedError {
+                        stage: format!("api_http:{name}:parse"),
+                        message: err.to_string(),
+                    });
+                    None
+                }
+            };
             let body_hash = if bytes.is_empty() {
                 None
             } else {
@@ -1030,7 +1070,9 @@ async fn execute_api_http_latency_action(
             }
         };
         let status = response.status().as_u16();
-        let _ = response.bytes().await;
+        if let Err(err) = response.bytes().await {
+            eprintln!("api_http_poll body drain failed for {path}: {err}");
+        }
 
         let success = expect_status
             .map(|expected| status == expected)
@@ -1096,8 +1138,9 @@ async fn cleanup_background_commands(
     background_commands: &mut HashMap<String, BackgroundCommandProcess>,
 ) {
     for (_handle, mut process) in background_commands.drain() {
-        let _ = process.child.kill().await;
-        let _ = process.child.wait().await;
+        if let Err(err) = terminate_background_process(&mut process, "background cleanup").await {
+            eprintln!("background command cleanup failed: {err}");
+        }
     }
 }
 
@@ -1234,10 +1277,10 @@ async fn execute_api_ws_expect_close_on_kernel_control_action(
     .await
     {
         Ok(Some(Ok(Message::Text(text)))) => {
-            validate_ws_payload(path, serde_json::from_str::<Value>(&text).ok())
+            validate_ws_payload(path, parse_ws_payload_text(&text, path))
         }
         Ok(Some(Ok(Message::Binary(data)))) => {
-            validate_ws_payload(path, serde_json::from_slice::<Value>(&data).ok())
+            validate_ws_payload(path, parse_ws_payload_binary(&data, path))
         }
         Ok(Some(Ok(_))) => false,
         Ok(Some(Err(_))) => false,
@@ -1246,7 +1289,9 @@ async fn execute_api_ws_expect_close_on_kernel_control_action(
     };
 
     if !initial_frame_ok {
-        let _ = stream.close(None).await;
+        if let Err(err) = stream.close(None).await {
+            eprintln!("ws expect-close initial close failed for {path}: {err}");
+        }
         return TrafficResult {
             name: name.to_string(),
             success: false,
@@ -1273,7 +1318,9 @@ async fn execute_api_ws_expect_close_on_kernel_control_action(
     .await;
 
     let close_observed = wait_for_ws_close(&mut stream, close_timeout_ms).await;
-    let _ = stream.close(None).await;
+    if let Err(err) = stream.close(None).await {
+        eprintln!("ws expect-close final close failed for {path}: {err}");
+    }
 
     match kernel_result {
         Ok(kernel_detail) => TrafficResult {
@@ -1562,9 +1609,12 @@ fn extract_dns_answer_ips(body: &Value) -> Vec<String> {
 }
 
 fn parse_ip_token(value: &str) -> Option<IpAddr> {
-    value
-        .split_whitespace()
-        .find_map(|token| token.trim_end_matches('.').parse::<IpAddr>().ok())
+    for token in value.split_whitespace() {
+        if let Ok(ip) = token.trim_end_matches('.').parse::<IpAddr>() {
+            return Some(ip);
+        }
+    }
+    None
 }
 
 async fn receive_api_ws_frame(ws_url: &str, path: &str, frame_timeout_ms: u64) -> Result<bool> {
@@ -1576,17 +1626,19 @@ async fn receive_api_ws_frame(ws_url: &str, path: &str, frame_timeout_ms: u64) -
     .await;
     let ok = match next {
         Ok(Some(Ok(Message::Text(text)))) => {
-            validate_ws_payload(path, serde_json::from_str::<Value>(&text).ok())
+            validate_ws_payload(path, parse_ws_payload_text(&text, path))
         }
         Ok(Some(Ok(Message::Binary(data)))) => {
-            validate_ws_payload(path, serde_json::from_slice::<Value>(&data).ok())
+            validate_ws_payload(path, parse_ws_payload_binary(&data, path))
         }
         Ok(Some(Ok(_))) => false,
         Ok(Some(Err(err))) => return Err(err.into()),
         Ok(None) => false,
         Err(_) => false,
     };
-    let _ = stream.close(None).await;
+    if let Err(err) = stream.close(None).await {
+        eprintln!("receive_api_ws_frame close failed for {path}: {err}");
+    }
     Ok(ok)
 }
 
@@ -1678,7 +1730,9 @@ async fn perform_kernel_control(
 ) -> Result<Value> {
     match action {
         KernelControlAction::Restart => {
-            let _ = session.shutdown().await;
+            if let Err(err) = session.shutdown().await {
+                eprintln!("kernel restart pre-shutdown failed: {err}");
+            }
             match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
                 Ok(new_session) => {
                     *session = new_session;
@@ -1719,6 +1773,26 @@ async fn perform_kernel_control(
     }
 }
 
+fn parse_ws_payload_text(raw: &str, path: &str) -> Option<Value> {
+    match serde_json::from_str::<Value>(raw) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            eprintln!("websocket text payload parse failed for {path}: {err}");
+            None
+        }
+    }
+}
+
+fn parse_ws_payload_binary(raw: &[u8], path: &str) -> Option<Value> {
+    match serde_json::from_slice::<Value>(raw) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            eprintln!("websocket binary payload parse failed for {path}: {err}");
+            None
+        }
+    }
+}
+
 async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64) -> Result<Value> {
     let Some(mut child) = session.child.take() else {
         return Err(anyhow!(
@@ -1736,8 +1810,7 @@ async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64)
         .await
         .with_context(|| format!("sending SIGTERM to pid {pid}"))?;
     if !signal_status.success() {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
+        terminate_child_process(&mut child, &format!("signal fallback for pid {pid}")).await?;
         join_kernel_log_tasks(session).await;
         return Err(anyhow!(
             "failed to send SIGTERM to pid {pid}: status={signal_status}"
@@ -1748,14 +1821,12 @@ async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64)
     let exit_status = match timeout(Duration::from_millis(wait_timeout_ms), child.wait()).await {
         Ok(Ok(status)) => status,
         Ok(Err(err)) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            terminate_child_process(&mut child, &format!("wait failure for pid {pid}")).await?;
             join_kernel_log_tasks(session).await;
             return Err(anyhow!("waiting for pid {pid} after SIGTERM failed: {err}"));
         }
         Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            terminate_child_process(&mut child, &format!("timeout fallback for pid {pid}")).await?;
             join_kernel_log_tasks(session).await;
             return Err(anyhow!(
                 "pid {pid} did not exit within {wait_timeout_ms} ms after SIGTERM"
@@ -1780,12 +1851,32 @@ async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64)
     }))
 }
 
+async fn terminate_child_process(child: &mut Child, context: &str) -> Result<()> {
+    match child.kill().await {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::InvalidInput => {}
+        Err(err) => {
+            return Err(err).with_context(|| format!("killing kernel child during {context}"));
+        }
+    }
+
+    child
+        .wait()
+        .await
+        .with_context(|| format!("waiting kernel child during {context}"))?;
+    Ok(())
+}
+
 async fn join_kernel_log_tasks(session: &mut KernelSession) {
     if let Some(task) = session.stdout_task.take() {
-        let _ = task.await;
+        if let Err(err) = task.await {
+            eprintln!("joining kernel stdout log task failed: {err}");
+        }
     }
     if let Some(task) = session.stderr_task.take() {
-        let _ = task.await;
+        if let Err(err) = task.await {
+            eprintln!("joining kernel stderr log task failed: {err}");
+        }
     }
 }
 
