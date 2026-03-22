@@ -40,8 +40,11 @@
   - `admin_debug/http_server` / `health` / `metrics` / `analyze` 改为接收 `AdminDebugState`，`started_at` 不再依赖 `START: OnceLock<_>`
   - `inbound_starter` 的 TUN 配置转换保留具体错误上下文，停机/直连路径的 `let _ = ...` 改为具名 `warn!`
   - `run_engine` 的 shutdown 链补上 join/send failure surfacing
+- 已继续完成一轮 `logging.rs` 尾项收口：
+  - `LOGGING_CONFIG` / `SHUTDOWN_SENDER` / `SAMPLER` 三个分散 `OnceLock` 收敛为单一 `ACTIVE_RUNTIME: OnceLock<Arc<LoggingRuntime>>`
+  - signal/panic/shutdown 链不再用 `let _ = ...` 吞掉接收、线程 join、broadcast 发送结果
+  - subscriber 安装从 `init()` 改为 `try_init()` 并返回具名错误
 - `security_metrics` 仍保留了一个 `DEFAULT_STATE: OnceLock<Arc<...>>` 兼容壳，用于平滑承接旧的模块级调用面；统计数据本体已经不再是进程级散落静态状态。
-- 本轮未继续处理 `logging.rs` 自身的 `OnceLock` 配置/采样单例；它不在首轮高优先级发现内，暂保留到下一批 `app/` Layer 1/2 尾项。
 - 带 `adapters` 的 `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli adapters"` 未能作为 `app/` 回归完成，因为当前工作树存在 `sb-adapters` 侧未完成改动：
   - `crates/sb-adapters/src/inbound/dns.rs`
   - `crates/sb-adapters/src/inbound/ssh.rs`

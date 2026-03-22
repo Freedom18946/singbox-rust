@@ -17,8 +17,9 @@
 - `crates/` Layer 1 / 2 修复工作包已进入执行态：`Batch A` 与 `Batch B` 已完成大部分已审议热点收口，`Batch C` 中 `conntrack/context` 生产 wiring 已显式注入化
 - 生产代码里 `shared_tracker()` / `global_tracker()` / `context_registry()` / `install_context_registry()` 读链已清零；剩余单例尾项主要集中在 `sb-metrics` 内部 `REGISTRY + LazyLock` 架构与 `Batch D` 机械性 sweep
 - `app/` Layer 1 / 2 首轮热点已进入执行并完成主修：`AppRuntimeDeps` / `AdminDebugState` 已接入，`tracing_init` / `tls_provider` / `redact` / `analyze::registry` / `admin_debug::security_metrics` / `inbound_starter` 已按显式注入 + failure surfacing 收口
+- `app/src/logging.rs` 第二波尾项也已继续收口：分散 `OnceLock` 已压缩为单一 runtime 兼容壳，signal/panic/shutdown 的静默 best-effort 已改为具名处理
 - 已通过 `cargo check -p app`、`cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"`、`cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`、`cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e`
-- 当前 `app` 维护剩余尾项主要是 `logging.rs` 自身单例/停机 best-effort 路径，以及 `security_metrics` 兼容壳是否继续收紧
+- 当前 `app` 维护剩余尾项主要是 `security_metrics` / `logging` 兼容壳是否继续完全去全局化，以及其他低风险 Layer 1/2 机械 sweep
 - 带 `adapters` 的 `app` 编译面暂被工作树内 `sb-adapters` 的未完成 `conn_tracker` 字段补线阻塞；不回退用户未明确要求回退的现有改动
 - 下一步继续只按 Layer 1 / 2 维护：保留 `crates/` 尾项收口，同时按 `app` 工作包做第二波尾项 sweep；不恢复 GitHub Actions，也不把普通测试完成表述为 dual-kernel parity 完成
 

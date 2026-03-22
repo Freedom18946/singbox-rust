@@ -25,11 +25,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-/// Global logging configuration
-static LOGGING_CONFIG: OnceLock<LoggingConfig> = OnceLock::new();
-
-/// Channel for coordinating application shutdown and log flushing
-static SHUTDOWN_SENDER: OnceLock<broadcast::Sender<()>> = OnceLock::new();
+static ACTIVE_RUNTIME: OnceLock<Arc<LoggingRuntime>> = OnceLock::new();
 
 /// Logging configuration from environment
 #[derive(Debug, Clone)]
@@ -75,8 +71,26 @@ struct SamplerState {
     window_start: Instant,
 }
 
-/// Global sampler for rate limiting logs
-static SAMPLER: OnceLock<Mutex<SamplerState>> = OnceLock::new();
+#[derive(Debug)]
+struct LoggingRuntime {
+    config: LoggingConfig,
+    shutdown_sender: broadcast::Sender<()>,
+    sampler: Mutex<SamplerState>,
+}
+
+impl LoggingRuntime {
+    fn new(config: LoggingConfig) -> Self {
+        let (shutdown_sender, _rx) = broadcast::channel(1);
+        Self {
+            config,
+            shutdown_sender,
+            sampler: Mutex::new(SamplerState {
+                samples: HashMap::new(),
+                window_start: Instant::now(),
+            }),
+        }
+    }
+}
 
 impl LoggingConfig {
     /// Create logging configuration from environment variables
@@ -136,22 +150,20 @@ impl LoggingConfig {
 /// Initialize the logging system with environment-based configuration
 pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
     let config = LoggingConfig::from_env();
-    LOGGING_CONFIG
-        .set(config.clone())
+    let runtime = Arc::new(LoggingRuntime::new(config.clone()));
+    ACTIVE_RUNTIME
+        .set(Arc::clone(&runtime))
         .map_err(|_| anyhow::anyhow!("logging already initialized"))?;
-
-    // Create shutdown channel for coordinated flushing
-    let (tx, _rx) = broadcast::channel(1);
-    SHUTDOWN_SENDER
-        .set(tx)
-        .map_err(|_| anyhow::anyhow!("shutdown sender already set"))?;
 
     // Build the subscriber based on configuration
     let env_filter = EnvFilter::new(&config.level);
 
     match config.format {
         LogFormat::Json => {
-            let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
+            let sampling_layer = config
+                .sampling
+                .as_ref()
+                .map(|_| SamplingLayer::new(Arc::clone(&runtime)));
             if config.timestamp {
                 let fmt_layer = fmt::layer()
                     .json()
@@ -163,9 +175,17 @@ pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
                     tracing_subscriber::registry()
                         .with(fmt_layer)
                         .with(sampling_layer)
-                        .init();
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!("failed to initialize JSON logging subscriber: {error}")
+                        })?;
                 } else {
-                    tracing_subscriber::registry().with(fmt_layer).init();
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!("failed to initialize JSON logging subscriber: {error}")
+                        })?;
                 }
             } else {
                 let fmt_layer = fmt::layer()
@@ -179,14 +199,25 @@ pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
                     tracing_subscriber::registry()
                         .with(fmt_layer)
                         .with(sampling_layer)
-                        .init();
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!("failed to initialize JSON logging subscriber: {error}")
+                        })?;
                 } else {
-                    tracing_subscriber::registry().with(fmt_layer).init();
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!("failed to initialize JSON logging subscriber: {error}")
+                        })?;
                 }
             }
         }
         LogFormat::Compact => {
-            let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
+            let sampling_layer = config
+                .sampling
+                .as_ref()
+                .map(|_| SamplingLayer::new(Arc::clone(&runtime)));
             if config.timestamp {
                 let fmt_layer = fmt::layer()
                     .compact()
@@ -198,9 +229,21 @@ pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
                     tracing_subscriber::registry()
                         .with(fmt_layer)
                         .with(sampling_layer)
-                        .init();
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!(
+                                "failed to initialize compact logging subscriber: {error}"
+                            )
+                        })?;
                 } else {
-                    tracing_subscriber::registry().with(fmt_layer).init();
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!(
+                                "failed to initialize compact logging subscriber: {error}"
+                            )
+                        })?;
                 }
             } else {
                 let fmt_layer = fmt::layer()
@@ -214,16 +257,28 @@ pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
                     tracing_subscriber::registry()
                         .with(fmt_layer)
                         .with(sampling_layer)
-                        .init();
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!(
+                                "failed to initialize compact logging subscriber: {error}"
+                            )
+                        })?;
                 } else {
-                    tracing_subscriber::registry().with(fmt_layer).init();
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .try_init()
+                        .map_err(|error| {
+                            anyhow::anyhow!(
+                                "failed to initialize compact logging subscriber: {error}"
+                            )
+                        })?;
                 }
             }
         }
     }
 
     // Install exit hook for log flushing
-    install_exit_hook();
+    install_exit_hook(Arc::clone(&runtime));
 
     tracing::info!(
         format = ?config.format,
@@ -285,7 +340,15 @@ impl Drop for RedactingWriter {
 }
 
 /// Sampling layer for rate limiting high-frequency logs
-struct SamplingLayer;
+struct SamplingLayer {
+    runtime: Arc<LoggingRuntime>,
+}
+
+impl SamplingLayer {
+    fn new(runtime: Arc<LoggingRuntime>) -> Self {
+        Self { runtime }
+    }
+}
 
 impl<S> Layer<S> for SamplingLayer
 where
@@ -306,25 +369,17 @@ where
             return;
         }
 
-        if let Some(config) = LOGGING_CONFIG.get() {
-            if let Some(sampling) = &config.sampling {
-                if !should_sample(metadata.target(), sampling) {
-                    // Rate limit exceeded; skip event
-                }
+        if let Some(sampling) = &self.runtime.config.sampling {
+            if !should_sample(&self.runtime, metadata.target(), sampling) {
+                // Rate limit exceeded; skip event
             }
         }
     }
 }
 
 /// Check if a log event should be sampled based on rate limiting
-fn should_sample(target: &str, config: &SamplingConfig) -> bool {
-    let sampler_mutex = SAMPLER.get_or_init(|| {
-        Mutex::new(SamplerState {
-            samples: HashMap::new(),
-            window_start: Instant::now(),
-        })
-    });
-    let mut sampler = match sampler_mutex.lock() {
+fn should_sample(runtime: &LoggingRuntime, target: &str, config: &SamplingConfig) -> bool {
+    let mut sampler = match runtime.sampler.lock() {
         Ok(g) => g,
         Err(_poison) => {
             // On lock poison, allow the event rather than panic.
@@ -350,9 +405,10 @@ fn should_sample(target: &str, config: &SamplingConfig) -> bool {
 }
 
 /// Install exit hook to flush logs before shutdown
-fn install_exit_hook() {
+fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
     // Register signal handlers for graceful shutdown
-    tokio::spawn(async {
+    let signal_runtime = Arc::clone(&runtime);
+    tokio::spawn(async move {
         use tokio::signal::unix::{signal, SignalKind};
 
         let mut sigterm = match signal(SignalKind::terminate()) {
@@ -375,23 +431,27 @@ fn install_exit_hook() {
                 tokio::select! {
                     _ = s1.recv() => {
                         tracing::info!("Received SIGTERM, flushing logs...");
-                        flush_logs().await;
+                        flush_logs_with(Arc::clone(&signal_runtime)).await;
                     }
                     _ = s2.recv() => {
                         tracing::info!("Received SIGINT, flushing logs...");
-                        flush_logs().await;
+                        flush_logs_with(Arc::clone(&signal_runtime)).await;
                     }
                 }
             }
             (Some(s1), None) => {
-                let _ = s1.recv().await;
+                if s1.recv().await.is_none() {
+                    tracing::debug!("SIGTERM stream ended before shutdown");
+                }
                 tracing::info!("Received SIGTERM, flushing logs...");
-                flush_logs().await;
+                flush_logs_with(Arc::clone(&signal_runtime)).await;
             }
             (None, Some(s2)) => {
-                let _ = s2.recv().await;
+                if s2.recv().await.is_none() {
+                    tracing::debug!("SIGINT stream ended before shutdown");
+                }
                 tracing::info!("Received SIGINT, flushing logs...");
-                flush_logs().await;
+                flush_logs_with(Arc::clone(&signal_runtime)).await;
             }
             (None, None) => {
                 // No handlers installed; nothing to do.
@@ -401,17 +461,24 @@ fn install_exit_hook() {
 
     // Also register a panic hook for emergency flush
     let original_hook = std::panic::take_hook();
+    let panic_runtime = Arc::clone(&runtime);
     std::panic::set_hook(Box::new(move |panic_info| {
         eprintln!("Panic occurred, attempting to flush logs...");
-        let _ = std::thread::spawn(|| {
+        if let Err(error) = std::thread::spawn({
+            let panic_runtime = Arc::clone(&panic_runtime);
+            move || {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(flush_logs());
+                handle.spawn(flush_logs_with(panic_runtime));
             } else {
                 // If no async runtime, wait briefly to allow buffers to flush
                 std::thread::sleep(Duration::from_millis(100));
             }
+            }
         })
-        .join();
+        .join()
+        {
+            eprintln!("panic-time logging flush join failed: {error:?}");
+        }
 
         original_hook(panic_info);
     }));
@@ -419,11 +486,19 @@ fn install_exit_hook() {
 
 /// Flush all pending logs and wait for completion
 pub async fn flush_logs() {
+    let Some(runtime) = ACTIVE_RUNTIME.get().cloned() else {
+        tracing::debug!("flush_logs called before logging runtime initialization");
+        return;
+    };
+    flush_logs_with(runtime).await;
+}
+
+async fn flush_logs_with(runtime: Arc<LoggingRuntime>) {
     tracing::info!("Flushing logs before shutdown...");
 
     // Send shutdown signal
-    if let Some(tx) = SHUTDOWN_SENDER.get() {
-        let _ = tx.send(());
+    if let Err(error) = runtime.shutdown_sender.send(()) {
+        tracing::debug!(%error, "logging shutdown signal had no active receivers");
     }
 
     // Give time for logs to flush
@@ -481,6 +556,17 @@ mod tests {
 
     #[test]
     fn test_sampling_rate_limit() {
+        let runtime = LoggingRuntime::new(LoggingConfig {
+            format: LogFormat::Compact,
+            level: "info".to_string(),
+            sampling: Some(SamplingConfig {
+                rate_per_second: 2,
+                window: Duration::from_secs(1),
+            }),
+            redact: true,
+            timestamp: true,
+            color: false,
+        });
         let config = SamplingConfig {
             rate_per_second: 2,
             window: Duration::from_secs(1),
@@ -488,23 +574,17 @@ mod tests {
 
         // Reset sampler state
         {
-            let sampler_mutex = SAMPLER.get_or_init(|| {
-                Mutex::new(SamplerState {
-                    samples: HashMap::new(),
-                    window_start: Instant::now(),
-                })
-            });
-            let mut sampler = sampler_mutex.lock().unwrap();
+            let mut sampler = runtime.sampler.lock().unwrap();
             sampler.samples.clear();
             sampler.window_start = Instant::now();
         }
 
         // First two should pass
-        assert!(should_sample("test_target", &config));
-        assert!(should_sample("test_target", &config));
+        assert!(should_sample(&runtime, "test_target", &config));
+        assert!(should_sample(&runtime, "test_target", &config));
 
         // Third should be rate limited
-        assert!(!should_sample("test_target", &config));
+        assert!(!should_sample(&runtime, "test_target", &config));
     }
 
     #[tokio::test]

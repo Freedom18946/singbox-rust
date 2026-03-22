@@ -16,6 +16,29 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 20:29] Agent: Codex (GPT-5)
+
+**任务**: 继续收口 `app/` Layer 1 / 2 尾项，重点处理 `logging.rs`
+**变更**:
+- `app/src/logging.rs`
+  - 将 `LOGGING_CONFIG` / `SHUTDOWN_SENDER` / `SAMPLER` 三个分散单例收敛为 `ACTIVE_RUNTIME: OnceLock<Arc<LoggingRuntime>>`
+  - `SamplingLayer` 改为持有显式 runtime 状态
+  - subscriber 初始化由 `init()` 改为 `try_init()` 并返回具名错误
+  - signal/panic/shutdown 链的 `let _ = ...` 改为具名处理与 debug/warn 记录
+- `agents-only/planning/2026-03-22-app-layer12-review-workpackage.md`
+  - 追加 `logging.rs` 第二波尾项收口说明
+- `agents-only/active_context.md`
+  - 更新 `app/` 当前尾项状态
+- `agents-only/log.md`
+  - 追加本次收口记录
+**结果**: 成功
+**构建验证**:
+- `cargo check -p app` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+**备注**:
+- 当前 `logging.rs` 仍保留一个单一 `ACTIVE_RUNTIME` 兼容壳，用于承接 `flush_logs()` 等已有调用面；相比上一轮已明显缩小全局面
+- 维护态口径不变：上述验证仅说明 Layer 1 / 2 维护收敛，不表述为 dual-kernel parity 完成
+
 ### [2026-03-22 20:05] Agent: Codex (GPT-5)
 
 **任务**: 执行 `app/` Layer 1 / 2 首轮修复，并同步 `agents-only` 跟踪
