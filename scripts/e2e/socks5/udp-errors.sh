@@ -6,7 +6,31 @@ echo "[INFO] e2e: socks5 udp error path (parse) -> inbound_error_total{socks_udp
 # Config
 LISTEN=${SB_SOCKS_UDP_LISTEN:-127.0.0.1:11090}
 PROM=${PROM_LISTEN:-127.0.0.1:19090}
-CFG=${CFG_PATH:-examples/e2e/minimal.yaml}
+CFG=${CFG_PATH:-}
+FEATS=${FEATS:-acceptance,adapters}
+
+if [[ -z "${CFG}" ]]; then
+  if [[ -f examples/e2e/minimal.yaml ]]; then
+    CFG="examples/e2e/minimal.yaml"
+  elif [[ -f .e2e/config.yaml ]]; then
+    CFG=".e2e/config.yaml"
+  else
+    CFG="$(mktemp -t sb-udp-errors-config.XXXX.yaml)"
+    cat > "${CFG}" <<'YAML'
+log:
+  level: error
+inbounds:
+  - type: socks
+    listen: "127.0.0.1:11080"
+outbounds:
+  - type: direct
+    tag: direct
+route:
+  rules:
+    - outbound: direct
+YAML
+  fi
+fi
 
 host="${LISTEN%:*}"
 port="${LISTEN##*:}"
@@ -29,7 +53,7 @@ echo "[RUN] launching app run with UDP inbound + metrics exporter"
 (
   SB_SOCKS_UDP_ENABLE=1 \
   SB_SOCKS_UDP_LISTEN="${LISTEN}" \
-  cargo run -q -p app --bin run -- \
+  target/debug/run \
     --config "${CFG}" \
     --prom-listen "${PROM}" \
     >/tmp/sb-udp-errors.log 2>&1 & echo $! > /tmp/sb-udp-errors.pid
@@ -37,7 +61,12 @@ echo "[RUN] launching app run with UDP inbound + metrics exporter"
 
 APP_PID=$(cat /tmp/sb-udp-errors.pid)
 trap 'kill ${APP_PID} 2>/dev/null || true' EXIT
-sleep 1.2
+for _ in {1..20}; do
+  if curl -fsS "http://${PROM}/metrics" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
 
 echo "[SCRAPE] baseline inbound_error_total{protocol=\"socks_udp\"}"
 base=$(scrape_metric_sum inbound_error_total 'protocol="socks_udp"')
@@ -76,4 +105,3 @@ echo "[CLEANUP] shutting down"
 kill ${APP_PID} 2>/dev/null || true
 sleep 0.2
 echo "[DONE]"
-
