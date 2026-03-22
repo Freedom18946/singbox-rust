@@ -33,6 +33,7 @@ pub struct RedirectConfig {
     pub listen: SocketAddr,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
@@ -193,7 +194,8 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.clone(),
         port,

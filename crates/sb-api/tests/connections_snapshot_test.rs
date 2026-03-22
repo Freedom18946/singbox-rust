@@ -1,9 +1,9 @@
-use sb_common::conntrack::{global_tracker, ConnMetadata, Network};
+use sb_common::conntrack::{shared_tracker, ConnMetadata, Network};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[test]
 fn build_connections_snapshot_includes_rule_and_chains() {
-    let tracker = global_tracker();
+    let tracker = shared_tracker();
     let _ = tracker.close_all();
 
     let tcp_id = tracker.next_id();
@@ -41,7 +41,7 @@ fn build_connections_snapshot_includes_rule_and_chains() {
     .with_chains(vec!["DIRECT".to_string()]);
     tracker.register(udp_meta);
 
-    let snapshot = sb_api::clash::websocket::build_connections_snapshot();
+    let snapshot = sb_api::clash::websocket::build_connections_snapshot(tracker.as_ref());
     let conns = snapshot
         .get("connections")
         .and_then(|v| v.as_array())

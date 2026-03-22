@@ -26,11 +26,8 @@
 //! // Throughput reported on Drop / Drop 时自动上报吞吐率
 //! ```
 
-use crate::labels::ensure_allowed_labels;
-use prometheus::{
-    opts, register_histogram, register_int_counter, register_int_counter_vec, Histogram,
-    IntCounter, IntCounterVec,
-};
+use crate::{guarded_counter_vec, guarded_histogram, guarded_int_counter, registered_collector};
+use prometheus::{Histogram, IntCounter, IntCounterVec};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -58,40 +55,36 @@ const TRACKED_CHANNELS: &[&str] = &[CHAN_TCP, CHAN_UDP, CHAN_TLS, CHAN_H2, CHAN_
 
 /// 全局累计下行字节（server->client）
 pub static BYTES_DOWN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "bytes_down_total",
-        "Total bytes sent from server to clients"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "bytes_down_total",
+            "Total bytes sent from server to clients",
+        ),
+    )
 });
 
 /// 全局累计上行字节（client->server）
 pub static BYTES_UP_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "bytes_up_total",
-        "Total bytes received from clients to server"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "bytes_up_total",
+            "Total bytes received from clients to server",
+        ),
+    )
 });
 
 /// 按方向与通道类型聚合的字节计数
 pub static BYTES_TOTAL_VEC: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    ensure_allowed_labels("bytes_total", &["dir", "chan"]);
-    register_int_counter_vec!(
+    registered_collector(
         "bytes_total",
-        "Total bytes by direction and channel",
-        &["dir", "chan"] // dir: up|down, chan: tcp|udp|tls|h2|h3|other
+        guarded_counter_vec(
+            "bytes_total",
+            "Total bytes by direction and channel",
+            &["dir", "chan"],
+        ),
     )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
 });
 
 /// 简单的时窗吞吐观测（单位：字节/秒），建议用于 O(秒) 级别粗观测
@@ -103,15 +96,14 @@ pub static THROUGHPUT_BPS: LazyLock<Histogram> = LazyLock::new(|| {
             512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0,
         ]
     });
-    register_histogram!(prometheus::HistogramOpts::new(
+    registered_collector(
         "throughput_bps",
-        "Observed coarse-grained throughput in bytes per second"
+        guarded_histogram(
+            "throughput_bps",
+            "Observed coarse-grained throughput in bytes per second",
+            buckets,
+        ),
     )
-    .buckets(buckets))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy histogram initialization
-        Histogram::with_opts(prometheus::HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-    })
 });
 
 /// 便捷：上报字节数

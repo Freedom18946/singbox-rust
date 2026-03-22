@@ -88,6 +88,20 @@ impl fmt::Display for TlsVersion {
     }
 }
 
+fn read_u8(data: &[u8], pos: usize) -> Option<u8> {
+    data.get(pos).copied()
+}
+
+fn read_u16(data: &[u8], pos: usize) -> Option<u16> {
+    let bytes = data.get(pos..pos + 2)?;
+    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
+}
+
+fn checked_advance(pos: usize, len: usize, data_len: usize) -> Option<usize> {
+    let next = pos.checked_add(len)?;
+    (next <= data_len).then_some(next)
+}
+
 /// TLS issue type detected in a connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TlsIssue {
@@ -194,7 +208,7 @@ impl TlsAnalyzer {
         }
 
         // Check record type
-        if data[0] != 0x16 {
+        if read_u8(data, 0) != Some(0x16) {
             self.issues.push(TlsIssue::MalformedData(
                 "not a handshake record".to_string(),
             ));
@@ -202,7 +216,14 @@ impl TlsAnalyzer {
         }
 
         // Check record version
-        let record_version = TlsVersion::from_bytes(data[1], data[2]);
+        let record_version = match (read_u8(data, 1), read_u8(data, 2)) {
+            (Some(major), Some(minor)) => TlsVersion::from_bytes(major, minor),
+            _ => {
+                self.issues
+                    .push(TlsIssue::MalformedData("data too short".to_string()));
+                return &self.issues;
+            }
+        };
         if record_version.is_deprecated() {
             self.issues
                 .push(TlsIssue::DeprecatedVersion(record_version));
@@ -214,14 +235,21 @@ impl TlsAnalyzer {
         }
 
         // Check handshake type
-        if data[5] != 0x01 {
+        if read_u8(data, 5) != Some(0x01) {
             self.issues
                 .push(TlsIssue::MalformedData("not a ClientHello".to_string()));
             return &self.issues;
         }
 
         // Check client version in handshake
-        let handshake_version = TlsVersion::from_bytes(data[9], data[10]);
+        let handshake_version = match (read_u8(data, 9), read_u8(data, 10)) {
+            (Some(major), Some(minor)) => TlsVersion::from_bytes(major, minor),
+            _ => {
+                self.issues
+                    .push(TlsIssue::MalformedData("data too short".to_string()));
+                return &self.issues;
+            }
+        };
 
         // Check for version mismatch (common in TLS 1.3 which uses 1.2 in record layer)
         if record_version != handshake_version && handshake_version != TlsVersion::Tls12 {
@@ -265,7 +293,7 @@ impl TlsAnalyzer {
         }
 
         // Check record type
-        if data[0] != 0x16 {
+        if read_u8(data, 0) != Some(0x16) {
             self.issues.push(TlsIssue::MalformedData(
                 "not a handshake record".to_string(),
             ));
@@ -273,14 +301,21 @@ impl TlsAnalyzer {
         }
 
         // Check handshake type (ServerHello = 0x02)
-        if data[5] != 0x02 {
+        if read_u8(data, 5) != Some(0x02) {
             self.issues
                 .push(TlsIssue::MalformedData("not a ServerHello".to_string()));
             return &self.issues;
         }
 
         // Check server version
-        let server_version = TlsVersion::from_bytes(data[9], data[10]);
+        let server_version = match (read_u8(data, 9), read_u8(data, 10)) {
+            (Some(major), Some(minor)) => TlsVersion::from_bytes(major, minor),
+            _ => {
+                self.issues
+                    .push(TlsIssue::MalformedData("data too short".to_string()));
+                return &self.issues;
+            }
+        };
 
         if server_version.is_deprecated() {
             self.issues
@@ -319,17 +354,11 @@ impl TlsAnalyzer {
     fn extract_cipher_suites(&self, data: &[u8]) -> Option<Vec<u16>> {
         // Skip: record header (5) + handshake header (4) + version (2) + random (32) + session_id_len (1)
         let mut pos = 5 + 4 + 2 + 32;
-        if pos >= data.len() {
-            return None;
-        }
 
-        let session_id_len = data[pos] as usize;
-        pos += 1 + session_id_len;
-        if pos + 2 > data.len() {
-            return None;
-        }
+        let session_id_len = read_u8(data, pos)? as usize;
+        pos = checked_advance(pos, 1 + session_id_len, data.len())?;
 
-        let cipher_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+        let cipher_len = read_u16(data, pos)? as usize;
         pos += 2;
         if pos + cipher_len > data.len() {
             return None;
@@ -338,7 +367,7 @@ impl TlsAnalyzer {
         let mut ciphers = Vec::new();
         let cipher_end = pos + cipher_len;
         while pos + 2 <= cipher_end {
-            let cipher = u16::from_be_bytes([data[pos], data[pos + 1]]);
+            let cipher = read_u16(data, pos)?;
             ciphers.push(cipher);
             pos += 2;
         }
@@ -350,34 +379,36 @@ impl TlsAnalyzer {
     fn has_extensions(&self, data: &[u8]) -> bool {
         // Skip: record header (5) + handshake header (4) + version (2) + random (32)
         let mut pos = 5 + 4 + 2 + 32;
-        if pos >= data.len() {
-            return false;
-        }
 
         // Skip session ID
-        let session_id_len = data[pos] as usize;
-        pos += 1 + session_id_len;
-        if pos + 2 > data.len() {
+        let Some(session_id_len) = read_u8(data, pos).map(|len| len as usize) else {
             return false;
-        }
+        };
+        let Some(next_pos) = checked_advance(pos, 1 + session_id_len, data.len()) else {
+            return false;
+        };
+        pos = next_pos;
 
         // Skip cipher suites
-        let cipher_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-        pos += 2 + cipher_len;
-        if pos >= data.len() {
+        let Some(cipher_len) = read_u16(data, pos).map(|len| len as usize) else {
             return false;
-        }
+        };
+        let Some(next_pos) = checked_advance(pos, 2 + cipher_len, data.len()) else {
+            return false;
+        };
+        pos = next_pos;
 
         // Skip compression methods
-        let compression_len = data[pos] as usize;
-        pos += 1 + compression_len;
-        if pos + 2 > data.len() {
+        let Some(compression_len) = read_u8(data, pos).map(|len| len as usize) else {
             return false;
-        }
+        };
+        let Some(next_pos) = checked_advance(pos, 1 + compression_len, data.len()) else {
+            return false;
+        };
+        pos = next_pos;
 
         // Check extensions length
-        let ext_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-        ext_len > 0
+        read_u16(data, pos).map(|len| len > 0).unwrap_or(false)
     }
 }
 
@@ -388,19 +419,26 @@ pub fn is_valid_tls(data: &[u8]) -> bool {
     }
 
     // Check content type (valid values: 20-24)
-    let content_type = data[0];
+    let Some(content_type) = read_u8(data, 0) else {
+        return false;
+    };
     if !(20..=24).contains(&content_type) {
         return false;
     }
 
     // Check version
-    let version = TlsVersion::from_bytes(data[1], data[2]);
+    let version = match (read_u8(data, 1), read_u8(data, 2)) {
+        (Some(major), Some(minor)) => TlsVersion::from_bytes(major, minor),
+        _ => return false,
+    };
     if matches!(version, TlsVersion::Unknown(_)) {
         return false;
     }
 
     // Check length is reasonable
-    let length = u16::from_be_bytes([data[3], data[4]]) as usize;
+    let Some(length) = read_u16(data, 3).map(|len| len as usize) else {
+        return false;
+    };
     length <= 16384 + 2048 // Max TLS record size with some margin
 }
 

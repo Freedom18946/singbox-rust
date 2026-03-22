@@ -106,6 +106,7 @@ pub struct TrojanInboundConfig {
     pub router: Arc<router::RouterHandle>,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Optional REALITY TLS configuration for inbound
     #[cfg(feature = "tls_reality")]
     pub reality: Option<sb_tls::RealityServerConfig>,
@@ -635,7 +636,8 @@ async fn handle_udp_associate(
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), Some("direct"), Some(auth_user))
     });
-    let wiring = sb_core::conntrack::register_inbound_udp(
+    let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.to_string(),
         port,
@@ -869,7 +871,8 @@ async fn handle_tcp_connect(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.to_string(),
         port,

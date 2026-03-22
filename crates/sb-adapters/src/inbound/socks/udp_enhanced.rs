@@ -330,7 +330,8 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                             TargetAddr::Ip(sa) => (sa.ip().to_string(), sa.port()),
                             TargetAddr::Domain { host, port } => (host.clone(), *port),
                         };
-                        let wiring = sb_core::conntrack::register_inbound_udp(
+                        let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+                            cfg.conn_tracker.clone(),
                             client_addr,
                             dst_host.clone(),
                             dst_port,

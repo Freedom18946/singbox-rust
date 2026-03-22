@@ -266,7 +266,10 @@ pub fn encode_udp_datagram(dst: &UdpTargetAddr, payload: &[u8]) -> Vec<u8> {
 
 /// New SOCKS5 UDP service with real forwarding implementation
 /// 具有真实转发实现的新 SOCKS5 UDP 服务
-pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> Result<()> {
+pub async fn serve_socks5_udp_service_real(
+    bind: Vec<std::net::SocketAddr>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+) -> Result<()> {
     // NAT 参数
     // NAT parameters
     let ttl_ms = std::env::var("SB_SOCKS_UDP_NAT_TTL_MS")
@@ -281,7 +284,7 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
     for addr in bind {
         let sock = UdpSocket::bind(addr).await?;
         let natc = nat.clone();
-        tasks.push(tokio::spawn(run_one_real(sock, natc)));
+        tasks.push(tokio::spawn(run_one_real(sock, natc, conn_tracker.clone())));
     }
 
     // 后台淘汰
@@ -307,7 +310,11 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
     Ok(())
 }
 
-async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result<()> {
+async fn run_one_real(
+    sock: UdpSocket,
+    nat: std::sync::Arc<UdpNatMap>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+) -> Result<()> {
     let _upstream_timeout = upstream_timeout_ms();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
@@ -353,7 +360,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             // Handle Decision::Sniff: sniff UDP payload (with multi-packet QUIC support) and re-decide
             if matches!(d, RDecision::Sniff { .. }) {
                 let payload = &buf[hdr_len..n];
-                let (mut outcome, mut quic_ctx) = sb_core::router::sniff::sniff_datagram_multi(payload);
+                let (mut outcome, mut quic_ctx) =
+                    sb_core::router::sniff::sniff_datagram_multi(payload);
 
                 // Multi-packet QUIC reassembly: read additional packets with timeout
                 if quic_ctx.is_some() {
@@ -366,12 +374,17 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                         match tokio::time::timeout(
                             Duration::from_millis(300),
                             sock.recv_from(&mut extra_buf),
-                        ).await {
+                        )
+                        .await
+                        {
                             Ok(Ok((en, _epeer))) => {
                                 // Try to parse SOCKS5 UDP header from extra packet
                                 if let Ok((_edst, ehdr_len)) = parse_socks5_udp(&extra_buf[..en]) {
                                     let epayload = &extra_buf[ehdr_len..en];
-                                    let (result, new_ctx) = sb_core::router::sniff::sniff_datagram_continue(epayload, ctx_val);
+                                    let (result, new_ctx) =
+                                        sb_core::router::sniff::sniff_datagram_continue(
+                                            epayload, ctx_val,
+                                        );
                                     if let Some(final_outcome) = result {
                                         outcome = final_outcome;
                                         break;
@@ -403,7 +416,11 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                     ..Default::default()
                 };
                 let (d2, r2) = eng.decide_with_meta(&ctx2);
-                d = if matches!(d2, RDecision::Sniff { .. }) { RDecision::Direct } else { d2 };
+                d = if matches!(d2, RDecision::Sniff { .. }) {
+                    RDecision::Direct
+                } else {
+                    d2
+                };
                 rule = r2;
             }
 
@@ -451,7 +468,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 new_socket.connect(dst_sa).await?;
                 let socket_arc = std::sync::Arc::new(new_socket);
                 if nat.upsert_guarded(key.clone(), socket_arc.clone()).await {
-                    let wiring = sb_core::conntrack::register_inbound_udp(
+                    let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+                        conn_tracker.clone(),
                         peer,
                         dst_sa.ip().to_string(),
                         dst_sa.port(),
@@ -825,7 +843,9 @@ fn sticky_selector() -> &'static PoolSelector {
 /// 检查环境变量和配置，决定是否启动UDP服务
 /// Legacy SOCKS/UDP service startup entry (with default disabled semantics)
 /// Check environment variables and config to decide whether to start UDP service
-pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
+pub async fn serve_socks5_udp_service(
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+) -> Result<Result<(), anyhow::Error>> {
     // 绑定监听（可能返回多个 socket）
     // Bind listeners (may return multiple sockets)
     let listens = bind_udp_from_env_or_any().await?;
@@ -841,8 +861,9 @@ pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
     // 原有逻辑：遍历 listens，逐个 spawn serve_udp_datagrams(...)
     // Original logic: iterate listens, spawn serve_udp_datagrams(...) one by one
     for sock in listens {
+        let conn_tracker = conn_tracker.clone();
         tokio::spawn(async move {
-            if let Err(e) = serve_udp_datagrams(sock, None, None, None).await {
+            if let Err(e) = serve_udp_datagrams(sock, None, None, None, conn_tracker).await {
                 tracing::warn!("socks/udp serve error: {e:?}");
             }
         });
@@ -856,7 +877,10 @@ pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
 /// SOCKS/UDP service entry.
 /// For test stability: When `SB_TEST_FORCE_ECHO=1`, run a "minimal local echo loop",
 /// directly echoing received requests back to client in SOCKS5 REPLY wire format; disabled by default, zero production impact.
-pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
+pub async fn serve_socks5_udp(
+    listen: Arc<UdpSocket>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+) -> Result<()> {
     // 检查是否应该启用 SOCKS UDP 服务
     // Check if SOCKS UDP service should be enabled
     if !socks_udp_enabled() {
@@ -939,7 +963,7 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
     } else {
         // 正常路径：进入完整的 UDP 处理循环（路由/代理/直连/限速等）
         // Normal path: Enter full UDP processing loop (routing/proxy/direct/ratelimit etc.)
-        serve_udp_datagrams(listen, None, None, None).await
+        serve_udp_datagrams(listen, None, None, None, conn_tracker).await
     }
 }
 
@@ -1025,6 +1049,7 @@ pub async fn serve_udp_datagrams(
     timeout: Option<Duration>,
     inbound_tag: Option<String>,
     stats: Option<Arc<StatsManager>>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Result<()> {
     let upstream_timeout = upstream_timeout_ms();
     let ttl = timeout.or_else(nat_ttl_from_env);
@@ -1201,7 +1226,8 @@ pub async fn serve_udp_datagrams(
             // Handle Decision::Sniff: sniff UDP payload (with multi-packet QUIC support) and re-decide
             if matches!(d, RDecision::Sniff { .. }) {
                 let payload = &buf[header_len..n];
-                let (mut outcome, mut quic_ctx) = sb_core::router::sniff::sniff_datagram_multi(payload);
+                let (mut outcome, mut quic_ctx) =
+                    sb_core::router::sniff::sniff_datagram_multi(payload);
 
                 // Multi-packet QUIC reassembly: read additional packets with timeout
                 if quic_ctx.is_some() {
@@ -1214,11 +1240,17 @@ pub async fn serve_udp_datagrams(
                         match tokio::time::timeout(
                             Duration::from_millis(300),
                             sock.recv_from(&mut extra_buf),
-                        ).await {
+                        )
+                        .await
+                        {
                             Ok(Ok((en, _epeer))) => {
-                                if let Ok((_edst, ehdr_len)) = parse_udp_datagram(&extra_buf[..en]) {
+                                if let Ok((_edst, ehdr_len)) = parse_udp_datagram(&extra_buf[..en])
+                                {
                                     let epayload = &extra_buf[ehdr_len..en];
-                                    let (result, new_ctx) = sb_core::router::sniff::sniff_datagram_continue(epayload, ctx_val);
+                                    let (result, new_ctx) =
+                                        sb_core::router::sniff::sniff_datagram_continue(
+                                            epayload, ctx_val,
+                                        );
                                     if let Some(final_outcome) = result {
                                         outcome = final_outcome;
                                         break;
@@ -1250,7 +1282,11 @@ pub async fn serve_udp_datagrams(
                     ..Default::default()
                 };
                 let (d2, r2) = eng.decide_with_meta(&ctx2);
-                d = if matches!(d2, RDecision::Sniff { .. }) { RDecision::Direct } else { d2 };
+                d = if matches!(d2, RDecision::Sniff { .. }) {
+                    RDecision::Direct
+                } else {
+                    d2
+                };
                 rule = r2;
             }
 
@@ -1404,7 +1440,8 @@ pub async fn serve_udp_datagrams(
                     UdpTargetAddr::Ip(sa) => (sa.ip().to_string(), sa.port()),
                     UdpTargetAddr::Domain { host, port } => (host.clone(), *port),
                 };
-                let wiring = sb_core::conntrack::register_inbound_udp(
+                let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+                    conn_tracker.clone(),
                     src,
                     dst_host.clone(),
                     dst_port,

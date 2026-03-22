@@ -20,6 +20,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
+use sb_common::conntrack::ConnTracker;
 use sb_config::ir::ConfigIR;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
@@ -40,6 +41,8 @@ pub struct ApiState {
     pub traffic_tx: broadcast::Sender<crate::types::TrafficStats>,
     /// Broadcast channel for log entries
     pub log_tx: broadcast::Sender<crate::types::LogEntry>,
+    /// Explicit connection tracker dependency for connection snapshots and control.
+    pub conn_tracker: Arc<ConnTracker>,
     /// Real-time monitoring system handle
     pub monitoring: Option<MonitoringSystemHandle>,
     /// Router handle for routing decisions
@@ -79,6 +82,7 @@ impl ApiState {
             config: Arc::new(config),
             traffic_tx,
             log_tx,
+            conn_tracker: Arc::new(ConnTracker::new()),
             monitoring: None,
             router: None,
             outbound_registry: None,
@@ -111,6 +115,7 @@ impl ApiState {
             config: Arc::new(config),
             traffic_tx,
             log_tx,
+            conn_tracker: Arc::new(ConnTracker::new()),
             monitoring: Some(monitoring),
             router: None,
             outbound_registry: None,
@@ -166,6 +171,12 @@ impl ClashApiServer {
     /// Set outbound registry handle
     pub fn with_outbound_registry(mut self, registry: Arc<OutboundRegistryHandle>) -> Self {
         self.state.outbound_registry = Some(registry);
+        self
+    }
+
+    /// Set explicit connection tracker dependency.
+    pub fn with_conn_tracker(mut self, tracker: Arc<ConnTracker>) -> Self {
+        self.state.conn_tracker = tracker;
         self
     }
 
@@ -364,7 +375,7 @@ impl ClashApiServer {
         let auth_token = self.state.config.auth_token.clone();
         app = app.layer(axum::middleware::from_fn(move |req, next| {
             let token = auth_token.clone();
-            super::auth::auth_middleware(token, req, next)
+            crate::clash::auth::auth_middleware(token, req, next)
         }));
 
         app

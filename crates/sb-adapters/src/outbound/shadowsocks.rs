@@ -632,7 +632,15 @@ impl ShadowsocksTunnelStream {
         // Write one empty chunk to ensure the server proceeds and sends back server salt.
         let mut wnonce = 0u64;
         let mut tmp_buf = Vec::with_capacity(32);
-        write_aead_chunk(&cipher, &c_subkey, &mut wnonce, &mut stream, &[], &mut tmp_buf).await?;
+        write_aead_chunk(
+            &cipher,
+            &c_subkey,
+            &mut wnonce,
+            &mut stream,
+            &[],
+            &mut tmp_buf,
+        )
+        .await?;
         debug_assert_eq!(wnonce, 2);
 
         // Server salt + subkey (server -> client)
@@ -652,7 +660,16 @@ impl ShadowsocksTunnelStream {
         let task_decrypt = tokio::spawn(async move {
             let mut rnonce = 0u64;
             let mut chunk_buf = Vec::with_capacity(65536 + 16);
-            while read_aead_chunk(&cipher_read, &key_read, &mut rnonce, &mut tcp_r, &mut chunk_buf).await.is_ok() {
+            while read_aead_chunk(
+                &cipher_read,
+                &key_read,
+                &mut rnonce,
+                &mut tcp_r,
+                &mut chunk_buf,
+            )
+            .await
+            .is_ok()
+            {
                 if clear_w.write_all(&chunk_buf).await.is_err() {
                     break;
                 }

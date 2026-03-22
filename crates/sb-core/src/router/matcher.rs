@@ -8,9 +8,9 @@
 //! - IP 使用 `ipnet` 做 CIDR 解析与匹配。
 //! - API 均为无状态匹配方法，可在上层封装读写锁或原子替换以实现热更新。
 
-use std::collections::{BTreeSet, HashSet};
-use std::net::{IpAddr};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+use std::collections::{BTreeSet, HashSet};
+use std::net::IpAddr;
 
 /// 域名规则集合
 #[derive(Debug, Default, Clone)]
@@ -31,10 +31,7 @@ impl DomainRuleSet {
         I2: IntoIterator<Item = String>,
         I3: IntoIterator<Item = String>,
     {
-        let exact: HashSet<String> = exact
-            .into_iter()
-            .map(Self::normalize)
-            .collect();
+        let exact: HashSet<String> = exact.into_iter().map(Self::normalize).collect();
         let suffix: BTreeSet<String> = suffix
             .into_iter()
             .map(|s| {
@@ -42,17 +39,18 @@ impl DomainRuleSet {
                 format!(".{n}")
             })
             .collect();
-        let keyword: HashSet<String> = keyword
-            .into_iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-        Self { exact, suffix, keyword }
+        let keyword: HashSet<String> = keyword.into_iter().map(|s| s.to_lowercase()).collect();
+        Self {
+            exact,
+            suffix,
+            keyword,
+        }
     }
 
     /// 从统一的字符串列表加载，带前缀语义：
-            // - `full:example.com` -> exact
-            // - `suffix:example.com` -> suffix
-            // - `keyword:foo` -> keyword
+    // - `full:example.com` -> exact
+    // - `suffix:example.com` -> suffix
+    // - `keyword:foo` -> keyword
     pub fn from_tagged_rules<I>(rules: I) -> Self
     where
         I: IntoIterator<Item = String>,
@@ -62,7 +60,9 @@ impl DomainRuleSet {
         let mut keyword = HashSet::new();
         for r in rules {
             let r = r.trim().to_string();
-            if r.is_empty() { continue; }
+            if r.is_empty() {
+                continue;
+            }
             if let Some(rest) = r.strip_prefix("full:") {
                 exact.insert(Self::normalize(rest.to_string()));
             } else if let Some(rest) = r.strip_prefix("suffix:") {
@@ -76,7 +76,11 @@ impl DomainRuleSet {
                 suffix.insert(format!(".{n}"));
             }
         }
-        Self { exact, suffix, keyword }
+        Self {
+            exact,
+            suffix,
+            keyword,
+        }
     }
 
     /// 判断 host 是否匹配集合（匹配顺序：exact > suffix > keyword）
@@ -163,7 +167,10 @@ pub struct IpCidrSet {
 
 impl IpCidrSet {
     pub fn new() -> Self {
-        Self { v4: Vec::new(), v6: Vec::new() }
+        Self {
+            v4: Vec::new(),
+            v6: Vec::new(),
+        }
     }
 
     /// 从字符串列表加载，如：`"10.0.0.0/8"`, `"192.168.0.0/16"`, `"2001:db8::/32"`
@@ -173,8 +180,11 @@ impl IpCidrSet {
     {
         for c in cidrs {
             let c = c.trim();
-            if c.is_empty() { continue; }
-            let net: IpNet = c.parse()
+            if c.is_empty() {
+                continue;
+            }
+            let net: IpNet = c
+                .parse()
                 .map_err(|e| anyhow::anyhow!("invalid cidr '{}': {e}", c))?;
             match net {
                 IpNet::V4(n) => self.v4.push(n),
@@ -186,12 +196,8 @@ impl IpCidrSet {
 
     pub fn matches_ip(&self, ip: IpAddr) -> bool {
         match ip {
-            IpAddr::V4(v4) => {
-                self.v4.iter().any(|n| n.contains(&v4))
-            }
-            IpAddr::V6(v6) => {
-                self.v6.iter().any(|n| n.contains(&v6))
-            }
+            IpAddr::V4(v4) => self.v4.iter().any(|n| n.contains(&v4)),
+            IpAddr::V6(v6) => self.v6.iter().any(|n| n.contains(&v6)),
         }
     }
 }
@@ -202,22 +208,14 @@ mod tests {
 
     #[test]
     fn test_domain_exact() {
-        let r = DomainRuleSet::new(
-            ["example.com".to_string()],
-            [],
-            []
-        );
+        let r = DomainRuleSet::new(["example.com".to_string()], [], []);
         assert!(r.matches_host("example.com"));
         assert!(!r.matches_host("a.example.com"));
     }
 
     #[test]
     fn test_domain_suffix() {
-        let r = DomainRuleSet::new(
-            [],
-            ["example.com".to_string(), ".foo.bar".to_string()],
-            []
-        );
+        let r = DomainRuleSet::new([], ["example.com".to_string(), ".foo.bar".to_string()], []);
         assert!(r.matches_host("a.example.com"));
         assert!(r.matches_host("example.com"));
         assert!(r.matches_host("x.foo.bar"));
@@ -226,11 +224,7 @@ mod tests {
 
     #[test]
     fn test_domain_keyword() {
-        let r = DomainRuleSet::new(
-            [],
-            [],
-            ["cdn".to_string(), "img".to_string()]
-        );
+        let r = DomainRuleSet::new([], [], ["cdn".to_string(), "img".to_string()]);
         assert!(r.matches_host("fastly.cdn.net"));
         assert!(r.matches_host("static-img.example.com"));
         assert!(!r.matches_host("example.com"));
@@ -256,7 +250,8 @@ mod tests {
             "10.0.0.0/8".to_string(),
             "192.168.0.0/16".to_string(),
             "2001:db8::/32".to_string(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert!(s.matches_ip(IpAddr::from([10, 1, 2, 3])));
         assert!(s.matches_ip(IpAddr::from([192, 168, 1, 1])));

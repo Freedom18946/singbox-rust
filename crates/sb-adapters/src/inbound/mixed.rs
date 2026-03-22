@@ -43,6 +43,7 @@ pub struct MixedInboundConfig {
     pub udp_timeout: Option<Duration>,
     pub domain_strategy: Option<crate::inbound::socks::DomainStrategy>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Inbound sniff configuration (Go parity: sniff_enabled).
     pub sniff: bool,
     /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
@@ -240,6 +241,7 @@ async fn handle_socks(
         udp_timeout: cfg.udp_timeout,
         domain_strategy: cfg.domain_strategy,
         stats: cfg.stats.clone(),
+        conn_tracker: cfg.conn_tracker.clone(),
         sniff: cfg.sniff,
         sniff_override_destination: cfg.sniff_override_destination,
     };
@@ -308,6 +310,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             udp_timeout: cfg.udp_timeout,
             domain_strategy: cfg.domain_strategy,
             stats: cfg.stats.clone(),
+            conn_tracker: cfg.conn_tracker.clone(),
             sniff: cfg.sniff,
             sniff_override_destination: cfg.sniff_override_destination,
         };
@@ -329,6 +332,7 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
             set_system_proxy: cfg.set_system_proxy,
             allow_private_network: cfg.allow_private_network,
             stats: cfg.stats.clone(),
+            conn_tracker: cfg.conn_tracker.clone(),
             active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             sniff: cfg.sniff,
             sniff_override_destination: cfg.sniff_override_destination,
@@ -358,6 +362,7 @@ async fn handle_http(
         set_system_proxy: cfg.set_system_proxy,
         allow_private_network: cfg.allow_private_network,
         stats: cfg.stats.clone(),
+        conn_tracker: cfg.conn_tracker.clone(),
         active_connections: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         sniff: cfg.sniff,
         sniff_override_destination: cfg.sniff_override_destination,

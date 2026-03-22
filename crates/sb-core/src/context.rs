@@ -1,7 +1,7 @@
 use crate::service::StartStage;
 use crate::services::v2ray_api::StatsManager;
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
+use sb_common::conntrack::ConnTracker;
 use sb_config::ir::RouteIR;
 use sb_platform::process::ProcessMatcher;
 use std::collections::HashMap;
@@ -78,6 +78,7 @@ impl Startable for crate::service::ServiceManager {
 pub struct Context {
     pub network: Arc<NetworkManager>,
     pub connections: Arc<ConnectionManager>,
+    pub conn_tracker: Arc<ConnTracker>,
     pub task_monitor: Arc<TaskMonitor>,
     pub platform: Arc<PlatformInterface>,
     pub inbound_manager: Arc<crate::inbound::InboundManager>,
@@ -100,6 +101,7 @@ pub struct Context {
 pub struct ContextRegistry {
     pub network: Arc<NetworkManager>,
     pub connections: Arc<ConnectionManager>,
+    pub conn_tracker: Arc<ConnTracker>,
     pub task_monitor: Arc<TaskMonitor>,
     pub platform: Arc<PlatformInterface>,
     pub inbound_manager: Arc<crate::inbound::InboundManager>,
@@ -120,6 +122,7 @@ impl From<&Context> for ContextRegistry {
         Self {
             network: ctx.network.clone(),
             connections: ctx.connections.clone(),
+            conn_tracker: ctx.conn_tracker.clone(),
             task_monitor: ctx.task_monitor.clone(),
             platform: ctx.platform.clone(),
             inbound_manager: ctx.inbound_manager.clone(),
@@ -137,25 +140,13 @@ impl From<&Context> for ContextRegistry {
     }
 }
 
-static CONTEXT_REGISTRY: Lazy<std::sync::RwLock<Option<ContextRegistry>>> =
-    Lazy::new(|| std::sync::RwLock::new(None));
-
-/// Install the current runtime context into the global registry (used by late-bound components).
-pub fn install_context_registry(ctx: &Context) {
-    let mut guard = CONTEXT_REGISTRY.write().unwrap();
-    *guard = Some(ContextRegistry::from(ctx));
-}
-
-/// Retrieve the current context registry snapshot, if installed.
-pub fn context_registry() -> Option<ContextRegistry> {
-    CONTEXT_REGISTRY.read().unwrap().clone()
-}
-
 impl Context {
     pub fn new() -> Self {
+        let conn_tracker = Arc::new(ConnTracker::new());
         Self {
             network: Arc::new(NetworkManager::new()),
             connections: Arc::new(ConnectionManager::new()),
+            conn_tracker,
             task_monitor: Arc::new(TaskMonitor::new()),
             platform: Arc::new(PlatformInterface::new()),
             inbound_manager: Arc::new(crate::inbound::InboundManager::new()),

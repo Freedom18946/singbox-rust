@@ -13,8 +13,6 @@
 pub mod builder;
 /// Connection manager (Go parity: route/conn.go)
 pub mod conn;
-/// Domain/IP rule matching primitives (suffix, keyword, exact, CIDR)
-pub mod matcher;
 pub mod dns;
 pub mod dns_bridge;
 pub mod dns_integration;
@@ -24,6 +22,8 @@ pub mod hot_reload;
 pub mod hot_reload_cli;
 #[cfg(feature = "json")]
 pub mod json_bridge;
+/// Domain/IP rule matching primitives (suffix, keyword, exact, CIDR)
+pub mod matcher;
 pub mod process_router;
 /// Route connection interface (Go parity: route.Router)
 pub mod route_connection;

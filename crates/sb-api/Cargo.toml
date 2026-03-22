@@ -35,6 +35,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 humantime = "2.1"
 libc = "0.2"
+prometheus = { version = "0.14", optional = true }
 
 # HTTP types
 http = "1.0"
@@ -48,6 +49,7 @@ sb-subscribe = { path = "../sb-subscribe", features = ["subs_provider_parse", "s
 [features]
 default = ["clash-api"]
 clash-api = []
+metrics = ["dep:prometheus"]
 provider-reload = ["sb-subscribe"]
 v2ray-api = ["tonic", "prost", "prost-types", "tokio-stream", "http-body"]
 

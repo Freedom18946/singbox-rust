@@ -5,14 +5,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
 async fn conntrack_wiring_tcp_counts_and_cancel_work() {
-    let tracker = sb_common::conntrack::global_tracker();
+    let tracker = sb_common::conntrack::shared_tracker();
     let _ = tracker.close_all();
 
     let (mut client, mut proxy_a) = tokio::io::duplex(4096);
     let (mut proxy_b, mut upstream) = tokio::io::duplex(4096);
 
     let source = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345);
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        tracker.clone(),
         source,
         "example.com".to_string(),
         443,

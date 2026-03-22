@@ -147,12 +147,14 @@ impl OutboundConnector for ShadowTlsDetourBridge {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // Shared invalid-config fallback for optional outbound builders.
 struct InvalidConfigConnector {
     protocol: &'static str,
     reason: Arc<str>,
 }
 
 impl InvalidConfigConnector {
+    #[allow(dead_code)] // Referenced only when optional outbound features are enabled.
     fn new(protocol: &'static str, reason: impl Into<Arc<str>>) -> Self {
         Self {
             protocol,
@@ -171,6 +173,7 @@ impl OutboundConnector for InvalidConfigConnector {
     }
 }
 
+#[allow(dead_code)] // Shared by optional outbound builders under feature-gated code paths.
 fn invalid_config_outbound(
     protocol: &'static str,
     reason: impl Into<Arc<str>>,
@@ -181,6 +184,7 @@ fn invalid_config_outbound(
     ))
 }
 
+#[allow(dead_code)] // Shared by optional outbound builders under feature-gated code paths.
 fn invalid_outbound_config_reason(
     protocol: &'static str,
     outbound: &str,
@@ -192,6 +196,7 @@ fn invalid_outbound_config_reason(
     .into()
 }
 
+#[allow(dead_code)] // Shared by optional outbound builders under feature-gated code paths.
 fn parse_required_outbound_uuid(
     protocol: &'static str,
     outbound: &str,
@@ -226,6 +231,7 @@ fn parse_required_outbound_ip_addr(
     }
 }
 
+#[allow(dead_code)] // Shared by optional outbound builders under feature-gated code paths.
 fn parse_required_outbound_socket_addr(
     protocol: &'static str,
     outbound: &str,
@@ -243,6 +249,7 @@ fn parse_required_outbound_socket_addr(
 
 /// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
 /// Both have identical bounds (AsyncRead + AsyncWrite + Unpin + Send).
+#[allow(dead_code)] // Used by optional bridge/detour paths when their transport features are enabled.
 struct BoxedStreamAdapter(crate::traits::BoxedStream);
 
 impl tokio::io::AsyncRead for BoxedStreamAdapter {
@@ -1243,6 +1250,7 @@ fn build_http_inbound(
         set_system_proxy: param.set_system_proxy,
         allow_private_network: param.allow_private_network,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         active_connections: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         sniff: param.sniff,
         sniff_override_destination: param.sniff_override_destination,
@@ -1304,6 +1312,7 @@ fn build_shadowsocks_inbound(
         router: ctx.router.clone(),
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         multiplex: convert_multiplex_config(&param.multiplex),
         // NOTE: Transport layer configuration can be added via param in future
         transport_layer: None,
@@ -1500,6 +1509,7 @@ fn build_vmess_inbound(
         router: ctx.router.clone(),
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         multiplex: convert_multiplex_config(&param.multiplex),
         transport_layer: None,
         fallback: None,
@@ -1552,6 +1562,7 @@ fn build_vless_inbound(
         router: ctx.router.clone(),
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         #[cfg(feature = "tls_reality")]
         // NOTE: REALITY configuration is feature-gated (tls_reality)
         reality: None,
@@ -1657,6 +1668,7 @@ fn build_trojan_inbound(
         router: ctx.router.clone(),
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
@@ -1704,6 +1716,7 @@ fn build_socks_inbound(
         udp_timeout: param.udp_timeout,
         domain_strategy,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         sniff: param.sniff,
         sniff_override_destination: param.sniff_override_destination,
     };
@@ -1753,6 +1766,7 @@ fn build_mixed_inbound(
         udp_timeout: param.udp_timeout,
         domain_strategy,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
         sniff: param.sniff,
         sniff_override_destination: param.sniff_override_destination,
     };
@@ -2162,6 +2176,7 @@ fn build_hysteria2_inbound(
             obfs: param.obfs.clone(),
             tag: param.tag.clone(),
             stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+            conn_tracker: ctx.context.conn_tracker.clone(),
             masquerade,
             router: ctx.router.clone(),
             outbounds: ctx.outbounds.clone(),
@@ -2278,6 +2293,7 @@ fn build_tuic_inbound(
         outbounds: ctx.outbounds.clone(),
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
     };
 
     Some(Arc::new(crate::inbound::tuic::TuicInboundAdapter::new(
@@ -3590,7 +3606,11 @@ impl InboundService for HttpInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         res
     }
 
@@ -3687,7 +3707,11 @@ impl InboundService for MixedInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         res
     }
 
@@ -3716,6 +3740,7 @@ fn build_redirect_inbound(
         listen,
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
     };
     Some(Arc::new(RedirectInboundAdapter::new(cfg)))
 }
@@ -3752,7 +3777,11 @@ impl InboundService for RedirectInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         res
     }
 
@@ -3779,6 +3808,7 @@ fn build_tproxy_inbound(
         listen,
         tag: param.tag.clone(),
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
+        conn_tracker: ctx.context.conn_tracker.clone(),
     };
     Some(Arc::new(TproxyInboundAdapter::new(cfg)))
 }
@@ -3815,7 +3845,11 @@ impl InboundService for TproxyInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         res
     }
 

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 
 /// Clash operating mode (Go parity: constant.Mode)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -77,7 +78,20 @@ pub fn set_mode(mode: ClashMode) {
 
 /// Clashe server adapter that uses global state
 #[derive(Debug, Clone, Default)]
-pub struct GlobalClashServerAdapter;
+pub struct GlobalClashServerAdapter {
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+}
+
+impl GlobalClashServerAdapter {
+    pub fn new() -> Self {
+        Self { cache_file: None }
+    }
+
+    pub fn with_cache_file(mut self, cache_file: Arc<dyn crate::context::CacheFile>) -> Self {
+        self.cache_file = Some(cache_file);
+        self
+    }
+}
 
 impl ClashServerAdapter for GlobalClashServerAdapter {
     fn mode(&self) -> ClashMode {
@@ -86,11 +100,9 @@ impl ClashServerAdapter for GlobalClashServerAdapter {
 
     fn set_mode(&self, mode: ClashMode) {
         set_mode(mode);
-        // Trigger cache update (Go parity: persistence)
-        if let Some(registry) = crate::context::context_registry() {
-            if let Some(cache) = &registry.cache_file {
-                cache.set_clash_mode(mode.to_string());
-            }
+        // Trigger cache update (Go parity: persistence) through explicit dependency injection.
+        if let Some(cache) = &self.cache_file {
+            cache.set_clash_mode(mode.to_string());
         }
     }
 }

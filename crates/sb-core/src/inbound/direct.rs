@@ -21,6 +21,7 @@ use crate::adapter::InboundService;
 use crate::net::datagram::UdpConntrackMeta;
 use crate::net::metered;
 use crate::services::v2ray_api::StatsManager;
+use sb_common::conntrack::ConnTracker;
 
 #[derive(Debug, Clone)]
 pub struct DirectConfig {
@@ -56,6 +57,7 @@ pub struct DirectForward {
     cfg: DirectConfig,
     tag: Option<String>,
     stats: Option<Arc<StatsManager>>,
+    conn_tracker: Arc<ConnTracker>,
     shutdown: Arc<AtomicBool>,
     udp_sessions: Arc<Mutex<HashMap<SocketAddr, UdpSession>>>,
     active: Arc<AtomicU64>,
@@ -72,6 +74,7 @@ impl DirectForward {
             cfg: DirectConfig::default(),
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(ConnTracker::new()),
             shutdown: Arc::new(AtomicBool::new(false)),
             udp_sessions: Arc::new(Mutex::new(HashMap::new())),
             active: Arc::new(AtomicU64::new(0)),
@@ -99,6 +102,11 @@ impl DirectForward {
         self
     }
 
+    pub fn with_conn_tracker(mut self, conn_tracker: Arc<ConnTracker>) -> Self {
+        self.conn_tracker = conn_tracker;
+        self
+    }
+
     async fn handle_tcp(&self, mut cli: TcpStream, peer: SocketAddr) -> io::Result<()> {
         // Establish upstream connection to fixed target
         let addr = format!("{}:{}", self.dst_host, self.dst_port);
@@ -113,7 +121,8 @@ impl DirectForward {
             .stats
             .as_ref()
             .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
-        let wiring = crate::conntrack::register_inbound_tcp(
+        let wiring = crate::conntrack::register_inbound_tcp_with_tracker(
+            self.conn_tracker.clone(),
             peer,
             self.dst_host.clone(),
             self.dst_port,
@@ -293,7 +302,8 @@ impl DirectForward {
             .stats
             .as_ref()
             .and_then(|stats| stats.traffic_recorder(self.tag.as_deref(), Some("direct"), None));
-        let wiring = crate::conntrack::register_inbound_udp(
+        let wiring = crate::conntrack::register_inbound_udp_with_tracker(
+            self.conn_tracker.clone(),
             client_addr,
             self.dst_host.clone(),
             self.dst_port,
@@ -478,6 +488,7 @@ impl DirectForward {
             cfg: self.cfg.clone(),
             tag: self.tag.clone(),
             stats: self.stats.clone(),
+            conn_tracker: self.conn_tracker.clone(),
             shutdown: self.shutdown.clone(),
             udp_sessions: self.udp_sessions.clone(),
             active: self.active.clone(),

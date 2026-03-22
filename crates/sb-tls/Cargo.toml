@@ -49,6 +49,7 @@ rustls-native-certs = { version = "0.7", optional = true }
 
 # Logging
 tracing = "0.1"
+log = "0.4"
 rustls-pemfile = "2.2.0"
 
 # Concurrency

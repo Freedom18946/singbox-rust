@@ -172,7 +172,7 @@ pub fn decode_packet_v1(buf: &mut BytesMut) -> io::Result<Option<Bytes>> {
         return Ok(None);
     }
 
-    let len = ((buf[0] as usize) << 8) | (buf[1] as usize);
+    let len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
     if len > MAX_UDP_PACKET_SIZE {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
@@ -194,7 +194,9 @@ pub fn decode_packet_v2(buf: &mut BytesMut) -> io::Result<Option<UdpPacket>> {
         return Ok(None);
     }
 
-    let addr_type = buf[0];
+    let Some(&addr_type) = buf.first() else {
+        return Ok(None);
+    };
     let header_len = match addr_type {
         0x01 => 1 + 4 + 2,  // type + IPv4 + port
         0x04 => 1 + 16 + 2, // type + IPv6 + port
@@ -220,25 +222,30 @@ pub fn decode_packet_v2(buf: &mut BytesMut) -> io::Result<Option<UdpPacket>> {
     let addr = match addr_type {
         0x01 => {
             let ip = std::net::Ipv4Addr::new(buf[1], buf[2], buf[3], buf[4]);
-            let port = ((buf[5] as u16) << 8) | (buf[6] as u16);
+            let port = u16::from_be_bytes([buf[5], buf[6]]);
             SocketAddr::from((ip, port))
         }
         0x04 => {
             let mut octets = [0u8; 16];
             octets.copy_from_slice(&buf[1..17]);
             let ip = std::net::Ipv6Addr::from(octets);
-            let port = ((buf[17] as u16) << 8) | (buf[18] as u16);
+            let port = u16::from_be_bytes([buf[17], buf[18]]);
             SocketAddr::from((ip, port))
         }
         0x03 => {
             // Domain not supported for decoded address, return placeholder
             let domain_len = buf[1] as usize;
             let port_offset = 2 + domain_len;
-            let port = ((buf[port_offset] as u16) << 8) | (buf[port_offset + 1] as u16);
+            let port = u16::from_be_bytes([buf[port_offset], buf[port_offset + 1]]);
             // Use unspecified address with port for domain
             SocketAddr::from(([0, 0, 0, 0], port))
         }
-        _ => unreachable!(),
+        _ => {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("unknown address type: {}", addr_type),
+            ))
+        }
     };
 
     buf.advance(header_len);
@@ -251,7 +258,7 @@ pub fn decode_packet_v2(buf: &mut BytesMut) -> io::Result<Option<UdpPacket>> {
         ));
     }
 
-    let len = ((buf[0] as usize) << 8) | (buf[1] as usize);
+    let len = u16::from_be_bytes([buf[0], buf[1]]) as usize;
     if len > MAX_UDP_PACKET_SIZE {
         return Err(io::Error::new(
             ErrorKind::InvalidData,

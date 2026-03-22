@@ -18,14 +18,14 @@
 //!   计算旧配置和新配置之间的差异，以尽量减少变动（例如，仅重启更改的入站）。
 
 use crate::adapter::Bridge;
-use crate::context::{install_context_registry, Context, Startable, V2RayServer};
+use crate::context::{Context, Startable, V2RayServer};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
 use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
-use std::collections::HashMap;
 use sb_config::ir::diff::Diff;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -179,8 +179,6 @@ impl Supervisor {
         let context = build_context_from_ir(&ir);
         ensure_geo_assets(&ir).await;
 
-        install_context_registry(&context);
-
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
         run_context_stage(&context, ServiceStage::Initialize)?;
         tracing::debug!(target: "sb_core::runtime", "Context managers initialized");
@@ -285,11 +283,22 @@ impl Supervisor {
                         if let Err(e) = Self::handle_reload(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         } else {
-                            state_clone.write().await.provider_overlay = ProviderOverlayState::default();
+                            state_clone.write().await.provider_overlay =
+                                ProviderOverlayState::default();
                         }
                     }
-                    ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
-                        let (merged_ir, overlay) = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
+                    ReloadMsg::UpdateProviders {
+                        outbounds,
+                        rules,
+                        provider_name,
+                    } => {
+                        let (merged_ir, overlay) = Self::merge_provider_updates(
+                            &state_clone,
+                            outbounds,
+                            rules,
+                            &provider_name,
+                        )
+                        .await;
                         if let Err(e) = Self::handle_reload(&state_clone, merged_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
                         } else {
@@ -345,8 +354,6 @@ impl Supervisor {
         // Create runtime context and wire experimental sidecars from IR
         let context = build_context_from_ir(&ir);
         ensure_geo_assets(&ir).await;
-
-        install_context_registry(&context);
 
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
         run_context_stage(&context, ServiceStage::Initialize)?;
@@ -434,12 +441,24 @@ impl Supervisor {
                         if let Err(e) = Self::handle_reload_no_router(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         } else {
-                            state_clone.write().await.provider_overlay = ProviderOverlayState::default();
+                            state_clone.write().await.provider_overlay =
+                                ProviderOverlayState::default();
                         }
                     }
-                    ReloadMsg::UpdateProviders { outbounds, rules, provider_name } => {
-                        let (merged_ir, overlay) = Self::merge_provider_updates(&state_clone, outbounds, rules, &provider_name).await;
-                        if let Err(e) = Self::handle_reload_no_router(&state_clone, merged_ir).await {
+                    ReloadMsg::UpdateProviders {
+                        outbounds,
+                        rules,
+                        provider_name,
+                    } => {
+                        let (merged_ir, overlay) = Self::merge_provider_updates(
+                            &state_clone,
+                            outbounds,
+                            rules,
+                            &provider_name,
+                        )
+                        .await;
+                        if let Err(e) = Self::handle_reload_no_router(&state_clone, merged_ir).await
+                        {
                             tracing::error!(target: "sb_core::runtime", error = %e, "provider reload failed for '{}'", provider_name);
                         } else {
                             state_clone.write().await.provider_overlay = overlay;
@@ -571,8 +590,6 @@ impl Supervisor {
         let new_context = build_context_from_ir(&new_ir);
         ensure_geo_assets(&new_ir).await;
 
-        install_context_registry(&new_context);
-
         // Initialize new context managers
         run_context_stage(&new_context, ServiceStage::Initialize)?;
         tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
@@ -639,8 +656,6 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
-            install_context_registry(&state_guard.context);
-
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -704,8 +719,6 @@ impl Supervisor {
         let new_context = build_context_from_ir(&new_ir);
         ensure_geo_assets(&new_ir).await;
 
-        install_context_registry(&new_context);
-
         // Initialize new context managers (Box Runtime Parity)
         run_context_stage(&new_context, ServiceStage::Initialize)?;
         tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
@@ -751,8 +764,6 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
-            install_context_registry(&state_guard.context);
-
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -829,9 +840,8 @@ impl Supervisor {
             let name = new_ob.name.as_deref().unwrap_or("");
             if !name.is_empty() {
                 // Remove existing outbound with same name (if any)
-                ir.outbounds.retain(|existing| {
-                    existing.name.as_deref() != Some(name)
-                });
+                ir.outbounds
+                    .retain(|existing| existing.name.as_deref() != Some(name));
                 injected_outbound_names.push(name.to_string());
             }
             ir.outbounds.push(new_ob);

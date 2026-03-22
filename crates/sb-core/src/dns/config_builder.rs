@@ -648,9 +648,8 @@ fn maybe_wrap_cache(dns: &sb_config::ir::DnsIR, base: Arc<dyn Resolver>) -> Arc<
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(1024);
-    let cache = Arc::new(DnsCache::new(cap).with_disable_expire(
-        dns.disable_expire.unwrap_or(false),
-    ));
+    let cache =
+        Arc::new(DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)));
 
     Arc::new(CachedResolver { inner: base, cache })
 }

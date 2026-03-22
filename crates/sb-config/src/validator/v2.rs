@@ -1326,14 +1326,16 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     "missing required field",
                     "add it",
                 ));
-            } else if !ib.get("type").unwrap().is_string() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::TypeMismatch,
-                    &format!("/inbounds/{}/type", i),
-                    "type must be a string",
-                    "use string value",
-                ));
+            } else if let Some(ty) = ib.get("type") {
+                if !ty.is_string() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/inbounds/{}/type", i),
+                        "type must be a string",
+                        "use string value",
+                    ));
+                }
             }
 
             // listen is only required for non-tun inbounds
@@ -1386,11 +1388,31 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                 for k in map.keys() {
                     match k.as_str() {
                         // Go parity: include 'tag' for inbound identification
-                        "tag" | "name" | "type" | "listen" | "port" | "udp" | "network"
-                        | "sniff" | "sniff_override_destination" | "override_address" | "override_host" | "override_port"
-                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route"
-                        | "auth" | "users" | "cert" | "key" | "congestion_control"
-                        | "salamander" | "obfs" | "up_mbps" | "down_mbps" => {}
+                        "tag"
+                        | "name"
+                        | "type"
+                        | "listen"
+                        | "port"
+                        | "udp"
+                        | "network"
+                        | "sniff"
+                        | "sniff_override_destination"
+                        | "override_address"
+                        | "override_host"
+                        | "override_port"
+                        | "interface_name"
+                        | "inet4_address"
+                        | "inet6_address"
+                        | "auto_route"
+                        | "auth"
+                        | "users"
+                        | "cert"
+                        | "key"
+                        | "congestion_control"
+                        | "salamander"
+                        | "obfs"
+                        | "up_mbps"
+                        | "down_mbps" => {}
                         _ => {
                             let kind = if allow_unknown { "warning" } else { "error" };
                             issues.push(emit_issue(
@@ -1441,14 +1463,16 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     "missing required field",
                     "add it",
                 ));
-            } else if !ob.get("type").unwrap().is_string() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::TypeMismatch,
-                    &format!("/outbounds/{}/type", i),
-                    "type must be a string",
-                    "use string value",
-                ));
+            } else if let Some(ty) = ob.get("type") {
+                if !ty.is_string() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/outbounds/{}/type", i),
+                        "type must be a string",
+                        "use string value",
+                    ));
+                }
             }
 
             // tag/name should be string if present
@@ -2771,11 +2795,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 if ob.tls_ca_pem.is_empty() {
                     match tls.get("ca_pem") {
                         Some(v) if v.is_array() => {
-                            for it in v.as_array().unwrap() {
-                                if let Some(s) = it.as_str() {
-                                    let s = s.trim();
-                                    if !s.is_empty() {
-                                        ob.tls_ca_pem.push(s.to_string());
+                            if let Some(items) = v.as_array() {
+                                for it in items {
+                                    if let Some(s) = it.as_str() {
+                                        let s = s.trim();
+                                        if !s.is_empty() {
+                                            ob.tls_ca_pem.push(s.to_string());
+                                        }
                                     }
                                 }
                             }
@@ -3327,11 +3353,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         let mut ca_pem = Vec::new();
                         match map.get("ca_pem") {
                             Some(v) if v.is_array() => {
-                                for it in v.as_array().unwrap() {
-                                    if let Some(s) = it.as_str() {
-                                        let s = s.trim();
-                                        if !s.is_empty() {
-                                            ca_pem.push(s.to_string());
+                                if let Some(items) = v.as_array() {
+                                    for it in items {
+                                        if let Some(s) = it.as_str() {
+                                            let s = s.trim();
+                                            if !s.is_empty() {
+                                                ca_pem.push(s.to_string());
+                                            }
                                         }
                                     }
                                 }

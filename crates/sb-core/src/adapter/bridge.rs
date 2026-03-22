@@ -281,7 +281,10 @@ fn parse_optional_outbound_ipv6_addr(
 }
 
 /// Converts inbound IR to adapter parameter.
-fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
+fn to_inbound_param(
+    ib: &InboundIR,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+) -> anyhow::Result<InboundParam> {
     let users_anytls = ib.users_anytls.as_ref().map(|users| {
         users
             .iter()
@@ -426,6 +429,7 @@ fn to_inbound_param(ib: &InboundIR) -> anyhow::Result<InboundParam> {
         domain_strategy: ib.domain_strategy.clone(),
         set_system_proxy: ib.set_system_proxy,
         allow_private_network: ib.allow_private_network,
+        conn_tracker,
         ssh_host_key_path: ib.ssh_host_key_path.clone(),
     })
 }
@@ -782,8 +786,11 @@ pub fn build_bridge(
     // Step 3: Inbounds
     // Create shared connection manager for all inbounds (Go parity: route.ConnectionManager)
     let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
-    let connection_manager =
-        Arc::new(crate::router::RouteConnectionManager::new().with_stats(stats));
+    let connection_manager = Arc::new(
+        crate::router::RouteConnectionManager::new()
+            .with_stats(stats)
+            .with_conn_tracker(br.context.conn_tracker.clone()),
+    );
 
     // Build DNS components for inbound context
     let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg, None)
@@ -792,7 +799,7 @@ pub fn build_bridge(
     let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
 
     for ib in &cfg.inbounds {
-        let p = match to_inbound_param(ib) {
+        let p = match to_inbound_param(ib, br.context.conn_tracker.clone()) {
             Ok(p) => p,
             Err(err) => {
                 tracing::warn!(
@@ -903,7 +910,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
 
     // Step 3: Inbounds (without engine)
     for ib in &cfg.inbounds {
-        let p = match to_inbound_param(ib) {
+        let p = match to_inbound_param(ib, br.context.conn_tracker.clone()) {
             Ok(p) => p,
             Err(err) => {
                 tracing::warn!(
@@ -1007,7 +1014,8 @@ mod tests {
             ..InboundIR::default()
         };
 
-        let err = to_inbound_param(&ib).expect_err("invalid duration should be rejected");
+        let err = to_inbound_param(&ib, Arc::new(sb_common::conntrack::ConnTracker::new()))
+            .expect_err("invalid duration should be rejected");
         assert!(err
             .to_string()
             .contains("mixed inbound udp_timeout 'bad' is invalid"));

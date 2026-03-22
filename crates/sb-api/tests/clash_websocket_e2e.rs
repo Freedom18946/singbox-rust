@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
-use sb_common::conntrack::{global_tracker, ConnMetadata, Network};
+use sb_common::conntrack::{shared_tracker, ConnMetadata, Network};
 use serde_json::Value;
 use serial_test::serial;
 use tokio::sync::oneshot;
@@ -57,7 +57,7 @@ impl TestServer {
             log_buffer_size: 100,
         };
 
-        let server = ClashApiServer::new(config)?;
+        let server = ClashApiServer::new(config)?.with_conn_tracker(shared_tracker());
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
@@ -105,7 +105,7 @@ impl ShutdownTestServer {
             log_buffer_size: 100,
         };
 
-        let server = ClashApiServer::new(config)?;
+        let server = ClashApiServer::new(config)?.with_conn_tracker(shared_tracker());
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
@@ -205,7 +205,7 @@ where
 }
 
 fn register_test_connection() -> sb_common::conntrack::ConnId {
-    let tracker = global_tracker();
+    let tracker = shared_tracker();
     let id = tracker.next_id();
     let meta = ConnMetadata::new(
         id,
@@ -230,7 +230,7 @@ fn register_test_connection() -> sb_common::conntrack::ConnId {
 #[tokio::test]
 #[serial]
 async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
-    let _ = global_tracker().close_all();
+    let _ = shared_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
         return Ok(());
     };
@@ -257,7 +257,7 @@ async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial]
 async fn test_connections_ws_reflects_close_all_updates() -> anyhow::Result<()> {
-    let tracker = global_tracker();
+    let tracker = shared_tracker();
     let _ = tracker.close_all();
     let tracked_id = register_test_connection();
 
@@ -306,7 +306,7 @@ async fn test_connections_ws_reflects_close_all_updates() -> anyhow::Result<()> 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
-    let _ = global_tracker().close_all();
+    let _ = shared_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
         return Ok(());
     };
@@ -338,7 +338,7 @@ async fn test_connections_ws_high_concurrency_clients() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[serial]
 async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
-    let _ = global_tracker().close_all();
+    let _ = shared_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
         return Ok(());
     };
@@ -387,7 +387,7 @@ async fn test_connections_ws_multi_wave_stability() -> anyhow::Result<()> {
 #[serial]
 #[ignore = "long-running soak; run explicitly in interop/nightly"]
 async fn test_connections_ws_long_running_soak() -> anyhow::Result<()> {
-    let _ = global_tracker().close_all();
+    let _ = shared_tracker().close_all();
     let Some(server) = TestServer::start().await? else {
         return Ok(());
     };
@@ -434,7 +434,7 @@ async fn test_connections_ws_long_running_soak() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial]
 async fn test_connections_ws_closes_on_server_shutdown() -> anyhow::Result<()> {
-    let _ = global_tracker().close_all();
+    let _ = shared_tracker().close_all();
     let Some(server) = ShutdownTestServer::start().await? else {
         return Ok(());
     };
@@ -473,7 +473,7 @@ async fn test_connections_ws_closes_on_server_shutdown() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial]
 async fn test_connections_ws_memory_remains_bounded_over_time() -> anyhow::Result<()> {
-    let tracker = global_tracker();
+    let tracker = shared_tracker();
     let _ = tracker.close_all();
     let tracked_id = register_test_connection();
 

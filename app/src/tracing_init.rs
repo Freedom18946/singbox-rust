@@ -68,7 +68,9 @@ pub fn init_metrics_exporter_once() {
         if std::env::var("SB_METRICS_ADDR").ok().is_some() {
             #[cfg(feature = "sb-metrics")]
             {
-                if let Some(_jh) = sb_metrics::maybe_spawn_http_exporter_from_env() {
+                if let Some(_jh) = sb_metrics::spawn_http_exporter_from_env(
+                    sb_metrics::MetricsRegistryHandle::global(),
+                ) {
                     tracing::info!("metrics exporter started");
                 } else {
                     tracing::warn!("metrics exporter disabled or failed to start");

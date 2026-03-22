@@ -284,6 +284,8 @@ pub struct InboundParam {
     pub domain_strategy: Option<String>,
     pub set_system_proxy: bool,
     pub allow_private_network: bool,
+    /// Explicit conntrack dependency for inbound adapters.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 
     // SSH-specific fields
     /// SSH server host key file path (PEM format)
@@ -349,6 +351,7 @@ impl Default for InboundParam {
             domain_strategy: None,
             set_system_proxy: false,
             allow_private_network: true,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
             ssh_host_key_path: None,
         }
     }
@@ -560,7 +563,8 @@ impl Bridge {
                         Arc::new(
                             DirectForward::new(addr, host, dst_port, inbound.udp)
                                 .with_tag(inbound.tag.clone())
-                                .with_stats(stats),
+                                .with_stats(stats)
+                                .with_conn_tracker(bridge.context.conn_tracker.clone()),
                         ) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Redirect => {

@@ -30,14 +30,7 @@ pub struct StandardTlsConnector {
 }
 
 impl StandardTlsConnector {
-    /// Create a new standard TLS connector with default configuration
-    /// 创建具有默认配置的新标准 TLS 连接器
-    ///
-    /// # Errors
-    /// # 错误
-    /// Returns an error if the TLS client configuration cannot be constructed.
-    /// 如果无法构建 TLS 客户端配置，则返回错误。
-    pub fn new() -> TlsResult<Self> {
+    fn build_default() -> Self {
         crate::ensure_crypto_provider();
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -46,10 +39,21 @@ impl StandardTlsConnector {
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-        Ok(Self {
+        Self {
             config: Arc::new(config),
             alpn_protocols: None,
-        })
+        }
+    }
+
+    /// Create a new standard TLS connector with default configuration
+    /// 创建具有默认配置的新标准 TLS 连接器
+    ///
+    /// # Errors
+    /// # 错误
+    /// Returns an error if the TLS client configuration cannot be constructed.
+    /// 如果无法构建 TLS 客户端配置，则返回错误。
+    pub fn new() -> TlsResult<Self> {
+        Ok(Self::build_default())
     }
 
     /// Create connector with custom root certificates
@@ -78,10 +82,7 @@ impl StandardTlsConnector {
 
 impl Default for StandardTlsConnector {
     fn default() -> Self {
-        // This is safe because creating a default TLS connector with webpki-roots
-        // should never fail in normal circumstances
-        #[allow(clippy::expect_used)]
-        Self::new().expect("Failed to create default TLS connector with webpki-roots")
+        Self::build_default()
     }
 }
 

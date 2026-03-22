@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use crate::net::metered::TrafficRecorder;
 use crate::services::v2ray_api::StatsManager;
+use sb_common::conntrack::ConnTracker;
 
 use once_cell::sync::Lazy;
 use publicsuffix::{List, Psl};
@@ -368,6 +369,8 @@ pub struct ConnectionManager {
     next_id: AtomicU64,
     /// Optional stats manager for V2Ray traffic tracking.
     stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for active connection registration.
+    conn_tracker: Arc<ConnTracker>,
 }
 
 impl std::fmt::Debug for ConnectionManager {
@@ -417,11 +420,17 @@ impl ConnectionManager {
             connections: Mutex::new(Vec::new()),
             next_id: AtomicU64::new(1),
             stats: None,
+            conn_tracker: Arc::new(ConnTracker::new()),
         }
     }
 
     pub fn with_stats(mut self, stats: Option<Arc<StatsManager>>) -> Self {
         self.stats = stats;
+        self
+    }
+
+    pub fn with_conn_tracker(mut self, conn_tracker: Arc<ConnTracker>) -> Self {
+        self.conn_tracker = conn_tracker;
         self
     }
 
@@ -523,7 +532,7 @@ impl ConnectionManager {
         );
 
         // Register with global connection tracker
-        let tracker = sb_common::conntrack::global_tracker();
+        let tracker = self.conn_tracker.clone();
         let tracker_id = tracker.next_id();
         let conn_meta = sb_common::conntrack::ConnMetadata::new(
             tracker_id,
@@ -766,7 +775,7 @@ impl ConnectionManager {
         });
 
         // Register with global connection tracker
-        let tracker = sb_common::conntrack::global_tracker();
+        let tracker = self.conn_tracker.clone();
         let tracker_id = tracker.next_id();
         let conn_meta = sb_common::conntrack::ConnMetadata::new(
             tracker_id,

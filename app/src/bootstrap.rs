@@ -849,7 +849,6 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     let urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage> =
         Arc::new(sb_core::services::urltest_history::URLTestHistoryService::new());
     ctx = ctx.with_urltest_history(urltest_history.clone());
-    sb_core::context::install_context_registry(&ctx);
 
     // Optionally configure DNS via config (env bridge for sb-core)
     apply_dns_from_config(&cfg);
@@ -904,6 +903,8 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         #[cfg(feature = "router")]
         &rh,
         &oh,
+        #[cfg(feature = "adapters")]
+        Arc::new(sb_common::conntrack::ConnTracker::new()),
     );
 
     // 3) Start experimental services if configured
@@ -957,12 +958,15 @@ fn start_inbounds_from_ir(
     inbounds: &[sb_config::ir::InboundIR],
     #[cfg(feature = "router")] router: &Arc<RouterHandle>,
     outbounds: &Arc<OutboundRegistryHandle>,
+    #[cfg(feature = "adapters")] conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Vec<app::inbound_starter::InboundHandle> {
     app::inbound_starter::start_inbounds_from_ir(
         inbounds,
         #[cfg(feature = "router")]
         router,
         outbounds,
+        #[cfg(feature = "adapters")]
+        conn_tracker,
     )
 }
 

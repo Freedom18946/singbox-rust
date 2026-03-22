@@ -47,6 +47,8 @@ pub struct NaiveInboundConfig {
     pub outbounds: Arc<OutboundRegistryHandle>,
     /// Active connection counter
     pub connections: Arc<AtomicU64>,
+    /// Explicit conntrack dependency for Naive streams.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 /// RAII guard for connection tracking
@@ -298,7 +300,8 @@ async fn handle_stream(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.clone(),
         port,
@@ -493,6 +496,7 @@ impl NaiveInboundAdapter {
             password,
             outbounds,
             connections: Arc::new(AtomicU64::new(0)),
+            conn_tracker: param.conn_tracker.clone(),
         };
 
         Ok(Box::new(NaiveInboundAdapter {

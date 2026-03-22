@@ -15,7 +15,9 @@ async fn main() -> anyhow::Result<()> {
         .try_init();
 
     // Start exporter
-    if let Some(_jh) = sb_metrics::maybe_spawn_http_exporter_from_env() {
+    if let Some(_jh) =
+        sb_metrics::spawn_http_exporter_from_env(sb_metrics::MetricsRegistryHandle::global())
+    {
         tracing::info!(addr = %std::env::var("SB_METRICS_ADDR").unwrap(), "metrics exporter up");
     } else {
         tracing::warn!("metrics exporter failed to start (check SB_METRICS_ADDR)");

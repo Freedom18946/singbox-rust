@@ -52,9 +52,11 @@ pub fn get_or_register_counter_vec(name: &str, help: &str, labels: &[&str]) -> I
         #[allow(clippy::unwrap_used)]
         IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
     });
-    // Best-effort registration; ignore errors to avoid panics on duplicate names across processes.
-    // 尽力注册；忽略错误以避免跨进程重复名称时的恐慌。
-    let _ = sb_metrics::REGISTRY.register(Box::new(vec.clone()));
+    // Best-effort registration; duplicate names should remain observable rather than silent.
+    // 尽力注册；重复名称应保持可观测，而不是静默吞掉。
+    if let Err(err) = sb_metrics::shared_registry().register_cloned(name, &vec) {
+        tracing::debug!(metric = name, error = %err, "transport counter registration skipped");
+    }
 
     if let Ok(mut map) = counter_map().lock() {
         map.insert(name.to_string(), vec.clone());
@@ -77,7 +79,9 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
         #[allow(clippy::unwrap_used)]
         GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
     });
-    let _ = sb_metrics::REGISTRY.register(Box::new(vec.clone()));
+    if let Err(err) = sb_metrics::shared_registry().register_cloned(name, &vec) {
+        tracing::debug!(metric = name, error = %err, "transport gauge registration skipped");
+    }
 
     if let Ok(mut map) = gauge_map().lock() {
         map.insert(name.to_string(), vec.clone());

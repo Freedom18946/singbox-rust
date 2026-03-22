@@ -133,12 +133,7 @@ impl TcpSession {
     }
 
     pub fn initiate_close(&self) {
-        if let Some(tx) = self
-            .shutdown_tx
-            .lock()
-            .expect("lock shutdown_tx")
-            .take()
-        {
+        if let Some(tx) = self.shutdown_tx.lock().expect("lock shutdown_tx").take() {
             let _ = tx.send(());
         }
     }
@@ -378,7 +373,9 @@ async fn relay_outbound_to_tun(
                 // Send FIN packet
                 let seq = session.reserve_server_seq(1);
                 let ack = session.client_next_seq();
-                if let Ok(fin_packet) = build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11) {
+                if let Ok(fin_packet) =
+                    build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11)
+                {
                     let _ = tun_writer.write_packet(&fin_packet).await;
                 }
                 break;

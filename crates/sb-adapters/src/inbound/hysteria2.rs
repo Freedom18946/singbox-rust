@@ -36,6 +36,7 @@ pub struct Hysteria2InboundConfig {
     pub obfs: Option<String>,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     #[cfg(feature = "adapter-hysteria2")]
     pub masquerade: Option<CoreMasqueradeConfig>,
     pub router: Arc<router::RouterHandle>,
@@ -62,6 +63,7 @@ impl Default for Hysteria2InboundConfig {
             obfs: None,
             tag: None,
             stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
             #[cfg(feature = "adapter-hysteria2")]
             masquerade: None,
             router: Arc::new(router::RouterHandle::from_env()),
@@ -372,7 +374,8 @@ impl Hysteria2Inbound {
             &decision,
             outbound_tag.as_deref(),
         );
-        let wiring = sb_core::conntrack::register_inbound_tcp(
+        let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+            cfg.conn_tracker.clone(),
             peer,
             host.clone(),
             port,

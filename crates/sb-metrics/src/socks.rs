@@ -34,7 +34,8 @@
 //! add_udp_nat_evictions(5);
 //! ```
 
-use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter, IntGauge};
+use crate::{guarded_int_counter, guarded_int_gauge, registered_collector};
+use prometheus::{IntCounter, IntGauge};
 use std::sync::LazyLock;
 
 // =============================
@@ -43,48 +44,43 @@ use std::sync::LazyLock;
 
 /// 当前 UDP NAT 表大小
 pub static UDP_NAT_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
-    register_int_gauge!(opts!("socks_udp_nat_size", "Current UDP NAT entries")).unwrap_or_else(
-        |_| {
-            #[allow(clippy::unwrap_used)] // Fallback dummy gauge initialization
-            IntGauge::new("dummy_gauge", "dummy").unwrap()
-        },
+    registered_collector(
+        "socks_udp_nat_size",
+        guarded_int_gauge("socks_udp_nat_size", "Current UDP NAT entries"),
     )
 });
 
 /// UDP NAT 淘汰条目累计
 pub static UDP_NAT_EVICTIONS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "socks_udp_nat_evictions_total",
-        "Total UDP NAT eviction entries"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "socks_udp_nat_evictions_total",
+            "Total UDP NAT eviction entries",
+        ),
+    )
 });
 
 /// 从客户端发往远端的 UDP 包总数（out）
 pub static UDP_PKTS_OUT_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "socks_udp_pkts_out_total",
-        "Total UDP packets forwarded from client to remote"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "socks_udp_pkts_out_total",
+            "Total UDP packets forwarded from client to remote",
+        ),
+    )
 });
 
 /// 从远端返回到客户端的 UDP 包总数（in）
 pub static UDP_PKTS_IN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "socks_udp_pkts_in_total",
-        "Total UDP packets forwarded from remote to client"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "socks_udp_pkts_in_total",
+            "Total UDP packets forwarded from remote to client",
+        ),
+    )
 });
 
 // =============================

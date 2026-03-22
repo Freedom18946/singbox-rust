@@ -322,7 +322,9 @@ impl TrojanUdpPacket {
             return Ok(None);
         }
 
-        let addr_type = buf[0];
+        let Some(&addr_type) = buf.first() else {
+            return Ok(None);
+        };
         let addr_len = match addr_type {
             0x01 => 1 + 4 + 2,  // type + ipv4 + port
             0x04 => 1 + 16 + 2, // type + ipv6 + port
@@ -349,29 +351,34 @@ impl TrojanUdpPacket {
         let addr = match addr_type {
             0x01 => {
                 let ip = Ipv4Addr::new(buf[1], buf[2], buf[3], buf[4]);
-                let port = ((buf[5] as u16) << 8) | (buf[6] as u16);
+                let port = u16::from_be_bytes([buf[5], buf[6]]);
                 TrojanAddr::V4(std::net::SocketAddrV4::new(ip, port))
             }
             0x04 => {
                 let mut octets = [0u8; 16];
                 octets.copy_from_slice(&buf[1..17]);
                 let ip = Ipv6Addr::from(octets);
-                let port = ((buf[17] as u16) << 8) | (buf[18] as u16);
+                let port = u16::from_be_bytes([buf[17], buf[18]]);
                 TrojanAddr::V6(std::net::SocketAddrV6::new(ip, port, 0, 0))
             }
             0x03 => {
                 let domain_len = buf[1] as usize;
                 let domain = String::from_utf8_lossy(&buf[2..2 + domain_len]).to_string();
                 let port_offset = 2 + domain_len;
-                let port = ((buf[port_offset] as u16) << 8) | (buf[port_offset + 1] as u16);
+                let port = u16::from_be_bytes([buf[port_offset], buf[port_offset + 1]]);
                 TrojanAddr::Domain(domain, port)
             }
-            _ => unreachable!(),
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("unknown address type: {}", addr_type),
+                ))
+            }
         };
 
         // Get payload length
         let len_offset = addr_len;
-        let payload_len = ((buf[len_offset] as usize) << 8) | (buf[len_offset + 1] as usize);
+        let payload_len = u16::from_be_bytes([buf[len_offset], buf[len_offset + 1]]) as usize;
 
         // Check for CRLF
         if buf.len() < len_offset + 2 + 2 + payload_len {

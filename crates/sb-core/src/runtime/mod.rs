@@ -186,4 +186,3 @@ impl Runtime {
         Arc::new(switchboard::OutboundSwitchboard::new())
     }
 }
-

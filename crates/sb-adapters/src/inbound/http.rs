@@ -170,6 +170,8 @@ pub struct HttpProxyConfig {
     pub allow_private_network: bool,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for inbound connection lifecycle.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Active connection gauge exposed to supervisor graceful shutdown.
     pub active_connections: Arc<AtomicU64>,
     /// Inbound sniff configuration (Go parity: sniff_enabled).
@@ -522,7 +524,10 @@ where
     let mut sniff_prefix: Vec<u8> = Vec::new();
     let mut sniff_reply_sent = false;
     let mut override_host: Option<String> = None;
-    if let RDecision::Sniff { override_destination } = decision {
+    if let RDecision::Sniff {
+        override_destination,
+    } = decision
+    {
         if sb_core::router::sniff::skip_sniff(port) {
             decision = RDecision::Direct;
         } else {
@@ -535,11 +540,7 @@ where
             // Read initial bytes with 300ms timeout
             use tokio::io::AsyncReadExt;
             let mut buf = vec![0u8; 4096];
-            let n = match tokio::time::timeout(
-                Duration::from_millis(300),
-                cli.read(&mut buf),
-            )
-            .await
+            let n = match tokio::time::timeout(Duration::from_millis(300), cli.read(&mut buf)).await
             {
                 Ok(Ok(n)) if n > 0 => n,
                 _ => 0,
@@ -592,7 +593,11 @@ where
         }
     }
     // Apply sniff override: use sniffed domain as outbound target
-    let host: &str = if let Some(ref oh) = override_host { oh } else { host };
+    let host: &str = if let Some(ref oh) = override_host {
+        oh
+    } else {
+        host
+    };
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
@@ -710,7 +715,10 @@ where
             // Should be filtered earlier; return explicit error to avoid panic paths.
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. }
+        | RDecision::Sniff { .. }
+        | RDecision::Resolve
+        | RDecision::HijackDns => {
             tracing::warn!("http inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision");
             outbound_tag = Some("direct".to_string());
             let s = direct_connect_hostport(host, port, &opts).await?;
@@ -742,7 +750,8 @@ where
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.to_string(),
         port,

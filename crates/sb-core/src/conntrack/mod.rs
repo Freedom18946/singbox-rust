@@ -7,5 +7,7 @@
 pub mod inbound_tcp;
 pub mod inbound_udp;
 
-pub use inbound_tcp::{register_inbound_tcp, ConntrackGuard, ConntrackWiring};
-pub use inbound_udp::register_inbound_udp;
+pub use inbound_tcp::{
+    register_inbound_tcp, register_inbound_tcp_with_tracker, ConntrackGuard, ConntrackWiring,
+};
+pub use inbound_udp::{register_inbound_udp, register_inbound_udp_with_tracker};

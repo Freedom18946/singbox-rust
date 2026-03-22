@@ -163,11 +163,11 @@ async fn handle_v1(
     let (hs_read, mut hs_write) = split(handshake_conn);
     let mut client_reader = PrefixStream::new(client_hello, cli_read);
     let (stop_tx, stop_rx) = oneshot::channel();
-    let server_task =
-        tokio::spawn(relay_server_to_client_passthrough(hs_read, cli_write, stop_rx));
+    let server_task = tokio::spawn(relay_server_to_client_passthrough(
+        hs_read, cli_write, stop_rx,
+    ));
 
-    let first_payload =
-        copy_until_v1_handshake_finished(&mut client_reader, &mut hs_write).await?;
+    let first_payload = copy_until_v1_handshake_finished(&mut client_reader, &mut hs_write).await?;
     let _ = stop_tx.send(());
     let (_hs_read, cli_write) = await_server_task(server_task).await?;
     // Reuse the v2 bridge — identical TLS record stripping / wrapping, no HMAC tags.

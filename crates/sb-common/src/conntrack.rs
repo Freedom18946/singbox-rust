@@ -309,11 +309,20 @@ impl ConnTracker {
 }
 
 /// Global connection tracker instance.
-static GLOBAL_TRACKER: std::sync::OnceLock<ConnTracker> = std::sync::OnceLock::new();
+static GLOBAL_TRACKER: std::sync::OnceLock<Arc<ConnTracker>> = std::sync::OnceLock::new();
+
+/// Get the shared global connection tracker handle.
+pub fn shared_tracker() -> Arc<ConnTracker> {
+    GLOBAL_TRACKER
+        .get_or_init(|| Arc::new(ConnTracker::new()))
+        .clone()
+}
 
 /// Get the global connection tracker.
 pub fn global_tracker() -> &'static ConnTracker {
-    GLOBAL_TRACKER.get_or_init(ConnTracker::new)
+    GLOBAL_TRACKER
+        .get_or_init(|| Arc::new(ConnTracker::new()))
+        .as_ref()
 }
 
 #[cfg(test)]

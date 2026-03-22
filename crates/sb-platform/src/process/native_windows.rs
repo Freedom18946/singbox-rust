@@ -23,6 +23,52 @@ use windows::Win32::Networking::WinSock::AF_INET;
 use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
+unsafe fn tcp_rows<'a>(buffer: &'a [u8]) -> Result<&'a [MIB_TCPROW_OWNER_PID], ProcessMatchError> {
+    if buffer.len() < std::mem::size_of::<u32>() {
+        return Err(ProcessMatchError::SystemError(
+            "TCP table buffer is truncated".to_string(),
+        ));
+    }
+    let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
+    let entries = table.dwNumEntries as usize;
+    let rows_size = entries
+        .checked_mul(std::mem::size_of::<MIB_TCPROW_OWNER_PID>())
+        .ok_or_else(|| ProcessMatchError::SystemError("TCP table size overflow".to_string()))?;
+    let required = std::mem::size_of::<u32>()
+        .checked_add(rows_size)
+        .ok_or_else(|| ProcessMatchError::SystemError("TCP table size overflow".to_string()))?;
+    if buffer.len() < required {
+        return Err(ProcessMatchError::SystemError(
+            "TCP table buffer is shorter than advertised".to_string(),
+        ));
+    }
+
+    Ok(std::slice::from_raw_parts(table.table.as_ptr(), entries))
+}
+
+unsafe fn udp_rows<'a>(buffer: &'a [u8]) -> Result<&'a [MIB_UDPROW_OWNER_PID], ProcessMatchError> {
+    if buffer.len() < std::mem::size_of::<u32>() {
+        return Err(ProcessMatchError::SystemError(
+            "UDP table buffer is truncated".to_string(),
+        ));
+    }
+    let table = &*(buffer.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
+    let entries = table.dwNumEntries as usize;
+    let rows_size = entries
+        .checked_mul(std::mem::size_of::<MIB_UDPROW_OWNER_PID>())
+        .ok_or_else(|| ProcessMatchError::SystemError("UDP table size overflow".to_string()))?;
+    let required = std::mem::size_of::<u32>()
+        .checked_add(rows_size)
+        .ok_or_else(|| ProcessMatchError::SystemError("UDP table size overflow".to_string()))?;
+    if buffer.len() < required {
+        return Err(ProcessMatchError::SystemError(
+            "UDP table buffer is shorter than advertised".to_string(),
+        ));
+    }
+
+    Ok(std::slice::from_raw_parts(table.table.as_ptr(), entries))
+}
+
 /// Windows native process matcher
 ///
 /// Uses `GetExtendedTcpTable`/`GetExtendedUdpTable` for 20-50x faster queries.
@@ -96,12 +142,7 @@ impl NativeWindowsProcessMatcher {
                     ProcessMatchError::SystemError(format!("GetExtendedTcpTable failed: {e:?}"))
                 })?;
 
-                // Parse the table
-                let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
-
-                for i in 0..table.dwNumEntries {
-                    let row = &table.table[i as usize];
-
+                for row in tcp_rows(&buffer)? {
                     // Convert port from network byte order
                     let row_local_port = u16::from_be((row.dwLocalPort & 0xFFFF) as u16);
                     let row_remote_port = u16::from_be((row.dwRemotePort & 0xFFFF) as u16);
@@ -160,12 +201,7 @@ impl NativeWindowsProcessMatcher {
                     ProcessMatchError::SystemError(format!("GetExtendedUdpTable failed: {e:?}"))
                 })?;
 
-                // Parse the table
-                let table = &*(buffer.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
-
-                for i in 0..table.dwNumEntries {
-                    let row = &table.table[i as usize];
-
+                for row in udp_rows(&buffer)? {
                     // Convert port from network byte order
                     let row_local_port = u16::from_be((row.dwLocalPort & 0xFFFF) as u16);
 

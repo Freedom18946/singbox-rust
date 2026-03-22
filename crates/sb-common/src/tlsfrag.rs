@@ -32,6 +32,20 @@ const TLS_CONTENT_TYPE_HANDSHAKE: u8 = 0x16;
 /// TLS handshake type for ClientHello.
 const TLS_HANDSHAKE_TYPE_CLIENT_HELLO: u8 = 0x01;
 
+fn read_u8(data: &[u8], pos: usize) -> Option<u8> {
+    data.get(pos).copied()
+}
+
+fn read_u16(data: &[u8], pos: usize) -> Option<u16> {
+    let bytes = data.get(pos..pos + 2)?;
+    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
+}
+
+fn checked_advance(pos: usize, len: usize, data_len: usize) -> Option<usize> {
+    let next = pos.checked_add(len)?;
+    (next <= data_len).then_some(next)
+}
+
 /// Configuration for TLS fragmentation.
 #[derive(Debug, Clone)]
 pub struct FragmentConfig {
@@ -113,9 +127,15 @@ pub fn is_client_hello(data: &[u8]) -> bool {
     }
 
     // Check TLS record header
-    let content_type = data[0];
-    let version_major = data[1];
-    let version_minor = data[2];
+    let Some(content_type) = read_u8(data, 0) else {
+        return false;
+    };
+    let Some(version_major) = read_u8(data, 1) else {
+        return false;
+    };
+    let Some(version_minor) = read_u8(data, 2) else {
+        return false;
+    };
 
     // Should be Handshake (0x16) with TLS version (0x0301 - 0x0303)
     if content_type != TLS_CONTENT_TYPE_HANDSHAKE {
@@ -126,7 +146,9 @@ pub fn is_client_hello(data: &[u8]) -> bool {
     }
 
     // Check handshake type
-    let handshake_type = data[TLS_RECORD_HEADER_SIZE];
+    let Some(handshake_type) = read_u8(data, TLS_RECORD_HEADER_SIZE) else {
+        return false;
+    };
     handshake_type == TLS_HANDSHAKE_TYPE_CLIENT_HELLO
 }
 
@@ -142,66 +164,42 @@ pub fn extract_sni(data: &[u8]) -> Option<String> {
 
     // Skip client version (2 bytes)
     pos += 2;
-    if pos >= data.len() {
-        return None;
-    }
 
     // Skip client random (32 bytes)
-    pos += 32;
-    if pos >= data.len() {
-        return None;
-    }
+    pos = checked_advance(pos, 32, data.len())?;
 
     // Skip session ID
-    if pos >= data.len() {
-        return None;
-    }
-    let session_id_len = data[pos] as usize;
-    pos += 1 + session_id_len;
-    if pos >= data.len() {
-        return None;
-    }
+    let session_id_len = read_u8(data, pos)? as usize;
+    pos = checked_advance(pos, 1 + session_id_len, data.len())?;
 
     // Skip cipher suites
-    if pos + 2 > data.len() {
-        return None;
-    }
-    let cipher_suites_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-    pos += 2 + cipher_suites_len;
-    if pos >= data.len() {
-        return None;
-    }
+    let cipher_suites_len = read_u16(data, pos)? as usize;
+    pos = checked_advance(pos, 2 + cipher_suites_len, data.len())?;
 
     // Skip compression methods
-    if pos >= data.len() {
-        return None;
-    }
-    let compression_len = data[pos] as usize;
-    pos += 1 + compression_len;
-    if pos + 2 > data.len() {
-        return None;
-    }
+    let compression_len = read_u8(data, pos)? as usize;
+    pos = checked_advance(pos, 1 + compression_len, data.len())?;
 
     // Extensions length
-    let extensions_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+    let extensions_len = read_u16(data, pos)? as usize;
     pos += 2;
-    let extensions_end = pos + extensions_len;
+    let extensions_end = pos.checked_add(extensions_len)?.min(data.len());
 
     // Parse extensions
     while pos + 4 <= extensions_end && pos + 4 <= data.len() {
-        let ext_type = u16::from_be_bytes([data[pos], data[pos + 1]]);
-        let ext_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+        let ext_type = read_u16(data, pos)?;
+        let ext_len = read_u16(data, pos + 2)? as usize;
         pos += 4;
 
         // SNI extension type is 0x0000
         if ext_type == 0x0000 && ext_len >= 5 && pos + ext_len <= data.len() {
             // SNI list length (2 bytes)
-            let sni_list_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+            let sni_list_len = read_u16(data, pos)? as usize;
             if sni_list_len >= 3 && pos + 2 + sni_list_len <= data.len() {
                 // Name type (1 byte, should be 0x00 for host_name)
-                let name_type = data[pos + 2];
+                let name_type = read_u8(data, pos + 2)?;
                 if name_type == 0x00 {
-                    let name_len = u16::from_be_bytes([data[pos + 3], data[pos + 4]]) as usize;
+                    let name_len = read_u16(data, pos + 3)? as usize;
                     if pos + 5 + name_len <= data.len() {
                         let sni = &data[pos + 5..pos + 5 + name_len];
                         return String::from_utf8(sni.to_vec()).ok();

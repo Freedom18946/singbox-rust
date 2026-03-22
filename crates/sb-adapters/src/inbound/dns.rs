@@ -32,6 +32,8 @@ pub struct DnsInboundAdapter {
     tag: Option<String>,
     /// Optional V2Ray stats manager
     stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for query accounting.
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Shutdown signal
     shutdown: Arc<AtomicBool>,
     /// Shutdown notification
@@ -71,6 +73,8 @@ pub struct DnsInboundConfig {
     pub tag: Option<String>,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for DNS requests.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 impl std::fmt::Debug for DnsInboundConfig {
@@ -117,6 +121,7 @@ impl DnsInboundAdapter {
             dns_router: config.dns_router,
             tag: config.tag,
             stats: config.stats,
+            conn_tracker: config.conn_tracker,
             shutdown: Arc::new(AtomicBool::new(false)),
             shutdown_notify: Arc::new(Notify::new()),
             active_queries: Arc::new(AtomicU64::new(0)),
@@ -146,6 +151,7 @@ impl DnsInboundAdapter {
             dns_router: None,
             tag: param.tag.clone(),
             stats,
+            conn_tracker: param.conn_tracker.clone(),
         };
 
         let adapter = Self::new(config)?;
@@ -194,6 +200,7 @@ impl DnsInboundAdapter {
                             let traffic = traffic.clone();
                             let dns_router = self.dns_router.clone();
                             let inbound_tag = self.tag.clone();
+                            let conn_tracker = self.conn_tracker.clone();
 
                             // Spawn task with resolver
                             tokio::spawn(async move {
@@ -204,6 +211,7 @@ impl DnsInboundAdapter {
                                     resolver,
                                     dns_router,
                                     inbound_tag,
+                                    conn_tracker,
                                     traffic,
                                 )
                                 .await
@@ -238,10 +246,12 @@ impl DnsInboundAdapter {
         resolver: Arc<ResolverHandle>,
         dns_router: Option<Arc<dyn DnsRouter>>,
         inbound_tag: Option<String>,
+        conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
         inner_traffic: Option<Arc<dyn TrafficRecorder>>,
     ) -> std::io::Result<()> {
         let (host, _qtype) = Self::parse_query(query).unwrap_or_else(|_| ("dns".to_string(), 1));
-        let wiring = sb_core::conntrack::register_inbound_udp(
+        let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+            conn_tracker,
             src,
             host.clone(),
             53,

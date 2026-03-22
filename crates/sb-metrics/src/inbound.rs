@@ -9,17 +9,18 @@
 //! 入站错误是诊断连接问题的第一道防线。
 //! 通过在所有协议（HTTP、SOCKS、Mixed）中标准化错误分类（超时、DNS、TLS 等），
 //! 我们实现了**跨协议健康对比**。
-use crate::{guarded_counter_vec, IntCounterVec, LazyLock, REGISTRY};
+use crate::{IntCounterVec, LazyLock, guarded_counter_vec, registered_collector};
 
 /// `inbound_error_total{protocol,class`}
 pub static INBOUND_ERROR_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    let v = guarded_counter_vec(
+    registered_collector(
         "inbound_error_total",
-        "Inbound errors total by protocol and class",
-        &["protocol", "class"],
-    );
-    REGISTRY.register(Box::new(v.clone())).ok();
-    v
+        guarded_counter_vec(
+            "inbound_error_total",
+            "Inbound errors total by protocol and class",
+            &["protocol", "class"],
+        ),
+    )
 });
 
 /// Increment `inbound_error_total` with explicit class label

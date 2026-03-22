@@ -22,6 +22,15 @@ use std::{
 };
 use tokio::{sync::broadcast, time::interval};
 
+fn send_broadcast<T>(sender: &broadcast::Sender<T>, value: T, channel: &'static str)
+where
+    T: Clone,
+{
+    if sender.send(value).is_err() {
+        log::debug!("No {channel} subscribers");
+    }
+}
+
 /// Configuration for the real-time reporter
 #[derive(Debug, Clone)]
 pub struct ReportConfig {
@@ -136,9 +145,7 @@ impl RealtimeReporter {
                 match traffic_rx.recv().await {
                     Ok(stats) => {
                         // Broadcast to Clash API clients
-                        if traffic_tx.send(stats.clone()).is_err() {
-                            log::debug!("No Clash API traffic subscribers");
-                        }
+                        send_broadcast(&traffic_tx, stats.clone(), "Clash API traffic");
 
                         // Update V2Ray API stats
                         {
@@ -171,8 +178,8 @@ impl RealtimeReporter {
                             value: stats.down as i64,
                         };
 
-                        let _ = v2ray_stats_tx.send(v2ray_uplink);
-                        let _ = v2ray_stats_tx.send(v2ray_downlink);
+                        send_broadcast(&v2ray_stats_tx, v2ray_uplink, "V2Ray uplink");
+                        send_broadcast(&v2ray_stats_tx, v2ray_downlink, "V2Ray downlink");
 
                         if config.enable_detailed_logging {
                             log::trace!("Traffic stats reported: up={}, down={}, up_speed={}, down_speed={}",
@@ -205,9 +212,7 @@ impl RealtimeReporter {
                 match connection_rx.recv().await {
                     Ok(connection) => {
                         // Broadcast to Clash API clients
-                        if connection_tx.send(connection.clone()).is_err() {
-                            log::debug!("No connection subscribers");
-                        }
+                        send_broadcast(&connection_tx, connection.clone(), "connection");
 
                         if config.enable_detailed_logging {
                             log::trace!(
@@ -287,9 +292,7 @@ impl RealtimeReporter {
                     connection_id: None,
                 };
 
-                if log_tx.send(log_entry).is_err() {
-                    log::debug!("No log subscribers");
-                }
+                send_broadcast(&log_tx, log_entry, "log");
             }
         })
     }
@@ -321,17 +324,17 @@ impl RealtimeReporter {
 
     /// Broadcast a traffic update directly
     pub async fn broadcast_traffic(&self, stats: TrafficStats) {
-        let _ = self.traffic_tx.send(stats);
+        send_broadcast(&self.traffic_tx, stats, "traffic");
     }
 
     /// Broadcast a log entry directly
     pub async fn broadcast_log(&self, entry: LogEntry) {
-        let _ = self.log_tx.send(entry);
+        send_broadcast(&self.log_tx, entry, "log");
     }
 
     /// Broadcast a connection update directly
     pub async fn broadcast_connection(&self, connection: Connection) {
-        let _ = self.connection_tx.send(connection);
+        send_broadcast(&self.connection_tx, connection, "connection");
     }
 
     /// Get current V2Ray stats (for V2Ray API integration)
@@ -349,7 +352,7 @@ impl RealtimeReporter {
             name: name.to_string(),
             value,
         };
-        let _ = self.v2ray_stats_tx.send(stat_update);
+        send_broadcast(&self.v2ray_stats_tx, stat_update, "V2Ray stats");
     }
 
     /// Query V2Ray stats with pattern matching

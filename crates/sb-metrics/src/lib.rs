@@ -14,11 +14,11 @@
 //!
 //! ## Usage / 使用方式
 //! - **Default**: Disabled by default. Set `SB_METRICS_ADDR=127.0.0.1:9090` env var to enable.
-//! - **Startup**: Call `maybe_spawn_http_exporter_from_env()` in `app` to start the HTTP server.
+//! - **Startup**: Build a `MetricsRegistryHandle` and call `spawn_http_exporter_from_env(...)` in `app`.
 //! - **Scrape**: Access `http://127.0.0.1:9090/metrics` to get Prometheus formatted metrics.
 //!
 //! - **默认**：默认不启动；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 环境变量时自动监听。
-//! - **启动**：在 `app` 中调用 `maybe_spawn_http_exporter_from_env()` 启动 metrics HTTP 服务器。
+//! - **启动**：在 `app` 中构造 `MetricsRegistryHandle`，并调用 `spawn_http_exporter_from_env(...)` 启动 metrics HTTP 服务器。
 //! - **采集**：访问 `http://127.0.0.1:9090/metrics` 获取 Prometheus 格式指标。
 //!
 //! ## Metric Categories / 指标类别
@@ -58,8 +58,8 @@ pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错
 use std::{
     convert::Infallible,
     net::SocketAddr,
-    sync::atomic::{AtomicU64, Ordering},
     sync::LazyLock,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -67,8 +67,8 @@ use hyper::server::conn::Http;
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts, Registry,
-    TextEncoder,
+    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
+    Registry, TextEncoder, core::Collector,
 };
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
@@ -85,6 +85,20 @@ fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec
     })
 }
 
+fn guarded_int_counter(name: &str, help: &str) -> IntCounter {
+    IntCounter::new(name, help).unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)]
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
+}
+
+fn guarded_int_gauge(name: &str, help: &str) -> IntGauge {
+    IntGauge::new(name, help).unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)]
+        IntGauge::new("dummy_gauge", "dummy").unwrap()
+    })
+}
+
 fn guarded_histogram_vec(
     name: &str,
     help: &str,
@@ -95,6 +109,13 @@ fn guarded_histogram_vec(
     let opts = HistogramOpts::new(name, help).buckets(buckets);
     #[allow(clippy::unwrap_used)]
     HistogramVec::new(opts, labels).unwrap()
+}
+
+fn guarded_histogram(name: &str, help: &str, buckets: Vec<f64>) -> Histogram {
+    Histogram::with_opts(HistogramOpts::new(name, help).buckets(buckets)).unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)]
+        Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+    })
 }
 
 /// Error rate limiter for metrics server to prevent log noise
@@ -146,7 +167,72 @@ impl ErrorRateLimiter {
 
 static ERROR_RATE_LIMITER: LazyLock<ErrorRateLimiter> = LazyLock::new(ErrorRateLimiter::new);
 
-pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
+static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
+
+/// Explicit handle over a metrics registry. This keeps current behavior on the
+/// shared global registry while allowing call sites to depend on a typed handle.
+#[derive(Clone, Copy, Debug)]
+pub struct MetricsRegistryHandle {
+    registry: &'static Registry,
+}
+
+impl MetricsRegistryHandle {
+    /// Return a handle to the shared process-wide registry.
+    #[must_use]
+    pub fn global() -> Self {
+        Self {
+            registry: &REGISTRY,
+        }
+    }
+
+    /// Register a cloned collector into this registry.
+    pub fn register_cloned<C>(&self, metric: &str, collector: &C) -> Result<(), prometheus::Error>
+    where
+        C: Collector + Clone + 'static,
+    {
+        self.registry
+            .register(Box::new(collector.clone()))
+            .map_err(|err| {
+                tracing::debug!(metric, error = %err, "metrics collector registration skipped");
+                err
+            })
+    }
+
+    /// Gather metric families from this registry.
+    #[must_use]
+    pub fn gather(&self) -> Vec<prometheus::proto::MetricFamily> {
+        self.registry.gather()
+    }
+
+    /// Encode the current registry into Prometheus text exposition format.
+    pub fn encode_text(&self) -> Result<Vec<u8>, prometheus::Error> {
+        let metric_families = self.gather();
+        let mut buf = Vec::new();
+        TextEncoder::new().encode(&metric_families, &mut buf)?;
+        Ok(buf)
+    }
+}
+
+/// Get the shared default metrics registry handle.
+#[must_use]
+pub fn shared_registry() -> MetricsRegistryHandle {
+    MetricsRegistryHandle::global()
+}
+
+fn register_collector<C>(metric: &str, collector: &C)
+where
+    C: Collector + Clone + 'static,
+{
+    let _ = shared_registry().register_cloned(metric, collector);
+}
+
+fn registered_collector<C>(metric: &str, collector: C) -> C
+where
+    C: Collector + Clone + 'static,
+{
+    register_collector(metric, &collector);
+    collector
+}
 
 // =============================
 // Constants
@@ -164,7 +250,7 @@ const ERROR_CLASS_OTHER: &str = "other";
 // ===================== Router Metrics =====================
 /// Router metrics: track rule matches by category and outbound
 mod router {
-    use super::{IntCounterVec, LazyLock, REGISTRY};
+    use super::{IntCounterVec, LazyLock, register_collector};
     /// 路由命中计数：按规则类别与出站类型维度统计
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
@@ -174,7 +260,7 @@ mod router {
             "Router rule matches total by category and outbound",
             &["category", "outbound"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("router_rule_match_total", &vec);
         vec
     });
 }
@@ -189,7 +275,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 // ===================== Outbound Metrics =====================
 /// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
-    use super::{HistogramVec, IntCounterVec, LazyLock, REGISTRY};
+    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -198,7 +284,7 @@ mod outbound {
             "Outbound connect attempts",
             &["kind"], // direct | socks | http | other
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("outbound_connect_attempt_total", &v);
         v
     });
 
@@ -209,7 +295,7 @@ mod outbound {
             "Outbound connect errors",
             &["kind", "class"], // class: dns | timeout | io | tls | other
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("outbound_connect_error_total", &v);
         v
     });
 
@@ -224,7 +310,7 @@ mod outbound {
                 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0,
             ],
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("outbound_connect_seconds", &v);
         v
     });
 }
@@ -286,7 +372,7 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 /// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
-    use super::{HistogramVec, IntCounterVec, LazyLock, REGISTRY};
+    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
@@ -296,7 +382,7 @@ mod adapter {
             "Adapter dial attempts total by adapter and result",
             &["adapter", "result"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("adapter_dial_total", &vec);
         vec
     });
 
@@ -312,7 +398,7 @@ mod adapter {
                 10000.0,
             ],
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("adapter_dial_latency_ms", &v);
         v
     });
 
@@ -324,7 +410,7 @@ mod adapter {
             "Adapter retry attempts total",
             &["adapter"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("adapter_retries_total", &vec);
         vec
     });
 }
@@ -332,7 +418,7 @@ mod adapter {
 // ===================== Selector/URLTest Metrics =====================
 /// Selector and `URLTest` metrics
 mod selector {
-    use super::{IntCounterVec, LazyLock, REGISTRY};
+    use super::{IntCounterVec, LazyLock, register_collector};
     use prometheus::IntGaugeVec;
 
     /// Health check total counter
@@ -343,7 +429,7 @@ mod selector {
             "Selector health check attempts total",
             &["proxy", "status"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("selector_health_check_total", &vec);
         vec
     });
 
@@ -362,7 +448,7 @@ mod selector {
             #[allow(clippy::unwrap_used)]
             IntGaugeVec::new(prometheus::Opts::new("dummy_gauge", "dummy"), &["proxy"]).unwrap()
         });
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("selector_active_connections", &vec);
         vec
     });
 
@@ -374,7 +460,7 @@ mod selector {
             "Selector failover events total",
             &["selector", "from", "to"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("selector_failover_total", &vec);
         vec
     });
 }
@@ -453,7 +539,7 @@ pub fn record_adapter_dial(
 // ===================== DERP Service Metrics =====================
 /// DERP service metrics: connections, relays, HTTP/STUN activity.
 mod derp {
-    use super::{guarded_counter_vec, guarded_histogram_vec, LazyLock, REGISTRY};
+    use super::{LazyLock, guarded_counter_vec, guarded_histogram_vec, register_collector};
     use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec, Opts};
 
     pub static CONNECTION_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -462,7 +548,7 @@ mod derp {
             "DERP client connection attempts",
             &["tag", "result"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_connection_total", &vec);
         vec
     });
 
@@ -473,7 +559,7 @@ mod derp {
                 #[allow(clippy::unwrap_used)]
                 IntGaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["tag"]).unwrap()
             });
-        REGISTRY.register(Box::new(gauge.clone())).ok();
+        register_collector("derp_clients", &gauge);
         gauge
     });
 
@@ -483,13 +569,13 @@ mod derp {
             "DERP packets relayed",
             &["tag", "result"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_relay_packets_total", &vec);
         vec
     });
 
     pub static RELAY_BYTES_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let vec = guarded_counter_vec("derp_relay_bytes_total", "DERP bytes relayed", &["tag"]);
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_relay_bytes_total", &vec);
         vec
     });
 
@@ -499,7 +585,7 @@ mod derp {
             "DERP HTTP stub requests",
             &["tag", "status"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_http_requests_total", &vec);
         vec
     });
 
@@ -509,7 +595,7 @@ mod derp {
             "DERP STUN request handling",
             &["tag", "result"],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_stun_requests_total", &vec);
         vec
     });
 
@@ -520,7 +606,7 @@ mod derp {
             &["tag"],
             vec![0.1, 0.5, 1.0, 5.0, 30.0, 120.0, 600.0, 1800.0, 3600.0],
         );
-        REGISTRY.register(Box::new(vec.clone())).ok();
+        register_collector("derp_client_lifetime_seconds", &vec);
         vec
     });
 }
@@ -571,29 +657,28 @@ pub fn observe_derp_client_lifetime(tag: &str, seconds: f64) {
 // ===================== SOCKS Inbound Metrics =====================
 /// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
-    use super::{IntCounter, IntCounterVec, IntGauge, LazyLock, REGISTRY};
+    use super::{
+        IntCounter, IntCounterVec, IntGauge, LazyLock, guarded_int_counter, guarded_int_gauge,
+        register_collector,
+    };
 
     /// SOCKS TCP 连接总数（握手成功即计数）
     pub static TCP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
-        let c = IntCounter::new(
+        let c = guarded_int_counter(
             "inbound_socks_tcp_connections_total",
             "SOCKS inbound accepted TCP connections total",
-        )
-        .unwrap();
-        REGISTRY.register(Box::new(c.clone())).ok();
+        );
+        register_collector("inbound_socks_tcp_connections_total", &c);
         c
     });
 
     /// UDP 关联创建总数
     pub static UDP_ASSOC_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
-        let c = IntCounter::new(
+        let c = guarded_int_counter(
             "inbound_socks_udp_associate_total",
             "SOCKS inbound UDP ASSOCIATE total",
-        )
-        .unwrap();
-        REGISTRY.register(Box::new(c.clone())).ok();
+        );
+        register_collector("inbound_socks_udp_associate_total", &c);
         c
     });
 
@@ -604,19 +689,17 @@ mod socks_in {
             "SOCKS inbound UDP packets",
             &["dir"], // "in" | "out"
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("inbound_socks_udp_packets_total", &v);
         v
     });
 
     /// UDP 当前关联估算（需要上层周期更新，可选）
     pub static UDP_ASSOC_ESTIMATE: LazyLock<IntGauge> = LazyLock::new(|| {
-        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
-        let g = IntGauge::new(
+        let g = guarded_int_gauge(
             "inbound_socks_udp_assoc_estimate",
             "SOCKS inbound UDP associations (approximate)",
-        )
-        .unwrap();
-        REGISTRY.register(Box::new(g.clone())).ok();
+        );
+        register_collector("inbound_socks_udp_assoc_estimate", &g);
         g
     });
 }
@@ -641,16 +724,16 @@ pub fn set_socks_udp_assoc_estimate(n: i64) {
 // ===================== Legacy Metrics (from registry.rs) =====================
 /// Legacy metrics: UDP NAT, proxy selection, health checks, build info
 mod legacy {
-    use super::{HistogramOpts, IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
+    use super::{
+        IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, guarded_histogram,
+        guarded_int_counter, guarded_int_gauge, register_collector,
+    };
     use prometheus::{GaugeVec, Histogram};
 
     /// UDP NAT map size
     pub static UDP_MAP_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
-        let g = IntGauge::new("udp_map_size", "UDP NAT table size").unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
-            IntGauge::new("dummy_gauge", "dummy").unwrap()
-        });
-        REGISTRY.register(Box::new(g.clone())).ok();
+        let g = guarded_int_gauge("udp_map_size", "UDP NAT table size");
+        register_collector("udp_map_size", &g);
         g
     });
 
@@ -661,38 +744,32 @@ mod legacy {
             "UDP NAT eviction total",
             &["reason"], // ttl | pressure
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("udp_evict_total", &v);
         v
     });
 
     /// UDP failure counter
     pub static UDP_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let v = super::guarded_counter_vec("udp_fail_total", "UDP failure total", &["class"]);
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("udp_fail_total", &v);
         v
     });
 
     /// Route explain counter
     pub static ROUTE_EXPLAIN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-        let c = IntCounter::new("route_explain_total", "Route explain invocations").unwrap_or_else(
-            |_| {
-                #[allow(clippy::unwrap_used)] // Fallback to dummy counter
-                IntCounter::new("dummy_counter", "dummy").unwrap()
-            },
-        );
-        REGISTRY.register(Box::new(c.clone())).ok();
+        let c = guarded_int_counter("route_explain_total", "Route explain invocations");
+        register_collector("route_explain_total", &c);
         c
     });
 
     /// TCP connect duration histogram
     pub static TCP_CONNECT_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-        let opts = HistogramOpts::new("tcp_connect_duration_seconds", "TCP connect duration")
-            .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]);
-        let h = Histogram::with_opts(opts).unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
-            Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-        });
-        REGISTRY.register(Box::new(h.clone())).ok();
+        let h = guarded_histogram(
+            "tcp_connect_duration_seconds",
+            "TCP connect duration",
+            vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
+        );
+        register_collector("tcp_connect_duration_seconds", &h);
         h
     });
 
@@ -706,7 +783,7 @@ mod legacy {
             #[allow(clippy::unwrap_used)]
             GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
         });
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("proxy_select_score", &v);
         v
     });
 
@@ -720,7 +797,7 @@ mod legacy {
             #[allow(clippy::unwrap_used)]
             GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
         });
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("outbound_up", &v);
         v
     });
 
@@ -731,19 +808,18 @@ mod legacy {
             "Prometheus HTTP export failures",
             &["class"], // bind | conn | io | other
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("prom_http_fail_total", &v);
         v
     });
 
     /// UDP NAT entry TTL histogram
     pub static UDP_TTL_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-        let opts = HistogramOpts::new("udp_nat_ttl_seconds", "UDP NAT entry TTL distribution")
-            .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]);
-        let h = Histogram::with_opts(opts).unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
-            Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-        });
-        REGISTRY.register(Box::new(h.clone())).ok();
+        let h = guarded_histogram(
+            "udp_nat_ttl_seconds",
+            "UDP NAT entry TTL distribution",
+            vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0],
+        );
+        register_collector("udp_nat_ttl_seconds", &h);
         h
     });
 
@@ -754,7 +830,7 @@ mod legacy {
             "Proxy selection invocations",
             &["proxy"],
         );
-        REGISTRY.register(Box::new(v.clone())).ok();
+        register_collector("proxy_select_total", &v);
         v
     });
 }
@@ -812,18 +888,19 @@ pub fn inc_proxy_select(proxy: &str) {
     legacy::PROXY_SELECT_TOTAL.with_label_values(&[proxy]).inc();
 }
 
-async fn metrics_http(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+async fn metrics_http_with_registry(
+    registry: MetricsRegistryHandle,
+    req: Request<Body>,
+) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/metrics") => {
-            let metric_families = REGISTRY.gather();
-            let mut buf = Vec::new();
             let encoder = TextEncoder::new();
-            if encoder.encode(&metric_families, &mut buf).is_err() {
+            let Ok(buf) = registry.encode_text() else {
                 return Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("encoding error"))
                     .unwrap_or_default());
-            }
+            };
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, encoder.format_type())
@@ -837,18 +914,11 @@ async fn metrics_http(req: Request<Body>) -> Result<Response<Body>, Infallible> 
     }
 }
 
-pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
-    let addr = std::env::var("SB_METRICS_ADDR").ok()?;
-    let sa: SocketAddr = match addr.parse() {
-        Ok(x) => x,
-        Err(e) => {
-            warn!(addr=%addr, error=%e, "invalid SB_METRICS_ADDR, metrics disabled");
-            return None;
-        }
-    };
-    Some(tokio::spawn(async move {
+/// Spawn the metrics HTTP exporter for a specific registry handle.
+pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) -> JoinHandle<()> {
+    tokio::spawn(async move {
         // 手工监听 + 逐连接 serve，避免不同 hyper 版本的 Server API 差异
-        let listener = match TcpListener::bind(sa).await {
+        let listener = match TcpListener::bind(addr).await {
             Ok(l) => l,
             Err(e) => {
                 warn!(error=%e, "metrics TcpListener bind failed");
@@ -866,14 +936,33 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
             };
             tokio::spawn(async move {
                 if let Err(e) = Http::new()
-                    .serve_connection(stream, service_fn(metrics_http))
+                    .serve_connection(
+                        stream,
+                        service_fn(move |req| metrics_http_with_registry(registry, req)),
+                    )
                     .await
                 {
                     ERROR_RATE_LIMITER.log_connection_error(&e);
                 }
             });
         }
-    }))
+    })
+}
+
+pub fn spawn_http_exporter_from_env(registry: MetricsRegistryHandle) -> Option<JoinHandle<()>> {
+    let addr = std::env::var("SB_METRICS_ADDR").ok()?;
+    let sa: SocketAddr = match addr.parse() {
+        Ok(x) => x,
+        Err(e) => {
+            warn!(addr=%addr, error=%e, "invalid SB_METRICS_ADDR, metrics disabled");
+            return None;
+        }
+    };
+    Some(spawn_http_exporter(registry, sa))
+}
+
+pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
+    spawn_http_exporter_from_env(shared_registry())
 }
 
 // NOTE:
@@ -891,11 +980,8 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
 /// contains invalid UTF-8.
 #[allow(clippy::expect_used)] // Test utility function, panic is acceptable
 pub fn export_prometheus() -> String {
-    let metric_families = REGISTRY.gather();
-    let mut buf = Vec::new();
-    let encoder = TextEncoder::new();
-    encoder
-        .encode(&metric_families, &mut buf)
+    let buf = shared_registry()
+        .encode_text()
         .expect("Prometheus encoding should never fail");
     String::from_utf8(buf).expect("Prometheus output should be valid UTF-8")
 }
@@ -913,7 +999,9 @@ mod tests {
             .uri("/metrics")
             .body(Body::empty())
             .unwrap();
-        let resp = metrics_http(req).await.unwrap();
+        let resp = metrics_http_with_registry(shared_registry(), req)
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Exercise non-/metrics path
@@ -922,7 +1010,9 @@ mod tests {
             .uri("/not-found")
             .body(Body::empty())
             .unwrap();
-        let resp2 = metrics_http(req2).await.unwrap();
+        let resp2 = metrics_http_with_registry(shared_registry(), req2)
+            .await
+            .unwrap();
         assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
     }
 

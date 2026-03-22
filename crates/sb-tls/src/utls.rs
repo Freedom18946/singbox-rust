@@ -529,12 +529,20 @@ impl UtlsConfig {
         };
 
         // Build config with custom cipher suites via CryptoProvider
-        #[allow(clippy::expect_used)]
-        let mut config = ClientConfig::builder_with_provider(Arc::new(provider))
+        let builder = match ClientConfig::builder_with_provider(Arc::new(provider))
             .with_safe_default_protocol_versions()
-            .expect("TLS protocol versions should be valid")
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+        {
+            Ok(builder) => builder,
+            Err(err) => {
+                log::warn!(
+                    "failed to build uTLS config with custom provider; falling back to default rustls builder: {}",
+                    err
+                );
+                ClientConfig::builder()
+            }
+        };
+
+        let mut config = builder.with_root_certificates(roots).with_no_client_auth();
 
         // Apply ALPN from config override or fingerprint default
         let alpn = self.alpn.clone().unwrap_or(fp.alpn);

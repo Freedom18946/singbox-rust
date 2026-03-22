@@ -60,6 +60,7 @@ pub struct VmessInboundConfig {
     pub router: Arc<router::RouterHandle>,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Optional Multiplex configuration
     /// 可选的多路复用配置
     pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
@@ -382,7 +383,8 @@ async fn handle_conn(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         target_host.clone(),
         target_port,

@@ -61,6 +61,7 @@ impl TunMacosRuntime {
         stats: Arc<ProcessAwareTunStatistics>,
         v2ray_stats: Option<Arc<StatsManager>>,
         inbound_tag: Option<String>,
+        conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     ) -> Result<Self, TunError> {
         let tun_cfg = TunConfig {
             name: config.name.clone(),
@@ -94,6 +95,7 @@ impl TunMacosRuntime {
             stats,
             v2ray_stats,
             inbound_tag,
+            conn_tracker,
         });
 
         let socks_task = tokio::spawn(run_socks_server(listener, stop_rx, bridge.clone()));
@@ -158,6 +160,7 @@ struct SocksBridge {
     stats: Arc<ProcessAwareTunStatistics>,
     v2ray_stats: Option<Arc<StatsManager>>,
     inbound_tag: Option<String>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 async fn run_socks_server(
@@ -334,7 +337,8 @@ async fn handle_connect(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        bridge.conn_tracker.clone(),
         peer,
         dest_host.clone(),
         target.port,

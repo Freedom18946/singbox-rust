@@ -11,6 +11,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 ///
 /// Used after sniffing: the inbound reads initial bytes to detect protocol,
 /// then wraps the stream so the outbound sees those bytes replayed transparently.
+#[allow(dead_code)] // Used by optional inbound adapters when their protocol features are enabled.
 pub(crate) struct SniffedStream<S> {
     inner: S,
     prefix: Vec<u8>,
@@ -20,6 +21,7 @@ pub(crate) struct SniffedStream<S> {
 impl<S> SniffedStream<S> {
     /// Create a new `SniffedStream`. The `prefix` bytes will be served first on read,
     /// then reads delegate to `inner`.
+    #[allow(dead_code)] // Constructor is referenced only from optional protocol paths.
     pub(crate) fn new(inner: S, prefix: Vec<u8>) -> Self {
         Self {
             inner,

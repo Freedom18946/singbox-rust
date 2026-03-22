@@ -49,8 +49,8 @@ impl Doh3Transport {
         );
 
         // Create client endpoint with HTTP/3 ALPN
-        let mut endpoint =
-            quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(io::Error::other)?;
+        let bind_addr = SocketAddr::from(([0, 0, 0, 0], 0));
+        let mut endpoint = quinn::Endpoint::client(bind_addr).map_err(io::Error::other)?;
 
         // Build rustls config with ALPN for HTTP/3
         let mut roots = crate::tls::global::base_root_store();

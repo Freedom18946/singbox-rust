@@ -352,7 +352,8 @@ pub(crate) async fn handle(
     } else {
         vec![outbound_tag.clone()]
     };
-    let wiring = crate::conntrack::register_inbound_tcp(
+    let wiring = crate::conntrack::register_inbound_tcp_with_tracker(
+        br.context.conn_tracker.clone(),
         peer,
         host.clone(),
         port,

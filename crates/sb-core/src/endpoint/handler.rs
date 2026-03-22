@@ -87,8 +87,11 @@ impl EndpointConnectionHandler {
                 false,
             ),
             Decision::Proxy(Some(tag)) => (RouteTarget::Named(tag.clone()), tag, true),
-            Decision::Proxy(None) | Decision::Hijack { .. } | Decision::Sniff { .. }
-            | Decision::Resolve | Decision::HijackDns => {
+            Decision::Proxy(None)
+            | Decision::Hijack { .. }
+            | Decision::Sniff { .. }
+            | Decision::Resolve
+            | Decision::HijackDns => {
                 // Sniff/Resolve/etc. are non-terminal and should have been resolved
                 // by callers. Safety net falls back to direct.
                 (
@@ -164,15 +167,15 @@ impl ConnectionHandler for EndpointConnectionHandler {
 
         // Handle Decision::Sniff: read initial bytes, sniff, re-decide
         let mut sniff_prefix: Vec<u8> = Vec::new();
-        if let crate::router::rules::Decision::Sniff { override_destination } = decision {
+        if let crate::router::rules::Decision::Sniff {
+            override_destination,
+        } = decision
+        {
             if !crate::router::sniff::skip_sniff(port) {
                 use tokio::io::AsyncReadExt;
                 let mut buf = vec![0u8; 4096];
-                let n = match tokio::time::timeout(
-                    Duration::from_millis(300),
-                    conn.read(&mut buf),
-                )
-                .await
+                let n = match tokio::time::timeout(Duration::from_millis(300), conn.read(&mut buf))
+                    .await
                 {
                     Ok(Ok(n)) if n > 0 => n,
                     _ => 0,

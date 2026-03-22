@@ -241,7 +241,7 @@ fn build_capability_matrix(entries: Vec<CapabilitiesReportEntry>) -> Vec<Capabil
     rows
 }
 
-fn normalize_provider_detail(value: Option<&String>) -> Option<String> {
+fn normalize_provider_detail(value: Option<&str>) -> Option<String> {
     let v = value?.trim();
     if v.is_empty() || v == "-" {
         None
@@ -252,11 +252,17 @@ fn normalize_provider_detail(value: Option<&String>) -> Option<String> {
 
 fn extract_tls_provider_snapshot(entry: &CapabilitiesReportEntry) -> Option<TlsProviderSnapshot> {
     let details = &entry.runtime_probe.as_ref()?.details;
-    let requested = normalize_provider_detail(details.get("tls_provider_requested"))?;
-    let effective = normalize_provider_detail(details.get("tls_provider"))?;
-    let source = normalize_provider_detail(details.get("tls_provider_source"))?;
-    let install = normalize_provider_detail(details.get("tls_provider_install"))?;
-    let fallback_reason = normalize_provider_detail(details.get("tls_provider_fallback_reason"));
+    let requested =
+        normalize_provider_detail(details.get("tls_provider_requested").map(String::as_str))?;
+    let effective = normalize_provider_detail(details.get("tls_provider").map(String::as_str))?;
+    let source = normalize_provider_detail(details.get("tls_provider_source").map(String::as_str))?;
+    let install =
+        normalize_provider_detail(details.get("tls_provider_install").map(String::as_str))?;
+    let fallback_reason = normalize_provider_detail(
+        details
+            .get("tls_provider_fallback_reason")
+            .map(String::as_str),
+    );
 
     Some(TlsProviderSnapshot {
         capability_id: entry.id.clone(),
@@ -903,7 +909,8 @@ pub async fn get_connections_or_ws(
         })
         .into_response()
     } else {
-        let snapshot = crate::clash::websocket::build_connections_snapshot();
+        let snapshot =
+            crate::clash::websocket::build_connections_snapshot(state.conn_tracker.as_ref());
         Json(snapshot).into_response()
     }
 }
@@ -913,12 +920,13 @@ pub async fn get_connections_or_ws(
 /// Terminates an active connection identified by its connection ID.
 /// Always returns 204 (Go behavior: silent success even if ID not found).
 pub async fn close_connection(
-    State(_state): State<ApiState>,
+    State(state): State<ApiState>,
     Path(connection_id): Path<String>,
 ) -> impl IntoResponse {
-    let tracker = sb_common::conntrack::global_tracker();
     if let Ok(id) = connection_id.parse::<u64>() {
-        tracker.close(sb_common::conntrack::ConnId::new(id));
+        state
+            .conn_tracker
+            .close(sb_common::conntrack::ConnId::new(id));
     }
     StatusCode::NO_CONTENT
 }
@@ -926,9 +934,8 @@ pub async fn close_connection(
 /// Close all connections — matches Go's closeAllConnections()
 ///
 /// Closes all active connections and returns 204 NoContent.
-pub async fn close_all_connections(State(_state): State<ApiState>) -> impl IntoResponse {
-    let tracker = sb_common::conntrack::global_tracker();
-    let count = tracker.close_all();
+pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoResponse {
+    let count = state.conn_tracker.close_all();
     log::info!("Closed {} connections", count);
     StatusCode::NO_CONTENT
 }

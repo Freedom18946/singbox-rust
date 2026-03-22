@@ -143,7 +143,8 @@ impl QuicDialer {
 
         // Create quinn endpoint
         // 创建 quinn 端点
-        let mut endpoint = Endpoint::client("0.0.0.0:0".parse::<SocketAddr>().unwrap())
+        let bind_addr = SocketAddr::from(([0, 0, 0, 0], 0));
+        let mut endpoint = Endpoint::client(bind_addr)
             .map_err(|e| DialError::Other(format!("Failed to create QUIC endpoint: {}", e)))?;
 
         // Build client configuration (handle platform verifier fallible API)
@@ -163,11 +164,14 @@ impl QuicDialer {
         // Configure transport parameters
         // 配置传输参数
         let mut transport_config = quinn::TransportConfig::default();
-        transport_config.max_idle_timeout(Some(
-            VarInt::from_u64(config.max_idle_timeout * 1000)
-                .unwrap()
-                .into(),
-        ));
+        let idle_timeout_ms = config
+            .max_idle_timeout
+            .checked_mul(1000)
+            .ok_or_else(|| DialError::Other("QUIC idle timeout overflow".to_string()))?;
+        let idle_timeout = VarInt::from_u64(idle_timeout_ms).map_err(|_| {
+            DialError::Other("QUIC idle timeout exceeds supported range".to_string())
+        })?;
+        transport_config.max_idle_timeout(Some(idle_timeout.into()));
         transport_config.keep_alive_interval(Some(Duration::from_secs(config.keep_alive_interval)));
 
         // Note: quinn 0.11 has different API for stream settings

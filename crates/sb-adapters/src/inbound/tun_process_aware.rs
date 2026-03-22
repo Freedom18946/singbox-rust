@@ -112,6 +112,7 @@ pub struct ProcessAwareTunInbound {
     outbound: Arc<dyn OutboundConnector>,
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     runtime: Mutex<Option<TunMacosRuntime>>,
     stats: Arc<ProcessAwareTunStatistics>,
     v2ray_stats: Option<Arc<StatsManager>>,
@@ -129,6 +130,7 @@ impl ProcessAwareTunInbound {
             outbound,
             process_router: process_router.map(Arc::new),
             process_matcher: ProcessMatcher::new().ok().map(Arc::new),
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
             runtime: Mutex::new(None),
             stats: Arc::new(ProcessAwareTunStatistics::default()),
             v2ray_stats: None,
@@ -160,6 +162,7 @@ impl ProcessAwareTunInbound {
             self.inbound_tag
                 .clone()
                 .or_else(|| Some(self.config.name.clone())),
+            self.conn_tracker.clone(),
         )
         .await?;
 

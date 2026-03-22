@@ -22,19 +22,16 @@
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 #[cfg(feature = "transport_reality")]
 use sb_tls::TlsConnector;
 
 fn ensure_rustls_crypto_provider() {
-    static INSTALLED: OnceLock<()> = OnceLock::new();
-    INSTALLED.get_or_init(|| {
-        // App startup should install provider explicitly. Keep this as fallback only.
-        if rustls::crypto::CryptoProvider::get_default().is_none() {
-            let _ = rustls::crypto::ring::default_provider().install_default();
-        }
-    });
+    // App startup should install provider explicitly. Keep this as fallback only.
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
 }
 
 /// TLS Dialer Wrapper / TLS 拨号器包装器

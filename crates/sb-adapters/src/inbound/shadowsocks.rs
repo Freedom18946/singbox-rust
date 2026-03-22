@@ -113,6 +113,7 @@ pub struct ShadowsocksInboundConfig {
     pub router: Arc<router::RouterHandle>,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Optional Multiplex configuration
     pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
     /// V2Ray transport layer configuration (WebSocket, gRPC, HTTPUpgrade)
@@ -237,6 +238,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for PrefixStream<T> {
 #[derive(Clone)]
 struct RuntimeShared {
     user_keys: Arc<parking_lot::RwLock<HashMap<Vec<u8>, String>>>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     #[cfg(feature = "service_ssmapi")]
     tracker: Arc<parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>>,
     #[cfg(feature = "service_ssmapi")]
@@ -633,7 +635,8 @@ async fn handle_udp_packet(
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
 
-    let wiring = sb_core::conntrack::register_inbound_udp(
+    let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+        shared.conn_tracker.clone(),
         peer,
         target_host.clone(),
         target_port,
@@ -733,6 +736,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, stop_rx: mpsc::Receiver<()>) -
     let user_map = cfg.build_user_map(&method);
     let shared = RuntimeShared {
         user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+        conn_tracker: cfg.conn_tracker.clone(),
         #[cfg(feature = "service_ssmapi")]
         tracker: Arc::new(parking_lot::RwLock::new(None)),
         #[cfg(feature = "service_ssmapi")]
@@ -757,6 +761,7 @@ pub async fn serve_with_ready(
     let user_map = cfg.build_user_map(&method);
     let shared = RuntimeShared {
         user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+        conn_tracker: cfg.conn_tracker.clone(),
         #[cfg(feature = "service_ssmapi")]
         tracker: Arc::new(parking_lot::RwLock::new(None)),
         #[cfg(feature = "service_ssmapi")]
@@ -1193,6 +1198,7 @@ impl ShadowsocksInboundAdapter {
             let _ = method;
             RuntimeShared {
                 user_keys: self.user_keys.clone(),
+                conn_tracker: self.config.conn_tracker.clone(),
                 tracker: self.tracker.clone(),
                 udp_sessions_seen: self.udp_sessions_seen.clone(),
             }
@@ -1203,6 +1209,7 @@ impl ShadowsocksInboundAdapter {
             let user_map = self.config.build_user_map(method);
             RuntimeShared {
                 user_keys: Arc::new(parking_lot::RwLock::new(user_map)),
+                conn_tracker: self.config.conn_tracker.clone(),
             }
         }
     }
@@ -1455,7 +1462,10 @@ where
             ));
         }
         RDecision::Reject | RDecision::RejectDrop => return Err(anyhow!("ss: rejected by rules")),
-        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. }
+        | RDecision::Sniff { .. }
+        | RDecision::Resolve
+        | RDecision::HijackDns => {
             return Err(anyhow!(
                 "ss: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
             ));
@@ -1471,7 +1481,8 @@ where
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.clone(),
         port,

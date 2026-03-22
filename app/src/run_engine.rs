@@ -699,11 +699,26 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
 
     // 1) Optional Prom exporter
     if let Some(ref addr) = opts.prom_listen {
-        let addr_clone = addr.clone();
-        std::thread::spawn(move || {
-            #[allow(deprecated)]
-            let _ = sb_core::metrics::http_exporter::run_exporter(&addr_clone);
-        });
+        #[cfg(feature = "sb-metrics")]
+        match addr.parse() {
+            Ok(sa) => {
+                let _jh = sb_metrics::spawn_http_exporter(
+                    sb_metrics::MetricsRegistryHandle::global(),
+                    sa,
+                );
+            }
+            Err(err) => {
+                tracing::warn!(addr = %addr, error = %err, "invalid prom exporter listen addr");
+            }
+        }
+        #[cfg(not(feature = "sb-metrics"))]
+        {
+            let addr_clone = addr.clone();
+            std::thread::spawn(move || {
+                #[allow(deprecated)]
+                let _ = sb_core::metrics::http_exporter::run_exporter(&addr_clone);
+            });
+        }
     }
 
     // 1.5) Dynamically collect config entries from inputs

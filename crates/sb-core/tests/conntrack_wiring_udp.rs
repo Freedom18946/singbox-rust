@@ -3,11 +3,12 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn conntrack_wiring_udp_counts_and_cancel_work() {
-    let tracker = sb_common::conntrack::global_tracker();
+    let tracker = sb_common::conntrack::shared_tracker();
     let _ = tracker.close_all();
 
     let source = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 12345);
-    let wiring = sb_core::conntrack::register_inbound_udp(
+    let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+        tracker.clone(),
         source,
         "example.com".to_string(),
         53,

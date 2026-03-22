@@ -37,11 +37,11 @@
 //!     // ... 处理请求 ...
 //! } // Drop 时自动上报耗时
 //! ```
-use crate::labels::ensure_allowed_labels;
-use prometheus::{
-    opts, register_histogram, register_int_counter, register_int_counter_vec, register_int_gauge,
-    Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge,
+use crate::{
+    guarded_counter_vec, guarded_histogram, guarded_int_counter, guarded_int_gauge,
+    registered_collector,
 };
+use prometheus::{Histogram, IntCounter, IntCounterVec, IntGauge};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -77,111 +77,93 @@ const EXPORT_FAIL_OTHER: &str = "other";
 
 /// 当前活跃 HTTP 连接（长连接含 keep-alive）
 pub static HTTP_INFLIGHT: LazyLock<IntGauge> = LazyLock::new(|| {
-    register_int_gauge!(opts!(
+    registered_collector(
         "http_inflight",
-        "In-flight HTTP connections (keep-alive included)"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy gauge initialization
-        IntGauge::new("dummy_gauge", "dummy").unwrap()
-    })
+        guarded_int_gauge(
+            "http_inflight",
+            "In-flight HTTP connections (keep-alive included)",
+        ),
+    )
 });
 
 /// 已接受的 HTTP 连接总数
 pub static HTTP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!("http_conn_total", "Total accepted HTTP connections"))
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-            IntCounter::new("dummy_counter", "dummy").unwrap()
-        })
+    registered_collector(
+        "http_conn_total",
+        guarded_int_counter("http_conn_total", "Total accepted HTTP connections"),
+    )
 });
 
 /// CONNECT 请求总数（入站 HTTP 代理处理的隧道建立请求）
 pub static HTTP_CONNECT_REQ_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "http_connect_req_total",
-        "Total HTTP CONNECT requests received"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "http_connect_req_total",
+            "Total HTTP CONNECT requests received",
+        ),
+    )
 });
 
 /// CONNECT 成功建立的总数
 pub static HTTP_CONNECT_OK_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "http_connect_ok_total",
-        "Total successful HTTP CONNECT tunnels"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "http_connect_ok_total",
+            "Total successful HTTP CONNECT tunnels",
+        ),
+    )
 });
 
 /// CONNECT 失败总数（握手失败/上游失败/路由失败等）
 pub static HTTP_CONNECT_FAIL_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "http_connect_fail_total",
-        "Total failed HTTP CONNECT attempts"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "http_connect_fail_total",
+            "Total failed HTTP CONNECT attempts",
+        ),
+    )
 });
 
 /// 入站 HTTP 层错误（解析/协议/早期关闭等）
 pub static HTTP_ERROR_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "http_error_total",
-        "Total HTTP layer errors observed at inbound"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter(
+            "http_error_total",
+            "Total HTTP layer errors observed at inbound",
+        ),
+    )
 });
 
 /// 入站请求总数（不区分方法/状态）
 pub static HTTP_REQ_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(opts!(
+    registered_collector(
         "http_req_total",
-        "Total HTTP requests handled by inbound"
-    ))
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-        IntCounter::new("dummy_counter", "dummy").unwrap()
-    })
+        guarded_int_counter("http_req_total", "Total HTTP requests handled by inbound"),
+    )
 });
 
 /// 按方法维度的请求计数（避免高基数，仅固定方法集合）
 pub static HTTP_METHOD_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    ensure_allowed_labels("http_method_total", &["method"]);
-    register_int_counter_vec!(
+    registered_collector(
         "http_method_total",
-        "HTTP requests by method",
-        &["method"] // GET/HEAD/POST/PUT/DELETE/CONNECT 等
+        guarded_counter_vec("http_method_total", "HTTP requests by method", &["method"]),
     )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
 });
 
 /// 按状态码段（2xx/3xx/4xx/5xx）的响应计数
 pub static HTTP_STATUS_CLASS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    ensure_allowed_labels("http_status_class_total", &["class"]);
-    register_int_counter_vec!(
+    registered_collector(
         "http_status_class_total",
-        "HTTP responses by status class",
-        &["class"] // "2xx" | "3xx" | "4xx" | "5xx"
+        guarded_counter_vec(
+            "http_status_class_total",
+            "HTTP responses by status class",
+            &["class"],
+        ),
     )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
 });
 
 /// 请求耗时直方图（毫秒）
@@ -191,17 +173,14 @@ pub static HTTP_REQ_DURATION_MS: LazyLock<Histogram> = LazyLock::new(|| {
         // Fallback to linear buckets if exponential buckets fail
         vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
     });
-    register_histogram!(HistogramOpts {
-        common_opts: opts!(
+    registered_collector(
+        "http_req_duration_ms",
+        guarded_histogram(
             "http_req_duration_ms",
-            "HTTP request duration in milliseconds"
+            "HTTP request duration in milliseconds",
+            buckets,
         ),
-        buckets,
-    })
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy histogram initialization
-        Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-    })
+    )
 });
 
 /// 便捷：方法自增（未知方法会被聚合到 "OTHER"）
@@ -260,16 +239,14 @@ pub fn on_connect_fail() {
 
 /// Metrics export failure classification
 pub static METRICS_EXPORT_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    ensure_allowed_labels("metrics_export_fail_total", &["class"]);
-    register_int_counter_vec!(
+    registered_collector(
         "metrics_export_fail_total",
-        "Metrics export failures by class",
-        &["class"] // "encode_error" | "timeout" | "busy" | "net_error" | "other"
+        guarded_counter_vec(
+            "metrics_export_fail_total",
+            "Metrics export failures by class",
+            &["class"],
+        ),
     )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
 });
 
 /// Record a metrics export failure with classification

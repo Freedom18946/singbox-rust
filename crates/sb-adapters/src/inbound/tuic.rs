@@ -48,6 +48,8 @@ pub struct TuicInboundConfig {
     pub tag: Option<String>,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for TUIC streams and UDP associations.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 /// TUIC user (UUID + token)
@@ -348,7 +350,8 @@ async fn handle_tcp_relay(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.clone(),
         port,
@@ -437,7 +440,8 @@ async fn handle_udp_relay(
         &decision,
         outbound_tag,
     );
-    let wiring = sb_core::conntrack::register_inbound_udp(
+    let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         host.clone(),
         port,

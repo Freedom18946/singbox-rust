@@ -83,6 +83,11 @@ fn decision_cache_from_env() -> bool {
 }
 
 #[cfg(feature = "router_cache_lru_demo")]
+fn router_cache_capacity(cap: usize) -> std::num::NonZeroUsize {
+    std::num::NonZeroUsize::new(cap.max(1)).unwrap_or(std::num::NonZeroUsize::MIN)
+}
+
+#[cfg(feature = "router_cache_lru_demo")]
 fn parse_decision_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
     match value {
         Some(raw) => raw.parse::<usize>().map_err(|err| {
@@ -319,10 +324,7 @@ impl RouterHandle {
             if use_cache {
                 Some(Mutex::new((
                     0u64,
-                    lru::LruCache::new(
-                    std::num::NonZeroUsize::new(cap)
-                        .unwrap_or(std::num::NonZeroUsize::new(1024).unwrap()),
-                ),
+                    lru::LruCache::new(router_cache_capacity(cap.max(1024))),
                 )))
             } else {
                 None

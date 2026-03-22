@@ -41,6 +41,7 @@ struct AnyTlsServerConfig {
     tls: Arc<TlsAcceptor>,
     padding: Arc<PaddingFactory>,
     users: Arc<Vec<AnyTlsUser>>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     #[allow(dead_code)]
     router: Arc<router::RouterHandle>,
     #[allow(dead_code)]
@@ -105,6 +106,7 @@ impl AnyTlsInboundAdapter {
             tls,
             padding,
             users,
+            conn_tracker: param.conn_tracker.clone(),
             router,
             outbounds,
         };
@@ -245,7 +247,7 @@ async fn handle_connection(
 }
 
 async fn handle_stream(
-    _cfg: Arc<AnyTlsServerConfig>,
+    cfg: Arc<AnyTlsServerConfig>,
     conn_ctx: Arc<ConnectionCtx>,
     stream: Arc<Stream>,
     session: Arc<Session>,
@@ -269,7 +271,8 @@ async fn handle_stream(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         conn_ctx.peer_addr,
         destination.host.clone(),
         destination.port,
@@ -548,7 +551,10 @@ async fn connect_via_router(
         RDecision::Reject | RDecision::RejectDrop => {
             return Err(anyhow!("destination rejected by router"))
         }
-        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. }
+        | RDecision::Sniff { .. }
+        | RDecision::Resolve
+        | RDecision::HijackDns => {
             return Err(anyhow!(
                 "anytls: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision"
             ));

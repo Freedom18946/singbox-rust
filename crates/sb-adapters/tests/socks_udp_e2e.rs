@@ -44,9 +44,16 @@ async fn socks_udp_service_starts_with_env() {
     };
     let socks_sock = Arc::new(socks_sock);
     let socks_addr = socks_sock.local_addr().unwrap();
+    let conn_tracker = sb_common::conntrack::shared_tracker();
 
     // 启动 SOCKS UDP 服务
-    let service_task = tokio::spawn(serve_udp_datagrams(socks_sock.clone(), None, None, None));
+    let service_task = tokio::spawn(serve_udp_datagrams(
+        socks_sock.clone(),
+        None,
+        None,
+        None,
+        conn_tracker.clone(),
+    ));
 
     // 给服务一些时间启动
     sleep(Duration::from_millis(100)).await;
@@ -112,7 +119,7 @@ async fn socks_udp_service_disabled_by_env() {
     let sock = std::sync::Arc::new(sock);
     let res = tokio::time::timeout(
         Duration::from_millis(300),
-        sb_adapters::inbound::socks::udp::serve_socks5_udp(sock),
+        sb_adapters::inbound::socks::udp::serve_socks5_udp(sock, conn_tracker),
     )
     .await;
     assert!(matches!(res, Ok(Ok(()))));

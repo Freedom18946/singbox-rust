@@ -68,6 +68,10 @@ struct CompiledRule {
     matcher: RuleMatcher,
 }
 
+fn lru_capacity(cap: usize) -> std::num::NonZeroUsize {
+    std::num::NonZeroUsize::new(cap.max(1)).unwrap_or(std::num::NonZeroUsize::MIN)
+}
+
 /// DNS rule action
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DnsRuleAction {
@@ -161,9 +165,9 @@ impl DnsRuleEngine {
             .collect();
 
         // Create routing cache (10k entries)
-        let cache = Arc::new(parking_lot::Mutex::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(10000).unwrap(),
-        )));
+        let cache = Arc::new(parking_lot::Mutex::new(lru::LruCache::new(lru_capacity(
+            10000,
+        ))));
 
         Self {
             rules,
@@ -174,9 +178,7 @@ impl DnsRuleEngine {
             registry,
             geoip,
             geosite,
-            reverse_mapping: parking_lot::Mutex::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(1024).unwrap(),
-            )),
+            reverse_mapping: parking_lot::Mutex::new(lru::LruCache::new(lru_capacity(1024))),
             fakeip_tags: std::collections::HashSet::new(),
         }
     }

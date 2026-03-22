@@ -21,16 +21,16 @@ const VERSION_2: u32 = 0x6b3343cf;
 
 // --- Version-specific salts (RFC 9001 §5.2, RFC 9369 §3.2) ---
 const SALT_OLD: [u8; 20] = [
-    0xaf, 0xbf, 0xec, 0x28, 0x99, 0x93, 0xd2, 0x4c, 0x9e, 0x97, 0x86, 0xf1, 0x9c, 0x61, 0x11,
-    0xe0, 0x43, 0x90, 0xa8, 0x99,
+    0xaf, 0xbf, 0xec, 0x28, 0x99, 0x93, 0xd2, 0x4c, 0x9e, 0x97, 0x86, 0xf1, 0x9c, 0x61, 0x11, 0xe0,
+    0x43, 0x90, 0xa8, 0x99,
 ];
 const SALT_V1: [u8; 20] = [
-    0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c,
-    0xad, 0xcc, 0xbb, 0x7f, 0x0a,
+    0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad,
+    0xcc, 0xbb, 0x7f, 0x0a,
 ];
 const SALT_V2: [u8; 20] = [
-    0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26, 0x9d,
-    0xcb, 0xf9, 0xbd, 0x2e, 0xd9,
+    0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb,
+    0xf9, 0xbd, 0x2e, 0xd9,
 ];
 
 /// Read a QUIC variable-length integer (RFC 9000 §16).
@@ -419,7 +419,12 @@ pub struct QuicReassembly {
 
 /// Decrypt a QUIC Initial packet and extract CRYPTO frame fragments.
 /// Returns the fragments or None if decryption fails.
-fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: &[u8]) -> Option<Vec<CryptoFragment>> {
+fn decrypt_initial_crypto(
+    buf: &[u8],
+    dcid: &[u8],
+    version: u32,
+    client_secret: &[u8],
+) -> Option<Vec<CryptoFragment>> {
     if buf.len() < 6 {
         return None;
     }
@@ -445,7 +450,9 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
     let mut pos = 5;
 
     // DCID
-    if pos >= buf.len() { return None; }
+    if pos >= buf.len() {
+        return None;
+    }
     let pkt_dcid_len = buf[pos] as usize;
     pos += 1;
     if pkt_dcid_len == 0 || pkt_dcid_len > 20 || pos + pkt_dcid_len > buf.len() {
@@ -460,16 +467,22 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
     }
 
     // SCID
-    if pos >= buf.len() { return None; }
+    if pos >= buf.len() {
+        return None;
+    }
     let scid_len = buf[pos] as usize;
     pos += 1;
-    if pos + scid_len > buf.len() { return None; }
+    if pos + scid_len > buf.len() {
+        return None;
+    }
     pos += scid_len;
 
     // Token length
     let (token_len, vlen) = read_quic_varint(buf, pos)?;
     pos += vlen;
-    if pos + token_len as usize > buf.len() { return None; }
+    if pos + token_len as usize > buf.len() {
+        return None;
+    }
     pos += token_len as usize;
 
     // Packet length
@@ -477,8 +490,12 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
     pos += vlen;
 
     let hdr_len = pos;
-    if hdr_len + packet_len as usize > buf.len() { return None; }
-    if hdr_len + 4 + 16 > buf.len() { return None; }
+    if hdr_len + packet_len as usize > buf.len() {
+        return None;
+    }
+    if hdr_len + 4 + 16 > buf.len() {
+        return None;
+    }
 
     let sample = &buf[hdr_len + 4..hdr_len + 4 + 16];
 
@@ -500,16 +517,23 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
     }
 
     let pn_len = (packet[0] & 0x03) as usize + 1;
-    if hdr_len + pn_len > hdr_len + packet_len as usize { return None; }
+    if hdr_len + pn_len > hdr_len + packet_len as usize {
+        return None;
+    }
 
     let packet_number: u32 = match pn_len {
         1 => packet[hdr_len] as u32,
         2 => u16::from_be_bytes([packet[hdr_len], packet[hdr_len + 1]]) as u32,
-        3 => ((packet[hdr_len] as u32) << 16)
-            | ((packet[hdr_len + 1] as u32) << 8)
-            | (packet[hdr_len + 2] as u32),
+        3 => {
+            ((packet[hdr_len] as u32) << 16)
+                | ((packet[hdr_len + 1] as u32) << 8)
+                | (packet[hdr_len + 2] as u32)
+        }
         4 => u32::from_be_bytes([
-            packet[hdr_len], packet[hdr_len + 1], packet[hdr_len + 2], packet[hdr_len + 3],
+            packet[hdr_len],
+            packet[hdr_len + 1],
+            packet[hdr_len + 2],
+            packet[hdr_len + 3],
         ]),
         _ => return None,
     };
@@ -536,7 +560,9 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
     }
 
     let payload_end = hdr_len + packet_len as usize;
-    if ext_hdr_len >= payload_end { return None; }
+    if ext_hdr_len >= payload_end {
+        return None;
+    }
 
     let aad = packet[..ext_hdr_len].to_vec();
     let mut buffer = packet[ext_hdr_len..payload_end].to_vec();
@@ -584,7 +610,9 @@ fn decrypt_initial_crypto(buf: &[u8], dcid: &[u8], version: u32, client_secret: 
                 let (length, vl) = read_quic_varint(&buffer, fpos)?;
                 fpos += vl;
                 let length = length as usize;
-                if fpos + length > buffer.len() { return None; }
+                if fpos + length > buffer.len() {
+                    return None;
+                }
                 fragments.push(CryptoFragment {
                     offset,
                     payload: buffer[fpos..fpos + length].to_vec(),
@@ -632,7 +660,9 @@ fn try_reassemble_sni(fragments: &[CryptoFragment]) -> Option<SniffOutcome> {
                 break;
             }
         }
-        if !found { break; }
+        if !found {
+            break;
+        }
     }
 
     let tls_info = sniff_tls_client_hello(&tls_record)?;
@@ -676,7 +706,9 @@ pub fn sniff_quic_sni_multi(buf: &[u8], state: Option<QuicReassembly>) -> SniffQ
 
     if let Some(mut ctx) = state {
         // Subsequent packet: decrypt and accumulate
-        if let Some(new_frags) = decrypt_initial_crypto(buf, &ctx.dcid, ctx.version, &ctx.client_secret) {
+        if let Some(new_frags) =
+            decrypt_initial_crypto(buf, &ctx.dcid, ctx.version, &ctx.client_secret)
+        {
             ctx.fragments.extend(new_frags);
 
             // Check if we have enough data
@@ -739,7 +771,9 @@ pub fn sniff_quic_sni_multi(buf: &[u8], state: Option<QuicReassembly>) -> SniffQ
     }
 
     let mut pos = 5;
-    if pos >= buf.len() { return SniffQuicResult::NotQuic; }
+    if pos >= buf.len() {
+        return SniffQuicResult::NotQuic;
+    }
     let dcid_len = buf[pos] as usize;
     pos += 1;
     if dcid_len == 0 || dcid_len > 20 || pos + dcid_len > buf.len() {

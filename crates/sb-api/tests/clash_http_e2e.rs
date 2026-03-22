@@ -7,7 +7,10 @@
 //! Coverage: 37 endpoints across 11 categories
 
 use reqwest::{Client, StatusCode};
-use sb_api::{clash::ClashApiServer, clash::server::ApiState, managers::Provider as ManagerProvider, types::ApiConfig};
+use sb_api::{
+    clash::server::ApiState, clash::ClashApiServer, managers::Provider as ManagerProvider,
+    types::ApiConfig,
+};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -612,10 +615,7 @@ async fn test_get_proxy_providers_with_data() -> anyhow::Result<()> {
         "injected provider should appear in response"
     );
     let entry = &providers["test-sub"];
-    assert_eq!(
-        entry.get("name").and_then(|v| v.as_str()),
-        Some("test-sub")
-    );
+    assert_eq!(entry.get("name").and_then(|v| v.as_str()), Some("test-sub"));
     assert_eq!(
         entry.get("vehicleType").and_then(|v| v.as_str()),
         Some("HTTP")

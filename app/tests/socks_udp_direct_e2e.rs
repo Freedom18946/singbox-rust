@@ -143,8 +143,7 @@ fn socks_udp_via_direct_nat_echo() {
     });
     let eng = Engine::new(std::sync::Arc::new(ir));
     thread::spawn(move || {
-        let srv =
-            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone());
+        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone());
         let _ = srv.serve();
     });
     thread::sleep(Duration::from_millis(150));

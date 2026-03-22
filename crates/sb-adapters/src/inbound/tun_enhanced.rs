@@ -15,9 +15,9 @@ use sb_platform::tun::{create_platform_device, TunConfig, TunError};
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
-use tokio::io::Interest;
-#[cfg(unix)]
 use tokio::io::unix::AsyncFd;
+#[cfg(unix)]
+use tokio::io::Interest;
 
 use crate::inbound::tun::TunInboundConfig;
 use crate::inbound::tun_session::{
@@ -314,7 +314,9 @@ struct UnixPacketIo {
 impl PacketIo for UnixPacketIo {
     async fn read_packet(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.device
-            .async_io_mut(Interest::READABLE, |inner| inner.inner.read(buf).map_err(tun_error_to_io))
+            .async_io_mut(Interest::READABLE, |inner| {
+                inner.inner.read(buf).map_err(tun_error_to_io)
+            })
             .await
     }
 
@@ -324,7 +326,10 @@ impl PacketIo for UnixPacketIo {
             let n = self
                 .device
                 .async_io_mut(Interest::WRITABLE, |inner| {
-                    inner.inner.write(&packet[written..]).map_err(tun_error_to_io)
+                    inner
+                        .inner
+                        .write(&packet[written..])
+                        .map_err(tun_error_to_io)
                 })
                 .await?;
             written += n;
@@ -496,7 +501,8 @@ impl EnhancedTunInbound {
                 return Ok(());
             }
             if packet.has_payload() {
-                self.send_tcp_control_packet(&session, writer, 0x10, 0).await?;
+                self.send_tcp_control_packet(&session, writer, 0x10, 0)
+                    .await?;
             }
             return Ok(());
         }
@@ -525,8 +531,14 @@ impl EnhancedTunInbound {
             }
         };
         let endpoint = match packet.tuple.dst_ip {
-            IpAddr::V4(ip) => Endpoint::Ip(std::net::SocketAddr::new(IpAddr::V4(ip), packet.tuple.dst_port)),
-            IpAddr::V6(ip) => Endpoint::Ip(std::net::SocketAddr::new(IpAddr::V6(ip), packet.tuple.dst_port)),
+            IpAddr::V4(ip) => Endpoint::Ip(std::net::SocketAddr::new(
+                IpAddr::V4(ip),
+                packet.tuple.dst_port,
+            )),
+            IpAddr::V6(ip) => Endpoint::Ip(std::net::SocketAddr::new(
+                IpAddr::V6(ip),
+                packet.tuple.dst_port,
+            )),
         };
 
         let stream = match self.outbounds.connect_tcp(&target, endpoint).await {
@@ -537,16 +549,14 @@ impl EnhancedTunInbound {
                 return Ok(());
             }
         };
-        let session = self
-            .session_manager
-            .create_session_with_state(
-                packet.tuple,
-                stream,
-                Arc::clone(&writer),
-                None,
-                packet.next_client_seq(),
-                INITIAL_SERVER_SEQ,
-            );
+        let session = self.session_manager.create_session_with_state(
+            packet.tuple,
+            stream,
+            Arc::clone(&writer),
+            None,
+            packet.next_client_seq(),
+            INITIAL_SERVER_SEQ,
+        );
 
         if packet.is_syn() {
             self.send_tcp_control_packet(&session, Arc::clone(&writer), 0x12, 1)
@@ -559,7 +569,8 @@ impl EnhancedTunInbound {
                 .await
                 .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err.to_string()))?;
             if !packet.is_syn() {
-                self.send_tcp_control_packet(&session, writer, 0x10, 0).await?;
+                self.send_tcp_control_packet(&session, writer, 0x10, 0)
+                    .await?;
             }
         }
 
@@ -633,9 +644,13 @@ impl TunWriter for ChannelTunWriter {
 fn tun_error_to_io(err: TunError) -> io::Error {
     match err {
         TunError::IoError(inner) => inner,
-        TunError::PermissionDenied => io::Error::new(io::ErrorKind::PermissionDenied, err.to_string()),
+        TunError::PermissionDenied => {
+            io::Error::new(io::ErrorKind::PermissionDenied, err.to_string())
+        }
         TunError::InvalidConfig(_) => io::Error::new(io::ErrorKind::InvalidInput, err.to_string()),
-        TunError::UnsupportedPlatform => io::Error::new(io::ErrorKind::Unsupported, err.to_string()),
+        TunError::UnsupportedPlatform => {
+            io::Error::new(io::ErrorKind::Unsupported, err.to_string())
+        }
         other => io::Error::other(other.to_string()),
     }
 }
@@ -656,14 +671,23 @@ fn set_nonblocking(fd: std::os::fd::RawFd) -> io::Result<()> {
 
 fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, String)> {
     match decision {
-        Decision::Direct => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
+        Decision::Direct => Ok((
+            RouteTarget::Kind(OutboundKind::Direct),
+            "direct".to_string(),
+        )),
         Decision::Proxy(Some(tag)) => Ok((RouteTarget::Named(tag.clone()), tag.clone())),
-        Decision::Proxy(None) => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
+        Decision::Proxy(None) => Ok((
+            RouteTarget::Kind(OutboundKind::Direct),
+            "direct".to_string(),
+        )),
         Decision::Reject | Decision::RejectDrop => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "blocked by routing rule",
         )),
-        Decision::Sniff { .. } => Ok((RouteTarget::Kind(OutboundKind::Direct), "direct".to_string())),
+        Decision::Sniff { .. } => Ok((
+            RouteTarget::Kind(OutboundKind::Direct),
+            "direct".to_string(),
+        )),
         Decision::Hijack { .. } | Decision::Resolve | Decision::HijackDns => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             format!("tun: unsupported routing decision {:?}", decision),
@@ -675,8 +699,7 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
 mod tests {
     use super::{
         default_udp_timeout, parse_raw_tcp, ChannelTunWriter, EnhancedTunConfig,
-        EnhancedTunInbound, PacketIo,
-        INITIAL_SERVER_SEQ,
+        EnhancedTunInbound, PacketIo, INITIAL_SERVER_SEQ,
     };
     use crate::inbound::tun::TunInboundConfig;
     use crate::inbound::tun_session::{FourTuple, TunWriter};
@@ -809,7 +832,10 @@ mod tests {
     #[async_trait::async_trait]
     impl TunWriter for RecordingTunWriter {
         async fn write_packet(&self, packet: &[u8]) -> std::io::Result<()> {
-            self.packets.lock().expect("lock packets").push(packet.to_vec());
+            self.packets
+                .lock()
+                .expect("lock packets")
+                .push(packet.to_vec());
             Ok(())
         }
     }
@@ -850,7 +876,9 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
         EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router)
     }
 
@@ -886,7 +914,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_connects_and_forwards_initial_payload() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -900,12 +930,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
 
         let payload = b"ping";
         let total_len = 20 + 20 + payload.len();
@@ -914,7 +943,14 @@ mod tests {
         raw[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
         raw[9] = 6;
         raw[12..16].copy_from_slice(&[10, 0, 0, 2]);
-        raw[16..20].copy_from_slice(&addr.ip().to_string().parse::<std::net::Ipv4Addr>().expect("ipv4").octets());
+        raw[16..20].copy_from_slice(
+            &addr
+                .ip()
+                .to_string()
+                .parse::<std::net::Ipv4Addr>()
+                .expect("ipv4")
+                .octets(),
+        );
         raw[20..22].copy_from_slice(&34567u16.to_be_bytes());
         raw[22..24].copy_from_slice(&addr.port().to_be_bytes());
         raw[32] = 0x50;
@@ -936,7 +972,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_flushes_syn_ack_before_eof() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         tokio::spawn(async move {
@@ -970,11 +1008,15 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_continues_after_connect_failure() {
-        let dead_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind dead listener");
+        let dead_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind dead listener");
         let dead_addr = dead_listener.local_addr().expect("dead addr");
         drop(dead_listener);
 
-        let live_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind live listener");
+        let live_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind live listener");
         let live_addr = live_listener.local_addr().expect("live addr");
         tokio::spawn(async move {
             let _ = live_listener.accept().await.expect("accept");
@@ -1009,7 +1051,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_forwards_fin_payload_and_cleans_up() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1061,7 +1105,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_relays_outbound_payload_back_to_tun() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1113,7 +1159,9 @@ mod tests {
             .collect();
 
         assert!(packets.iter().any(|packet| packet.flags == 0x12));
-        assert!(packets.iter().any(|packet| packet.flags == 0x10 && packet.payload.is_empty()));
+        assert!(packets
+            .iter()
+            .any(|packet| packet.flags == 0x10 && packet.payload.is_empty()));
 
         let reply = packets
             .iter()
@@ -1125,7 +1173,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_emits_fin_ack_on_outbound_eof_and_cleans_up() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1173,7 +1223,9 @@ mod tests {
             .map(|packet| parse_raw_tcp(packet).expect("parse reply packet"))
             .collect();
         assert!(packets.iter().any(|packet| packet.flags == 0x12));
-        assert!(packets.iter().any(|packet| packet.flags == 0x10 && packet.payload.is_empty()));
+        assert!(packets
+            .iter()
+            .any(|packet| packet.flags == 0x10 && packet.payload.is_empty()));
         let fin = packets
             .iter()
             .find(|packet| packet.flags == 0x11)
@@ -1185,7 +1237,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_ack_only_updates_session_state_without_extra_reply() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1280,7 +1334,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_stale_or_duplicate_ack_does_not_regress_state_or_reply() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1396,7 +1452,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_future_ack_is_capped_to_emitted_server_seq() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1482,7 +1540,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_rst_closes_existing_session_without_reply() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1562,7 +1622,9 @@ mod tests {
 
     #[tokio::test]
     async fn packet_loop_stray_rst_without_session_is_ignored() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         drop(listener);
 
@@ -1594,7 +1656,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_syn_sends_syn_ack() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         tokio::spawn(async move {
@@ -1604,12 +1668,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut raw = vec![0u8; 40];
@@ -1618,7 +1681,8 @@ mod tests {
         raw[9] = 6;
         raw[12..16].copy_from_slice(&[10, 0, 0, 2]);
         raw[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1648,19 +1712,20 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_connect_failure_sends_rst_ack() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut raw = vec![0u8; 40];
@@ -1669,7 +1734,8 @@ mod tests {
         raw[9] = 6;
         raw[12..16].copy_from_slice(&[10, 0, 0, 2]);
         raw[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1697,7 +1763,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_fin_sends_fin_ack() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         tokio::spawn(async move {
@@ -1708,12 +1776,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut syn = vec![0u8; 40];
@@ -1722,7 +1789,8 @@ mod tests {
         syn[9] = 6;
         syn[12..16].copy_from_slice(&[10, 0, 0, 2]);
         syn[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1746,7 +1814,8 @@ mod tests {
         fin[9] = 6;
         fin[12..16].copy_from_slice(&[10, 0, 0, 2]);
         fin[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1776,19 +1845,20 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_fin_without_session_sends_rst_ack() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut fin = vec![0u8; 40];
@@ -1797,7 +1867,8 @@ mod tests {
         fin[9] = 6;
         fin[12..16].copy_from_slice(&[10, 0, 0, 2]);
         fin[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1826,7 +1897,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_fin_with_payload_forwards_then_closes() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let (payload_tx, payload_rx) = oneshot::channel();
 
@@ -1841,12 +1914,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut syn = vec![0u8; 40];
@@ -1855,7 +1927,8 @@ mod tests {
         syn[9] = 6;
         syn[12..16].copy_from_slice(&[10, 0, 0, 2]);
         syn[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1881,7 +1954,8 @@ mod tests {
         fin[9] = 6;
         fin[12..16].copy_from_slice(&[10, 0, 0, 2]);
         fin[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1917,19 +1991,20 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_ack_without_session_is_ignored() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut ack = vec![0u8; 40];
@@ -1938,7 +2013,8 @@ mod tests {
         ack[9] = 6;
         ack[12..16].copy_from_slice(&[10, 0, 0, 2]);
         ack[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -1963,7 +2039,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_ack_updates_existing_session_state_without_reply() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         tokio::spawn(async move {
@@ -1974,12 +2052,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let syn_raw = build_ipv4_tcp_packet_for_test(addr, 0x02, 42, 0, &[]);
@@ -1996,13 +2073,7 @@ mod tests {
             .expect("session should exist after syn");
         assert_eq!(session.server_acked_seq(), INITIAL_SERVER_SEQ);
 
-        let ack_raw = build_ipv4_tcp_packet_for_test(
-            addr,
-            0x10,
-            43,
-            INITIAL_SERVER_SEQ + 1,
-            &[],
-        );
+        let ack_raw = build_ipv4_tcp_packet_for_test(addr, 0x10, 43, INITIAL_SERVER_SEQ + 1, &[]);
         let ack = parse_raw_tcp(&ack_raw).expect("parse ack");
         inbound
             .bootstrap_tcp_session(&ack, writer.clone())
@@ -2016,7 +2087,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_rst_closes_existing_session() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
 
         tokio::spawn(async move {
@@ -2027,12 +2100,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
-        let router = Arc::new(RouterHandle::new(Router::with_default(OutboundKind::Direct)));
-        let inbound = EnhancedTunInbound::with_router(
-            EnhancedTunConfig::default(),
-            outbounds,
-            router,
-        );
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
         let writer = Arc::new(RecordingTunWriter::default());
 
         let mut syn = vec![0u8; 40];
@@ -2041,7 +2113,8 @@ mod tests {
         syn[9] = 6;
         syn[12..16].copy_from_slice(&[10, 0, 0, 2]);
         syn[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")
@@ -2065,7 +2138,8 @@ mod tests {
         rst[9] = 6;
         rst[12..16].copy_from_slice(&[10, 0, 0, 2]);
         rst[16..20].copy_from_slice(
-            &addr.ip()
+            &addr
+                .ip()
                 .to_string()
                 .parse::<std::net::Ipv4Addr>()
                 .expect("ipv4")

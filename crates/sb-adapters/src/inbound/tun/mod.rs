@@ -645,9 +645,12 @@ impl TunInbound {
                                             let dst = Address::Ip(SocketAddr::new(ip, port));
 
                                             // Sniffing: use full sniff_stream for better coverage
-                                            let sniff_outcome = if let Some(head) = &pkt.payload_head {
+                                            let sniff_outcome = if let Some(head) =
+                                                &pkt.payload_head
+                                            {
                                                 if !sb_core::router::sniff::skip_sniff(port) {
-                                                    let outcome = sb_core::router::sniff::sniff_stream(head);
+                                                    let outcome =
+                                                        sb_core::router::sniff::sniff_stream(head);
                                                     if outcome.protocol.is_some() {
                                                         SNI_OK.fetch_add(1, Ordering::Relaxed);
                                                     }
@@ -658,14 +661,16 @@ impl TunInbound {
                                             } else {
                                                 None
                                             };
-                                            let sniff_host = sniff_outcome.as_ref().and_then(|o| o.host.clone());
+                                            let sniff_host =
+                                                sniff_outcome.as_ref().and_then(|o| o.host.clone());
 
                                             let host_str = match sniff_host.as_ref() {
                                                 Some(s) if !s.is_empty() => s.clone(),
                                                 _ => format!("{}:{}", ip, port),
                                             };
 
-                                            let sniff_proto = sniff_outcome.as_ref().and_then(|o| o.protocol);
+                                            let sniff_proto =
+                                                sniff_outcome.as_ref().and_then(|o| o.protocol);
 
                                             let (wifi_ssid, wifi_bssid) = if let Some(info) =
                                                 sb_platform::wifi::get_wifi_info()
@@ -685,14 +690,18 @@ impl TunInbound {
                                                 wifi_bssid: wifi_bssid.as_deref(),
                                                 inbound_tag: self.inbound_tag.as_deref(),
                                                 inbound_sniff: self.sniff,
-                                                inbound_sniff_override: self.sniff_override_destination,
+                                                inbound_sniff_override: self
+                                                    .sniff_override_destination,
                                                 ..Default::default()
                                             };
                                             let mut decision = self.router.decide(&route_ctx);
 
                                             // Handle Decision::Sniff: re-decide with sniffed metadata
                                             let mut override_host: Option<String> = None;
-                                            if let Decision::Sniff { override_destination } = decision {
+                                            if let Decision::Sniff {
+                                                override_destination,
+                                            } = decision
+                                            {
                                                 if sniff_proto.is_some() {
                                                     // Already sniffed — re-decide should skip Sniff rules
                                                     // The guard in engine.rs handles this via protocol.is_some()
@@ -813,15 +822,17 @@ impl TunInbound {
                                             };
                                             trace!(
                                                 "tun udp {}:{} -> {}:{} len={}",
-                                                pkt.src_ip, pkt.src_port,
-                                                pkt.dst_ip, pkt.dst_port,
+                                                pkt.src_ip,
+                                                pkt.src_port,
+                                                pkt.dst_ip,
+                                                pkt.dst_port,
                                                 payload.len()
                                             );
-                                            if let Err(e) = self.udp_nat.forward(
-                                                key,
-                                                payload,
-                                                writer.clone(),
-                                            ).await {
+                                            if let Err(e) = self
+                                                .udp_nat
+                                                .forward(key, payload, writer.clone())
+                                                .await
+                                            {
                                                 trace!("tun udp forward error: {}", e);
                                             }
                                         }
@@ -933,10 +944,7 @@ impl TunInbound {
                                                     .forward(key, payload, writer.clone())
                                                     .await
                                                 {
-                                                    tracing::trace!(
-                                                        "tun udp forward error: {}",
-                                                        e
-                                                    );
+                                                    tracing::trace!("tun udp forward error: {}", e);
                                                 }
                                             }
                                         }
@@ -1957,8 +1965,10 @@ mod tests {
 
     #[test]
     fn sniff_decision_falls_back_to_direct() {
-        let (target, tag) = route_target_from_decision(&Decision::Sniff { override_destination: false })
-            .expect("Sniff should fall back to direct");
+        let (target, tag) = route_target_from_decision(&Decision::Sniff {
+            override_destination: false,
+        })
+        .expect("Sniff should fall back to direct");
         assert_eq!(target, RouteTarget::Kind(OutboundKind::Direct));
         assert_eq!(tag, "direct");
     }
@@ -1968,7 +1978,9 @@ mod tests {
         let err = route_target_from_decision(&Decision::Resolve)
             .expect_err("unsupported tun routing action should be rejected");
         assert_eq!(err.kind(), io::ErrorKind::Unsupported);
-        assert!(err.to_string().contains("implicit direct fallback is disabled"));
+        assert!(err
+            .to_string()
+            .contains("implicit direct fallback is disabled"));
     }
 
     #[test]
@@ -1982,7 +1994,10 @@ mod tests {
     #[test]
     fn tun_stack_backend_defaults_to_manual() {
         assert_eq!(parse_stack_backend(None).unwrap(), TunBackendKind::Manual);
-        assert_eq!(parse_stack_backend(Some("")).unwrap(), TunBackendKind::Manual);
+        assert_eq!(
+            parse_stack_backend(Some("")).unwrap(),
+            TunBackendKind::Manual
+        );
         assert_eq!(
             parse_stack_backend(Some("system")).unwrap(),
             TunBackendKind::Manual
@@ -2039,7 +2054,10 @@ mod tests {
         assert_eq!(parsed.dst_port, dst_port);
         assert_eq!(parsed.payload_offset, 28);
         assert_eq!(parsed.payload_len, payload.len());
-        assert_eq!(&pkt[parsed.payload_offset..parsed.payload_offset + parsed.payload_len], &payload[..]);
+        assert_eq!(
+            &pkt[parsed.payload_offset..parsed.payload_offset + parsed.payload_len],
+            &payload[..]
+        );
     }
 
     #[cfg(feature = "tun")]

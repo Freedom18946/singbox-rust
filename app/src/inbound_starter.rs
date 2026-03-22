@@ -190,6 +190,7 @@ pub fn start_inbounds_from_ir(
     inbounds: &[InboundIR],
     #[cfg(feature = "router")] router: &Arc<RouterHandle>,
     outbounds: &Arc<OutboundRegistryHandle>,
+    #[cfg(feature = "adapters")] conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Vec<InboundHandle> {
     info!("start_inbounds_from_ir: count={}", inbounds.len());
     let mut handles = Vec::new();
@@ -204,6 +205,7 @@ pub fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
+                    conn_tracker.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -217,6 +219,7 @@ pub fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
+                    conn_tracker.clone(),
                 ));
                 #[cfg(not(feature = "adapters"))]
                 warn!("socks inbound requires 'adapters' feature; skipping");
@@ -228,6 +231,7 @@ pub fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
+                    conn_tracker.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -245,7 +249,9 @@ pub fn start_inbounds_from_ir(
                     handles.push(handle);
                 }
                 #[cfg(any(not(feature = "adapter-tun"), not(feature = "adapters")))]
-                warn!("config includes tun inbound, but feature 'adapter-tun' is disabled; skipping");
+                warn!(
+                    "config includes tun inbound, but feature 'adapter-tun' is disabled; skipping"
+                );
             }
             InboundType::Direct => {
                 #[cfg(feature = "router")]
@@ -261,6 +267,7 @@ pub fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
+                    conn_tracker.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -273,6 +280,7 @@ pub fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
+                    conn_tracker.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -285,6 +293,7 @@ pub fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
+                    conn_tracker.clone(),
                 ) {
                     handles.push(handle);
                 }
@@ -313,6 +322,7 @@ fn start_http_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Option<InboundHandle> {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
@@ -342,6 +352,7 @@ fn start_http_inbound(
                 active_connections: Arc::new(AtomicU64::new(0)),
                 sniff: ib.sniff,
                 sniff_override_destination: ib.sniff_override_destination,
+                conn_tracker,
             };
             let listen_str_log = listen_str.clone();
             let join = tokio::spawn(async move {
@@ -363,6 +374,7 @@ fn start_socks_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Vec<InboundHandle> {
     let mut handles = Vec::new();
     let listen_str = if ib.listen.contains(':') {
@@ -417,6 +429,7 @@ fn start_socks_inbound(
             domain_strategy,
             sniff: ib.sniff,
             sniff_override_destination: ib.sniff_override_destination,
+            conn_tracker,
         };
         let listen_str_log = listen_str.clone();
         let join = tokio::spawn(async move {
@@ -431,8 +444,9 @@ fn start_socks_inbound(
         });
         // start UDP association service if config or env enables
         if ib.udp || socks_udp_should_start() {
+            let conn_tracker = cfg.conn_tracker.clone();
             let join = tokio::spawn(async move {
-                if let Err(e) = serve_socks5_udp_service().await {
+                if let Err(e) = serve_socks5_udp_service(conn_tracker).await {
                     warn!(error=%e, "socks udp service failed");
                 }
             });
@@ -453,6 +467,7 @@ fn start_mixed_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Option<InboundHandle> {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
@@ -513,6 +528,7 @@ fn start_mixed_inbound(
                 domain_strategy,
                 sniff: ib.sniff,
                 sniff_override_destination: ib.sniff_override_destination,
+                conn_tracker,
             };
             let listen_str_log = listen_str.clone();
             let join = tokio::spawn(async move {
@@ -624,6 +640,7 @@ fn start_direct_inbound(ib: &InboundIR) -> Option<InboundHandle> {
 fn start_trojan_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Option<InboundHandle> {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
@@ -688,6 +705,7 @@ fn start_trojan_inbound(
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
             tag: None,
             stats: None,
+            conn_tracker,
             #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
@@ -717,6 +735,7 @@ fn start_trojan_inbound(
 fn start_vless_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Option<InboundHandle> {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
@@ -782,6 +801,7 @@ fn start_vless_inbound(
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
             tag: None,
             stats: None,
+            conn_tracker,
             #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
@@ -812,6 +832,7 @@ fn start_vless_inbound(
 fn start_vmess_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Option<InboundHandle> {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
@@ -878,6 +899,7 @@ fn start_vmess_inbound(
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
             tag: None,
             stats: None,
+            conn_tracker,
             multiplex: None,
             transport_layer: None,
             fallback,

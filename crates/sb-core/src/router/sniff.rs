@@ -332,16 +332,40 @@ pub fn sniff_datagram_multi(buf: &[u8]) -> (SniffOutcome, Option<QuicReassembly>
         return (out, None);
     }
     if is_dtls_record(buf) {
-        return (SniffOutcome { protocol: Some("dtls"), ..Default::default() }, None);
+        return (
+            SniffOutcome {
+                protocol: Some("dtls"),
+                ..Default::default()
+            },
+            None,
+        );
     }
     if is_stun_message(buf) {
-        return (SniffOutcome { protocol: Some("stun"), ..Default::default() }, None);
+        return (
+            SniffOutcome {
+                protocol: Some("stun"),
+                ..Default::default()
+            },
+            None,
+        );
     }
     if is_bittorrent_utp(buf) || is_bittorrent_udp_tracker(buf) {
-        return (SniffOutcome { protocol: Some("bittorrent"), ..Default::default() }, None);
+        return (
+            SniffOutcome {
+                protocol: Some("bittorrent"),
+                ..Default::default()
+            },
+            None,
+        );
     }
     if is_ntp_protocol(buf) {
-        return (SniffOutcome { protocol: Some("ntp"), ..Default::default() }, None);
+        return (
+            SniffOutcome {
+                protocol: Some("ntp"),
+                ..Default::default()
+            },
+            None,
+        );
     }
 
     // QUIC: try multi-packet extraction
@@ -368,7 +392,10 @@ pub fn sniff_datagram_multi(buf: &[u8]) -> (SniffOutcome, Option<QuicReassembly>
 /// Returns `Some(SniffOutcome)` when SNI is extracted, `None` if still need more data.
 /// The `ctx` is consumed; if `None` is returned, caller should read another packet
 /// and call again.
-pub fn sniff_datagram_continue(buf: &[u8], ctx: QuicReassembly) -> (Option<SniffOutcome>, Option<QuicReassembly>) {
+pub fn sniff_datagram_continue(
+    buf: &[u8],
+    ctx: QuicReassembly,
+) -> (Option<SniffOutcome>, Option<QuicReassembly>) {
     match super::sniff_quic::sniff_quic_sni_multi(buf, Some(ctx)) {
         SniffQuicResult::Done(outcome) => (Some(outcome), None),
         SniffQuicResult::NeedMoreData(new_ctx) => (None, Some(new_ctx)),

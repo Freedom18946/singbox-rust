@@ -39,7 +39,9 @@ pub async fn fetch_text(url: &str) -> Result<String, SubsError> {
         FetchResult::Ok(body, _) => Ok(body),
         FetchResult::NotModified => {
             // Shouldn't happen without cache headers, but handle gracefully
-            Err(SubsError::Fetch("unexpected 304 without cache headers".into()))
+            Err(SubsError::Fetch(
+                "unexpected 304 without cache headers".into(),
+            ))
         }
     }
 }

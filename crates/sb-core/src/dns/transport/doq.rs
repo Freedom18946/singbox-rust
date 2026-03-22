@@ -43,8 +43,8 @@ impl DoqTransport {
                 .unwrap_or(5000),
         );
         // Create client endpoint and config once with DoQ ALPN
-        let mut endpoint =
-            quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(io::Error::other)?;
+        let bind_addr = SocketAddr::from(([0, 0, 0, 0], 0));
+        let mut endpoint = quinn::Endpoint::client(bind_addr).map_err(io::Error::other)?;
 
         // Build rustls config with ALPN for DoQ using global trust (+ per-upstream additions)
         let mut roots = crate::tls::global::base_root_store();

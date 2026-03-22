@@ -379,7 +379,9 @@ fn hex_encode(data: &[u8]) -> String {
     use std::fmt::Write;
     data.iter()
         .fold(String::with_capacity(data.len() * 2), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
+            if write!(s, "{b:02x}").is_err() {
+                return String::new();
+            }
             s
         })
 }

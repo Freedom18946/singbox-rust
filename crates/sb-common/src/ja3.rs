@@ -51,6 +51,20 @@ fn is_grease(value: u16) -> bool {
     GREASE_VALUES.contains(&value)
 }
 
+fn read_u8(data: &[u8], pos: usize) -> Option<u8> {
+    data.get(pos).copied()
+}
+
+fn read_u16(data: &[u8], pos: usize) -> Option<u16> {
+    let bytes = data.get(pos..pos + 2)?;
+    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
+}
+
+fn checked_advance(pos: usize, len: usize, data_len: usize) -> Option<usize> {
+    let next = pos.checked_add(len)?;
+    (next <= data_len).then_some(next)
+}
+
 /// JA3 fingerprint data extracted from a TLS ClientHello.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ja3Fingerprint {
@@ -75,7 +89,7 @@ impl Ja3Fingerprint {
         }
 
         // Verify TLS handshake record
-        if data[0] != 0x16 {
+        if read_u8(data, 0)? != 0x16 {
             return None;
         }
 
@@ -83,7 +97,7 @@ impl Ja3Fingerprint {
         let mut pos = TLS_RECORD_HEADER_SIZE;
 
         // Verify ClientHello handshake type
-        if data[pos] != 0x01 {
+        if read_u8(data, pos)? != 0x01 {
             return None;
         }
 
@@ -91,27 +105,18 @@ impl Ja3Fingerprint {
         pos += TLS_HANDSHAKE_HEADER_SIZE;
 
         // Client version (2 bytes)
-        if pos + 2 > data.len() {
-            return None;
-        }
-        let version = u16::from_be_bytes([data[pos], data[pos + 1]]);
+        let version = read_u16(data, pos)?;
         pos += 2;
 
         // Skip client random (32 bytes)
-        pos += 32;
-        if pos >= data.len() {
-            return None;
-        }
+        pos = checked_advance(pos, 32, data.len())?;
 
         // Skip session ID
-        let session_id_len = data[pos] as usize;
-        pos += 1 + session_id_len;
-        if pos + 2 > data.len() {
-            return None;
-        }
+        let session_id_len = read_u8(data, pos)? as usize;
+        pos = checked_advance(pos, 1 + session_id_len, data.len())?;
 
         // Parse cipher suites
-        let cipher_suites_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+        let cipher_suites_len = read_u16(data, pos)? as usize;
         pos += 2;
         if pos + cipher_suites_len > data.len() {
             return None;
@@ -120,7 +125,7 @@ impl Ja3Fingerprint {
         let mut cipher_suites = Vec::new();
         let cipher_end = pos + cipher_suites_len;
         while pos + 2 <= cipher_end {
-            let cipher = u16::from_be_bytes([data[pos], data[pos + 1]]);
+            let cipher = read_u16(data, pos)?;
             if !is_grease(cipher) {
                 cipher_suites.push(cipher);
             }
@@ -129,27 +134,21 @@ impl Ja3Fingerprint {
         pos = cipher_end;
 
         // Skip compression methods
-        if pos >= data.len() {
-            return None;
-        }
-        let compression_len = data[pos] as usize;
-        pos += 1 + compression_len;
-        if pos + 2 > data.len() {
-            return None;
-        }
+        let compression_len = read_u8(data, pos)? as usize;
+        pos = checked_advance(pos, 1 + compression_len, data.len())?;
 
         // Parse extensions
-        let extensions_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+        let extensions_len = read_u16(data, pos)? as usize;
         pos += 2;
-        let extensions_end = pos + extensions_len;
+        let extensions_end = pos.checked_add(extensions_len)?.min(data.len());
 
         let mut extensions = Vec::new();
         let mut supported_groups = Vec::new();
         let mut ec_point_formats = Vec::new();
 
         while pos + 4 <= extensions_end && pos + 4 <= data.len() {
-            let ext_type = u16::from_be_bytes([data[pos], data[pos + 1]]);
-            let ext_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+            let ext_type = read_u16(data, pos)?;
+            let ext_len = read_u16(data, pos + 2)? as usize;
             pos += 4;
 
             if !is_grease(ext_type) {
@@ -157,11 +156,11 @@ impl Ja3Fingerprint {
 
                 // Parse Supported Groups extension
                 if ext_type == EXT_SUPPORTED_GROUPS && ext_len >= 2 && pos + ext_len <= data.len() {
-                    let groups_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                    let groups_len = read_u16(data, pos)? as usize;
                     let mut group_pos = pos + 2;
                     let groups_end = (pos + 2 + groups_len).min(pos + ext_len);
                     while group_pos + 2 <= groups_end {
-                        let group = u16::from_be_bytes([data[group_pos], data[group_pos + 1]]);
+                        let group = read_u16(data, group_pos)?;
                         if !is_grease(group) {
                             supported_groups.push(group);
                         }
@@ -171,13 +170,11 @@ impl Ja3Fingerprint {
 
                 // Parse EC Point Formats extension
                 if ext_type == EXT_EC_POINT_FORMATS && ext_len >= 1 && pos + ext_len <= data.len() {
-                    let formats_len = data[pos] as usize;
+                    let formats_len = read_u8(data, pos)? as usize;
                     let formats_start = pos + 1;
                     let formats_end = (formats_start + formats_len).min(pos + ext_len);
-                    for i in formats_start..formats_end {
-                        if i < data.len() {
-                            ec_point_formats.push(data[i]);
-                        }
+                    if let Some(formats) = data.get(formats_start..formats_end) {
+                        ec_point_formats.extend_from_slice(formats);
                     }
                 }
             }

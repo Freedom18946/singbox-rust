@@ -304,7 +304,14 @@ fn looks_like_base64(s: &str) -> bool {
     }
     let base64_chars = clean
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '=' || *c == '-' || *c == '_')
+        .filter(|c| {
+            c.is_ascii_alphanumeric()
+                || *c == '+'
+                || *c == '/'
+                || *c == '='
+                || *c == '-'
+                || *c == '_'
+        })
         .count();
     base64_chars as f64 / clean.len() as f64 > 0.9
 }
@@ -414,7 +421,8 @@ mod tests {
 
     #[test]
     fn test_parse_proxy_content_json_array() {
-        let json = r#"[{"ty":"shadowsocks","server":"1.2.3.4","port":8388,"method":"aes-256-gcm"}]"#;
+        let json =
+            r#"[{"ty":"shadowsocks","server":"1.2.3.4","port":8388,"method":"aes-256-gcm"}]"#;
         let result = parse_proxy_content(json).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, OutboundType::Shadowsocks);
@@ -445,7 +453,8 @@ mod tests {
 
     #[test]
     fn test_parse_rule_content_plain_text() {
-        let content = "DOMAIN,example.com\nDOMAIN-SUFFIX,google.com\n# comment\n\nIP-CIDR,1.2.3.0/24";
+        let content =
+            "DOMAIN,example.com\nDOMAIN-SUFFIX,google.com\n# comment\n\nIP-CIDR,1.2.3.0/24";
         let rules = parse_rule_content(content).unwrap();
         assert_eq!(rules.len(), 3);
         assert_eq!(rules[0], "DOMAIN,example.com");
@@ -473,10 +482,7 @@ mod tests {
             parse_host_port("example.com:443"),
             Some(("example.com".into(), 443))
         );
-        assert_eq!(
-            parse_host_port("[::1]:8080"),
-            Some(("::1".into(), 8080))
-        );
+        assert_eq!(parse_host_port("[::1]:8080"), Some(("::1".into(), 8080)));
         assert!(parse_host_port("noport").is_none());
     }
 
@@ -489,7 +495,9 @@ mod tests {
 
     #[test]
     fn test_looks_like_base64() {
-        assert!(looks_like_base64("dHJvamFuOi8vcGFzc0BleGFtcGxlLmNvbTo0NDM="));
+        assert!(looks_like_base64(
+            "dHJvamFuOi8vcGFzc0BleGFtcGxlLmNvbTo0NDM="
+        ));
         assert!(!looks_like_base64(
             "trojan://pass@example.com:443\nvless://uuid@host:443"
         ));

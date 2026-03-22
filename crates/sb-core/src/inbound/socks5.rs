@@ -314,7 +314,8 @@ pub(crate) async fn handle_conn(
                             vec![out_name.clone()]
                         };
                         let client_addr = client_ep.unwrap_or(src);
-                        let wiring = crate::conntrack::register_inbound_udp(
+                        let wiring = crate::conntrack::register_inbound_udp_with_tracker(
+                            br_owned.context.conn_tracker.clone(),
                             client_addr,
                             dst_host.clone(),
                             dst_port,
@@ -643,7 +644,8 @@ pub(crate) async fn handle_conn(
     } else {
         vec![outbound_tag.clone()]
     };
-    let wiring = crate::conntrack::register_inbound_tcp(
+    let wiring = crate::conntrack::register_inbound_tcp_with_tracker(
+        bridge.context.conn_tracker.clone(),
         cli.peer_addr()
             .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0))),
         host.clone(),

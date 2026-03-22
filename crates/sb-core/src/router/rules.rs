@@ -109,10 +109,14 @@ impl Decision {
                 port: override_port,
             },
             RuleAction::HijackDns => Decision::HijackDns,
-            RuleAction::Sniff => Decision::Sniff { override_destination: false },
+            RuleAction::Sniff => Decision::Sniff {
+                override_destination: false,
+            },
             RuleAction::Resolve => Decision::Resolve,
             RuleAction::RouteOptions => Self::from_outbound_or_unresolved(outbound.as_deref()),
-            RuleAction::SniffOverride => Decision::Sniff { override_destination: true },
+            RuleAction::SniffOverride => Decision::Sniff {
+                override_destination: true,
+            },
         }
     }
 }

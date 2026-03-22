@@ -28,20 +28,18 @@
 
 use async_trait::async_trait;
 use std::io;
-use std::sync::OnceLock;
 use tokio::io::{AsyncRead, AsyncWrite};
-
-static RUSTLS_CRYPTO_PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
 
 /// Ensure the rustls crypto provider is installed process-wide.
 ///
-/// This function is safe to call multiple times; only the first call has effect.
-/// It selects the `ring` provider for consistency when multiple providers are available.
+/// App/runtime startup should install the preferred provider explicitly. This
+/// helper is a fallback for library callers and tests when no provider has been
+/// installed yet.
 pub fn ensure_crypto_provider() {
-    RUSTLS_CRYPTO_PROVIDER_INSTALLED.get_or_init(|| {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
         // Prefer ring for consistency when multiple providers are enabled.
         let _ = rustls::crypto::ring::default_provider().install_default();
-    });
+    }
 }
 
 /// Combined `AsyncRead` + `AsyncWrite` trait

@@ -37,7 +37,7 @@ fn classify_err(e: &std::io::Error) -> &'static str {
 
 #[deprecated(
     since = "0.1.0",
-    note = "Use sb_metrics::maybe_spawn_http_exporter_from_env() instead (async, same Registry)"
+    note = "Use sb_metrics::spawn_http_exporter_from_env(sb_metrics::MetricsRegistryHandle::global()) instead (async, same Registry)"
 )]
 pub fn run_exporter(addr: &str) -> std::io::Result<()> {
     match TcpListener::bind(addr) {

@@ -158,6 +158,12 @@ struct State {
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 
+const DEFAULT_FAKEIP_CACHE_CAPACITY: usize = 1024;
+
+fn fakeip_capacity(cap: usize) -> NonZeroUsize {
+    NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::MIN)
+}
+
 fn state() -> &'static Mutex<State> {
     STATE.get_or_init(|| {
         // Defaults: 240.0.0.0/8, capacity 16384
@@ -169,7 +175,7 @@ fn state() -> &'static Mutex<State> {
         );
         let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
         let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
-        let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
+        let cap_nz = fakeip_capacity(cap.max(DEFAULT_FAKEIP_CACHE_CAPACITY));
         Mutex::new(State {
             v4_base,
             v4_mask,
@@ -206,7 +212,7 @@ fn refresh_from_env(st: &mut State) {
     }
 
     // Preserve existing mappings and storage when resizing
-    let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
+    let cap_nz = fakeip_capacity(cap.max(DEFAULT_FAKEIP_CACHE_CAPACITY));
 
     // Create new caches with new capacity
     let mut new_v4 = LruCache::new(cap_nz);

@@ -59,6 +59,7 @@ clap = { version = "4", optional = true, features = ["derive"] }
 
 # 工作区内依赖（按你的仓库结构）
 sb-core = { path = "../sb-core", features = ["router", "scaffold", "v2ray_transport"] }
+sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
 sb-metrics = { path = "../sb-metrics", optional = true }

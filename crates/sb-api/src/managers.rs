@@ -15,20 +15,19 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::{
-        Arc,
         atomic::{AtomicU64, Ordering},
+        Arc,
     },
     time::{Duration, Instant},
 };
-use tokio::sync::{RwLock, watch};
+use tokio::sync::{watch, RwLock};
 use uuid::Uuid;
 
 /// Async function type for fetching provider content from a URL.
 ///
 /// Production code wraps `sb_subscribe::http::fetch_text`; tests use mocks.
-pub type FetchFn = Arc<
-    dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
->;
+pub type FetchFn =
+    Arc<dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync>;
 
 #[cfg(feature = "provider-reload")]
 fn production_fetch() -> FetchFn {
@@ -276,20 +275,13 @@ impl DnsResolver {
     /// Create a new DNS resolver.
     /// 创建新的 DNS 解析器。
     ///
-    /// # Panics
-    /// This function will panic if hardcoded DNS server addresses are invalid (should never happen).
-    #[allow(clippy::expect_used)]
     pub fn new() -> Self {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
             fake_ip_mappings: Arc::new(RwLock::new(HashMap::new())),
             dns_servers: vec![
-                "8.8.8.8:53"
-                    .parse()
-                    .expect("hardcoded DNS server must be valid"),
-                "1.1.1.1:53"
-                    .parse()
-                    .expect("hardcoded DNS server must be valid"),
+                SocketAddr::from(([8, 8, 8, 8], 53)),
+                SocketAddr::from(([1, 1, 1, 1], 53)),
             ],
         }
     }
@@ -550,10 +542,7 @@ impl ProviderManager {
             fetch_fn,
             outbound_registry: None,
             probe_target: sb_core::outbound::RouteTarget::direct(),
-            probe_endpoint: sb_core::outbound::Endpoint::Domain(
-                "www.gstatic.com".into(),
-                443,
-            ),
+            probe_endpoint: sb_core::outbound::Endpoint::Domain("www.gstatic.com".into(), 443),
             tick_interval: Duration::from_secs(60),
             bg_task_handle: std::sync::Mutex::new(None),
             reload_tx: None,
@@ -667,7 +656,8 @@ impl ProviderManager {
                     // Trigger hot-reload if content changed
                     if content_changed {
                         if let Some(ref tx) = self.reload_tx {
-                            Self::try_send_provider_reload(tx, name, &content, is_proxy_provider).await;
+                            Self::try_send_provider_reload(tx, name, &content, is_proxy_provider)
+                                .await;
                         }
                     }
                 }
@@ -714,11 +704,8 @@ impl ProviderManager {
         let healthy = if let Some(ref registry) = self.outbound_registry {
             let ep = self.probe_endpoint.clone();
             let target = self.probe_target.clone();
-            match tokio::time::timeout(
-                Duration::from_secs(5),
-                registry.connect_tcp(&target, ep),
-            )
-            .await
+            match tokio::time::timeout(Duration::from_secs(5), registry.connect_tcp(&target, ep))
+                .await
             {
                 Ok(Ok(_stream)) => true,
                 Ok(Err(e)) => {
@@ -747,10 +734,7 @@ impl ProviderManager {
 
     /// Start the background update loop. Spawns a tokio task that sweeps
     /// all providers on `self.tick_interval` and fetches stale ones.
-    pub fn start_background_updates(
-        self: &Arc<Self>,
-        mut shutdown_rx: watch::Receiver<bool>,
-    ) {
+    pub fn start_background_updates(self: &Arc<Self>, mut shutdown_rx: watch::Receiver<bool>) {
         let weak = Arc::downgrade(self);
         let interval = self.tick_interval;
 
@@ -810,10 +794,26 @@ impl ProviderManager {
         let reload_tx = self.reload_tx.as_ref();
 
         for (name, url) in &stale_proxy {
-            Self::fetch_and_update(&self.fetch_fn, &self.proxy_providers, name, url, true, reload_tx).await;
+            Self::fetch_and_update(
+                &self.fetch_fn,
+                &self.proxy_providers,
+                name,
+                url,
+                true,
+                reload_tx,
+            )
+            .await;
         }
         for (name, url) in &stale_rule {
-            Self::fetch_and_update(&self.fetch_fn, &self.rule_providers, name, url, false, reload_tx).await;
+            Self::fetch_and_update(
+                &self.fetch_fn,
+                &self.rule_providers,
+                name,
+                url,
+                false,
+                reload_tx,
+            )
+            .await;
         }
     }
 
@@ -879,11 +879,7 @@ impl ProviderManager {
                     (obs, Vec::new())
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Provider '{}': failed to parse proxy content: {}",
-                        name,
-                        e
-                    );
+                    log::warn!("Provider '{}': failed to parse proxy content: {}", name, e);
                     return;
                 }
             }
@@ -898,11 +894,7 @@ impl ProviderManager {
                     (Vec::new(), rules)
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Provider '{}': failed to parse rule content: {}",
-                        name,
-                        e
-                    );
+                    log::warn!("Provider '{}': failed to parse rule content: {}", name, e);
                     return;
                 }
             }
@@ -919,11 +911,7 @@ impl ProviderManager {
         };
 
         if let Err(e) = tx.send(msg).await {
-            log::error!(
-                "Provider '{}': failed to send reload message: {}",
-                name,
-                e
-            );
+            log::error!("Provider '{}': failed to send reload message: {}", name, e);
         }
     }
 
@@ -956,9 +944,8 @@ impl Default for ProviderManager {
         }
 
         #[cfg(not(feature = "provider-reload"))]
-        let noop_fetch: FetchFn = Arc::new(|_url| {
-            Box::pin(async { Err("no fetch function configured".to_string()) })
-        });
+        let noop_fetch: FetchFn =
+            Arc::new(|_url| Box::pin(async { Err("no fetch function configured".to_string()) }));
         #[cfg(not(feature = "provider-reload"))]
         {
             Self::new(noop_fetch)
@@ -1052,9 +1039,8 @@ mod tests {
     #[tokio::test]
     async fn test_background_update_fetches_stale_providers() {
         let (fetch, count) = counting_fetch("fresh-content");
-        let mgr = Arc::new(
-            ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)),
-        );
+        let mgr =
+            Arc::new(ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)));
 
         // Provider with no last_update → needs_update() == true
         mgr.add_proxy_provider(make_provider("sub1", Some("https://example.com")))
@@ -1068,7 +1054,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(120)).await;
         let _ = shutdown_tx.send(true);
 
-        assert!(count.load(Ordering::SeqCst) >= 1, "fetch should have been called");
+        assert!(
+            count.load(Ordering::SeqCst) >= 1,
+            "fetch should have been called"
+        );
         let p = mgr.get_proxy_provider("sub1").await.unwrap().unwrap();
         assert_eq!(p.content, "fresh-content");
         assert!(p.healthy);
@@ -1077,9 +1066,8 @@ mod tests {
     #[tokio::test]
     async fn test_background_update_skips_non_stale_providers() {
         let (fetch, count) = counting_fetch("should-not-appear");
-        let mgr = Arc::new(
-            ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)),
-        );
+        let mgr =
+            Arc::new(ProviderManager::new(fetch).with_tick_interval(Duration::from_millis(50)));
 
         // Provider that was just updated → needs_update() == false
         let mut p = make_provider("sub1", Some("https://example.com"));
@@ -1093,7 +1081,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(120)).await;
         let _ = shutdown_tx.send(true);
 
-        assert_eq!(count.load(Ordering::SeqCst), 0, "fetch should NOT have been called");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "fetch should NOT have been called"
+        );
     }
 
     #[tokio::test]
@@ -1126,7 +1118,10 @@ mod tests {
             .unwrap();
 
         let healthy = mgr.health_check_provider("sub1", true).await.unwrap();
-        assert!(healthy, "without registry, should gracefully return healthy");
+        assert!(
+            healthy,
+            "without registry, should gracefully return healthy"
+        );
     }
 
     #[tokio::test]
@@ -1147,11 +1142,8 @@ mod tests {
         reg.insert("block-probe".into(), OutboundImpl::Block);
         let handle = Arc::new(OutboundRegistryHandle::new(reg));
 
-        let noop_fetch: FetchFn = Arc::new(|_| {
-            Box::pin(async { Err("unused".into()) })
-        });
-        let mut mgr = ProviderManager::new(noop_fetch)
-            .with_outbound_registry(handle);
+        let noop_fetch: FetchFn = Arc::new(|_| Box::pin(async { Err("unused".into()) }));
+        let mut mgr = ProviderManager::new(noop_fetch).with_outbound_registry(handle);
         // Point the probe at the Named "block-probe" outbound
         mgr.probe_target = RouteTarget::Named("block-probe".into());
         mgr.probe_endpoint = Endpoint::Domain("www.gstatic.com".into(), 443);

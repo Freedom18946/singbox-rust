@@ -77,6 +77,8 @@ pub struct SocksInboundConfig {
     pub domain_strategy: Option<DomainStrategy>,
     /// Optional V2Ray stats manager
     pub stats: Option<Arc<StatsManager>>,
+    /// Explicit conntrack dependency for SOCKS TCP/UDP sessions.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Inbound sniff configuration (Go parity: sniff_enabled).
     pub sniff: bool,
     /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
@@ -168,7 +170,9 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
 
     let udp_addr = if udp_enabled {
         // Bind UDP socket
-        let bind_addr = cfg.udp_bind.unwrap_or_else(|| "0.0.0.0:0".parse().unwrap());
+        let bind_addr = cfg
+            .udp_bind
+            .unwrap_or_else(|| SocketAddr::from(([0, 0, 0, 0], 0)));
         let sock = tokio::net::UdpSocket::bind(bind_addr).await?;
         let local_addr = sock.local_addr()?;
         let sock = std::sync::Arc::new(sock);
@@ -177,8 +181,11 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
         let timeout = cfg.udp_timeout;
         let inbound_tag = cfg.tag.clone();
         let stats = cfg.stats.clone();
+        let conn_tracker = cfg.conn_tracker.clone();
         tokio::spawn(async move {
-            if let Err(e) = udp::serve_udp_datagrams(sock, timeout, inbound_tag, stats).await {
+            if let Err(e) =
+                udp::serve_udp_datagrams(sock, timeout, inbound_tag, stats, conn_tracker).await
+            {
                 tracing::warn!("socks/udp serve error: {:?}", e);
             }
         });
@@ -550,7 +557,10 @@ where
     let mut sniff_prefix: Vec<u8> = Vec::new();
     let mut sniff_reply_sent = false;
     let mut override_host: Option<String> = None;
-    if let RDecision::Sniff { override_destination } = decision {
+    if let RDecision::Sniff {
+        override_destination,
+    } = decision
+    {
         let dest_port = port_opt.unwrap_or(0);
         if sb_core::router::sniff::skip_sniff(dest_port) {
             decision = RDecision::Direct;
@@ -561,11 +571,7 @@ where
 
             // Read initial bytes with 300ms timeout
             let mut buf = vec![0u8; 4096];
-            let n = match tokio::time::timeout(
-                Duration::from_millis(300),
-                cli.read(&mut buf),
-            )
-            .await
+            let n = match tokio::time::timeout(Duration::from_millis(300), cli.read(&mut buf)).await
             {
                 Ok(Ok(n)) if n > 0 => n,
                 _ => 0,
@@ -677,94 +683,95 @@ where
     // Fast path: if router decided a named outbound, try OutboundRegistry first
     // Skip fast-path when sniff already sent reply (fast-path sends its own reply)
     if sniff_prefix.is_empty() {
-    if let RDecision::Proxy(Some(name)) = &decision {
-        let out_ep = match &endpoint {
-            Endpoint::Domain(h, p) => OutEndpoint::Domain(h.clone(), *p),
-            Endpoint::Ip(sa) => OutEndpoint::Ip(*sa),
-        };
-        match cfg
-            .outbounds
-            .connect_io(&OutRouteTarget::Named(name.clone()), out_ep)
-            .await
-        {
-            Ok(mut s) => {
-                // Success: reply and start piping
-                reply(cli, 0x00, None).await?;
-                outbound_tag = Some(name.clone());
+        if let RDecision::Proxy(Some(name)) = &decision {
+            let out_ep = match &endpoint {
+                Endpoint::Domain(h, p) => OutEndpoint::Domain(h.clone(), *p),
+                Endpoint::Ip(sa) => OutEndpoint::Ip(*sa),
+            };
+            match cfg
+                .outbounds
+                .connect_io(&OutRouteTarget::Named(name.clone()), out_ep)
+                .await
+            {
+                Ok(mut s) => {
+                    // Success: reply and start piping
+                    reply(cli, 0x00, None).await?;
+                    outbound_tag = Some(name.clone());
 
-                fn dur_from_env(key: &str) -> Option<std::time::Duration> {
-                    std::env::var(key)
-                        .ok()
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .and_then(|ms| {
-                            if ms > 0 {
-                                Some(std::time::Duration::from_millis(ms))
-                            } else {
-                                None
-                            }
-                        })
-                }
-                let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
-                let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
-                let traffic = cfg.stats.as_ref().and_then(|stats| {
-                    stats.traffic_recorder(
-                        cfg.tag.as_deref(),
+                    fn dur_from_env(key: &str) -> Option<std::time::Duration> {
+                        std::env::var(key)
+                            .ok()
+                            .and_then(|v| v.parse::<u64>().ok())
+                            .and_then(|ms| {
+                                if ms > 0 {
+                                    Some(std::time::Duration::from_millis(ms))
+                                } else {
+                                    None
+                                }
+                            })
+                    }
+                    let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
+                    let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+                    let traffic = cfg.stats.as_ref().and_then(|stats| {
+                        stats.traffic_recorder(
+                            cfg.tag.as_deref(),
+                            outbound_tag.as_deref(),
+                            auth_user.as_deref(),
+                        )
+                    });
+                    let (dst_host, dst_port) = match &endpoint {
+                        Endpoint::Domain(h, p) => (h.clone(), *p),
+                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                    };
+                    let chains = sb_core::outbound::chain::compute_chain_for_decision(
+                        Some(cfg.outbounds.as_ref()),
+                        &decision,
                         outbound_tag.as_deref(),
-                        auth_user.as_deref(),
-                    )
-                });
-                let (dst_host, dst_port) = match &endpoint {
-                    Endpoint::Domain(h, p) => (h.clone(), *p),
-                    Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                };
-                let chains = sb_core::outbound::chain::compute_chain_for_decision(
-                    Some(cfg.outbounds.as_ref()),
-                    &decision,
-                    outbound_tag.as_deref(),
-                );
-                let wiring = sb_core::conntrack::register_inbound_tcp(
-                    peer,
-                    dst_host.clone(),
-                    dst_port,
-                    dst_host,
-                    "socks",
-                    cfg.tag.clone(),
-                    outbound_tag.clone(),
-                    chains,
-                    rule.clone(),
-                    None,
-                    None,
-                    traffic,
-                );
-                let _guard = wiring.guard;
+                    );
+                    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+                        cfg.conn_tracker.clone(),
+                        peer,
+                        dst_host.clone(),
+                        dst_port,
+                        dst_host,
+                        "socks",
+                        cfg.tag.clone(),
+                        outbound_tag.clone(),
+                        chains,
+                        rule.clone(),
+                        None,
+                        None,
+                        traffic,
+                    );
+                    let _guard = wiring.guard;
 
-                let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
-                    cli,
-                    &mut s,
-                    "socks",
-                    std::time::Duration::from_secs(1),
-                    rt,
-                    wt,
-                    Some(wiring.cancel),
-                    Some(wiring.traffic),
-                )
-                .await;
-                match copy_res {
-                    Ok(_) => {}
-                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                    Err(e) => return Err(e),
+                    let copy_res = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+                        cli,
+                        &mut s,
+                        "socks",
+                        std::time::Duration::from_secs(1),
+                        rt,
+                        wt,
+                        Some(wiring.cancel),
+                        Some(wiring.traffic),
+                    )
+                    .await;
+                    match copy_res {
+                        Ok(_) => {}
+                        Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                        Err(e) => return Err(e),
+                    }
+                    return Ok(());
                 }
-                return Ok(());
-            }
-            Err(e) => {
-                tracing::warn!(
-                    outbound = %name,
-                    error = %e,
-                    "socks5 inbound: named outbound fast-path connect_io failed; falling back to registry path"
-                );
+                Err(e) => {
+                    tracing::warn!(
+                        outbound = %name,
+                        error = %e,
+                        "socks5 inbound: named outbound fast-path connect_io failed; falling back to registry path"
+                    );
+                }
             }
         }
-    }
     } // end skip fast-path when sniffed
 
     // 与上游建立连接（根据决策与默认代理）
@@ -879,7 +886,10 @@ where
             // Should have been filtered earlier; return explicit error to avoid panic.
             return Err(io::Error::other("socks: rejected by rules"));
         }
-        RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+        RDecision::Hijack { .. }
+        | RDecision::Sniff { .. }
+        | RDecision::Resolve
+        | RDecision::HijackDns => {
             tracing::warn!("socks5 inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision");
             outbound_tag = Some("direct".to_string());
             match &endpoint {
@@ -935,7 +945,8 @@ where
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         dst_host.clone(),
         dst_port,
@@ -1096,6 +1107,7 @@ impl SocksInbound {
     pub async fn run(&self) -> anyhow::Result<()> {
         // ... 既有 TCP 接受/处理逻辑 ...
         // ... Existing TCP accept/handle logic ...
+        let compat_conn_tracker = Arc::new(sb_common::conntrack::ConnTracker::new());
 
         // NOTE(linus): UDP Associate 接入（默认关闭）。仅当显式设置 SB_SOCKS_UDP_ENABLE=1 时启用。
         // 行为守恒：不开关 → 不绑定端口，不起后台任务。
@@ -1120,12 +1132,15 @@ impl SocksInbound {
             // 后台处理 UDP 报文（解析+上游转发+回写）
             // Background processing of UDP packets (parse + upstream forward + write back)
             for s in sockets {
+                let conn_tracker = compat_conn_tracker.clone();
                 tokio::spawn({
                     let sock = s.clone();
                     async move {
                         // 这里的 sock 已经是 Arc<UdpSocket>，与新签名匹配
                         // sock here is already Arc<UdpSocket>, matching the new signature
-                        if let Err(e) = udp::serve_udp_datagrams(sock, None, None, None).await {
+                        if let Err(e) =
+                            udp::serve_udp_datagrams(sock, None, None, None, conn_tracker).await
+                        {
                             tracing::warn!("socks/udp serve ended: {e}");
                         }
                     }
@@ -1147,10 +1162,13 @@ impl SocksInbound {
                     .await
                     .map_err(|e| anyhow::anyhow!("bind_udp_from_env_or_any failed: {e}"))?;
                 for s in sockets {
+                    let conn_tracker = compat_conn_tracker.clone();
                     tokio::spawn({
                         let sock = s.clone();
                         async move {
-                            if let Err(e) = udp::serve_udp_datagrams(sock, None, None, None).await {
+                            if let Err(e) =
+                                udp::serve_udp_datagrams(sock, None, None, None, conn_tracker).await
+                            {
                                 tracing::warn!("socks/udp (autostart for TCP) ended: {e}");
                             }
                         }

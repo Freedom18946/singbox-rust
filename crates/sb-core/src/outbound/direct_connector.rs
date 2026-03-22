@@ -76,7 +76,10 @@ impl DirectConnector {
             Host::Name(domain) => super::resolve_host_for_direct(domain, endpoint.port)
                 .await
                 .map_err(|e| {
-                    SbError::network(ErrorClass::Connection, format!("DNS resolution failed: {e}"))
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("DNS resolution failed: {e}"),
+                    )
                 }),
         }
     }
@@ -445,7 +448,10 @@ impl UdpTransport for DirectUdpTransport {
             Host::Name(domain) => super::resolve_host_for_direct(domain, dst.port)
                 .await
                 .map_err(|e| {
-                    SbError::network(ErrorClass::Connection, format!("DNS resolution failed: {e}"))
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("DNS resolution failed: {e}"),
+                    )
                 })?
                 .into_iter()
                 .next()

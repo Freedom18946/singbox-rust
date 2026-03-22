@@ -24,6 +24,18 @@ use std::collections::VecDeque;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, time::interval};
 
+async fn send_ws_message(
+    sender: &mut futures_util::stream::SplitSink<WebSocket, axum::extract::ws::Message>,
+    message: axum::extract::ws::Message,
+    channel: &'static str,
+) -> bool {
+    if let Err(err) = sender.send(message).await {
+        log::debug!("WebSocket {channel} send failed: {}", err);
+        return false;
+    }
+    true
+}
+
 // ===== Traffic WebSocket =====
 
 /// Handle traffic WebSocket connections — pushes real traffic delta every second.
@@ -32,11 +44,11 @@ pub async fn traffic_websocket(ws: WebSocketUpgrade, State(state): State<ApiStat
 }
 
 /// Handle traffic WebSocket — pushes `{"up": delta, "down": delta}` every second
-/// using real data from the global connection tracker.
-async fn handle_traffic_websocket(socket: WebSocket, _state: ApiState) {
+/// using real data from the injected connection tracker.
+async fn handle_traffic_websocket(socket: WebSocket, state: ApiState) {
     let (mut sender, mut receiver) = socket.split();
     let mut tick = interval(Duration::from_secs(1));
-    let tracker = sb_common::conntrack::global_tracker();
+    let tracker = state.conn_tracker;
 
     let mut prev_up = tracker.total_upload();
     let mut prev_down = tracker.total_download();
@@ -47,7 +59,15 @@ async fn handle_traffic_websocket(socket: WebSocket, _state: ApiState) {
                 match msg {
                     Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
                     Some(Ok(axum::extract::ws::Message::Ping(data))) => {
-                        let _ = sender.send(axum::extract::ws::Message::Pong(data)).await;
+                        if !send_ws_message(
+                            &mut sender,
+                            axum::extract::ws::Message::Pong(data),
+                            "traffic pong",
+                        )
+                        .await
+                        {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -62,14 +82,25 @@ async fn handle_traffic_websocket(socket: WebSocket, _state: ApiState) {
                 prev_up = cur_up;
                 prev_down = cur_down;
                 if let Ok(text) = serde_json::to_string(&msg) {
-                    if sender.send(axum::extract::ws::Message::Text(text)).await.is_err() {
+                    if !send_ws_message(
+                        &mut sender,
+                        axum::extract::ws::Message::Text(text),
+                        "traffic payload",
+                    )
+                    .await
+                    {
                         break;
                     }
                 }
             }
         }
     }
-    let _ = sender.send(axum::extract::ws::Message::Close(None)).await;
+    let _ = send_ws_message(
+        &mut sender,
+        axum::extract::ws::Message::Close(None),
+        "traffic close",
+    )
+    .await;
 }
 
 // ===== Connections WebSocket =====
@@ -94,29 +125,49 @@ pub async fn handle_connections_websocket(socket: WebSocket, state: ApiState) {
                 match msg {
                     Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
                     Some(Ok(axum::extract::ws::Message::Ping(data))) => {
-                        let _ = sender.send(axum::extract::ws::Message::Pong(data)).await;
+                        if !send_ws_message(
+                            &mut sender,
+                            axum::extract::ws::Message::Pong(data),
+                            "connections pong",
+                        )
+                        .await
+                        {
+                            break;
+                        }
                     }
                     _ => {}
                 }
             }
             _ = tick.tick() => {
-                let snapshot = build_connections_snapshot();
+                let snapshot = build_connections_snapshot(state.conn_tracker.as_ref());
                 if let Ok(text) = serde_json::to_string(&snapshot) {
-                    if sender.send(axum::extract::ws::Message::Text(text)).await.is_err() {
+                    if !send_ws_message(
+                        &mut sender,
+                        axum::extract::ws::Message::Text(text),
+                        "connections payload",
+                    )
+                    .await
+                    {
                         break;
                     }
                 }
             }
         }
     }
-    let _ = sender.send(axum::extract::ws::Message::Close(None)).await;
+    let _ = send_ws_message(
+        &mut sender,
+        axum::extract::ws::Message::Close(None),
+        "connections close",
+    )
+    .await;
 }
 
 /// Build connections snapshot (shared between HTTP and WS).
 /// Returns the Go-compatible Snapshot format:
 /// `{downloadTotal, uploadTotal, connections[], memory}`
-pub fn build_connections_snapshot() -> serde_json::Value {
-    let tracker = sb_common::conntrack::global_tracker();
+pub fn build_connections_snapshot(
+    tracker: &sb_common::conntrack::ConnTracker,
+) -> serde_json::Value {
     let connections = tracker.list();
     let memory = get_process_memory();
 
@@ -184,10 +235,12 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
     });
 
     if let Ok(welcome_text) = serde_json::to_string(&welcome) {
-        if sender
-            .send(axum::extract::ws::Message::Text(welcome_text))
-            .await
-            .is_err()
+        if !send_ws_message(
+            &mut sender,
+            axum::extract::ws::Message::Text(welcome_text),
+            "logs welcome",
+        )
+        .await
         {
             return;
         }
@@ -205,7 +258,13 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                 match msg {
                     Some(Ok(axum::extract::ws::Message::Close(_))) => break,
                     Some(Ok(axum::extract::ws::Message::Ping(data))) => {
-                        if sender.send(axum::extract::ws::Message::Pong(data)).await.is_err() {
+                        if !send_ws_message(
+                            &mut sender,
+                            axum::extract::ws::Message::Pong(data),
+                            "logs pong",
+                        )
+                        .await
+                        {
                             error_count += 1;
                         }
                     }
@@ -214,9 +273,16 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                             if let Some(action) = request.get("action").and_then(|a| a.as_str()) {
                                 if action == "get_recent_logs" {
                                     for buffered_log in &message_buffer {
-                                        let _ = sender
-                                            .send(axum::extract::ws::Message::Text(buffered_log.clone()))
-                                            .await;
+                                        if !send_ws_message(
+                                            &mut sender,
+                                            axum::extract::ws::Message::Text(buffered_log.clone()),
+                                            "logs replay",
+                                        )
+                                        .await
+                                        {
+                                            error_count += 1;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -239,7 +305,13 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                         .as_millis() as u64,
                 };
                 if let Ok(ping_text) = serde_json::to_string(&ping_msg) {
-                    if sender.send(axum::extract::ws::Message::Text(ping_text)).await.is_err() {
+                    if !send_ws_message(
+                        &mut sender,
+                        axum::extract::ws::Message::Text(ping_text),
+                        "logs heartbeat",
+                    )
+                    .await
+                    {
                         error_count += 1;
                     }
                 }
@@ -253,7 +325,13 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                             if message_buffer.len() == BUFFER_SIZE { message_buffer.pop_front(); }
                             message_buffer.push_back(log_text.clone());
 
-                            if sender.send(axum::extract::ws::Message::Text(log_text)).await.is_err() {
+                            if !send_ws_message(
+                                &mut sender,
+                                axum::extract::ws::Message::Text(log_text),
+                                "logs payload",
+                            )
+                            .await
+                            {
                                 error_count += 1;
                             }
                         }
@@ -273,11 +351,22 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
     }
 
     for buffered_msg in message_buffer {
-        let _ = sender
-            .send(axum::extract::ws::Message::Text(buffered_msg))
-            .await;
+        if !send_ws_message(
+            &mut sender,
+            axum::extract::ws::Message::Text(buffered_msg),
+            "logs drain",
+        )
+        .await
+        {
+            break;
+        }
     }
-    let _ = sender.send(axum::extract::ws::Message::Close(None)).await;
+    let _ = send_ws_message(
+        &mut sender,
+        axum::extract::ws::Message::Close(None),
+        "logs close",
+    )
+    .await;
 }
 
 // ===== Memory WebSocket =====
@@ -314,7 +403,8 @@ fn get_process_memory() -> u64 {
         unsafe {
             let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
             let mut count = (std::mem::size_of::<libc::mach_task_basic_info_data_t>()
-                / std::mem::size_of::<libc::natural_t>()) as libc::mach_msg_type_number_t;
+                / std::mem::size_of::<libc::natural_t>())
+                as libc::mach_msg_type_number_t;
             let kr = libc::task_info(
                 libc::mach_task_self(),
                 libc::MACH_TASK_BASIC_INFO,
@@ -347,7 +437,15 @@ pub async fn handle_memory_websocket_inner(socket: WebSocket, _state: ApiState) 
                 match msg {
                     Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
                     Some(Ok(axum::extract::ws::Message::Ping(data))) => {
-                        let _ = sender.send(axum::extract::ws::Message::Pong(data)).await;
+                        if !send_ws_message(
+                            &mut sender,
+                            axum::extract::ws::Message::Pong(data),
+                            "memory pong",
+                        )
+                        .await
+                        {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -361,12 +459,23 @@ pub async fn handle_memory_websocket_inner(socket: WebSocket, _state: ApiState) 
                 };
                 let msg = json!({"inuse": inuse, "oslimit": 0});
                 if let Ok(text) = serde_json::to_string(&msg) {
-                    if sender.send(axum::extract::ws::Message::Text(text)).await.is_err() {
+                    if !send_ws_message(
+                        &mut sender,
+                        axum::extract::ws::Message::Text(text),
+                        "memory payload",
+                    )
+                    .await
+                    {
                         break;
                     }
                 }
             }
         }
     }
-    let _ = sender.send(axum::extract::ws::Message::Close(None)).await;
+    let _ = send_ws_message(
+        &mut sender,
+        axum::extract::ws::Message::Close(None),
+        "memory close",
+    )
+    .await;
 }

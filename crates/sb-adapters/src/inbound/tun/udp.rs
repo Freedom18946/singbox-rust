@@ -127,17 +127,17 @@ impl UdpNatTable {
         });
         if evicted > 0 {
             self.session_count.fetch_sub(evicted, Ordering::Relaxed);
-            tracing::debug!(evicted, remaining = self.sessions.len(), "tun udp: NAT eviction");
+            tracing::debug!(
+                evicted,
+                remaining = self.sessions.len(),
+                "tun udp: NAT eviction"
+            );
         }
     }
 }
 
 /// Spawn a background task that relays inbound UDP responses back through the TUN.
-fn spawn_reverse_relay(
-    key: UdpFourTuple,
-    socket: Arc<UdpSocket>,
-    writer: Arc<dyn TunWriter>,
-) {
+fn spawn_reverse_relay(key: UdpFourTuple, socket: Arc<UdpSocket>, writer: Arc<dyn TunWriter>) {
     tokio::spawn(async move {
         let mut buf = vec![0u8; 65536];
         loop {
@@ -149,8 +149,10 @@ fn spawn_reverse_relay(
             // Construct IP/UDP response packet and write to TUN.
             // Source = original destination, Destination = original source (NAT reverse).
             let pkt = build_udp_ip_packet(
-                key.dst_ip, key.dst_port, // response source = original dst
-                key.src_ip, key.src_port, // response dest = original src
+                key.dst_ip,
+                key.dst_port, // response source = original dst
+                key.src_ip,
+                key.src_port, // response dest = original src
                 &buf[..n],
             );
             if let Err(e) = writer.write_packet(&pkt).await {
@@ -283,7 +285,7 @@ fn build_ipv6_udp(
     // IPv6 header (40 bytes)
     let hdr = &mut pkt[prefix_len..prefix_len + 40];
     hdr[0] = 0x60; // version=6, traffic class hi=0
-    // hdr[1..4] = 0: traffic class lo + flow label
+                   // hdr[1..4] = 0: traffic class lo + flow label
     hdr[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes()); // payload length
     hdr[6] = 17; // next header: UDP
     hdr[7] = 64; // hop limit
@@ -317,7 +319,7 @@ fn ipv6_udp_checksum(src: &Ipv6Addr, dst: &Ipv6Addr, udp_len: u16, udp_segment: 
     }
     sum += udp_len as u32;
     sum += 17u32; // next header = UDP
-    // UDP segment (header + payload)
+                  // UDP segment (header + payload)
     let mut i = 0;
     while i + 1 < udp_segment.len() {
         sum += u16::from_be_bytes([udp_segment[i], udp_segment[i + 1]]) as u32;
@@ -330,7 +332,11 @@ fn ipv6_udp_checksum(src: &Ipv6Addr, dst: &Ipv6Addr, udp_len: u16, udp_segment: 
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
     let r = !(sum as u16);
-    if r == 0 { 0xFFFF } else { r } // RFC 768: 0 transmitted as 0xFFFF for IPv6
+    if r == 0 {
+        0xFFFF
+    } else {
+        r
+    } // RFC 768: 0 transmitted as 0xFFFF for IPv6
 }
 
 /// Compute IPv4 header checksum (RFC 1071).
@@ -364,7 +370,7 @@ mod tests {
         header[9] = 17; // UDP
         header[12..16].copy_from_slice(&[10, 0, 0, 1]); // src
         header[16..20].copy_from_slice(&[10, 0, 0, 2]); // dst
-        // Total length = 28 (20 IP + 8 UDP)
+                                                        // Total length = 28 (20 IP + 8 UDP)
         header[2..4].copy_from_slice(&28u16.to_be_bytes());
 
         let cksum = ip_checksum(&header);

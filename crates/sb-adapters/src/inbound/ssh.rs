@@ -35,6 +35,8 @@ pub struct SshInboundAdapter {
     authorized_keys: HashMap<String, Vec<String>>,
     /// Password authentication (username -> password)
     passwords: HashMap<String, String>,
+    /// Explicit conntrack dependency for direct-tcpip channels.
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Shutdown signal
     shutdown: Arc<AtomicBool>,
     /// Shutdown notification
@@ -56,6 +58,8 @@ pub struct SshInboundConfig {
     pub authorized_keys: HashMap<String, Vec<String>>,
     /// Password authentication (username -> password)
     pub passwords: HashMap<String, String>,
+    /// Explicit conntrack dependency for direct-tcpip channels.
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 }
 
 impl Default for SshInboundConfig {
@@ -66,6 +70,7 @@ impl Default for SshInboundConfig {
             host_key_path: None,
             authorized_keys: HashMap::new(),
             passwords: HashMap::new(),
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         }
     }
 }
@@ -86,6 +91,7 @@ impl SshInboundAdapter {
             host_key_path: config.host_key_path,
             authorized_keys: config.authorized_keys,
             passwords: config.passwords,
+            conn_tracker: config.conn_tracker,
             shutdown: Arc::new(AtomicBool::new(false)),
             shutdown_notify: Arc::new(Notify::new()),
             active_connections: Arc::new(AtomicU64::new(0)),
@@ -108,6 +114,7 @@ impl SshInboundAdapter {
             host_key_path: param.ssh_host_key_path.clone(),
             authorized_keys: HashMap::new(),
             passwords,
+            conn_tracker: param.conn_tracker.clone(),
         };
 
         let adapter = Self::new(config)?;
@@ -134,6 +141,8 @@ mod ssh_server {
         pub active_connections: Arc<AtomicU64>,
         /// Peer address (if known)
         pub peer_addr: Option<std::net::SocketAddr>,
+        /// Explicit conntrack dependency.
+        pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     }
 
     /// State for an active SSH channel
@@ -157,6 +166,7 @@ mod ssh_server {
                 channels: HashMap::new(),
                 active_connections: self.active_connections.clone(),
                 peer_addr,
+                conn_tracker: self.conn_tracker.clone(),
             }
         }
     }
@@ -239,7 +249,8 @@ mod ssh_server {
                             0,
                         )
                     });
-                    let wiring = sb_core::conntrack::register_inbound_tcp(
+                    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+                        self.conn_tracker.clone(),
                         peer,
                         host_to_connect.to_string(),
                         port_to_connect as u16,
@@ -434,6 +445,7 @@ mod ssh_server {
                                     channels: HashMap::new(),
                                     active_connections: self.active_connections.clone(),
                                     peer_addr: Some(peer_addr),
+                                    conn_tracker: self.conn_tracker.clone(),
                                 };
                                 let active_connections = self.active_connections.clone();
 
@@ -603,6 +615,7 @@ mod tests {
             host_key_path: None,
             authorized_keys: HashMap::new(),
             passwords,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         };
 
         let adapter = SshInboundAdapter::new(config).unwrap();

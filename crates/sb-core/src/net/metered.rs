@@ -48,11 +48,15 @@ impl Drop for RelayBuf {
 
 impl std::ops::Deref for RelayBuf {
     type Target = [u8];
-    fn deref(&self) -> &[u8] { &self.0 }
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl std::ops::DerefMut for RelayBuf {
-    fn deref_mut(&mut self) -> &mut [u8] { &mut self.0 }
+    fn deref_mut(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
 }
 
 /// Optional traffic recorder for per-connection byte accounting (e.g. V2Ray stats).

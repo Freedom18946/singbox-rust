@@ -9,7 +9,7 @@
 //! - **Default outbound**: Use `sub.default_outbound` if present, otherwise keep `base`
 //! - **Other fields**: Retained from `base`
 
-use super::{Config, Outbound};
+use crate::{compat, merge_raw, Config, Outbound};
 use serde_json::Value;
 
 /// Non-destructive merge: returns a new [`Config`].
@@ -25,13 +25,13 @@ use serde_json::Value;
 /// ```
 #[must_use]
 pub fn merge(base: Config, sub: Config) -> Config {
-    let merged_raw = super::merge_raw(base.raw(), sub.raw());
+    let merged_raw = merge_raw(base.raw(), sub.raw());
     match Config::from_value(merged_raw) {
         Ok(cfg) => cfg,
         Err(_) => {
             let mut typed = merge_typed(base, sub);
             let value = serde_json::to_value(&typed).unwrap_or(Value::Null);
-            let (migrated, _migration_diagnostics) = super::compat::migrate_to_v2(&value);
+            let (migrated, _migration_diagnostics) = compat::migrate_to_v2(&value);
             match Config::from_value(migrated.clone()) {
                 Ok(cfg) => cfg,
                 Err(_) => {

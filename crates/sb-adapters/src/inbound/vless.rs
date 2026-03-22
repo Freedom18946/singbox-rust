@@ -62,6 +62,7 @@ pub struct VlessInboundConfig {
     pub router: Arc<router::RouterHandle>,
     pub tag: Option<String>,
     pub stats: Option<Arc<StatsManager>>,
+    pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     /// Optional REALITY TLS configuration for inbound
     /// 可选的 REALITY TLS 入站配置
     #[cfg(feature = "tls_reality")]
@@ -535,7 +536,8 @@ async fn handle_conn_impl(
         &decision,
         outbound_tag.as_deref(),
     );
-    let wiring = sb_core::conntrack::register_inbound_tcp(
+    let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
+        cfg.conn_tracker.clone(),
         peer,
         target_host.clone(),
         target_port,
