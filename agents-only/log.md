@@ -16,6 +16,43 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 16:53] Agent: Codex (GPT-5)
+
+**任务**: 更新 `crates/` Layer 1 / 2 维护执行状态文档，并同步当前修复批次进展
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-remediation-workpackage.md`
+  - 新增“执行进展（2026-03-22）”段
+  - 记录 `Batch A` / `Batch B` / `Batch C` 当前完成面与尾项
+  - 更新任务状态表与“下一步”到执行态口径
+- `agents-only/active_context.md`
+  - 将“当前维护动作”从排程态更新为执行态
+  - 明确 `conntrack/context` 生产读链已收口，下一步转向 `sb-metrics` 内部注册表与 `Batch D`
+- `agents-only/log.md`
+  - 追加本次执行态同步记录
+**结果**: 成功
+**备注**:
+- 文档口径继续保持 maintenance mode，仅描述 Layer 1 / 2 维护进展
+- 普通 `cargo check` / `cargo test` 验证仅作为维护收敛依据，不表述为 dual-kernel parity 完成
+
+### [2026-03-22 13:36] Agent: Codex (GPT-5)
+
+**任务**: 完成 `crates/` Layer 1 / 2 审议结果归并，并建立维护态修复排程工作包
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-remediation-workpackage.md`
+  - 新建修复归并工作包
+  - 将 2026-03-22 `crates/` 审议发现按 `G1`~`G5` 统一归并
+  - 冻结 `Batch A`~`Batch D` 的优先级、影响范围、可修复性与推进顺序
+- `agents-only/active_context.md`
+  - 补充维护态“当前维护动作”段
+  - 明确下一步为 `Batch A / P0 / Crash Surface`
+- `agents-only/log.md`
+  - 追加本次归并记录
+**结果**: 成功
+**备注**:
+- 本次只更新 `agents-only`，未改 `crates/` 源码
+- `workpackage_latest.md` 按既定口径保持不变
+- 继续遵守 maintenance mode、Layer 1 / 2 优先、不恢复 GitHub Actions、不把普通测试视为 dual-kernel parity 完成
+
 ### [2026-03-22 14:28] Agent: Codex (GPT-5)
 
 **任务**: 审议 `crates/sb-test-utils`（Layer 1 / 2）

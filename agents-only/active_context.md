@@ -12,6 +12,12 @@
 **历史阶段**: L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
+## 当前维护动作（2026-03-22）
+
+- `crates/` Layer 1 / 2 修复工作包已进入执行态：`Batch A` 与 `Batch B` 已完成大部分已审议热点收口，`Batch C` 中 `conntrack/context` 生产 wiring 已显式注入化
+- 生产代码里 `shared_tracker()` / `global_tracker()` / `context_registry()` / `install_context_registry()` 读链已清零；剩余单例尾项主要集中在 `sb-metrics` 内部 `REGISTRY + LazyLock` 架构与 `Batch D` 机械性 sweep
+- 下一步继续只按 Layer 1 / 2 维护，优先完成 `Batch C` 的 `sb-metrics` 注册表内部收口，再做 `Batch D` 风格/路径收尾；不恢复 GitHub Actions，也不把普通测试完成表述为 dual-kernel parity 完成
+
 ## L25 完成总结（2026-03-17）
 
 **10/10 任务完成，4 批次全部交付**
