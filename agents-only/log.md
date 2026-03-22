@@ -16,6 +16,32 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 19:53] Agent: Codex (GPT-5)
+
+**任务**: 承接 repo-wide Layer 1 / 2 maintenance 收尾，完成最终复核、follow-up 判断与文档归档
+**变更**:
+- `agents-only/active_context.md`
+  - 更新为最终收尾状态
+  - 记录本轮重新验证结果、`GO_SINGBOX_BIN` 继续缺失、以及 `inbound_errors` 维持 follow-up 的结论
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加收尾复核结果
+  - 将 `R5` 标记为完成，并把 `must-fix` / `follow-up-nonblocking` 状态更新到最终归档口径
+- `agents-only/log.md`
+  - 追加本次最终收尾记录
+**结果**: 成功
+**构建验证**:
+- `git status --short --branch` ✅ clean (`main...origin/main`)
+- `git log --oneline -5` ✅ 当前 HEAD=`1912050f`
+- `cargo check --workspace` ✅
+- `cargo clippy --workspace --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `bash scripts/ci/accept.sh` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ⚠️ `ok=false`, `reason=runtime-exited-before-metrics`
+**备注**:
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 maintenance validation 记为 skipped
+- 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空；当前判断该项属于低收益/高不确定性的 maintenance follow-up，不在本轮强行扩改
+- 上述结果仅说明 maintenance acceptance / integration validation 收尾完成，不表述为 dual-kernel parity 完成
+
 ### [2026-03-22 21:47] Agent: Codex (GPT-5)
 
 **任务**: 将 Layer 1 / 2 要求扩散到全仓库，完成 workspace 级标准验收与 maintenance acceptance

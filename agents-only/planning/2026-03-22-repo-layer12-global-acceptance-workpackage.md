@@ -62,6 +62,11 @@
   - `inbound_errors` 子任务已改为结构化上报，不再因脚本假设失配直接炸整轮 acceptance
   - 当前 acceptance 结果里 `inbound_errors.ok=false`，原因是 `runtime-exited-before-metrics`；已文档化为 follow-up，而非 parity 结论
 - 当前环境未设置 `GO_SINGBOX_BIN`，因此 `scripts/e2e/run.sh` 的 Go/Rust compat 子集本轮未执行，按计划记为 skipped
+- 收尾复核已补跑：
+  - `git status` 仍为 clean，`git log --oneline -5` 确认当前 HEAD 为 `1912050f`
+  - `cargo check --workspace`、`cargo clippy --workspace --all-features --all-targets -- -D warnings`、`cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` 均再次通过
+  - `bash scripts/ci/tasks/inbound-errors.sh` 单独复跑后仍稳定返回 `ok=false`
+  - 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空；该问题当前更像 runtime 常驻假设与脚本观测模型失配，继续深挖的收益/确定性都偏低，按 non-blocking follow-up 收口
 
 ---
 
@@ -69,10 +74,10 @@
 
 | 类别 | 状态 | 说明 |
 |------|------|------|
-| `must-fix` | 进行中 | workspace `clippy -D warnings` 暴露的真实 blocker，必须清零 |
+| `must-fix` | 已清零 | workspace `clippy -D warnings` 暴露的真实 blocker 已完成收口 |
 | `allowed-test-only` | 已识别 | `#[cfg(test)]` / bench 驱动内部的 `unwrap/expect/panic`，不当作生产 blocker |
 | `allowed-cli-boundary` | 少量 | 顶层工具初始化失败、CLI 致命退出边界上的显式 panic/expect |
-| `follow-up-nonblocking` | 已记录 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`labs` 工具层个别 best-effort 发送/关闭路径、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务的 runtime 常驻假设 |
+| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`labs` 工具层个别 best-effort 发送/关闭路径、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务的 runtime 常驻/metrics 观测假设 |
 
 ---
 
@@ -88,6 +93,7 @@
 - `cargo test -p sb-core --lib` ✅
 - `cargo test -p sb-subscribe --all-features --lib` ✅
 - `bash scripts/ci/accept.sh` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ⚠️ 结构化 follow-up（`ok=false`, `reason=runtime-exited-before-metrics`）
 - `bash scripts/e2e/run.sh` ⏭️ skipped（`GO_SINGBOX_BIN` 未设置）
 
 ---
@@ -101,17 +107,14 @@
 | `R2` | 清理 workspace 首批 blocker（`sb-metrics` / `interop-lab`） | ✅ DONE | `cargo check --workspace` 已恢复通过 |
 | `R3` | 继续清理 `sb-api` / `sb-adapters` / `labs` / `xtask` / `xtests` / `benches` 尾项 | ✅ DONE | 全仓 `clippy -D warnings` 已通过 |
 | `R4` | 跑定向测试与 acceptance / e2e 联调 | ✅ DONE | maintenance acceptance 已完成；compat 子集因环境缺 `GO_SINGBOX_BIN` skipped |
-| `R5` | 更新 `active_context.md` / `log.md` 并整理提交 | ⏳ DOING | 文档归档进行中 |
+| `R5` | 更新 `active_context.md` / `log.md` 并整理提交 | ✅ DONE | 最终收尾结论已归档，保持 maintenance mode 口径 |
 
 ---
 
 ## 下一步
 
-1. 继续审议 `follow-up-nonblocking`：
+1. 如后续提供 `GO_SINGBOX_BIN`，补跑 `bash scripts/e2e/run.sh`，并只按 compat smoke / oracle regression confidence 归档，不上升为 parity 完成。
+2. 若未来单独开 maintenance follow-up，可再审议：
    - `sb-metrics` 内部 `LazyLock + REGISTRY` 静态架构是否继续去全局化
-   - `scripts/ci/tasks/inbound-errors.sh` / `scripts/e2e/socks5/udp-errors.sh` 是否改造成真正可复现的常驻 runtime 验证
-2. 若提供 `GO_SINGBOX_BIN`，补跑 `bash scripts/e2e/run.sh` 并只按 compat smoke / oracle regression confidence 归档，不上升为 parity 完成。
-3. 整理本轮代码与文档为 2-3 个 maintenance 提交，并显式区分：
-   - workspace / repo-wide Layer 1/2 修复
-   - 脚本验收与 tooling 收口
-   - `agents-only` 文档归档
+   - `scripts/ci/tasks/inbound-errors.sh` / `scripts/e2e/socks5/udp-errors.sh` 是否重构为真正可复现的常驻 runtime 验证
+3. 当前工作包到此收口：maintenance acceptance / integration validation 已完成，保留 follow-up 不等于 dual-kernel parity 完成。

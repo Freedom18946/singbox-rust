@@ -14,20 +14,19 @@
 
 ## 当前维护动作（2026-03-22）
 
-- 全仓库 Layer 1 / 2 扩散与标准验收已进入收口态：`cargo check --workspace` 与 `cargo clippy --workspace --all-features --all-targets -- -D warnings` 已双绿
-- `app/` 与 `crates/` 的主修面已基本完成，`labs/interop-lab` / `xtask` / `xtests` / `benches` 也已完成一轮 repo-wide 机械收口
-- 本轮已通过关键维护验证：
+- 全仓库 Layer 1 / 2 maintenance 收尾已完成最终复核：`git status` 仍为干净工作树，`git log --oneline -5` 确认当前 HEAD 为 `1912050f`（docs-only），其后是 `3142a9aa`、`eb56fd19`
+- 本轮再次复跑的关键 maintenance 验证均为绿色：
   - `cargo check --workspace`
   - `cargo clippy --workspace --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
-  - `cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e`
-  - `cargo test -p sb-core --lib`
-  - `cargo test -p sb-subscribe --all-features --lib`
-  - `cargo check -p interop-lab`
-- `bash scripts/ci/accept.sh` 已完成并生成 `target/acceptance.json`；`pprof` / `explain snapshot` / `quick soak` 通过
-- acceptance 中 `inbound_errors` 仍为 `ok=false`，原因是 `runtime-exited-before-metrics`；已从“整轮失败”降级为结构化 follow-up，不把它包装成 parity 信号
-- 当前环境未设置 `GO_SINGBOX_BIN`，因此 `scripts/e2e/run.sh` compat smoke 本轮未跑，按 maintenance validation 记录为 skipped
-- 下一步优先整理提交与推送，同时继续保留一个 follow-up：`sb-metrics` 内部静态 registry/LazyLock 架构，以及 acceptance `inbound_errors` 子任务的 runtime 常驻假设
+  - `bash scripts/ci/accept.sh`
+- 重新生成的 `target/acceptance.json` 与上一轮结论一致：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`
+- 已单独复跑 `bash scripts/ci/tasks/inbound-errors.sh` 并做手工探针复核：
+  - 现象仍为 `reason=runtime-exited-before-metrics`
+  - 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空
+  - 当前更接近 runtime/脚本假设失配的 maintenance follow-up，收益低且不确定性高，不在本轮强行扩改
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 本轮继续按 maintenance validation 记为 skipped
+- repo-wide 最终静态审计未发现新的 Layer 1 / Layer 2 回归；剩余 `OnceLock` / 静态 registry 等项维持既有 follow-up 口径，不上升为本轮 blocker，更不表述为 dual-kernel parity 完成
 
 ## L25 完成总结（2026-03-17）
 
