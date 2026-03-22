@@ -101,7 +101,9 @@ pub fn canonicalize_or(path: &Path) -> PathBuf {
 /// Normalize a WebSocket message into a JSON `Value` for snapshot storage.
 ///
 /// Shared by gui_replay and go_collector.
-pub fn normalize_ws_message(msg: tokio_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
+pub fn normalize_ws_message(
+    msg: tokio_tungstenite::tungstenite::Message,
+) -> Option<serde_json::Value> {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use serde_json::json;

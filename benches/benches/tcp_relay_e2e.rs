@@ -45,7 +45,9 @@ async fn bench_relay_throughput(payload: &[u8], relay_buf_size: usize) {
         let mut remaining = payload_len;
         while remaining > 0 {
             let n = sock.read(&mut buf).await.unwrap();
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             sock.write_all(&buf[..n]).await.unwrap();
             remaining -= n;
         }
@@ -60,10 +62,7 @@ async fn bench_relay_throughput(payload: &[u8], relay_buf_size: usize) {
         let (er, ew) = tokio::io::split(echo_stream);
 
         // Bidirectional pump (mirrors real relay)
-        tokio::join!(
-            pump(cr, ew, relay_buf_size),
-            pump(er, cw, relay_buf_size),
-        );
+        tokio::join!(pump(cr, ew, relay_buf_size), pump(er, cw, relay_buf_size),);
     });
 
     // Client: send payload, receive echo
@@ -89,34 +88,32 @@ fn tcp_relay_throughput(c: &mut Criterion) {
     for size in [1024usize, 64 * 1024, 1024 * 1024] {
         let payload = Arc::new(generate_random_data(size));
         group.throughput(Throughput::Bytes(size as u64 * 2)); // round-trip
-        group.bench_with_input(
-            BenchmarkId::new("buf_16k", size),
-            &size,
-            |b, _| {
-                let data = payload.clone();
-                b.to_async(&rt).iter(|| {
-                    let d = data.clone();
-                    async move { bench_relay_throughput(&d, relay_buf).await; black_box(()) }
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("buf_16k", size), &size, |b, _| {
+            let data = payload.clone();
+            b.to_async(&rt).iter(|| {
+                let d = data.clone();
+                async move {
+                    bench_relay_throughput(&d, relay_buf).await;
+                    black_box(())
+                }
+            });
+        });
     }
 
     // Also test with 64KB buffer to show buffer size impact
     for size in [64 * 1024usize, 1024 * 1024] {
         let payload = Arc::new(generate_random_data(size));
         group.throughput(Throughput::Bytes(size as u64 * 2));
-        group.bench_with_input(
-            BenchmarkId::new("buf_64k", size),
-            &size,
-            |b, _| {
-                let data = payload.clone();
-                b.to_async(&rt).iter(|| {
-                    let d = data.clone();
-                    async move { bench_relay_throughput(&d, 64 * 1024).await; black_box(()) }
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("buf_64k", size), &size, |b, _| {
+            let data = payload.clone();
+            b.to_async(&rt).iter(|| {
+                let d = data.clone();
+                async move {
+                    bench_relay_throughput(&d, 64 * 1024).await;
+                    black_box(())
+                }
+            });
+        });
     }
 
     group.finish();

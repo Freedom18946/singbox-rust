@@ -1460,13 +1460,16 @@ async fn execute_tcp_drain_during_shutdown_action(
     // The kernel may have already completed shutdown by now; the key question
     // is whether data sent during shutdown was properly relayed.
     let drain_payload = b"drain-verify";
-    let drain_echo_ok = matches!(timeout(Duration::from_millis(hold_ms.max(500)), async {
-        stream.write_all(drain_payload).await?;
-        let mut buf = vec![0u8; drain_payload.len()];
-        stream.read_exact(&mut buf).await?;
-        Ok::<bool, std::io::Error>(buf == drain_payload)
-    })
-    .await, Ok(Ok(true)));
+    let drain_echo_ok = matches!(
+        timeout(Duration::from_millis(hold_ms.max(500)), async {
+            stream.write_all(drain_payload).await?;
+            let mut buf = vec![0u8; drain_payload.len()];
+            stream.read_exact(&mut buf).await?;
+            Ok::<bool, std::io::Error>(buf == drain_payload)
+        })
+        .await,
+        Ok(Ok(true))
+    );
 
     match kernel_result {
         Ok(kernel_detail) => TrafficResult {
@@ -2312,10 +2315,26 @@ mod tests {
 
     #[test]
     fn evaluate_assertion_new_operators() {
-        assert!(evaluate_assertion_op("gt", Some(&json!(10)), Some(&json!(9))));
-        assert!(evaluate_assertion_op("gte", Some(&json!(10)), Some(&json!(10))));
-        assert!(evaluate_assertion_op("lt", Some(&json!(9)), Some(&json!(10))));
-        assert!(evaluate_assertion_op("lte", Some(&json!(10)), Some(&json!(10))));
+        assert!(evaluate_assertion_op(
+            "gt",
+            Some(&json!(10)),
+            Some(&json!(9))
+        ));
+        assert!(evaluate_assertion_op(
+            "gte",
+            Some(&json!(10)),
+            Some(&json!(10))
+        ));
+        assert!(evaluate_assertion_op(
+            "lt",
+            Some(&json!(9)),
+            Some(&json!(10))
+        ));
+        assert!(evaluate_assertion_op(
+            "lte",
+            Some(&json!(10)),
+            Some(&json!(10))
+        ));
         assert!(evaluate_assertion_op(
             "contains",
             Some(&json!("abc-hello-xyz")),

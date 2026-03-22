@@ -966,17 +966,15 @@ pub async fn run_traffic_plan(
 
                 for idx in 0..total_samples {
                     let started = tokio::time::Instant::now();
-                    let response = tokio::time::timeout(
-                        Duration::from_millis((*timeout_ms).max(1)),
-                        async {
+                    let response =
+                        tokio::time::timeout(Duration::from_millis((*timeout_ms).max(1)), async {
                             if let Some(proxy) = resolved_proxy.as_deref() {
                                 http_get_via_curl(&url, Some(proxy)).await
                             } else {
                                 http_get_via_reqwest(&url).await
                             }
-                        },
-                    )
-                    .await;
+                        })
+                        .await;
 
                     let (status, _body) = match response {
                         Ok(Ok((status, body))) => (status, body),
@@ -1432,10 +1430,7 @@ pub async fn run_traffic_plan(
                 }),
             },
             TrafficAction::ApiHttpLatency {
-                name,
-                method,
-                path,
-                ..
+                name, method, path, ..
             } => TrafficResult {
                 name: name.clone(),
                 success: false,

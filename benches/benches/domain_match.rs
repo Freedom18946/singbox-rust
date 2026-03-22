@@ -23,22 +23,14 @@ fn domain_suffix_match(c: &mut Criterion) {
 
         // Hit case: subdomain of a suffix rule
         let hit_host = format!("sub.domain-{}.example.com", rule_count / 2);
-        group.bench_with_input(
-            BenchmarkId::new("hit", rule_count),
-            &rule_count,
-            |b, _| {
-                b.iter(|| black_box(ruleset.matches_host(&hit_host)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("hit", rule_count), &rule_count, |b, _| {
+            b.iter(|| black_box(ruleset.matches_host(&hit_host)));
+        });
 
         // Miss case: no matching rule
-        group.bench_with_input(
-            BenchmarkId::new("miss", rule_count),
-            &rule_count,
-            |b, _| {
-                b.iter(|| black_box(ruleset.matches_host("not-matching.other.net")));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("miss", rule_count), &rule_count, |b, _| {
+            b.iter(|| black_box(ruleset.matches_host("not-matching.other.net")));
+        });
 
         // Exact match case
         group.bench_with_input(
