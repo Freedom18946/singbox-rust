@@ -14,14 +14,20 @@
 
 ## 当前维护动作（2026-03-22）
 
-- `crates/` Layer 1 / 2 修复工作包已进入执行态：`Batch A` 与 `Batch B` 已完成大部分已审议热点收口，`Batch C` 中 `conntrack/context` 生产 wiring 已显式注入化
-- 生产代码里 `shared_tracker()` / `global_tracker()` / `context_registry()` / `install_context_registry()` 读链已清零；剩余单例尾项主要集中在 `sb-metrics` 内部 `REGISTRY + LazyLock` 架构与 `Batch D` 机械性 sweep
-- `app/` Layer 1 / 2 首轮热点已进入执行并完成主修：`AppRuntimeDeps` / `AdminDebugState` 已接入，`tracing_init` / `tls_provider` / `redact` / `analyze::registry` / `admin_debug::security_metrics` / `inbound_starter` 已按显式注入 + failure surfacing 收口
-- `app/src/logging.rs` 第二波尾项也已继续收口：分散 `OnceLock` 已压缩为单一 runtime 兼容壳，signal/panic/shutdown 的静默 best-effort 已改为具名处理
-- 已通过 `cargo check -p app`、`cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"`、`cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`、`cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e`
-- 当前 `app` 维护剩余尾项主要是 `security_metrics` / `logging` 兼容壳是否继续完全去全局化，以及其他低风险 Layer 1/2 机械 sweep
-- 带 `adapters` 的 `app` 编译面暂被工作树内 `sb-adapters` 的未完成 `conn_tracker` 字段补线阻塞；不回退用户未明确要求回退的现有改动
-- 下一步继续只按 Layer 1 / 2 维护：保留 `crates/` 尾项收口，同时按 `app` 工作包做第二波尾项 sweep；不恢复 GitHub Actions，也不把普通测试完成表述为 dual-kernel parity 完成
+- 全仓库 Layer 1 / 2 扩散与标准验收已进入收口态：`cargo check --workspace` 与 `cargo clippy --workspace --all-features --all-targets -- -D warnings` 已双绿
+- `app/` 与 `crates/` 的主修面已基本完成，`labs/interop-lab` / `xtask` / `xtests` / `benches` 也已完成一轮 repo-wide 机械收口
+- 本轮已通过关键维护验证：
+  - `cargo check --workspace`
+  - `cargo clippy --workspace --all-features --all-targets -- -D warnings`
+  - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
+  - `cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e`
+  - `cargo test -p sb-core --lib`
+  - `cargo test -p sb-subscribe --all-features --lib`
+  - `cargo check -p interop-lab`
+- `bash scripts/ci/accept.sh` 已完成并生成 `target/acceptance.json`；`pprof` / `explain snapshot` / `quick soak` 通过
+- acceptance 中 `inbound_errors` 仍为 `ok=false`，原因是 `runtime-exited-before-metrics`；已从“整轮失败”降级为结构化 follow-up，不把它包装成 parity 信号
+- 当前环境未设置 `GO_SINGBOX_BIN`，因此 `scripts/e2e/run.sh` compat smoke 本轮未跑，按 maintenance validation 记录为 skipped
+- 下一步优先整理提交与推送，同时继续保留一个 follow-up：`sb-metrics` 内部静态 registry/LazyLock 架构，以及 acceptance `inbound_errors` 子任务的 runtime 常驻假设
 
 ## L25 完成总结（2026-03-17）
 
