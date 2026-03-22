@@ -16,6 +16,278 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 14:28] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-test-utils`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T16 `sb-test-utils` 标记为 ✅ DONE
+  - 记录本轮收尾审议摘要
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 本 crate 为测试辅助 crate，本轮未发现需要单列的 Layer 1 / 2 问题
+- 命中的 `unwrap()` / `panic!()` / 输出语句主要位于文档示例、测试代码或显式跳过辅助；`socks5.rs` 的 mock server 实现未按生产路径问题上报
+
+### [2026-03-22 14:27] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-adapters`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T15 `sb-adapters` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 7 类问题：
+  - 全局可变状态（Layer 1）
+  - 生产路径 `unwrap()` / `expect()`（Layer 1）
+  - 多文件 `super::` 相对路径（Layer 1）
+  - 大量静默丢弃结果（Layer 2）
+  - 多协议解析路径的直接下标访问（Layer 2）
+  - 通配符导入（Layer 2）
+  - `Option<&String>` 等不惯用借用签名（Layer 2）
+
+### [2026-03-22 14:25] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-api`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T14 `sb-api` 标记为 ✅ DONE
+  - 更新任务状态备注
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 5 类问题：
+  - `managers.rs` 的生产路径 `expect()`（Layer 1）
+  - `monitoring/reporter.rs` / `v2ray/services.rs` 的 broadcast 发送结果静默丢弃（Layer 2）
+  - `clash/websocket.rs` 的 WebSocket 发送结果静默丢弃（Layer 2）
+  - `clash/server.rs` 的 `super::auth::...` 相对路径（Layer 1 风格）
+  - `clash/handlers.rs` 的 `Option<&String>` 非惯用借用签名（Layer 2 风格）
+
+### [2026-03-22 14:24] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-subscribe`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T13 `sb-subscribe` 标记为 ✅ DONE
+  - 更新任务状态备注
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 本轮未发现 `sb-subscribe` 的 Layer 1 / 2 生产路径问题
+- `providers.rs` 的再导出按 feature-gated facade 处理，`convert_full.rs` / `lint.rs` 的 `let _ = ...` 仅用于消除未用告警，未计为静默丢错
+
+### [2026-03-22 14:18] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-core`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T12 `sb-core` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 6 类问题：
+  - 大范围全局可变状态（Layer 1）
+  - 生产路径 `unwrap()` / `expect()`（Layer 1）
+  - 多文件 `super::` 相对路径（Layer 1）
+  - 大量静默丢弃结果（Layer 2）
+  - 多协议/控制面解析路径的直接下标访问（Layer 2）
+  - 通配符导入与 `&String` / `&PathBuf` 等不惯用签名（Layer 2）
+
+### [2026-03-22 14:05] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-runtime`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T11 `sb-runtime` 标记为 ✅ DONE
+  - 记录本轮审议摘要与发现数量
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 2 个 Layer 2 问题：`crates/sb-runtime/src/loopback.rs` 的 `hex_encode()` 使用 `let _ = write!(...)` 静默丢弃格式化结果；`crates/sb-runtime/src/tcp_local.rs` 的 `spawn_echo_once()` 使用 `let _ = s.write_all(&out).await` 静默丢弃 I/O 错误
+- 未见 Layer 1 生产路径问题；`lib.rs` / `protocols/mod.rs` 的 `pub use ...::*` 按 facade 式再导出处理，未计为问题
+
+### [2026-03-22 13:59] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-proto`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T10 `sb-proto` 标记为 ✅ DONE
+  - 记录本轮审议摘要
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 本轮未发现 `sb-proto` 的 Layer 1 / 2 生产路径问题
+- `lib.rs` 的 root facade 再导出未计为问题
+
+### [2026-03-22 13:56] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-transport`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T9 `sb-transport` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 5 类问题：
+  - `tls.rs` 的全局 `OnceLock`（Layer 1）
+  - 多文件 `super::` 相对路径（Layer 1）
+  - `quic.rs` / `trojan.rs` / `uot.rs` 的生产路径 `unwrap()` / `expect()` / `unreachable!()`（Layer 1）
+  - `dialer.rs` / `metrics_ext.rs` / `http2.rs` / `wireguard.rs` / `tls.rs` 的静默丢弃结果（Layer 2）
+  - 多协议解析路径的直接下标访问（Layer 2）
+
+### [2026-03-22 13:48] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-tls`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T8 `sb-tls` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 5 类问题：
+  - `lib.rs` 的全局 `OnceLock`（Layer 1）
+  - `standard.rs` / `utls.rs` 的生产路径 `expect()`（Layer 1）
+  - `reality/*` / `ech/*` / `global.rs` 的 `super::` 相对路径（Layer 1）
+  - `lib.rs` / `global.rs` / `acme.rs` / `ech_keygen.rs` 的静默丢弃结果（Layer 2）
+  - `ech/parser.rs` / `reality/client.rs` / `reality/server.rs` 的直接下标访问（Layer 2）
+
+### [2026-03-22 13:41] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-platform`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T7 `sb-platform` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 4 类问题：
+  - 生产代码 `super::` 相对路径（Layer 1）
+  - Windows 路径通配符导入（Layer 2）
+  - `let _ = ...` 静默丢弃系统调用/命令/close 结果（Layer 2）
+  - 解析与缓冲区处理中的直接下标访问（Layer 2）
+
+### [2026-03-22 13:34] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-config`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T6 `sb-config` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 4 类问题：
+  - `validator/v2.rs` 的 `OnceLock` 缓存（Layer 1）
+  - `merge.rs` / `ir/diff.rs` 的 `super::` 相对路径（Layer 1）
+  - `validator/v2.rs` 的生产路径 `unwrap()`（Layer 1）
+  - `lib.rs` / `validator/v2.rs` 的静默丢错与 `.ok()` 折叠（Layer 2）
+
+### [2026-03-22 13:27] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-metrics`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T5 `sb-metrics` 标记为 ✅ DONE
+  - 记录本轮审议摘要与问题类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 3 类问题：
+  - 全局 `LazyLock` 注册表 / 指标静态（Layer 1）
+  - 生产代码 `unwrap()` / `expect()`（Layer 1）
+  - `REGISTRY.register(...).ok()` 静默丢弃失败结果（Layer 2）
+
+### [2026-03-22 13:21] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-security`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T4 `sb-security` 标记为 ✅ DONE
+  - 记录本轮审议摘要与发现数量
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 1 个 Layer 2 问题：`key_loading.rs` 用 `.ok()` 将 `std::env::var` 的错误静默折叠为 `None`
+- 其余命中主要来自测试与文档示例，不计入生产路径问题
+
+### [2026-03-22 13:15] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-common`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T3 `sb-common` 标记为 ✅ DONE
+  - 记录本轮审议摘要与发现类型
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 3 类问题：
+  - `conntrack.rs` 的全局 `OnceLock<ConnTracker>`（Layer 1）
+  - `interrupt.rs` 的 `let _ = ...` 静默丢弃 `Result`（Layer 2）
+  - `ja3.rs` / `tlsfrag.rs` / `badtls.rs` / `pipelistener.rs` 的直接下标访问模式（Layer 2）
+
+### [2026-03-22 13:10] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-admin-contract`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T2 `sb-admin-contract` 标记为 ✅ DONE
+  - 记录本轮审议摘要
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 本轮未发现 `sb-admin-contract` 的 Layer 1 / 2 问题
+- `as_result()` 中的 `unwrap_or_else` 属于带回退值的防御性分支，不是 panic 路径
+
+### [2026-03-22 13:08] Agent: Codex (GPT-5)
+
+**任务**: 审议 `crates/sb-types`（Layer 1 / 2）
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 将 T1 `sb-types` 标记为 ✅ DONE
+  - 记录本轮审议摘要与发现数量
+- `agents-only/log.md`
+  - 追加本次审议记录
+**结果**: 成功
+**备注**:
+- 发现 1 个 Layer 2 问题：`crates/sb-types/src/lib.rs` 的 `IssueCode::as_str()` 使用生产代码通配符导入 `use IssueCode::*;`
+- 未见 Layer 1 生产路径问题；`ports/mod.rs` 的 `pub use ...::*` 按 facade 式再导出处理，未计为问题
+
+### [2026-03-22 12:58] Agent: Codex (GPT-5)
+
+**任务**: 建立 `crates/` 专项审议工作包，按 Layer 1 / 2 优先口径冻结 crate 审议顺序
+**变更**:
+- `agents-only/planning/2026-03-22-crates-layer12-review-workpackage.md`
+  - 新建 crates 专项审议工作包
+  - 记录 `crates/` 构成分层、审议范围、Layer 1 / 2 审议重点
+  - 冻结 16 项任务顺序并标记当前完成状态（T0 DONE，其余 TODO）
+- `agents-only/log.md`
+  - 追加本次工作记录
+**结果**: 成功
+**备注**:
+- 本轮仅建立审议入口与顺序，尚未开始逐 crate 审议
+- 顺序原则：基础契约/共享能力 → 配置/平台/传输底座 → 内核/控制面/协议边界
+
 ### [2026-03-17 08:00] Agent: Antigravity (Gemini)
 
 **任务**: T2-06 — 实现 RFC 8484 DoH 客户端（`http_client.rs`）
