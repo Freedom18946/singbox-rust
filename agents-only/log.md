@@ -16,6 +16,44 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-22 17:19] Agent: Codex (GPT-5)
+
+**任务**: 继续执行 `crates/` Layer 1 / 2 维护收尾，完成 `sb-metrics` registry 显式化尾项并启动首批 `Batch D` 机械 sweep
+**变更**:
+- `crates/sb-metrics/src/lib.rs`
+  - 补充统一 metrics 构造/注册 helper（`guarded_*`、`registered_collector`）
+  - 将 exporter 内部 registry 访问统一收口到 `MetricsRegistryHandle`
+  - 收敛 `socks_in` / `legacy` 内部残余直接构造路径
+- `crates/sb-metrics/src/http.rs`
+  - 移除 `prometheus` 默认全局注册宏
+  - 改为通过 crate 内 helper 显式注册到共享 registry handle
+- `crates/sb-metrics/src/socks.rs`
+  - 移除默认全局注册宏
+  - 改为统一 helper + 显式 registry 注册
+- `crates/sb-metrics/src/transfer.rs`
+  - 移除默认全局注册宏
+  - 改为统一 helper + 显式 registry 注册
+- `crates/sb-metrics/src/inbound.rs`
+  - 改为 `registered_collector(...)` 统一注册
+- `crates/sb-api/src/clash/server.rs`
+  - `super::auth::...` 改为 `crate::clash::auth::...`
+- `crates/sb-api/src/clash/handlers.rs`
+  - `normalize_provider_detail` 签名从 `Option<&String>` 调整为 `Option<&str>`
+- `crates/sb-config/src/merge.rs`
+  - `super::` 相对路径改为 `crate::...` / 顶层导入
+- `crates/sb-types/src/lib.rs`
+  - `IssueCode::as_str()` 去除生产代码通配符导入
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo check -p sb-metrics -p sb-api -p sb-transport -p app` ✅
+- `cargo test -p sb-metrics --lib` ✅
+- `cargo test -p sb-api --test connections_snapshot_test --test clash_websocket_e2e` ✅
+**备注**:
+- 本次继续保持 maintenance mode 口径；验证结果仅说明 Layer 1 / 2 维护收敛，不表述为 dual-kernel parity 完成
+- 提交时计划只整理 `Cargo.lock`、`app/`、`crates/` 下代码改动；不把 `benches/`、`labs/interop-lab/`、`agents-only/` 混入代码提交
+
 ### [2026-03-22 16:53] Agent: Codex (GPT-5)
 
 **任务**: 更新 `crates/` Layer 1 / 2 维护执行状态文档，并同步当前修复批次进展
