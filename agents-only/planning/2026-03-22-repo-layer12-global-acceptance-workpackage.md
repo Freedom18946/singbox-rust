@@ -89,6 +89,9 @@
     - `sb-core` 默认 HTTP client 从全局强持有 owner 收口为弱引用兼容注册表
     - 显式 owner 上提到 `AppRuntimeDeps`
     - `run_engine` 不再重复安装全局强持有 owner
+  - `app/src/main.rs`、`app/src/runtime_deps.rs`
+    - logging 初始化改为只构造 `Redactor`，不再为了 startup redactor 临时构造整包 `AppRuntimeDeps`
+    - 默认 `http_client` / `security_metrics` owner 只在真正 runtime 持有路径上安装，避免弱注册表在启动早期出现瞬时 install-then-drop 抖动
   - `app/Cargo.toml`
     - 补齐 `sbcore_analyze_json = ["sb-core/analyze_json"]`
     - 补齐 `transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]`
@@ -101,6 +104,7 @@
   - `cargo test -p sb-core --lib http_client -- --nocapture` ✅
   - `cargo check -p app` ✅
   - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+  - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
   - `bash scripts/ci/tasks/inbound-errors.sh` ✅
   - `bash scripts/ci/accept.sh` ✅

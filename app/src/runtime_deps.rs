@@ -2,6 +2,16 @@ use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Build the redactor used by logging and admin surfaces without installing
+/// any other runtime compatibility owners.
+///
+/// # Errors
+///
+/// Returns any regex compilation or initialization error from `Redactor`.
+pub fn build_redactor() -> Result<Arc<crate::redact::Redactor>> {
+    Ok(Arc::new(crate::redact::Redactor::new()?))
+}
+
 #[derive(Clone)]
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
@@ -25,7 +35,7 @@ impl AppRuntimeDeps {
     /// `Redactor` construction failures.
     pub fn new() -> Result<Self> {
         let started_at = Instant::now();
-        let redactor = Arc::new(crate::redact::Redactor::new()?);
+        let redactor = build_redactor()?;
         #[cfg(feature = "router")]
         let http_client = sb_core::http_client::install_default_http_client(Arc::new(
             crate::reqwest_http::ReqwestHttpClient::new(),
@@ -64,5 +74,40 @@ impl AppRuntimeDeps {
             security_metrics: Arc::clone(&self.security_metrics),
             started_at: self.started_at,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_redactor;
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn build_redactor_avoids_runtime_dependency_side_effects() {
+        let redactor = build_redactor().expect("redactor should build without runtime deps");
+        assert_eq!(redactor.redact_str("token=secret"), "token=***");
+
+        #[cfg(feature = "admin_debug")]
+        assert!(
+            crate::admin_debug::security_metrics::snapshot().is_err(),
+            "building only the redactor should not install default security metrics"
+        );
+
+        #[cfg(feature = "router")]
+        {
+            let err = sb_core::http_client::http_execute(sb_types::ports::http::HttpRequest::get(
+                "https://example.invalid/runtime-deps-side-effect",
+                1,
+            ))
+            .await
+            .expect_err("building only the redactor should not install the default HTTP client");
+            match err {
+                sb_types::CoreError::Internal { message } => {
+                    assert!(message.contains("install_default_http_client"));
+                }
+                other => panic!("unexpected error: {other:?}"),
+            }
+        }
     }
 }

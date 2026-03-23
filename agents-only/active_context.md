@@ -24,6 +24,9 @@
   - `crates/sb-core/src/http_client.rs` + `app/src/runtime_deps.rs`：
     - `sb-core` 的默认 HTTP client owner 已从进程级 `OnceLock<Box<dyn HttpClient>>` 收敛为弱引用兼容注册表
     - 真正 owner 改由 `AppRuntimeDeps` 显式持有；`run_engine` 不再额外安装全局强持有 owner
+  - `app/src/main.rs` + `app/src/runtime_deps.rs`：
+    - logging 初始化不再为了拿 `redactor` 临时构造整包 `AppRuntimeDeps`
+    - 默认 `http_client` / `security_metrics` owner 只在真正会被显式持有的 runtime 路径里安装，避免启动期瞬时注册后立刻 drop 的弱注册表抖动
   - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
 - 本轮关键验证已通过：
   - `cargo check --workspace`
@@ -35,6 +38,7 @@
   - `cargo test -p sb-core --lib http_client -- --nocapture`
   - `cargo check -p app`
   - `cargo clippy -p app --all-features --all-targets -- -D warnings`
+  - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
 - `scripts/e2e/socks5/udp-errors.sh` / `scripts/ci/tasks/inbound-errors.sh` 已完成 maintenance harness 收口：
   - 不再把 malformed UDP datagram 直接打到假定固定端口
   - 改为先经 TCP `UDP ASSOCIATE` 学习真实 relay，再向返回的随机 UDP 端口注入坏包

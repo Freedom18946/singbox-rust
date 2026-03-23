@@ -7561,6 +7561,33 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口的是生产路径默认 owner，不改变旧兼容安装口，也不表述为 dual-kernel parity 完成
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
 
+### [2026-03-23 16:33] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，去掉 `main` 启动路径为 logging redactor 临时构造整包 `AppRuntimeDeps` 的副作用
+**变更**:
+- `app/src/runtime_deps.rs`
+  - 抽出无副作用的 `build_redactor()` helper，供 startup logging 直接使用
+  - `AppRuntimeDeps::new()` 复用该 helper，保持实际 runtime 构造语义不变
+  - 新增串行回归测试，验证单独构造 redactor 不会顺手安装默认 `security_metrics` / HTTP client
+- `app/src/main.rs`
+  - logging 初始化改为直接调用 `build_redactor()`
+  - 不再为拿 `redactor` 临时构造会安装弱默认 owner 的完整 runtime deps
+- `agents-only/active_context.md`
+  - 记录 startup redactor 路径已收口
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次启动期副作用收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo check -p app` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口的是 startup redactor 构造副作用，仍属于 maintenance / Layer 1/2 范围，不表述为 dual-kernel parity 完成
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

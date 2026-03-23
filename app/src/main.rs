@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize enhanced logging system (env + optional overrides above)
     // 初始化增强日志系统（环境变量 + 上述可选覆盖）
-    let redactor = app::runtime_deps::AppRuntimeDeps::new()?.redactor;
+    let redactor = app::runtime_deps::build_redactor()?;
     logging::init_logging(redactor)?;
 
     #[cfg(feature = "failpoints")]
