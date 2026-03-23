@@ -27,6 +27,9 @@
   - `app/src/main.rs` + `app/src/runtime_deps.rs`：
     - logging 初始化不再为了拿 `redactor` 临时构造整包 `AppRuntimeDeps`
     - 默认 `http_client` / `security_metrics` owner 只在真正会被显式持有的 runtime 路径里安装，避免启动期瞬时注册后立刻 drop 的弱注册表抖动
+  - `crates/sb-core/src/router/engine.rs` + `crates/sb-core/src/router/explain_util.rs`：
+    - router 主决策链的 legacy GeoIP fallback 不再直连 `crate::geoip` 全局服务
+    - `RouterHandle` 现有的 `geoip_mux` / `geoip` / `geoip_db` owner 已成为优先查询路径；`geoip/mod.rs` 的全局注册点被收窄为兼容壳而非主路径依赖
   - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
 - 本轮关键验证已通过：
   - `cargo check --workspace`
@@ -39,6 +42,8 @@
   - `cargo check -p app`
   - `cargo clippy -p app --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
+  - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
+  - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings`
 - `scripts/e2e/socks5/udp-errors.sh` / `scripts/ci/tasks/inbound-errors.sh` 已完成 maintenance harness 收口：
   - 不再把 malformed UDP datagram 直接打到假定固定端口
   - 改为先经 TCP `UDP ASSOCIATE` 学习真实 relay，再向返回的随机 UDP 端口注入坏包
@@ -48,7 +53,7 @@
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：仍有全局兼容入口，但已降为 `Weak<LoggingRuntime>` 注册表，不再持有额外 runtime owner
   - `app/src/admin_debug/security_metrics.rs`：仍有默认查找入口，但已降为 `Weak<SecurityMetricsState>` 注册表，runtime deps 继续显式持有真正状态
-  - `crates/sb-core/src/geoip/mod.rs` 等仍存在的显式全局注册点
+  - `crates/sb-core/src/geoip/mod.rs` 仍保留兼容全局注册点，但主 router 决策链已不再依赖它
   - `crates/sb-metrics` 的共享静态 registry 架构
 
 ## L25 完成总结（2026-03-17）

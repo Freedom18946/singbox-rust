@@ -7588,6 +7588,32 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口的是 startup redactor 构造副作用，仍属于 maintenance / Layer 1/2 范围，不表述为 dual-kernel parity 完成
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
 
+### [2026-03-23 18:42] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 router 主决策链对 `crate::geoip` 全局服务的依赖
+**变更**:
+- `crates/sb-core/src/router/engine.rs`
+  - `enhanced_geoip_lookup(...)` 的 legacy fallback 改为优先走 `RouterHandle` 已持有的 `geoip_mux` / `geoip`
+  - 提炼 `legacy_geo_cc(...)`，让 `RouterHandle` 自有 geo owner 成为主查询入口
+  - 新增 mock-provider 回归测试，验证不安装 `crate::geoip` 全局服务时也能完成 GeoIP 路由决策
+- `crates/sb-core/src/router/explain_util.rs`
+  - explain 路径里的 GeoIP 查询改为优先走 `RouterHandle` 本地 owner，而不是直接读取全局服务
+- `agents-only/active_context.md`
+  - 记录 router 主路径已不再依赖 `geoip/mod.rs` 的全局服务
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 GeoIP 主路径收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo check -p app` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+**备注**:
+- 本次收口的是 router 主决策链的 GeoIP owner 依赖，不移除 `geoip/mod.rs` 的兼容壳，也不表述为 dual-kernel parity 完成
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

@@ -13,7 +13,6 @@ use tracing::warn;
 
 use once_cell::sync::Lazy;
 
-use crate::geoip::lookup_with_metrics_decision;
 use crate::router::{
     normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
     runtime_override_http, runtime_override_udp, shared_index, RouteTarget, RouterIndex,
@@ -535,12 +534,16 @@ impl RouterHandle {
             }
         }
 
-        // Fall back to legacy GeoIP lookup
-        if let Some(decision) = lookup_with_metrics_decision(ip) {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("geoip_lookup_total", "source"=>"legacy", "result"=>"hit")
-                .increment(1);
-            return Some(decision);
+        // Fall back to the router-local legacy GeoIP providers.
+        if let Some(country_code) = self.legacy_geo_cc(ip) {
+            for (cc, decision) in &idx.geoip_rules {
+                if cc.eq_ignore_ascii_case(&country_code) {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("geoip_lookup_total", "source"=>"legacy", "result"=>"hit")
+                        .increment(1);
+                    return Some(*decision);
+                }
+            }
         }
 
         #[cfg(feature = "metrics")]
@@ -901,7 +904,9 @@ impl RouterHandle {
                 }
                 // Check GeoSite rules
                 if let Some(geosite_db) = &self.geosite_db {
-                    if let Some(d) = crate::router::router_index_decide_geosite(&idx, host, geosite_db) {
+                    if let Some(d) =
+                        crate::router::router_index_decide_geosite(&idx, host, geosite_db)
+                    {
                         return tag_to_decision(d);
                     }
                 }
@@ -948,7 +953,9 @@ impl RouterHandle {
                     return d.to_string();
                 }
             }
-            if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port, Some("udp")) {
+            if let Some(d) =
+                crate::router::router_index_decide_transport_port(&idx, port, Some("udp"))
+            {
                 return d.to_string();
             }
             return idx.default.to_string();
@@ -1013,7 +1020,9 @@ impl RouterHandle {
                     return d.to_string();
                 }
             }
-            if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp")) {
+            if let Some(d) =
+                crate::router::router_index_decide_transport_port(&idx, None, Some("udp"))
+            {
                 return d.to_string();
             }
             return idx.default.to_string();
@@ -1119,7 +1128,8 @@ impl RouterHandle {
         }
 
         // 4) Transport/port fallback (UDP)
-        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp")) {
+        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp"))
+        {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1241,7 +1251,9 @@ impl RouterHandle {
             }
         }
 
-        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
+        if let Some(d) =
+            crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp"))
+        {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1350,7 +1362,9 @@ impl RouterHandle {
                 }
             }
         }
-        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, ctx.port, Some("tcp")) {
+        if let Some(d) =
+            crate::router::router_index_decide_transport_port(&idx, ctx.port, Some("tcp"))
+        {
             return (
                 RouteTarget::Named(d.to_string()),
                 Some("transport".to_string()),
@@ -1649,39 +1663,8 @@ impl RouterHandle {
 
     /// Explain 旁路可选地查询 IP→国家码（未接入则返回 None）
     #[cfg(feature = "explain")]
-    pub fn geo_cc(&self, _ip: std::net::IpAddr) -> Option<String> {
-        #[cfg(feature = "geoip_mmdb")]
-        {
-            let mut provider_seen = false;
-            if let Some(mux) = self.geoip_mux.as_ref() {
-                provider_seen = true;
-                if let Some((source, cc)) = mux.lookup(_ip) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("geoip_lookup_total", "source"=>source.as_str().to_string())
-                        .increment(1);
-                    return Some(cc);
-                }
-            }
-            if let Some(geo) = self.geoip.as_ref() {
-                provider_seen = true;
-                if let Some(geo_info) = geo.lookup(_ip) {
-                    if let Some(cc) = geo_info.country_code {
-                        #[cfg(feature = "metrics")]
-                        {
-                            let label = self.geoip_source.as_deref().unwrap_or("legacy");
-                            metrics::counter!("geoip_lookup_total", "source"=>label.to_string())
-                                .increment(1);
-                        }
-                        return Some(cc);
-                    }
-                }
-            }
-            #[cfg(feature = "metrics")]
-            if provider_seen {
-                metrics::counter!("geoip_lookup_total", "source"=>"miss").increment(1);
-            }
-        }
-        None
+    pub fn geo_cc(&self, ip: std::net::IpAddr) -> Option<String> {
+        self.legacy_geo_cc(ip)
     }
 
     /// 返回 geo 规则的只读视图（占位，实际实现需接入真实数据）
@@ -1944,7 +1927,8 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
             };
         }
     }
-    if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
+    if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp"))
+    {
         let k = if port_opt.is_some() {
             "port"
         } else {
@@ -2043,7 +2027,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
                 }
                 if try_geoip {
                     for ip in ips {
-                        if let Some(d) = lookup_with_metrics_decision(ip) {
+                        if let Some(d) = handle.enhanced_geoip_lookup(ip, &idx) {
                             return DecisionExplain {
                                 decision: d.to_string(),
                                 reason: format!("dns->geoip matched ip={}", ip),
@@ -2140,6 +2124,48 @@ impl RouterHandle {
     pub fn index_snapshot(&self) -> Arc<RouterIndex> {
         self.idx.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
+
+    pub(crate) fn legacy_geo_cc(&self, _ip: std::net::IpAddr) -> Option<String> {
+        #[cfg(feature = "geoip_mmdb")]
+        {
+            #[cfg(feature = "metrics")]
+            let mut provider_seen = false;
+            if let Some(mux) = self.geoip_mux.as_ref() {
+                #[cfg(feature = "metrics")]
+                {
+                    provider_seen = true;
+                }
+                if let Some((_source, cc)) = mux.lookup(_ip) {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("geoip_lookup_total", "source"=>_source.as_str().to_string())
+                        .increment(1);
+                    return Some(cc);
+                }
+            }
+            if let Some(geo) = self.geoip.as_ref() {
+                #[cfg(feature = "metrics")]
+                {
+                    provider_seen = true;
+                }
+                if let Some(geo_info) = geo.lookup(_ip) {
+                    if let Some(cc) = geo_info.country_code {
+                        #[cfg(feature = "metrics")]
+                        {
+                            let label = self.geoip_source.as_deref().unwrap_or("legacy");
+                            metrics::counter!("geoip_lookup_total", "source"=>label.to_string())
+                                .increment(1);
+                        }
+                        return Some(cc);
+                    }
+                }
+            }
+            #[cfg(feature = "metrics")]
+            if provider_seen {
+                metrics::counter!("geoip_lookup_total", "source"=>"miss").increment(1);
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -2158,7 +2184,31 @@ mod migration_tests {
 
 #[cfg(all(test, feature = "geoip_mmdb"))]
 mod geoip_migration_tests {
-    use super::{parse_geoip_cache_cap_env, parse_geoip_ttl_env};
+    use super::{parse_geoip_cache_cap_env, parse_geoip_ttl_env, RouterHandle};
+    use crate::geoip::{GeoInfo, GeoIpProvider};
+    use crate::router::router_build_index_from_str;
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    struct MockGeoIpProvider;
+
+    impl GeoIpProvider for MockGeoIpProvider {
+        fn lookup(&self, ip: IpAddr) -> Option<GeoInfo> {
+            if ip == IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)) {
+                return Some(GeoInfo {
+                    country_code: Some("US".to_string()),
+                    country_name: None,
+                    city: None,
+                    region: None,
+                    continent_code: None,
+                    asn: None,
+                    organization: None,
+                });
+            }
+            None
+        }
+    }
 
     #[test]
     fn invalid_geoip_cache_env_reports_explicitly() {
@@ -2176,6 +2226,26 @@ mod geoip_migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("SB_GEOIP_TTL"));
         assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn enhanced_geoip_lookup_uses_router_local_provider_without_global_service() {
+        let idx = router_build_index_from_str("geoip:US=direct\ndefault=block", 1024)
+            .expect("router index should build");
+        let mut handle = RouterHandle::from_index(idx.clone());
+        let mut mux =
+            crate::geoip::multi::GeoMux::new(crate::geoip::multi::LookupStrategy::FirstSuccess);
+        mux.add_provider(
+            Arc::new(MockGeoIpProvider),
+            "mock".to_string(),
+            1,
+            Duration::from_secs(1),
+        );
+        handle.geoip_mux = Some(mux);
+
+        let decision =
+            handle.enhanced_geoip_lookup(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), &idx);
+        assert_eq!(decision, Some("direct"));
     }
 }
 

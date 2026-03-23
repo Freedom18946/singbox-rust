@@ -1,4 +1,4 @@
-use super::{ip_in_v4net, ip_in_v6net, RouterHandle};
+use super::{RouterHandle, ip_in_v4net, ip_in_v6net};
 use std::net::IpAddr;
 
 pub fn try_override(
@@ -90,11 +90,8 @@ pub fn try_geo(_r: &RouterHandle, ip: Option<IpAddr>) -> Option<(String, String)
 
     // Check GeoIP rules
     for rule in &idx.geoip_rules {
-        // Use the GeoIP lookup functionality
-        if let Some(country_code) = crate::geoip::service()
-            .and_then(|s| s.lookup(ip))
-            .and_then(|info| info.country_code)
-        {
+        // Prefer the router-local GeoIP providers before touching legacy globals.
+        if let Some(country_code) = _r.legacy_geo_cc(ip) {
             // Check if this rule matches the country
             // rule is (String, &'static str) where first element is country, second is decision
             if rule.0 == country_code {
@@ -105,8 +102,7 @@ pub fn try_geo(_r: &RouterHandle, ip: Option<IpAddr>) -> Option<(String, String)
             }
         }
 
-        // Alternative: check using lookup_with_metrics_decision
-        if let Some(decision) = crate::geoip::lookup_with_metrics_decision(ip) {
+        if let Some(decision) = _r.enhanced_geoip_lookup(ip, &idx) {
             return Some((decision.to_string(), "geoip_lookup".to_string()));
         }
     }
