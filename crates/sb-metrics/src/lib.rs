@@ -204,7 +204,7 @@ impl MetricsRegistryHandle {
     where
         C: Collector + Clone + 'static,
     {
-        self.registration_registry_ref()
+        self.registry_ref()
             .register(Box::new(collector.clone()))
             .map_err(|err| {
                 tracing::debug!(metric, error = %err, "metrics collector registration skipped");
@@ -238,13 +238,6 @@ impl MetricsRegistryHandle {
         match self {
             Self::Shared => current_registry_ref(),
             Self::Owned(registry) => RegistryRef::Owned(Arc::clone(registry)),
-        }
-    }
-
-    fn registration_registry_ref(&self) -> RegistryRef<'_> {
-        match self {
-            Self::Shared => current_registry_ref(),
-            Self::Owned(_) => self.registry_ref(),
         }
     }
 }
@@ -298,18 +291,19 @@ enum RegistryRef<'a> {
 }
 
 impl RegistryRef<'_> {
-    fn register(&self, collector: Box<dyn Collector>) -> Result<(), prometheus::Error> {
+    fn as_registry(&self) -> &Registry {
         match self {
-            Self::Owned(registry) => registry.register(collector),
-            Self::Global(registry) => registry.register(collector),
+            Self::Owned(registry) => registry,
+            Self::Global(registry) => registry,
         }
     }
 
+    fn register(&self, collector: Box<dyn Collector>) -> Result<(), prometheus::Error> {
+        self.as_registry().register(collector)
+    }
+
     fn gather(&self) -> Vec<prometheus::proto::MetricFamily> {
-        match self {
-            Self::Owned(registry) => registry.gather(),
-            Self::Global(registry) => registry.gather(),
-        }
+        self.as_registry().gather()
     }
 }
 
@@ -353,6 +347,26 @@ where
 {
     register_collector(metric, &collector);
     collector
+}
+
+fn registered_int_gauge(name: &str, help: &str) -> IntGauge {
+    registered_collector(name, guarded_int_gauge(name, help))
+}
+
+fn registered_int_counter(name: &str, help: &str) -> IntCounter {
+    registered_collector(name, guarded_int_counter(name, help))
+}
+
+fn registered_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec {
+    registered_collector(name, guarded_counter_vec(name, help, labels))
+}
+
+fn registered_histogram(
+    name: &str,
+    help: &str,
+    buckets: Vec<f64>,
+) -> prometheus::Histogram {
+    registered_collector(name, guarded_histogram(name, help, buckets))
 }
 
 // =============================
@@ -845,56 +859,32 @@ pub fn set_socks_udp_assoc_estimate(n: i64) {
 // ===================== Legacy Metrics (from registry.rs) =====================
 /// Legacy metrics: UDP NAT, proxy selection, health checks, build info
 mod legacy {
-    use super::{
-        guarded_histogram, guarded_int_counter, guarded_int_gauge, register_collector, IntCounter,
-        IntCounterVec, IntGauge, LazyLock, Opts,
-    };
-    use prometheus::{GaugeVec, Histogram};
+    use super::{LazyLock, Opts};
+    use prometheus::{GaugeVec, Histogram, IntCounter, IntCounterVec, IntGauge};
 
-    /// UDP NAT map size
-    pub static UDP_MAP_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
-        let g = guarded_int_gauge("udp_map_size", "UDP NAT table size");
-        register_collector("udp_map_size", &g);
-        g
-    });
+    pub static UDP_MAP_SIZE: LazyLock<IntGauge> =
+        LazyLock::new(|| super::registered_int_gauge("udp_map_size", "UDP NAT table size"));
 
-    /// UDP NAT eviction counter
     pub static UDP_EVICT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = super::guarded_counter_vec(
-            "udp_evict_total",
-            "UDP NAT eviction total",
-            &["reason"], // ttl | pressure
-        );
-        register_collector("udp_evict_total", &v);
-        v
+        super::registered_counter_vec("udp_evict_total", "UDP NAT eviction total", &["reason"])
     });
 
-    /// UDP failure counter
     pub static UDP_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = super::guarded_counter_vec("udp_fail_total", "UDP failure total", &["class"]);
-        register_collector("udp_fail_total", &v);
-        v
+        super::registered_counter_vec("udp_fail_total", "UDP failure total", &["class"])
     });
 
-    /// Route explain counter
     pub static ROUTE_EXPLAIN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-        let c = guarded_int_counter("route_explain_total", "Route explain invocations");
-        register_collector("route_explain_total", &c);
-        c
+        super::registered_int_counter("route_explain_total", "Route explain invocations")
     });
 
-    /// TCP connect duration histogram
     pub static TCP_CONNECT_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-        let h = guarded_histogram(
+        super::registered_histogram(
             "tcp_connect_duration_seconds",
             "TCP connect duration",
             vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
-        );
-        register_collector("tcp_connect_duration_seconds", &h);
-        h
+        )
     });
 
-    /// Proxy selection score gauge
     pub static PROXY_SELECT_SCORE: LazyLock<GaugeVec> = LazyLock::new(|| {
         let v = GaugeVec::new(
             Opts::new("proxy_select_score", "Proxy selection score"),
@@ -904,11 +894,10 @@ mod legacy {
             #[allow(clippy::unwrap_used)]
             GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
         });
-        register_collector("proxy_select_score", &v);
+        super::register_collector("proxy_select_score", &v);
         v
     });
 
-    /// Outbound health status
     pub static OUTBOUND_UP: LazyLock<GaugeVec> = LazyLock::new(|| {
         let v = GaugeVec::new(
             Opts::new("outbound_up", "Outbound health status (1=up, 0=down)"),
@@ -918,41 +907,32 @@ mod legacy {
             #[allow(clippy::unwrap_used)]
             GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
         });
-        register_collector("outbound_up", &v);
+        super::register_collector("outbound_up", &v);
         v
     });
 
-    /// Prometheus HTTP export failure counter
     pub static PROM_HTTP_FAIL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = super::guarded_counter_vec(
+        super::registered_counter_vec(
             "prom_http_fail_total",
             "Prometheus HTTP export failures",
-            &["class"], // bind | conn | io | other
-        );
-        register_collector("prom_http_fail_total", &v);
-        v
+            &["class"],
+        )
     });
 
-    /// UDP NAT entry TTL histogram
     pub static UDP_TTL_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
-        let h = guarded_histogram(
+        super::registered_histogram(
             "udp_nat_ttl_seconds",
             "UDP NAT entry TTL distribution",
             vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0],
-        );
-        register_collector("udp_nat_ttl_seconds", &h);
-        h
+        )
     });
 
-    /// Proxy selection counter
     pub static PROXY_SELECT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = super::guarded_counter_vec(
+        super::registered_counter_vec(
             "proxy_select_total",
             "Proxy selection invocations",
             &["proxy"],
-        );
-        register_collector("proxy_select_total", &v);
-        v
+        )
     });
 }
 
@@ -1187,6 +1167,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     #[allow(clippy::unwrap_used)]
     fn explicit_owner_registry_lifecycle_controls_shared_handle() {
         let owner = install_default_registry_owner();
@@ -1214,6 +1195,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     #[allow(clippy::unwrap_used)]
     fn shared_handle_keeps_global_metrics_visible_after_owner_install() {
         let global_gauge = IntGauge::new(
@@ -1246,6 +1228,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     #[allow(clippy::unwrap_used)]
     fn owner_handle_exports_metrics_without_shared_lookup() {
         let owner = install_default_registry_owner();
@@ -1289,5 +1272,86 @@ mod tests {
             !shared_text.contains("codex_metrics_export_with_owned_handle"),
             "owned-handle export should not require shared registry lookup"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(clippy::unwrap_used)]
+    fn owner_drop_cleans_up_without_residual_metrics() {
+        let owner = install_default_registry_owner();
+        let gauge = IntGauge::new(
+            "compat_owner_drop_residual",
+            "test that owner drop does not leave residual metrics",
+        )
+        .unwrap();
+        shared_registry()
+            .register_cloned("compat_owner_drop_residual", &gauge)
+            .unwrap();
+        gauge.set(42);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(
+            text.contains("compat_owner_drop_residual"),
+            "metric should be visible while owner is alive"
+        );
+
+        drop(owner);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(
+            !text.contains("compat_owner_drop_residual"),
+            "metric must disappear after owner is dropped"
+        );
+
+        // A new owner should be able to register the same metric name without error.
+        let owner2 = install_default_registry_owner();
+        let gauge2 = IntGauge::new(
+            "compat_owner_drop_residual",
+            "re-registration after owner drop",
+        )
+        .unwrap();
+        shared_registry()
+            .register_cloned("compat_owner_drop_residual", &gauge2)
+            .unwrap();
+        gauge2.set(99);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(text.contains("compat_owner_drop_residual"));
+        assert!(text.contains(" 99"));
+        drop(owner2);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(clippy::unwrap_used)]
+    fn shared_register_after_owner_install_lands_in_owner_registry() {
+        let owner = install_default_registry_owner();
+
+        // Register via the shared path while an owner is installed.
+        let gauge = IntGauge::new(
+            "compat_shared_reg_lands_in_owner",
+            "shared registration should land in the owner registry",
+        )
+        .unwrap();
+        shared_registry()
+            .register_cloned("compat_shared_reg_lands_in_owner", &gauge)
+            .unwrap();
+        gauge.set(77);
+
+        // Visible via the shared handle (merged view).
+        let shared_text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(
+            shared_text.contains("compat_shared_reg_lands_in_owner"),
+            "metric should be visible via shared handle"
+        );
+
+        // Also visible via the owner's own handle (proves it landed in owner registry).
+        let owned_text = String::from_utf8(owner.handle().encode_text().unwrap()).unwrap();
+        assert!(
+            owned_text.contains("compat_shared_reg_lands_in_owner"),
+            "metric registered via shared path must land in owner registry when owner is installed"
+        );
+
+        drop(owner);
     }
 }

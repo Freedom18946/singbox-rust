@@ -13,6 +13,23 @@
 
 ## 最近完成（2026-03-24）
 
+### sb-metrics registry plumbing 收口 — 已完成
+
+- `crates/sb-metrics/src/lib.rs`
+  - 补 2 个 characterization tests：`owner_drop_cleans_up_without_residual_metrics`、`shared_register_after_owner_install_lands_in_owner_registry`
+  - 给 3 个 owner-installing tests 加 `#[serial]`，锁住默认 owner 安装/释放的并行测试干扰
+  - 删除冗余 `registration_registry_ref()`；`RegistryRef` 新增 `as_registry()`，把重复 match 臂收口
+  - 新增 `registered_int_gauge()` / `registered_int_counter()` / `registered_counter_vec()` / `registered_histogram()` 4 个私有 helper
+  - `legacy` 模块 8 个静态里，6 个收成一行 helper 调用；2 个 `GaugeVec` 因自定义 fallback 保持原写法
+- `crates/sb-metrics/Cargo.toml` / `Cargo.lock`
+  - 新增 `serial_test` dev-dependency，承接 registry owner 测试隔离
+
+**验证**:
+- `cargo test -p sb-metrics --lib -- --nocapture` ✅
+- `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p sb-metrics --example serve` ✅
+- `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` ✅
+
 ### security_metrics compat 壳收口 — review follow-up 已修正
 
 **Commit 1** `ebe9db4b` — 内部调用面脱钩（+92/-137, 4 files）:
@@ -45,12 +62,16 @@
 |------|------|------|
 | logging compat | `ACTIVE_RUNTIME` 薄壳 | **保留** — public API |
 | security_metrics compat | public wrapper + legacy boundary 单次 owner upgrade | **保留** — public API / legacy default-owner 兼容 |
-| sb-metrics LazyLock | 56 LazyLock + 40 便捷函数 | **不做** — prometheus 惯用范式 |
+| sb-metrics LazyLock | registry plumbing 已收口；指标静态仍保留 | **部分完成** — 不继续全量去全局化 |
 
 ## 构建基线（2026-03-24）
 
 | 构建 | 状态 |
 |------|------|
+| `cargo test -p sb-metrics --lib -- --nocapture` | ✅ |
+| `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ |
+| `cargo check -p sb-metrics --example serve` | ✅ |
+| `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` | ✅ |
 | `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ |
 | `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli admin_tests"` | ✅ 152 passed |
 | `cargo test -p app --lib default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` | ✅ |
@@ -61,5 +82,5 @@
 
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托；legacy public 边界保留默认 owner compat 语义
-- `sb-metrics` LazyLock：不碰，prometheus crate 惯用范式
+- `sb-metrics` LazyLock 指标静态：registry plumbing 和部分 helper 已收口；不继续做全量去全局化
 - `geoip/mod.rs` compat 全局注册点：已收敛为弱默认 owner 优先

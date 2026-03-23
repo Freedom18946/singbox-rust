@@ -16,6 +16,26 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 02:10] Agent: Codex (GPT-5)
+
+**任务**: 收尾 sb-metrics registry plumbing 收口，补文档并整理提交范围
+**变更**:
+- `crates/sb-metrics/Cargo.toml`: 新增 `serial_test = "3"` dev-dependency
+- `Cargo.lock`: 同步 `serial_test` 锁文件变更
+- `crates/sb-metrics/src/lib.rs`: 补 2 个 characterization tests、给 3 个 owner-installing tests 加 `#[serial]`、删除冗余 `registration_registry_ref()`、新增 `RegistryRef::as_registry()` 与 4 个 `registered_*` 私有 helper、试点收口 `legacy` 模块 8 个静态中的 6 个
+- `agents-only/active_context.md`: 记录 sb-metrics 本轮收口与验证结果
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`: 追加 sb-metrics registry plumbing 收口
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功，review 通过，未发现新的 blocker
+**构建验证**:
+- `cargo test -p sb-metrics --lib -- --nocapture` ✅
+- `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p sb-metrics --example serve` ✅
+- `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` ✅
+**备注**:
+- 本轮只收 registry plumbing、tests 与少量 helper；`LazyLock` 指标静态仍保留
+- 结论仍然只按 maintenance / Layer 1/2 收口归档，不表述成 dual-kernel parity 完成
+
 ### [2026-03-24 01:59] Agent: Codex (GPT-5)
 
 **任务**: 修复 security_metrics compat review findings，恢复 legacy default-owner 记账语义

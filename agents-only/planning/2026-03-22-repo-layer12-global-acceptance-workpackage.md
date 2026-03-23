@@ -135,6 +135,10 @@
   - `crates/sb-metrics/src/lib.rs`、`crates/sb-core/src/metrics/http_exporter.rs`
     - `sb-metrics` 补齐 `export_prometheus_with(&MetricsRegistryHandle)`、`maybe_spawn_http_exporter_from_env_with(...)`
     - legacy metrics HTTP exporter 新增显式 `MetricsRegistryHandle` 入口；旧无参 helper 仅保留 compat 包装层
+  - `crates/sb-metrics/src/lib.rs`
+    - 新增 owner drop / shared-after-owner characterization tests，并给 owner-installing tests 加 `#[serial]`
+    - `RegistryRef` registry plumbing 进一步收口；`legacy` 模块试点切到 `registered_*` 私有 helper
+    - `LazyLock` 指标静态仍保留，按 maintenance follow-up 口径继续视为非阻塞架构债
   - `app/Cargo.toml`
     - 补齐 `sbcore_analyze_json = ["sb-core/analyze_json"]`
     - 补齐 `transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]`
@@ -168,6 +172,7 @@
   - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture` ✅
   - `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture` ✅
+  - `cargo test -p sb-metrics --lib -- --nocapture` ✅
   - `cargo check -p sb-metrics --example serve` ✅
   - `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` ✅
   - `cargo check -p app --bin metrics-serve --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅

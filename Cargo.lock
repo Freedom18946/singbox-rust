@@ -6690,6 +6690,7 @@ dependencies = [
  "once_cell",
  "prometheus",
  "serde",
+ "serial_test 3.4.0",
  "sha2",
  "tokio",
  "tracing",
