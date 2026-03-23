@@ -11,41 +11,41 @@
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
-## 当前维护动作（2026-03-24）— Compat Shell 收口
+## 最近完成（2026-03-24）
 
-### Compat 债务评估结论（三项）
+### logging.rs public compat API 恢复 — review follow-up
 
-| 项目 | 位置 | 残留 | 工作量 | ROI | 决策 |
-|------|------|------|--------|-----|------|
-| logging compat | `app/src/logging.rs` | `ACTIVE_RUNTIME` LazyLock + `init_logging()` + `flush_logs()` + 2 helper，~30 行死代码 | 30min | 极高 | **本轮执行** |
-| sb-metrics LazyLock | `crates/sb-metrics/src/lib.rs` + 6 子模块 | 56 个 LazyLock 静态，32 register_collector，40+ 便捷函数，23 外部调用点 | 3-5天 | 很低 | **不做** — prometheus crate 设计哲学如此 |
-| security_metrics compat | `app/src/admin_debug/security_metrics.rs` | `DEFAULT_STATE` Weak 注册表 + 40 个 wrapper 函数，16 外部调用点 | 2-4h | 中等 | **可选** — 主链已解耦 |
+- 针对 `6c88a027` 的 review finding，恢复 `init_logging()` / `flush_logs()` 公共 compat wrapper，避免 maintenance mode 下的 Rust public API break
+- 恢复 `ACTIVE_RUNTIME: LazyLock<StdMutex<Weak<LoggingRuntime>>>`、`current_compat_runtime()`、`install_active_runtime_compat()` 与私有 `runtime()` getter
+- `main` 生产启动/退出路径仍继续显式持有并 flush `LoggingOwner`；compat 壳仅服务 legacy public API，不重新成为主路径 owner
+- 保留 Claude 已修的 2 个 flaky tests：`HIGH_WATERMARK` 重置、`runtime_deps` serial + cleanup
 
-### 正在执行：logging.rs compat shell 清理
+**验证**:
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p app --bin app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo test -p app --bin app test_flush_logs_async --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-**目标**: 删除 `ACTIVE_RUNTIME` / `init_logging()` / `flush_logs()` / `current_compat_runtime()` / `install_active_runtime_compat()` 全部死代码
+## Compat 债务评估结论（三项）
 
-**背景**:
-- 生产路径已走 `init_logging_with_owner()` + `LoggingOwner::flush()`
-- 两个 compat pub fn 均标 `#[allow(dead_code)]`，零外部生产调用
-- 仅 logging.rs 内部测试使用 `clear_active_runtime_for_test()` 引用 `ACTIVE_RUNTIME`
+| 项目 | 残留 | ROI | 决策 |
+|------|------|-----|------|
+| logging compat | `ACTIVE_RUNTIME` + `init_logging()` / `flush_logs()` 薄包装层 | 低 | **保留** — public API compat shell |
+| sb-metrics LazyLock | 56 LazyLock + 40 便捷函数 | 很低 | **不做** — prometheus 惯用范式 |
+| security_metrics compat | DEFAULT_STATE + 40 wrapper | 中等 | **可选** — 主链已解耦 |
 
-**验证基线**:
-- `cargo check -p app`
-- `cargo clippy -p app --all-features --all-targets -- -D warnings`
-- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
-
-## 构建基线（2026-03-17，L25 后）
+## 构建基线（2026-03-24）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo clippy --workspace --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-core --lib` | ✅ 509 passed |
-| `cargo test -p sb-api` | ✅ pass |
-| `cargo test -p sb-subscribe --all-features --lib` | ✅ 16 passed |
+| `cargo check -p app` | ✅ |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ |
+| `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` | ✅ 49 passed |
 
 ## 剩余 Maintenance 债务（非阻塞）
 
+- `logging.rs` public compat 壳：为 Rust API 兼容保留，不再作为继续削减目标
 - `security_metrics.rs` Weak compat 壳：主链已解耦，40 wrapper 仅尾部 legacy 入口使用
 - `sb-metrics` LazyLock：结论为"不碰"，prometheus crate 惯用范式
 - `geoip/mod.rs` compat 全局注册点：已收敛为弱默认 owner 优先

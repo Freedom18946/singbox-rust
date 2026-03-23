@@ -20,10 +20,14 @@
 use anyhow::{self, Result};
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex as StdMutex;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+
+static ACTIVE_RUNTIME: LazyLock<StdMutex<Weak<LoggingRuntime>>> =
+    LazyLock::new(|| StdMutex::new(Weak::new()));
 
 pub struct LoggingOwner {
     runtime: Arc<LoggingRuntime>,
@@ -32,6 +36,10 @@ pub struct LoggingOwner {
 impl LoggingOwner {
     fn new(runtime: Arc<LoggingRuntime>) -> Self {
         Self { runtime }
+    }
+
+    fn runtime(&self) -> &Arc<LoggingRuntime> {
+        &self.runtime
     }
 
     pub async fn flush(&self) {
@@ -174,6 +182,15 @@ impl LoggingConfig {
             color,
         }
     }
+}
+
+/// Initialize the logging system with compatibility wrappers for callers
+/// that still use the legacy public API.
+#[allow(dead_code)]
+pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
+    let owner = init_logging_with_owner(redactor)?;
+    install_active_runtime_compat(owner.runtime())?;
+    Ok(())
 }
 
 /// Initialize logging and return the explicit runtime owner for production
@@ -512,6 +529,35 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
 }
 
 /// Flush all pending logs and wait for completion
+#[allow(dead_code)]
+pub async fn flush_logs() {
+    let runtime = current_compat_runtime();
+    let Some(runtime) = runtime else {
+        tracing::debug!("flush_logs called before logging runtime initialization");
+        return;
+    };
+    flush_logs_with(runtime).await;
+}
+
+fn current_compat_runtime() -> Option<Arc<LoggingRuntime>> {
+    ACTIVE_RUNTIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade()
+}
+
+fn install_active_runtime_compat(runtime: &Arc<LoggingRuntime>) -> Result<()> {
+    let mut runtime_slot = ACTIVE_RUNTIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if runtime_slot.upgrade().is_some() {
+        return Err(anyhow::anyhow!("logging already initialized"));
+    }
+
+    *runtime_slot = Arc::downgrade(runtime);
+    Ok(())
+}
+
 async fn flush_logs_with(runtime: Arc<LoggingRuntime>) {
     tracing::info!("Flushing logs before shutdown...");
 
@@ -538,6 +584,13 @@ pub fn flush_logs_sync() {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    fn clear_active_runtime_for_test() {
+        let mut runtime_slot = ACTIVE_RUNTIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *runtime_slot = Weak::new();
+    }
 
     #[test]
     #[serial]
@@ -604,6 +657,39 @@ mod tests {
 
         // Third should be rate limited
         assert!(!should_sample(&runtime, "test_target", &config));
+    }
+
+    #[test]
+    #[serial]
+    fn explicit_owner_does_not_install_compat_registry() {
+        clear_active_runtime_for_test();
+
+        let owner = LoggingOwner::new(Arc::new(LoggingRuntime::new(LoggingConfig {
+            format: LogFormat::Compact,
+            level: "info".to_string(),
+            sampling: None,
+            redact: true,
+            timestamp: true,
+            color: false,
+        })));
+
+        assert!(
+            current_compat_runtime().is_none(),
+            "explicit owner path should not auto-install compat runtime"
+        );
+
+        install_active_runtime_compat(owner.runtime()).expect("compat registration should succeed");
+        assert!(current_compat_runtime().is_some());
+
+        clear_active_runtime_for_test();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_flush_logs_async() {
+        clear_active_runtime_for_test();
+        flush_logs().await;
+        clear_active_runtime_for_test();
     }
 
     #[tokio::test]

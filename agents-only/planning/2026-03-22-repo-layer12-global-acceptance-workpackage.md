@@ -96,6 +96,9 @@
     - `main` 启动路径改为显式持有 `LoggingOwner`
     - 正常 `main` 退出路径（含 `check` 分支在 `process::exit` 前）现改为显式调用 `LoggingOwner::flush()`
     - `ACTIVE_RUNTIME` 收窄为 `init_logging()` / `flush_logs()` 的兼容包装层，不再是生产启动路径的首选 owner
+  - `app/src/logging.rs`
+    - review follow-up 已恢复 `init_logging()` / `flush_logs()` 公共 compat API，避免 maintenance mode 下的 Rust public API break
+    - 恢复后的 compat 壳继续复用 `ACTIVE_RUNTIME` 弱注册表；`main` 显式 `LoggingOwner` 主路径保持不变
   - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/router/explain_util.rs`
     - router 主决策链里的 legacy GeoIP fallback 改为优先走 `RouterHandle` 已持有的 `geoip_mux` / `geoip` / `geoip_db`
     - `crate::geoip` 全局服务不再是这些主路径的直接依赖；剩余全局注册点收窄到兼容工具面
@@ -144,6 +147,8 @@
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p app --bin app explicit_owner_flush_completes --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+  - `cargo test -p app --bin app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+  - `cargo test -p app --bin app test_flush_logs_async --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
   - `cargo test -p sb-core --lib decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅

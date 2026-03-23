@@ -16,6 +16,37 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 01:27] Agent: Codex (GPT-5)
+
+**任务**: 修复 logging review finding，恢复 maintenance 模式下的 public compat API
+**变更**:
+- `app/src/logging.rs`: 恢复 `ACTIVE_RUNTIME: LazyLock<StdMutex<Weak<LoggingRuntime>>>`、`init_logging()` / `flush_logs()`、`current_compat_runtime()`、`install_active_runtime_compat()` 与私有 `runtime()` getter；补回 `clear_active_runtime_for_test()`、`explicit_owner_does_not_install_compat_registry`、`test_flush_logs_async`
+- `agents-only/active_context.md`: 把 “logging compat 已清除” 更正为 “保留 public API compat shell”
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`: 追加 logging review follow-up 与验证结果
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功，修复了 `6c88a027` 引入的 public API break review finding
+**构建验证**:
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p app --bin app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo test -p app --bin app test_flush_logs_async --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次修复只恢复薄 compat 壳，不让 logging 主启动/退出路径退回全局 owner
+- 结论仍然只按 maintenance / Layer 1/2 收口归档，不表述成 dual-kernel parity 完成
+
+### [2026-03-24 21:00] Agent: Claude Opus 4.6
+
+**任务**: 执行 logging.rs compat shell 清理 + 修复 flaky tests
+**变更**:
+- `app/src/logging.rs`: 删除 `ACTIVE_RUNTIME` LazyLock + `init_logging()` / `flush_logs()` / `current_compat_runtime()` / `install_active_runtime_compat()` / `runtime()` getter + 3 个 compat 测试 + `clear_active_runtime_for_test()` + unused imports（-84 行）
+- `app/src/admin_debug/prefetch.rs:435`: `HIGH_WATERMARK.store(0, Relaxed)` 修复非 serial 测试污染模块级静态
+- `app/src/runtime_deps.rs:126`: 添加 `#[serial]` + `clear_default_for_test()` 前后清理
+- `agents-only/active_context.md`: 更新为已完成状态
+- `agents-only/log.md`: 记录本轮变更
+**结果**: ✅ commit `6c88a027`; cargo check / clippy / 30/30 test 全绿
+**备注**: 修复的两个 flaky 根因均为模块级 static (AtomicU64 / Weak) 在并行测试间泄漏状态
+
 ### [2026-03-24 20:00] Agent: Claude Opus 4.6
 
 **任务**: Compat shell 架构债务评估 — logging / sb-metrics / security_metrics 三项
