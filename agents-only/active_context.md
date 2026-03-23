@@ -21,6 +21,9 @@
   - `crates/sb-config/src/validator/v2.rs`：移除一组纯查表 `OnceLock<HashSet<_>>` 缓存，改为普通构造路径
   - `crates/sb-common/src/conntrack.rs`：去掉生产态 `shared_tracker()` 的进程级 singleton；全局 tracker 只保留在 `#[cfg(test)]`
   - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/dns/config_builder.rs`、`crates/sb-adapters/src/inbound/tun/mod.rs`：非测试 `super::` 改写为稳定 `crate::...` 绝对路径
+  - `crates/sb-core/src/http_client.rs` + `app/src/runtime_deps.rs`：
+    - `sb-core` 的默认 HTTP client owner 已从进程级 `OnceLock<Box<dyn HttpClient>>` 收敛为弱引用兼容注册表
+    - 真正 owner 改由 `AppRuntimeDeps` 显式持有；`run_engine` 不再额外安装全局强持有 owner
   - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
 - 本轮关键验证已通过：
   - `cargo check --workspace`
@@ -29,6 +32,9 @@
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
   - `bash scripts/ci/tasks/inbound-errors.sh`
   - `bash scripts/ci/accept.sh`
+  - `cargo test -p sb-core --lib http_client -- --nocapture`
+  - `cargo check -p app`
+  - `cargo clippy -p app --all-features --all-targets -- -D warnings`
 - `scripts/e2e/socks5/udp-errors.sh` / `scripts/ci/tasks/inbound-errors.sh` 已完成 maintenance harness 收口：
   - 不再把 malformed UDP datagram 直接打到假定固定端口
   - 改为先经 TCP `UDP ASSOCIATE` 学习真实 relay，再向返回的随机 UDP 端口注入坏包
@@ -38,7 +44,7 @@
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：仍有全局兼容入口，但已降为 `Weak<LoggingRuntime>` 注册表，不再持有额外 runtime owner
   - `app/src/admin_debug/security_metrics.rs`：仍有默认查找入口，但已降为 `Weak<SecurityMetricsState>` 注册表，runtime deps 继续显式持有真正状态
-  - `crates/sb-core/src/http_client.rs` / `crates/sb-core/src/geoip/mod.rs` 等仍存在的显式全局注册点
+  - `crates/sb-core/src/geoip/mod.rs` 等仍存在的显式全局注册点
   - `crates/sb-metrics` 的共享静态 registry 架构
 
 ## L25 完成总结（2026-03-17）

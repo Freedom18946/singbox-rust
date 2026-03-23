@@ -6,6 +6,8 @@ use std::time::Instant;
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
     metrics_registry: sb_metrics::MetricsRegistryHandle,
+    #[cfg(feature = "router")]
+    pub http_client: Arc<dyn sb_types::ports::http::HttpClient>,
     pub redactor: Arc<crate::redact::Redactor>,
     #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
@@ -24,6 +26,10 @@ impl AppRuntimeDeps {
     pub fn new() -> Result<Self> {
         let started_at = Instant::now();
         let redactor = Arc::new(crate::redact::Redactor::new()?);
+        #[cfg(feature = "router")]
+        let http_client = sb_core::http_client::install_default_http_client(Arc::new(
+            crate::reqwest_http::ReqwestHttpClient::new(),
+        ));
         #[cfg(feature = "admin_debug")]
         let security_metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
@@ -32,6 +38,8 @@ impl AppRuntimeDeps {
         Ok(Self {
             #[cfg(feature = "observe")]
             metrics_registry: sb_metrics::MetricsRegistryHandle::global(),
+            #[cfg(feature = "router")]
+            http_client,
             redactor,
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
             analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),

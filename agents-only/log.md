@@ -7530,6 +7530,37 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口修的是 maintenance acceptance harness，不改变 Rust 公开 API，不表述为 dual-kernel parity 完成
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
 
+### [2026-03-23 18:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进剩余 maintenance follow-up，收口 `sb-core` HTTP client 的全局强持有 owner
+**变更**:
+- `crates/sb-core/src/http_client.rs`
+  - 新增弱引用默认注册表，使默认 HTTP client 不再由 `sb-core` 全局强持有
+  - 保留原 `install_http_client(Box<dyn HttpClient>)` 兼容安装口作为 fallback
+  - `http_execute(...)` 先走弱引用默认 owner，再回退到旧兼容安装口
+  - 新增回归测试，验证显式 owner 存活时可执行、drop 后弱引用失效、重新安装后可恢复
+- `app/src/runtime_deps.rs`
+  - `AppRuntimeDeps` 新增显式持有的 HTTP client owner
+  - 构造阶段改用 `sb_core::http_client::install_default_http_client(...)`
+- `app/src/run_engine.rs`
+  - 去掉重复的 `install_global_http_client()` 调用，避免重新引入全局强持有 owner
+- `agents-only/active_context.md`
+  - 从剩余 follow-up 中移除 `crates/sb-core/src/http_client.rs`
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 owner 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-core --lib http_client -- --nocapture` ✅
+- `cargo check -p app` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口的是生产路径默认 owner，不改变旧兼容安装口，也不表述为 dual-kernel parity 完成
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
