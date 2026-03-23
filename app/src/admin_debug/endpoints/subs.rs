@@ -9,12 +9,7 @@ use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist
 use crate::admin_debug::security_async::{
     forbid_private_host_or_resolved_async, forbid_private_host_or_resolved_async_with_metrics,
 };
-use crate::admin_debug::security_metrics::{
-    inc_block_private_ip, inc_breaker_block, inc_cache_hit, inc_cache_miss, inc_connect_timeout,
-    inc_exceed_size, inc_redirects, inc_timeout, inc_total_requests, inc_upstream_4xx,
-    inc_upstream_5xx, mark_last_ok, record_latency_ms, set_last_error, set_last_error_with_host,
-    SecurityErrorKind,
-};
+use crate::admin_debug::security_metrics::SecurityErrorKind;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
@@ -282,8 +277,6 @@ async fn resolve_and_check_host(host: &str) -> Result<(), &'static str> {
 fn metrics_inc_total_requests(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_total_requests();
-    } else {
-        inc_total_requests();
     }
 }
 
@@ -291,8 +284,6 @@ fn metrics_inc_total_requests(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_rate_limited(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_rate_limited();
-    } else {
-        crate::admin_debug::security_metrics::inc_rate_limited();
     }
 }
 
@@ -300,8 +291,6 @@ fn metrics_inc_rate_limited(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_breaker_block(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_breaker_block();
-    } else {
-        inc_breaker_block();
     }
 }
 
@@ -309,8 +298,6 @@ fn metrics_inc_breaker_block(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_block_private_ip(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_block_private_ip();
-    } else {
-        inc_block_private_ip();
     }
 }
 
@@ -318,8 +305,6 @@ fn metrics_inc_block_private_ip(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_cache_hit(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_cache_hit();
-    } else {
-        inc_cache_hit();
     }
 }
 
@@ -327,8 +312,6 @@ fn metrics_inc_cache_hit(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_cache_miss(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_cache_miss();
-    } else {
-        inc_cache_miss();
     }
 }
 
@@ -336,8 +319,6 @@ fn metrics_inc_cache_miss(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_head_total(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_head_total();
-    } else {
-        crate::admin_debug::security_metrics::inc_head_total();
     }
 }
 
@@ -345,8 +326,6 @@ fn metrics_inc_head_total(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_redirects(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_redirects();
-    } else {
-        inc_redirects();
     }
 }
 
@@ -354,8 +333,6 @@ fn metrics_inc_redirects(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_connect_timeout(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_connect_timeout();
-    } else {
-        inc_connect_timeout();
     }
 }
 
@@ -363,8 +340,6 @@ fn metrics_inc_connect_timeout(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_timeout(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_timeout();
-    } else {
-        inc_timeout();
     }
 }
 
@@ -372,8 +347,6 @@ fn metrics_inc_timeout(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_upstream_4xx(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_upstream_4xx();
-    } else {
-        inc_upstream_4xx();
     }
 }
 
@@ -381,8 +354,6 @@ fn metrics_inc_upstream_4xx(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_upstream_5xx(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_upstream_5xx();
-    } else {
-        inc_upstream_5xx();
     }
 }
 
@@ -390,8 +361,6 @@ fn metrics_inc_upstream_5xx(metrics: Option<&SecurityMetricsState>) {
 fn metrics_inc_exceed_size(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_exceed_size();
-    } else {
-        inc_exceed_size();
     }
 }
 
@@ -399,8 +368,6 @@ fn metrics_inc_exceed_size(metrics: Option<&SecurityMetricsState>) {
 fn metrics_record_latency_ms(ms: u64, metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.record_latency_ms(ms);
-    } else {
-        record_latency_ms(ms);
     }
 }
 
@@ -408,8 +375,6 @@ fn metrics_record_latency_ms(ms: u64, metrics: Option<&SecurityMetricsState>) {
 fn metrics_mark_last_ok(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.mark_last_ok();
-    } else {
-        mark_last_ok();
     }
 }
 
@@ -422,8 +387,6 @@ fn metrics_set_last_error(
     let message = msg.into();
     if let Some(metrics) = metrics {
         metrics.set_last_error(kind, message);
-    } else {
-        set_last_error(kind, message);
     }
 }
 
@@ -437,8 +400,6 @@ fn metrics_set_last_error_with_host(
     let message = msg.into();
     if let Some(metrics) = metrics {
         metrics.set_last_error_with_host(kind, host, message);
-    } else {
-        set_last_error_with_host(kind, host, message);
     }
 }
 

@@ -368,8 +368,6 @@ impl HostBreaker {
 fn record_breaker_reopen(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.inc_breaker_reopen();
-    } else {
-        crate::admin_debug::security_metrics::inc_breaker_reopen();
     }
 }
 
@@ -509,7 +507,9 @@ mod tests {
         }
 
         assert!(!br.check("metrics-owner.com"));
-        let snapshot = metrics.snapshot().expect("explicit metrics snapshot should succeed");
+        let snapshot = metrics
+            .snapshot()
+            .expect("explicit metrics snapshot should succeed");
         assert_eq!(snapshot.subs_breaker_reopen, 1);
     }
 
@@ -888,5 +888,26 @@ mod tests {
             reopen3, 3,
             "Third failure should increment reopen_count to 3"
         );
+    }
+
+    #[test]
+    fn explicit_metrics_owner_records_breaker_reopen_without_default_state() {
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+        let mut br = HostBreaker::new(30_000, 15_000, 2, 0.5);
+
+        // Trip the breaker with explicit metrics
+        br.mark_failure_with_metrics("test-host", &metrics);
+        br.mark_failure_with_metrics("test-host", &metrics);
+
+        assert_eq!(
+            metrics.snapshot().unwrap().subs_breaker_reopen,
+            1,
+            "explicit metrics owner should record breaker reopen"
+        );
+
+        // Without metrics (None path) should silently skip, not panic
+        record_breaker_reopen(None);
     }
 }

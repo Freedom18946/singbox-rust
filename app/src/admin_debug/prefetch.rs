@@ -47,43 +47,33 @@ fn observe_depth(depth: u64, metrics: Option<&SecurityMetricsState>) {
     set_prefetch_queue_high_watermark(HIGH_WATERMARK.load(Ordering::Relaxed), metrics);
 }
 
-fn init_prefetch_metrics(metrics: Option<&SecurityMetricsState>) {
+const fn init_prefetch_metrics(metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.init_prefetch_metrics();
-    } else {
-        crate::admin_debug::security_metrics::init_prefetch_metrics();
     }
 }
 
 fn prefetch_inc(event: &str, metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.prefetch_inc(event);
-    } else {
-        crate::admin_debug::security_metrics::prefetch_inc(event);
     }
 }
 
 fn record_prefetch_run_ms(ms: u64, metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.record_prefetch_run_ms(ms);
-    } else {
-        crate::admin_debug::security_metrics::record_prefetch_run_ms(ms);
     }
 }
 
 fn set_prefetch_queue_depth(depth: u64, metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.set_prefetch_queue_depth(depth);
-    } else {
-        crate::admin_debug::security_metrics::set_prefetch_queue_depth(depth);
     }
 }
 
 fn set_prefetch_queue_high_watermark(watermark: u64, metrics: Option<&SecurityMetricsState>) {
     if let Some(metrics) = metrics {
         metrics.set_prefetch_queue_high_watermark(watermark);
-    } else {
-        crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(watermark);
     }
 }
 
@@ -507,6 +497,31 @@ mod tests {
             Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
             None => std::env::remove_var("SB_PREFETCH_ENABLE"),
         }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn owner_aware_helpers_record_without_default_state() {
+        crate::admin_debug::security_metrics::clear_default_for_test();
+        HIGH_WATERMARK.store(0, Ordering::Relaxed);
+
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+
+        // Helpers should work via explicit owner, not compat wrappers
+        prefetch_inc("enq", Some(&metrics));
+        prefetch_inc("done", Some(&metrics));
+        observe_depth(5, Some(&metrics));
+        record_prefetch_run_ms(42, Some(&metrics));
+
+        assert_eq!(metrics.get_prefetch_queue_depth(), 5);
+        assert_eq!(metrics.get_prefetch_queue_high_watermark(), 5);
+        let (enq, _, done, _, _) = metrics.get_prefetch_counters();
+        assert_eq!(enq, 1);
+        assert_eq!(done, 1);
+
+        // None metrics should silently no-op, not panic
+        prefetch_inc("enq", None);
+        observe_depth(10, None);
     }
 
     #[tokio::test]
