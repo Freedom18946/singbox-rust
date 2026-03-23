@@ -120,15 +120,21 @@ fn current_service() -> Option<Arc<GeoIpService>> {
         .and_then(Weak::upgrade)
 }
 
+#[must_use]
+pub fn lookup_country_code(ip: IpAddr) -> Option<String> {
+    current_service()
+        .and_then(|s| s.lookup(ip))
+        .or_else(|| service().and_then(|s| s.lookup(ip)))
+        .and_then(|info| info.country_code)
+}
+
 /// Lookup with metrics
 pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     #[cfg(feature = "metrics")]
     {
         let start = std::time::Instant::now();
-        let result = current_service()
-            .map(|s| s.is_country(ip, country_code))
-            .or_else(|| service().map(|s| s.is_country(ip, country_code)))
-            .unwrap_or(false);
+        let result = lookup_country_code(ip)
+            .is_some_and(|code| code.eq_ignore_ascii_case(country_code));
         let duration = start.elapsed();
 
         // Record metrics
@@ -139,31 +145,25 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     }
     #[cfg(not(feature = "metrics"))]
     {
-        current_service()
-            .map(|s| s.is_country(ip, country_code))
-            .or_else(|| service().map(|s| s.is_country(ip, country_code)))
-            .unwrap_or(false)
+        lookup_country_code(ip)
+            .is_some_and(|code| code.eq_ignore_ascii_case(country_code))
     }
 }
 
 /// Lookup IP address and return outbound decision
 pub fn lookup_with_metrics_decision(ip: IpAddr) -> Option<&'static str> {
-    let geo_info = current_service()
-        .and_then(|s| s.lookup(ip))
-        .or_else(|| service().and_then(|s| s.lookup(ip)))?;
+    let country_code = lookup_country_code(ip)?;
 
     #[cfg(feature = "metrics")]
     {
-        if let Some(country) = &geo_info.country_code {
-            crate::metrics::geoip::geoip_country_lookup_total(country);
-        }
+        crate::metrics::geoip::geoip_country_lookup_total(&country_code);
     }
 
     // Return outbound based on country
-    match geo_info.country_code.as_deref() {
-        Some("CN") => Some("direct"),
-        Some("US" | "UK" | "CA") => Some("proxy"),
-        Some("RU" | "IR" | "KP") => Some("block"),
+    match country_code.as_str() {
+        "CN" => Some("direct"),
+        "US" | "UK" | "CA" => Some("proxy"),
+        "RU" | "IR" | "KP" => Some("block"),
         _ => Some("auto"),
     }
 }
@@ -199,6 +199,10 @@ mod tests {
         let installed = install_default_geoip_service(service);
 
         assert_eq!(
+            lookup_country_code(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+            Some("US".to_string())
+        );
+        assert_eq!(
             lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
             Some("proxy")
         );
@@ -209,6 +213,10 @@ mod tests {
 
         drop(installed);
 
+        assert_eq!(
+            lookup_country_code(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+            None
+        );
         assert_eq!(
             lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
             None
@@ -222,6 +230,10 @@ mod tests {
             country_code: "CN",
         })));
         let installed = install_default_geoip_service(replacement);
+        assert_eq!(
+            lookup_country_code(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
+            Some("CN".to_string())
+        );
         assert_eq!(
             lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
             Some("direct")

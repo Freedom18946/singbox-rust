@@ -16,6 +16,34 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 01:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 GeoIP compat fallback 收口到单次 owner-first country lookup
+**变更**:
+- `crates/sb-core/src/geoip/mod.rs`
+  - 新增 `lookup_country_code(...)`
+  - `lookup_with_metrics(...)` / `lookup_with_metrics_decision(...)` 现统一复用单次 country lookup
+  - 扩展 `weak_default_registry_uses_explicit_owner` 测试覆盖 country-code helper
+- `crates/sb-core/src/router/mod.rs`
+  - UDP GeoIP compat fallback 现先用 `lookup_country_code(...)` 做单次查询，再匹配规则
+  - 避免按每条 GeoIP 规则重复打 compat lookup
+- `agents-only/active_context.md`
+  - 同步 GeoIP compat fallback 已收口到单次 country lookup
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 GeoIP compat fallback 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
+- `cargo test -p sb-core --lib decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `crates/sb-core/src/geoip/mod.rs` 的 compat 壳仍保留，但 fallback 已收口为单次 owner-first country lookup，而不是重复规则级查询
+
 ### [2026-03-24 00:20] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 legacy prefetch / async DNS helper 对 `security_metrics` compat wrapper 的反复回落收口到“入口处升级一次 owner”

@@ -2926,6 +2926,13 @@ fn decide_udp_with_prebuilt_index(
                     return decision;
                 }
             }
+            if let Some(lookup_cc) = crate::geoip::lookup_country_code(ip) {
+                for (cc, decision) in &idx.geoip_rules {
+                    if cc.eq_ignore_ascii_case(&lookup_cc) {
+                        return decision;
+                    }
+                }
+            }
             for (cc, decision) in &idx.geoip_rules {
                 if crate::geoip::lookup_with_metrics(ip, cc) {
                     return decision;
