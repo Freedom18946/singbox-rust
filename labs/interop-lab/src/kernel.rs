@@ -121,7 +121,7 @@ pub async fn launch_kernel(
                     if let Err(err) =
                         tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await
                     {
-                        eprintln!("kernel stdout log write failed: {err}");
+                        tracing::warn!(error = %err, "kernel stdout log write failed");
                         break;
                     }
                 }
@@ -139,7 +139,7 @@ pub async fn launch_kernel(
                     if let Err(err) =
                         tokio::io::AsyncWriteExt::write_all(&mut file, payload.as_bytes()).await
                     {
-                        eprintln!("kernel stderr log write failed: {err}");
+                        tracing::warn!(error = %err, "kernel stderr log write failed");
                         break;
                     }
                 }

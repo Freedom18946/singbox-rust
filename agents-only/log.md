@@ -7441,6 +7441,37 @@ L2.8.4-6 Handlers + WebSocket:
 - 四批次执行：B1 安全+Fuzz → B2 性能+Bench → B3 功能+质量 → B4 按需
 - 关键依赖链：T1-01→T1-03, T1-02→T1-03/04, T1-12→T2-05/07/09
 
+### [2026-03-23] Agent: Codex (Layer 1/2 生产路径严格收口)
+
+**任务**: 按 maintenance mode 继续推进全仓库 Layer 1 / Layer 2 生产路径严格收口，不把 repo-level 验证表述为 dual-kernel parity 完成
+**范围**: `app/src`、`crates/*/src`、`labs/interop-lab/src` 的非测试生产源码；排除 `tests/`、`#[cfg(test)]`、`examples/`、`benches/`、`app/src/bin/*`、CLI stdout 边界输出
+**变更**:
+- `app/src/logging.rs` — 内部 `eprintln!` 改为内部 stderr helper，保留边界行为
+- `app/src/hardening.rs` — 内部告警改为 `tracing::warn!`
+- `app/src/admin_debug/security_async.rs` — 去掉全局 `OnceCell` resolver，改成显式构造；生产态 `super::` → `crate::...`
+- `crates/sb-config/src/validator/v2.rs` — 纯查表 `OnceLock<HashSet<_>>` 改为普通局部构造
+- `crates/sb-common/src/conntrack.rs` / `crates/sb-common/src/lib.rs` — `shared_tracker()` 去 singleton；测试域保留 `GLOBAL_TRACKER`
+- `crates/sb-core/src/router/engine.rs` — 生产态 `super::` 改为 `crate::router::...`
+- `crates/sb-core/src/dns/config_builder.rs` — 生产态 `super::` 改为 `crate::dns::...`
+- `crates/sb-adapters/src/inbound/tun/mod.rs` — 生产态 `super::L4` 改为 `crate::inbound::tun::L4`
+- `labs/interop-lab/src/{upstream,gui_replay,kernel,orchestrator}.rs` — 内部 `eprintln!` / best-effort 静默失败迁移到 `tracing`
+- `labs/interop-lab/Cargo.toml` — 补入 `tracing`
+- `app/Cargo.toml` — 补齐 `sbcore_analyze_json` 与 `transport_ech` feature 透传
+- `crates/sb-adapters/src/testsupport/mod.rs` — 调整 conntrack 测试支撑以适配非全局 tracker
+- `Cargo.lock` — `interop-lab` 新增 `tracing` 依赖锁文件更新
+**验证**:
+- `cargo check --workspace` ✅
+- `cargo clippy --workspace --all-features --all-targets -- -D warnings` ✅
+- `cargo clippy -p app -p sb-common -p sb-config -p sb-adapters -p interop-lab --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p sb-core --lib` ✅ (509 passed)
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅ (40 passed)
+- `bash scripts/ci/accept.sh` ✅
+**maintenance 归档**:
+- `target/acceptance.json` 继续显示 `pprof` / `explain snapshot` / `quick soak` 通过
+- `inbound_errors.ok=false`、`reason=runtime-exited-before-metrics` 维持为 maintenance follow-up，不升级为 parity 结论
+- 当前环境未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续 skipped
+**结果**: 成功 — 点名高风险文件的生产态 `super::` 与一批内部日志/全局状态命中已收口；剩余全局注册点继续作为 non-blocking maintenance follow-up 归档
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

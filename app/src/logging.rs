@@ -92,6 +92,21 @@ impl LoggingRuntime {
     }
 }
 
+fn write_internal_stderr(message: &str) {
+    let mut stderr = io::stderr().lock();
+    if let Err(_write_err) = stderr.write_all(message.as_bytes()) {
+        // Ignoring write failure: initialization/panic paths have no safer fallback sink.
+        return;
+    }
+    if let Err(_write_err) = stderr.write_all(b"\n") {
+        // Ignoring write failure: initialization/panic paths have no safer fallback sink.
+        return;
+    }
+    if let Err(_flush_err) = stderr.flush() {
+        // Ignoring flush failure: initialization/panic paths have no safer fallback sink.
+    }
+}
+
 impl LoggingConfig {
     /// Create logging configuration from environment variables
     pub fn from_env() -> Self {
@@ -114,7 +129,9 @@ impl LoggingConfig {
                         window: Duration::from_secs(1),
                     }),
                     Err(err) => {
-                        eprintln!("env 'SB_LOG_SAMPLE' value '{trimmed}' is not a valid u32; silent parse fallback is disabled; ignoring: {err}");
+                        write_internal_stderr(&format!(
+                            "env 'SB_LOG_SAMPLE' value '{trimmed}' is not a valid u32; silent parse fallback is disabled; ignoring: {err}"
+                        ));
                         None
                     }
                 }
@@ -331,10 +348,10 @@ impl Drop for RedactingWriter {
         let s = String::from_utf8_lossy(&self.buf);
         let redacted = self.redactor.redact_str(&s);
         if let Err(err) = self.inner.write_all(redacted.as_bytes()) {
-            eprintln!("logging redaction write failed: {err}");
+            write_internal_stderr(&format!("logging redaction write failed: {err}"));
         }
         if let Err(err) = self.inner.flush() {
-            eprintln!("logging redaction flush failed: {err}");
+            write_internal_stderr(&format!("logging redaction flush failed: {err}"));
         }
     }
 }
@@ -463,7 +480,7 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
     let original_hook = std::panic::take_hook();
     let panic_runtime = Arc::clone(&runtime);
     std::panic::set_hook(Box::new(move |panic_info| {
-        eprintln!("Panic occurred, attempting to flush logs...");
+        write_internal_stderr("Panic occurred, attempting to flush logs...");
         if let Err(error) = std::thread::spawn({
             let panic_runtime = Arc::clone(&panic_runtime);
             move || {
@@ -477,7 +494,7 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
         })
         .join()
         {
-            eprintln!("panic-time logging flush join failed: {error:?}");
+            write_internal_stderr(&format!("panic-time logging flush join failed: {error:?}"));
         }
 
         original_hook(panic_info);

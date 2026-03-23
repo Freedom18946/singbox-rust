@@ -15,7 +15,7 @@ fn parse_http_method(method: &str) -> Method {
     match method.parse::<Method>() {
         Ok(value) => value,
         Err(err) => {
-            eprintln!("invalid GUI replay HTTP method {method:?}, defaulting to GET: {err}");
+            tracing::warn!(method = ?method, error = %err, "invalid GUI replay HTTP method, defaulting to GET");
             Method::GET
         }
     }
@@ -258,7 +258,7 @@ async fn run_ws_parallel(
                         }
                     }
                     if let Err(err) = stream.close(None).await {
-                        eprintln!("parallel websocket close failed for {stream_name}: {err}");
+                        tracing::debug!(stream_name = %stream_name, error = %err, "parallel websocket close failed");
                     }
                     (stream_name, path, frames, None)
                 }
@@ -306,7 +306,7 @@ async fn request_json(api: &ApiAccess, path: &str) -> Option<Value> {
     let response = match req.send().await {
         Ok(response) => response,
         Err(err) => {
-            eprintln!("request_json send failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "request_json send failed");
             return None;
         }
     };
@@ -316,7 +316,7 @@ async fn request_json(api: &ApiAccess, path: &str) -> Option<Value> {
     match response.json::<Value>().await {
         Ok(value) => Some(value),
         Err(err) => {
-            eprintln!("request_json decode failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "request_json decode failed");
             None
         }
     }

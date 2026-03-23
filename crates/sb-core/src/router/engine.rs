@@ -23,7 +23,7 @@ type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
 static UDP_RULES_CACHE: Lazy<RwLock<UdpRulesCacheEntry>> = Lazy::new(|| RwLock::new(None));
 
 fn parse_udp_rules_index(raw: &str) -> Result<Arc<RouterIndex>, Arc<str>> {
-    super::router_build_index_from_str(raw, 8192).map_err(|err| {
+    crate::router::router_build_index_from_str(raw, 8192).map_err(|err| {
         format!(
             "router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
         )
@@ -583,7 +583,7 @@ impl RouterHandle {
 
     /// 注入 DNS 模块的 Resolver（通过桥接器）
     pub fn with_dns_resolver(mut self, resolver: Arc<dyn crate::dns::Resolver>) -> Self {
-        let bridge = super::dns_bridge::DnsResolverBridge::new(resolver);
+        let bridge = crate::router::dns_bridge::DnsResolverBridge::new(resolver);
         self.resolver = Some(Arc::new(bridge));
         self
     }
@@ -896,26 +896,26 @@ impl RouterHandle {
         if idx.rules.is_empty() {
             // Check exact/suffix first
             if let Some(host) = ctx.host {
-                if let Some(d) = super::router_index_decide_exact_suffix(&idx, host) {
+                if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, host) {
                     return tag_to_decision(d);
                 }
                 // Check GeoSite rules
                 if let Some(geosite_db) = &self.geosite_db {
-                    if let Some(d) = super::router_index_decide_geosite(&idx, host, geosite_db) {
+                    if let Some(d) = crate::router::router_index_decide_geosite(&idx, host, geosite_db) {
                         return tag_to_decision(d);
                     }
                 }
             }
 
             if let Some(ip) = ctx.ip {
-                if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                     return tag_to_decision(d);
                 }
             }
 
             // Check transport/port
             if let Some(d) =
-                super::router_index_decide_transport_port(&idx, ctx.port, Some(ctx.network))
+                crate::router::router_index_decide_transport_port(&idx, ctx.port, Some(ctx.network))
             {
                 return tag_to_decision(d);
             }
@@ -939,16 +939,16 @@ impl RouterHandle {
             };
 
             if let Some(host) = host.as_deref() {
-                if let Some(d) = super::router_index_decide_exact_suffix(&idx, host) {
+                if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, host) {
                     return d.to_string();
                 }
             }
             if let Some(ip) = ip {
-                if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                     return d.to_string();
                 }
             }
-            if let Some(d) = super::router_index_decide_transport_port(&idx, port, Some("udp")) {
+            if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port, Some("udp")) {
                 return d.to_string();
             }
             return idx.default.to_string();
@@ -1005,15 +1005,15 @@ impl RouterHandle {
             let host_norm: String = normalize_host(host);
             let ip_opt = host_norm.parse::<IpAddr>().ok();
 
-            if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host_norm) {
+            if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, &host_norm) {
                 return d.to_string();
             }
             if let Some(ip) = ip_opt {
-                if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                     return d.to_string();
                 }
             }
-            if let Some(d) = super::router_index_decide_transport_port(&idx, None, Some("udp")) {
+            if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp")) {
                 return d.to_string();
             }
             return idx.default.to_string();
@@ -1068,14 +1068,14 @@ impl RouterHandle {
 
         // 1) Domain-first decision (FakeIP resolves to original domain here)
         let host_for_domain = fake_domain_norm.as_deref().unwrap_or(&host_norm);
-        if let Some(d) = super::router_index_decide_exact_suffix(&idx, host_for_domain) {
+        if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         #[cfg(feature = "router_keyword")]
-        if let Some(d) = super::router_index_decide_keyword(&idx, host_for_domain) {
+        if let Some(d) = crate::router::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1083,12 +1083,12 @@ impl RouterHandle {
 
         // 2) If target is a literal IP (or FakeIP fallback), apply IP rules.
         if let Some(ip) = ip_opt {
-            if let Some(d) = super::runtime_override_ip(ip) {
+            if let Some(d) = crate::router::runtime_override_ip(ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
             }
-            if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+            if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -1104,12 +1104,12 @@ impl RouterHandle {
                 .await
             {
                 for ip in ips {
-                    if let Some(d) = super::runtime_override_ip(ip) {
+                    if let Some(d) = crate::router::runtime_override_ip(ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
                     }
-                    if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                    if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -1119,7 +1119,7 @@ impl RouterHandle {
         }
 
         // 4) Transport/port fallback (UDP)
-        if let Some(d) = super::router_index_decide_transport_port(&idx, None, Some("udp")) {
+        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp")) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1193,26 +1193,26 @@ impl RouterHandle {
         }
 
         let host_for_domain = fake_domain_norm.as_deref().unwrap_or(&host_norm);
-        if let Some(d) = super::router_index_decide_exact_suffix(&idx, host_for_domain) {
+        if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         #[cfg(feature = "router_keyword")]
-        if let Some(d) = super::router_index_decide_keyword(&idx, host_for_domain) {
+        if let Some(d) = crate::router::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
         }
 
         if let Some(ip) = ip_opt {
-            if let Some(d) = super::runtime_override_ip(ip) {
+            if let Some(d) = crate::router::runtime_override_ip(ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
             }
-            if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+            if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -1227,12 +1227,12 @@ impl RouterHandle {
                 .await
             {
                 for ip in ips {
-                    if let Some(d) = super::runtime_override_ip(ip) {
+                    if let Some(d) = crate::router::runtime_override_ip(ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
                     }
-                    if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                    if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -1241,7 +1241,7 @@ impl RouterHandle {
             }
         }
 
-        if let Some(d) = super::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
+        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
             return d_str;
@@ -1350,7 +1350,7 @@ impl RouterHandle {
                 }
             }
         }
-        if let Some(d) = super::router_index_decide_transport_port(&idx, ctx.port, Some("tcp")) {
+        if let Some(d) = crate::router::router_index_decide_transport_port(&idx, ctx.port, Some("tcp")) {
             return (
                 RouteTarget::Named(d.to_string()),
                 Some("transport".to_string()),
@@ -1455,7 +1455,7 @@ impl RouterHandle {
 
         // 2) Fast path: attempt to label host-based match kind when rules list is empty.
         if let Some(host) = ctx.host {
-            if let Some(_d) = super::router_index_decide_exact_suffix(&idx, host) {
+            if let Some(_d) = crate::router::router_index_decide_exact_suffix(&idx, host) {
                 let kind = if idx.exact.contains_key(host) {
                     "exact"
                 } else {
@@ -1480,13 +1480,13 @@ impl RouterHandle {
 // ============================================================================
 
 #[async_trait::async_trait]
-impl super::route_connection::ConnectionRouter for RouterHandle {
+impl crate::router::route_connection::ConnectionRouter for RouterHandle {
     /// Route a TCP connection based on the routing context.
     /// 根据路由上下文路由 TCP 连接。
     async fn route_connection<'a>(
         &self,
-        ctx: &super::RouteCtx<'a>,
-    ) -> super::route_connection::RouteResult {
+        ctx: &crate::router::RouteCtx<'a>,
+    ) -> crate::router::route_connection::RouteResult {
         let decision = self.decide(ctx);
         decision_to_route_result(decision)
     }
@@ -1495,15 +1495,15 @@ impl super::route_connection::ConnectionRouter for RouterHandle {
     /// 根据路由上下文路由 UDP 包。
     async fn route_packet<'a>(
         &self,
-        ctx: &super::RouteCtx<'a>,
-    ) -> super::route_connection::RouteResult {
+        ctx: &crate::router::RouteCtx<'a>,
+    ) -> crate::router::route_connection::RouteResult {
         let decision = self.decide(ctx);
         decision_to_route_result(decision)
     }
 
     /// Pre-match hook for connection acceptance checks.
     /// 连接接受检查的预匹配钩子。
-    fn pre_match(&self, _ctx: &super::RouteCtx<'_>) -> bool {
+    fn pre_match(&self, _ctx: &crate::router::RouteCtx<'_>) -> bool {
         // Default: accept all connections
         // Future: can check source IP rules, inbound-specific filters, etc.
         true
@@ -1514,8 +1514,8 @@ impl super::route_connection::ConnectionRouter for RouterHandle {
 /// 将 Decision 转换为 RouteResult
 fn decision_to_route_result(
     decision: crate::router::rules::Decision,
-) -> super::route_connection::RouteResult {
-    use super::route_connection::RouteResult;
+) -> crate::router::route_connection::RouteResult {
+    use crate::router::route_connection::RouteResult;
     use crate::router::rules::Decision;
 
     match decision {
@@ -1644,7 +1644,7 @@ impl RouterHandle {
 
     pub fn export_and_rebuild(&self) -> Result<(), String> {
         let snapshot = self.export_rules_json()?;
-        super::explain_bridge::rebuild_index(&snapshot)
+        crate::router::explain_bridge::rebuild_index(&snapshot)
     }
 
     /// Explain 旁路可选地查询 IP→国家码（未接入则返回 None）
@@ -1722,7 +1722,7 @@ pub enum Transport {
 ///
 /// Kept under this path for compatibility with older call sites that import
 /// `sb_core::router::engine::RouteCtx`.
-pub type RouteCtx<'a> = super::RouteCtx<'a>;
+pub type RouteCtx<'a> = crate::router::RouteCtx<'a>;
 
 // ===== 兼容层：Rule / CompositeRule / Router（旧 API 期望） =====
 
@@ -1849,9 +1849,9 @@ impl Router {
     }
 
     /// Make routing decision
-    pub fn decide(&self, _ctx: &super::RouteCtx) -> super::RouteDecision {
+    pub fn decide(&self, _ctx: &crate::router::RouteCtx) -> crate::router::RouteDecision {
         // Simplified implementation - return default decision
-        super::RouteDecision {
+        crate::router::RouteDecision {
             target: self.default.clone(),
             matched_rule: None,
         }
@@ -1900,7 +1900,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
         (target, None)
     };
     let host = normalize_host(host_raw);
-    if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host) {
+    if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, &host) {
         let k = if idx.exact.contains_key(&host) {
             "exact"
         } else {
@@ -1934,7 +1934,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
         }
     }
     if let Ok(ip) = host.parse::<IpAddr>() {
-        if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+        if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
             return DecisionExplain {
                 decision: d.to_string(),
                 reason: format!("ip matched ip={}", ip),
@@ -1944,7 +1944,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
             };
         }
     }
-    if let Some(d) = super::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
+    if let Some(d) = crate::router::router_index_decide_transport_port(&idx, port_opt, Some("tcp")) {
         let k = if port_opt.is_some() {
             "port"
         } else {
@@ -1979,7 +1979,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
             .clone()
     };
     let host_norm = normalize_host(host);
-    if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host_norm) {
+    if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, &host_norm) {
         let k = if idx.exact.contains_key(&host_norm) {
             "exact"
         } else {
@@ -2013,7 +2013,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
         }
     }
     if let Ok(ip) = host_norm.parse::<IpAddr>() {
-        if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+        if let Some(d) = crate::router::router_index_decide_ip(&idx, ip) {
             return DecisionExplain {
                 decision: d.to_string(),
                 reason: format!("ip matched ip={}", ip),
@@ -2031,7 +2031,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
         match handle.resolve_with_fallback(&host_norm, timeout_ms).await {
             DnsResult::Ok(ips) => {
                 for ip in &ips {
-                    if let Some(d) = super::router_index_decide_ip(&idx, *ip) {
+                    if let Some(d) = crate::router::router_index_decide_ip(&idx, *ip) {
                         return DecisionExplain {
                             decision: d.to_string(),
                             reason: format!("dns->ip matched ip={}", ip),
@@ -2059,7 +2059,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
             DnsResult::Timeout | DnsResult::Error => {}
         }
     }
-    if let Some(d) = super::router_index_decide_transport_port(&idx, None, Some("udp")) {
+    if let Some(d) = crate::router::router_index_decide_transport_port(&idx, None, Some("udp")) {
         return DecisionExplain {
             decision: d.to_string(),
             reason: "transport/port matched transport=udp".into(),

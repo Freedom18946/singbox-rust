@@ -308,17 +308,20 @@ impl ConnTracker {
     }
 }
 
-/// Global connection tracker instance.
+#[cfg(test)]
+/// Global connection tracker instance for legacy tests.
 static GLOBAL_TRACKER: std::sync::OnceLock<Arc<ConnTracker>> = std::sync::OnceLock::new();
 
-/// Get the shared global connection tracker handle.
+/// Create a standalone shared connection tracker handle.
+///
+/// This helper exists for tests and harnesses that need an owned `Arc<ConnTracker>`
+/// without wiring an explicit runtime context.
 pub fn shared_tracker() -> Arc<ConnTracker> {
-    GLOBAL_TRACKER
-        .get_or_init(|| Arc::new(ConnTracker::new()))
-        .clone()
+    Arc::new(ConnTracker::new())
 }
 
-/// Get the global connection tracker.
+#[cfg(test)]
+/// Get the global connection tracker for legacy tests.
 pub fn global_tracker() -> &'static ConnTracker {
     GLOBAL_TRACKER
         .get_or_init(|| Arc::new(ConnTracker::new()))

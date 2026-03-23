@@ -68,6 +68,39 @@
   - `bash scripts/ci/tasks/inbound-errors.sh` 单独复跑后仍稳定返回 `ok=false`
   - 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空；该问题当前更像 runtime 常驻假设与脚本观测模型失配，继续深挖的收益/确定性都偏低，按 non-blocking follow-up 收口
 
+## 追加收口（2026-03-23，生产路径严格口径）
+
+- 在不改变 CLI/JSON/stdout 合约、metrics 名称、admin API 合约和 oracle ignore 口径的前提下，继续对生产路径做 Layer 1 / Layer 2 机械收口。
+- 本轮新增完成：
+  - `app/src/logging.rs`、`app/src/hardening.rs`、`labs/interop-lab/src/{upstream,gui_replay,kernel,orchestrator}.rs`
+    - 生产态内部 `eprintln!` / best-effort 静默失败改为 `tracing::{debug,info,warn,error}` 或内部 stderr helper
+  - `app/src/admin_debug/security_async.rs`
+    - 移除全局 `OnceCell` resolver，改成显式 `build_resolver()`
+    - 清理生产态 `super::`
+  - `crates/sb-config/src/validator/v2.rs`
+    - 纯查表 `OnceLock<HashSet<_>>` 缓存改成普通局部构造
+  - `crates/sb-common/src/conntrack.rs`
+    - `shared_tracker()` 不再依赖进程级 singleton；`GLOBAL_TRACKER` 仅保留在 `#[cfg(test)]`
+  - `crates/sb-core/src/router/engine.rs`
+  - `crates/sb-core/src/dns/config_builder.rs`
+  - `crates/sb-adapters/src/inbound/tun/mod.rs`
+    - 非测试 `super::` 改为稳定 `crate::...` 路径
+  - `app/Cargo.toml`
+    - 补齐 `sbcore_analyze_json = ["sb-core/analyze_json"]`
+    - 补齐 `transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]`
+  - `labs/interop-lab/Cargo.toml`
+    - 补入 `tracing` 依赖以承接内部诊断日志迁移
+- 追加验证已通过：
+  - `cargo check --workspace` ✅
+  - `cargo clippy --workspace --all-features --all-targets -- -D warnings` ✅
+  - `cargo test -p sb-core --lib` ✅
+  - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+  - `bash scripts/ci/accept.sh` ✅
+- 追加静态审计结论：
+  - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
+  - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/http_client.rs`、`crates/sb-core/src/geoip/mod.rs`、`crates/sb-metrics/src/lib.rs`
+  - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
+
 ---
 
 ## 发现归类（当前）
@@ -77,7 +110,7 @@
 | `must-fix` | 已清零 | workspace `clippy -D warnings` 暴露的真实 blocker 已完成收口 |
 | `allowed-test-only` | 已识别 | `#[cfg(test)]` / bench 驱动内部的 `unwrap/expect/panic`，不当作生产 blocker |
 | `allowed-cli-boundary` | 少量 | 顶层工具初始化失败、CLI 致命退出边界上的显式 panic/expect |
-| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`labs` 工具层个别 best-effort 发送/关闭路径、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务的 runtime 常驻/metrics 观测假设 |
+| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`app/src/logging.rs` / `app/src/admin_debug/security_metrics.rs` / `sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务的 runtime 常驻/metrics 观测假设 |
 
 ---
 

@@ -5,9 +5,9 @@ use crate::ir::{
 };
 use sb_types::IssueCode;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::sync::OnceLock;
 
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
 const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
@@ -29,17 +29,31 @@ fn rule_set_format_from_url(url: &str) -> Option<&'static str> {
     rule_set_format_from_path(path)
 }
 
-fn allowed_route_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::RouteIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
+fn object_keys<T>(value: T) -> HashSet<String>
+where
+    T: Serialize,
+{
+    let mut set = HashSet::new();
+    let val = serde_json::to_value(value).unwrap_or(Value::Null);
+    if let Some(map) = val.as_object() {
+        for key in map.keys() {
+            set.insert(key.clone());
         }
-        for key in [
+    }
+    set
+}
+
+fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
+    for key in keys {
+        set.insert((*key).to_string());
+    }
+}
+
+fn allowed_route_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::RouteIR::default());
+    insert_keys(
+        &mut set,
+        &[
             "final",
             "geoip",
             "geosite",
@@ -50,120 +64,70 @@ fn allowed_route_keys() -> &'static HashSet<String> {
             "tls_fragment",
             "tls_record_fragment",
             "tls_fragment_fallback_delay",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+        ],
+    );
+    set
 }
 
-fn allowed_route_rule_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::RuleIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
-        }
-        for key in [
-            "when", "to", "suffix", "keyword", "regex", "ip_cidr", "process",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+fn allowed_route_rule_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::RuleIR::default());
+    insert_keys(
+        &mut set,
+        &["when", "to", "suffix", "keyword", "regex", "ip_cidr", "process"],
+    );
+    set
 }
 
-fn allowed_rule_set_keys() -> &'static HashSet<&'static str> {
-    static KEYS: OnceLock<HashSet<&'static str>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        for key in [
-            "tag",
-            "type",
-            "format",
-            "path",
-            "url",
-            "download_detour",
-            "update_interval",
-            "rules",
-            "version",
-        ] {
-            set.insert(key);
-        }
-        set
-    })
+fn allowed_rule_set_keys() -> HashSet<&'static str> {
+    [
+        "tag",
+        "type",
+        "format",
+        "path",
+        "url",
+        "download_detour",
+        "update_interval",
+        "rules",
+        "version",
+    ]
+    .into_iter()
+    .collect()
 }
 
-fn allowed_dns_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::DnsIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
-        }
-        for key in ["ttl", "fakeip", "pool", "hosts", "hosts_ttl", "static_ttl"] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+fn allowed_dns_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::DnsIR::default());
+    insert_keys(
+        &mut set,
+        &["ttl", "fakeip", "pool", "hosts", "hosts_ttl", "static_ttl"],
+    );
+    set
 }
 
-fn allowed_dns_server_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::DnsServerIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
-        }
-        for key in ["name", "type", "server"] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+fn allowed_dns_server_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::DnsServerIR::default());
+    insert_keys(&mut set, &["name", "type", "server"]);
+    set
 }
 
-fn allowed_dns_rule_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::DnsRuleIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
-        }
-        for key in [
+fn allowed_dns_rule_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::DnsRuleIR::default());
+    insert_keys(
+        &mut set,
+        &[
             "domain_keyword",
             "process",
             "rule_set_ipcidr_match_source",
             "rule_set_ipcidr_accept_empty",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+        ],
+    );
+    set
 }
 
-fn allowed_service_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::ServiceIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                set.insert(key.clone());
-            }
-        }
-        for key in [
+fn allowed_service_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::ServiceIR::default());
+    insert_keys(
+        &mut set,
+        &[
             "resolved_listen",
             "resolved_listen_port",
             "ssmapi_listen",
@@ -185,95 +149,69 @@ fn allowed_service_keys() -> &'static HashSet<String> {
             "derp_mesh_with",
             "derp_stun_enabled",
             "derp_stun_listen_port",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+        ],
+    );
+    set
 }
 
-fn allowed_endpoint_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        for key in [
-            "type",
-            "tag",
-            "network",
-            "system_interface",
-            "interface_name",
-            "mtu",
-            "address",
-            "private_key",
-            "listen_port",
-            "peers",
-            "udp_timeout",
-            "workers",
-            "state_directory",
-            "auth_key",
-            "control_url",
-            "ephemeral",
-            "hostname",
-            "accept_routes",
-            "exit_node",
-            "exit_node_allow_lan_access",
-            "advertise_routes",
-            "advertise_exit_node",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+fn allowed_endpoint_keys() -> HashSet<String> {
+    [
+        "type",
+        "tag",
+        "network",
+        "system_interface",
+        "interface_name",
+        "mtu",
+        "address",
+        "private_key",
+        "listen_port",
+        "peers",
+        "udp_timeout",
+        "workers",
+        "state_directory",
+        "auth_key",
+        "control_url",
+        "ephemeral",
+        "hostname",
+        "accept_routes",
+        "exit_node",
+        "exit_node_allow_lan_access",
+        "advertise_routes",
+        "advertise_exit_node",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
-fn allowed_endpoint_peer_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        for key in [
-            "address",
-            "port",
-            "public_key",
-            "pre_shared_key",
-            "allowed_ips",
-            "persistent_keepalive_interval",
-            "reserved",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+fn allowed_endpoint_peer_keys() -> HashSet<String> {
+    [
+        "address",
+        "port",
+        "public_key",
+        "pre_shared_key",
+        "allowed_ips",
+        "persistent_keepalive_interval",
+        "reserved",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
-fn allowed_outbound_keys() -> &'static HashSet<String> {
-    static KEYS: OnceLock<HashSet<String>> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let mut set = HashSet::new();
-        let val = serde_json::to_value(crate::ir::OutboundIR::default()).unwrap_or(Value::Null);
-        if let Some(map) = val.as_object() {
-            for key in map.keys() {
-                if key == "ty" {
-                    set.insert("type".to_string());
-                } else {
-                    set.insert(key.clone());
-                }
-            }
-        }
-        // Go parity: allow legacy tags and transport sections
-        set.insert("tag".to_string());
-        for key in [
-            "transport",
-            "ws",
-            "h2",
-            "tls",
-            "http_upgrade",
-            "httpupgrade",
-            "grpc",
-        ] {
-            set.insert(key.to_string());
-        }
-        // Go parity: legacy outbound aliases
-        for key in [
+fn allowed_outbound_keys() -> HashSet<String> {
+    let mut set = object_keys(crate::ir::OutboundIR::default());
+    if set.remove("ty") {
+        set.insert("type".to_string());
+    }
+    set.insert("tag".to_string());
+    insert_keys(
+        &mut set,
+        &["transport", "ws", "h2", "tls", "http_upgrade", "httpupgrade", "grpc"],
+    );
+    insert_keys(
+        &mut set,
+        &[
             "user",
             "auth_str",
             "url",
@@ -285,11 +223,9 @@ fn allowed_outbound_keys() -> &'static HashSet<String> {
             "tolerance_ms",
             "outbounds",
             "default",
-        ] {
-            set.insert(key.to_string());
-        }
-        set
-    })
+        ],
+    );
+    set
 }
 
 fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {

@@ -1470,7 +1470,7 @@ mod sys_macos {
     // ====== 解析 ======
     // L4 is now defined at the parent module level; re-export for backward compat.
     #[cfg(feature = "tun")]
-    pub(crate) use super::L4;
+    pub(crate) use crate::inbound::tun::L4;
 
     /// 从 utun 帧解析出的摘要（仅目标地址和端口）
     #[cfg(feature = "tun")]
@@ -1679,7 +1679,7 @@ mod sys_linux {
     /// Parse IP packet from TUN device (similar to macOS implementation)
     /// Returns (L4 protocol, destination IP, destination port)
     #[cfg(feature = "tun")]
-    pub fn parse_tun_packet(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    pub fn parse_tun_packet(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.is_empty() {
             return None;
         }
@@ -1693,7 +1693,7 @@ mod sys_linux {
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv4(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv4(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.len() < 20 {
             return None;
         }
@@ -1704,26 +1704,26 @@ mod sys_linux {
         // Get header length in bytes
         let ihl = ((pkt[0] & 0x0F) as usize) * 4;
         if pkt.len() < ihl + 4 {
-            return Some((super::L4::Other(proto), Some(dst), None));
+            return Some((crate::inbound::tun::L4::Other(proto), Some(dst), None));
         }
 
         match proto {
             6 => {
                 // TCP: destination port at offset ihl+2
                 let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
-                Some((super::L4::Tcp, Some(dst), Some(port)))
+                Some((crate::inbound::tun::L4::Tcp, Some(dst), Some(port)))
             }
             17 => {
                 // UDP: destination port at offset ihl+2
                 let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
-                Some((super::L4::Udp, Some(dst), Some(port)))
+                Some((crate::inbound::tun::L4::Udp, Some(dst), Some(port)))
             }
-            _ => Some((super::L4::Other(proto), Some(dst), None)),
+            _ => Some((crate::inbound::tun::L4::Other(proto), Some(dst), None)),
         }
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv6(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv6(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.len() < 40 {
             return None;
         }
@@ -1739,17 +1739,17 @@ mod sys_linux {
             6 | 17 => {
                 // TCP or UDP: check if we have L4 header
                 if pkt.len() < 40 + 4 {
-                    return Some((super::L4::Other(next), Some(dst), None));
+                    return Some((crate::inbound::tun::L4::Other(next), Some(dst), None));
                 }
                 let port = u16::from_be_bytes([pkt[42], pkt[43]]);
                 let l4 = if next == 6 {
-                    super::L4::Tcp
+                    crate::inbound::tun::L4::Tcp
                 } else {
-                    super::L4::Udp
+                    crate::inbound::tun::L4::Udp
                 };
                 Some((l4, Some(dst), Some(port)))
             }
-            _ => Some((super::L4::Other(next), Some(dst), None)),
+            _ => Some((crate::inbound::tun::L4::Other(next), Some(dst), None)),
         }
     }
 }
@@ -1817,7 +1817,7 @@ mod sys_windows {
 
     /// Parse IP packet from wintun (similar to Linux/macOS)
     #[cfg(feature = "tun")]
-    pub fn parse_wintun_packet(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    pub fn parse_wintun_packet(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.is_empty() {
             return None;
         }
@@ -1831,7 +1831,7 @@ mod sys_windows {
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv4(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv4(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.len() < 20 {
             return None;
         }
@@ -1841,24 +1841,24 @@ mod sys_windows {
 
         let ihl = ((pkt[0] & 0x0F) as usize) * 4;
         if pkt.len() < ihl + 4 {
-            return Some((super::L4::Other(proto), Some(dst), None));
+            return Some((crate::inbound::tun::L4::Other(proto), Some(dst), None));
         }
 
         match proto {
             6 => {
                 let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
-                Some((super::L4::Tcp, Some(dst), Some(port)))
+                Some((crate::inbound::tun::L4::Tcp, Some(dst), Some(port)))
             }
             17 => {
                 let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
-                Some((super::L4::Udp, Some(dst), Some(port)))
+                Some((crate::inbound::tun::L4::Udp, Some(dst), Some(port)))
             }
-            _ => Some((super::L4::Other(proto), Some(dst), None)),
+            _ => Some((crate::inbound::tun::L4::Other(proto), Some(dst), None)),
         }
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv6(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv6(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.len() < 40 {
             return None;
         }
@@ -1873,17 +1873,17 @@ mod sys_windows {
         match next {
             6 | 17 => {
                 if pkt.len() < 40 + 4 {
-                    return Some((super::L4::Other(next), Some(dst), None));
+                    return Some((crate::inbound::tun::L4::Other(next), Some(dst), None));
                 }
                 let port = u16::from_be_bytes([pkt[42], pkt[43]]);
                 let l4 = if next == 6 {
-                    super::L4::Tcp
+                    crate::inbound::tun::L4::Tcp
                 } else {
-                    super::L4::Udp
+                    crate::inbound::tun::L4::Udp
                 };
                 Some((l4, Some(dst), Some(port)))
             }
-            _ => Some((super::L4::Other(next), Some(dst), None)),
+            _ => Some((crate::inbound::tun::L4::Other(next), Some(dst), None)),
         }
     }
 }

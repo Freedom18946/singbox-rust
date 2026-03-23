@@ -26,13 +26,13 @@ pub fn apply() {
 
     let limit = Rlim::from_raw(1_048_576);
     if let Err(e) = setrlimit(Resource::RLIMIT_NOFILE, limit, limit) {
-        eprintln!("Hardening warning: failed to set RLIMIT_NOFILE: {}", e);
+        tracing::warn!(error = %e, "hardening: failed to set RLIMIT_NOFILE");
     }
     if let Err(e) = set_dumpable(false) {
-        eprintln!("Hardening warning: failed to disable core dumps: {}", e);
+        tracing::warn!(error = %e, "hardening: failed to disable core dumps");
     }
     if let Err(e) = set_no_new_privs() {
-        eprintln!("Hardening warning: failed to set no_new_privs: {}", e);
+        tracing::warn!(error = %e, "hardening: failed to set no_new_privs");
     }
 }
 

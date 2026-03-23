@@ -396,13 +396,13 @@ pub async fn run_case(
                         }
                     }
                     Err(err) => {
-                        eprintln!("warning: failed to save Go snapshot: {err}");
+                        tracing::warn!(error = %err, "failed to save Go snapshot");
                         None
                     }
                 }
             }
             Err(err) => {
-                eprintln!("warning: Go passive collection failed: {err}");
+                tracing::warn!(error = %err, "Go passive collection failed");
                 None
             }
         }
@@ -1071,7 +1071,7 @@ async fn execute_api_http_latency_action(
         };
         let status = response.status().as_u16();
         if let Err(err) = response.bytes().await {
-            eprintln!("api_http_poll body drain failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "api_http_poll body drain failed");
         }
 
         let success = expect_status
@@ -1139,7 +1139,7 @@ async fn cleanup_background_commands(
 ) {
     for (_handle, mut process) in background_commands.drain() {
         if let Err(err) = terminate_background_process(&mut process, "background cleanup").await {
-            eprintln!("background command cleanup failed: {err}");
+            tracing::warn!(error = %err, "background command cleanup failed");
         }
     }
 }
@@ -1290,7 +1290,7 @@ async fn execute_api_ws_expect_close_on_kernel_control_action(
 
     if !initial_frame_ok {
         if let Err(err) = stream.close(None).await {
-            eprintln!("ws expect-close initial close failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "ws expect-close initial close failed");
         }
         return TrafficResult {
             name: name.to_string(),
@@ -1319,7 +1319,7 @@ async fn execute_api_ws_expect_close_on_kernel_control_action(
 
     let close_observed = wait_for_ws_close(&mut stream, close_timeout_ms).await;
     if let Err(err) = stream.close(None).await {
-        eprintln!("ws expect-close final close failed for {path}: {err}");
+        tracing::debug!(path = %path, error = %err, "ws expect-close final close failed");
     }
 
     match kernel_result {
@@ -1637,7 +1637,7 @@ async fn receive_api_ws_frame(ws_url: &str, path: &str, frame_timeout_ms: u64) -
         Err(_) => false,
     };
     if let Err(err) = stream.close(None).await {
-        eprintln!("receive_api_ws_frame close failed for {path}: {err}");
+        tracing::debug!(path = %path, error = %err, "receive_api_ws_frame close failed");
     }
     Ok(ok)
 }
@@ -1731,7 +1731,7 @@ async fn perform_kernel_control(
     match action {
         KernelControlAction::Restart => {
             if let Err(err) = session.shutdown().await {
-                eprintln!("kernel restart pre-shutdown failed: {err}");
+                tracing::warn!(error = %err, "kernel restart pre-shutdown failed");
             }
             match launch_kernel(mode.clone(), launch_spec, kernel_log_dir).await {
                 Ok(new_session) => {
@@ -1777,7 +1777,7 @@ fn parse_ws_payload_text(raw: &str, path: &str) -> Option<Value> {
     match serde_json::from_str::<Value>(raw) {
         Ok(value) => Some(value),
         Err(err) => {
-            eprintln!("websocket text payload parse failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "websocket text payload parse failed");
             None
         }
     }
@@ -1787,7 +1787,7 @@ fn parse_ws_payload_binary(raw: &[u8], path: &str) -> Option<Value> {
     match serde_json::from_slice::<Value>(raw) {
         Ok(value) => Some(value),
         Err(err) => {
-            eprintln!("websocket binary payload parse failed for {path}: {err}");
+            tracing::debug!(path = %path, error = %err, "websocket binary payload parse failed");
             None
         }
     }
@@ -1870,12 +1870,12 @@ async fn terminate_child_process(child: &mut Child, context: &str) -> Result<()>
 async fn join_kernel_log_tasks(session: &mut KernelSession) {
     if let Some(task) = session.stdout_task.take() {
         if let Err(err) = task.await {
-            eprintln!("joining kernel stdout log task failed: {err}");
+            tracing::warn!(error = %err, "joining kernel stdout log task failed");
         }
     }
     if let Some(task) = session.stderr_task.take() {
         if let Err(err) = task.await {
-            eprintln!("joining kernel stderr log task failed: {err}");
+            tracing::warn!(error = %err, "joining kernel stderr log task failed");
         }
     }
 }

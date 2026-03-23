@@ -112,7 +112,7 @@ struct UpstreamHandle {
 
 fn signal_upstream_shutdown(tx: oneshot::Sender<()>, context: &str) {
     if tx.send(()).is_err() {
-        eprintln!("upstream shutdown signal skipped during {context}: receiver already closed");
+        tracing::debug!(%context, "upstream shutdown signal skipped: receiver already closed");
     }
 }
 
@@ -120,10 +120,10 @@ async fn await_upstream_join(join: JoinHandle<()>, context: &str) {
     match tokio::time::timeout(Duration::from_secs(5), join).await {
         Ok(Ok(())) => {}
         Ok(Err(err)) => {
-            eprintln!("upstream task join failed during {context}: {err}");
+            tracing::warn!(%context, error = %err, "upstream task join failed");
         }
         Err(_) => {
-            eprintln!("upstream task join timed out during {context}");
+            tracing::warn!(%context, "upstream task join timed out");
         }
     }
 }
@@ -175,7 +175,7 @@ impl UpstreamHarness {
             signal_upstream_shutdown(tx, "disconnect target");
         }
         if let Err(err) = handle.join.await {
-            eprintln!("upstream disconnect join failed for {target}: {err}");
+            tracing::warn!(target = %target, error = %err, "upstream disconnect join failed");
         }
         Ok(())
     }
@@ -186,7 +186,7 @@ impl UpstreamHarness {
                 signal_upstream_shutdown(tx, "reconnect target");
             }
             if let Err(err) = existing.join.await {
-                eprintln!("upstream reconnect join failed for {target}: {err}");
+                tracing::warn!(target = %target, error = %err, "upstream reconnect join failed");
             }
         }
         let spec = self
@@ -248,14 +248,14 @@ async fn start_single_upstream(
             let join = tokio::spawn(async move {
                 let shutdown = async move {
                     if rx.await.is_err() {
-                        eprintln!("http echo shutdown channel closed before signal");
+                        tracing::debug!("http echo shutdown channel closed before signal");
                     }
                 };
                 if let Err(err) = axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown)
                     .await
                 {
-                    eprintln!("http echo upstream serve failed: {err}");
+                    tracing::warn!(error = %err, "http echo upstream serve failed");
                 }
             });
             harness.endpoints.insert(
@@ -284,14 +284,14 @@ async fn start_single_upstream(
             let join = tokio::spawn(async move {
                 let shutdown = async move {
                     if rx.await.is_err() {
-                        eprintln!("ws echo shutdown channel closed before signal");
+                        tracing::debug!("ws echo shutdown channel closed before signal");
                     }
                 };
                 if let Err(err) = axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown)
                     .await
                 {
-                    eprintln!("ws echo upstream serve failed: {err}");
+                    tracing::warn!(error = %err, "ws echo upstream serve failed");
                 }
             });
             harness.endpoints.insert(
@@ -683,10 +683,10 @@ async fn start_single_upstream(
                 tokio::select! {
                     _ = &mut rx => {
                         if stop_tx.send(()).await.is_err() {
-                            eprintln!("trojan upstream stop channel already closed");
+                            tracing::debug!("trojan upstream stop channel already closed");
                         }
                         if let Err(err) = serve.await {
-                            eprintln!("trojan upstream serve failed during shutdown: {err}");
+                            tracing::warn!(error = %err, "trojan upstream serve failed during shutdown");
                         }
                     }
                     _ = &mut serve => {}
@@ -740,10 +740,10 @@ async fn start_single_upstream(
                 tokio::select! {
                     _ = &mut rx => {
                         if stop_tx.send(()).await.is_err() {
-                            eprintln!("shadowsocks upstream stop channel already closed");
+                            tracing::debug!("shadowsocks upstream stop channel already closed");
                         }
                         if let Err(err) = serve.await {
-                            eprintln!("shadowsocks upstream serve failed during shutdown: {err}");
+                            tracing::warn!(error = %err, "shadowsocks upstream serve failed during shutdown");
                         }
                     }
                     _ = &mut serve => {}
@@ -824,10 +824,10 @@ async fn start_single_upstream(
                 tokio::select! {
                     _ = &mut rx => {
                         if stop_tx.send(()).await.is_err() {
-                            eprintln!("shadowtls upstream stop channel already closed");
+                            tracing::debug!("shadowtls upstream stop channel already closed");
                         }
                         if let Err(err) = serve.await {
-                            eprintln!("shadowtls upstream serve failed during shutdown: {err}");
+                            tracing::warn!(error = %err, "shadowtls upstream serve failed during shutdown");
                         }
                     }
                     _ = &mut serve => {}
@@ -881,10 +881,10 @@ async fn start_single_upstream(
                 tokio::select! {
                     _ = &mut rx => {
                         if stop_tx.send(()).await.is_err() {
-                            eprintln!("vless upstream stop channel already closed");
+                            tracing::debug!("vless upstream stop channel already closed");
                         }
                         if let Err(err) = serve.await {
-                            eprintln!("vless upstream serve failed during shutdown: {err}");
+                            tracing::warn!(error = %err, "vless upstream serve failed during shutdown");
                         }
                     }
                     _ = &mut serve => {}
@@ -937,10 +937,10 @@ async fn start_single_upstream(
                 tokio::select! {
                     _ = &mut rx => {
                         if stop_tx.send(()).await.is_err() {
-                            eprintln!("vmess upstream stop channel already closed");
+                            tracing::debug!("vmess upstream stop channel already closed");
                         }
                         if let Err(err) = serve.await {
-                            eprintln!("vmess upstream serve failed during shutdown: {err}");
+                            tracing::warn!(error = %err, "vmess upstream serve failed during shutdown");
                         }
                     }
                     _ = &mut serve => {}
@@ -2187,7 +2187,7 @@ async fn ws_roundtrip(
             Ok(Some(Ok(WsMessage::Text(text)))) => {
                 if text == payload {
                     if let Err(err) = stream.close(None).await {
-                        eprintln!("ws roundtrip close failed: {err}");
+                        tracing::debug!(error = %err, "ws roundtrip close failed");
                     }
                     return Ok(text);
                 }

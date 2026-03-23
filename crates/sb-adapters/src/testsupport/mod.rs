@@ -40,7 +40,7 @@ pub async fn spawn_socks_udp_inbound() -> Result<SocketAddr> {
     anyhow::ensure!(!socks.is_empty(), "no UDP listens configured");
     let first = Arc::clone(&socks[0]);
     let addr = first.local_addr()?;
-    let conn_tracker = sb_common::conntrack::shared_tracker();
+    let conn_tracker = Arc::new(sb_common::conntrack::ConnTracker::new());
     for s in socks {
         let conn_tracker = conn_tracker.clone();
         tokio::spawn(async move {

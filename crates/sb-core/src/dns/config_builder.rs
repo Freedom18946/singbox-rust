@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{
+use crate::dns::{
     cache::{DnsCache, Key as CacheKey, QType as CacheQType},
     resolver::DnsResolver,
     rule_engine::{DnsRoutingRule, DnsRuleEngine},
@@ -81,7 +81,7 @@ pub fn build_dns_components(
         // Add system upstream as fallback when default not found
         upstreams.insert(
             default_tag.clone(),
-            Arc::new(super::upstream::SystemUpstream::new()),
+            Arc::new(crate::dns::upstream::SystemUpstream::new()),
         );
     }
 
@@ -223,10 +223,10 @@ pub fn build_upstream(
         return Ok(None);
     }
     if a.eq_ignore_ascii_case("system") {
-        return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+        return Ok(Some(Arc::new(crate::dns::upstream::SystemUpstream::new())));
     }
     if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
-        return Ok(Some(Arc::new(super::upstream::LocalUpstream::new(None))));
+        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(None))));
     }
     if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
         return Ok(Some(build_dhcp_dns_upstream(a, None)?));
@@ -242,10 +242,10 @@ pub fn build_upstream(
     }
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
-        return Ok(Some(Arc::new(super::upstream::UdpUpstream::new(sa))));
+        return Ok(Some(Arc::new(crate::dns::upstream::UdpUpstream::new(sa))));
     }
     if a.starts_with("https://") || a.starts_with("http://") {
-        let up = super::upstream::DohUpstream::new(a.to_string())?;
+        let up = crate::dns::upstream::DohUpstream::new(a.to_string())?;
         return Ok(Some(Arc::new(up)));
     }
     if let Some(rest) = a
@@ -254,7 +254,7 @@ pub fn build_upstream(
     {
         let (host, port) = split_host_port(rest, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
-        let up = super::upstream::DotUpstream::new(sa, host.to_string());
+        let up = crate::dns::upstream::DotUpstream::new(sa, host.to_string());
         return Ok(Some(Arc::new(up)));
     }
     if let Some(rest) = a
@@ -269,7 +269,7 @@ pub fn build_upstream(
         let (host, port) = split_host_port(hp, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let sni = sni.unwrap_or_else(|| host.to_string());
-        let up = super::upstream::DoqUpstream::new(sa, sni);
+        let up = crate::dns::upstream::DoqUpstream::new(sa, sni);
         return Ok(Some(Arc::new(up)));
     }
     if let Some(rest) = a
@@ -284,7 +284,7 @@ pub fn build_upstream(
         };
         let (host, port) = split_host_port(host_port, 443)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
-        let up = super::upstream::Doh3Upstream::new(sa, host.to_string(), path)?;
+        let up = crate::dns::upstream::Doh3Upstream::new(sa, host.to_string(), path)?;
         return Ok(Some(Arc::new(up)));
     }
     Ok(None)
@@ -321,7 +321,8 @@ pub fn build_upstream_from_server(
                         crate::dns::transport::resolved::ResolvedTransportConfig::default();
                     cfg.accept_default_resolvers = srv.accept_default_resolvers.unwrap_or(false);
 
-                    let up = super::upstream::ResolvedTransportUpstream::new(srv.tag.clone(), cfg);
+                    let up =
+                        crate::dns::upstream::ResolvedTransportUpstream::new(srv.tag.clone(), cfg);
                     return Ok(Some(Arc::new(up)));
                 }
                 #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
@@ -332,7 +333,7 @@ pub fn build_upstream_from_server(
                 }
             }
             "fakeip" => {
-                let up = super::upstream::FakeIpUpstream::new(
+                let up = crate::dns::upstream::FakeIpUpstream::new(
                     srv.tag.clone(),
                     srv.inet4_range.clone(),
                     srv.inet6_range.clone(),
@@ -340,7 +341,7 @@ pub fn build_upstream_from_server(
                 return Ok(Some(Arc::new(up)));
             }
             "hosts" => {
-                let up = super::upstream::HostsUpstream::from_json_predefined(
+                let up = crate::dns::upstream::HostsUpstream::from_json_predefined(
                     srv.tag.clone(),
                     srv.predefined.as_ref(),
                     &srv.hosts_path,
@@ -360,10 +361,10 @@ pub fn build_upstream_from_server(
     }
     let a = if a.is_empty() { "system" } else { a };
     if a.eq_ignore_ascii_case("system") {
-        return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+        return Ok(Some(Arc::new(crate::dns::upstream::SystemUpstream::new())));
     }
     if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
-        return Ok(Some(Arc::new(super::upstream::LocalUpstream::new(Some(
+        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(Some(
             &srv.tag,
         )))));
     }
@@ -382,11 +383,12 @@ pub fn build_upstream_from_server(
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
         let up =
-            super::upstream::UdpUpstream::new(sa).with_client_subnet(srv.client_subnet.clone());
+            crate::dns::upstream::UdpUpstream::new(sa)
+                .with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
     if a.starts_with("https://") || a.starts_with("http://") {
-        let mut up = super::upstream::DohUpstream::new(a.to_string())?;
+        let mut up = crate::dns::upstream::DohUpstream::new(a.to_string())?;
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
@@ -397,7 +399,7 @@ pub fn build_upstream_from_server(
         let (host, port) = split_host_port(rest, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let sni = srv.sni.clone().unwrap_or_else(|| host.to_string());
-        let mut up = super::upstream::DotUpstream::new_with_tls(
+        let mut up = crate::dns::upstream::DotUpstream::new_with_tls(
             sa,
             sni,
             srv.ca_paths.clone(),
@@ -424,7 +426,7 @@ pub fn build_upstream_from_server(
             .clone()
             .or(sni_param)
             .unwrap_or_else(|| host.to_string());
-        let mut up = super::upstream::DoqUpstream::new_with_tls(
+        let mut up = crate::dns::upstream::DoqUpstream::new_with_tls(
             sa,
             sni,
             srv.ca_paths.clone(),
@@ -448,7 +450,7 @@ pub fn build_upstream_from_server(
         let (host, port) = split_host_port(host_port, 443)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let sni = srv.sni.clone().unwrap_or_else(|| host.to_string());
-        let mut up = super::upstream::Doh3Upstream::new_with_tls(
+        let mut up = crate::dns::upstream::Doh3Upstream::new_with_tls(
             sa,
             sni,
             path,
@@ -465,7 +467,7 @@ pub fn build_upstream_from_server(
 
 #[cfg(feature = "dns_dhcp")]
 fn build_dhcp_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
-    let up = super::upstream::DhcpUpstream::from_spec(spec, tag)?;
+    let up = crate::dns::upstream::DhcpUpstream::from_spec(spec, tag)?;
     Ok(Arc::new(up))
 }
 
@@ -478,11 +480,11 @@ fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn Dn
 
 #[cfg(feature = "dns_tailscale")]
 fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
-    let (name, addrs) = super::upstream::parse_tailscale_spec(spec, tag)?;
+    let (name, addrs) = crate::dns::upstream::parse_tailscale_spec(spec, tag)?;
     if addrs.is_empty() {
-        Ok(Arc::new(super::upstream::TailscaleLocalUpstream::new(tag)))
+        Ok(Arc::new(crate::dns::upstream::TailscaleLocalUpstream::new(tag)))
     } else {
-        Ok(Arc::new(super::upstream::StaticMultiUpstream::new(
+        Ok(Arc::new(crate::dns::upstream::StaticMultiUpstream::new(
             name, addrs,
         )))
     }
@@ -503,7 +505,7 @@ fn build_resolved_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn 
     } else {
         spec
     };
-    let up = super::upstream::ResolvedUpstream::from_spec(spec, tag)?;
+    let up = crate::dns::upstream::ResolvedUpstream::from_spec(spec, tag)?;
     Ok(Arc::new(up))
 }
 
@@ -536,7 +538,7 @@ struct EngineResolver {
 
 #[async_trait::async_trait]
 impl Resolver for EngineResolver {
-    async fn resolve(&self, domain: &str) -> Result<super::DnsAnswer> {
+    async fn resolve(&self, domain: &str) -> Result<crate::dns::DnsAnswer> {
         // Resolve both A/AAAA via rule engine helper
         self.engine.resolve_dual_stack(domain).await
     }
@@ -599,15 +601,15 @@ struct HostsOverlayResolver {
 
 #[async_trait::async_trait]
 impl Resolver for HostsOverlayResolver {
-    async fn resolve(&self, domain: &str) -> Result<super::DnsAnswer> {
+    async fn resolve(&self, domain: &str) -> Result<crate::dns::DnsAnswer> {
         let key = domain.to_ascii_lowercase();
         if let Some(ips) = self.map.get(&key) {
             let ips = ips.clone();
-            return Ok(super::DnsAnswer::new(
+            return Ok(crate::dns::DnsAnswer::new(
                 ips,
                 self.ttl,
-                super::cache::Source::Static,
-                super::cache::Rcode::NoError,
+                crate::dns::cache::Source::Static,
+                crate::dns::cache::Rcode::NoError,
             ));
         }
         self.inner.resolve(domain).await
@@ -661,7 +663,7 @@ struct CachedResolver {
 
 #[async_trait::async_trait]
 impl Resolver for CachedResolver {
-    async fn resolve(&self, domain: &str) -> Result<super::DnsAnswer> {
+    async fn resolve(&self, domain: &str) -> Result<crate::dns::DnsAnswer> {
         let cache_key = CacheKey {
             name: domain.to_ascii_lowercase(),
             qtype: CacheQType::A,

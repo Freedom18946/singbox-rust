@@ -33,7 +33,7 @@ pub mod compatible;
 pub mod minijson;
 
 pub use badtls::{is_valid_tls, is_weak_cipher, TlsAnalyzer, TlsIssue, TlsVersion};
-pub use conntrack::{global_tracker, ConnId, ConnMetadata, ConnTracker, Network};
+pub use conntrack::{shared_tracker, ConnId, ConnMetadata, ConnTracker, Network};
 pub use ja3::Ja3Fingerprint;
 pub use tlsfrag::{extract_sni, fragment_client_hello, is_client_hello, FragmentConfig};
 

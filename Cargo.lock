@@ -3723,6 +3723,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
+ "tracing",
  "tracing-subscriber",
  "url",
  "uuid",

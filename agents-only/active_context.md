@@ -12,21 +12,29 @@
 **历史阶段**: L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
-## 当前维护动作（2026-03-22）
+## 当前维护动作（2026-03-23）
 
-- 全仓库 Layer 1 / 2 maintenance 收尾已完成最终复核：`git status` 仍为干净工作树，`git log --oneline -5` 确认当前 HEAD 为 `1912050f`（docs-only），其后是 `3142a9aa`、`eb56fd19`
-- 本轮再次复跑的关键 maintenance 验证均为绿色：
+- 本轮从“maintenance acceptance 收尾”继续推进到“生产路径 Layer 1 / Layer 2 严格收口”，范围限定为 `app/src`、`crates/*/src`、`labs/interop-lab/src`、`xtask/src`、`xtests/src` 的非测试生产源码；明确排除 `tests/`、`#[cfg(test)]`、`examples/`、`benches/`、`app/src/bin/*`、CLI stdout 边界输出和 `.github/workflows/*`
+- 已完成的主收口动作：
+  - `app/src/logging.rs`、`app/src/hardening.rs`、`labs/interop-lab/src/{upstream,gui_replay,kernel,orchestrator}.rs`：内部 `eprintln!` / best-effort 静默失败改为结构化 `tracing`，保留 CLI/协议输出边界
+  - `app/src/admin_debug/security_async.rs`：移除全局 `OnceCell` resolver，改为显式构造；生产态 `super::` 改为 `crate::...`
+  - `crates/sb-config/src/validator/v2.rs`：移除一组纯查表 `OnceLock<HashSet<_>>` 缓存，改为普通构造路径
+  - `crates/sb-common/src/conntrack.rs`：去掉生产态 `shared_tracker()` 的进程级 singleton；全局 tracker 只保留在 `#[cfg(test)]`
+  - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/dns/config_builder.rs`、`crates/sb-adapters/src/inbound/tun/mod.rs`：非测试 `super::` 改写为稳定 `crate::...` 绝对路径
+  - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
+- 本轮关键验证已通过：
   - `cargo check --workspace`
   - `cargo clippy --workspace --all-features --all-targets -- -D warnings`
+  - `cargo test -p sb-core --lib`
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
   - `bash scripts/ci/accept.sh`
-- 重新生成的 `target/acceptance.json` 与上一轮结论一致：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`
-- 已单独复跑 `bash scripts/ci/tasks/inbound-errors.sh` 并做手工探针复核：
-  - 现象仍为 `reason=runtime-exited-before-metrics`
-  - 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空
-  - 当前更接近 runtime/脚本假设失配的 maintenance follow-up，收益低且不确定性高，不在本轮强行扩改
-- 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 本轮继续按 maintenance validation 记为 skipped
-- repo-wide 最终静态审计未发现新的 Layer 1 / Layer 2 回归；剩余 `OnceLock` / 静态 registry 等项维持既有 follow-up 口径，不上升为本轮 blocker，更不表述为 dual-kernel parity 完成
+- 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`，`reason=runtime-exited-before-metrics`
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
+- 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
+  - `app/src/logging.rs` 的 `ACTIVE_RUNTIME`
+  - `app/src/admin_debug/security_metrics.rs` 的 `DEFAULT_STATE`
+  - `crates/sb-core/src/http_client.rs` / `crates/sb-core/src/geoip/mod.rs` 等仍存在的显式全局注册点
+  - `crates/sb-metrics` 的共享静态 registry 架构
 
 ## L25 完成总结（2026-03-17）
 
