@@ -16,6 +16,34 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 00:20] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 legacy prefetch / async DNS helper 对 `security_metrics` compat wrapper 的反复回落收口到“入口处升级一次 owner”
+**变更**:
+- `app/src/admin_debug/security_metrics.rs`
+  - 新增 `current_owner()`，供 compat 入口一次性升级默认 `SecurityMetricsState` owner
+  - 新增 `clear_default_for_test()` 测试辅助
+- `app/src/admin_debug/prefetch.rs`
+  - `enqueue_prefetch(...)` 现会捕获当前默认 metrics owner 并挂到 `PrefetchJob`
+  - 新增 `enqueue_prefetch_attaches_current_default_metrics_owner` 回归测试
+- `app/src/admin_debug/security_async.rs`
+  - `resolve_checked(...)` 与 `forbid_private_host_or_resolved_async(...)` 现会先尝试升级默认 owner，再走已有的 `_with_metrics(...)` 分支
+- `agents-only/active_context.md`
+  - 同步 legacy prefetch / async DNS helper 已改为入口处升级 owner
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 compat wrapper 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --lib enqueue_prefetch_attaches_current_default_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `Weak<SecurityMetricsState>` compat 壳仍保留，但 legacy prefetch / async DNS helper 已不再在后续分支里反复依赖它
+
 ### [2026-03-23 22:00] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 `router/mod.rs` 里的 UDP GeoIP helper 从 compat 全局 lookup 收口到 router owner-first 路径

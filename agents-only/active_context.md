@@ -45,6 +45,9 @@
     - `PrefetchJob` 现可携带 runtime metrics owner，`fetch_with_limits_to_cache(...)` 可直接沿调用链传递，不再默认依赖弱注册表记账
     - `Prefetcher` 现已从 `OnceCell` 全局强 owner 收敛为弱默认注册表优先；真正 owner 改由 `AppRuntimeDeps` 显式持有
     - `security_metrics.rs` 的默认 `Weak` 注册表保留为兼容包装层，但不再是这些主路径的首选 owner 来源
+  - `app/src/admin_debug/security_metrics.rs`、`app/src/admin_debug/prefetch.rs`、`app/src/admin_debug/security_async.rs`：
+    - compat 入口现在会先升级一次默认 `SecurityMetricsState` owner，再把显式 `Arc` 沿 prefetch worker / async DNS 链继续传递
+    - legacy `enqueue_prefetch(...)` 与 `resolve_checked(...)` / `forbid_private_host_or_resolved_async(...)` 不再在后续分支里反复回落到弱注册表 wrapper
   - `app/src/cli/prefetch/mod.rs`：
     - CLI prefetch stats/enqueue/heat/watch/drain/sample 现改为构造本地显式 metrics/prefetch owner bundle
     - CLI 路径不再默认依赖 `security_metrics` / `Prefetcher` 的 compat 注册表查询
@@ -81,6 +84,7 @@
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --lib handle_with_metrics_records_private_target_block_on_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
+  - `cargo test -p app --lib enqueue_prefetch_attaches_current_default_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture`
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture`
   - `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture`
@@ -100,7 +104,7 @@
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`，退出 flush 也已走 owner；`Weak<LoggingRuntime>` 注册表仅剩 `init_logging()` / `flush_logs()` 兼容包装层
-  - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`，`Prefetcher` 也已改由 runtime 显式 owner 持有
+  - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`，`Prefetcher` 也已改由 runtime 显式 owner 持有；legacy `enqueue_prefetch(...)` / async DNS helper 现也会先升级一次默认 owner 再继续沿显式 `Arc` 传递
   - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链以及 `decide_udp_with_rules()` helper 已优先改走 `RouterHandle` owner-first GeoIP lookup
   - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现仅保留为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口；剩余 `export_prometheus()` / `maybe_spawn_http_exporter_from_env()` / legacy `run_exporter()` 也已降为显式 handle API 外侧的 compat 包装层
 

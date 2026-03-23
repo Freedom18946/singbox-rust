@@ -551,6 +551,14 @@ fn current() -> Result<Arc<SecurityMetricsState>> {
 }
 
 #[must_use]
+pub(crate) fn current_owner() -> Option<Arc<SecurityMetricsState>> {
+    DEFAULT_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade()
+}
+
+#[must_use]
 fn host_to_hash(host: &str) -> u16 {
     let mut hasher = DefaultHasher::new();
     host.hash(&mut hasher);
@@ -787,6 +795,14 @@ pub fn reset_caches() {
     if let Ok(mut breaker) = crate::admin_debug::breaker::global().lock() {
         *breaker = crate::admin_debug::breaker::HostBreaker::new(30_000, 15_000, 5, 0.5);
     }
+}
+
+#[cfg(test)]
+pub(crate) fn clear_default_for_test() {
+    let mut slot = DEFAULT_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *slot = Weak::new();
 }
 
 #[cfg(test)]

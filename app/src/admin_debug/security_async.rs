@@ -19,6 +19,10 @@ fn build_resolver() -> TokioAsyncResolver {
 /// Unified DNS resolution with private IP checking and metrics
 /// This is the single entry point for all DNS resolution needs in subs processing
 pub async fn resolve_checked(host: &str) -> Result<Vec<IpAddr>> {
+    if let Some(metrics) = crate::admin_debug::security_metrics::current_owner() {
+        return resolve_checked_with_metrics(host, &metrics).await;
+    }
+
     // Skip resolution if it's already an IP
     if let Ok(ip) = host.parse::<IpAddr>() {
         if crate::admin_debug::security::is_private_ip(ip) {
@@ -123,6 +127,10 @@ pub async fn resolve_host_checked(host: &str) -> Result<Vec<IpAddr>> {
 
 /// 异步 DNS 校验：解析 A/AAAA，命中私网即拒（配合同步 allowlist）
 pub async fn forbid_private_host_or_resolved_async(url: &Url) -> Result<()> {
+    if let Some(metrics) = crate::admin_debug::security_metrics::current_owner() {
+        return forbid_private_host_or_resolved_async_with_metrics(url, &metrics).await;
+    }
+
     let allow = crate::admin_debug::security::parse_private_allowlist();
     if let Some(host) = url.host_str() {
         if let Ok(ip) = host.parse::<IpAddr>() {

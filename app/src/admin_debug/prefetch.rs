@@ -2,8 +2,8 @@
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::{LazyLock, Weak};
 use std::time::Duration;
 use tokio::sync::{
@@ -265,7 +265,7 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
             .as_millis() as u64
             + 60_000,
         tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
-        metrics: None,
+        metrics: crate::admin_debug::security_metrics::current_owner(),
     };
     if let Some(prefetcher) = current_prefetcher() {
         prefetcher.enqueue(job)
@@ -453,7 +453,9 @@ mod tests {
         let (tx_one, mut rx_one) = mpsc::channel::<PrefetchJob>(1);
         let owner_one = install_default_prefetcher(Arc::new(Prefetcher { tx: tx_one }));
         assert!(enqueue_prefetch("https://example.com/one", None));
-        let first = rx_one.try_recv().expect("explicit owner should receive first job");
+        let first = rx_one
+            .try_recv()
+            .expect("explicit owner should receive first job");
         assert_eq!(first.url, "https://example.com/one");
         drop(owner_one);
 
@@ -466,6 +468,39 @@ mod tests {
         assert_eq!(second.url, "https://example.com/two");
         drop(owner_two);
 
+        clear_default_prefetcher_for_test();
+        match prev {
+            Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
+            None => std::env::remove_var("SB_PREFETCH_ENABLE"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn enqueue_prefetch_attaches_current_default_metrics_owner() {
+        let _guard = env_lock();
+        let prev = std::env::var("SB_PREFETCH_ENABLE").ok();
+        std::env::set_var("SB_PREFETCH_ENABLE", "1");
+        clear_default_prefetcher_for_test();
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let _metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
+            crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+        ));
+        let (tx, mut rx) = mpsc::channel::<PrefetchJob>(1);
+        let owner = install_default_prefetcher(Arc::new(Prefetcher { tx }));
+
+        assert!(enqueue_prefetch("https://example.com/metrics", None));
+        let job = rx
+            .try_recv()
+            .expect("prefetch job should be enqueued through explicit owner");
+        assert!(
+            job.metrics.is_some(),
+            "legacy enqueue should capture current metrics owner"
+        );
+
+        drop(owner);
+        crate::admin_debug::security_metrics::clear_default_for_test();
         clear_default_prefetcher_for_test();
         match prev {
             Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
