@@ -6,6 +6,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
+
 /// Clock abstraction for testable time operations
 pub trait Clock: Send + Sync {
     fn now(&self) -> Instant;
@@ -209,6 +211,14 @@ impl HostBreaker {
     }
 
     pub fn mark_failure(&mut self, host: &str) {
+        self.mark_failure_inner(host, None);
+    }
+
+    pub fn mark_failure_with_metrics(&mut self, host: &str, metrics: &SecurityMetricsState) {
+        self.mark_failure_inner(host, Some(metrics));
+    }
+
+    fn mark_failure_inner(&mut self, host: &str, metrics: Option<&SecurityMetricsState>) {
         let current_time = now();
 
         // Calculate backoff first to avoid borrowing issues
@@ -254,8 +264,7 @@ impl HostBreaker {
                     _backoff: jittered_backoff,
                 };
 
-                // Record reopen metric
-                crate::admin_debug::security_metrics::inc_breaker_reopen();
+                record_breaker_reopen(metrics);
 
                 tracing::warn!(host = %host, backoff_ms = %backoff.as_millis(), "Circuit breaker reopened with backoff");
             }
@@ -276,8 +285,7 @@ impl HostBreaker {
                         _backoff: initial_backoff,
                     };
 
-                    // Record initial reopen metric
-                    crate::admin_debug::security_metrics::inc_breaker_reopen();
+                    record_breaker_reopen(metrics);
 
                     tracing::warn!(host = %host, failures = %stat.failures, ratio = %ratio, "Circuit breaker opened");
                 }
@@ -354,6 +362,14 @@ impl HostBreaker {
     }
     pub fn mark_ok(&mut self, host: &str) {
         self.mark_success(host);
+    }
+}
+
+fn record_breaker_reopen(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_breaker_reopen();
+    } else {
+        crate::admin_debug::security_metrics::inc_breaker_reopen();
     }
 }
 
@@ -479,6 +495,22 @@ mod tests {
 
         // Circuit should be open now
         assert!(!br.check("bad.com"));
+    }
+
+    #[test]
+    fn test_breaker_explicit_metrics_owner_tracks_reopen() {
+        let _clock = setup_test_clock();
+        let mut br = HostBreaker::new(10000, 1000, 2, 0.9);
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+
+        for _ in 0..2 {
+            assert!(br.check("metrics-owner.com"));
+            br.mark_failure_with_metrics("metrics-owner.com", &metrics);
+        }
+
+        assert!(!br.check("metrics-owner.com"));
+        let snapshot = metrics.snapshot().expect("explicit metrics snapshot should succeed");
+        assert_eq!(snapshot.subs_breaker_reopen, 1);
     }
 
     #[test]

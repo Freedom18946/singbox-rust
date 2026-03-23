@@ -6,7 +6,9 @@ use crate::admin_debug::http_util::{
 };
 use crate::admin_debug::reloadable;
 use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist;
-use crate::admin_debug::security_async::forbid_private_host_or_resolved_async;
+use crate::admin_debug::security_async::{
+    forbid_private_host_or_resolved_async, forbid_private_host_or_resolved_async_with_metrics,
+};
 use crate::admin_debug::security_metrics::{
     inc_block_private_ip, inc_breaker_block, inc_cache_hit, inc_cache_miss, inc_connect_timeout,
     inc_exceed_size, inc_redirects, inc_timeout, inc_total_requests, inc_upstream_4xx,
@@ -33,6 +35,9 @@ use reqwest::{redirect::Policy, Client};
 use std::net::IpAddr;
 #[cfg(feature = "subs_http")]
 use tokio::time::timeout;
+
+#[cfg(feature = "subs_http")]
+type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
 
 // Rate limiting globals - updated for hot reloading
 #[cfg(feature = "subs_http")]
@@ -275,18 +280,216 @@ async fn resolve_and_check_host(host: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+#[cfg(feature = "subs_http")]
+fn metrics_inc_total_requests(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_total_requests();
+    } else {
+        inc_total_requests();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_rate_limited(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_rate_limited();
+    } else {
+        crate::admin_debug::security_metrics::inc_rate_limited();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_breaker_block(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_breaker_block();
+    } else {
+        inc_breaker_block();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_block_private_ip(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_block_private_ip();
+    } else {
+        inc_block_private_ip();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_cache_hit(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_cache_hit();
+    } else {
+        inc_cache_hit();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_cache_miss(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_cache_miss();
+    } else {
+        inc_cache_miss();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_head_total(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_head_total();
+    } else {
+        crate::admin_debug::security_metrics::inc_head_total();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_redirects(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_redirects();
+    } else {
+        inc_redirects();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_connect_timeout(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_connect_timeout();
+    } else {
+        inc_connect_timeout();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_timeout(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_timeout();
+    } else {
+        inc_timeout();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_upstream_4xx(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_upstream_4xx();
+    } else {
+        inc_upstream_4xx();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_upstream_5xx(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_upstream_5xx();
+    } else {
+        inc_upstream_5xx();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_inc_exceed_size(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.inc_exceed_size();
+    } else {
+        inc_exceed_size();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_record_latency_ms(ms: u64, metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.record_latency_ms(ms);
+    } else {
+        record_latency_ms(ms);
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_mark_last_ok(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.mark_last_ok();
+    } else {
+        mark_last_ok();
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_set_last_error(
+    kind: SecurityErrorKind,
+    msg: impl Into<String>,
+    metrics: Option<&SecurityMetricsState>,
+) {
+    let message = msg.into();
+    if let Some(metrics) = metrics {
+        metrics.set_last_error(kind, message);
+    } else {
+        set_last_error(kind, message);
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn metrics_set_last_error_with_host(
+    kind: SecurityErrorKind,
+    host: &str,
+    msg: impl Into<String>,
+    metrics: Option<&SecurityMetricsState>,
+) {
+    let message = msg.into();
+    if let Some(metrics) = metrics {
+        metrics.set_last_error_with_host(kind, host, message);
+    } else {
+        set_last_error_with_host(kind, host, message);
+    }
+}
+
+#[cfg(feature = "subs_http")]
+async fn forbid_private_host_or_resolved_async_for_metrics(
+    parsed: &url::Url,
+    metrics: Option<&SecurityMetricsState>,
+) -> anyhow::Result<()> {
+    if let Some(metrics) = metrics {
+        forbid_private_host_or_resolved_async_with_metrics(parsed, metrics).await
+    } else {
+        forbid_private_host_or_resolved_async(parsed).await
+    }
+}
+
 /// # Errors
 /// Returns an error if fetching fails due to rate limiting, circuit breaker, network issues, or response processing errors
 #[cfg(feature = "subs_http")]
 pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
-    inc_total_requests();
+    fetch_with_limits_inner(url, None).await
+}
+
+/// # Errors
+/// Returns an error if fetching fails due to rate limiting, circuit breaker, network issues, or response processing errors.
+#[cfg(feature = "subs_http")]
+pub async fn fetch_with_limits_with_metrics(
+    url: &str,
+    metrics: Arc<SecurityMetricsState>,
+) -> anyhow::Result<String> {
+    fetch_with_limits_inner(url, Some(metrics)).await
+}
+
+#[cfg(feature = "subs_http")]
+async fn fetch_with_limits_inner(
+    url: &str,
+    metrics: Option<Arc<SecurityMetricsState>>,
+) -> anyhow::Result<String> {
+    metrics_inc_total_requests(metrics.as_deref());
 
     let t0 = Instant::now();
 
     // Rate limiting - acquire permits for both concurrency and RPS
     let permit = acquire_permits().await.map_err(|e| {
-        crate::admin_debug::security_metrics::inc_rate_limited();
-        set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {e}"));
+        metrics_inc_rate_limited(metrics.as_deref());
+        metrics_set_last_error(
+            SecurityErrorKind::RateLimited,
+            format!("rate limit: {e}"),
+            metrics.as_deref(),
+        );
         e
     })?;
     let result = async {
@@ -296,27 +499,34 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         // Circuit breaker check
         if let Ok(mut br) = breaker::global().lock() {
             if !br.check(&host) {
-                inc_breaker_block();
-                set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
+                metrics_inc_breaker_block(metrics.as_deref());
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::Other,
+                    &host,
+                    "circuit breaker open",
+                    metrics.as_deref(),
+                );
                 anyhow::bail!("circuit breaker open for host: {host}");
             }
         }
         // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
         if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
-            inc_block_private_ip();
-            set_last_error_with_host(
+            metrics_inc_block_private_ip(metrics.as_deref());
+            metrics_set_last_error_with_host(
                 SecurityErrorKind::PrivateBlocked,
                 &host,
                 format!("private/loopback: {e}"),
+                metrics.as_deref(),
             );
             return Err(e);
         }
-        if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
-            inc_block_private_ip();
-            set_last_error_with_host(
+        if let Err(e) = forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await {
+            metrics_inc_block_private_ip(metrics.as_deref());
+            metrics_set_last_error_with_host(
                 SecurityErrorKind::PrivateBlocked,
                 &host,
                 format!("dns-private: {e}"),
+                metrics.as_deref(),
             );
             return Err(e);
         }
@@ -342,11 +552,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         let mut has_cached_entry = false;
         if let Ok(mut lru) = cache::global().lock() {
             if let Some(cached_tier_entry) = lru.get(url) {
-                inc_cache_hit();
+                metrics_inc_cache_hit(metrics.as_deref());
                 if_none_match = cached_tier_entry.etag().cloned();
                 has_cached_entry = true;
             } else {
-                inc_cache_miss();
+                metrics_inc_cache_miss(metrics.as_deref());
             }
         }
 
@@ -357,7 +567,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             if let Ok(mut lru) = cache::global().lock() {
                 lru.inc_head_count();
             }
-            crate::admin_debug::security_metrics::inc_head_total();
+            metrics_inc_head_total(metrics.as_deref());
 
             let _head_resp = match tokio::time::timeout(
                 std::time::Duration::from_millis(timeout_ms / 2), // Shorter timeout for HEAD
@@ -411,33 +621,48 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
                     cur = src;
                 }
                 if is_tmr {
-                    inc_redirects();
-                    set_last_error_with_host(
+                    metrics_inc_redirects(metrics.as_deref());
+                    metrics_set_last_error_with_host(
                         SecurityErrorKind::TooManyRedirects,
                         &host,
                         "too many redirects",
+                        metrics.as_deref(),
                     );
                 }
                 if e.is_connect() {
-                    inc_connect_timeout();
-                    set_last_error_with_host(
+                    metrics_inc_connect_timeout(metrics.as_deref());
+                    metrics_set_last_error_with_host(
                         SecurityErrorKind::ConnectTimeout,
                         &host,
                         "connect timeout",
+                        metrics.as_deref(),
                     );
                 }
                 // Mark circuit breaker failure
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
                 return Err(e.into());
             }
             Err(_) => {
-                inc_timeout();
-                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
+                metrics_inc_timeout(metrics.as_deref());
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::Timeout,
+                    &host,
+                    "overall timeout",
+                    metrics.as_deref(),
+                );
                 // Mark circuit breaker failure
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
                 return Err(anyhow::anyhow!("timeout"));
             }
@@ -453,11 +678,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
                         .await
                         .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
                     let cached_string = String::from_utf8_lossy(&cached_body).to_string();
-                    record_latency_ms(t0.elapsed().as_millis() as u64);
-                    mark_last_ok();
+                    metrics_record_latency_ms(t0.elapsed().as_millis() as u64, metrics.as_deref());
+                    metrics_mark_last_ok(metrics.as_deref());
                     // Trigger prefetch for successful 304 response
                     let et_local: Option<String> = cached_tier_entry.etag().cloned();
-                    maybe_enqueue_prefetch(&resp, et_local.as_ref());
+                    maybe_enqueue_prefetch(&resp, et_local.as_ref(), metrics.clone());
                     return Ok(cached_string);
                 }
             }
@@ -468,20 +693,25 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         if resp.url() != &parsed {
             let redirect_host = resp.url().host_str().unwrap_or("").to_string();
             if let Err(e) = forbid_private_host_or_resolved_with_allowlist(resp.url()) {
-                inc_block_private_ip();
-                set_last_error_with_host(
+                metrics_inc_block_private_ip(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::PrivateBlocked,
                     &redirect_host,
                     format!("redirect->private: {e}"),
+                    metrics.as_deref(),
                 );
                 return Err(e);
             }
-            if let Err(e) = forbid_private_host_or_resolved_async(resp.url()).await {
-                inc_block_private_ip();
-                set_last_error_with_host(
+            if let Err(e) =
+                forbid_private_host_or_resolved_async_for_metrics(resp.url(), metrics.as_deref())
+                    .await
+            {
+                metrics_inc_block_private_ip(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::PrivateBlocked,
                     &redirect_host,
                     format!("redirect->dns-private: {e}"),
+                    metrics.as_deref(),
                 );
                 return Err(e);
             }
@@ -491,25 +721,31 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             let status = resp.status();
             let code = resp.status().as_u16();
             if (400..500).contains(&code) {
-                inc_upstream_4xx();
-                set_last_error_with_host(
+                metrics_inc_upstream_4xx(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::Upstream4xx,
                     &host,
                     format!("upstream {status}"),
+                    metrics.as_deref(),
                 );
             }
             if (500..600).contains(&code) {
-                inc_upstream_5xx();
-                set_last_error_with_host(
+                metrics_inc_upstream_5xx(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::Upstream5xx,
                     &host,
                     format!("upstream {status}"),
+                    metrics.as_deref(),
                 );
             }
             // Mark circuit breaker failure for server errors
             if (500..600).contains(&code) {
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
             }
             anyhow::bail!("upstream status {status}");
@@ -524,10 +760,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             {
                 let allowed = allow_list.iter().any(|pat| ct.starts_with(pat));
                 if !allowed {
-                    set_last_error_with_host(
+                    metrics_set_last_error_with_host(
                         SecurityErrorKind::MimeDeny,
                         &host,
                         format!("mime not allowed: {ct}"),
+                        metrics.as_deref(),
                     );
                     anyhow::bail!("content-type not allowed: {ct}");
                 }
@@ -543,10 +780,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             {
                 let denied = deny_list.iter().any(|pat| ct.starts_with(pat));
                 if denied {
-                    set_last_error_with_host(
+                    metrics_set_last_error_with_host(
                         SecurityErrorKind::MimeDeny,
                         &host,
                         format!("mime denied: {ct}"),
+                        metrics.as_deref(),
                     );
                     anyhow::bail!("content-type denied: {ct}");
                 }
@@ -554,8 +792,13 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         }
         if let Some(cl) = resp.content_length() {
             if cl as usize > size_limit {
-                inc_exceed_size();
-                set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
+                metrics_inc_exceed_size(metrics.as_deref());
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::SizeExceed,
+                    &host,
+                    "cl exceed",
+                    metrics.as_deref(),
+                );
                 anyhow::bail!("exceed size limit: {size_limit} bytes");
             }
         }
@@ -582,8 +825,13 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk?;
                 if body.len() + chunk.len() > size_limit {
-                    inc_exceed_size();
-                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+                    metrics_inc_exceed_size(metrics.as_deref());
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::SizeExceed,
+                        &host,
+                        "stream exceed",
+                        metrics.as_deref(),
+                    );
                     anyhow::bail!("exceed size limit: {size_limit} bytes");
                 }
                 body.extend_from_slice(&chunk);
@@ -595,15 +843,20 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             Ok(Ok(body)) => body,
             Ok(Err(err)) => return Err(err),
             Err(_) => {
-                inc_timeout();
-                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "read timeout");
+                metrics_inc_timeout(metrics.as_deref());
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::Timeout,
+                    &host,
+                    "read timeout",
+                    metrics.as_deref(),
+                );
                 return Err(anyhow::anyhow!("timeout"));
             }
         };
 
         // Record latency and mark success
         let dt = t0.elapsed().as_millis() as u64;
-        record_latency_ms(dt);
+        metrics_record_latency_ms(dt, metrics.as_deref());
 
         let out = String::from_utf8_lossy(&body).to_string();
 
@@ -624,13 +877,20 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             br.mark_success(&host);
         }
 
-        mark_last_ok();
+        metrics_mark_last_ok(metrics.as_deref());
         // Trigger prefetch for successful 200 response
         let et_local: Option<String> = response_etag.clone();
         if let Some(ma) = cache_control_max_age(&response_headers) {
             if ma >= 60 {
-                let _ =
-                    crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local);
+                let _ = if let Some(metrics) = metrics.as_ref() {
+                    crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                        response_url.as_str(),
+                        et_local,
+                        Arc::clone(metrics),
+                    )
+                } else {
+                    crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local)
+                };
             }
         }
         Ok(out)
@@ -646,14 +906,38 @@ pub async fn fetch_with_limits_to_cache(
     etag: Option<String>,
     is_prefetch: bool,
 ) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
-    inc_total_requests();
+    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, None).await
+}
+
+#[cfg(feature = "subs_http")]
+pub async fn fetch_with_limits_to_cache_with_metrics(
+    url: &str,
+    etag: Option<String>,
+    is_prefetch: bool,
+    metrics: Arc<SecurityMetricsState>,
+) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
+    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, Some(metrics)).await
+}
+
+#[cfg(feature = "subs_http")]
+async fn fetch_with_limits_to_cache_inner(
+    url: &str,
+    etag: Option<String>,
+    is_prefetch: bool,
+    metrics: Option<Arc<SecurityMetricsState>>,
+) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
+    metrics_inc_total_requests(metrics.as_deref());
 
     let t0 = Instant::now();
 
     // Rate limiting - acquire permits for both concurrency and RPS
     let _permit = acquire_permits().await.map_err(|e| {
-        crate::admin_debug::security_metrics::inc_rate_limited();
-        set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {e}"));
+        metrics_inc_rate_limited(metrics.as_deref());
+        metrics_set_last_error(
+            SecurityErrorKind::RateLimited,
+            format!("rate limit: {e}"),
+            metrics.as_deref(),
+        );
         e
     })?;
     let parsed = url::Url::parse(url)?;
@@ -662,28 +946,35 @@ pub async fn fetch_with_limits_to_cache(
     // Circuit breaker check
     if let Ok(mut br) = breaker::global().lock() {
         if !br.check(&host) {
-            inc_breaker_block();
-            set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
+            metrics_inc_breaker_block(metrics.as_deref());
+            metrics_set_last_error_with_host(
+                SecurityErrorKind::Other,
+                &host,
+                "circuit breaker open",
+                metrics.as_deref(),
+            );
             anyhow::bail!("circuit breaker open for host: {host}");
         }
     }
 
     // Async security checks
     if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
-        inc_block_private_ip();
-        set_last_error_with_host(
+        metrics_inc_block_private_ip(metrics.as_deref());
+        metrics_set_last_error_with_host(
             SecurityErrorKind::PrivateBlocked,
             &host,
             format!("private/loopback: {e}"),
+            metrics.as_deref(),
         );
         return Err(e);
     }
-    if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
-        inc_block_private_ip();
-        set_last_error_with_host(
+    if let Err(e) = forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await {
+        metrics_inc_block_private_ip(metrics.as_deref());
+        metrics_set_last_error_with_host(
             SecurityErrorKind::PrivateBlocked,
             &host,
             format!("dns-private: {e}"),
+            metrics.as_deref(),
         );
         return Err(e);
     }
@@ -708,12 +999,12 @@ pub async fn fetch_with_limits_to_cache(
     let mut if_none_match = etag;
     if let Ok(mut lru) = cache::global().lock() {
         if let Some(cached_tier_entry) = lru.get(url) {
-            inc_cache_hit();
+            metrics_inc_cache_hit(metrics.as_deref());
             if if_none_match.is_none() {
                 if_none_match = cached_tier_entry.etag().cloned();
             }
         } else {
-            inc_cache_miss();
+            metrics_inc_cache_miss(metrics.as_deref());
         }
     }
 
@@ -733,23 +1024,37 @@ pub async fn fetch_with_limits_to_cache(
         Ok(Err(e)) => {
             // Handle various error types
             if e.is_connect() {
-                inc_connect_timeout();
-                set_last_error_with_host(
+                metrics_inc_connect_timeout(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::ConnectTimeout,
                     &host,
                     "connect timeout",
+                    metrics.as_deref(),
                 );
             }
             if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
+                if let Some(metrics) = metrics.as_deref() {
+                    br.mark_failure_with_metrics(&host, metrics);
+                } else {
+                    br.mark_failure(&host);
+                }
             }
             return Err(e.into());
         }
         Err(_) => {
-            inc_timeout();
-            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
+            metrics_inc_timeout(metrics.as_deref());
+            metrics_set_last_error_with_host(
+                SecurityErrorKind::Timeout,
+                &host,
+                "overall timeout",
+                metrics.as_deref(),
+            );
             if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
+                if let Some(metrics) = metrics.as_deref() {
+                    br.mark_failure_with_metrics(&host, metrics);
+                } else {
+                    br.mark_failure(&host);
+                }
             }
             return Err(anyhow::anyhow!("timeout"));
         }
@@ -770,11 +1075,11 @@ pub async fn fetch_with_limits_to_cache(
                 .get_body()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
-            record_latency_ms(t0.elapsed().as_millis() as u64);
-            mark_last_ok();
+            metrics_record_latency_ms(t0.elapsed().as_millis() as u64, metrics.as_deref());
+            metrics_mark_last_ok(metrics.as_deref());
             // Trigger prefetch for successful 304 response
             let et_local: Option<String> = cached_tier_entry.etag().cloned();
-            maybe_enqueue_prefetch(&resp, et_local.as_ref());
+            maybe_enqueue_prefetch(&resp, et_local.as_ref(), metrics.clone());
 
             return Ok(crate::admin_debug::cache::CacheEntry {
                 etag: cached_tier_entry.etag().cloned(),
@@ -796,23 +1101,37 @@ pub async fn fetch_with_limits_to_cache(
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 if e.is_connect() {
-                    inc_connect_timeout();
-                    set_last_error_with_host(
+                    metrics_inc_connect_timeout(metrics.as_deref());
+                    metrics_set_last_error_with_host(
                         SecurityErrorKind::ConnectTimeout,
                         &host,
                         "connect timeout on fallback",
+                        metrics.as_deref(),
                     );
                 }
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
                 return Err(e.into());
             }
             Err(_) => {
-                inc_timeout();
-                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "timeout on fallback");
+                metrics_inc_timeout(metrics.as_deref());
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::Timeout,
+                    &host,
+                    "timeout on fallback",
+                    metrics.as_deref(),
+                );
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
                 return Err(anyhow::anyhow!("timeout on fallback"));
             }
@@ -822,24 +1141,30 @@ pub async fn fetch_with_limits_to_cache(
             let status = fresh_resp.status();
             let code = fresh_resp.status().as_u16();
             if (400..500).contains(&code) {
-                inc_upstream_4xx();
-                set_last_error_with_host(
+                metrics_inc_upstream_4xx(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::Upstream4xx,
                     &host,
                     format!("upstream {status} on fallback"),
+                    metrics.as_deref(),
                 );
             }
             if (500..600).contains(&code) {
-                inc_upstream_5xx();
-                set_last_error_with_host(
+                metrics_inc_upstream_5xx(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::Upstream5xx,
                     &host,
                     format!("upstream {status} on fallback"),
+                    metrics.as_deref(),
                 );
             }
             if (500..600).contains(&code) {
                 if let Ok(mut br) = breaker::global().lock() {
-                    br.mark_failure(&host);
+                    if let Some(metrics) = metrics.as_deref() {
+                        br.mark_failure_with_metrics(&host, metrics);
+                    } else {
+                        br.mark_failure(&host);
+                    }
                 }
             }
             anyhow::bail!("upstream status {status} on fallback");
@@ -864,11 +1189,12 @@ pub async fn fetch_with_limits_to_cache(
         // Check content length
         if let Some(cl) = fresh_resp.content_length() {
             if cl as usize > size_limit {
-                inc_exceed_size();
-                set_last_error_with_host(
+                metrics_inc_exceed_size(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::SizeExceed,
                     &host,
                     "cl exceed on fallback",
+                    metrics.as_deref(),
                 );
                 anyhow::bail!("exceed size limit: {size_limit} bytes on fallback");
             }
@@ -880,11 +1206,12 @@ pub async fn fetch_with_limits_to_cache(
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
             if body.len() + chunk.len() > size_limit {
-                inc_exceed_size();
-                set_last_error_with_host(
+                metrics_inc_exceed_size(metrics.as_deref());
+                metrics_set_last_error_with_host(
                     SecurityErrorKind::SizeExceed,
                     &host,
                     "stream exceed on fallback",
+                    metrics.as_deref(),
                 );
                 anyhow::bail!("exceed size limit: {size_limit} bytes on fallback");
             }
@@ -893,7 +1220,7 @@ pub async fn fetch_with_limits_to_cache(
 
         // Record latency and mark success
         let dt = t0.elapsed().as_millis() as u64;
-        record_latency_ms(dt);
+        metrics_record_latency_ms(dt, metrics.as_deref());
 
         // Create cache entry
         let fresh_cache_entry = crate::admin_debug::cache::CacheEntry {
@@ -913,15 +1240,23 @@ pub async fn fetch_with_limits_to_cache(
             br.mark_success(&host);
         }
 
-        mark_last_ok();
+        metrics_mark_last_ok(metrics.as_deref());
         // Trigger prefetch for successful fallback 200 response
         let et_local: Option<String> = response_etag.clone();
         if let Some(ma) = cache_control_max_age(&fresh_resp_headers) {
             if ma >= 60 {
-                let _ = crate::admin_debug::prefetch::enqueue_prefetch(
-                    fresh_resp_url.as_str(),
-                    et_local,
-                );
+                let _ = if let Some(metrics) = metrics.as_ref() {
+                    crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                        fresh_resp_url.as_str(),
+                        et_local,
+                        Arc::clone(metrics),
+                    )
+                } else {
+                    crate::admin_debug::prefetch::enqueue_prefetch(
+                        fresh_resp_url.as_str(),
+                        et_local,
+                    )
+                };
             }
         }
         return Ok(fresh_cache_entry);
@@ -931,24 +1266,30 @@ pub async fn fetch_with_limits_to_cache(
         let status = resp.status();
         let code = resp.status().as_u16();
         if (400..500).contains(&code) {
-            inc_upstream_4xx();
-            set_last_error_with_host(
+            metrics_inc_upstream_4xx(metrics.as_deref());
+            metrics_set_last_error_with_host(
                 SecurityErrorKind::Upstream4xx,
                 &host,
                 format!("upstream {status}"),
+                metrics.as_deref(),
             );
         }
         if (500..600).contains(&code) {
-            inc_upstream_5xx();
-            set_last_error_with_host(
+            metrics_inc_upstream_5xx(metrics.as_deref());
+            metrics_set_last_error_with_host(
                 SecurityErrorKind::Upstream5xx,
                 &host,
                 format!("upstream {status}"),
+                metrics.as_deref(),
             );
         }
         if (500..600).contains(&code) {
             if let Ok(mut br) = breaker::global().lock() {
-                br.mark_failure(&host);
+                if let Some(metrics) = metrics.as_deref() {
+                    br.mark_failure_with_metrics(&host, metrics);
+                } else {
+                    br.mark_failure(&host);
+                }
             }
         }
         anyhow::bail!("upstream status {status}");
@@ -973,8 +1314,13 @@ pub async fn fetch_with_limits_to_cache(
     // Check content length
     if let Some(cl) = resp.content_length() {
         if cl as usize > size_limit {
-            inc_exceed_size();
-            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
+            metrics_inc_exceed_size(metrics.as_deref());
+            metrics_set_last_error_with_host(
+                SecurityErrorKind::SizeExceed,
+                &host,
+                "cl exceed",
+                metrics.as_deref(),
+            );
             anyhow::bail!("exceed size limit: {size_limit} bytes");
         }
     }
@@ -985,8 +1331,13 @@ pub async fn fetch_with_limits_to_cache(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if body.len() + chunk.len() > size_limit {
-            inc_exceed_size();
-            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+            metrics_inc_exceed_size(metrics.as_deref());
+            metrics_set_last_error_with_host(
+                SecurityErrorKind::SizeExceed,
+                &host,
+                "stream exceed",
+                metrics.as_deref(),
+            );
             anyhow::bail!("exceed size limit: {size_limit} bytes");
         }
         body.extend_from_slice(&chunk);
@@ -994,7 +1345,7 @@ pub async fn fetch_with_limits_to_cache(
 
     // Record latency and mark success
     let dt = t0.elapsed().as_millis() as u64;
-    record_latency_ms(dt);
+    metrics_record_latency_ms(dt, metrics.as_deref());
 
     // Create cache entry
     let cache_entry = crate::admin_debug::cache::CacheEntry {
@@ -1014,12 +1365,20 @@ pub async fn fetch_with_limits_to_cache(
         br.mark_success(&host);
     }
 
-    mark_last_ok();
+    metrics_mark_last_ok(metrics.as_deref());
     // Trigger prefetch for successful 200 response
     let et_local: Option<String> = response_etag.clone();
     if let Some(ma) = cache_control_max_age(&resp_headers) {
         if ma >= 60 {
-            let _ = crate::admin_debug::prefetch::enqueue_prefetch(resp_url.as_str(), et_local);
+            let _ = if let Some(metrics) = metrics.as_ref() {
+                crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                    resp_url.as_str(),
+                    et_local,
+                    Arc::clone(metrics),
+                )
+            } else {
+                crate::admin_debug::prefetch::enqueue_prefetch(resp_url.as_str(), et_local)
+            };
         }
     }
     Ok(cache_entry)
@@ -1580,13 +1939,25 @@ pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
 
 /// 在主路径成功后触发预取（200/304 且 max-age>=60）
 #[cfg(feature = "subs_http")]
-pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: Option<&String>) {
+pub(crate) fn maybe_enqueue_prefetch(
+    resp: &reqwest::Response,
+    response_etag: Option<&String>,
+    metrics: Option<Arc<SecurityMetricsState>>,
+) {
     if let Some(ma) = cache_control_max_age(resp.headers()) {
         if ma >= 60 {
-            let _ = crate::admin_debug::prefetch::enqueue_prefetch(
-                resp.url().as_str(),
-                response_etag.cloned(),
-            );
+            let _ = if let Some(metrics) = metrics {
+                crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                    resp.url().as_str(),
+                    response_etag.cloned(),
+                    metrics,
+                )
+            } else {
+                crate::admin_debug::prefetch::enqueue_prefetch(
+                    resp.url().as_str(),
+                    response_etag.cloned(),
+                )
+            };
         }
     }
 }

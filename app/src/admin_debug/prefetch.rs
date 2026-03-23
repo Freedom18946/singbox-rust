@@ -1,6 +1,7 @@
 // app/src/admin_debug/prefetch.rs
 use anyhow::Result;
 use once_cell::sync::OnceCell;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::{
@@ -9,12 +10,15 @@ use tokio::sync::{
 };
 use url::Url;
 
-#[derive(Clone, Debug)]
+type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
+
+#[derive(Clone)]
 pub struct PrefetchJob {
     pub url: String,
     pub etag: Option<String>,
     pub deadline_ms: u64,
     pub tries: u8,
+    metrics: Option<Arc<SecurityMetricsState>>,
 }
 
 pub struct Prefetcher {
@@ -26,7 +30,7 @@ static QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 static HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
 static LAST_PREFETCH_SIZE: AtomicU64 = AtomicU64::new(0);
 
-fn observe_depth(depth: u64) {
+fn observe_depth(depth: u64, metrics: Option<&SecurityMetricsState>) {
     let mut cur = HIGH_WATERMARK.load(Ordering::Relaxed);
     while depth > cur
         && HIGH_WATERMARK
@@ -35,10 +39,48 @@ fn observe_depth(depth: u64) {
     {
         cur = HIGH_WATERMARK.load(Ordering::Relaxed);
     }
-    crate::admin_debug::security_metrics::set_prefetch_queue_depth(depth);
-    crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(
-        HIGH_WATERMARK.load(Ordering::Relaxed),
-    );
+    set_prefetch_queue_depth(depth, metrics);
+    set_prefetch_queue_high_watermark(HIGH_WATERMARK.load(Ordering::Relaxed), metrics);
+}
+
+fn init_prefetch_metrics(metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.init_prefetch_metrics();
+    } else {
+        crate::admin_debug::security_metrics::init_prefetch_metrics();
+    }
+}
+
+fn prefetch_inc(event: &str, metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.prefetch_inc(event);
+    } else {
+        crate::admin_debug::security_metrics::prefetch_inc(event);
+    }
+}
+
+fn record_prefetch_run_ms(ms: u64, metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.record_prefetch_run_ms(ms);
+    } else {
+        crate::admin_debug::security_metrics::record_prefetch_run_ms(ms);
+    }
+}
+
+fn set_prefetch_queue_depth(depth: u64, metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.set_prefetch_queue_depth(depth);
+    } else {
+        crate::admin_debug::security_metrics::set_prefetch_queue_depth(depth);
+    }
+}
+
+fn set_prefetch_queue_high_watermark(watermark: u64, metrics: Option<&SecurityMetricsState>) {
+    if let Some(metrics) = metrics {
+        metrics.set_prefetch_queue_high_watermark(watermark);
+    } else {
+        crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(watermark);
+    }
 }
 
 impl Prefetcher {
@@ -68,24 +110,24 @@ impl Prefetcher {
                     });
                 }
             }
-            // metrics init（建议放 metrics 模块集中管理）
-            crate::admin_debug::security_metrics::init_prefetch_metrics();
             Self { tx }
         })
     }
 
     pub fn enqueue(&self, job: PrefetchJob) -> bool {
+        let metrics = job.metrics.clone();
+        init_prefetch_metrics(metrics.as_deref());
         // 队列满即丢弃 + 计数
         match self.tx.try_send(job) {
             Ok(()) => {
-                crate::admin_debug::security_metrics::prefetch_inc("enq");
+                prefetch_inc("enq", metrics.as_deref());
                 // Update queue depth after successful enqueue with high watermark tracking
                 let new_depth = QUEUE_DEPTH.fetch_add(1, Ordering::Relaxed) + 1;
-                observe_depth(new_depth as u64);
+                observe_depth(new_depth as u64, metrics.as_deref());
                 true
             }
             Err(_e) => {
-                crate::admin_debug::security_metrics::prefetch_inc("drop");
+                prefetch_inc("drop", metrics.as_deref());
                 false
             }
         }
@@ -111,19 +153,19 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
         let mut ok = false;
         let mut left = parse_prefetch_env_usize("SB_PREFETCH_RETRIES", 2);
         loop {
-            match do_prefetch(&job).await {
+            match do_prefetch(&job.url, job.etag.clone(), job.metrics.clone()).await {
                 Ok(()) => {
                     ok = true;
-                    crate::admin_debug::security_metrics::prefetch_inc("done");
+                    prefetch_inc("done", job.metrics.as_deref());
                     break;
                 }
                 Err(_e) => {
-                    crate::admin_debug::security_metrics::prefetch_inc("fail");
+                    prefetch_inc("fail", job.metrics.as_deref());
                     if left == 0 {
                         break;
                     }
                     left -= 1;
-                    crate::admin_debug::security_metrics::prefetch_inc("retry");
+                    prefetch_inc("retry", job.metrics.as_deref());
                     // 简单指数退避（避免与 breaker backoff 相互放大）
                     let backoff_ms =
                         50u64.saturating_mul(1 << u32::from(job.tries.saturating_sub(left as u8)));
@@ -134,19 +176,22 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
 
         // Update queue depth after job completion (success or failure)
         let prev = QUEUE_DEPTH.fetch_sub(1, Ordering::Relaxed) - 1;
-        crate::admin_debug::security_metrics::set_prefetch_queue_depth(prev as u64);
+        set_prefetch_queue_depth(prev as u64, job.metrics.as_deref());
 
         let dur_ms = start.elapsed().as_millis() as u64;
-        crate::admin_debug::security_metrics::record_prefetch_run_ms(dur_ms);
+        record_prefetch_run_ms(dur_ms, job.metrics.as_deref());
         tracing::debug!(id, ok, "prefetch worker finished");
     }
 }
 
-async fn do_prefetch(job: &PrefetchJob) -> Result<()> {
+async fn do_prefetch(
+    url: &str,
+    etag: Option<String>,
+    metrics: Option<Arc<SecurityMetricsState>>,
+) -> Result<()> {
     // 1) 走已有安全路径：限流/熔断/DNS 私网拦截/ETag 条件请求
     // 可直接复用 subs 的 fetch 函数（建议抽出 fetch_with_limits(&url, etag) -> Result<CacheEntry>）
-    let url = &job.url;
-    let cache_entry = prefetch_once(url, job.etag.clone()).await?;
+    let cache_entry = prefetch_once(url, etag, metrics).await?;
 
     // Update size tracking
     let size = cache_entry.body.len() as u64;
@@ -186,6 +231,30 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
             .as_millis() as u64
             + 60_000,
         tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
+        metrics: None,
+    };
+    Prefetcher::global().enqueue(job)
+}
+
+#[must_use]
+pub fn enqueue_prefetch_with_metrics(
+    url: &str,
+    etag: Option<String>,
+    metrics: Arc<SecurityMetricsState>,
+) -> bool {
+    if std::env::var("SB_PREFETCH_ENABLE").ok().as_deref() != Some("1") {
+        return false;
+    }
+    let job = PrefetchJob {
+        url: url.to_string(),
+        etag,
+        deadline_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+            + 60_000,
+        tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
+        metrics: Some(metrics),
     };
     Prefetcher::global().enqueue(job)
 }
@@ -193,6 +262,7 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
 async fn prefetch_once(
     url: &str,
     etag: Option<String>,
+    metrics: Option<Arc<SecurityMetricsState>>,
 ) -> Result<crate::admin_debug::cache::CacheEntry> {
     // 快速校验
     if url.len() > 2048 {
@@ -204,8 +274,17 @@ async fn prefetch_once(
     // 真实抓取（含限流/熔断/缓存/ETag）
     #[cfg(feature = "subs_http")]
     {
-        return crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache(url, etag, true)
-            .await;
+        return if let Some(metrics) = metrics.as_ref() {
+            crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache_with_metrics(
+                url,
+                etag,
+                true,
+                Arc::clone(metrics),
+            )
+            .await
+        } else {
+            crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache(url, etag, true).await
+        };
     }
     #[cfg(not(feature = "subs_http"))]
     {
@@ -244,7 +323,6 @@ fn parse_prefetch_env_u8(key: &str, default: u8) -> u8 {
 }
 
 #[cfg(test)]
-#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
     use once_cell::sync::Lazy;
@@ -266,6 +344,7 @@ mod tests {
             etag: Some("\"abc123\"".to_string()),
             deadline_ms: 5000,
             tries: 0,
+            metrics: None,
         };
 
         assert_eq!(job.url, "https://example.com/config");
@@ -301,6 +380,17 @@ mod tests {
         }
     }
 
+    #[test]
+    #[serial_test::serial]
+    fn test_explicit_metrics_owner_tracks_prefetch_depth() {
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+        observe_depth(3, Some(&metrics));
+
+        let snapshot = metrics.snapshot().expect("explicit metrics snapshot should succeed");
+        assert_eq!(snapshot.prefetch_queue_depth, 3);
+        assert_eq!(metrics.get_prefetch_queue_high_watermark(), 3);
+    }
+
     #[tokio::test]
     async fn queue_depth_drops_when_full() {
         // 构造容量=1的 prefetcher
@@ -311,14 +401,16 @@ mod tests {
             url: "http://a".into(),
             etag: None,
             deadline_ms: 0,
-            tries: 1
+            tries: 1,
+            metrics: None,
         }));
         // 第二次应丢弃
         assert!(!pf.enqueue(PrefetchJob {
             url: "http://b".into(),
             etag: None,
             deadline_ms: 0,
-            tries: 1
+            tries: 1,
+            metrics: None,
         }));
     }
 }

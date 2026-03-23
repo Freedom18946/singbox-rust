@@ -7614,6 +7614,40 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口的是 router 主决策链的 GeoIP owner 依赖，不移除 `geoip/mod.rs` 的兼容壳，也不表述为 dual-kernel parity 完成
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
 
+### [2026-03-23 20:35] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 admin subscription / prefetch / breaker / async DNS 主链对默认 `security_metrics` 查找的依赖
+**变更**:
+- `app/src/admin_debug/security_async.rs`
+  - 新增显式 metrics owner 版本的 DNS 校验入口，保留旧包装层
+- `app/src/admin_debug/breaker.rs`
+  - 新增 `mark_failure_with_metrics(...)`，让熔断器 reopen 计数可直接写入显式 `SecurityMetricsState`
+  - 新增回归测试，验证不依赖默认安装也能更新 reopen 指标
+- `app/src/admin_debug/prefetch.rs`
+  - `PrefetchJob` 新增可选 metrics owner
+  - prefetch enqueue / worker / depth 统计改为优先走 job 自带 owner
+  - 新增回归测试，验证显式 owner 可更新 prefetch depth / high watermark
+- `app/src/admin_debug/endpoints/subs.rs`
+  - 新增 owner-aware `fetch_with_limits_with_metrics(...)` / `fetch_with_limits_to_cache_with_metrics(...)`
+  - subscription fetch 主链在可用时优先直接写显式 metrics owner，并把 owner 透传给 prefetch / breaker / async DNS
+- `agents-only/active_context.md`
+  - 记录 `security_metrics` 主链已改为优先显式 owner，默认弱注册表降为兼容壳
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 owner-aware metrics 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `app/src/admin_debug/security_metrics.rs` 的 `Weak<SecurityMetricsState>` 默认注册表仍保留兼容入口，但已不再是 subs/prefetch/breaker/security_async 主链的首选 owner 来源
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

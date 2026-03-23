@@ -7,6 +7,8 @@ use std::net::IpAddr;
 use std::time::Instant;
 use url::Url;
 
+type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
+
 fn build_resolver() -> TokioAsyncResolver {
     let mut opts = ResolverOpts::default();
     opts.cache_size = 1024;
@@ -67,6 +69,53 @@ pub async fn resolve_checked(host: &str) -> Result<Vec<IpAddr>> {
     }
 }
 
+/// Unified DNS resolution with an explicit metrics owner for runtime paths that
+/// already hold `SecurityMetricsState`.
+pub async fn resolve_checked_with_metrics(
+    host: &str,
+    metrics: &SecurityMetricsState,
+) -> Result<Vec<IpAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if crate::admin_debug::security::is_private_ip(ip) {
+            anyhow::bail!("direct private ip not allowed: {ip}");
+        }
+        return Ok(vec![ip]);
+    }
+
+    let normalized_host = crate::admin_debug::security::normalize_host(host)
+        .with_context(|| format!("IDNA normalization failed for host: {host}"))?;
+
+    let t0 = Instant::now();
+    let resolver = build_resolver();
+    let resp = resolver.lookup_ip(&normalized_host).await;
+    let ms = t0.elapsed().as_millis() as u64;
+
+    match resp {
+        Ok(ips) => {
+            metrics.record_dns_latency_ms(ms);
+            if ms < 5 {
+                metrics.inc_dns_cache_hit();
+            } else {
+                metrics.inc_dns_cache_miss();
+            }
+
+            let resolved_ips: Vec<IpAddr> = ips.iter().collect();
+            for ip in &resolved_ips {
+                if crate::admin_debug::security::is_private_ip(*ip) {
+                    anyhow::bail!("resolved to private ip: {ip}");
+                }
+            }
+
+            Ok(resolved_ips)
+        }
+        Err(e) => {
+            metrics.record_dns_latency_ms(ms);
+            metrics.inc_dns_cache_miss();
+            anyhow::bail!("dns resolution failed: {e}")
+        }
+    }
+}
+
 pub async fn resolve_host_checked(host: &str) -> Result<Vec<IpAddr>> {
     // Legacy wrapper around the new unified function
     resolve_checked(host).await
@@ -90,6 +139,30 @@ pub async fn forbid_private_host_or_resolved_async(url: &Url) -> Result<()> {
         // Skip resolution if it's already an IP
         if host.parse::<IpAddr>().is_err() {
             let _ips = resolve_host_checked(host).await?; // Just for security check, don't use return value
+        }
+    }
+    Ok(())
+}
+
+pub async fn forbid_private_host_or_resolved_async_with_metrics(
+    url: &Url,
+    metrics: &SecurityMetricsState,
+) -> Result<()> {
+    let allow = crate::admin_debug::security::parse_private_allowlist();
+    if let Some(host) = url.host_str() {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            if crate::admin_debug::security::host_matches_allowlist(host, Some(ip), &allow) {
+                return Ok(());
+            }
+        } else if crate::admin_debug::security::host_matches_allowlist(host, None, &allow) {
+            return Ok(());
+        }
+    }
+
+    crate::admin_debug::security::forbid_private_host(url)?;
+    if let Some(host) = url.host_str() {
+        if host.parse::<IpAddr>().is_err() {
+            let _ips = resolve_checked_with_metrics(host, metrics).await?;
         }
     }
     Ok(())
