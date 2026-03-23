@@ -5,7 +5,8 @@ async fn main() {
     if std::env::var("SB_METRICS_ADDR").is_err() {
         std::env::set_var("SB_METRICS_ADDR", "127.0.0.1:9090");
     }
-    let _jh = sb_metrics::spawn_http_exporter_from_env(sb_metrics::MetricsRegistryHandle::global());
+    let registry_owner = sb_metrics::install_default_registry_owner();
+    let _jh = sb_metrics::spawn_http_exporter_from_env(registry_owner.handle());
     // Force-register a few common metric families
     sb_metrics::inc_router_match("default", "direct");
     sb_metrics::observe_outbound_connect_seconds("direct", 0.01);

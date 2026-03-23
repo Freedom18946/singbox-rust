@@ -14,10 +14,10 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .try_init();
 
+    let registry_owner = sb_metrics::install_default_registry_owner();
+
     // Start exporter
-    if let Some(_jh) =
-        sb_metrics::spawn_http_exporter_from_env(sb_metrics::MetricsRegistryHandle::global())
-    {
+    if let Some(_jh) = sb_metrics::spawn_http_exporter_from_env(registry_owner.handle()) {
         tracing::info!(addr = %std::env::var("SB_METRICS_ADDR").unwrap(), "metrics exporter up");
     } else {
         tracing::warn!("metrics exporter failed to start (check SB_METRICS_ADDR)");

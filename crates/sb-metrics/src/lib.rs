@@ -1231,4 +1231,24 @@ mod tests {
         assert!(text.contains("codex_metrics_owned_after_owner"));
         assert!(text.contains(" 13"));
     }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn owner_handle_exports_metrics_without_shared_lookup() {
+        let owner = install_default_registry_owner();
+        let owned_handle = owner.handle();
+        let gauge = IntGauge::new(
+            "codex_metrics_owner_handle_export",
+            "codex metrics owner handle export test",
+        )
+        .unwrap();
+        owned_handle
+            .register_cloned("codex_metrics_owner_handle_export", &gauge)
+            .unwrap();
+        gauge.set(17);
+
+        let text = String::from_utf8(owned_handle.encode_text().unwrap()).unwrap();
+        assert!(text.contains("codex_metrics_owner_handle_export"));
+        assert!(text.contains(" 17"));
+    }
 }

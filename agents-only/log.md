@@ -16,6 +16,35 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 19:40] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 standalone metrics serve 路径从默认 shared registry 切到显式 owner
+**变更**:
+- `app/src/bin/metrics-serve.rs`
+  - binary 入口现显式持有 `MetricsRegistryOwner`
+  - 启动 exporter 时改走 `registry_owner.handle()`，不再直接依赖 `MetricsRegistryHandle::global()`
+- `crates/sb-metrics/examples/serve.rs`
+  - example 现显式持有 `MetricsRegistryOwner`
+  - exporter 启动改走 owner handle
+- `crates/sb-metrics/src/lib.rs`
+  - 新增 `owner_handle_exports_metrics_without_shared_lookup` 回归测试
+- `agents-only/active_context.md`
+  - 同步 standalone metrics serve 路径已切到显式 owner
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 metrics owner 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture` ✅
+- `cargo check -p sb-metrics --example serve` ✅
+- `cargo check -p app --bin metrics-serve --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `shared_registry()` 和 `MetricsRegistryHandle::global()` 仍保留为 compat 入口；继续下探内部 `LazyLock` 指标静态属于后续非阻塞 maintenance 债务
+
 ### [2026-03-23 19:10] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 `cli/prefetch` 路径从默认 `security_metrics` / `Prefetcher` compat 查询切到显式 owner
