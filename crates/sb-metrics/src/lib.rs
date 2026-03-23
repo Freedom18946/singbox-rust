@@ -56,6 +56,7 @@ pub mod inbound;
 pub mod socks; // SOCKS 侧指标
 pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错误指标
 use std::{
+    collections::HashSet,
     convert::Infallible,
     net::SocketAddr,
     sync::atomic::{AtomicU64, Ordering},
@@ -203,7 +204,7 @@ impl MetricsRegistryHandle {
     where
         C: Collector + Clone + 'static,
     {
-        self.registry_ref()
+        self.registration_registry_ref()
             .register(Box::new(collector.clone()))
             .map_err(|err| {
                 tracing::debug!(metric, error = %err, "metrics collector registration skipped");
@@ -214,7 +215,10 @@ impl MetricsRegistryHandle {
     /// Gather metric families from this registry.
     #[must_use]
     pub fn gather(&self) -> Vec<prometheus::proto::MetricFamily> {
-        self.registry_ref().gather()
+        match self {
+            Self::Shared => gather_shared_metric_families(),
+            Self::Owned(_) => self.registry_ref().gather(),
+        }
     }
 
     /// Encode the current registry into Prometheus text exposition format.
@@ -234,6 +238,13 @@ impl MetricsRegistryHandle {
         match self {
             Self::Shared => current_registry_ref(),
             Self::Owned(registry) => RegistryRef::Owned(Arc::clone(registry)),
+        }
+    }
+
+    fn registration_registry_ref(&self) -> RegistryRef<'_> {
+        match self {
+            Self::Shared => current_registry_ref(),
+            Self::Owned(_) => self.registry_ref(),
         }
     }
 }
@@ -300,6 +311,27 @@ impl RegistryRef<'_> {
             Self::Global(registry) => registry.gather(),
         }
     }
+}
+
+fn gather_shared_metric_families() -> Vec<prometheus::proto::MetricFamily> {
+    let Some(current_registry) = current_registry() else {
+        return REGISTRY.gather();
+    };
+
+    let mut metric_families = current_registry.gather();
+    let mut names = metric_families
+        .iter()
+        .map(|family| family.name().to_string())
+        .collect::<HashSet<_>>();
+
+    for family in REGISTRY.gather() {
+        let name = family.name().to_string();
+        if names.insert(name) {
+            metric_families.push(family);
+        }
+    }
+
+    metric_families
 }
 
 /// Get the shared default metrics registry handle.
@@ -1166,5 +1198,37 @@ mod tests {
             !text.contains("codex_metrics_owner_lifecycle"),
             "dropping explicit owner should fall back away from the temporary registry"
         );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn shared_handle_keeps_global_metrics_visible_after_owner_install() {
+        let global_gauge = IntGauge::new(
+            "codex_metrics_global_before_owner",
+            "codex metrics global before owner test",
+        )
+        .unwrap();
+        shared_registry()
+            .register_cloned("codex_metrics_global_before_owner", &global_gauge)
+            .unwrap();
+        global_gauge.set(11);
+
+        let owner = install_default_registry_owner();
+        let owned_gauge = IntGauge::new(
+            "codex_metrics_owned_after_owner",
+            "codex metrics owned after owner test",
+        )
+        .unwrap();
+        owner
+            .handle()
+            .register_cloned("codex_metrics_owned_after_owner", &owned_gauge)
+            .unwrap();
+        owned_gauge.set(13);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(text.contains("codex_metrics_global_before_owner"));
+        assert!(text.contains(" 11"));
+        assert!(text.contains("codex_metrics_owned_after_owner"));
+        assert!(text.contains(" 13"));
     }
 }

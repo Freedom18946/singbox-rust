@@ -64,7 +64,8 @@ impl AppRuntimeDeps {
     #[cfg(feature = "observe")]
     #[must_use]
     pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        self.metrics_registry_owner.handle()
+        let _ = &self.metrics_registry_owner;
+        sb_metrics::shared_registry()
     }
 
     #[cfg(feature = "admin_debug")]

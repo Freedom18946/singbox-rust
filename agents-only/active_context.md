@@ -57,6 +57,7 @@
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings`
   - `cargo test -p sb-metrics --lib explicit_owner_registry_lifecycle_controls_shared_handle -- --nocapture`
+  - `cargo test -p sb-metrics --lib shared_handle_keeps_global_metrics_visible_after_owner_install -- --nocapture`
   - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
@@ -72,7 +73,7 @@
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`；`Weak<LoggingRuntime>` 注册表仅剩兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链已优先走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
-  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps` 显式持有，`shared_registry()` 仅保留“弱默认 owner 优先、强全局 fallback”的兼容入口
+  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps` 显式持有，`shared_registry()` 已收敛为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口
 
 ## L25 完成总结（2026-03-17）
 
