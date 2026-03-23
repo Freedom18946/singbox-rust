@@ -16,6 +16,33 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 19:10] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 `cli/prefetch` 路径从默认 `security_metrics` / `Prefetcher` compat 查询切到显式 owner
+**变更**:
+- `app/src/cli/prefetch/mod.rs`
+  - CLI prefetch 子命令新增本地 owner bundle，显式持有 `SecurityMetricsState` 和 `Prefetcher`
+  - `stats` / `enqueue` / `heat` / `watch` / `drain` / `sample` 现优先走显式 owner，不再默认依赖 compat 注册表
+  - 新增 `collect_prefetch_cli_stats_uses_explicit_metrics_owner` 回归测试
+- `app/src/admin_debug/security_metrics.rs`
+  - 为显式 owner 路径补充 `get_prefetch_queue_depth()` getter，避免 CLI 再走默认 snapshot 包装层
+- `agents-only/active_context.md`
+  - 同步 CLI prefetch owner 收口状态与验证命令
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加 CLI prefetch 显式 owner 收口与 follow-up 口径
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli prefetch" -- --nocapture` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `security_metrics` / `Prefetcher` 的默认弱注册表仍保留 compat 入口，后续若继续裁薄，属于非阻塞 maintenance follow-up
+
 ### [2026-03-23 18:25] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，收窄 `prefetch` 主路径对全局 `OnceCell` owner 的依赖

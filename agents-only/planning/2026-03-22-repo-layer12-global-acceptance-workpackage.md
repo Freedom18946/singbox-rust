@@ -107,6 +107,9 @@
     - `PrefetchJob` 可携带 runtime metrics owner，`fetch_with_limits_to_cache(...)` 新增 owner-aware 入口并沿调用链透传
     - `Prefetcher` 从 `OnceCell` 全局强 owner 收口为弱默认注册表优先，显式 owner 上提到 `AppRuntimeDeps`
     - `security_metrics.rs` 的默认 `Weak` 注册表继续保留为兼容包装层，但不再是这些主路径的首选 owner 来源
+  - `app/src/cli/prefetch/mod.rs`
+    - CLI prefetch 子命令现改为构造本地显式 metrics/prefetch owner bundle
+    - stats / enqueue / heat / watch / drain / sample 不再默认依赖 compat 注册表查询
   - `app/Cargo.toml`
     - 补齐 `sbcore_analyze_json = ["sb-core/analyze_json"]`
     - 补齐 `transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]`
@@ -131,6 +134,7 @@
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
   - `cargo test -p app --lib handle_with_metrics_records_private_target_block_on_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
   - `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+  - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo check -p app` ✅
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
@@ -139,7 +143,7 @@
 - 追加静态审计结论：
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs` 以及 `crates/sb-metrics` 内部静态指标定义层
-  - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、真实 admin server 的 `/subs/` 入口、`Prefetcher` runtime 路径以及 `main` logging 启动/退出路径都已优先改走显式 owner
+  - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径、真实 admin server 的 `/subs/` 入口、`Prefetcher` runtime 路径以及 `main` logging 启动/退出路径都已优先改走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径继续优先改走 `RouterHandle` 自有 geo owner
   - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps` 显式持有；`shared_registry()` 现保留“弱默认 owner 优先、强全局 fallback，并合并 owner 安装前旧全局指标”的兼容入口
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成

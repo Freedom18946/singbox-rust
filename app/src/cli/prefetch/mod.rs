@@ -154,14 +154,75 @@ fn feature_guard(feature: &str) -> anyhow::Result<()> {
     anyhow::bail!("该命令需要启用编译特性：{feature}")
 }
 
+#[cfg(feature = "admin_debug")]
+struct PrefetchCliRuntimeDeps {
+    #[cfg(feature = "subs_http")]
+    _prefetcher: std::sync::Arc<crate::admin_debug::prefetch::Prefetcher>,
+    metrics: std::sync::Arc<crate::admin_debug::security_metrics::SecurityMetricsState>,
+}
+
+#[cfg(feature = "admin_debug")]
+struct PrefetchCliStats {
+    depth: u64,
+    high: u64,
+    enq: u64,
+    drop: u64,
+    done: u64,
+    fail: u64,
+    retry: u64,
+    bytes: u64,
+    duration_ms: u64,
+}
+
+#[cfg(feature = "admin_debug")]
+fn build_prefetch_runtime_deps() -> PrefetchCliRuntimeDeps {
+    let metrics = crate::admin_debug::security_metrics::install_default(std::sync::Arc::new(
+        crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+    ));
+    #[cfg(feature = "subs_http")]
+    let prefetcher = crate::admin_debug::prefetch::install_default_prefetcher(std::sync::Arc::new(
+        crate::admin_debug::prefetch::Prefetcher::from_env(),
+    ));
+
+    PrefetchCliRuntimeDeps {
+        #[cfg(feature = "subs_http")]
+        _prefetcher: prefetcher,
+        metrics,
+    }
+}
+
+#[cfg(feature = "admin_debug")]
+#[must_use]
+fn collect_prefetch_cli_stats(
+    metrics: &crate::admin_debug::security_metrics::SecurityMetricsState,
+) -> PrefetchCliStats {
+    let (enq, drop, done, fail, retry) = metrics.get_prefetch_counters();
+    PrefetchCliStats {
+        depth: metrics.get_prefetch_queue_depth(),
+        high: metrics.get_prefetch_queue_high_watermark(),
+        enq,
+        drop,
+        done,
+        fail,
+        retry,
+        bytes: metrics.get_prefetch_total_bytes(),
+        duration_ms: metrics.get_prefetch_session_duration_ms(),
+    }
+}
+
 fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
     // admin_debug 下导出指标；否则提示开启特性
     #[cfg(feature = "admin_debug")]
     {
-        use crate::admin_debug::security_metrics as m;
-        let depth = m::get_prefetch_queue_depth();
-        let high = m::get_prefetch_queue_high_watermark();
-        let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
+        let runtime_deps = build_prefetch_runtime_deps();
+        let stats = collect_prefetch_cli_stats(&runtime_deps.metrics);
+        let depth = stats.depth;
+        let high = stats.high;
+        let enq = stats.enq;
+        let drop = stats.drop;
+        let done = stats.done;
+        let fail = stats.fail;
+        let retry = stats.retry;
 
         let use_json = _json || _format == "json";
         let use_envelope = _format == "json";
@@ -221,9 +282,14 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
 
         // 检查队列容量配置
         let queue_cap = cli_prefetch_env_usize("SB_PREFETCH_CAP", 128);
+        let runtime_deps = build_prefetch_runtime_deps();
 
         // 仅入队，不抓取
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
+        let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+            &_url,
+            _etag,
+            std::sync::Arc::clone(&runtime_deps.metrics),
+        );
         if ok {
             println!("enqueued: {_url}");
             Ok(())
@@ -248,6 +314,9 @@ fn heat(
 ) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
+        let runtime_deps = build_prefetch_runtime_deps();
+        let metrics: std::sync::Arc<crate::admin_debug::security_metrics::SecurityMetricsState> =
+            std::sync::Arc::clone(&runtime_deps.metrics);
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stop2 = stop.clone();
         std::thread::spawn(move || {
@@ -260,6 +329,7 @@ fn heat(
             let stop = stop.clone();
             let url = _url.clone();
             let etag = _etag.clone();
+            let metrics = metrics.clone();
             handles.push(std::thread::spawn(move || {
                 let mut enq = 0u64;
                 let mut drop = 0u64;
@@ -270,7 +340,11 @@ fn heat(
                     std::time::Duration::from_secs_f64(1.0 / (_rps as f64).max(1.0))
                 };
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    let ok = crate::admin_debug::prefetch::enqueue_prefetch(&url, etag.clone());
+                    let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                        &url,
+                        etag.clone(),
+                        metrics.clone(),
+                    );
                     if ok {
                         enq += 1;
                     } else {
@@ -313,15 +387,15 @@ fn heat(
 #[cfg(all(feature = "admin_debug", feature = "prefetch"))]
 #[allow(dead_code)]
 fn read_stats() -> PrefStats {
-    use crate::admin_debug::security_metrics as m;
-    let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
+    let runtime_deps = build_prefetch_runtime_deps();
+    let stats = collect_prefetch_cli_stats(&runtime_deps.metrics);
     PrefStats {
-        total: enq + drop + done + fail + retry,
-        succeeded: done,
-        failed: fail,
-        skipped: drop,
-        bytes: m::get_prefetch_total_bytes(),
-        duration_ms: m::get_prefetch_session_duration_ms(),
+        total: stats.enq + stats.drop + stats.done + stats.fail + stats.retry,
+        succeeded: stats.done,
+        failed: stats.fail,
+        skipped: stats.drop,
+        bytes: stats.bytes,
+        duration_ms: stats.duration_ms,
         canceled: false,
     }
 }
@@ -335,7 +409,7 @@ fn watch(
 ) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
-        use crate::admin_debug::security_metrics as m;
+        let runtime_deps = build_prefetch_runtime_deps();
         let iv = std::time::Duration::from_secs(_interval.max(1));
         let deadline = if _duration == 0 {
             None
@@ -346,9 +420,14 @@ fn watch(
         use std::io::IsTerminal;
         let is_tty = std::io::stdout().is_terminal() && !_plain && !_json && !_ndjson;
         loop {
-            let depth = m::get_prefetch_queue_depth();
-            let high = m::get_prefetch_queue_high_watermark();
-            let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
+            let stats = collect_prefetch_cli_stats(&runtime_deps.metrics);
+            let depth = stats.depth;
+            let high = stats.high;
+            let enq = stats.enq;
+            let drop = stats.drop;
+            let done = stats.done;
+            let fail = stats.fail;
+            let retry = stats.retry;
 
             series.push(depth);
             while series.len() > 60 {
@@ -415,10 +494,10 @@ fn sparkline(data: &[u64]) -> String {
 fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
-        use crate::admin_debug::security_metrics as m;
+        let runtime_deps = build_prefetch_runtime_deps();
         let until = std::time::Instant::now() + std::time::Duration::from_secs(_timeout);
         loop {
-            let d = m::get_prefetch_queue_depth();
+            let d = runtime_deps.metrics.get_prefetch_queue_depth();
             if d == 0 {
                 if !_quiet {
                     println!("queue drained");
@@ -450,24 +529,25 @@ fn sample(
 ) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch"))]
     {
-        use crate::admin_debug::security_metrics as m;
-        let before = m::get_prefetch_queue_depth();
+        let runtime_deps = build_prefetch_runtime_deps();
+        let metrics = std::sync::Arc::clone(&runtime_deps.metrics);
+        let before = runtime_deps.metrics.get_prefetch_queue_depth();
         let t0 = std::time::Instant::now();
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
+        let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(&_url, _etag, metrics);
         let t1 = t0.elapsed();
         let mut peak = before;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(_window);
         while std::time::Instant::now() < until {
-            let cur = m::get_prefetch_queue_depth();
+            let cur = runtime_deps.metrics.get_prefetch_queue_depth();
             peak = peak.max(cur);
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        let mut after = m::get_prefetch_queue_depth();
+        let mut after = runtime_deps.metrics.get_prefetch_queue_depth();
         if _wait_done {
             let target = before.saturating_add(1); // 允许微小波动
             let end2 = std::time::Instant::now() + std::time::Duration::from_secs(_window);
             while std::time::Instant::now() < end2 {
-                after = m::get_prefetch_queue_depth();
+                after = runtime_deps.metrics.get_prefetch_queue_depth();
                 if after <= target {
                     break;
                 }
@@ -531,5 +611,30 @@ fn cli_prefetch_env_usize(key: &str, default: usize) -> usize {
             tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
             default
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "admin_tests")]
+mod tests {
+    use super::collect_prefetch_cli_stats;
+
+    #[test]
+    fn collect_prefetch_cli_stats_uses_explicit_metrics_owner() {
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+        metrics.set_prefetch_queue_depth(4);
+        metrics.set_prefetch_queue_high_watermark(7);
+        metrics.prefetch_inc("enq");
+        metrics.prefetch_inc("done");
+        metrics.prefetch_inc("retry");
+        metrics.add_prefetch_bytes(128);
+
+        let stats = collect_prefetch_cli_stats(&metrics);
+        assert_eq!(stats.depth, 4);
+        assert_eq!(stats.high, 7);
+        assert_eq!(stats.enq, 1);
+        assert_eq!(stats.done, 1);
+        assert_eq!(stats.retry, 1);
+        assert_eq!(stats.bytes, 128);
     }
 }

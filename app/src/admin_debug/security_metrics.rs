@@ -4,9 +4,9 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, LazyLock, Weak};
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex as StdMutex;
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -255,6 +255,11 @@ impl SecurityMetricsState {
         self.prefetch_queue_depth.store(depth, Ordering::Relaxed);
     }
 
+    #[must_use]
+    pub fn get_prefetch_queue_depth(&self) -> u64 {
+        self.prefetch_queue_depth.load(Ordering::Relaxed)
+    }
+
     pub fn set_prefetch_queue_high_watermark(&self, watermark: u64) {
         self.prefetch_queue_high_watermark
             .store(watermark, Ordering::Relaxed);
@@ -277,7 +282,8 @@ impl SecurityMetricsState {
     }
 
     pub fn add_prefetch_bytes(&self, bytes: u64) {
-        self.prefetch_total_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.prefetch_total_bytes
+            .fetch_add(bytes, Ordering::Relaxed);
     }
 
     #[must_use]
@@ -675,7 +681,7 @@ pub fn set_prefetch_queue_depth(depth: u64) {
 #[must_use]
 pub fn get_prefetch_queue_depth() -> u64 {
     current()
-        .map(|state| state.prefetch_queue_depth.load(Ordering::Relaxed))
+        .map(|state| state.get_prefetch_queue_depth())
         .unwrap_or_default()
 }
 pub fn set_prefetch_queue_high_watermark(watermark: u64) {
