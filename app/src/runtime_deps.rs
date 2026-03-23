@@ -18,6 +18,8 @@ pub struct AppRuntimeDeps {
     _metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
     #[cfg(feature = "router")]
     pub http_client: Arc<dyn sb_types::ports::http::HttpClient>,
+    #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
+    _prefetcher: Arc<crate::admin_debug::prefetch::Prefetcher>,
     pub redactor: Arc<crate::redact::Redactor>,
     #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
@@ -46,12 +48,18 @@ impl AppRuntimeDeps {
         let security_metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
+        #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
+        let prefetcher = crate::admin_debug::prefetch::install_default_prefetcher(Arc::new(
+            crate::admin_debug::prefetch::Prefetcher::from_env(),
+        ));
 
         Ok(Self {
             #[cfg(feature = "observe")]
             _metrics_registry_owner: metrics_registry_owner,
             #[cfg(feature = "router")]
             http_client,
+            #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
+            _prefetcher: prefetcher,
             redactor,
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
             analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),

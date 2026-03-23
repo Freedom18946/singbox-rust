@@ -1,8 +1,10 @@
 // app/src/admin_debug/prefetch.rs
 use anyhow::Result;
 use once_cell::sync::OnceCell;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex as StdMutex;
+use std::sync::Arc;
+use std::sync::{LazyLock, Weak};
 use std::time::Duration;
 use tokio::sync::{
     mpsc,
@@ -26,6 +28,8 @@ pub struct Prefetcher {
 }
 
 static GLOBAL: OnceCell<Prefetcher> = OnceCell::new();
+static DEFAULT_PREFETCHER: LazyLock<StdMutex<Option<Weak<Prefetcher>>>> =
+    LazyLock::new(|| StdMutex::new(None));
 static QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 static HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
 static LAST_PREFETCH_SIZE: AtomicU64 = AtomicU64::new(0);
@@ -84,34 +88,38 @@ fn set_prefetch_queue_high_watermark(watermark: u64, metrics: Option<&SecurityMe
 }
 
 impl Prefetcher {
-    pub fn global() -> &'static Self {
-        GLOBAL.get_or_init(|| {
-            let cap = parse_prefetch_env_usize("SB_PREFETCH_CAP", 128);
-            let (tx, rx) = mpsc::channel::<PrefetchJob>(cap);
-            let n = parse_prefetch_env_usize("SB_PREFETCH_WORKERS", 2);
+    #[must_use]
+    pub fn from_env() -> Self {
+        let cap = parse_prefetch_env_usize("SB_PREFETCH_CAP", 128);
+        let (tx, rx) = mpsc::channel::<PrefetchJob>(cap);
+        let n = parse_prefetch_env_usize("SB_PREFETCH_WORKERS", 2);
 
-            // Create shared receiver using Arc
-            let rx = std::sync::Arc::new(tokio::sync::Mutex::new(rx));
+        // Create shared receiver using Arc
+        let rx = std::sync::Arc::new(tokio::sync::Mutex::new(rx));
 
-            for id in 0..n {
-                let rx_clone = rx.clone();
-                // If we are inside a Tokio runtime, use tokio::spawn. Otherwise, spawn a thread
-                // and create a small runtime to drive the worker. This prevents tests without
-                // a runtime from panicking.
-                if tokio::runtime::Handle::try_current().is_ok() {
-                    tokio::spawn(worker_loop(id, rx_clone));
-                } else {
-                    std::thread::spawn(move || {
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .expect("build tokio runtime");
-                        rt.block_on(worker_loop(id, rx_clone));
-                    });
-                }
+        for id in 0..n {
+            let rx_clone = rx.clone();
+            // If we are inside a Tokio runtime, use tokio::spawn. Otherwise, spawn a thread
+            // and create a small runtime to drive the worker. This prevents tests without
+            // a runtime from panicking.
+            if tokio::runtime::Handle::try_current().is_ok() {
+                tokio::spawn(worker_loop(id, rx_clone));
+            } else {
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("build tokio runtime");
+                    rt.block_on(worker_loop(id, rx_clone));
+                });
             }
-            Self { tx }
-        })
+        }
+
+        Self { tx }
+    }
+
+    pub fn global() -> &'static Self {
+        GLOBAL.get_or_init(Self::from_env)
     }
 
     pub fn enqueue(&self, job: PrefetchJob) -> bool {
@@ -137,6 +145,32 @@ impl Prefetcher {
         // Placeholder for graceful shutdown - simplified version for compatibility
         drop(self.tx);
     }
+}
+
+/// Install the default prefetcher via a weak compatibility registry.
+///
+/// The caller keeps the returned `Arc` as the explicit owner while admin-debug
+/// lookup paths only store a weak compatibility handle.
+#[must_use]
+pub fn install_default_prefetcher(prefetcher: Arc<Prefetcher>) -> Arc<Prefetcher> {
+    let mut slot = DEFAULT_PREFETCHER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match slot.as_ref().and_then(Weak::upgrade) {
+        Some(existing) => existing,
+        None => {
+            *slot = Some(Arc::downgrade(&prefetcher));
+            prefetcher
+        }
+    }
+}
+
+fn current_prefetcher() -> Option<Arc<Prefetcher>> {
+    DEFAULT_PREFETCHER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(Weak::upgrade)
 }
 
 async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<PrefetchJob>>>) {
@@ -233,7 +267,11 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
         tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
         metrics: None,
     };
-    Prefetcher::global().enqueue(job)
+    if let Some(prefetcher) = current_prefetcher() {
+        prefetcher.enqueue(job)
+    } else {
+        Prefetcher::global().enqueue(job)
+    }
 }
 
 #[must_use]
@@ -256,7 +294,11 @@ pub fn enqueue_prefetch_with_metrics(
         tries: parse_prefetch_env_u8("SB_PREFETCH_RETRIES", 3),
         metrics: Some(metrics),
     };
-    Prefetcher::global().enqueue(job)
+    if let Some(prefetcher) = current_prefetcher() {
+        prefetcher.enqueue(job)
+    } else {
+        Prefetcher::global().enqueue(job)
+    }
 }
 
 async fn prefetch_once(
@@ -337,6 +379,13 @@ mod tests {
         }
     }
 
+    fn clear_default_prefetcher_for_test() {
+        let mut slot = DEFAULT_PREFETCHER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *slot = None;
+    }
+
     #[test]
     fn test_prefetch_job_creation() {
         let job = PrefetchJob {
@@ -386,9 +435,42 @@ mod tests {
         let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
         observe_depth(3, Some(&metrics));
 
-        let snapshot = metrics.snapshot().expect("explicit metrics snapshot should succeed");
+        let snapshot = metrics
+            .snapshot()
+            .expect("explicit metrics snapshot should succeed");
         assert_eq!(snapshot.prefetch_queue_depth, 3);
         assert_eq!(metrics.get_prefetch_queue_high_watermark(), 3);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn weak_default_prefetcher_routes_enqueue_through_explicit_owner() {
+        let _guard = env_lock();
+        let prev = std::env::var("SB_PREFETCH_ENABLE").ok();
+        std::env::set_var("SB_PREFETCH_ENABLE", "1");
+        clear_default_prefetcher_for_test();
+
+        let (tx_one, mut rx_one) = mpsc::channel::<PrefetchJob>(1);
+        let owner_one = install_default_prefetcher(Arc::new(Prefetcher { tx: tx_one }));
+        assert!(enqueue_prefetch("https://example.com/one", None));
+        let first = rx_one.try_recv().expect("explicit owner should receive first job");
+        assert_eq!(first.url, "https://example.com/one");
+        drop(owner_one);
+
+        let (tx_two, mut rx_two) = mpsc::channel::<PrefetchJob>(1);
+        let owner_two = install_default_prefetcher(Arc::new(Prefetcher { tx: tx_two }));
+        assert!(enqueue_prefetch("https://example.com/two", None));
+        let second = rx_two
+            .try_recv()
+            .expect("replacement explicit owner should receive second job");
+        assert_eq!(second.url, "https://example.com/two");
+        drop(owner_two);
+
+        clear_default_prefetcher_for_test();
+        match prev {
+            Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
+            None => std::env::remove_var("SB_PREFETCH_ENABLE"),
+        }
     }
 
     #[tokio::test]

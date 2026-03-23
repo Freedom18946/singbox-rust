@@ -16,6 +16,35 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 18:25] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 `prefetch` 主路径对全局 `OnceCell` owner 的依赖
+**变更**:
+- `app/src/admin_debug/prefetch.rs`
+  - 保留旧的 `Prefetcher::global()` 兼容路径
+  - 新增默认弱 owner 注册表 `install_default_prefetcher(...)`
+  - `enqueue_prefetch*()` 现优先走显式 owner，再 fallback 到旧全局 singleton
+  - 新增 `weak_default_prefetcher_routes_enqueue_through_explicit_owner` 回归测试
+- `app/src/runtime_deps.rs`
+  - `AppRuntimeDeps` 在 `admin_debug + subs_http` 路径下显式持有 `Prefetcher` owner
+  - runtime 初始化时安装默认弱 owner，生产路径不再默认依赖全局强持有 singleton
+- `agents-only/active_context.md`
+  - 同步 `Prefetcher` owner 收口状态与验证命令
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 prefetch owner 收口与静态审计结论
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo check -p app` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `Prefetcher::global()` 仍保留给兼容调用面和 CLI 预取工具，后续若继续裁薄属于非阻塞 maintenance follow-up
+
 ### [2026-03-23 16:40] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，补齐 `logging` 显式 owner 在正常退出路径上的 flush 收口
