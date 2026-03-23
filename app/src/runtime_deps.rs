@@ -15,7 +15,7 @@ pub fn build_redactor() -> Result<Arc<crate::redact::Redactor>> {
 #[derive(Clone)]
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
-    metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
+    _metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
     #[cfg(feature = "router")]
     pub http_client: Arc<dyn sb_types::ports::http::HttpClient>,
     pub redactor: Arc<crate::redact::Redactor>,
@@ -49,7 +49,7 @@ impl AppRuntimeDeps {
 
         Ok(Self {
             #[cfg(feature = "observe")]
-            metrics_registry_owner,
+            _metrics_registry_owner: metrics_registry_owner,
             #[cfg(feature = "router")]
             http_client,
             redactor,
@@ -63,8 +63,7 @@ impl AppRuntimeDeps {
 
     #[cfg(feature = "observe")]
     #[must_use]
-    pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        let _ = &self.metrics_registry_owner;
+    pub const fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
         sb_metrics::shared_registry()
     }
 

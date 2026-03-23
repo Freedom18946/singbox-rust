@@ -27,7 +27,7 @@ pub use normalize::handle as handle_normalize;
     feature = "subs_clash",
     feature = "subs_singbox"
 ))]
-pub use subs::handle as handle_subs;
+pub use subs::{handle as handle_subs, handle_with_metrics as handle_subs_with_metrics};
 
 #[cfg(feature = "sbcore_rules_tool")]
 pub use analyze::handle as handle_analyze;

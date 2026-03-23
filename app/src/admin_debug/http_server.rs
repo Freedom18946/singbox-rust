@@ -712,7 +712,12 @@ pub async fn serve(
                             feature = "subs_singbox"
                         ))]
                         {
-                            endpoints::handle_subs(p, &mut s).await?;
+                            endpoints::handle_subs_with_metrics(
+                                p,
+                                &mut s,
+                                Arc::clone(&state.security_metrics),
+                            )
+                            .await?;
                         }
                         #[cfg(not(any(
                             feature = "subs_http",
@@ -910,7 +915,12 @@ async fn serve_with_config(
                             feature = "subs_singbox"
                         ))]
                         {
-                            endpoints::handle_subs(p, &mut s).await?;
+                            endpoints::handle_subs_with_metrics(
+                                p,
+                                &mut s,
+                                Arc::clone(&state.security_metrics),
+                            )
+                            .await?;
                         }
                         #[cfg(not(any(
                             feature = "subs_http",
@@ -1090,7 +1100,12 @@ async fn handle_connection(
             feature = "subs_singbox"
         ))]
         {
-            endpoints::handle_subs(path_q, &mut stream).await?;
+            endpoints::handle_subs_with_metrics(
+                path_q,
+                &mut stream,
+                Arc::clone(&state.security_metrics),
+            )
+            .await?;
         }
         #[cfg(not(any(
             feature = "subs_http",

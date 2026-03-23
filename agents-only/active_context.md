@@ -60,6 +60,7 @@
   - `cargo test -p sb-metrics --lib shared_handle_keeps_global_metrics_visible_after_owner_install -- --nocapture`
   - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
+  - `cargo test -p app --lib handle_with_metrics_records_private_target_block_on_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo check -p app`
   - `bash scripts/ci/tasks/inbound-errors.sh`
@@ -71,7 +72,7 @@
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`；`Weak<LoggingRuntime>` 注册表仅剩兼容包装层
-  - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链已优先走显式 owner
+  - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`
   - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
   - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps` 显式持有，`shared_registry()` 已收敛为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口
 

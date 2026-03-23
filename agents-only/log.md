@@ -7757,6 +7757,38 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
 - `sb-metrics` 内部 `LazyLock` 指标静态仍是后续非阻塞 maintenance 债务，但 shared registry 已补齐 owner 安装前后指标可见性的 compat 保护
 
+### [2026-03-23 23:28] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄真实 admin server `/subs/` 入口对默认 `security_metrics` 兼容壳的依赖
+**变更**:
+- `app/src/admin_debug/endpoints/subs.rs`
+  - 新增 `handle_with_metrics(...)`，真实运行态可显式接收 `SecurityMetricsState`
+  - 旧 `handle(...)` 保留为兼容包装层
+  - `/subs/fetch` 路径在显式 owner 模式下补齐请求总数、私网拦截、超时、上游状态、体积限制与成功延迟等 metrics 记账
+  - 新增回归测试，验证显式 owner 模式下私网拒绝会记入传入的 metrics owner
+- `app/src/admin_debug/endpoints/mod.rs`
+  - 导出新的 `handle_subs_with_metrics`
+- `app/src/admin_debug/http_server.rs`
+  - 真实 admin server `/subs/` 路由改为传入 `state.security_metrics`
+- `app/src/runtime_deps.rs`
+  - 将仅用于持有生命周期的 metrics owner 字段改名为 `_metrics_registry_owner`，并把 `metrics_registry()` 收回到 `const fn`
+- `agents-only/active_context.md`
+  - 同步 `/subs/` 主入口已显式传入 `SecurityMetricsState` 与新增验证命令
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 更新 `security_metrics` 收口口径，补记真实 admin server `/subs/` 入口
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --lib handle_with_metrics_records_private_target_block_on_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+- `cargo check -p app` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `app/src/admin_debug/security_metrics.rs` 的 `Weak<SecurityMetricsState>` 默认入口仍保留给兼容路径，但真实 admin server `/subs/` 入口已不再依赖它
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

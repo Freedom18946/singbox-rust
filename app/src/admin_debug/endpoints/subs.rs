@@ -18,12 +18,11 @@ use crate::admin_debug::security_metrics::{
 use base64::{engine::general_purpose::STANDARD, Engine};
 use once_cell::sync::OnceCell;
 use serde::Serialize;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 #[cfg(feature = "subs_http")]
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-#[cfg(feature = "subs_http")]
-use std::sync::Arc;
 #[cfg(feature = "subs_http")]
 use std::time::{Duration, Instant};
 #[cfg(feature = "subs_http")]
@@ -36,7 +35,6 @@ use std::net::IpAddr;
 #[cfg(feature = "subs_http")]
 use tokio::time::timeout;
 
-#[cfg(feature = "subs_http")]
 type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
 
 // Rate limiting globals - updated for hot reloading
@@ -520,7 +518,9 @@ async fn fetch_with_limits_inner(
             );
             return Err(e);
         }
-        if let Err(e) = forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await {
+        if let Err(e) =
+            forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await
+        {
             metrics_inc_block_private_ip(metrics.as_deref());
             metrics_set_last_error_with_host(
                 SecurityErrorKind::PrivateBlocked,
@@ -968,7 +968,9 @@ async fn fetch_with_limits_to_cache_inner(
         );
         return Err(e);
     }
-    if let Err(e) = forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await {
+    if let Err(e) =
+        forbid_private_host_or_resolved_async_for_metrics(&parsed, metrics.as_deref()).await
+    {
         metrics_inc_block_private_ip(metrics.as_deref());
         metrics_set_last_error_with_host(
             SecurityErrorKind::PrivateBlocked,
@@ -1384,7 +1386,24 @@ async fn fetch_with_limits_to_cache_inner(
     Ok(cache_entry)
 }
 
+pub async fn handle_with_metrics(
+    path_q: &str,
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    metrics: Arc<SecurityMetricsState>,
+) -> std::io::Result<()> {
+    handle_inner(path_q, sock, Some(metrics)).await
+}
+
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
+    handle_inner(path_q, sock, None).await
+}
+
+async fn handle_inner(
+    path_q: &str,
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    metrics: Option<Arc<SecurityMetricsState>>,
+) -> std::io::Result<()> {
+    let _ = &metrics;
     if !path_q.starts_with("/subs/") {
         return Ok(());
     }
@@ -1409,6 +1428,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         {
             let params = parse_query(q);
             let url = params.get("url").cloned().unwrap_or_default();
+            let metrics_ref = metrics.as_deref();
             if url.is_empty() {
                 return respond_json_error(
                     sock,
@@ -1418,6 +1438,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 )
                 .await;
             }
+
+            metrics_inc_total_requests(metrics_ref);
 
             // Validate URL scheme for security
             if validate_url_scheme(&url).is_err() {
@@ -1436,8 +1458,17 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 .and_then(|u| u.host_str().map(std::string::ToString::to_string))
                 .ok_or_else(|| std::io::Error::other("invalid url"))?;
             if let Err(e) = resolve_and_check_host(&host).await {
+                metrics_inc_block_private_ip(metrics_ref);
+                metrics_set_last_error_with_host(
+                    SecurityErrorKind::PrivateBlocked,
+                    &host,
+                    format!("unsafe target: {e}"),
+                    metrics_ref,
+                );
                 return respond_json_error(sock, 400, "unsafe target", Some(e)).await;
             }
+
+            let t0 = Instant::now();
 
             // 限制
             let timeout_ms = parse_env_u64("SB_ADMIN_FETCH_TIMEOUT_MS", 8000);
@@ -1482,17 +1513,57 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     attempt.follow()
                 }))
                 .build()
-                .map_err(|e| std::io::Error::other(e.to_string()))?;
+                .map_err(|e| {
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::Other,
+                        &host,
+                        format!("build client: {e}"),
+                        metrics_ref,
+                    );
+                    std::io::Error::other(e.to_string())
+                })?;
 
             // 请求 + 总体超时
             let fut = client.get(&url).send();
             let resp = match timeout(std::time::Duration::from_millis(timeout_ms), fut).await {
                 Ok(Ok(r)) => r,
                 Ok(Err(e)) => {
+                    let is_redirect_error = e.to_string().contains("redirect");
+                    if is_redirect_error {
+                        metrics_inc_redirects(metrics_ref);
+                        metrics_set_last_error_with_host(
+                            SecurityErrorKind::TooManyRedirects,
+                            &host,
+                            format!("redirect failure: {e}"),
+                            metrics_ref,
+                        );
+                    } else if e.is_connect() {
+                        metrics_inc_connect_timeout(metrics_ref);
+                        metrics_set_last_error_with_host(
+                            SecurityErrorKind::ConnectTimeout,
+                            &host,
+                            format!("connect timeout: {e}"),
+                            metrics_ref,
+                        );
+                    } else {
+                        metrics_set_last_error_with_host(
+                            SecurityErrorKind::Other,
+                            &host,
+                            format!("fetch failed: {e}"),
+                            metrics_ref,
+                        );
+                    }
                     return respond_json_error(sock, 502, "fetch failed", Some(&e.to_string()))
                         .await;
                 }
                 Err(_) => {
+                    metrics_inc_timeout(metrics_ref);
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::Timeout,
+                        &host,
+                        "fetch timeout",
+                        metrics_ref,
+                    );
                     return respond_json_error(
                         sock,
                         504,
@@ -1504,6 +1575,25 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             };
 
             if !resp.status().is_success() {
+                let code = resp.status().as_u16();
+                if (400..500).contains(&code) {
+                    metrics_inc_upstream_4xx(metrics_ref);
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::Upstream4xx,
+                        &host,
+                        format!("upstream {}", resp.status()),
+                        metrics_ref,
+                    );
+                }
+                if (500..600).contains(&code) {
+                    metrics_inc_upstream_5xx(metrics_ref);
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::Upstream5xx,
+                        &host,
+                        format!("upstream {}", resp.status()),
+                        metrics_ref,
+                    );
+                }
                 return respond_json_error(
                     sock,
                     resp.status().as_u16(),
@@ -1522,6 +1612,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 let chunk = chunk.map_err(|e| std::io::Error::other(e.to_string()))?;
                 total += chunk.len();
                 if total > max_bytes {
+                    metrics_inc_exceed_size(metrics_ref);
+                    metrics_set_last_error_with_host(
+                        SecurityErrorKind::SizeExceed,
+                        &host,
+                        "fetched content too large",
+                        metrics_ref,
+                    );
                     return respond_json_error(
                         sock,
                         413,
@@ -1533,6 +1630,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 buf.extend_from_slice(&chunk);
             }
             let text = String::from_utf8_lossy(&buf).to_string();
+            metrics_record_latency_ms(t0.elapsed().as_millis() as u64, metrics_ref);
+            metrics_mark_last_ok(metrics_ref);
             respond(sock, 200, "text/plain; charset=utf-8", &text).await
         }
         #[cfg(not(feature = "subs_http"))]
@@ -1967,7 +2066,43 @@ pub(crate) fn maybe_enqueue_prefetch(
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+    use tokio::io::{duplex, AsyncReadExt};
     use tokio::time::sleep;
+
+    #[cfg(feature = "subs_http")]
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn handle_with_metrics_records_private_target_block_on_explicit_owner() {
+        std::env::set_var("SB_ADMIN_ALLOW_NET", "1");
+
+        let metrics = Arc::new(SecurityMetricsState::new());
+        let (mut server, mut client) = duplex(4096);
+        handle_with_metrics(
+            "/subs/fetch?url=http://127.0.0.1/test",
+            &mut server,
+            Arc::clone(&metrics),
+        )
+        .await
+        .expect("handler should respond for blocked private target");
+        drop(server);
+
+        let mut response = Vec::new();
+        client
+            .read_to_end(&mut response)
+            .await
+            .expect("read handler response");
+        let response = String::from_utf8(response).expect("response should be utf-8");
+        assert!(response.contains("400"));
+        assert!(response.contains("unsafe target"));
+
+        let snapshot = metrics
+            .snapshot()
+            .expect("explicit metrics snapshot should succeed");
+        assert_eq!(snapshot.subs_block_private_ip, 1);
+        assert_eq!(snapshot.total_requests, 1);
+
+        std::env::remove_var("SB_ADMIN_ALLOW_NET");
+    }
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
