@@ -20,8 +20,8 @@
 use anyhow::{self, Result};
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::sync::Mutex as StdMutex;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
@@ -40,6 +40,10 @@ impl LoggingOwner {
 
     fn runtime(&self) -> &Arc<LoggingRuntime> {
         &self.runtime
+    }
+
+    pub async fn flush(&self) {
+        flush_logs_with(Arc::clone(&self.runtime)).await;
     }
 }
 
@@ -506,12 +510,12 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
         if let Err(error) = std::thread::spawn({
             let panic_runtime = Arc::clone(&panic_runtime);
             move || {
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(flush_logs_with(panic_runtime));
-            } else {
-                // If no async runtime, wait briefly to allow buffers to flush
-                std::thread::sleep(Duration::from_millis(100));
-            }
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(flush_logs_with(panic_runtime));
+                } else {
+                    // If no async runtime, wait briefly to allow buffers to flush
+                    std::thread::sleep(Duration::from_millis(100));
+                }
             }
         })
         .join()
@@ -684,5 +688,19 @@ mod tests {
         // This test verifies flush_logs doesn't panic
         flush_logs().await;
         // If we reach here, the function completed successfully
+    }
+
+    #[tokio::test]
+    async fn explicit_owner_flush_completes() {
+        let owner = LoggingOwner::new(Arc::new(LoggingRuntime::new(LoggingConfig {
+            format: LogFormat::Compact,
+            level: "info".to_string(),
+            sampling: None,
+            redact: true,
+            timestamp: true,
+            color: false,
+        })));
+
+        owner.flush().await;
     }
 }

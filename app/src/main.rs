@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize enhanced logging system (env + optional overrides above)
     // 初始化增强日志系统（环境变量 + 上述可选覆盖）
     let redactor = app::runtime_deps::build_redactor()?;
-    let _logging_owner = logging::init_logging_with_owner(redactor)?;
+    let logging_owner = logging::init_logging_with_owner(redactor)?;
 
     #[cfg(feature = "failpoints")]
     sb_core::util::failpoint::init_from_env();
@@ -89,9 +89,10 @@ async fn main() -> anyhow::Result<()> {
     // Command Dispatch / 命令分发
     // Routes execution to the appropriate submodule based on the parsed command.
     // 根据解析的命令将执行路由到相应的子模块。
-    match args.command {
+    let result = match args.command {
         cli::Commands::Check(a) => {
             let code = cli::check::run(&args.global, a)?;
+            logging_owner.flush().await;
             std::process::exit(code);
         }
         #[cfg(feature = "prefetch")]
@@ -159,7 +160,10 @@ async fn main() -> anyhow::Result<()> {
             cli::version::run(a)?;
             Ok(())
         }
-    }
+    };
+
+    logging_owner.flush().await;
+    result
 }
 
 // Try to locate a config path from CLI args, load it, and extract log overrides.

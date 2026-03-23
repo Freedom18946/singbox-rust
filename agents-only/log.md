@@ -16,6 +16,33 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 16:40] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，补齐 `logging` 显式 owner 在正常退出路径上的 flush 收口
+**变更**:
+- `app/src/logging.rs`
+  - 为显式 `LoggingOwner` 增加 `flush()`，让生产路径可以直接通过 owner 完成退出刷新
+  - 新增 `explicit_owner_flush_completes` 回归测试
+- `app/src/main.rs`
+  - `main` 继续显式持有 `LoggingOwner`
+  - 正常退出路径改为显式调用 `LoggingOwner::flush()`
+  - `check` 分支在 `std::process::exit(code)` 前也会先 flush，避免绕回 compat 包装层
+- `agents-only/active_context.md`
+  - 同步 `logging` 主路径的退出 flush 已改走显式 owner
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 `logging` flush 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --bin app explicit_owner_flush_completes --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo check -p app` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次仅收口 maintenance / Layer 1 / Layer 2 下的 logging owner 生命周期，不表述为 dual-kernel parity 完成
+- `ACTIVE_RUNTIME` / `flush_logs()` 仍保留为 compat 包装层，后续若再继续裁薄，属于非阻塞 maintenance follow-up
+
 ### [2026-03-22 19:53] Agent: Codex (GPT-5)
 
 **任务**: 承接 repo-wide Layer 1 / 2 maintenance 收尾，完成最终复核、follow-up 判断与文档归档

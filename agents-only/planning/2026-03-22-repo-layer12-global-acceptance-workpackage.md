@@ -94,6 +94,7 @@
     - 默认 `http_client` / `security_metrics` owner 只在真正 runtime 持有路径上安装，避免弱注册表在启动早期出现瞬时 install-then-drop 抖动
   - `app/src/logging.rs`、`app/src/main.rs`
     - `main` 启动路径改为显式持有 `LoggingOwner`
+    - 正常 `main` 退出路径（含 `check` 分支在 `process::exit` 前）现改为显式调用 `LoggingOwner::flush()`
     - `ACTIVE_RUNTIME` 收窄为 `init_logging()` / `flush_logs()` 的兼容包装层，不再是生产启动路径的首选 owner
   - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/router/explain_util.rs`
     - router 主决策链里的 legacy GeoIP fallback 改为优先走 `RouterHandle` 已持有的 `geoip_mux` / `geoip` / `geoip_db`
@@ -119,6 +120,7 @@
   - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+  - `cargo test -p app --bin app explicit_owner_flush_completes --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
@@ -135,7 +137,7 @@
 - 追加静态审计结论：
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs` 以及 `crates/sb-metrics` 内部静态指标定义层
-  - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、真实 admin server 的 `/subs/` 入口以及 `main` logging 启动路径都已优先改走显式 owner
+  - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、真实 admin server 的 `/subs/` 入口以及 `main` logging 启动/退出路径都已优先改走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径继续优先改走 `RouterHandle` 自有 geo owner
   - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps` 显式持有；`shared_registry()` 现保留“弱默认 owner 优先、强全局 fallback，并合并 owner 安装前旧全局指标”的兼容入口
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
