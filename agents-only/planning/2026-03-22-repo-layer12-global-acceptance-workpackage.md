@@ -60,7 +60,7 @@
 - 本地 maintenance acceptance 已执行完毕：`bash scripts/ci/accept.sh` ✅
   - `pprof`、`explain snapshot`、`quick soak` 通过
   - `inbound_errors` 子任务已改为结构化上报，不再因脚本假设失配直接炸整轮 acceptance
-  - 当前 acceptance 结果里 `inbound_errors.ok=false`，原因是 `runtime-exited-before-metrics`；已文档化为 follow-up，而非 parity 结论
+  - 当前 acceptance 结果里 `inbound_errors.ok=false`；本轮顺序跟进后已确认旧的 `runtime-exited-before-metrics` 主要是脚本误判，真实保留原因收敛为 `metric-did-not-increase`
 - 当前环境未设置 `GO_SINGBOX_BIN`，因此 `scripts/e2e/run.sh` 的 Go/Rust compat 子集本轮未执行，按计划记为 skipped
 - 收尾复核已补跑：
   - `git status` 仍为 clean，`git log --oneline -5` 确认当前 HEAD 为 `1912050f`
@@ -99,6 +99,7 @@
 - 追加静态审计结论：
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/http_client.rs`、`crates/sb-core/src/geoip/mod.rs`、`crates/sb-metrics/src/lib.rs`
+  - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；真正状态继续由显式 `Arc` 持有
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
 
 ---
@@ -110,7 +111,7 @@
 | `must-fix` | 已清零 | workspace `clippy -D warnings` 暴露的真实 blocker 已完成收口 |
 | `allowed-test-only` | 已识别 | `#[cfg(test)]` / bench 驱动内部的 `unwrap/expect/panic`，不当作生产 blocker |
 | `allowed-cli-boundary` | 少量 | 顶层工具初始化失败、CLI 致命退出边界上的显式 panic/expect |
-| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`app/src/logging.rs` / `app/src/admin_debug/security_metrics.rs` / `sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务的 runtime 常驻/metrics 观测假设 |
+| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务当前仍未打到期望 unified metric（`reason=metric-did-not-increase`） |
 
 ---
 
@@ -126,7 +127,7 @@
 - `cargo test -p sb-core --lib` ✅
 - `cargo test -p sb-subscribe --all-features --lib` ✅
 - `bash scripts/ci/accept.sh` ✅
-- `bash scripts/ci/tasks/inbound-errors.sh` ⚠️ 结构化 follow-up（`ok=false`, `reason=runtime-exited-before-metrics`）
+- `bash scripts/ci/tasks/inbound-errors.sh` ⚠️ 结构化 follow-up（`ok=false`, `reason=metric-did-not-increase`）
 - `bash scripts/e2e/run.sh` ⏭️ skipped（`GO_SINGBOX_BIN` 未设置）
 
 ---

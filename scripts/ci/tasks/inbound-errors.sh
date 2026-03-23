@@ -16,7 +16,9 @@ if FEATS="${FEATS}" zsh scripts/e2e/socks5/udp-errors.sh >&2; then
   echo "{\"task\":\"inbound_errors\",\"ok\":true,\"prom\":\"${PROM_LISTEN}\",\"listen\":\"${SB_SOCKS_UDP_LISTEN}\"}"
 else
   reason="udp-error-e2e-failed"
-  if [[ -f /tmp/sb-udp-errors.log ]]; then
+  if [[ -f /tmp/sb-udp-errors.reason ]]; then
+    reason="$(cat /tmp/sb-udp-errors.reason)"
+  elif [[ -f /tmp/sb-udp-errors.log ]]; then
     if grep -q "beginning graceful shutdown" /tmp/sb-udp-errors.log; then
       reason="runtime-exited-before-metrics"
     elif grep -q "no inbound builder available" /tmp/sb-udp-errors.log; then

@@ -28,11 +28,11 @@
   - `cargo test -p sb-core --lib`
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
   - `bash scripts/ci/accept.sh`
-- 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`，`reason=runtime-exited-before-metrics`
+- 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`，但原因已从脚本误判收敛为 `metric-did-not-increase`
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
-  - `app/src/logging.rs` 的 `ACTIVE_RUNTIME`
-  - `app/src/admin_debug/security_metrics.rs` 的 `DEFAULT_STATE`
+  - `app/src/logging.rs`：仍有全局兼容入口，但已降为 `Weak<LoggingRuntime>` 注册表，不再持有额外 runtime owner
+  - `app/src/admin_debug/security_metrics.rs`：仍有默认查找入口，但已降为 `Weak<SecurityMetricsState>` 注册表，runtime deps 继续显式持有真正状态
   - `crates/sb-core/src/http_client.rs` / `crates/sb-core/src/geoip/mod.rs` 等仍存在的显式全局注册点
   - `crates/sb-metrics` 的共享静态 registry 架构
 

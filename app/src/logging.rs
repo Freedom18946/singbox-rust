@@ -20,12 +20,14 @@
 use anyhow::{self, Result};
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-static ACTIVE_RUNTIME: OnceLock<Arc<LoggingRuntime>> = OnceLock::new();
+static ACTIVE_RUNTIME: LazyLock<StdMutex<Weak<LoggingRuntime>>> =
+    LazyLock::new(|| StdMutex::new(Weak::new()));
 
 /// Logging configuration from environment
 #[derive(Debug, Clone)]
@@ -168,9 +170,15 @@ impl LoggingConfig {
 pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
     let config = LoggingConfig::from_env();
     let runtime = Arc::new(LoggingRuntime::new(config.clone()));
-    ACTIVE_RUNTIME
-        .set(Arc::clone(&runtime))
-        .map_err(|_| anyhow::anyhow!("logging already initialized"))?;
+    {
+        let mut slot = ACTIVE_RUNTIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.upgrade().is_some() {
+            return Err(anyhow::anyhow!("logging already initialized"));
+        }
+        *slot = Arc::downgrade(&runtime);
+    }
 
     // Build the subscriber based on configuration
     let env_filter = EnvFilter::new(&config.level);
@@ -504,7 +512,11 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
 /// Flush all pending logs and wait for completion
 #[allow(dead_code)]
 pub async fn flush_logs() {
-    let Some(runtime) = ACTIVE_RUNTIME.get().cloned() else {
+    let runtime = ACTIVE_RUNTIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade();
+    let Some(runtime) = runtime else {
         tracing::debug!("flush_logs called before logging runtime initialization");
         return;
     };

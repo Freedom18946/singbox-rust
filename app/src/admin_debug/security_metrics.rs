@@ -4,8 +4,8 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
-use std::sync::OnceLock;
+use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -102,7 +102,8 @@ const PREFETCH_RUN_BUCKETS: [u32; 7] = [50, 100, 200, 500, 1000, 2000, u32::MAX]
 const LAT_BUCKETS: &[u64] = &[50, 100, 200, 500, 1000, 2000, u64::MAX];
 const DNS_BUCKETS: &[u64] = &[50, 100, 200, 500, 1000, 2000, u64::MAX];
 
-static DEFAULT_STATE: OnceLock<Arc<SecurityMetricsState>> = OnceLock::new();
+static DEFAULT_STATE: LazyLock<StdMutex<Weak<SecurityMetricsState>>> =
+    LazyLock::new(|| StdMutex::new(Weak::new()));
 
 #[derive(Default)]
 pub struct SecurityMetricsState {
@@ -523,12 +524,23 @@ impl SecurityMetricsState {
 
 #[must_use]
 pub fn install_default(state: Arc<SecurityMetricsState>) -> Arc<SecurityMetricsState> {
-    Arc::clone(DEFAULT_STATE.get_or_init(|| state))
+    let mut slot = DEFAULT_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match slot.upgrade() {
+        Some(existing) => existing,
+        None => {
+            *slot = Arc::downgrade(&state);
+            state
+        }
+    }
 }
 
-fn current() -> Result<&'static Arc<SecurityMetricsState>> {
+fn current() -> Result<Arc<SecurityMetricsState>> {
     DEFAULT_STATE
-        .get()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .upgrade()
         .context("security metrics state has not been installed")
 }
 

@@ -7472,6 +7472,37 @@ L2.8.4-6 Handlers + WebSocket:
 - 当前环境未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续 skipped
 **结果**: 成功 — 点名高风险文件的生产态 `super::` 与一批内部日志/全局状态命中已收口；剩余全局注册点继续作为 non-blocking maintenance follow-up 归档
 
+### [2026-03-23] Agent: Codex (Layer 1/2 顺序 follow-up：security_metrics → logging → inbound_errors)
+
+**任务**: 按既定顺序继续推进残余 Layer 1 / Layer 2 项，先收缩 `security_metrics`、再收缩 `logging`，最后复核 `inbound_errors` follow-up 的真实原因
+**变更**:
+- `app/src/admin_debug/security_metrics.rs`
+  - `DEFAULT_STATE` 从 `OnceLock<Arc<...>>` 改为 `LazyLock<Mutex<Weak<...>>>`
+  - 默认入口不再额外持有 runtime owner；真正状态继续由 `AppRuntimeDeps` 中的显式 `Arc` 持有
+- `app/src/logging.rs`
+  - `ACTIVE_RUNTIME` 从 `OnceLock<Arc<...>>` 改为 `LazyLock<Mutex<Weak<...>>>`
+  - `flush_logs()` 改为通过弱引用升级查找当前 runtime；采样层和 exit hook 继续持有真实 `Arc`
+- `scripts/e2e/socks5/udp-errors.sh`
+  - 后台启动改为更稳健的 detached/nohup 形式，并增加启动期探活
+  - `scrape_metric_sum` 改为容忍空指标，避免 baseline 阶段因 grep 0 命中直接误退出
+  - 注入包从 3 字节 `"bad"` 改为能稳定命中 parse path 的坏 SOCKS5 UDP 头
+  - 引入 `/tmp/sb-udp-errors.reason` 显式归因文件
+- `scripts/ci/tasks/inbound-errors.sh`
+  - 优先读取 reason 文件，避免再根据 shutdown 日志误判原因
+- `agents-only/active_context.md`
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 同步归档新的保留原因和弱引用注册表现状
+**验证**:
+- `cargo check -p app` ✅
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅ 结构化归因稳定
+- `bash scripts/ci/accept.sh` ✅ 主链通过，`inbound_errors` 保留为 `reason=metric-did-not-increase`
+**结论**:
+- `security_metrics` 和 `logging` 已从“全局 owner”收敛为“弱引用兼容注册表 + 显式 Arc 持有”
+- `inbound_errors` 的旧结论 `runtime-exited-before-metrics` 已证实主要是脚本误判；当前真实保留项是统一指标未增长（`metric-did-not-increase`）
+- 该 follow-up 继续按 maintenance 债务归档，不上升为 dual-kernel parity 结论
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
