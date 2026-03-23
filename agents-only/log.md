@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 20:00] Agent: Claude Opus 4.6
+
+**任务**: Compat shell 架构债务评估 — logging / sb-metrics / security_metrics 三项
+**变更**:
+- 阅读 `app/src/logging.rs` (707 行)、`crates/sb-metrics/src/lib.rs` (1293 行)、`app/src/admin_debug/security_metrics.rs` (856 行)
+- 统计调用方: logging compat 零外部调用, sb-metrics 56 LazyLock + 23 外部调用, security_metrics 40 wrapper + 16 外部调用
+- 评估结论: logging 极高 ROI (30min/死代码), sb-metrics 很低 ROI (3-5天/跟 prometheus 对着干), security_metrics 中等 ROI (2-4h/主链已解耦)
+- 更新 `agents-only/active_context.md`: 裁剪 >7 天旧快照，写入评估结论和当前 logging cleanup 任务
+**结果**: 评估完成，决策: logging 本轮执行，sb-metrics 不做，security_metrics 可选
+**备注**: 接下来进入 plan mode 执行 logging.rs compat shell 清理
+
 ### [2026-03-24 01:05] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 GeoIP compat fallback 收口到单次 owner-first country lookup

@@ -432,6 +432,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_explicit_metrics_owner_tracks_prefetch_depth() {
+        HIGH_WATERMARK.store(0, Ordering::Relaxed);
         let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
         observe_depth(3, Some(&metrics));
 

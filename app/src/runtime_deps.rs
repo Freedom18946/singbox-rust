@@ -122,12 +122,21 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(feature = "observe")]
     fn app_runtime_deps_exposes_owned_metrics_handle() {
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
         let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
         assert!(matches!(
             deps.metrics_registry(),
             sb_metrics::MetricsRegistryHandle::Owned(_)
         ));
+
+        drop(deps);
+
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
     }
 }
