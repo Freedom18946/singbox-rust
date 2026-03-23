@@ -70,6 +70,17 @@
 **结果**: ✅ Commit 1 `ebe9db4b` (+92/-137, 4 files) + Commit 2 `88efb216` (+47/-183, 1 file); clippy ✅ / 152 tests ✅ / inbound-errors ✅; grep 验收零仓内 compat 调用
 **备注**: public API 不变；4 个 parallel agent 并行执行 Phase 1a-1d
 
+### [2026-03-24 02:57] Agent: Codex (GPT-5)
+
+**任务**: 刷新 logging review finding 的 docs-only closeout 记录
+**变更**:
+- `agents-only/active_context.md`: 明确标记 `[P1] Removing logging compat wrappers breaks the public app::logging API` 已由 `2f653444` 关闭
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`: 在 logging follow-up 段落补充同一 review finding 的关闭状态
+- `agents-only/log.md`: 记录本轮 docs-only closeout
+**结果**: 成功；文档现已明确对齐此前 `2f653444` 的代码修复结论
+**构建验证**:
+- 未运行；本轮仅文档刷新，无代码改动
+
 ### [2026-03-24 01:27] Agent: Codex (GPT-5)
 
 **任务**: 修复 logging review finding，恢复 maintenance 模式下的 public compat API

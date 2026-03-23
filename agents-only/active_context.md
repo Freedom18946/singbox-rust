@@ -54,6 +54,7 @@
 ### logging.rs public compat API 恢复 — review follow-up
 
 - 针对 `6c88a027` 的 review，恢复 `init_logging()` / `flush_logs()` public compat
+- review finding `[P1] Removing logging compat wrappers breaks the public app::logging API` 已由 `2f653444` 关闭
 - 保留 2 个 flaky test 修复：`HIGH_WATERMARK` 重置、`runtime_deps` serial + cleanup
 
 ## Compat 债务评估结论（三项）

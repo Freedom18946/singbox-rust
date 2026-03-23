@@ -98,6 +98,7 @@
     - `ACTIVE_RUNTIME` 收窄为 `init_logging()` / `flush_logs()` 的兼容包装层，不再是生产启动路径的首选 owner
   - `app/src/logging.rs`
     - review follow-up 已恢复 `init_logging()` / `flush_logs()` 公共 compat API，避免 maintenance mode 下的 Rust public API break
+    - review finding `[P1] Removing logging compat wrappers breaks the public app::logging API` 已在 `2f653444` 关闭
     - 恢复后的 compat 壳继续复用 `ACTIVE_RUNTIME` 弱注册表；`main` 显式 `LoggingOwner` 主路径保持不变
   - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/router/explain_util.rs`
     - router 主决策链里的 legacy GeoIP fallback 改为优先走 `RouterHandle` 已持有的 `geoip_mux` / `geoip` / `geoip_db`
