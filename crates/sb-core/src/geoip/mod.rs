@@ -4,7 +4,7 @@
 //! including MMDB database support and multiple provider interfaces.
 
 use std::net::IpAddr;
-use std::sync::OnceLock;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, Weak};
 
 pub mod mmdb;
 pub mod multi;
@@ -79,6 +79,8 @@ impl GeoIpService {
 
 /// Global `GeoIP` service instance
 static GEOIP_SERVICE: OnceLock<GeoIpService> = OnceLock::new();
+static DEFAULT_GEOIP_SERVICE: LazyLock<Mutex<Option<Weak<GeoIpService>>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 /// Initialize the global `GeoIP` service
 pub fn init() -> anyhow::Result<()> {
@@ -87,9 +89,35 @@ pub fn init() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Install the default `GeoIP` service via a weak compatibility registry.
+///
+/// The caller keeps the returned `Arc` as the explicit owner while `sb-core`
+/// only stores a weak lookup entry for compatibility.
+#[must_use]
+pub fn install_default_geoip_service(service: Arc<GeoIpService>) -> Arc<GeoIpService> {
+    let mut slot = DEFAULT_GEOIP_SERVICE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match slot.as_ref().and_then(Weak::upgrade) {
+        Some(existing) => existing,
+        None => {
+            *slot = Some(Arc::downgrade(&service));
+            service
+        }
+    }
+}
+
 /// Get a reference to the global `GeoIP` service
 pub fn service() -> Option<&'static GeoIpService> {
     GEOIP_SERVICE.get()
+}
+
+fn current_service() -> Option<Arc<GeoIpService>> {
+    DEFAULT_GEOIP_SERVICE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(Weak::upgrade)
 }
 
 /// Lookup with metrics
@@ -97,8 +125,9 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     #[cfg(feature = "metrics")]
     {
         let start = std::time::Instant::now();
-        let result = service()
+        let result = current_service()
             .map(|s| s.is_country(ip, country_code))
+            .or_else(|| service().map(|s| s.is_country(ip, country_code)))
             .unwrap_or(false);
         let duration = start.elapsed();
 
@@ -110,13 +139,18 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     }
     #[cfg(not(feature = "metrics"))]
     {
-        service().is_some_and(|s| s.is_country(ip, country_code))
+        current_service()
+            .map(|s| s.is_country(ip, country_code))
+            .or_else(|| service().map(|s| s.is_country(ip, country_code)))
+            .unwrap_or(false)
     }
 }
 
 /// Lookup IP address and return outbound decision
 pub fn lookup_with_metrics_decision(ip: IpAddr) -> Option<&'static str> {
-    let geo_info = service().and_then(|s| s.lookup(ip))?;
+    let geo_info = current_service()
+        .and_then(|s| s.lookup(ip))
+        .or_else(|| service().and_then(|s| s.lookup(ip)))?;
 
     #[cfg(feature = "metrics")]
     {
@@ -131,5 +165,67 @@ pub fn lookup_with_metrics_decision(ip: IpAddr) -> Option<&'static str> {
         Some("US" | "UK" | "CA") => Some("proxy"),
         Some("RU" | "IR" | "KP") => Some("block"),
         _ => Some("auto"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    struct TestGeoIpProvider {
+        country_code: &'static str,
+    }
+
+    impl GeoIpProvider for TestGeoIpProvider {
+        fn lookup(&self, _ip: IpAddr) -> Option<GeoInfo> {
+            Some(GeoInfo {
+                country_code: Some(self.country_code.to_string()),
+                country_name: None,
+                city: None,
+                region: None,
+                continent_code: None,
+                asn: None,
+                organization: None,
+            })
+        }
+    }
+
+    #[test]
+    fn weak_default_registry_uses_explicit_owner() {
+        let service = Arc::new(GeoIpService::new(Box::new(TestGeoIpProvider {
+            country_code: "US",
+        })));
+        let installed = install_default_geoip_service(service);
+
+        assert_eq!(
+            lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+            Some("proxy")
+        );
+        assert!(lookup_with_metrics(
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)),
+            "US"
+        ));
+
+        drop(installed);
+
+        assert_eq!(
+            lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
+            None
+        );
+        assert!(!lookup_with_metrics(
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)),
+            "US"
+        ));
+
+        let replacement = Arc::new(GeoIpService::new(Box::new(TestGeoIpProvider {
+            country_code: "CN",
+        })));
+        let installed = install_default_geoip_service(replacement);
+        assert_eq!(
+            lookup_with_metrics_decision(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 9))),
+            Some("direct")
+        );
+        drop(installed);
     }
 }

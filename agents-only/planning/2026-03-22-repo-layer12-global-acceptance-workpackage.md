@@ -98,6 +98,9 @@
   - `crates/sb-core/src/router/engine.rs`、`crates/sb-core/src/router/explain_util.rs`
     - router 主决策链里的 legacy GeoIP fallback 改为优先走 `RouterHandle` 已持有的 `geoip_mux` / `geoip` / `geoip_db`
     - `crate::geoip` 全局服务不再是这些主路径的直接依赖；剩余全局注册点收窄到兼容工具面
+  - `crates/sb-core/src/geoip/mod.rs`
+    - 旧的强全局安装路径继续保留兼容
+    - 新增默认弱 owner 注册表；内部 lookup 先走显式 owner，再 fallback 到旧全局安装路径
   - `app/src/admin_debug/security_async.rs`、`app/src/admin_debug/prefetch.rs`、`app/src/admin_debug/breaker.rs`、`app/src/admin_debug/endpoints/subs.rs`
     - subscription fetch / prefetch / breaker / async DNS 主链补齐显式 `SecurityMetricsState` owner 入口
     - `PrefetchJob` 可携带 runtime metrics owner，`fetch_with_limits_to_cache(...)` 新增 owner-aware 入口并沿调用链透传
@@ -116,6 +119,7 @@
   - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+  - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
@@ -126,7 +130,7 @@
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs`、`crates/sb-metrics/src/lib.rs`
   - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链与 `main` logging 启动路径都已优先改走显式 owner
-  - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但 `router/engine.rs` / `router/explain_util.rs` 主路径已优先改走 `RouterHandle` 自有 geo owner
+  - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径继续优先改走 `RouterHandle` 自有 geo owner
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
 
 ---

@@ -33,6 +33,9 @@
   - `crates/sb-core/src/router/engine.rs` + `crates/sb-core/src/router/explain_util.rs`：
     - router 主决策链的 legacy GeoIP fallback 不再直连 `crate::geoip` 全局服务
     - `RouterHandle` 现有的 `geoip_mux` / `geoip` / `geoip_db` owner 已成为优先查询路径；`geoip/mod.rs` 的全局注册点被收窄为兼容壳而非主路径依赖
+  - `crates/sb-core/src/geoip/mod.rs`：
+    - 旧的全局强安装路径继续保留兼容
+    - 新增默认弱 owner 注册表，内部 lookup 现优先走显式 owner，再 fallback 到旧全局安装路径
   - `app/src/admin_debug/{security_async,prefetch,breaker,endpoints/subs.rs}`：
     - subscription fetch / prefetch / breaker / async DNS 主链已补齐显式 `SecurityMetricsState` owner 入口
     - `PrefetchJob` 现可携带 runtime metrics owner，`fetch_with_limits_to_cache(...)` 可直接沿调用链传递，不再默认依赖弱注册表记账
@@ -50,6 +53,7 @@
   - `cargo clippy -p app --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
+  - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture`
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings`
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
@@ -62,7 +66,7 @@
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`；`Weak<LoggingRuntime>` 注册表仅剩兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链已优先走显式 owner
-  - `crates/sb-core/src/geoip/mod.rs` 仍保留兼容全局注册点，但主 router 决策链已不再依赖它
+  - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
   - `crates/sb-metrics` 的共享静态 registry 架构
 
 ## L25 完成总结（2026-03-17）

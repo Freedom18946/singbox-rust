@@ -7676,6 +7676,31 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
 - `ACTIVE_RUNTIME` 仍保留给 `init_logging()` / `flush_logs()` 的兼容调用面，但 `main` 生产启动路径已不再依赖它
 
+### [2026-03-23 22:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 `crates/sb-core/src/geoip/mod.rs` 的强全局 owner 语义
+**变更**:
+- `crates/sb-core/src/geoip/mod.rs`
+  - 保留旧的强全局 `init()` / `service()` 兼容路径
+  - 新增默认弱 owner 注册表 `install_default_geoip_service(...)`
+  - 内部 `lookup_with_metrics(...)` / `lookup_with_metrics_decision(...)` 现优先走显式 owner，再 fallback 到旧全局安装路径
+  - 新增回归测试，验证弱 owner 生命周期和 replacement 行为
+- `agents-only/active_context.md`
+  - 更新 `geoip/mod.rs` 已收敛为“弱默认 owner 优先、强全局 fallback”的 compat 壳
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 GeoIP compat shell 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
+- `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo check -p app` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `router/mod.rs` 里的 `decide_udp_with_rules(...)` 仍保留 legacy test helper 语义，不作为生产主路径 blocker
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
