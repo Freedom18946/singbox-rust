@@ -16,6 +16,40 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-24 01:59] Agent: Codex (GPT-5)
+
+**任务**: 修复 security_metrics compat review findings，恢复 legacy default-owner 记账语义
+**变更**:
+- `app/src/admin_debug/breaker.rs`: `mark_failure()` 现会在 legacy public 边界单次升级默认 `SecurityMetricsState` owner，再传入 `mark_failure_inner(...)`；新增 `default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure`
+- `app/src/admin_debug/endpoints/subs.rs`: `fetch_with_limits()` / `fetch_with_limits_to_cache()` / `handle()` 现会在 legacy public 边界单次升级默认 owner；新增 `legacy_subs_entrypoints_use_default_metrics_owner_when_installed`
+- `agents-only/active_context.md`: 更正 “security_metrics compat 已收口完成” 口径，改为保留 public wrapper + legacy boundary compat 语义
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`: 追加本次 review follow-up 与验证结果
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功，修复了 `ebe9db4b` 引入的 2 个 P1 行为回退
+**构建验证**:
+- `cargo test -p app --lib default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
+- `cargo test -p app --lib legacy_subs_entrypoints_use_default_metrics_owner_when_installed --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次修复只恢复 legacy public boundary 的默认 owner 兼容语义，不让内部 helper 回到 compat wrapper 散点调用
+- 结论仍然只按 maintenance / Layer 1/2 收口归档，不表述成 dual-kernel parity 完成
+
+### [2026-03-24 22:00] Agent: Claude Opus 4.6
+
+**任务**: security_metrics compat 壳收口 — Phase 1 内部调用面脱钩 + Phase 2 本体瘦身
+**变更**:
+- `app/src/admin_debug/prefetch.rs`: 5 个 helper 删 else 分支 + `init_prefetch_metrics` const fn + 新增 `owner_aware_helpers_record_without_default_state` 回归测试
+- `app/src/admin_debug/security_async.rs`: 合并 `resolve_checked` / `forbid_private_*` 为共用 inner 函数（`resolve_checked_inner` / `forbid_private_inner`），消除 5 个 compat 调用
+- `app/src/admin_debug/breaker.rs`: `record_breaker_reopen` 删 else + 新增 `explicit_metrics_owner_records_breaker_reopen_without_default_state` 回归测试
+- `app/src/admin_debug/endpoints/subs.rs`: 17 个 local wrapper 删 else + 清理 15 个 compat use 导入（仅保留 `SecurityErrorKind`）
+- `app/src/admin_debug/security_metrics.rs`: 新增 `with_current()` / `map_current()` 私有 helper，40 个 pub fn 从 3-4 行 if-let 块收成单行委托
+- `agents-only/active_context.md`: 更新为已完成状态
+- `agents-only/log.md`: 记录变更
+**结果**: ✅ Commit 1 `ebe9db4b` (+92/-137, 4 files) + Commit 2 `88efb216` (+47/-183, 1 file); clippy ✅ / 152 tests ✅ / inbound-errors ✅; grep 验收零仓内 compat 调用
+**备注**: public API 不变；4 个 parallel agent 并行执行 Phase 1a-1d
+
 ### [2026-03-24 01:27] Agent: Codex (GPT-5)
 
 **任务**: 修复 logging review finding，恢复 maintenance 模式下的 public compat API

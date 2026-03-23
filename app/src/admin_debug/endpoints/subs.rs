@@ -415,11 +415,16 @@ async fn forbid_private_host_or_resolved_async_for_metrics(
     }
 }
 
+#[cfg(feature = "subs_http")]
+fn legacy_metrics_owner() -> Option<Arc<SecurityMetricsState>> {
+    crate::admin_debug::security_metrics::current_owner()
+}
+
 /// # Errors
 /// Returns an error if fetching fails due to rate limiting, circuit breaker, network issues, or response processing errors
 #[cfg(feature = "subs_http")]
 pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
-    fetch_with_limits_inner(url, None).await
+    fetch_with_limits_inner(url, legacy_metrics_owner()).await
 }
 
 /// # Errors
@@ -867,7 +872,7 @@ pub async fn fetch_with_limits_to_cache(
     etag: Option<String>,
     is_prefetch: bool,
 ) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
-    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, None).await
+    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, legacy_metrics_owner()).await
 }
 
 #[cfg(feature = "subs_http")]
@@ -1356,7 +1361,7 @@ pub async fn handle_with_metrics(
 }
 
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
-    handle_inner(path_q, sock, None).await
+    handle_inner(path_q, sock, legacy_metrics_owner()).await
 }
 
 async fn handle_inner(
@@ -2062,6 +2067,51 @@ mod tests {
         assert_eq!(snapshot.subs_block_private_ip, 1);
         assert_eq!(snapshot.total_requests, 1);
 
+        std::env::remove_var("SB_ADMIN_ALLOW_NET");
+    }
+
+    #[cfg(feature = "subs_http")]
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn legacy_subs_entrypoints_use_default_metrics_owner_when_installed() {
+        std::env::set_var("SB_ADMIN_ALLOW_NET", "1");
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
+            SecurityMetricsState::new(),
+        ));
+
+        let fetch_result = fetch_with_limits("http://127.0.0.1/test").await;
+        assert!(fetch_result.is_err());
+
+        let snapshot = metrics
+            .snapshot()
+            .expect("default metrics snapshot should succeed after legacy fetch");
+        assert_eq!(snapshot.subs_block_private_ip, 1);
+        assert_eq!(snapshot.total_requests, 1);
+
+        let (mut server, mut client) = duplex(4096);
+        handle("/subs/fetch?url=http://127.0.0.1/test", &mut server)
+            .await
+            .expect("legacy handler should respond for blocked private target");
+        drop(server);
+
+        let mut response = Vec::new();
+        client
+            .read_to_end(&mut response)
+            .await
+            .expect("read legacy handler response");
+        let response = String::from_utf8(response).expect("response should be utf-8");
+        assert!(response.contains("400"));
+        assert!(response.contains("unsafe target"));
+
+        let snapshot = metrics
+            .snapshot()
+            .expect("default metrics snapshot should succeed after legacy handler");
+        assert_eq!(snapshot.subs_block_private_ip, 2);
+        assert_eq!(snapshot.total_requests, 2);
+
+        crate::admin_debug::security_metrics::clear_default_for_test();
         std::env::remove_var("SB_ADMIN_ALLOW_NET");
     }
 

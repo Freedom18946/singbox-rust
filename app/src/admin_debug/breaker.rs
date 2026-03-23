@@ -211,7 +211,8 @@ impl HostBreaker {
     }
 
     pub fn mark_failure(&mut self, host: &str) {
-        self.mark_failure_inner(host, None);
+        let metrics = crate::admin_debug::security_metrics::current_owner();
+        self.mark_failure_inner(host, metrics.as_deref());
     }
 
     pub fn mark_failure_with_metrics(&mut self, host: &str, metrics: &SecurityMetricsState) {
@@ -909,5 +910,26 @@ mod tests {
 
         // Without metrics (None path) should silently skip, not panic
         record_breaker_reopen(None);
+    }
+
+    #[test]
+    fn default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure() {
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let metrics = crate::admin_debug::security_metrics::install_default(std::sync::Arc::new(
+            crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+        ));
+        let mut br = HostBreaker::new(30_000, 15_000, 2, 0.5);
+
+        br.mark_failure("legacy-host");
+        br.mark_failure("legacy-host");
+
+        assert_eq!(
+            metrics.snapshot().unwrap().subs_breaker_reopen,
+            1,
+            "legacy mark_failure should reuse current default metrics owner"
+        );
+
+        crate::admin_debug::security_metrics::clear_default_for_test();
     }
 }

@@ -120,6 +120,9 @@
   - `app/src/admin_debug/security_metrics.rs`、`app/src/admin_debug/prefetch.rs`、`app/src/admin_debug/security_async.rs`
     - legacy `enqueue_prefetch(...)` / async DNS helper 现会先升级一次默认 `SecurityMetricsState` owner
     - 升级后的显式 `Arc` 会继续沿 prefetch worker / DNS 分支透传，不再在后续路径里反复回落到 compat wrapper
+  - `app/src/admin_debug/breaker.rs`、`app/src/admin_debug/endpoints/subs.rs`
+    - review follow-up 恢复 legacy public API 在默认 `SecurityMetricsState` 已安装时的记账语义
+    - `mark_failure()` / `fetch_with_limits()` / `fetch_with_limits_to_cache()` / `handle()` 现仅在边界单次 upgrade 默认 owner；内部 helper 继续维持 owner-first
   - `app/src/cli/prefetch/mod.rs`
     - CLI prefetch 子命令现改为构造本地显式 metrics/prefetch owner bundle
     - stats / enqueue / heat / watch / drain / sample 不再默认依赖 compat 注册表查询
@@ -160,6 +163,8 @@
   - `cargo test -p app --lib handle_with_metrics_records_private_target_block_on_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
   - `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
   - `cargo test -p app --lib enqueue_prefetch_attaches_current_default_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+  - `cargo test -p app --lib default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
+  - `cargo test -p app --lib legacy_subs_entrypoints_use_default_metrics_owner_when_installed --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
   - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture` ✅
   - `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture` ✅
