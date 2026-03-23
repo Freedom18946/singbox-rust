@@ -591,194 +591,58 @@ fn get_current_concurrency() -> u64 {
     }
 }
 
-pub fn inc_block_private_ip() {
-    if let Ok(state) = current() {
-        state.inc_block_private_ip();
+fn with_current(f: impl FnOnce(&SecurityMetricsState)) {
+    if let Some(state) = current_owner() {
+        f(&state);
     }
 }
-pub fn inc_exceed_size() {
-    if let Ok(state) = current() {
-        state.inc_exceed_size();
-    }
+
+fn map_current<T>(f: impl FnOnce(&SecurityMetricsState) -> T, default: T) -> T {
+    current_owner().map_or(default, |state| f(&state))
 }
-pub fn inc_timeout() {
-    if let Ok(state) = current() {
-        state.inc_timeout();
-    }
-}
-pub fn inc_redirects() {
-    if let Ok(state) = current() {
-        state.inc_redirects();
-    }
-}
-pub fn inc_connect_timeout() {
-    if let Ok(state) = current() {
-        state.inc_connect_timeout();
-    }
-}
-pub fn inc_upstream_4xx() {
-    if let Ok(state) = current() {
-        state.inc_upstream_4xx();
-    }
-}
-pub fn inc_upstream_5xx() {
-    if let Ok(state) = current() {
-        state.inc_upstream_5xx();
-    }
-}
-pub fn inc_rate_limited() {
-    if let Ok(state) = current() {
-        state.inc_rate_limited();
-    }
-}
-pub fn inc_cache_hit() {
-    if let Ok(state) = current() {
-        state.inc_cache_hit();
-    }
-}
-pub fn inc_cache_miss() {
-    if let Ok(state) = current() {
-        state.inc_cache_miss();
-    }
-}
-pub fn inc_cache_evict_mem() {
-    if let Ok(state) = current() {
-        state.inc_cache_evict_mem();
-    }
-}
-pub fn inc_cache_evict_disk() {
-    if let Ok(state) = current() {
-        state.inc_cache_evict_disk();
-    }
-}
-pub fn inc_head_total() {
-    if let Ok(state) = current() {
-        state.inc_head_total();
-    }
-}
-pub fn inc_breaker_block() {
-    if let Ok(state) = current() {
-        state.inc_breaker_block();
-    }
-}
-pub fn inc_breaker_reopen() {
-    if let Ok(state) = current() {
-        state.inc_breaker_reopen();
-    }
-}
-pub fn init_prefetch_metrics() {
-    if let Ok(state) = current() {
-        state.init_prefetch_metrics();
-    }
-}
-pub fn prefetch_inc(event: &str) {
-    if let Ok(state) = current() {
-        state.prefetch_inc(event);
-    }
-}
-pub fn record_prefetch_run_ms(ms: u64) {
-    if let Ok(state) = current() {
-        state.record_prefetch_run_ms(ms);
-    }
-}
-pub fn set_prefetch_queue_depth(depth: u64) {
-    if let Ok(state) = current() {
-        state.set_prefetch_queue_depth(depth);
-    }
-}
+
+pub fn inc_block_private_ip() { with_current(SecurityMetricsState::inc_block_private_ip); }
+pub fn inc_exceed_size() { with_current(SecurityMetricsState::inc_exceed_size); }
+pub fn inc_timeout() { with_current(SecurityMetricsState::inc_timeout); }
+pub fn inc_redirects() { with_current(SecurityMetricsState::inc_redirects); }
+pub fn inc_connect_timeout() { with_current(SecurityMetricsState::inc_connect_timeout); }
+pub fn inc_upstream_4xx() { with_current(SecurityMetricsState::inc_upstream_4xx); }
+pub fn inc_upstream_5xx() { with_current(SecurityMetricsState::inc_upstream_5xx); }
+pub fn inc_rate_limited() { with_current(SecurityMetricsState::inc_rate_limited); }
+pub fn inc_cache_hit() { with_current(SecurityMetricsState::inc_cache_hit); }
+pub fn inc_cache_miss() { with_current(SecurityMetricsState::inc_cache_miss); }
+pub fn inc_cache_evict_mem() { with_current(SecurityMetricsState::inc_cache_evict_mem); }
+pub fn inc_cache_evict_disk() { with_current(SecurityMetricsState::inc_cache_evict_disk); }
+pub fn inc_head_total() { with_current(SecurityMetricsState::inc_head_total); }
+pub fn inc_breaker_block() { with_current(SecurityMetricsState::inc_breaker_block); }
+pub fn inc_breaker_reopen() { with_current(SecurityMetricsState::inc_breaker_reopen); }
+pub fn init_prefetch_metrics() { with_current(SecurityMetricsState::init_prefetch_metrics); }
+pub fn prefetch_inc(event: &str) { with_current(|s| s.prefetch_inc(event)); }
+pub fn record_prefetch_run_ms(ms: u64) { with_current(|s| s.record_prefetch_run_ms(ms)); }
+pub fn set_prefetch_queue_depth(depth: u64) { with_current(|s| s.set_prefetch_queue_depth(depth)); }
 #[must_use]
-pub fn get_prefetch_queue_depth() -> u64 {
-    current()
-        .map(|state| state.get_prefetch_queue_depth())
-        .unwrap_or_default()
-}
-pub fn set_prefetch_queue_high_watermark(watermark: u64) {
-    if let Ok(state) = current() {
-        state.set_prefetch_queue_high_watermark(watermark);
-    }
-}
+pub fn get_prefetch_queue_depth() -> u64 { map_current(SecurityMetricsState::get_prefetch_queue_depth, 0) }
+pub fn set_prefetch_queue_high_watermark(watermark: u64) { with_current(|s| s.set_prefetch_queue_high_watermark(watermark)); }
 #[must_use]
-pub fn get_prefetch_queue_high_watermark() -> u64 {
-    current()
-        .map(|state| state.get_prefetch_queue_high_watermark())
-        .unwrap_or_default()
-}
+pub fn get_prefetch_queue_high_watermark() -> u64 { map_current(SecurityMetricsState::get_prefetch_queue_high_watermark, 0) }
 #[must_use]
-pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) {
-    current()
-        .map(|state| state.get_prefetch_counters())
-        .unwrap_or((0, 0, 0, 0, 0))
-}
-pub fn add_prefetch_bytes(bytes: u64) {
-    if let Ok(state) = current() {
-        state.add_prefetch_bytes(bytes);
-    }
-}
+pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) { map_current(SecurityMetricsState::get_prefetch_counters, (0, 0, 0, 0, 0)) }
+pub fn add_prefetch_bytes(bytes: u64) { with_current(|s| s.add_prefetch_bytes(bytes)); }
 #[must_use]
-pub fn get_prefetch_session_duration_ms() -> u64 {
-    current()
-        .map(|state| state.get_prefetch_session_duration_ms())
-        .unwrap_or_default()
-}
+pub fn get_prefetch_session_duration_ms() -> u64 { map_current(SecurityMetricsState::get_prefetch_session_duration_ms, 0) }
 #[must_use]
-pub fn get_prefetch_total_bytes() -> u64 {
-    current()
-        .map(|state| state.get_prefetch_total_bytes())
-        .unwrap_or_default()
-}
-pub fn start_prefetch_session() {
-    if let Ok(state) = current() {
-        state.start_prefetch_session();
-    }
-}
-pub fn inc_dns_cache_hit() {
-    if let Ok(state) = current() {
-        state.inc_dns_cache_hit();
-    }
-}
-pub fn inc_dns_cache_miss() {
-    if let Ok(state) = current() {
-        state.inc_dns_cache_miss();
-    }
-}
-pub fn record_dns_latency_ms(ms: u64) {
-    if let Ok(state) = current() {
-        state.record_dns_latency_ms(ms);
-    }
-}
-pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) {
-    if let Ok(state) = current() {
-        state.set_last_error(kind, msg);
-    }
-}
-pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) {
-    if let Ok(state) = current() {
-        state.set_last_error_with_host(kind, host, msg);
-    }
-}
-pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) {
-    if let Ok(state) = current() {
-        state.set_last_error_with_url(kind, url, msg);
-    }
-}
-pub fn inc_total_requests() {
-    if let Ok(state) = current() {
-        state.inc_total_requests();
-    }
-}
-pub fn record_latency_ms(ms: u64) {
-    if let Ok(state) = current() {
-        state.record_latency_ms(ms);
-    }
-}
-pub fn mark_last_ok() {
-    if let Ok(state) = current() {
-        state.mark_last_ok();
-    }
-}
-pub fn snapshot() -> Result<SecuritySnapshot> {
-    current()?.snapshot()
-}
+pub fn get_prefetch_total_bytes() -> u64 { map_current(SecurityMetricsState::get_prefetch_total_bytes, 0) }
+pub fn start_prefetch_session() { with_current(SecurityMetricsState::start_prefetch_session); }
+pub fn inc_dns_cache_hit() { with_current(SecurityMetricsState::inc_dns_cache_hit); }
+pub fn inc_dns_cache_miss() { with_current(SecurityMetricsState::inc_dns_cache_miss); }
+pub fn record_dns_latency_ms(ms: u64) { with_current(|s| s.record_dns_latency_ms(ms)); }
+pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) { with_current(|s| s.set_last_error(kind, msg)); }
+pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) { with_current(|s| s.set_last_error_with_host(kind, host, msg)); }
+pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) { with_current(|s| s.set_last_error_with_url(kind, url, msg)); }
+pub fn inc_total_requests() { with_current(SecurityMetricsState::inc_total_requests); }
+pub fn record_latency_ms(ms: u64) { with_current(|s| s.record_latency_ms(ms)); }
+pub fn mark_last_ok() { with_current(SecurityMetricsState::mark_last_ok); }
+pub fn snapshot() -> Result<SecuritySnapshot> { current()?.snapshot() }
 
 #[cfg(test)]
 pub fn reset_metrics() {
