@@ -122,15 +122,20 @@
   - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture` ✅
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+  - `cargo test -p sb-metrics --lib explicit_owner_registry_lifecycle_controls_shared_handle -- --nocapture` ✅
+  - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
+  - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+  - `cargo check -p app` ✅
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
   - `bash scripts/ci/tasks/inbound-errors.sh` ✅
   - `bash scripts/ci/accept.sh` ✅
 - 追加静态审计结论：
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
-  - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs`、`crates/sb-metrics/src/lib.rs`
+  - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs` 以及 `crates/sb-metrics` 内部静态指标定义层
   - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链与 `main` logging 启动路径都已优先改走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径继续优先改走 `RouterHandle` 自有 geo owner
+  - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps` 显式持有；`shared_registry()` 仅保留“弱默认 owner 优先、强全局 fallback”的兼容入口
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
 
 ---
@@ -142,7 +147,7 @@
 | `must-fix` | 已清零 | workspace `clippy -D warnings` 暴露的真实 blocker 已完成收口 |
 | `allowed-test-only` | 已识别 | `#[cfg(test)]` / bench 驱动内部的 `unwrap/expect/panic`，不当作生产 blocker |
 | `allowed-cli-boundary` | 少量 | 顶层工具初始化失败、CLI 致命退出边界上的显式 panic/expect |
-| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债 |
+| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、兼容弱默认注册表包装层、以及若干解析辅助中的 `.ok()?` 风格债 |
 
 ---
 
@@ -180,5 +185,6 @@
 
 1. 如后续提供 `GO_SINGBOX_BIN`，补跑 `bash scripts/e2e/run.sh`，并只按 compat smoke / oracle regression confidence 归档，不上升为 parity 完成。
 2. 若未来单独开 maintenance follow-up，可再审议：
-   - `sb-metrics` 内部 `LazyLock + REGISTRY` 静态架构是否继续去全局化
+   - `sb-metrics` 内部 `LazyLock` 指标静态架构是否继续去全局化
+   - `app/src/logging.rs` / `app/src/admin_debug/security_metrics.rs` / `crates/sb-core/src/geoip/mod.rs` 的 compat 弱默认注册表是否继续裁薄
 3. 当前工作包到此收口：maintenance acceptance / integration validation 已完成，保留 follow-up 不等于 dual-kernel parity 完成。

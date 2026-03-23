@@ -15,7 +15,7 @@ pub fn build_redactor() -> Result<Arc<crate::redact::Redactor>> {
 #[derive(Clone)]
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
-    metrics_registry: sb_metrics::MetricsRegistryHandle,
+    metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
     #[cfg(feature = "router")]
     pub http_client: Arc<dyn sb_types::ports::http::HttpClient>,
     pub redactor: Arc<crate::redact::Redactor>,
@@ -36,6 +36,8 @@ impl AppRuntimeDeps {
     pub fn new() -> Result<Self> {
         let started_at = Instant::now();
         let redactor = build_redactor()?;
+        #[cfg(feature = "observe")]
+        let metrics_registry_owner = sb_metrics::install_default_registry_owner();
         #[cfg(feature = "router")]
         let http_client = sb_core::http_client::install_default_http_client(Arc::new(
             crate::reqwest_http::ReqwestHttpClient::new(),
@@ -47,7 +49,7 @@ impl AppRuntimeDeps {
 
         Ok(Self {
             #[cfg(feature = "observe")]
-            metrics_registry: sb_metrics::MetricsRegistryHandle::global(),
+            metrics_registry_owner,
             #[cfg(feature = "router")]
             http_client,
             redactor,
@@ -61,8 +63,8 @@ impl AppRuntimeDeps {
 
     #[cfg(feature = "observe")]
     #[must_use]
-    pub const fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        self.metrics_registry
+    pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
+        self.metrics_registry_owner.handle()
     }
 
     #[cfg(feature = "admin_debug")]

@@ -58,8 +58,8 @@ pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错
 use std::{
     convert::Infallible,
     net::SocketAddr,
-    sync::LazyLock,
     sync::atomic::{AtomicU64, Ordering},
+    sync::{Arc, LazyLock, Mutex, Weak},
     time::{Duration, Instant},
 };
 
@@ -67,8 +67,8 @@ use hyper::server::conn::Http;
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
-    Registry, TextEncoder, core::Collector,
+    core::Collector, Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec,
+    IntGauge, Opts, Registry, TextEncoder,
 };
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
@@ -166,23 +166,30 @@ impl ErrorRateLimiter {
 }
 
 static ERROR_RATE_LIMITER: LazyLock<ErrorRateLimiter> = LazyLock::new(ErrorRateLimiter::new);
+static DEFAULT_REGISTRY: LazyLock<Mutex<Option<Weak<Registry>>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 /// Explicit handle over a metrics registry. This keeps current behavior on the
 /// shared global registry while allowing call sites to depend on a typed handle.
-#[derive(Clone, Copy, Debug)]
-pub struct MetricsRegistryHandle {
-    registry: &'static Registry,
+#[derive(Clone, Debug, Default)]
+pub enum MetricsRegistryHandle {
+    #[default]
+    Shared,
+    Owned(Arc<Registry>),
+}
+
+#[derive(Clone, Debug)]
+pub struct MetricsRegistryOwner {
+    registry: Arc<Registry>,
 }
 
 impl MetricsRegistryHandle {
     /// Return a handle to the shared process-wide registry.
     #[must_use]
-    pub fn global() -> Self {
-        Self {
-            registry: &REGISTRY,
-        }
+    pub const fn global() -> Self {
+        Self::Shared
     }
 
     /// Register a cloned collector into this registry.
@@ -196,7 +203,7 @@ impl MetricsRegistryHandle {
     where
         C: Collector + Clone + 'static,
     {
-        self.registry
+        self.registry_ref()
             .register(Box::new(collector.clone()))
             .map_err(|err| {
                 tracing::debug!(metric, error = %err, "metrics collector registration skipped");
@@ -207,7 +214,7 @@ impl MetricsRegistryHandle {
     /// Gather metric families from this registry.
     #[must_use]
     pub fn gather(&self) -> Vec<prometheus::proto::MetricFamily> {
-        self.registry.gather()
+        self.registry_ref().gather()
     }
 
     /// Encode the current registry into Prometheus text exposition format.
@@ -222,12 +229,83 @@ impl MetricsRegistryHandle {
         TextEncoder::new().encode(&metric_families, &mut buf)?;
         Ok(buf)
     }
+
+    fn registry_ref(&self) -> RegistryRef<'_> {
+        match self {
+            Self::Shared => current_registry_ref(),
+            Self::Owned(registry) => RegistryRef::Owned(Arc::clone(registry)),
+        }
+    }
+}
+
+impl MetricsRegistryOwner {
+    const fn new(registry: Arc<Registry>) -> Self {
+        Self { registry }
+    }
+
+    #[must_use]
+    pub fn handle(&self) -> MetricsRegistryHandle {
+        MetricsRegistryHandle::Owned(Arc::clone(&self.registry))
+    }
+}
+
+#[must_use]
+pub fn install_default_registry(registry: Arc<Registry>) -> MetricsRegistryOwner {
+    let mut slot = DEFAULT_REGISTRY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let existing = slot.as_ref().and_then(Weak::upgrade);
+    if let Some(existing) = existing {
+        drop(slot);
+        return MetricsRegistryOwner::new(existing);
+    }
+    *slot = Some(Arc::downgrade(&registry));
+    drop(slot);
+    MetricsRegistryOwner::new(registry)
+}
+
+#[must_use]
+pub fn install_default_registry_owner() -> MetricsRegistryOwner {
+    install_default_registry(Arc::new(Registry::new()))
+}
+
+fn current_registry() -> Option<Arc<Registry>> {
+    DEFAULT_REGISTRY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(Weak::upgrade)
+}
+
+fn current_registry_ref() -> RegistryRef<'static> {
+    current_registry().map_or_else(|| RegistryRef::Global(&REGISTRY), RegistryRef::Owned)
+}
+
+enum RegistryRef<'a> {
+    Owned(Arc<Registry>),
+    Global(&'a Registry),
+}
+
+impl RegistryRef<'_> {
+    fn register(&self, collector: Box<dyn Collector>) -> Result<(), prometheus::Error> {
+        match self {
+            Self::Owned(registry) => registry.register(collector),
+            Self::Global(registry) => registry.register(collector),
+        }
+    }
+
+    fn gather(&self) -> Vec<prometheus::proto::MetricFamily> {
+        match self {
+            Self::Owned(registry) => registry.gather(),
+            Self::Global(registry) => registry.gather(),
+        }
+    }
 }
 
 /// Get the shared default metrics registry handle.
 #[must_use]
-pub fn shared_registry() -> MetricsRegistryHandle {
-    MetricsRegistryHandle::global()
+pub const fn shared_registry() -> MetricsRegistryHandle {
+    MetricsRegistryHandle::Shared
 }
 
 fn register_collector<C>(metric: &str, collector: &C)
@@ -261,7 +339,7 @@ const ERROR_CLASS_OTHER: &str = "other";
 // ===================== Router Metrics =====================
 /// Router metrics: track rule matches by category and outbound
 mod router {
-    use super::{IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, IntCounterVec, LazyLock};
     /// 路由命中计数：按规则类别与出站类型维度统计
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
@@ -286,7 +364,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 // ===================== Outbound Metrics =====================
 /// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
-    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -383,7 +461,7 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 /// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
-    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
@@ -429,7 +507,7 @@ mod adapter {
 // ===================== Selector/URLTest Metrics =====================
 /// Selector and `URLTest` metrics
 mod selector {
-    use super::{IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, IntCounterVec, LazyLock};
     use prometheus::IntGaugeVec;
 
     /// Health check total counter
@@ -550,7 +628,7 @@ pub fn record_adapter_dial(
 // ===================== DERP Service Metrics =====================
 /// DERP service metrics: connections, relays, HTTP/STUN activity.
 mod derp {
-    use super::{LazyLock, guarded_counter_vec, guarded_histogram_vec, register_collector};
+    use super::{guarded_counter_vec, guarded_histogram_vec, register_collector, LazyLock};
     use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec, Opts};
 
     pub static CONNECTION_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -669,8 +747,8 @@ pub fn observe_derp_client_lifetime(tag: &str, seconds: f64) {
 /// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
     use super::{
-        IntCounter, IntCounterVec, IntGauge, LazyLock, guarded_int_counter, guarded_int_gauge,
-        register_collector,
+        guarded_int_counter, guarded_int_gauge, register_collector, IntCounter, IntCounterVec,
+        IntGauge, LazyLock,
     };
 
     /// SOCKS TCP 连接总数（握手成功即计数）
@@ -736,8 +814,8 @@ pub fn set_socks_udp_assoc_estimate(n: i64) {
 /// Legacy metrics: UDP NAT, proxy selection, health checks, build info
 mod legacy {
     use super::{
-        IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, guarded_histogram,
-        guarded_int_counter, guarded_int_gauge, register_collector,
+        guarded_histogram, guarded_int_counter, guarded_int_gauge, register_collector, IntCounter,
+        IntCounterVec, IntGauge, LazyLock, Opts,
     };
     use prometheus::{GaugeVec, Histogram};
 
@@ -900,7 +978,7 @@ pub fn inc_proxy_select(proxy: &str) {
 }
 
 fn metrics_http_with_registry(
-    registry: MetricsRegistryHandle,
+    registry: &MetricsRegistryHandle,
     req: &Request<Body>,
 ) -> Response<Body> {
     match (req.method(), req.uri().path()) {
@@ -946,12 +1024,16 @@ pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) ->
                     continue;
                 }
             };
+            let registry = registry.clone();
             tokio::spawn(async move {
                 if let Err(e) = Http::new()
                     .serve_connection(
                         stream,
-                        service_fn(move |req| async move {
-                            Ok::<_, Infallible>(metrics_http_with_registry(registry, &req))
+                        service_fn(move |req| {
+                            let registry = registry.clone();
+                            async move {
+                                Ok::<_, Infallible>(metrics_http_with_registry(&registry, &req))
+                            }
                         }),
                     )
                     .await
@@ -1005,6 +1087,7 @@ pub fn export_prometheus() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prometheus::IntGauge;
 
     #[tokio::test]
     #[allow(clippy::unwrap_used)]
@@ -1015,7 +1098,8 @@ mod tests {
             .uri("/metrics")
             .body(Body::empty())
             .unwrap();
-        let resp = metrics_http_with_registry(shared_registry(), &req);
+        let registry = shared_registry();
+        let resp = metrics_http_with_registry(&registry, &req);
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Exercise non-/metrics path
@@ -1024,7 +1108,8 @@ mod tests {
             .uri("/not-found")
             .body(Body::empty())
             .unwrap();
-        let resp2 = metrics_http_with_registry(shared_registry(), &req2);
+        let registry = shared_registry();
+        let resp2 = metrics_http_with_registry(&registry, &req2);
         assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
     }
 
@@ -1054,5 +1139,32 @@ mod tests {
                 "export should contain {needle}, got:\n{text}"
             );
         }
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn explicit_owner_registry_lifecycle_controls_shared_handle() {
+        let owner = install_default_registry_owner();
+        let gauge = IntGauge::new(
+            "codex_metrics_owner_lifecycle",
+            "codex metrics owner lifecycle test",
+        )
+        .unwrap();
+        shared_registry()
+            .register_cloned("codex_metrics_owner_lifecycle", &gauge)
+            .unwrap();
+        gauge.set(7);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(text.contains("codex_metrics_owner_lifecycle"));
+        assert!(text.contains(" 7"));
+
+        drop(owner);
+
+        let text = String::from_utf8(shared_registry().encode_text().unwrap()).unwrap();
+        assert!(
+            !text.contains("codex_metrics_owner_lifecycle"),
+            "dropping explicit owner should fall back away from the temporary registry"
+        );
     }
 }

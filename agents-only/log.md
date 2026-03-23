@@ -7701,6 +7701,35 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
 - `router/mod.rs` 里的 `decide_udp_with_rules(...)` 仍保留 legacy test helper 语义，不作为生产主路径 blocker
 
+### [2026-03-23 22:32] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 `crates/sb-metrics/src/lib.rs` 共享 registry 对强全局 owner 的依赖
+**变更**:
+- `crates/sb-metrics/src/lib.rs`
+  - 保留旧的强全局 `REGISTRY` 兼容路径
+  - 新增默认弱 owner 注册表 `install_default_registry(...)` / `install_default_registry_owner()`
+  - `shared_registry()` / `MetricsRegistryHandle::global()` 现优先走弱默认 owner，再 fallback 到旧全局 registry
+  - 新增 `MetricsRegistryOwner` 与回归测试，验证显式 owner 生命周期控制 shared handle 可见性
+- `app/src/runtime_deps.rs`
+  - `AppRuntimeDeps` 现显式持有 `MetricsRegistryOwner`
+  - `metrics_registry()` 改为从显式 owner 派生 handle，不再依赖单独的全局 shared handle 字段
+- `agents-only/active_context.md`
+  - 记录 `sb-metrics` owner 收口状态与新增验证命令
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 同步本次 shared registry owner 收口与剩余非阻塞 follow-up 口径
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-metrics --lib explicit_owner_registry_lifecycle_controls_shared_handle -- --nocapture` ✅
+- `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p app` ✅
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `sb-metrics` 内部 `LazyLock` 指标静态仍保留为后续非阻塞 maintenance 债务，但生产路径的 shared registry owner 已改由 `AppRuntimeDeps` 显式持有
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
