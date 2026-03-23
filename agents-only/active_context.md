@@ -27,8 +27,13 @@
   - `cargo clippy --workspace --all-features --all-targets -- -D warnings`
   - `cargo test -p sb-core --lib`
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"`
+  - `bash scripts/ci/tasks/inbound-errors.sh`
   - `bash scripts/ci/accept.sh`
-- 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` 通过；`inbound_errors` 仍为结构化 `ok=false`，但原因已从脚本误判收敛为 `metric-did-not-increase`
+- `scripts/e2e/socks5/udp-errors.sh` / `scripts/ci/tasks/inbound-errors.sh` 已完成 maintenance harness 收口：
+  - 不再把 malformed UDP datagram 直接打到假定固定端口
+  - 改为先经 TCP `UDP ASSOCIATE` 学习真实 relay，再向返回的随机 UDP 端口注入坏包
+  - 子任务默认改用隔离的 `127.0.0.1:11081`，避免和 `accept.sh` 主 runtime 的 `127.0.0.1:11080` SOCKS 入口串台
+- 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` / `inbound_errors` 全部通过；`inbound_errors.ok=true`
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：仍有全局兼容入口，但已降为 `Weak<LoggingRuntime>` 注册表，不再持有额外 runtime owner

@@ -7503,6 +7503,33 @@ L2.8.4-6 Handlers + WebSocket:
 - `inbound_errors` 的旧结论 `runtime-exited-before-metrics` 已证实主要是脚本误判；当前真实保留项是统一指标未增长（`metric-did-not-increase`）
 - 该 follow-up 继续按 maintenance 债务归档，不上升为 dual-kernel parity 结论
 
+### [2026-03-23 16:10] Agent: Codex (GPT-5)
+
+**任务**: 收口 `inbound_errors` maintenance follow-up，修正 acceptance harness 与 supervisor/registry 路径的真实 SOCKS5 UDP relay 语义失配
+**变更**:
+- `scripts/e2e/socks5/udp-errors.sh`
+  - 不再假设固定 `SB_SOCKS_UDP_LISTEN` UDP 监听口就是实际 relay
+  - 改为先连 SOCKS TCP 入口做 `UDP ASSOCIATE`，学习返回的随机 relay，再向该 relay 注入 malformed UDP datagram
+  - 默认 probe 入口改为隔离的 `127.0.0.1:11081`，并为本子任务生成独立最小 config，避免和 `accept.sh` 主 runtime 的 `127.0.0.1:11080` 串台
+  - 新增 `udp-associate-failed` / `udp-relay-send-failed` 结构化 reason
+- `scripts/ci/tasks/inbound-errors.sh`
+  - JSON 结构保持不变，但 `listen` 语义改为实际探测的 SOCKS TCP 入口
+  - 默认入口同步切到 `127.0.0.1:11081`
+- `agents-only/active_context.md`
+  - 将 `inbound_errors` 从当前 follow-up 移出，更新为 acceptance 已恢复全绿
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 归档本次 harness 修正、手工 probe 结论与最新验证面
+- `agents-only/log.md`
+  - 追加本次收口记录
+**结果**: 成功
+**构建验证**:
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+- 手工 probe ✅ `run` 监听 `127.0.0.1:11081/tcp` + 随机 UDP relay；注入后出现 `inbound_error_total{class="other",protocol="socks_udp"}`
+- `bash scripts/ci/accept.sh` ✅
+**备注**:
+- 本次收口修的是 maintenance acceptance harness，不改变 Rust 公开 API，不表述为 dual-kernel parity 完成
+- 当前环境仍未设置 `GO_SINGBOX_BIN`，compat smoke 继续按 skipped 归档
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)

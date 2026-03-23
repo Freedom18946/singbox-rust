@@ -59,14 +59,14 @@
   - `cargo check -p interop-lab` ✅
 - 本地 maintenance acceptance 已执行完毕：`bash scripts/ci/accept.sh` ✅
   - `pprof`、`explain snapshot`、`quick soak` 通过
-  - `inbound_errors` 子任务已改为结构化上报，不再因脚本假设失配直接炸整轮 acceptance
-  - 当前 acceptance 结果里 `inbound_errors.ok=false`；本轮顺序跟进后已确认旧的 `runtime-exited-before-metrics` 主要是脚本误判，真实保留原因收敛为 `metric-did-not-increase`
+  - `inbound_errors` 子任务已完成 maintenance harness 收口，不再因固定 UDP 端口假设与主 acceptance runtime 端口串台导致假阴性
+  - 当前脚本改为先经 TCP `UDP ASSOCIATE` 学习真实 relay，再向返回的随机 UDP 端口注入坏包；同时用隔离的 `127.0.0.1:11081` 避开主 acceptance runtime 的 `127.0.0.1:11080`
 - 当前环境未设置 `GO_SINGBOX_BIN`，因此 `scripts/e2e/run.sh` 的 Go/Rust compat 子集本轮未执行，按计划记为 skipped
 - 收尾复核已补跑：
   - `git status` 仍为 clean，`git log --oneline -5` 确认当前 HEAD 为 `1912050f`
   - `cargo check --workspace`、`cargo clippy --workspace --all-features --all-targets -- -D warnings`、`cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` 均再次通过
-  - `bash scripts/ci/tasks/inbound-errors.sh` 单独复跑后仍稳定返回 `ok=false`
-  - 手工探针显示 runtime 启动后很快进入 graceful shutdown，`/metrics` 抓取为空；该问题当前更像 runtime 常驻假设与脚本观测模型失配，继续深挖的收益/确定性都偏低，按 non-blocking follow-up 收口
+  - `bash scripts/ci/tasks/inbound-errors.sh` 单独复跑已稳定返回 `ok=true`
+  - 手工探针确认 `run` 在 supervisor/registry 路径下监听 `11081/tcp` + 随机 UDP relay；注入前 `inbound_error_total{protocol="socks_udp"}` 不存在，注入后出现 `class="other"` 的 unified metric 行
 
 ## 追加收口（2026-03-23，生产路径严格口径）
 
@@ -95,6 +95,7 @@
   - `cargo clippy --workspace --all-features --all-targets -- -D warnings` ✅
   - `cargo test -p sb-core --lib` ✅
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+  - `bash scripts/ci/tasks/inbound-errors.sh` ✅
   - `bash scripts/ci/accept.sh` ✅
 - 追加静态审计结论：
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
@@ -111,7 +112,7 @@
 | `must-fix` | 已清零 | workspace `clippy -D warnings` 暴露的真实 blocker 已完成收口 |
 | `allowed-test-only` | 已识别 | `#[cfg(test)]` / bench 驱动内部的 `unwrap/expect/panic`，不当作生产 blocker |
 | `allowed-cli-boundary` | 少量 | 顶层工具初始化失败、CLI 致命退出边界上的显式 panic/expect |
-| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债、`accept.sh` 中 `inbound_errors` 子任务当前仍未打到期望 unified metric（`reason=metric-did-not-increase`） |
+| `follow-up-nonblocking` | 已归档 | `sb-metrics` 内部剩余 `LazyLock` 指标静态、`sb-core` 中仍存的显式全局注册点、若干解析辅助中的 `.ok()?` 风格债 |
 
 ---
 
@@ -127,7 +128,7 @@
 - `cargo test -p sb-core --lib` ✅
 - `cargo test -p sb-subscribe --all-features --lib` ✅
 - `bash scripts/ci/accept.sh` ✅
-- `bash scripts/ci/tasks/inbound-errors.sh` ⚠️ 结构化 follow-up（`ok=false`, `reason=metric-did-not-increase`）
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
 - `bash scripts/e2e/run.sh` ⏭️ skipped（`GO_SINGBOX_BIN` 未设置）
 
 ---
@@ -150,5 +151,4 @@
 1. 如后续提供 `GO_SINGBOX_BIN`，补跑 `bash scripts/e2e/run.sh`，并只按 compat smoke / oracle regression confidence 归档，不上升为 parity 完成。
 2. 若未来单独开 maintenance follow-up，可再审议：
    - `sb-metrics` 内部 `LazyLock + REGISTRY` 静态架构是否继续去全局化
-   - `scripts/ci/tasks/inbound-errors.sh` / `scripts/e2e/socks5/udp-errors.sh` 是否重构为真正可复现的常驻 runtime 验证
 3. 当前工作包到此收口：maintenance acceptance / integration validation 已完成，保留 follow-up 不等于 dual-kernel parity 完成。
