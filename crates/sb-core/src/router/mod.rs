@@ -2904,6 +2904,39 @@ pub fn router_index_decide_keyword_static(
 }
 
 // ===== Test helper functions =====
+fn decide_udp_with_prebuilt_index(
+    idx: &Arc<RouterIndex>,
+    handle: Option<&RouterHandle>,
+    host_or_ip: &str,
+    use_geoip: bool,
+) -> &'static str {
+    // Check exact/suffix first
+    if let Some(d) = router_index_decide_exact_suffix(idx, host_or_ip) {
+        return d;
+    }
+
+    // Check IP rules
+    if let Ok(ip) = host_or_ip.parse::<IpAddr>() {
+        if let Some(d) = router_index_decide_ip(idx, ip) {
+            return d;
+        }
+        if use_geoip {
+            if let Some(handle) = handle {
+                if let Some(decision) = handle.enhanced_geoip_lookup(ip, idx) {
+                    return decision;
+                }
+            }
+            for (cc, decision) in &idx.geoip_rules {
+                if crate::geoip::lookup_with_metrics(ip, cc) {
+                    return decision;
+                }
+            }
+        }
+    }
+
+    idx.default
+}
+
 pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) -> &'static str {
     let normalized = if rules.contains(',') || rules.contains(';') {
         std::borrow::Cow::Owned(rules.replace([',', ';'], "\n"))
@@ -2947,29 +2980,59 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
         })
     });
 
-    // Check exact/suffix first
-    if let Some(d) = router_index_decide_exact_suffix(&idx, host_or_ip) {
-        return d;
-    }
+    let handle = RouterHandle::from_index(Arc::clone(&idx));
+    decide_udp_with_prebuilt_index(&idx, Some(&handle), host_or_ip, _use_geoip)
+}
 
-    // Check IP rules
-    if let Ok(ip) = host_or_ip.parse::<IpAddr>() {
-        if let Some(d) = router_index_decide_ip(&idx, ip) {
-            return d;
-        }
-        // GeoIP check if enabled
-        if _use_geoip {
-            if let Some(lookup_cc) = crate::geoip::lookup_with_metrics_decision(ip) {
-                for (cc, decision) in &idx.geoip_rules {
-                    if cc == lookup_cc {
-                        return decision;
-                    }
-                }
-            }
-        }
-    }
+pub fn decide_udp_with_rules_and_handle(
+    handle: &RouterHandle,
+    host_or_ip: &str,
+    use_geoip: bool,
+    rules: &str,
+) -> &'static str {
+    let normalized = if rules.contains(',') || rules.contains(';') {
+        std::borrow::Cow::Owned(rules.replace([',', ';'], "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(rules)
+    };
+    let idx = router_build_index_from_str(normalized.as_ref(), 8192).unwrap_or_else(|_| {
+        Arc::new(RouterIndex {
+            exact: Default::default(),
+            suffix: vec![],
+            suffix_map: Default::default(),
+            port_rules: Default::default(),
+            port_ranges: vec![],
+            transport_tcp: None,
+            transport_udp: None,
+            cidr4: vec![],
+            cidr6: vec![],
+            cidr4_buckets: vec![Vec::new(); 33],
+            cidr6_buckets: vec![Vec::new(); 129],
+            geoip_rules: vec![],
+            geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
 
-    idx.default
+            #[cfg(feature = "router_keyword")]
+            keyword_rules: vec![],
+            #[cfg(feature = "router_keyword")]
+            keyword_idx: None,
+            default: "unresolved",
+            gen: 0,
+            checksum: [0; 32],
+            rules: vec![],
+        })
+    });
+
+    decide_udp_with_prebuilt_index(&idx, Some(handle), host_or_ip, use_geoip)
 }
 
 /// UDP 决策：基于 UdpTargetAddr 进行路由
@@ -3216,5 +3279,46 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_SUFFIX_TRIE"));
         assert!(msg.contains("silent parse fallback is disabled"));
+    }
+}
+
+#[cfg(all(test, feature = "geoip_mmdb"))]
+mod geoip_helper_tests {
+    use super::{decide_udp_with_rules_and_handle, RouterHandle};
+    use crate::geoip::{GeoInfo, GeoIpProvider};
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::Arc;
+
+    struct MockGeoIpProvider;
+
+    impl GeoIpProvider for MockGeoIpProvider {
+        fn lookup(&self, ip: IpAddr) -> Option<GeoInfo> {
+            if ip == IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)) {
+                return Some(GeoInfo {
+                    country_code: Some("US".to_string()),
+                    country_name: None,
+                    city: None,
+                    region: None,
+                    continent_code: None,
+                    asn: None,
+                    organization: None,
+                });
+            }
+            None
+        }
+    }
+
+    #[test]
+    fn decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service() {
+        let handle =
+            RouterHandle::from_env().with_geoip_provider_for_tests(Arc::new(MockGeoIpProvider));
+
+        let decision = decide_udp_with_rules_and_handle(
+            &handle,
+            "203.0.113.7",
+            true,
+            "geoip:US=direct\ndefault=block",
+        );
+        assert_eq!(decision, "direct");
     }
 }

@@ -385,6 +385,23 @@ impl RouterHandle {
         handle
     }
 
+    #[cfg(all(test, feature = "geoip_mmdb"))]
+    pub fn with_geoip_provider_for_tests(
+        mut self,
+        provider: Arc<dyn crate::geoip::GeoIpProvider>,
+    ) -> Self {
+        let mut mux =
+            crate::geoip::multi::GeoMux::new(crate::geoip::multi::LookupStrategy::FirstSuccess);
+        mux.add_provider(
+            provider,
+            "test".to_string(),
+            1,
+            std::time::Duration::from_secs(1),
+        );
+        self.geoip_mux = Some(mux);
+        self
+    }
+
     #[cfg(feature = "router_cache_lru_demo")]
     /// Returns LRU cache snapshot for diagnostics
     #[allow(dead_code)]

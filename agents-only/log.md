@@ -16,6 +16,33 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 22:00] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 `router/mod.rs` 里的 UDP GeoIP helper 从 compat 全局 lookup 收口到 router owner-first 路径
+**变更**:
+- `crates/sb-core/src/router/mod.rs`
+  - 抽出 `decide_udp_with_prebuilt_index(...)`
+  - `decide_udp_with_rules()` 的 GeoIP 分支现优先走 `RouterHandle` owner-first lookup
+  - 新增 `decide_udp_with_rules_and_handle(...)`
+  - 新增 `decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service` 回归测试
+- `crates/sb-core/src/router/engine.rs`
+  - 新增仅测试用的 `with_geoip_provider_for_tests(...)`，用于显式注入 router-local GeoIP provider
+- `agents-only/active_context.md`
+  - 同步 UDP GeoIP helper 已切到 router owner-first 路径
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 router helper 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-core --lib decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `crates/sb-core/src/geoip/mod.rs` 的 compat 壳仍保留为 fallback；本次只是把 `router/mod.rs` 这条 legacy helper 也切到 owner-first
+
 ### [2026-03-23 21:05] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 `sb-metrics` 与 legacy metrics HTTP exporter 的剩余公共 helper 收口到显式 registry owner

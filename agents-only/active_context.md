@@ -34,6 +34,9 @@
   - `crates/sb-core/src/router/engine.rs` + `crates/sb-core/src/router/explain_util.rs`：
     - router 主决策链的 legacy GeoIP fallback 不再直连 `crate::geoip` 全局服务
     - `RouterHandle` 现有的 `geoip_mux` / `geoip` / `geoip_db` owner 已成为优先查询路径；`geoip/mod.rs` 的全局注册点被收窄为兼容壳而非主路径依赖
+  - `crates/sb-core/src/router/mod.rs` + `crates/sb-core/src/router/engine.rs`：
+    - `decide_udp_with_rules()` 的 GeoIP helper 现优先走 `RouterHandle` owner-first lookup
+    - 新增 `decide_udp_with_rules_and_handle(...)`；compat `crate::geoip` lookup 只保留为 owner 未命中时的回退
   - `crates/sb-core/src/geoip/mod.rs`：
     - 旧的全局强安装路径继续保留兼容
     - 新增默认弱 owner 注册表，内部 lookup 现优先走显式 owner，再 fallback 到旧全局安装路径
@@ -70,6 +73,7 @@
   - `cargo test -p app --bin app explicit_owner_flush_completes --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner -- --nocapture`
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
+  - `cargo test -p sb-core --lib decide_udp_with_rules_and_handle_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings`
   - `cargo test -p sb-metrics --lib explicit_owner_registry_lifecycle_controls_shared_handle -- --nocapture`
   - `cargo test -p sb-metrics --lib shared_handle_keeps_global_metrics_visible_after_owner_install -- --nocapture`
@@ -97,7 +101,7 @@
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`，退出 flush 也已走 owner；`Weak<LoggingRuntime>` 注册表仅剩 `init_logging()` / `flush_logs()` 兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`，`Prefetcher` 也已改由 runtime 显式 owner 持有
-  - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
+  - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链以及 `decide_udp_with_rules()` helper 已优先改走 `RouterHandle` owner-first GeoIP lookup
   - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现仅保留为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口；剩余 `export_prometheus()` / `maybe_spawn_http_exporter_from_env()` / legacy `run_exporter()` 也已降为显式 handle API 外侧的 compat 包装层
 
 ## L25 完成总结（2026-03-17）
