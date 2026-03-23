@@ -27,6 +27,9 @@
   - `app/src/main.rs` + `app/src/runtime_deps.rs`：
     - logging 初始化不再为了拿 `redactor` 临时构造整包 `AppRuntimeDeps`
     - 默认 `http_client` / `security_metrics` owner 只在真正会被显式持有的 runtime 路径里安装，避免启动期瞬时注册后立刻 drop 的弱注册表抖动
+  - `app/src/logging.rs` + `app/src/main.rs`：
+    - `main` 入口现改为显式持有 `LoggingOwner`
+    - `ACTIVE_RUNTIME` 仅保留给 `init_logging()` / `flush_logs()` 旧兼容面，不再是生产启动路径的首选 owner
   - `crates/sb-core/src/router/engine.rs` + `crates/sb-core/src/router/explain_util.rs`：
     - router 主决策链的 legacy GeoIP fallback 不再直连 `crate::geoip` 全局服务
     - `RouterHandle` 现有的 `geoip_mux` / `geoip` / `geoip_db` owner 已成为优先查询路径；`geoip/mod.rs` 的全局注册点被收窄为兼容壳而非主路径依赖
@@ -46,6 +49,7 @@
   - `cargo check -p app`
   - `cargo clippy -p app --all-features --all-targets -- -D warnings`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
+  - `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo test -p sb-core --lib enhanced_geoip_lookup_uses_router_local_provider_without_global_service --features geoip_mmdb -- --nocapture`
   - `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings`
   - `cargo test -p app --lib explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
@@ -56,7 +60,7 @@
 - 最新 `target/acceptance.json` 结论维持 maintenance 口径不变：`pprof` / `explain snapshot` / `quick soak` / `inbound_errors` 全部通过；`inbound_errors.ok=true`
 - 当前环境仍未设置 `GO_SINGBOX_BIN`，因此 `bash scripts/e2e/run.sh` compat smoke 继续按 skipped 归档
 - 现阶段剩余 follow-up 仍以非阻塞 maintenance 债务记录，不上升为 dual-kernel parity 结论：
-  - `app/src/logging.rs`：仍有全局兼容入口，但已降为 `Weak<LoggingRuntime>` 注册表，不再持有额外 runtime owner
+  - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`；`Weak<LoggingRuntime>` 注册表仅剩兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链已优先走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 仍保留兼容全局注册点，但主 router 决策链已不再依赖它
   - `crates/sb-metrics` 的共享静态 registry 架构

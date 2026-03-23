@@ -7648,6 +7648,34 @@ L2.8.4-6 Handlers + WebSocket:
 - 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
 - `app/src/admin_debug/security_metrics.rs` 的 `Weak<SecurityMetricsState>` 默认注册表仍保留兼容入口，但已不再是 subs/prefetch/breaker/security_async 主链的首选 owner 来源
 
+### [2026-03-23 21:20] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，收窄 `logging` 启动路径对 `ACTIVE_RUNTIME` compat registry 的依赖
+**变更**:
+- `app/src/logging.rs`
+  - 新增显式 `LoggingOwner`
+  - `init_logging_with_owner(...)` 现在直接返回 runtime owner，供生产启动路径显式持有
+  - 旧 `init_logging()` 仅作为兼容包装层，负责把 runtime 挂到 `ACTIVE_RUNTIME`
+  - `flush_logs()` 改为通过统一 compat lookup helper 读取弱注册表
+  - 新增回归测试，验证显式 owner 路径不会自动安装 compat registry
+- `app/src/main.rs`
+  - `main` 入口改为持有 `_logging_owner`，不再通过 compat registry 维持 logging runtime owner
+- `agents-only/active_context.md`
+  - 更新 logging 主路径已切到显式 owner，`ACTIVE_RUNTIME` 降为兼容壳
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 logging owner 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli"` ✅
+- `cargo test -p app explicit_owner_does_not_install_compat_registry --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `ACTIVE_RUNTIME` 仍保留给 `init_logging()` / `flush_logs()` 的兼容调用面，但 `main` 生产启动路径已不再依赖它
+
 <!-- AI LOG APPEND MARKER - 新日志追加到此标记之上 -->
 
 ### [2026-03-17 14:30] Agent: Claude Opus (综合验收)
