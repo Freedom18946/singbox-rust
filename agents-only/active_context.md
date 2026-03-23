@@ -48,6 +48,9 @@
   - `app/src/bin/metrics-serve.rs` + `crates/sb-metrics/examples/serve.rs`：
     - standalone metrics serve 路径现改为显式持有 `MetricsRegistryOwner`
     - 不再直接依赖 `MetricsRegistryHandle::global()` 作为首选 owner 来源
+  - `app/src/runtime_deps.rs`：
+    - `metrics_registry()` 现直接返回 `MetricsRegistryOwner::handle()`
+    - `AppRuntimeDeps` 的 metrics 导出路径不再经由 `shared_registry()` compat handle
   - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
 - 本轮关键验证已通过：
   - `cargo check --workspace`
@@ -75,6 +78,7 @@
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture`
   - `cargo check -p sb-metrics --example serve`
   - `cargo check -p app --bin metrics-serve --features "admin_debug sbcore_rules_tool dev-cli prefetch"`
+  - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli prefetch" -- --nocapture`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo check -p app`
   - `bash scripts/ci/tasks/inbound-errors.sh`
@@ -88,7 +92,7 @@
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`，退出 flush 也已走 owner；`Weak<LoggingRuntime>` 注册表仅剩 `init_logging()` / `flush_logs()` 兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`，`Prefetcher` 也已改由 runtime 显式 owner 持有
   - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
-  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`shared_registry()` 已收敛为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口
+  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现仅保留为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口
 
 ## L25 完成总结（2026-03-17）
 

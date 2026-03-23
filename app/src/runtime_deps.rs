@@ -15,7 +15,7 @@ pub fn build_redactor() -> Result<Arc<crate::redact::Redactor>> {
 #[derive(Clone)]
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
-    _metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
+    metrics_registry_owner: sb_metrics::MetricsRegistryOwner,
     #[cfg(feature = "router")]
     pub http_client: Arc<dyn sb_types::ports::http::HttpClient>,
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
@@ -55,7 +55,7 @@ impl AppRuntimeDeps {
 
         Ok(Self {
             #[cfg(feature = "observe")]
-            _metrics_registry_owner: metrics_registry_owner,
+            metrics_registry_owner,
             #[cfg(feature = "router")]
             http_client,
             #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
@@ -71,8 +71,8 @@ impl AppRuntimeDeps {
 
     #[cfg(feature = "observe")]
     #[must_use]
-    pub const fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        sb_metrics::shared_registry()
+    pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
+        self.metrics_registry_owner.handle()
     }
 
     #[cfg(feature = "admin_debug")]
@@ -119,5 +119,15 @@ mod tests {
                 other => panic!("unexpected error: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    #[cfg(feature = "observe")]
+    fn app_runtime_deps_exposes_owned_metrics_handle() {
+        let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
+        assert!(matches!(
+            deps.metrics_registry(),
+            sb_metrics::MetricsRegistryHandle::Owned(_)
+        ));
     }
 }

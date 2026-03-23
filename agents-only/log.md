@@ -16,6 +16,30 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 20:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 `AppRuntimeDeps::metrics_registry()` 从 compat shared handle 切到显式 owner handle
+**变更**:
+- `app/src/runtime_deps.rs`
+  - `AppRuntimeDeps` 现在显式保留 `metrics_registry_owner`
+  - `metrics_registry()` 现直接返回 `metrics_registry_owner.handle()`
+  - 新增 `app_runtime_deps_exposes_owned_metrics_handle` 回归测试
+- `agents-only/active_context.md`
+  - 同步 runtime deps metrics handle 已切到显式 owner
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 runtime deps metrics handle 收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli prefetch" -- --nocapture` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `shared_registry()` 仍保留给兼容入口和少量跨 crate 静态注册路径，继续下探属于后续 non-blocking maintenance follow-up
+
 ### [2026-03-23 19:40] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 standalone metrics serve 路径从默认 shared registry 切到显式 owner
