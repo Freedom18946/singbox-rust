@@ -51,6 +51,9 @@
   - `app/src/runtime_deps.rs`：
     - `metrics_registry()` 现直接返回 `MetricsRegistryOwner::handle()`
     - `AppRuntimeDeps` 的 metrics 导出路径不再经由 `shared_registry()` compat handle
+  - `crates/sb-metrics/src/lib.rs` + `crates/sb-core/src/metrics/http_exporter.rs`：
+    - `sb-metrics` 现补齐 `export_prometheus_with(&MetricsRegistryHandle)` 和 `maybe_spawn_http_exporter_from_env_with(...)`
+    - legacy metrics HTTP exporter 现可显式接收 `MetricsRegistryHandle`；旧无参 helper 仅保留 compat 包装层
   - `app/Cargo.toml`：补齐 `sbcore_analyze_json`、`transport_ech` 的 feature 透传，恢复 `--all-features --all-targets` 下的依赖一致性
 - 本轮关键验证已通过：
   - `cargo check --workspace`
@@ -76,11 +79,14 @@
   - `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture`
   - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture`
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture`
+  - `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture`
   - `cargo check -p sb-metrics --example serve`
+  - `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture`
   - `cargo check -p app --bin metrics-serve --features "admin_debug sbcore_rules_tool dev-cli prefetch"`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli prefetch" -- --nocapture`
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture`
   - `cargo check -p app`
+  - `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"`
   - `bash scripts/ci/tasks/inbound-errors.sh`
 - `scripts/e2e/socks5/udp-errors.sh` / `scripts/ci/tasks/inbound-errors.sh` 已完成 maintenance harness 收口：
   - 不再把 malformed UDP datagram 直接打到假定固定端口
@@ -92,7 +98,7 @@
   - `app/src/logging.rs`：`main` 已切到显式 `LoggingOwner`，退出 flush 也已走 owner；`Weak<LoggingRuntime>` 注册表仅剩 `init_logging()` / `flush_logs()` 兼容包装层
   - `app/src/admin_debug/security_metrics.rs`：默认查找入口仍保留为 `Weak<SecurityMetricsState>` 兼容壳，但 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径已优先走显式 owner；其中真实 admin server 的 `/subs/` 入口现已显式传入 `SecurityMetricsState`，`Prefetcher` 也已改由 runtime 显式 owner 持有
   - `crates/sb-core/src/geoip/mod.rs` 仍保留 compat 全局注册点，但已收敛为“弱默认 owner 优先、强全局 fallback”的兼容壳；主 router 决策链已不再依赖它
-  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现仅保留为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口
+  - `crates/sb-metrics` 的共享指标静态 (`LazyLock`) 架构仍在；但 shared registry owner 已改由 `AppRuntimeDeps`、`metrics-serve`、`sb-metrics` example 等显式持有，`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现仅保留为“弱默认 owner 优先、强全局 fallback、并保留 owner 安装前旧全局指标可见性”的兼容入口；剩余 `export_prometheus()` / `maybe_spawn_http_exporter_from_env()` / legacy `run_exporter()` 也已降为显式 handle API 外侧的 compat 包装层
 
 ## L25 完成总结（2026-03-17）
 

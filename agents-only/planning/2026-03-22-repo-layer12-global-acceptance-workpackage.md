@@ -116,6 +116,9 @@
   - `app/src/runtime_deps.rs`
     - `metrics_registry()` 现直接返回 `MetricsRegistryOwner::handle()`
     - runtime exporter 路径不再经由 `shared_registry()` compat handle
+  - `crates/sb-metrics/src/lib.rs`、`crates/sb-core/src/metrics/http_exporter.rs`
+    - `sb-metrics` 补齐 `export_prometheus_with(&MetricsRegistryHandle)`、`maybe_spawn_http_exporter_from_env_with(...)`
+    - legacy metrics HTTP exporter 新增显式 `MetricsRegistryHandle` 入口；旧无参 helper 仅保留 compat 包装层
   - `app/Cargo.toml`
     - 补齐 `sbcore_analyze_json = ["sb-core/analyze_json"]`
     - 补齐 `transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]`
@@ -142,11 +145,14 @@
   - `cargo test -p app --lib weak_default_prefetcher_routes_enqueue_through_explicit_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests" -- --nocapture` ✅
   - `cargo test -p app --bin app collect_prefetch_cli_stats_uses_explicit_metrics_owner --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` ✅
   - `cargo test -p sb-metrics --lib owner_handle_exports_metrics_without_shared_lookup -- --nocapture` ✅
+  - `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture` ✅
   - `cargo check -p sb-metrics --example serve` ✅
+  - `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` ✅
   - `cargo check -p app --bin metrics-serve --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli prefetch" -- --nocapture` ✅
   - `cargo test -p app --lib runtime_deps --features "admin_debug sbcore_rules_tool dev-cli" -- --nocapture` ✅
   - `cargo check -p app` ✅
+  - `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
   - `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli"` ✅
   - `bash scripts/ci/tasks/inbound-errors.sh` ✅
   - `bash scripts/ci/accept.sh` ✅
@@ -155,7 +161,7 @@
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs` 以及 `crates/sb-metrics` 内部静态指标定义层
   - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径、真实 admin server 的 `/subs/` 入口、`Prefetcher` runtime 路径以及 `main` logging 启动/退出路径都已优先改走显式 owner
   - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径继续优先改走 `RouterHandle` 自有 geo owner
-  - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps`、`metrics-serve` binary 和 `sb-metrics` example 的显式持有；`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现保留“弱默认 owner 优先、强全局 fallback，并合并 owner 安装前旧全局指标”的兼容入口
+  - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps`、`metrics-serve` binary 和 `sb-metrics` example 的显式持有；`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现保留“弱默认 owner 优先、强全局 fallback，并合并 owner 安装前旧全局指标”的兼容入口；`export_prometheus()` / `maybe_spawn_http_exporter_from_env()` / `sb-core` legacy `run_exporter()` 也已退到显式 handle helper 外侧的 compat 壳
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
 
 ---

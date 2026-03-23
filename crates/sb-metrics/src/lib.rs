@@ -1090,8 +1090,15 @@ pub fn spawn_http_exporter_from_env(registry: MetricsRegistryHandle) -> Option<J
 }
 
 #[must_use]
+pub fn maybe_spawn_http_exporter_from_env_with(
+    registry: MetricsRegistryHandle,
+) -> Option<JoinHandle<()>> {
+    spawn_http_exporter_from_env(registry)
+}
+
+#[must_use]
 pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
-    spawn_http_exporter_from_env(shared_registry())
+    maybe_spawn_http_exporter_from_env_with(shared_registry())
 }
 
 // NOTE:
@@ -1109,11 +1116,17 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
 /// contains invalid UTF-8.
 #[allow(clippy::expect_used)] // Test utility function, panic is acceptable
 #[must_use]
-pub fn export_prometheus() -> String {
-    let buf = shared_registry()
+pub fn export_prometheus_with(registry: &MetricsRegistryHandle) -> String {
+    let buf = registry
         .encode_text()
         .expect("Prometheus encoding should never fail");
     String::from_utf8(buf).expect("Prometheus output should be valid UTF-8")
+}
+
+#[allow(clippy::expect_used)] // Test utility function, panic is acceptable
+#[must_use]
+pub fn export_prometheus() -> String {
+    export_prometheus_with(&shared_registry())
 }
 
 #[cfg(test)]
@@ -1250,5 +1263,31 @@ mod tests {
         let text = String::from_utf8(owned_handle.encode_text().unwrap()).unwrap();
         assert!(text.contains("codex_metrics_owner_handle_export"));
         assert!(text.contains(" 17"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn export_prometheus_with_owned_handle_avoids_shared_lookup() {
+        let owned_registry = Arc::new(Registry::new());
+        let owned_handle = MetricsRegistryHandle::Owned(Arc::clone(&owned_registry));
+        let gauge = IntGauge::new(
+            "codex_metrics_export_with_owned_handle",
+            "codex metrics export with owned handle test",
+        )
+        .unwrap();
+        owned_handle
+            .register_cloned("codex_metrics_export_with_owned_handle", &gauge)
+            .unwrap();
+        gauge.set(23);
+
+        let text = export_prometheus_with(&owned_handle);
+        assert!(text.contains("codex_metrics_export_with_owned_handle"));
+        assert!(text.contains(" 23"));
+
+        let shared_text = export_prometheus();
+        assert!(
+            !shared_text.contains("codex_metrics_export_with_owned_handle"),
+            "owned-handle export should not require shared registry lookup"
+        );
     }
 }

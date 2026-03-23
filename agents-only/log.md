@@ -16,6 +16,36 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-23 21:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 maintenance follow-up，把 `sb-metrics` 与 legacy metrics HTTP exporter 的剩余公共 helper 收口到显式 registry owner
+**变更**:
+- `crates/sb-metrics/src/lib.rs`
+  - 新增 `export_prometheus_with(&MetricsRegistryHandle)` 与 `maybe_spawn_http_exporter_from_env_with(...)`
+  - 旧 `export_prometheus()` / `maybe_spawn_http_exporter_from_env()` 仅保留 compat 包装层
+  - 新增 `export_prometheus_with_owned_handle_avoids_shared_lookup` 回归测试
+- `crates/sb-core/src/metrics/http_exporter.rs`
+  - 新增显式 `run_exporter_with_registry(...)`
+  - exporter body 生成现可直接走传入的 `MetricsRegistryHandle`
+  - 新增 `metrics_body_with_registry_exports_owned_metric_without_shared_registry` 回归测试
+- `agents-only/active_context.md`
+  - 同步 metrics helper / legacy exporter 已切到 owner-first 结构
+- `agents-only/planning/2026-03-22-repo-layer12-global-acceptance-workpackage.md`
+  - 追加本次 metrics helper compat 壳收口与验证结果
+- `agents-only/log.md`
+  - 追加本次执行记录
+**结果**: 成功
+**构建验证**:
+- `cargo test -p sb-metrics --lib export_prometheus_with_owned_handle_avoids_shared_lookup -- --nocapture` ✅
+- `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` ✅
+- `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+- `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 本次收口仍然只按 maintenance / Layer 1/2 口径归档，不表述为 dual-kernel parity 完成
+- `shared_registry()` 与内部 `LazyLock` 指标静态仍保留为最后的非阻塞架构债；当前只把公共 helper 和 legacy exporter 收窄为显式 owner API 外侧的 compat 壳
+
 ### [2026-03-23 20:05] Agent: Codex (GPT-5)
 
 **任务**: 继续推进 maintenance follow-up，把 `AppRuntimeDeps::metrics_registry()` 从 compat shared handle 切到显式 owner handle
