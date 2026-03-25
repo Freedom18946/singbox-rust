@@ -13,24 +13,26 @@
 
 ## 最近完成（2026-03-26）
 
-### outbound/ssh.rs lifecycle 收口 — 已完成
+### sb-config outbound.rs Raw/Validated 边界试点 — 已完成
 
-- `crates/sb-adapters/src/outbound/ssh.rs`:
-  - **Session lock 消除**：`Mutex<Handle>` → `Arc<PostAuthSession>`（最小能力封装，handle 字段私有，仅暴露 `open_direct_tcpip()`；`unsafe impl Sync` 边界仅服务于该单一方法）
-  - **Pool lock-across-await 消除**：三阶段锁（短锁检查→锁外 connect→短锁安装，含竞争处理）
-  - **Bridge lifecycle tracked**：`bridge_tasks: Arc<Mutex<JoinSet<()>>>` 持有所有 bridge task
-  - 零 `tokio::spawn` 调用：所有任务通过 `JoinSet::spawn`
-  - `JoinSet::drop` 作为 sync 兜底：connector drop 时 abort all
-  - bridge reaping：`try_join_next()` 在每次新 bridge 前清理已完成 task
+- `crates/sb-config/src/outbound/`:
+  - **Raw 层（`raw.rs`）**：16 个 Raw 类型，全部 `#[serde(deny_unknown_fields)]`，承接所有 serde 反序列化
+  - **Validated 层（`mod.rs`）**：16 个 domain 类型，不再 `derive(Deserialize)`，通过 `impl Deserialize via Raw bridge` 中转
+  - **`From<Raw*> for *`**：16 组无损转换
+  - **adapter 使用面零影响**：`HttpProxyConfig` / `Socks5Config` / `Socks4Config` / `TlsConfig` 等仍由 adapter 直接字段构造
+  - **新增 27 个定点测试**：未知字段拒绝（8 顶层 + 3 嵌套）、合法解析（9）、默认值（4）、roundtrip（2）、适配器兼容（1）
+
+**注意**：这是 sb-config 的第一刀。`ir/mod.rs` 与 `validator/v2.rs` 仍是结构 blocker，sb-config 整体仍在第一波 blocker 列表中。
 
 **验证**:
+- `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p app --test ssh_outbound_test` ✅ (4 passed)
-- `cargo test -p sb-adapters --all-features --lib outbound::ssh` ✅ (7 passed, 含 4 lifecycle 测试)
-- `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p sb-config` ✅ (全部通过，含 27 个新 boundary 测试)
+- `cargo test -p sb-config --test vless_config_test` ✅ (5 passed，现有测试未被打坏)
+- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-### outbound/anytls.rs / http_server / prefetch / geoip / http_client — 已完成
+### outbound/ssh.rs / anytls.rs / http_server / prefetch / geoip / http_client — 已完成
 
 - 详见本文件历史快照
 

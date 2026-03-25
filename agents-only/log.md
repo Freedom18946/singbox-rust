@@ -8399,3 +8399,23 @@ L2.8.4-6 Handlers + WebSocket:
 - `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 2 处 SyncSessionHandle → PostAuthSession
 - `重构package相关/singbox_rust_rebuild_workpackage.md`: 2 处 SyncSessionHandle → PostAuthSession
 **结果**: 纯文档对齐，无代码变更。
+
+---
+
+## 2026-03-26 sb-config outbound.rs Raw/Validated 边界试点
+
+**任务**: 为 `crates/sb-config/src/outbound.rs` 建立 Raw → Validated 配置边界试点
+
+**完成内容**:
+- 将 `outbound.rs` 转换为 `outbound/mod.rs` + `outbound/raw.rs` 模块结构
+- `raw.rs`: 16 个 Raw 类型全部 `#[serde(deny_unknown_fields)]`，承接所有 serde 反序列化
+- `mod.rs`: 16 个 domain 类型不再 `derive(Deserialize)`，通过自定义 `impl Deserialize` 走 Raw 中转
+- 16 组 `From<Raw*> for *` 无损转换
+- 新增 27 个定点测试（`outbound_raw_boundary_test.rs`）
+
+**未触碰**:
+- `ir/mod.rs` — 仍是结构 blocker
+- `validator/v2.rs` — 仍是结构 blocker
+- sb-config 整体仍在第一波 blocker 列表中
+
+**验证**: cargo check/test/clippy 全 pass，inbound-errors.sh pass

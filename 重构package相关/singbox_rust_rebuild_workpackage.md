@@ -50,7 +50,7 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `sb-config` Raw 边界（`outbound.rs` / `ir/mod.rs` / `validator/v2.rs`）
+  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / `validator/v2.rs`）
 - **已完成 hard global + lifecycle 收口**：
   - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
@@ -450,7 +450,7 @@
 ### 2026-03-25 核验说明
 
 - 这一组结论在当前仓库上 **没有被维护期修正推翻**。
-- `crates/sb-config/src/outbound.rs` 仍是直接 `Deserialize` 的 Raw 边界模型。
+- ~~`crates/sb-config/src/outbound.rs` 仍是直接 `Deserialize` 的 Raw 边界模型。~~ → ✅ 2026-03-26 已完成 Raw/Validated 边界试点（`deny_unknown_fields` + 自定义 `Deserialize` via Raw bridge）
 - `crates/sb-config/src/ir/mod.rs` 仍是 3755 LOC 巨石，未完成 Raw / Validated / Planned 三相拆分。
 - `crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。
 
