@@ -16,6 +16,19 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-25 22:00] Agent: Claude Opus 4.6
+
+**任务**: prefetch hard global fallback 删除 + worker lifecycle 收口
+**变更**:
+- `app/src/admin_debug/prefetch.rs`: 删除 `GLOBAL`/`Prefetcher::global()`/`global_take()`；enqueue 函数去除 global fallback 分支；worker 改为 dispatcher_loop（单 Receiver owner）+ JoinSet + CancellationToken；`shutdown()` 改为真实 async shutdown；新增 `Drop` impl；新增 3 个 lifecycle 测试
+- `app/Cargo.toml`: `admin_debug` feature 加入 `tokio-util`（CancellationToken）
+- `agents-only/active_context.md`: 记录 prefetch 收口
+- `agents-only/log.md`: 本条日志
+- `重构package相关/singbox_rust_rebuild_workpackage.md`: prefetch 从第一波 blocker 移出
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: prefetch 行项更新为已收口
+**结果**: 成功；52 lib tests passed，10 prefetch tests passed，clippy clean，inbound-errors ✅
+**备注**: 维护模式 Layer 1/2 收口，不表述成 parity 完成
+
 ### [2026-03-25 21:00] Agent: Claude Opus 4.6
 
 **任务**: 对齐 geoip 收口后的残留文档排序，移除"第一波 blocker"旧表述

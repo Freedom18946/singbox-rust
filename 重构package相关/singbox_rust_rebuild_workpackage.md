@@ -50,12 +50,12 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `prefetch.rs`
   - `http_server.rs`
   - `outbound/anytls.rs`
   - `outbound/ssh.rs`
   - `sb-config` Raw 边界（`outbound.rs` / `ir/mod.rs` / `validator/v2.rs`）
-- **已完成 hard global 收口，保留为 weak-owner compat 债务**：
+- **已完成 hard global + lifecycle 收口**：
+  - `prefetch.rs` — hard global 已删，worker lifecycle 改为 tracked/owned（dispatcher + CancellationToken + JoinSet），仅剩 `DEFAULT_PREFETCHER` weak-owner compat
   - `http_client.rs` — hard global 已删（`d3a0b1e7`），仅剩 `DEFAULT_HTTP_CLIENT` weak-owner
   - `geoip/mod.rs` — hard global 已删（`f5297845`），仅剩 `DEFAULT_GEOIP_SERVICE` weak-owner
 - **保留为债务，但下调优先级**：
@@ -375,7 +375,7 @@
 
 - **已完成**：`crates/sb-core/src/http_client.rs` — hard global singleton 已删（`d3a0b1e7`），仅剩 weak-owner compat
 - **已完成**：`crates/sb-core/src/geoip/mod.rs` — `GEOIP_SERVICE` / `init()` / `service()` 已删除，仅剩 weak-owner compat
-- **第一波**：`app/src/admin_debug/prefetch.rs`
+- **已完成**：`app/src/admin_debug/prefetch.rs` — `GLOBAL` / `global()` / `global_take()` 已删除，worker lifecycle 改为 tracked dispatcher + CancellationToken + JoinSet，仅剩 weak-owner compat
 - **第二波**：`app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`
 - **第三波**：`crates/sb-metrics/src/lib.rs`、`crates/sb-core/src/metrics/registry_ext.rs`
 

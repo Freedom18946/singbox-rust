@@ -13,66 +13,55 @@
 
 ## 最近完成（2026-03-25）
 
-### geoip hard global fallback 收口 — 已完成
+### prefetch hard global + lifecycle 收口 — 已完成
 
-- `crates/sb-core/src/geoip/mod.rs`:
-  - 删除 `GEOIP_SERVICE` (`OnceLock<GeoIpService>`) — hard global singleton
-  - 删除 `init()` / `service()` — hard global API
-  - `lookup_country_code()` 只走 weak-owner lookup（`DEFAULT_GEOIP_SERVICE`），不再回落 hard global
-  - 新增 `clear_default_for_test()` 测试工具
-  - 模块文档更新为 weak-owner model 描述
-- Router-local provider 路径（`enhanced_geoip_lookup`）不受影响
+- `app/src/admin_debug/prefetch.rs`:
+  - 删除 `GLOBAL: OnceCell<Prefetcher>` — hard global singleton
+  - 删除 `Prefetcher::global()` — hard global API
+  - 删除 `global_take()` — placeholder shutdown API
+  - `enqueue_prefetch()` / `enqueue_prefetch_with_metrics()` 不再 fallback 到 `Prefetcher::global()`，无 owner 时返回 `false`
+  - Worker lifecycle 改为 tracked/owned model：
+    - 单 dispatcher task 直接拥有 `Receiver`（不再 `Arc<Mutex<Receiver>>`）
+    - `CancellationToken` + `JoinHandle` 存储于 `Prefetcher`
+    - `JoinSet` 管理并发 worker（不再裸 `tokio::spawn` N 个 worker）
+    - `shutdown()` 是真实的 async shutdown（cancel + await handle）
+    - `Drop` impl 触发 cancel
+  - 模块文档更新为 explicit-owner + tracked-worker 描述
+- `app/Cargo.toml`: `admin_debug` feature 新增 `tokio-util` 依赖（`CancellationToken`）
 
-**保留的 compat**: `DEFAULT_GEOIP_SERVICE` weak-owner 机制不变，`install_default_geoip_service()` 仍是唯一安装入口。
+**保留的 compat**: `DEFAULT_PREFETCHER` weak-owner 机制不变，`install_default_prefetcher()` 仍是唯一安装入口。
 
-**不需要补 owner 安装承接**：生产路径通过 router-local GeoIP provider（`RouterHandle::geoip_mux` / `geoip_db`），`init()` 和 `service()` 在生产代码中零调用方。
+**owner 安装点未改动**：`AppRuntimeDeps::new()` 和 `build_prefetch_runtime_deps()` 保持原样。
 
 **验证**:
-- `cargo check -p sb-core` ✅
 - `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
-- `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner` ✅
-- `cargo test -p sb-core --lib --features geoip_mmdb enhanced_geoip_lookup_uses_router_local_provider_without_global_service` ✅
-- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
-- `cargo test -p sb-core` ✅ (512 tests)
+- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅ (52 passed)
+- `cargo test -p app --lib "admin_debug::prefetch"` ✅ (10 passed, 含 lifecycle 测试)
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-### geoip docs alignment follow-up — 已完成
+### geoip / http_client hard global 收口 — 已完成（earlier today）
 
-- `重构package相关/` 两份文档中"第一波 blocker"列表已移除 `geoip`，与代码收口状态对齐
+- 详见本文件历史快照
 
-### http_client hard global fallback 收口 — 已完成（earlier）
-
-- 删除 `GLOBAL_HTTP_CLIENT` + `install_http_client()` / `global_http_client()`
-- `http_execute()` 只走 weak-owner
-
-## Compat 债务评估结论（四项）
+## Compat 债务评估结论
 
 | 项目 | 残留 | 决策 |
 |------|------|------|
-| http_client | weak-owner only，hard global 已删 | **完成** — 仅 `install_default_http_client()` 入口 |
-| geoip | weak-owner only，hard global 已删 | **完成** — 仅 `install_default_geoip_service()` 入口 |
+| http_client | weak-owner only，hard global 已删 | **完成** |
+| geoip | weak-owner only，hard global 已删 | **完成** |
+| prefetch | weak-owner only，hard global 已删，worker lifecycle tracked | **完成** |
 | logging compat | `ACTIVE_RUNTIME` 薄壳 | **保留** — public API |
-| security_metrics compat | public wrapper + legacy boundary 单次 owner upgrade | **保留** — public API / legacy default-owner 兼容 |
-| sb-metrics LazyLock | registry plumbing 已收口；指标静态仍保留 | **部分完成** — 不继续全量去全局化 |
-
-## 构建基线（2026-03-24）
-
-| 构建 | 状态 |
-|------|------|
-| `cargo test -p sb-metrics --lib -- --nocapture` | ✅ |
-| `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ |
-| `cargo check -p sb-metrics --example serve` | ✅ |
-| `cargo test -p sb-core --lib metrics_body_with_registry_exports_owned_metric_without_shared_registry -- --nocapture` | ✅ |
-| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ |
-| `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli admin_tests"` | ✅ 152 passed |
-| `cargo test -p app --lib default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` | ✅ |
-| `cargo test -p app --lib legacy_subs_entrypoints_use_default_metrics_owner_when_installed --features "admin_debug sbcore_rules_tool dev-cli admin_tests prefetch" -- --nocapture` | ✅ |
-| `bash scripts/ci/tasks/inbound-errors.sh` | ✅ |
+| security_metrics compat | public wrapper + legacy boundary | **保留** — public API |
+| sb-metrics LazyLock | registry plumbing 已收口 | **部分完成** |
 
 ## 剩余 Maintenance 债务（非阻塞）
 
-- ~~`http_client` hard global~~ → **已收口**（2026-03-25），仅剩 weak-owner compat
-- ~~`geoip` hard global~~ → **已收口**（2026-03-25），仅剩 weak-owner compat
+- ~~`http_client` hard global~~ → **已收口**
+- ~~`geoip` hard global~~ → **已收口**
+- ~~`prefetch` hard global + lifecycle~~ → **已收口**
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
-- `security_metrics.rs` public compat wrapper：已瘦身为单行委托；legacy public 边界保留默认 owner compat 语义
-- `sb-metrics` LazyLock 指标静态：registry plumbing 和部分 helper 已收口；不继续做全量去全局化
+- `security_metrics.rs` public compat wrapper：已瘦身为单行委托
+- `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
+- `http_server.rs` accept loop 裸 spawn：仍是第一波 blocker
+- `outbound/anytls.rs` / `ssh`：仍是第一波 blocker

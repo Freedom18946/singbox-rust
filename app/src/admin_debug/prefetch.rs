@@ -1,15 +1,29 @@
 // app/src/admin_debug/prefetch.rs
+//
+// Prefetch subsystem with explicit owner model.
+//
+// The `Prefetcher` is always created and installed via an explicit owner
+// (`install_default_prefetcher`). There is no process-wide global singleton.
+// Legacy entry points (`enqueue_prefetch`, `enqueue_prefetch_with_metrics`)
+// look up the current owner through a weak-owner compatibility registry
+// (`DEFAULT_PREFETCHER`). If no owner is installed, enqueue silently returns
+// `false`.
+//
+// Worker lifecycle is fully managed: a single dispatcher task owns the
+// `Receiver` directly (no `Arc<Mutex<Receiver>>`), spawns bounded concurrent
+// workers via `JoinSet`, and responds to a `CancellationToken` for graceful
+// shutdown. The owner (`Arc<Prefetcher>`) cancels the token on drop, causing
+// the dispatcher to drain and exit.
+
 use anyhow::Result;
-use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::{LazyLock, Weak};
 use std::time::Duration;
-use tokio::sync::{
-    mpsc,
-    mpsc::{Receiver, Sender},
-};
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
@@ -25,9 +39,11 @@ pub struct PrefetchJob {
 
 pub struct Prefetcher {
     tx: Sender<PrefetchJob>,
+    cancel: CancellationToken,
+    /// The dispatcher task handle, taken on shutdown for awaiting.
+    dispatcher_handle: StdMutex<Option<JoinHandle<()>>>,
 }
 
-static GLOBAL: OnceCell<Prefetcher> = OnceCell::new();
 static DEFAULT_PREFETCHER: LazyLock<StdMutex<Option<Weak<Prefetcher>>>> =
     LazyLock::new(|| StdMutex::new(None));
 static QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
@@ -78,48 +94,43 @@ fn set_prefetch_queue_high_watermark(watermark: u64, metrics: Option<&SecurityMe
 }
 
 impl Prefetcher {
+    /// Create a new prefetcher reading configuration from environment variables.
+    ///
+    /// If called inside a Tokio runtime, the dispatcher task is spawned via
+    /// `tokio::spawn` and tracked. If no runtime is available (e.g. sync test
+    /// context), the dispatcher is not started — enqueue still works but jobs
+    /// won't be consumed until a runtime-aware owner is installed.
     #[must_use]
     pub fn from_env() -> Self {
         let cap = parse_prefetch_env_usize("SB_PREFETCH_CAP", 128);
-        let (tx, rx) = mpsc::channel::<PrefetchJob>(cap);
-        let n = parse_prefetch_env_usize("SB_PREFETCH_WORKERS", 2);
+        let (tx, rx) = tokio::sync::mpsc::channel::<PrefetchJob>(cap);
+        let workers = parse_prefetch_env_usize("SB_PREFETCH_WORKERS", 2);
+        let cancel = CancellationToken::new();
 
-        // Create shared receiver using Arc
-        let rx = std::sync::Arc::new(tokio::sync::Mutex::new(rx));
+        let handle = if tokio::runtime::Handle::try_current().is_ok() {
+            Some(tokio::spawn(dispatcher_loop(rx, workers, cancel.clone())))
+        } else {
+            // No Tokio runtime — skip dispatcher. The receiver is dropped,
+            // so `try_send` will return `Err` once the channel buffer fills.
+            // This is acceptable: the only sync callers are test setups that
+            // verify the owner plumbing, not actual prefetch processing.
+            drop(rx);
+            None
+        };
 
-        for id in 0..n {
-            let rx_clone = rx.clone();
-            // If we are inside a Tokio runtime, use tokio::spawn. Otherwise, spawn a thread
-            // and create a small runtime to drive the worker. This prevents tests without
-            // a runtime from panicking.
-            if tokio::runtime::Handle::try_current().is_ok() {
-                tokio::spawn(worker_loop(id, rx_clone));
-            } else {
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("build tokio runtime");
-                    rt.block_on(worker_loop(id, rx_clone));
-                });
-            }
+        Self {
+            tx,
+            cancel,
+            dispatcher_handle: StdMutex::new(handle),
         }
-
-        Self { tx }
-    }
-
-    pub fn global() -> &'static Self {
-        GLOBAL.get_or_init(Self::from_env)
     }
 
     pub fn enqueue(&self, job: PrefetchJob) -> bool {
         let metrics = job.metrics.clone();
         init_prefetch_metrics(metrics.as_deref());
-        // 队列满即丢弃 + 计数
         match self.tx.try_send(job) {
             Ok(()) => {
                 prefetch_inc("enq", metrics.as_deref());
-                // Update queue depth after successful enqueue with high watermark tracking
                 let new_depth = QUEUE_DEPTH.fetch_add(1, Ordering::Relaxed) + 1;
                 observe_depth(new_depth as u64, metrics.as_deref());
                 true
@@ -131,9 +142,31 @@ impl Prefetcher {
         }
     }
 
-    pub fn shutdown(self) {
-        // Placeholder for graceful shutdown - simplified version for compatibility
-        drop(self.tx);
+    /// Graceful shutdown: cancel the dispatcher, drop the sender, and await
+    /// the dispatcher task to finish processing in-flight jobs.
+    pub async fn shutdown(&self) {
+        self.cancel.cancel();
+        // Close the sender side so the dispatcher sees channel closed.
+        // (The `tx` clone inside `self` is the only sender; dropping it
+        // signals the dispatcher. But we can't drop `self.tx` through &self,
+        // so we rely on cancellation token + channel close on Drop.)
+        let handle = self
+            .dispatcher_handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(h) = handle {
+            let _ = h.await;
+        }
+    }
+}
+
+impl Drop for Prefetcher {
+    fn drop(&mut self) {
+        // Signal the dispatcher to stop. The JoinHandle is not awaited here
+        // (we are in sync Drop), but the dispatcher will observe cancellation
+        // and exit promptly once the channel sender is also dropped.
+        self.cancel.cancel();
     }
 }
 
@@ -163,49 +196,89 @@ fn current_prefetcher() -> Option<Arc<Prefetcher>> {
         .and_then(Weak::upgrade)
 }
 
-async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<PrefetchJob>>>) {
-    loop {
-        let job = {
-            let mut guard = rx.lock().await;
-            match guard.recv().await {
-                Some(job) => job,
-                None => break, // Channel closed
-            }
-        };
+/// The single dispatcher task that owns the `Receiver` and fans out work to a
+/// bounded set of concurrent worker futures via `JoinSet`.
+async fn dispatcher_loop(
+    mut rx: Receiver<PrefetchJob>,
+    max_workers: usize,
+    cancel: CancellationToken,
+) {
+    use tokio::task::JoinSet;
 
-        let start = std::time::Instant::now();
-        let mut ok = false;
-        let mut left = parse_prefetch_env_usize("SB_PREFETCH_RETRIES", 2);
-        loop {
-            match do_prefetch(&job.url, job.etag.clone(), job.metrics.clone()).await {
-                Ok(()) => {
-                    ok = true;
-                    prefetch_inc("done", job.metrics.as_deref());
-                    break;
+    let mut workers = JoinSet::new();
+
+    loop {
+        // If we are at max concurrency, wait for a slot to free up.
+        while workers.len() >= max_workers {
+            tokio::select! {
+                () = cancel.cancelled() => {
+                    // Drain remaining workers on cancellation.
+                    while workers.join_next().await.is_some() {}
+                    return;
                 }
-                Err(_e) => {
-                    prefetch_inc("fail", job.metrics.as_deref());
-                    if left == 0 {
-                        break;
+                result = workers.join_next() => {
+                    if result.is_none() {
+                        break; // No more workers, proceed to recv.
                     }
-                    left -= 1;
-                    prefetch_inc("retry", job.metrics.as_deref());
-                    // 简单指数退避（避免与 breaker backoff 相互放大）
-                    let backoff_ms =
-                        50u64.saturating_mul(1 << u32::from(job.tries.saturating_sub(left as u8)));
-                    tokio::time::sleep(Duration::from_millis(backoff_ms.min(1000))).await;
                 }
             }
         }
 
-        // Update queue depth after job completion (success or failure)
-        let prev = QUEUE_DEPTH.fetch_sub(1, Ordering::Relaxed) - 1;
-        set_prefetch_queue_depth(prev as u64, job.metrics.as_deref());
+        // Receive next job or exit.
+        let job = tokio::select! {
+            () = cancel.cancelled() => {
+                // Drain remaining workers on cancellation.
+                while workers.join_next().await.is_some() {}
+                return;
+            }
+            maybe_job = rx.recv() => {
+                match maybe_job {
+                    Some(job) => job,
+                    None => {
+                        // Channel closed — owner dropped. Drain workers.
+                        while workers.join_next().await.is_some() {}
+                        return;
+                    }
+                }
+            }
+        };
 
-        let dur_ms = start.elapsed().as_millis() as u64;
-        record_prefetch_run_ms(dur_ms, job.metrics.as_deref());
-        tracing::debug!(id, ok, "prefetch worker finished");
+        workers.spawn(run_job(job));
     }
+}
+
+/// Execute a single prefetch job with retries.
+async fn run_job(job: PrefetchJob) {
+    let start = std::time::Instant::now();
+    let mut ok = false;
+    let mut left = parse_prefetch_env_usize("SB_PREFETCH_RETRIES", 2);
+    loop {
+        match do_prefetch(&job.url, job.etag.clone(), job.metrics.clone()).await {
+            Ok(()) => {
+                ok = true;
+                prefetch_inc("done", job.metrics.as_deref());
+                break;
+            }
+            Err(_e) => {
+                prefetch_inc("fail", job.metrics.as_deref());
+                if left == 0 {
+                    break;
+                }
+                left -= 1;
+                prefetch_inc("retry", job.metrics.as_deref());
+                let backoff_ms =
+                    50u64.saturating_mul(1 << u32::from(job.tries.saturating_sub(left as u8)));
+                tokio::time::sleep(Duration::from_millis(backoff_ms.min(1000))).await;
+            }
+        }
+    }
+
+    let prev = QUEUE_DEPTH.fetch_sub(1, Ordering::Relaxed) - 1;
+    set_prefetch_queue_depth(prev as u64, job.metrics.as_deref());
+
+    let dur_ms = start.elapsed().as_millis() as u64;
+    record_prefetch_run_ms(dur_ms, job.metrics.as_deref());
+    tracing::debug!(ok, "prefetch worker finished");
 }
 
 async fn do_prefetch(
@@ -213,22 +286,10 @@ async fn do_prefetch(
     etag: Option<String>,
     metrics: Option<Arc<SecurityMetricsState>>,
 ) -> Result<()> {
-    // 1) 走已有安全路径：限流/熔断/DNS 私网拦截/ETag 条件请求
-    // 可直接复用 subs 的 fetch 函数（建议抽出 fetch_with_limits(&url, etag) -> Result<CacheEntry>）
     let cache_entry = prefetch_once(url, etag, metrics).await?;
-
-    // Update size tracking
     let size = cache_entry.body.len() as u64;
     LAST_PREFETCH_SIZE.store(size, Ordering::Relaxed);
-
     Ok(())
-}
-
-/// For shutdown support - can be called once to take ownership for graceful shutdown
-#[must_use]
-pub const fn global_take() -> Option<Prefetcher> {
-    // Note: This is a simplified version - in production you'd want proper synchronization
-    None // Current structure doesn't easily support taking ownership, placeholder for interface
 }
 
 /// Get high watermark metric for export
@@ -260,7 +321,8 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
     if let Some(prefetcher) = current_prefetcher() {
         prefetcher.enqueue(job)
     } else {
-        Prefetcher::global().enqueue(job)
+        // No owner installed — silently fail.
+        false
     }
 }
 
@@ -287,7 +349,8 @@ pub fn enqueue_prefetch_with_metrics(
     if let Some(prefetcher) = current_prefetcher() {
         prefetcher.enqueue(job)
     } else {
-        Prefetcher::global().enqueue(job)
+        // No owner installed — silently fail.
+        false
     }
 }
 
@@ -296,14 +359,12 @@ async fn prefetch_once(
     etag: Option<String>,
     metrics: Option<Arc<SecurityMetricsState>>,
 ) -> Result<crate::admin_debug::cache::CacheEntry> {
-    // 快速校验
     if url.len() > 2048 {
         anyhow::bail!("url too long");
     }
     let parsed = Url::parse(url)?;
     crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist(&parsed)?;
 
-    // 真实抓取（含限流/熔断/缓存/ETag）
     #[cfg(feature = "subs_http")]
     {
         return if let Some(metrics) = metrics.as_ref() {
@@ -359,6 +420,7 @@ mod tests {
     use super::*;
     use once_cell::sync::Lazy;
     use std::sync::Mutex;
+    use tokio::sync::mpsc;
 
     static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -406,13 +468,14 @@ mod tests {
     }
 
     #[test]
-    fn test_enqueue_when_enabled() {
+    fn test_enqueue_when_enabled_but_no_owner() {
         let _guard = env_lock();
         let prev = std::env::var("SB_PREFETCH_ENABLE").ok();
         std::env::set_var("SB_PREFETCH_ENABLE", "1");
-        // Note: This test might succeed or fail depending on queue capacity
-        // In a real test, we'd want to mock the underlying components
-        let _result = enqueue_prefetch("https://example.com", None);
+        clear_default_prefetcher_for_test();
+        // With no owner installed, enqueue should return false (no global fallback).
+        let result = enqueue_prefetch("https://example.com", None);
+        assert!(!result, "enqueue should fail when no owner is installed");
         match prev {
             Some(value) => std::env::set_var("SB_PREFETCH_ENABLE", value),
             None => std::env::remove_var("SB_PREFETCH_ENABLE"),
@@ -441,8 +504,13 @@ mod tests {
         std::env::set_var("SB_PREFETCH_ENABLE", "1");
         clear_default_prefetcher_for_test();
 
+        // Install first owner via a manually-constructed Prefetcher (no dispatcher needed).
         let (tx_one, mut rx_one) = mpsc::channel::<PrefetchJob>(1);
-        let owner_one = install_default_prefetcher(Arc::new(Prefetcher { tx: tx_one }));
+        let owner_one = install_default_prefetcher(Arc::new(Prefetcher {
+            tx: tx_one,
+            cancel: CancellationToken::new(),
+            dispatcher_handle: StdMutex::new(None),
+        }));
         assert!(enqueue_prefetch("https://example.com/one", None));
         let first = rx_one
             .try_recv()
@@ -450,8 +518,20 @@ mod tests {
         assert_eq!(first.url, "https://example.com/one");
         drop(owner_one);
 
+        // After owner_one is dropped, enqueue should fail (no global fallback).
+        clear_default_prefetcher_for_test();
+        assert!(
+            !enqueue_prefetch("https://example.com/orphan", None),
+            "enqueue must fail after owner drop without global fallback"
+        );
+
+        // Install replacement owner.
         let (tx_two, mut rx_two) = mpsc::channel::<PrefetchJob>(1);
-        let owner_two = install_default_prefetcher(Arc::new(Prefetcher { tx: tx_two }));
+        let owner_two = install_default_prefetcher(Arc::new(Prefetcher {
+            tx: tx_two,
+            cancel: CancellationToken::new(),
+            dispatcher_handle: StdMutex::new(None),
+        }));
         assert!(enqueue_prefetch("https://example.com/two", None));
         let second = rx_two
             .try_recv()
@@ -479,7 +559,11 @@ mod tests {
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
         let (tx, mut rx) = mpsc::channel::<PrefetchJob>(1);
-        let owner = install_default_prefetcher(Arc::new(Prefetcher { tx }));
+        let owner = install_default_prefetcher(Arc::new(Prefetcher {
+            tx,
+            cancel: CancellationToken::new(),
+            dispatcher_handle: StdMutex::new(None),
+        }));
 
         assert!(enqueue_prefetch("https://example.com/metrics", None));
         let job = rx
@@ -507,7 +591,6 @@ mod tests {
 
         let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
 
-        // Helpers should work via explicit owner, not compat wrappers
         prefetch_inc("enq", Some(&metrics));
         prefetch_inc("done", Some(&metrics));
         observe_depth(5, Some(&metrics));
@@ -526,9 +609,12 @@ mod tests {
 
     #[tokio::test]
     async fn queue_depth_drops_when_full() {
-        // 构造容量=1的 prefetcher
         let (tx, _rx) = mpsc::channel::<PrefetchJob>(1);
-        let pf = Prefetcher { tx };
+        let pf = Prefetcher {
+            tx,
+            cancel: CancellationToken::new(),
+            dispatcher_handle: StdMutex::new(None),
+        };
 
         assert!(pf.enqueue(PrefetchJob {
             url: "http://a".into(),
@@ -537,7 +623,6 @@ mod tests {
             tries: 1,
             metrics: None,
         }));
-        // 第二次应丢弃
         assert!(!pf.enqueue(PrefetchJob {
             url: "http://b".into(),
             etag: None,
@@ -545,5 +630,48 @@ mod tests {
             tries: 1,
             metrics: None,
         }));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn dispatcher_exits_on_owner_drop() {
+        // Verify that the tracked dispatcher task exits when the owner is dropped.
+        let (tx, rx) = mpsc::channel::<PrefetchJob>(4);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(dispatcher_loop(rx, 2, cancel.clone()));
+
+        // Give the dispatcher a moment to enter its recv loop.
+        tokio::task::yield_now().await;
+
+        // Drop sender + cancel to simulate owner drop.
+        drop(tx);
+        cancel.cancel();
+
+        // The dispatcher handle must resolve promptly.
+        let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        assert!(
+            result.is_ok(),
+            "dispatcher should exit within 2s of owner drop"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn shutdown_awaits_dispatcher() {
+        clear_default_prefetcher_for_test();
+
+        let (tx, rx) = mpsc::channel::<PrefetchJob>(4);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(dispatcher_loop(rx, 2, cancel.clone()));
+
+        let pf = Prefetcher {
+            tx,
+            cancel,
+            dispatcher_handle: StdMutex::new(Some(handle)),
+        };
+
+        // Shutdown should complete without hanging.
+        let result = tokio::time::timeout(Duration::from_secs(2), pf.shutdown()).await;
+        assert!(result.is_ok(), "shutdown should complete within 2s");
     }
 }
