@@ -13,6 +13,28 @@
 
 ## 最近完成（2026-03-26）
 
+### validator/v2 outbound 子域拆分 — 已完成
+
+- `crates/sb-config/src/validator/v2.rs` 转为目录模块 `v2/mod.rs` + `v2/outbound.rs`
+- **搬到 `outbound.rs` 的逻辑**：
+  - `allowed_outbound_keys()` — outbound 允许字段集
+  - `validate_outbounds()` — `/outbounds` 数组结构、type/tag/unknown-field 校验
+  - `check_tls_capabilities()` — uTLS/ECH/REALITY TLS 诊断（含 QUIC+ECH 拦截）
+- **`validate_v2()` 仍为统一 orchestration 入口**，outbound 部分 dispatch 到子模块
+- **语义冻结**：issue ptr / code / severity / message 完全不变
+- **mod.rs 从 5384 行瘦身至 5048 行**（-336 行），outbound.rs 610 行（含 13 个新定点测试）
+- 新增 13 个 outbound 定点测试：数组校验、item 类型、type/tag 类型、unknown-field strict/allow_unknown、utls/reality/ECH
+
+**注意**：`validator/v2` 仅完成 outbound 子域拆分，dns/route/service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。sb-config 整体仍在第一波 blocker 列表中。
+
+**验证**:
+- `cargo check -p sb-config` ✅
+- `cargo check -p app --features parity` ✅
+- `cargo test -p sb-config --test compatibility_matrix` ✅ (6 passed)
+- `cargo test -p sb-config --lib validator::v2` ✅ (60 passed，含 13 个新 outbound 测试)
+- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+
 ### sb-config outbound.rs Raw/Validated 边界试点 — 已完成
 
 - `crates/sb-config/src/outbound/`:
@@ -22,7 +44,7 @@
   - **adapter 使用面零影响**：`HttpProxyConfig` / `Socks5Config` / `Socks4Config` / `TlsConfig` 等仍由 adapter 直接字段构造
   - **新增 27 个定点测试**：未知字段拒绝（8 顶层 + 3 嵌套）、合法解析（9）、默认值（4）、roundtrip（2）、适配器兼容（1）
 
-**注意**：这是 sb-config 的第一刀。`ir/mod.rs` 与 `validator/v2.rs` 仍是结构 blocker，sb-config 整体仍在第一波 blocker 列表中。
+**注意**：这是 sb-config 的第一刀。`ir/mod.rs` 与 `validator/v2/` 其余子域（dns/route/service/endpoint）仍是结构 blocker，sb-config 整体仍在第一波 blocker 列表中。
 
 **验证**:
 - `cargo check -p sb-config` ✅

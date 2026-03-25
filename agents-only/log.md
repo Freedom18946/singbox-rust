@@ -16,6 +16,24 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-26 16:00] Agent: Claude Opus 4.6
+
+**任务**: validator/v2 outbound 子域拆分 — 从巨型 validate_v2() 中切出 outbound 逻辑
+**变更**:
+- `crates/sb-config/src/validator/v2.rs` → 转为目录模块 `v2/mod.rs`
+- 新增 `crates/sb-config/src/validator/v2/outbound.rs`（610 行）：
+  - `allowed_outbound_keys()` — outbound 允许字段集
+  - `validate_outbounds()` — /outbounds 数组结构/type/tag/unknown-field 校验
+  - `check_tls_capabilities()` — uTLS/ECH/REALITY 诊断 + QUIC+ECH 拦截
+  - 13 个定点测试（数组、item 类型、type/tag、unknown-field strict/allow_unknown、utls/reality/ECH）
+- `v2/mod.rs` 从 5384→5048 行（-336 行），validate_v2() 内 outbound 块替换为 outbound::validate_outbounds() 调用
+- `include_str!` 路径修正为 `../v2_schema.json`
+- `object_keys`/`insert_keys` 提升为 `pub(crate)` 供子模块使用
+- `check_tls_capabilities` 通过 `pub use` 保持公共 API 兼容
+- `agents-only/active_context.md` — 新增 validator/v2 outbound 拆分记录
+**结果**: 成功。60 v2 lib tests + 6 compatibility_matrix tests 全通过，clippy clean，inbound-errors.sh ✅
+**备注**: 仅拆出 outbound 子域。dns/route/service/endpoint 未动。ir/mod.rs 未动。sb-config 整体仍在第一波 blocker。
+
 ### [2026-03-26 02:30] Agent: Claude Opus 4.6
 
 **任务**: follow-up: 补齐 anytls SessionRuntime JoinHandle 持有 + 文档对齐

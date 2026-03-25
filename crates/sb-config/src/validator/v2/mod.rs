@@ -1,3 +1,8 @@
+mod outbound;
+
+// Re-export outbound TLS capability check for public API stability
+pub use outbound::check_tls_capabilities;
+
 use crate::deprecation::{deprecation_directory, DeprecationSeverity};
 use crate::ir::{
     ConfigIR, Credentials, DerpMeshPeerIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, HeaderEntry,
@@ -29,7 +34,7 @@ fn rule_set_format_from_url(url: &str) -> Option<&'static str> {
     rule_set_format_from_path(path)
 }
 
-fn object_keys<T>(value: T) -> HashSet<String>
+pub(crate) fn object_keys<T>(value: T) -> HashSet<String>
 where
     T: Serialize,
 {
@@ -43,7 +48,7 @@ where
     set
 }
 
-fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
+pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     for key in keys {
         set.insert((*key).to_string());
     }
@@ -73,7 +78,9 @@ fn allowed_route_rule_keys() -> HashSet<String> {
     let mut set = object_keys(crate::ir::RuleIR::default());
     insert_keys(
         &mut set,
-        &["when", "to", "suffix", "keyword", "regex", "ip_cidr", "process"],
+        &[
+            "when", "to", "suffix", "keyword", "regex", "ip_cidr", "process",
+        ],
     );
     set
 }
@@ -197,35 +204,6 @@ fn allowed_endpoint_peer_keys() -> HashSet<String> {
     .into_iter()
     .map(str::to_string)
     .collect()
-}
-
-fn allowed_outbound_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::OutboundIR::default());
-    if set.remove("ty") {
-        set.insert("type".to_string());
-    }
-    set.insert("tag".to_string());
-    insert_keys(
-        &mut set,
-        &["transport", "ws", "h2", "tls", "http_upgrade", "httpupgrade", "grpc"],
-    );
-    insert_keys(
-        &mut set,
-        &[
-            "user",
-            "auth_str",
-            "url",
-            "interval",
-            "interval_ms",
-            "timeout",
-            "timeout_ms",
-            "tolerance",
-            "tolerance_ms",
-            "outbounds",
-            "default",
-        ],
-    );
-    set
 }
 
 fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
@@ -930,234 +908,6 @@ pub fn check_non_localhost_binding_warnings(doc: &Value) -> Vec<Value> {
     issues
 }
 
-/// Check outbound TLS configurations for capabilities that have known
-/// limitations in the Rust implementation. Emits info-level diagnostics for:
-/// - uTLS fingerprints other than "chrome" or empty (limited support)
-/// - ECH (encrypted_client_hello) configuration (behind feature flag)
-/// - REALITY TLS (supported, informational notice)
-///
-/// 检查出站 TLS 配置中在 Rust 实现中有已知限制的功能。
-/// 为以下情况发出 info 级别的诊断：
-/// - 非 "chrome" 或空的 uTLS 指纹（有限支持）
-/// - ECH（encrypted_client_hello）配置（需要 feature flag）
-/// - REALITY TLS（已支持，信息通知）
-pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum QuicEchMode {
-        Reject,
-        Experimental,
-    }
-
-    fn ech_enabled(ech_val: &Value) -> bool {
-        match ech_val {
-            Value::Bool(b) => *b,
-            Value::Object(o) => o.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-            _ => false,
-        }
-    }
-
-    fn has_quic_token(value: Option<&Value>) -> bool {
-        match value {
-            Some(Value::String(s)) => s
-                .split(',')
-                .map(str::trim)
-                .any(|token| token.eq_ignore_ascii_case("quic")),
-            Some(Value::Array(items)) => items
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|token| token.eq_ignore_ascii_case("quic")),
-            Some(Value::Object(map)) => map
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|ty| ty.eq_ignore_ascii_case("quic")),
-            _ => false,
-        }
-    }
-
-    fn outbound_uses_quic(obj: &serde_json::Map<String, Value>) -> bool {
-        if obj.get("type").and_then(Value::as_str).is_some_and(|ty| {
-            ty.eq_ignore_ascii_case("tuic")
-                || ty.eq_ignore_ascii_case("hysteria")
-                || ty.eq_ignore_ascii_case("hysteria2")
-        }) {
-            return true;
-        }
-        if has_quic_token(obj.get("network")) || has_quic_token(obj.get("transport")) {
-            return true;
-        }
-        obj.get("udp_relay_mode")
-            .and_then(Value::as_str)
-            .is_some_and(|mode| mode.eq_ignore_ascii_case("quic"))
-    }
-
-    fn read_quic_ech_mode(doc: &Value, issues: &mut Vec<Value>) -> QuicEchMode {
-        let Some(exp) = doc.get("experimental") else {
-            return QuicEchMode::Reject;
-        };
-        let Some(raw) = exp.get("quic_ech_mode") else {
-            return QuicEchMode::Reject;
-        };
-
-        let Some(mode) = raw.as_str() else {
-            issues.push(emit_issue(
-                "error",
-                IssueCode::TypeMismatch,
-                "/experimental/quic_ech_mode",
-                "experimental.quic_ech_mode must be a string: 'reject' or 'experimental'",
-                "set experimental.quic_ech_mode to 'reject' (default) or 'experimental'",
-            ));
-            return QuicEchMode::Reject;
-        };
-
-        match mode.trim().to_ascii_lowercase().as_str() {
-            "" | "reject" => QuicEchMode::Reject,
-            "experimental" => QuicEchMode::Experimental,
-            _ => {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::InvalidEnum,
-                    "/experimental/quic_ech_mode",
-                    "experimental.quic_ech_mode must be 'reject' or 'experimental'",
-                    "use 'reject' for production safety; use 'experimental' only for controlled tests",
-                ));
-                QuicEchMode::Reject
-            }
-        }
-    }
-
-    let mut issues = Vec::new();
-    let quic_ech_mode = read_quic_ech_mode(doc, &mut issues);
-
-    let outbounds = match doc.get("outbounds").and_then(|v| v.as_array()) {
-        Some(arr) => arr,
-        None => return issues,
-    };
-
-    for (i, ob) in outbounds.iter().enumerate() {
-        let obj = match ob.as_object() {
-            Some(o) => o,
-            None => continue,
-        };
-
-        let outbound_tag = obj
-            .get("tag")
-            .or_else(|| obj.get("name"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unnamed");
-
-        // Check uTLS fingerprint
-        if let Some(fp_val) = obj.get("utls_fingerprint").or_else(|| {
-            // Also check nested tls.utls.fingerprint pattern
-            obj.get("tls")
-                .and_then(|t| t.get("utls"))
-                .and_then(|u| u.get("fingerprint"))
-        }) {
-            if let Some(fp) = fp_val.as_str() {
-                let fp_lower = fp.to_ascii_lowercase();
-                if !fp_lower.is_empty() && fp_lower != "chrome" {
-                    issues.push(emit_issue(
-                        "info",
-                        IssueCode::Deprecated,
-                        &format!("/outbounds/{}/utls_fingerprint", i),
-                        &format!(
-                            "outbound '{}': uTLS fingerprint '{}' has limited support in Rust; \
-                             'chrome' is the most reliable fingerprint, others may fall back to native TLS",
-                            outbound_tag, fp
-                        ),
-                        "use 'chrome' fingerprint for best compatibility, or omit for native TLS",
-                    ));
-                }
-            }
-        }
-
-        // Check ECH (encrypted_client_hello)
-        let ech_loc = if let Some(v) = obj.get("encrypted_client_hello") {
-            Some(("encrypted_client_hello", v))
-        } else if let Some(v) = obj.get("tls").and_then(|t| t.get("ech")) {
-            Some(("tls/ech", v))
-        } else {
-            obj.get("tls")
-                .and_then(|t| t.get("encrypted_client_hello"))
-                .map(|v| ("tls/encrypted_client_hello", v))
-        };
-
-        if let Some((ech_ptr_suffix, ech_val)) = ech_loc {
-            let ech_enabled = ech_enabled(ech_val);
-            if ech_enabled {
-                issues.push(emit_issue(
-                    "info",
-                    IssueCode::Deprecated,
-                    &format!("/outbounds/{}/encrypted_client_hello", i),
-                    &format!(
-                        "outbound '{}': Encrypted Client Hello (ECH) is behind the 'tls_ech' feature flag; \
-                         without it, ECH configuration is silently ignored",
-                        outbound_tag
-                    ),
-                    "enable the 'tls_ech' feature flag at build time for ECH support",
-                ));
-
-                if outbound_uses_quic(obj) {
-                    match quic_ech_mode {
-                        QuicEchMode::Reject => {
-                            issues.push(emit_issue(
-                                "error",
-                                IssueCode::Conflict,
-                                &format!("/outbounds/{}/{}", i, ech_ptr_suffix),
-                                &format!(
-                                    "outbound '{}': QUIC + ECH is not supported in the current Rust implementation; \
-                                     configuration is rejected by default to avoid silent fallback",
-                                    outbound_tag
-                                ),
-                                "set experimental.quic_ech_mode='experimental' only for controlled interop tests, \
-                                 or use TCP-based TLS ECH outbounds",
-                            ));
-                        }
-                        QuicEchMode::Experimental => {
-                            issues.push(emit_issue(
-                                "warning",
-                                IssueCode::Conflict,
-                                &format!("/outbounds/{}/{}", i, ech_ptr_suffix),
-                                &format!(
-                                    "outbound '{}': QUIC + ECH is in experimental mode; runtime behavior may fail or change and should not be treated as production-ready",
-                                    outbound_tag
-                                ),
-                                "keep experimental scope small, capture handshake evidence, and prefer TCP+TLS ECH for production paths",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check REALITY TLS
-        let reality_enabled = obj
-            .get("reality_enabled")
-            .or_else(|| {
-                obj.get("tls")
-                    .and_then(|t| t.get("reality"))
-                    .and_then(|r| r.get("enabled"))
-            })
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        if reality_enabled {
-            issues.push(emit_issue(
-                "info",
-                IssueCode::Deprecated,
-                &format!("/outbounds/{}/reality_enabled", i),
-                &format!(
-                    "outbound '{}': REALITY TLS is supported in Rust via rustls; \
-                     verify public_key and short_id are correctly configured",
-                    outbound_tag
-                ),
-                "ensure reality_public_key and reality_short_id are set correctly",
-            ));
-        }
-    }
-
-    issues
-}
-
 /// Lightweight schema validation (placeholder implementation): parses built-in schema, checks against field set for UnknownField/TypeMismatch/MissingRequired.
 /// Note: To avoid heavy dependencies, minimal necessary logic is implemented here; can be switched to jsonschema crate later while keeping output structure unchanged.
 /// 轻量 schema 校验（占位实现）：解析内置 schema，对照字段集做 UnknownField/TypeMismatch/MissingRequired
@@ -1167,7 +917,7 @@ pub fn check_tls_capabilities(doc: &Value) -> Vec<Value> {
 /// * `doc` - The JSON document to validate / 待验证的 JSON 文档
 /// * `allow_unknown` - Whether to treat unknown fields as warnings (true) instead of errors (false) / 是否将未知字段视为警告（true）而非错误（false）
 pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
-    let schema_text = include_str!("v2_schema.json");
+    let schema_text = include_str!("../v2_schema.json");
     let schema: Value = match serde_json::from_str(schema_text) {
         Ok(v) => v,
         Err(_) => {
@@ -1364,84 +1114,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             }
         }
     }
-    // 3) outbounds type and structure validation
-    if let Some(outbounds_val) = doc.get("outbounds") {
-        if !outbounds_val.is_array() {
-            issues.push(emit_issue(
-                "error",
-                IssueCode::TypeMismatch,
-                "/outbounds",
-                "outbounds must be an array",
-                "use []",
-            ));
-        }
-    }
-    if let Some(arr) = doc.get("outbounds").and_then(|v| v.as_array()) {
-        for (i, ob) in arr.iter().enumerate() {
-            // Each outbound must be an object
-            if !ob.is_object() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::TypeMismatch,
-                    &format!("/outbounds/{}", i),
-                    "outbound item must be an object",
-                    "use {}",
-                ));
-                continue;
-            }
-
-            // type is required
-            if ob.get("type").is_none() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::MissingRequired,
-                    &format!("/outbounds/{}/type", i),
-                    "missing required field",
-                    "add it",
-                ));
-            } else if let Some(ty) = ob.get("type") {
-                if !ty.is_string() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/outbounds/{}/type", i),
-                        "type must be a string",
-                        "use string value",
-                    ));
-                }
-            }
-
-            // tag/name should be string if present
-            if let Some(tag_val) = ob.get("tag") {
-                if !tag_val.is_string() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/outbounds/{}/tag", i),
-                        "tag must be a string",
-                        "use string value",
-                    ));
-                }
-            }
-
-            // additionalProperties=false (V2 allowed fields)
-            if let Some(map) = ob.as_object() {
-                let allowed = allowed_outbound_keys();
-                for k in map.keys() {
-                    if !allowed.contains(k) {
-                        let kind = if allow_unknown { "warning" } else { "error" };
-                        issues.push(emit_issue(
-                            kind,
-                            IssueCode::UnknownField,
-                            &format!("/outbounds/{}/{}", i, k),
-                            "unknown field",
-                            "remove it",
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    // 3) outbounds type and structure validation (delegated to outbound submodule)
+    outbound::validate_outbounds(doc, allow_unknown, &mut issues);
 
     if let Some(route) = doc.get("route").and_then(|v| v.as_object()) {
         let allowed = allowed_route_keys();
@@ -1715,7 +1389,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     // Security: non-localhost binding warnings
     issues.extend(check_non_localhost_binding_warnings(doc));
     // TLS capability matrix validation
-    issues.extend(check_tls_capabilities(doc));
+    issues.extend(outbound::check_tls_capabilities(doc));
     issues
 }
 

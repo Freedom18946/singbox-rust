@@ -77,8 +77,9 @@
   - `app/src/admin_debug/security_async.rs`
     - 移除全局 `OnceCell` resolver，改成显式 `build_resolver()`
     - 清理生产态 `super::`
-  - `crates/sb-config/src/validator/v2.rs`
+  - `crates/sb-config/src/validator/v2/mod.rs` (原 `v2.rs`，已转为目录模块)
     - 纯查表 `OnceLock<HashSet<_>>` 缓存改成普通局部构造
+    - outbound 子域已拆分至 `v2/outbound.rs`（2026-03-26 完成）
   - `crates/sb-common/src/conntrack.rs`
     - `shared_tracker()` 不再依赖进程级 singleton；`GLOBAL_TRACKER` 仅保留在 `#[cfg(test)]`
   - `crates/sb-core/src/router/engine.rs`
