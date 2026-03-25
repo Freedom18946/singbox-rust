@@ -1,6 +1,7 @@
 mod dns;
 mod outbound;
 mod route;
+mod service;
 
 // Re-export outbound TLS capability check for public API stability
 pub use outbound::check_tls_capabilities;
@@ -39,37 +40,6 @@ pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     for key in keys {
         set.insert((*key).to_string());
     }
-}
-
-fn allowed_service_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::ServiceIR::default());
-    insert_keys(
-        &mut set,
-        &[
-            "resolved_listen",
-            "resolved_listen_port",
-            "ssmapi_listen",
-            "ssmapi_listen_port",
-            "derp_listen",
-            "derp_listen_port",
-            "ssmapi_tls_cert_path",
-            "ssmapi_tls_key_path",
-            "ssmapi_cache_path",
-            "derp_tls_cert_path",
-            "derp_tls_key_path",
-            "derp_config_path",
-            "derp_server_key_path",
-            "derp_verify_client_endpoint",
-            "derp_verify_client_url",
-            "derp_home",
-            "derp_mesh_psk",
-            "derp_mesh_psk_file",
-            "derp_mesh_with",
-            "derp_stun_enabled",
-            "derp_stun_listen_port",
-        ],
-    );
-    set
 }
 
 fn allowed_endpoint_keys() -> HashSet<String> {
@@ -1034,25 +1004,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     // 5) dns unknown-field validation (delegated to dns submodule)
     dns::validate_dns(doc, allow_unknown, &mut issues);
 
-    if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
-        let allowed = allowed_service_keys();
-        for (i, svc) in services.iter().enumerate() {
-            if let Some(map) = svc.as_object() {
-                for k in map.keys() {
-                    if !allowed.contains(k) {
-                        let kind = if allow_unknown { "warning" } else { "error" };
-                        issues.push(emit_issue(
-                            kind,
-                            IssueCode::UnknownField,
-                            &format!("/services/{}/{}", i, k),
-                            "unknown field",
-                            "remove it",
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    // 6) service unknown-field validation (delegated to service submodule)
+    service::validate_services(doc, allow_unknown, &mut issues);
 
     if let Some(endpoints) = doc.get("endpoints").and_then(|v| v.as_array()) {
         let allowed = allowed_endpoint_keys();

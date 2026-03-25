@@ -50,7 +50,7 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / `validator/v2` 其余子域 service/endpoint）
+  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` service 子域~~ ✅ 已拆分 2026-03-26 / `validator/v2` endpoint 待拆）
 - **已完成 hard global + lifecycle 收口**：
   - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
@@ -452,7 +452,7 @@
 - 这一组结论在当前仓库上 **没有被维护期修正推翻**。
 - ~~`crates/sb-config/src/outbound.rs` 仍是直接 `Deserialize` 的 Raw 边界模型。~~ → ✅ 2026-03-26 已完成 Raw/Validated 边界试点（`deny_unknown_fields` + 自定义 `Deserialize` via Raw bridge）
 - `crates/sb-config/src/ir/mod.rs` 仍是 3755 LOC 巨石，未完成 Raw / Validated / Planned 三相拆分。
-- ~~`crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。~~ → ✅ 2026-03-26 已完成 outbound + route + dns 子域拆分（`v2/outbound.rs` 610 行 + `v2/route.rs` 362 行 + `v2/dns.rs` 221 行，`v2/mod.rs` 4757 行），service/endpoint 子域待拆。
+- ~~`crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。~~ → ✅ 2026-03-26 已完成 outbound + route + dns + service 子域拆分（`v2/outbound.rs` 610 行 + `v2/route.rs` 362 行 + `v2/dns.rs` 221 行 + `v2/service.rs` 131 行，`v2/mod.rs` 4710 行），endpoint 子域待拆。
 
 因此 `WP-30` / `WP-31` 仍是中期主线，不建议因为 `logging` / `security_metrics` 的 compat 壳残留而后移。
 
@@ -507,7 +507,7 @@
 - ~~`validator/v2/route.rs`~~ ✅ 已完成 2026-03-26（362 行，含 `allowed_route_keys` + `allowed_route_rule_keys` + `allowed_rule_set_keys` + `rule_set_format_from_path/url` + `validate_route` + 14 定点测试）
 - `validator/v2/inbound.rs`
 - ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26（610 行，含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试）
-- `validator/v2/service.rs`
+- ~~`validator/v2/service.rs`~~ ✅ 已完成 2026-03-26（131 行，含 `allowed_service_keys` + `validate_services` + 4 定点测试）
 - `validator/v2/endpoint.rs`
 
 ### 必做任务
