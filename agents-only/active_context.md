@@ -36,6 +36,12 @@
 - `cargo test -p sb-core` ✅ (504+ tests)
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
+### http_client follow-up: docs alignment + report restore — 已完成
+
+- 恢复 `d3a0b1e7` 误删的 `reports/l18/.../l18_capstone_status.json`
+- 更新 `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`：http_client 从 P1→Done，从第一波移出
+- 更新 `重构package相关/singbox_rust_rebuild_workpackage.md`：§1.1 和 WP-20 分波说明同步校正
+
 ## Compat 债务评估结论（四项）
 
 | 项目 | 残留 | 决策 |

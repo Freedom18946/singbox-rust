@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-03-07T11:30:27Z",
+  "profile": "daily",
+  "overall": "FAIL",
+  "api_url": "http://127.0.0.1:29090",
+  "fail_fast": 0,
+  "require_docker": 0,
+  "sandbox_controls": {
+    "allow_existing_system_proxy": 1,
+    "allow_real_proxy_coexist": 1
+  },
+  "canary": {
+    "duration_hours": 1,
+    "sample_interval_sec": 300
+  },
+  "stability_artifacts": {
+    "report_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports",
+    "config_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports/stability_test_config.json"
+  },
+  "gates": {
+    "preflight": "PASS",
+    "oracle": "PASS",
+    "boundaries": "PASS",
+    "parity": "PASS",
+    "workspace_test": "FAIL",
+    "fmt": "PASS",
+    "clippy": "PASS",
+    "hot_reload": "FAIL",
+    "signal": "FAIL",
+    "docker": "WARN",
+    "gui_smoke": "PASS",
+    "canary": "PASS",
+    "dual_kernel_diff": "FAIL",
+    "perf_gate": "PASS"
+  }
+}

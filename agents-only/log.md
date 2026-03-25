@@ -8256,3 +8256,19 @@ L2.8.4-6 Handlers + WebSocket:
 - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
 - `cargo test -p sb-core` ✅ (504+ tests)
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
+
+### 2026-03-25 — http_client follow-up: docs alignment + report restore
+
+**目标**: 修正 `d3a0b1e7` 的两个遗留问题。
+
+**变更**:
+1. 恢复误删的 `reports/l18/batches/.../l18_capstone_status.json`
+2. `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`:
+   - §2 表格 http_client 行：P1→Done
+   - §2.0 globals 细化证据 http_client 行：标注 hard global 已删
+   - §3.1 第一波列表：移除 http_client.rs
+   - §3.2 下调列表：新增 http_client.rs 作为已收口项
+3. `重构package相关/singbox_rust_rebuild_workpackage.md`:
+   - §1.1 第一波 blocker 列表：移除 http_client.rs，新增"已完成"分类
+   - WP-20 分波说明：http_client 移入"已完成"，从第一波移出
+4. `agents-only/active_context.md`: 追加 follow-up 记录
