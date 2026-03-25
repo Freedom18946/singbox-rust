@@ -15,13 +15,13 @@
 
 ### validator/v2 service 子域拆分 — 已完成
 
-- 新增 `crates/sb-config/src/validator/v2/service.rs`（131 行）
+- 新增 `crates/sb-config/src/validator/v2/service.rs`（135 行）
 - **搬到 `service.rs` 的逻辑**：
   - `allowed_service_keys()` — service 允许字段集
   - `validate_services()` — `/services` unknown-field 校验
 - **`validate_v2()` 仍为统一 orchestration 入口**，service 部分 dispatch 到子模块
 - **语义冻结**：issue ptr / code / severity / message / hint 完全不变
-- **mod.rs 从 4757 行瘦身至 4710 行**（-47 行），service.rs 131 行（含 4 个新定点测试）
+- **mod.rs 从 4757 行瘦身至 4710 行**（-47 行），service.rs 135 行（含 4 个新定点测试）
 - 新增 4 个 service 定点测试：unknown-field strict/allow_unknown、无 services 无误报、ptr 精确命中多 index
 
 **注意**：`validator/v2` 已完成 outbound + route + dns + service 四个子域拆分，endpoint 尚未拆出。`ir/mod.rs` 仍未动。
