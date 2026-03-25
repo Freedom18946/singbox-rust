@@ -15,7 +15,7 @@
 
 ### validator/v2 dns 子域拆分 — 已完成
 
-- 新增 `crates/sb-config/src/validator/v2/dns.rs`（200 行）
+- 新增 `crates/sb-config/src/validator/v2/dns.rs`（221 行）
 - **搬到 `dns.rs` 的逻辑**：
   - `allowed_dns_keys()` — dns 顶层允许字段集
   - `allowed_dns_server_keys()` — dns server 允许字段集
@@ -23,7 +23,7 @@
   - `validate_dns()` — `/dns` 顶层 + `/dns/servers` + `/dns/rules` unknown-field 校验
 - **`validate_v2()` 仍为统一 orchestration 入口**，dns 部分 dispatch 到子模块
 - **语义冻结**：issue ptr / code / severity / message / hint 完全不变
-- **mod.rs 从 4836 行瘦身至 4757 行**（-79 行），dns.rs 200 行（含 8 个新定点测试）
+- **mod.rs 从 4836 行瘦身至 4757 行**（-79 行），dns.rs 221 行（含 8 个新定点测试）
 - 新增 8 个 dns 定点测试：unknown-field strict/allow_unknown（dns/server/rule）、无 dns 无误报、ptr 精确命中全层级
 
 **注意**：`validator/v2` 已完成 outbound + route + dns 三个子域拆分，service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。
