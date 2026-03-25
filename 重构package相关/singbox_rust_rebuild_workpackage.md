@@ -451,7 +451,7 @@
 
 - 这一组结论在当前仓库上 **没有被维护期修正推翻**。
 - ~~`crates/sb-config/src/outbound.rs` 仍是直接 `Deserialize` 的 Raw 边界模型。~~ → ✅ 2026-03-26 已完成 Raw/Validated 边界试点（`deny_unknown_fields` + 自定义 `Deserialize` via Raw bridge）
-- `crates/sb-config/src/ir/mod.rs` 仍是 3755 LOC 巨石，未完成 Raw / Validated / Planned 三相拆分。
+- `crates/sb-config/src/ir/mod.rs` 巨石问题仍未根治，但已完成 endpoint + service 第一刀结构拆分（2026-03-26，`ir/endpoint.rs` 174 行 + `ir/service.rs` 322 行，mod.rs 3755→3283 行）。剩余重点仍是 dns IR 与更大的 raw/validated/planned/normalize 三相边界治理。
 - ~~`crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。~~ → ✅ 2026-03-26 已完成 outbound + route + dns + service + endpoint 子域拆分（`v2/outbound.rs` 610 行 + `v2/route.rs` 362 行 + `v2/dns.rs` 221 行 + `v2/service.rs` 135 行 + `v2/endpoint.rs` 195 行，`v2/mod.rs` 4630 行），**validator/v2 第一轮子域拆分已完成，剩余主战场转为 `ir/mod.rs`**。
 
 因此 `WP-30` / `WP-31` 仍是中期主线，不建议因为 `logging` / `security_metrics` 的 compat 壳残留而后移。
