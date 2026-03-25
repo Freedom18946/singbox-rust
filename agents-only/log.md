@@ -16,6 +16,48 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-25 15:30] Agent: Codex (GPT-5)
+
+**任务**: 阅读 `5.4pro第三次审计`，按 `top_backlog` 逐项核验当前仓库中问题是否仍存在、是否严重，并将维护期实测反馈回写到 `重构package相关/`
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 新增维护期核验记录，逐项标注 `top_backlog` 的“仍存在 / 部分缓解 / 严重度”与优先级校正
+- `重构package相关/singbox_rust_rebuild_workpackage.md`: 新增对核验记录的引用，并校正 `WP-20`、`WP-30`、`WP-41`、`WP-61` 的优先级说明
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功；确认原 5.4pro 审计大方向仍有效，但 `logging.rs`、`security_metrics.rs`、`sb-metrics`、`registry_ext` 的部分“现在时表述”已被 2026-03-24 maintenance 修正，workpackage 已据此下调优先级
+**备注**:
+- 本轮未重新跑全仓静态扫描；采用的是“原始审计 + 当前源码抽查 + maintenance 文档证据”的核验模式
+- 尝试使用 3 个 subagent 并行核验，但均因 workspace 402 错误失败，后续改为本地串行完成
+
+### [2026-03-25 15:45] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 5.4pro 审计核验，补强 async lifecycle / lock-across-await 第二轮细化证据
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 新增 `async lifecycle / lock-across-await 第二轮细化证据`，补充 `http_server.rs`、`anytls.rs`、`ssh.rs`、`tun.rs`、`optimizations.rs` 的函数级与行号级证据
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功；确认 `WP-41` 相关判断无需下调，当前仓库里仍有明确的 accept loop 裸 spawn、session/pool 锁跨 await、bridge task 未跟踪等问题
+**备注**:
+- 本轮仍未改代码，仅补强核验证据，便于后续继续修订重构包优先级或直接进入整改
+
+### [2026-03-25 16:05] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 5.4pro 审计核验，补强配置边界与 mega-file 第二轮细化证据
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 新增 `配置边界 / mega-file 第二轮细化证据`，补充 `outbound.rs`、`ir/mod.rs`、`validator/v2.rs`、`bootstrap.rs`、`run_engine.rs`、`dns/upstream.rs`、`router/mod.rs` 的函数级与行号级证据
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功；第二轮配置/mega-file 细化未改变既有 P1/P2 判断，现有 `WP-30` / `WP-61` 排序无需继续调整
+**备注**:
+- 本轮主要是把“为什么仍判 P1/P2”落成可直接引用的源码证据，便于后续继续分拆整改或写更细 workpackage
+
+### [2026-03-25 16:15] Agent: Codex (GPT-5)
+
+**任务**: 继续推进 5.4pro 审计核验，补强 globals / compat 第二轮细化证据
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 新增 `globals / compat 第二轮细化证据`，补充 `http_client.rs`、`geoip/mod.rs`、`logging.rs`、`prefetch.rs`、`security_metrics.rs`、`sb-metrics/src/lib.rs`、`metrics/registry_ext.rs` 的函数级与行号级证据
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功；确认 `http_client` / `geoip` / `prefetch` 仍是第一波，`logging` / `security_metrics` / `sb-metrics` / `registry_ext` 继续维持下调后的优先级
+**备注**:
+- 本轮未改代码，仅补强核验证据，方便后续直接进入整改
+
 ### [2026-03-24 02:10] Agent: Codex (GPT-5)
 
 **任务**: 收尾 sb-metrics registry plumbing 收口，补文档并整理提交范围
@@ -8192,3 +8234,25 @@ L2.8.4-6 Handlers + WebSocket:
 **构建验证**: clippy ✅ | sb-core 509 ✅ | sb-api ✅ | sb-subscribe 16 ✅
 **变更统计**: 56 files, +4653 -499 lines
 **L25 状态**: CLOSED — 10/10 完成，两个 L22-L24 PARTIAL 项全部解决
+
+---
+
+### 2026-03-25 — http_client hard global fallback 收口（Maintenance）
+
+**目标**: 消除 `sb-core http_client` 的 `OnceLock` 硬全局 singleton，收口为 weak-owner only 模式。
+
+**变更文件**:
+- `crates/sb-core/src/http_client.rs`: 删除 `GLOBAL_HTTP_CLIENT`、`install_http_client()`、`global_http_client()`；`http_execute()` 只走 weak-owner；测试新增负断言
+- `app/src/reqwest_http.rs`: 删除 `install_global_http_client()`（零调用方死代码）
+
+**保留 compat**: `DEFAULT_HTTP_CLIENT` weak-owner 机制不变；`install_default_http_client()` 仍是唯一安装入口。
+
+**验证**:
+- `cargo check -p sb-core` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner` ✅
+- `cargo test -p app --lib build_redactor_avoids_runtime_dependency_side_effects --features "..."` ✅
+- `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` ✅
+- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo test -p sb-core` ✅ (504+ tests)
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅

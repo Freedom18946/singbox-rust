@@ -106,12 +106,3 @@ impl HttpClient for ReqwestHttpClient {
     }
 }
 
-/// Install the global reqwest HTTP client for sb-core.
-///
-/// Should be called once at application startup before any HTTP requests are made.
-pub fn install_global_http_client() {
-    let client = ReqwestHttpClient::new();
-    if sb_core::http_client::install_http_client(Box::new(client)).is_err() {
-        tracing::debug!("HTTP client already installed, skipping");
-    }
-}

@@ -89,6 +89,7 @@
     - `sb-core` 默认 HTTP client 从全局强持有 owner 收口为弱引用兼容注册表
     - 显式 owner 上提到 `AppRuntimeDeps`
     - `run_engine` 不再重复安装全局强持有 owner
+    - **2026-03-25 追加**: `GLOBAL_HTTP_CLIENT` OnceLock + `install_http_client()` / `global_http_client()` 已彻底删除；`http_execute()` 现在只走 weak-owner；`app/src/reqwest_http.rs` 的 `install_global_http_client()` 同步删除
   - `app/src/main.rs`、`app/src/runtime_deps.rs`
     - logging 初始化改为只构造 `Redactor`，不再为了 startup redactor 临时构造整包 `AppRuntimeDeps`
     - 默认 `http_client` / `security_metrics` owner 只在真正 runtime 持有路径上安装，避免弱注册表在启动早期出现瞬时 install-then-drop 抖动

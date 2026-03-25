@@ -1,23 +1,17 @@
-//! Global HTTP client registry.
+//! HTTP client registry (weak-owner model).
 //!
-//! Provides a global `HttpClient` instance that can be set once at startup
-//! by the application layer. This allows sb-core to perform HTTP requests
-//! (geo asset downloads, remote rule-set fetching) without directly depending
-//! on a specific HTTP client library like reqwest.
+//! The application layer installs an `Arc<dyn HttpClient>` via
+//! [`install_default_http_client`]; sb-core retains only a `Weak` reference so
+//! the client is automatically reclaimed when the owning `Arc` is dropped.
+//!
+//! There is **no** process-wide hard global singleton.  All callers go through
+//! the weak-owner lookup in [`http_execute`].
 
 use sb_types::ports::http::{HttpClient, HttpRequest, HttpResponse};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-static GLOBAL_HTTP_CLIENT: OnceLock<Box<dyn HttpClient>> = OnceLock::new();
 static DEFAULT_HTTP_CLIENT: LazyLock<Mutex<Option<Weak<dyn HttpClient>>>> =
     LazyLock::new(|| Mutex::new(None));
-
-/// Install the global HTTP client. Should be called once at application startup.
-///
-/// Returns `Err` if a client has already been installed.
-pub fn install_http_client(client: Box<dyn HttpClient>) -> Result<(), Box<dyn HttpClient>> {
-    GLOBAL_HTTP_CLIENT.set(client)
-}
 
 /// Install the default HTTP client via a weak compatibility registry.
 ///
@@ -37,13 +31,6 @@ pub fn install_default_http_client(client: Arc<dyn HttpClient>) -> Arc<dyn HttpC
     }
 }
 
-/// Get a reference to the global HTTP client.
-///
-/// Returns `None` if no client has been installed yet.
-pub fn global_http_client() -> Option<&'static dyn HttpClient> {
-    GLOBAL_HTTP_CLIENT.get().map(|c| c.as_ref())
-}
-
 fn current_http_client() -> Option<Arc<dyn HttpClient>> {
     DEFAULT_HTTP_CLIENT
         .lock()
@@ -52,17 +39,15 @@ fn current_http_client() -> Option<Arc<dyn HttpClient>> {
         .and_then(Weak::upgrade)
 }
 
-/// Execute an HTTP request using the global HTTP client.
+/// Execute an HTTP request using the installed HTTP client.
 ///
-/// Returns an error if no HTTP client has been installed.
+/// Returns an error if no client owner is alive.  The caller must ensure
+/// [`install_default_http_client`] has been called and the owning `Arc` is
+/// still held.
 pub async fn http_execute(req: HttpRequest) -> Result<HttpResponse, sb_types::CoreError> {
-    if let Some(client) = current_http_client() {
-        return client.execute(req).await;
-    }
-
-    let client = global_http_client().ok_or_else(|| sb_types::CoreError::Internal {
+    let client = current_http_client().ok_or_else(|| sb_types::CoreError::Internal {
         message:
-            "no HTTP client installed; call install_default_http_client() or install_http_client() at startup"
+            "no HTTP client installed; call install_default_http_client() at startup and keep the owning Arc alive"
                 .into(),
     })?;
     client.execute(req).await
@@ -71,8 +56,8 @@ pub async fn http_execute(req: HttpRequest) -> Result<HttpResponse, sb_types::Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_types::CoreError;
     use sb_types::ports::http::{HttpMethod, HttpRequest, HttpResponse};
+    use sb_types::CoreError;
     use std::collections::HashMap;
     use std::pin::Pin;
 
@@ -120,7 +105,14 @@ mod tests {
             .expect_err("dropping explicit owner should disable weak registry lookup");
         match err {
             sb_types::CoreError::Internal { message } => {
-                assert!(message.contains("install_default_http_client"));
+                assert!(
+                    message.contains("install_default_http_client"),
+                    "error should reference the weak-owner API"
+                );
+                assert!(
+                    !message.contains("install_http_client()"),
+                    "error must not reference the removed hard-global API"
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }
