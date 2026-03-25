@@ -13,24 +13,25 @@
 
 ## 最近完成（2026-03-26）
 
-### validator/v2 service 子域拆分 — 已完成
+### validator/v2 endpoint 子域拆分 — 已完成
 
-- 新增 `crates/sb-config/src/validator/v2/service.rs`（135 行）
-- **搬到 `service.rs` 的逻辑**：
-  - `allowed_service_keys()` — service 允许字段集
-  - `validate_services()` — `/services` unknown-field 校验
-- **`validate_v2()` 仍为统一 orchestration 入口**，service 部分 dispatch 到子模块
+- 新增 `crates/sb-config/src/validator/v2/endpoint.rs`（195 行）
+- **搬到 `endpoint.rs` 的逻辑**：
+  - `allowed_endpoint_keys()` — endpoint 允许字段集
+  - `allowed_endpoint_peer_keys()` — endpoint peer 允许字段集
+  - `validate_endpoints()` — `/endpoints` + `/endpoints/{i}/peers` unknown-field 校验
+- **`validate_v2()` 仍为统一 orchestration 入口**，endpoint 部分 dispatch 到子模块
 - **语义冻结**：issue ptr / code / severity / message / hint 完全不变
-- **mod.rs 从 4757 行瘦身至 4710 行**（-47 行），service.rs 135 行（含 4 个新定点测试）
-- 新增 4 个 service 定点测试：unknown-field strict/allow_unknown、无 services 无误报、ptr 精确命中多 index
+- **mod.rs 从 4710 行瘦身至 4630 行**（-80 行），endpoint.rs 195 行（含 6 个新定点测试）
+- 新增 6 个 endpoint 定点测试：unknown-field strict/allow_unknown（endpoint 层 + peer 层）、无 endpoints 无误报、ptr 精确命中（endpoint + peer）
 
-**注意**：`validator/v2` 已完成 outbound + route + dns + service 四个子域拆分，endpoint 尚未拆出。`ir/mod.rs` 仍未动。
+**注意**：`validator/v2` 已完成 outbound + route + dns + service + endpoint 五个子域拆分，第一轮子域拆分已完成。`ir/mod.rs` 仍未动。
 
 **验证**:
 - `cargo fmt --all` ✅
 - `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib validator::v2` ✅ (86 passed，含 4 个新 service 测试)
+- `cargo test -p sb-config --lib validator::v2` ✅ (92 passed，含 6 个新 endpoint 测试)
 - `cargo test -p sb-config --test compatibility_matrix` ✅ (6 passed)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅

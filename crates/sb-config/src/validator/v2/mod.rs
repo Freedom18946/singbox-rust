@@ -1,4 +1,5 @@
 mod dns;
+mod endpoint;
 mod outbound;
 mod route;
 mod service;
@@ -40,51 +41,6 @@ pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     for key in keys {
         set.insert((*key).to_string());
     }
-}
-
-fn allowed_endpoint_keys() -> HashSet<String> {
-    [
-        "type",
-        "tag",
-        "network",
-        "system_interface",
-        "interface_name",
-        "mtu",
-        "address",
-        "private_key",
-        "listen_port",
-        "peers",
-        "udp_timeout",
-        "workers",
-        "state_directory",
-        "auth_key",
-        "control_url",
-        "ephemeral",
-        "hostname",
-        "accept_routes",
-        "exit_node",
-        "exit_node_allow_lan_access",
-        "advertise_routes",
-        "advertise_exit_node",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
-}
-
-fn allowed_endpoint_peer_keys() -> HashSet<String> {
-    [
-        "address",
-        "port",
-        "public_key",
-        "pre_shared_key",
-        "allowed_ips",
-        "persistent_keepalive_interval",
-        "reserved",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
 }
 
 fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
@@ -1007,44 +963,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     // 6) service unknown-field validation (delegated to service submodule)
     service::validate_services(doc, allow_unknown, &mut issues);
 
-    if let Some(endpoints) = doc.get("endpoints").and_then(|v| v.as_array()) {
-        let allowed = allowed_endpoint_keys();
-        for (i, endpoint) in endpoints.iter().enumerate() {
-            if let Some(map) = endpoint.as_object() {
-                for k in map.keys() {
-                    if !allowed.contains(k) {
-                        let kind = if allow_unknown { "warning" } else { "error" };
-                        issues.push(emit_issue(
-                            kind,
-                            IssueCode::UnknownField,
-                            &format!("/endpoints/{}/{}", i, k),
-                            "unknown field",
-                            "remove it",
-                        ));
-                    }
-                }
-                if let Some(peers) = map.get("peers").and_then(|v| v.as_array()) {
-                    let allowed_peers = allowed_endpoint_peer_keys();
-                    for (j, peer) in peers.iter().enumerate() {
-                        if let Some(peer_map) = peer.as_object() {
-                            for k in peer_map.keys() {
-                                if !allowed_peers.contains(k) {
-                                    let kind = if allow_unknown { "warning" } else { "error" };
-                                    issues.push(emit_issue(
-                                        kind,
-                                        IssueCode::UnknownField,
-                                        &format!("/endpoints/{}/peers/{}/{}", i, j, k),
-                                        "unknown field",
-                                        "remove it",
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 7) endpoint unknown-field validation (delegated to endpoint submodule)
+    endpoint::validate_endpoints(doc, allow_unknown, &mut issues);
 
     // Deprecation detection pass
     issues.extend(check_deprecations(doc));
