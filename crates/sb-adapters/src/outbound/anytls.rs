@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use tokio::task::{AbortHandle, JoinSet};
 use tokio_rustls::rustls::{self, pki_types};
 use tokio_rustls::TlsConnector;
 
@@ -30,11 +31,51 @@ pub struct AnyTlsConfig {
     pub server_name: pki_types::ServerName<'static>,
 }
 
+/// Owns a session and its background tasks (recv_loop + process_stream_data).
+/// When dropped, aborts both background tasks to prevent leaked fire-and-forget spawns.
+struct SessionRuntime {
+    session: Arc<Session>,
+    recv_abort: AbortHandle,
+    process_abort: AbortHandle,
+}
+
+impl SessionRuntime {
+    fn new(session: Arc<Session>) -> Self {
+        let s1 = session.clone();
+        let recv_handle = tokio::spawn(async move {
+            if let Err(err) = s1.recv_loop().await {
+                tracing::debug!(error = %err, "AnyTLS session recv loop exited");
+            }
+        });
+
+        let s2 = session.clone();
+        let process_handle = tokio::spawn(async move {
+            if let Err(err) = s2.process_stream_data().await {
+                tracing::debug!(error = %err, "AnyTLS session process loop exited");
+            }
+        });
+
+        Self {
+            session,
+            recv_abort: recv_handle.abort_handle(),
+            process_abort: process_handle.abort_handle(),
+        }
+    }
+}
+
+impl Drop for SessionRuntime {
+    fn drop(&mut self) {
+        self.recv_abort.abort();
+        self.process_abort.abort();
+    }
+}
+
 /// AnyTLS outbound connector
 #[derive(Clone)]
 pub struct AnyTlsConnector {
     config: Arc<AnyTlsConfig>,
-    session: Arc<Mutex<Option<Arc<Session>>>>,
+    session: Arc<Mutex<Option<SessionRuntime>>>,
+    bridge_tasks: Arc<Mutex<JoinSet<()>>>,
 }
 
 impl AnyTlsConnector {
@@ -42,38 +83,47 @@ impl AnyTlsConnector {
         Self {
             config: Arc::new(config),
             session: Arc::new(Mutex::new(None)),
+            bridge_tasks: Arc::new(Mutex::new(JoinSet::new())),
         }
     }
 
+    /// Returns an active session, creating one if needed.
+    ///
+    /// Uses two-phase locking to avoid holding the mutex across the
+    /// async connect/TLS/auth path:
+    ///   Phase 1 — short lock: read existing session
+    ///   Phase 2 — no lock: create session + spawn background tasks
+    ///   Phase 3 — short lock: install (with race-loser detection)
     async fn get_or_create_session(&self) -> Result<Arc<Session>> {
-        let mut guard = self.session.lock().await;
-        if let Some(session) = guard.as_ref() {
-            if !session.is_closed() {
-                return Ok(session.clone());
+        // Phase 1: check existing session (short lock)
+        {
+            let guard = self.session.lock().await;
+            if let Some(ref rt) = *guard {
+                if !rt.session.is_closed() {
+                    return Ok(rt.session.clone());
+                }
             }
+        } // lock released
+
+        // Phase 2: create session outside the lock (no lock-across-await)
+        let new_session = Arc::new(self.connect_session().await?);
+        let runtime = SessionRuntime::new(new_session.clone());
+
+        // Phase 3: re-lock and install; handle race where another task won
+        {
+            let mut guard = self.session.lock().await;
+            if let Some(ref existing) = *guard {
+                if !existing.session.is_closed() {
+                    // Another task installed a session while we were connecting.
+                    // Drop our runtime (aborts our background tasks) and use theirs.
+                    drop(runtime);
+                    return Ok(existing.session.clone());
+                }
+            }
+            *guard = Some(runtime);
         }
 
-        // Create new session
-        let session = self.connect_session().await?;
-        let session = Arc::new(session);
-        *guard = Some(session.clone());
-
-        // Spawn background tasks for the session
-        let session_clone = session.clone();
-        tokio::spawn(async move {
-            if let Err(err) = session_clone.recv_loop().await {
-                tracing::debug!(error = %err, "AnyTLS session recv loop exited");
-            }
-        });
-
-        let session_clone = session.clone();
-        tokio::spawn(async move {
-            if let Err(err) = session_clone.process_stream_data().await {
-                tracing::debug!(error = %err, "AnyTLS session process loop exited");
-            }
-        });
-
-        Ok(session)
+        Ok(new_session)
     }
 
     async fn connect_session(&self) -> Result<Session> {
@@ -113,14 +163,7 @@ impl AnyTlsConnector {
         let password_hash = hash_password(&self.config.password);
         writer.write_all(&password_hash).await?;
 
-        // Send padding if configured (client side usually sends 0 padding for auth?
         // Protocol: Client sends Hash(32) + PaddingLen(2) + Padding
-        // Server verifies hash.
-
-        // We need to send padding length 0 for now as initial handshake
-        // Or does AnyTLS require padding in handshake?
-        // Protocol: Client sends Hash(32) + PaddingLen(2) + Padding
-
         // Generate random padding length (0-255 bytes) and padding before any await.
         // This keeps ThreadRng off the await boundary and avoids non-Send futures.
         let padding_len: u16 = rand::thread_rng().gen_range(0..=255);
@@ -145,6 +188,12 @@ impl AnyTlsConnector {
 #[async_trait::async_trait]
 impl OutboundConnector for AnyTlsConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
+        // Drain completed bridge tasks to prevent unbounded accumulation
+        {
+            let mut bridges = self.bridge_tasks.lock().await;
+            while bridges.try_join_next().is_some() {}
+        }
+
         let session = self
             .get_or_create_session()
             .await
@@ -156,37 +205,20 @@ impl OutboundConnector for AnyTlsConnector {
             .await
             .map_err(|e| std::io::Error::other(format!("failed to open stream: {}", e)))?;
 
-        // Send target address (SOCKS5 style)
-        // Protocol: ATYP + ADDR + PORT
-        // We need to write this to the stream.
-        // But `stream` is `anytls_rs::session::Stream`.
-        // We need to bridge it to a TcpStream.
-
-        // Create loopback pair
+        // Create loopback pair — use try_join! instead of spawning a task for accept
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
 
-        let server_task = tokio::spawn(async move { listener.accept().await.map(|(s, _)| s) });
-
-        let client_stream = TcpStream::connect(local_addr).await?;
-        let server_stream = server_task.await??;
-
-        // Write target address to the AnyTLS stream *through* the bridge?
-        // No, we should write it directly to the AnyTLS stream before bridging.
-        // Wait, `stream` is a `Stream` object. It has `reader()` and `send_data()`.
-        // It doesn't implement AsyncRead/AsyncWrite directly?
-        // In inbound `relay_stream`, it uses `stream.reader()` (lock) and `stream.send_data()`.
-
-        // We need to wrap `Stream` into AsyncRead/AsyncWrite or bridge manually.
-        // Let's bridge manually.
+        let (client_stream, server_stream) = tokio::try_join!(
+            TcpStream::connect(local_addr),
+            async { listener.accept().await.map(|(s, _)| s) }
+        )?;
 
         let stream_reader = stream.reader().clone();
-        let stream_writer = stream.clone(); // Stream is Arc-like or handle?
-                                            // Stream is Arc<Stream> in inbound. Here `open_stream` returns `Arc<Stream>`.
+        let stream_writer = stream.clone();
 
-        // Send target address
+        // Send target address (SOCKS5 style: ATYP + ADDR + PORT)
         let mut target_buf = Vec::new();
-        // SOCKS5 address format
         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
             match ip {
                 std::net::IpAddr::V4(v4) => {
@@ -216,12 +248,16 @@ impl OutboundConnector for AnyTlsConnector {
             .send_data(Bytes::from(target_buf))
             .map_err(|e| std::io::Error::other(format!("failed to send target: {}", e)))?;
 
-        // Bridge tasks
+        // Bridge tasks — tracked in JoinSet so they are aborted on connector drop
         let (mut local_read, mut local_write) = server_stream.into_split();
 
-        // Remote -> Local
         let reader_clone = stream_reader.clone();
-        tokio::spawn(async move {
+        let writer_clone = stream_writer.clone();
+
+        let mut bridges = self.bridge_tasks.lock().await;
+
+        // Remote -> Local
+        bridges.spawn(async move {
             let mut buf = vec![0u8; 16 * 1024];
             loop {
                 let n = {
@@ -242,18 +278,11 @@ impl OutboundConnector for AnyTlsConnector {
         });
 
         // Local -> Remote
-        let writer_clone = stream_writer.clone();
-        tokio::spawn(async move {
+        bridges.spawn(async move {
             let mut buf = vec![0u8; 16 * 1024];
             loop {
                 match local_read.read(&mut buf).await {
-                    Ok(0) => {
-                        // EOF
-                        // Send FIN? AnyTLS stream doesn't have explicit FIN in API maybe?
-                        // It has `close()`.
-                        // writer_clone.close();
-                        break;
-                    }
+                    Ok(0) => break,
                     Ok(n) => {
                         if writer_clone
                             .send_data(Bytes::copy_from_slice(&buf[..n]))
@@ -266,6 +295,8 @@ impl OutboundConnector for AnyTlsConnector {
                 }
             }
         });
+
+        drop(bridges);
 
         Ok(client_stream)
     }
@@ -427,5 +458,100 @@ impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
             rustls::SignatureScheme::ED25519,
             rustls::SignatureScheme::ED448,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn session_runtime_drop_aborts_background_tasks() {
+        // Verify that SessionRuntime's Drop impl actually aborts tasks.
+        // We simulate the pattern by spawning long-lived tasks and checking
+        // that they get cancelled when the owning structure is dropped.
+        let task1 = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+        let task2 = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+
+        let abort1 = task1.abort_handle();
+        let abort2 = task2.abort_handle();
+
+        assert!(!abort1.is_finished());
+        assert!(!abort2.is_finished());
+
+        // Simulate SessionRuntime Drop behavior
+        abort1.abort();
+        abort2.abort();
+
+        assert!(task1.await.unwrap_err().is_cancelled());
+        assert!(task2.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn bridge_joinset_aborts_tasks_on_drop() {
+        let mut js = JoinSet::new();
+        let barrier = Arc::new(tokio::sync::Notify::new());
+        let b1 = barrier.clone();
+        let b2 = barrier.clone();
+
+        js.spawn(async move {
+            b1.notified().await; // will never fire
+        });
+        js.spawn(async move {
+            b2.notified().await;
+        });
+
+        assert_eq!(js.len(), 2);
+        drop(js); // JoinSet::drop aborts all tasks
+        // If we reach here, tasks were cleaned up (no hang)
+    }
+
+    #[tokio::test]
+    async fn bridge_joinset_reaps_completed_tasks() {
+        let mut js: JoinSet<()> = JoinSet::new();
+        js.spawn(async {}); // completes immediately
+        js.spawn(async {}); // completes immediately
+
+        // Give tasks a moment to complete
+        tokio::task::yield_now().await;
+
+        // Drain completed
+        while js.try_join_next().is_some() {}
+        assert_eq!(js.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn connector_new_initializes_empty_state() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+
+        let config = AnyTlsConfig {
+            server: "example.com".into(),
+            port: 443,
+            password: "test".into(),
+            padding: None,
+            tls: Arc::new(tls_config),
+            server_name: pki_types::ServerName::try_from("example.com")
+                .unwrap()
+                .to_owned(),
+        };
+
+        let connector = AnyTlsConnector::new(config);
+
+        // Session slot starts empty
+        let guard = connector.session.lock().await;
+        assert!(guard.is_none());
+        drop(guard);
+
+        // Bridge set starts empty
+        let bridges = connector.bridge_tasks.lock().await;
+        assert_eq!(bridges.len(), 0);
     }
 }

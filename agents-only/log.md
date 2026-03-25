@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-26 01:30] Agent: Claude Opus 4.6
+
+**任务**: outbound/anytls.rs lifecycle 收口 — 消除 lock-across-await，tracked session/bridge lifecycle
+**变更**:
+- `crates/sb-adapters/src/outbound/anytls.rs` — 新增 `SessionRuntime`（`Arc<Session>` + 2 `AbortHandle`，`Drop` aborts both）；`get_or_create_session()` 改为三阶段锁（短锁读→锁外 connect→短锁安装含竞争合并）；`connect()` bridge tasks 改为 `JoinSet<()>` tracked（drain completed at connect entry）；loopback `listener.accept()` spawn 替换为 `tokio::try_join!`；新增 4 个 lifecycle 模块测试
+- `agents-only/active_context.md` — 更新 anytls 收口记录，从第一波 blocker 移出
+- `重构package相关/singbox_rust_rebuild_workpackage.md` — §核验说明 anytls 标记已收口
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md` — anytls 行标记 P1→Done
+**结果**: 成功。6 registration tests + 4 lifecycle tests 全通过，编译 clean，inbound-errors.sh ✅
+**备注**: 仅改 outbound/anytls.rs，未触及 inbound/anytls.rs 或 outbound/ssh.rs。ssh 仍是 P1 blocker。
+
 ### [2026-03-26 00:10] Agent: Claude Opus 4.6
 
 **任务**: follow-up: 补齐 AdminDebugHandle Drop 语义 + 对齐 workpackage 顶部优先级

@@ -11,30 +11,27 @@
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
-## 最近完成（2026-03-25）
+## 最近完成（2026-03-26）
 
-### http_server accept/connection lifecycle 收口 — 已完成
+### outbound/anytls.rs lifecycle 收口 — 已完成
 
-- `app/src/admin_debug/http_server.rs`:
-  - `AdminDebugHandle` (CancellationToken + Option\<JoinHandle\>)
-  - `Drop` impl 触发 cancel（与 Prefetcher 同 pattern）
-  - `shutdown()` cancel + await join；显式 shutdown 更强（等待 drain），drop 仅发信号
-  - `serve()` / `serve_plain()` / `spawn()` 底层改为 tracked accept loop
-  - 新增 `spawn_plain_sync()` 供非 async 调用方使用
-  - 抽取 `route_full_request()` 消除路由重复
-- `app/src/admin_debug/mod.rs`: `init()` 返回 `AdminDebugHandle`（不再裸 `tokio::spawn`）
-- `app/src/run_engine.rs`: `admin_debug_handle` 变量持有 handle，section 11 显式 shutdown
-- `app/src/cli/run.rs`: `_admin_debug_handle` 存活至 run_supervisor 退出
-- `app/src/telemetry.rs`: `init_and_listen()` 返回 `Option<AdminDebugHandle>`
+- `crates/sb-adapters/src/outbound/anytls.rs`:
+  - `SessionRuntime` owner：持有 `Arc<Session>` + 2 个 `AbortHandle`（recv_loop / process_stream_data）
+  - `Drop for SessionRuntime` 在 session 替换或 connector drop 时 abort 后台 tasks
+  - `get_or_create_session()` 改为三阶段：短锁读→锁外 connect→短锁安装（含竞争合并）
+  - `connect()` bridge tasks 改为 `JoinSet<()>` tracked，connector drop 时 abort 所有残余
+  - `listener.accept()` 临时 spawn 替换为 `tokio::try_join!`
+  - 每次 `connect()` 入口 drain 已完成的 bridge tasks 防止无限累积
 
 **验证**:
-- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
-- `cargo test -p app --lib "admin_debug::http_server"` ✅ (14 passed, 含 4 新 lifecycle 测试)
-- `cargo test -p app --test admin_auth_contract` ✅ (7 passed)
-- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+- `cargo check -p sb-adapters --features adapter-anytls` ✅
+- `cargo check -p app --features parity` ✅
+- `cargo test -p app --test anytls_outbound_test` ✅ (6 passed)
+- `cargo test -p sb-adapters --lib outbound::anytls` ✅ (4 passed, 含新 lifecycle 测试)
+- `cargo clippy -p sb-adapters --features adapter-anytls` ✅ (仅 pre-existing dead_code warning)
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-### prefetch / geoip / http_client — 已完成（earlier today）
+### http_server / prefetch / geoip / http_client — 已完成（2026-03-25）
 
 - 详见本文件历史快照
 
@@ -59,4 +56,5 @@
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `outbound/anytls.rs` / `ssh`：仍是第一波 blocker
+- ~~`outbound/anytls.rs`~~ → **已收口**（session owner + bridge JoinSet + lock-across-await 消除）
+- `outbound/ssh.rs`：仍是第一波 blocker
