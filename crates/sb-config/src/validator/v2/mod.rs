@@ -1,4 +1,5 @@
 mod outbound;
+mod route;
 
 // Re-export outbound TLS capability check for public API stability
 pub use outbound::check_tls_capabilities;
@@ -19,21 +20,6 @@ const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
 const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
 
-fn rule_set_format_from_path(path: &str) -> Option<&'static str> {
-    if path.ends_with(".json") {
-        Some("source")
-    } else if path.ends_with(".srs") {
-        Some("binary")
-    } else {
-        None
-    }
-}
-
-fn rule_set_format_from_url(url: &str) -> Option<&'static str> {
-    let path = url.split('?').next().unwrap_or(url);
-    rule_set_format_from_path(path)
-}
-
 pub(crate) fn object_keys<T>(value: T) -> HashSet<String>
 where
     T: Serialize,
@@ -52,53 +38,6 @@ pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     for key in keys {
         set.insert((*key).to_string());
     }
-}
-
-fn allowed_route_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::RouteIR::default());
-    insert_keys(
-        &mut set,
-        &[
-            "final",
-            "geoip",
-            "geosite",
-            "default_mark",
-            "default_resolver",
-            "default_network_strategy",
-            "fallback_delay",
-            "tls_fragment",
-            "tls_record_fragment",
-            "tls_fragment_fallback_delay",
-        ],
-    );
-    set
-}
-
-fn allowed_route_rule_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::RuleIR::default());
-    insert_keys(
-        &mut set,
-        &[
-            "when", "to", "suffix", "keyword", "regex", "ip_cidr", "process",
-        ],
-    );
-    set
-}
-
-fn allowed_rule_set_keys() -> HashSet<&'static str> {
-    [
-        "tag",
-        "type",
-        "format",
-        "path",
-        "url",
-        "download_detour",
-        "update_interval",
-        "rules",
-        "version",
-    ]
-    .into_iter()
-    .collect()
 }
 
 fn allowed_dns_keys() -> HashSet<String> {
@@ -1117,59 +1056,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     // 3) outbounds type and structure validation (delegated to outbound submodule)
     outbound::validate_outbounds(doc, allow_unknown, &mut issues);
 
-    if let Some(route) = doc.get("route").and_then(|v| v.as_object()) {
-        let allowed = allowed_route_keys();
-        for k in route.keys() {
-            if !allowed.contains(k) {
-                let kind = if allow_unknown { "warning" } else { "error" };
-                issues.push(emit_issue(
-                    kind,
-                    IssueCode::UnknownField,
-                    &format!("/route/{}", k),
-                    "unknown field",
-                    "remove it",
-                ));
-            }
-        }
-        if let Some(rules) = route.get("rules").and_then(|v| v.as_array()) {
-            let allowed_rules = allowed_route_rule_keys();
-            for (i, rule) in rules.iter().enumerate() {
-                if let Some(map) = rule.as_object() {
-                    for k in map.keys() {
-                        if !allowed_rules.contains(k) {
-                            let kind = if allow_unknown { "warning" } else { "error" };
-                            issues.push(emit_issue(
-                                kind,
-                                IssueCode::UnknownField,
-                                &format!("/route/rules/{}/{}", i, k),
-                                "unknown field",
-                                "remove it",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        if let Some(rule_sets) = route.get("rule_set").and_then(|v| v.as_array()) {
-            let allowed_rule_set = allowed_rule_set_keys();
-            for (i, rs) in rule_sets.iter().enumerate() {
-                if let Some(map) = rs.as_object() {
-                    for k in map.keys() {
-                        if !allowed_rule_set.contains(k.as_str()) {
-                            let kind = if allow_unknown { "warning" } else { "error" };
-                            issues.push(emit_issue(
-                                kind,
-                                IssueCode::UnknownField,
-                                &format!("/route/rule_set/{}/{}", i, k),
-                                "unknown field",
-                                "remove it",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 4) route unknown-field and rule_set validation (delegated to route submodule)
+    route::validate_route(doc, allow_unknown, &mut issues);
 
     if let Some(dns) = doc.get("dns").and_then(|v| v.as_object()) {
         let allowed = allowed_dns_keys();
@@ -1284,106 +1172,6 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
         }
     }
 
-    // 4) route.rule_set validation (type/format parity)
-    if let Some(route) = doc.get("route").and_then(|v| v.as_object()) {
-        if let Some(rule_sets) = route.get("rule_set").and_then(|v| v.as_array()) {
-            for (i, rs) in rule_sets.iter().enumerate() {
-                let Some(obj) = rs.as_object() else {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/route/rule_set/{}", i),
-                        "rule_set item must be an object",
-                        "use object",
-                    ));
-                    continue;
-                };
-
-                let tag = obj.get("tag").and_then(|v| v.as_str()).unwrap_or("");
-                if tag.trim().is_empty() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::MissingRequired,
-                        &format!("/route/rule_set/{}/tag", i),
-                        "missing required field",
-                        "add tag",
-                    ));
-                }
-
-                let ty_raw = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                let ty = if ty_raw.trim().is_empty() {
-                    "inline"
-                } else {
-                    ty_raw
-                };
-                match ty {
-                    "inline" | "local" | "remote" => {}
-                    _ => {
-                        issues.push(emit_issue(
-                            "error",
-                            IssueCode::TypeMismatch,
-                            &format!("/route/rule_set/{}/type", i),
-                            "unknown rule_set type",
-                            "use inline|local|remote",
-                        ));
-                    }
-                }
-
-                if ty != "inline" {
-                    let mut format = obj
-                        .get("format")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    if format.is_empty() {
-                        if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
-                            if let Some(inferred) = rule_set_format_from_path(path) {
-                                format = inferred.to_string();
-                            }
-                        }
-                        if format.is_empty() {
-                            if let Some(url) = obj.get("url").and_then(|v| v.as_str()) {
-                                if let Some(inferred) = rule_set_format_from_url(url) {
-                                    format = inferred.to_string();
-                                }
-                            }
-                        }
-                    }
-
-                    if format.is_empty() {
-                        issues.push(emit_issue(
-                            "error",
-                            IssueCode::MissingRequired,
-                            &format!("/route/rule_set/{}/format", i),
-                            "missing format",
-                            "set format to source|binary",
-                        ));
-                    } else if format != "source" && format != "binary" {
-                        issues.push(emit_issue(
-                            "error",
-                            IssueCode::TypeMismatch,
-                            &format!("/route/rule_set/{}/format", i),
-                            "unknown rule_set format",
-                            "use source|binary",
-                        ));
-                    }
-                }
-                if let Some(version_val) = obj.get("version") {
-                    let version = version_val.as_u64().and_then(|v| u8::try_from(v).ok());
-                    let valid = matches!(version, Some(1..=3));
-                    if !valid {
-                        issues.push(emit_issue(
-                            "error",
-                            IssueCode::TypeMismatch,
-                            &format!("/route/rule_set/{}/version", i),
-                            "unknown rule_set version",
-                            "use 1|2|3",
-                        ));
-                    }
-                }
-            }
-        }
-    }
     // Deprecation detection pass
     issues.extend(check_deprecations(doc));
     // Security: non-localhost binding warnings
@@ -2644,13 +2432,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     };
                     if ty != "inline" && format.is_empty() {
                         if let Some(p) = &path {
-                            if let Some(fmt) = rule_set_format_from_path(p) {
+                            if let Some(fmt) = route::rule_set_format_from_path(p) {
                                 format = fmt.to_string();
                             }
                         }
                         if format.is_empty() {
                             if let Some(u) = &url {
-                                if let Some(fmt) = rule_set_format_from_url(u) {
+                                if let Some(fmt) = route::rule_set_format_from_url(u) {
                                     format = fmt.to_string();
                                 }
                             }

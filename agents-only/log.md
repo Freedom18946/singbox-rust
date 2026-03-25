@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-26 18:00] Agent: Claude Opus 4.6
+
+**任务**: validator/v2 route 子域拆分 — 从巨型 validate_v2() 中切出 route 逻辑
+**变更**:
+- `crates/sb-config/src/validator/v2/route.rs` — 新建，362 行，承接 route 全部校验逻辑 + 14 定点测试
+- `crates/sb-config/src/validator/v2/mod.rs` — 移除 route 内联逻辑（5048→4836 行），添加 `mod route;` + dispatch
+- `重构package相关/singbox_rust_rebuild_workpackage.md` — 更新 route 子域状态
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md` — 更新 validator 状态
+- `agents-only/active_context.md` — 添加 route 子域拆分记录
+**结果**: 成功。74 lib tests passed（含 14 新 route 测试），6 compatibility_matrix passed，4 rule_set_parity passed，clippy clean。issue ptr/code/severity 语义完全冻结。
+
 ### [2026-03-26 16:00] Agent: Claude Opus 4.6
 
 **任务**: validator/v2 outbound 子域拆分 — 从巨型 validate_v2() 中切出 outbound 逻辑
