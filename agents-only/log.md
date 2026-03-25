@@ -16,6 +16,27 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-25 20:00] Agent: Claude Opus 4.6
+
+**任务**: 收口 `geoip` hard global fallback，改成 weak-owner compat only
+**变更**:
+- `crates/sb-core/src/geoip/mod.rs`: 删除 `GEOIP_SERVICE` (`OnceLock`)、`init()`、`service()`；`lookup_country_code()` 只走 weak-owner；新增 `clear_default_for_test()`；更新模块文档
+- `crates/sb-core/tests/router_geoip_provider.rs`: 更新过时注释（不再引用 `init()`）
+- `agents-only/active_context.md`: 记录 geoip 收口完成
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功
+**构建验证**:
+- `cargo check -p sb-core` ✅
+- `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
+- `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner` ✅
+- `cargo test -p sb-core --lib --features geoip_mmdb enhanced_geoip_lookup_uses_router_local_provider_without_global_service` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo test -p sb-core` ✅ (512 tests)
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+**备注**:
+- 不需要补 owner 安装承接：`init()` / `service()` 在生产代码中零调用方，router-local provider 是实际生产路径
+- 结论仍然只按 maintenance / Layer 1/2 收口归档，不表述成 parity 完成
+
 ### [2026-03-25 15:30] Agent: Codex (GPT-5)
 
 **任务**: 阅读 `5.4pro第三次审计`，按 `top_backlog` 逐项核验当前仓库中问题是否仍存在、是否严重，并将维护期实测反馈回写到 `重构package相关/`

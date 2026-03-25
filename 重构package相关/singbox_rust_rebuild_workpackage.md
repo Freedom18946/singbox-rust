@@ -374,7 +374,8 @@
 ### 2026-03-25 优先级校正（updated）
 
 - **已完成**：`crates/sb-core/src/http_client.rs` — hard global singleton 已删（`d3a0b1e7`），仅剩 weak-owner compat
-- **第一波**：`crates/sb-core/src/geoip/mod.rs`、`app/src/admin_debug/prefetch.rs`
+- **已完成**：`crates/sb-core/src/geoip/mod.rs` — `GEOIP_SERVICE` / `init()` / `service()` 已删除，仅剩 weak-owner compat
+- **第一波**：`app/src/admin_debug/prefetch.rs`
 - **第二波**：`app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`
 - **第三波**：`crates/sb-metrics/src/lib.rs`、`crates/sb-core/src/metrics/registry_ext.rs`
 
@@ -382,7 +383,7 @@
 
 - `http_client.rs` 的 `GLOBAL_HTTP_CLIENT` / `install_http_client()` / `global_http_client()` 已在 2026-03-25 维护任务中删除。`http_execute()` 不再有 hard global fallback，只走 weak-owner lookup。剩余 compat 是 `DEFAULT_HTTP_CLIENT` weak 注册表，等后续 `RuntimeContext` 落地后统一收口。
 - `logging.rs` 与 `security_metrics.rs` 当前仍有 compat 壳，但已不是原始审计时期那种”主链继续扩散的散点全局”。
-- `sb-metrics` / `registry_ext` 仍需治理，但在维护模式下更接近 Prometheus 设计债与局部 leak/fallback 债，不宜继续排在 `geoip` / `prefetch` 之前。
+- `sb-metrics` / `registry_ext` 仍需治理，但在维护模式下更接近 Prometheus 设计债与局部 leak/fallback 债，不宜继续排在 `prefetch` 之前。
 
 ### 必做任务
 

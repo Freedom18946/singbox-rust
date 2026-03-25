@@ -2,8 +2,8 @@
 #![cfg(all(feature = "geoip_mmdb", feature = "router"))]
 use std::net::IpAddr;
 
-// Test removed: geoip API has changed to use GeoIpProvider instead of old Provider trait
-// and uses init() instead of set_global_provider(). This test needs significant rewrite.
+// Test removed: geoip API uses GeoIpProvider trait with weak-owner model
+// (install_default_geoip_service). This test needs rewrite to use the new API.
 
 #[test]
 fn placeholder_test() {

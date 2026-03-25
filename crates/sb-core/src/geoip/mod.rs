@@ -1,10 +1,15 @@
-//! `GeoIP` functionality for IP-based routing rules
+//! `GeoIP` functionality for IP-based routing rules (weak-owner model).
 //!
-//! This module provides comprehensive `GeoIP` functionality for routing decisions,
-//! including MMDB database support and multiple provider interfaces.
+//! The application layer installs an `Arc<GeoIpService>` via
+//! [`install_default_geoip_service`]; sb-core retains only a `Weak` reference so
+//! the service is automatically reclaimed when the owning `Arc` is dropped.
+//!
+//! There is **no** process-wide hard global singleton.  All callers go through
+//! the weak-owner lookup in [`lookup_country_code`] or through the router-local
+//! GeoIP providers in `RouterHandle::enhanced_geoip_lookup`.
 
 use std::net::IpAddr;
-use std::sync::{Arc, LazyLock, Mutex, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 pub mod mmdb;
 pub mod multi;
@@ -77,17 +82,8 @@ impl GeoIpService {
     }
 }
 
-/// Global `GeoIP` service instance
-static GEOIP_SERVICE: OnceLock<GeoIpService> = OnceLock::new();
 static DEFAULT_GEOIP_SERVICE: LazyLock<Mutex<Option<Weak<GeoIpService>>>> =
     LazyLock::new(|| Mutex::new(None));
-
-/// Initialize the global `GeoIP` service
-pub fn init() -> anyhow::Result<()> {
-    let provider = mmdb::MmdbProvider::new()?;
-    let _ = GEOIP_SERVICE.set(GeoIpService::new(Box::new(provider)));
-    Ok(())
-}
 
 /// Install the default `GeoIP` service via a weak compatibility registry.
 ///
@@ -107,11 +103,6 @@ pub fn install_default_geoip_service(service: Arc<GeoIpService>) -> Arc<GeoIpSer
     }
 }
 
-/// Get a reference to the global `GeoIP` service
-pub fn service() -> Option<&'static GeoIpService> {
-    GEOIP_SERVICE.get()
-}
-
 fn current_service() -> Option<Arc<GeoIpService>> {
     DEFAULT_GEOIP_SERVICE
         .lock()
@@ -120,12 +111,25 @@ fn current_service() -> Option<Arc<GeoIpService>> {
         .and_then(Weak::upgrade)
 }
 
+/// Look up country code for an IP address via the weak-owner service.
+///
+/// Returns `None` if no owner is alive.  The caller must ensure
+/// [`install_default_geoip_service`] has been called and the owning `Arc` is
+/// still held — or use the router-local GeoIP provider path instead.
 #[must_use]
 pub fn lookup_country_code(ip: IpAddr) -> Option<String> {
     current_service()
         .and_then(|s| s.lookup(ip))
-        .or_else(|| service().and_then(|s| s.lookup(ip)))
         .and_then(|info| info.country_code)
+}
+
+/// Reset the weak-owner slot (test-only).
+#[cfg(test)]
+pub(crate) fn clear_default_for_test() {
+    let mut slot = DEFAULT_GEOIP_SERVICE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *slot = None;
 }
 
 /// Lookup with metrics
@@ -193,6 +197,8 @@ mod tests {
 
     #[test]
     fn weak_default_registry_uses_explicit_owner() {
+        clear_default_for_test();
+
         let service = Arc::new(GeoIpService::new(Box::new(TestGeoIpProvider {
             country_code: "US",
         })));
@@ -213,6 +219,7 @@ mod tests {
 
         drop(installed);
 
+        // After owner drop, lookup must fail — no hard global fallback.
         assert_eq!(
             lookup_country_code(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7))),
             None
@@ -226,6 +233,7 @@ mod tests {
             "US"
         ));
 
+        // Replacement owner works.
         let replacement = Arc::new(GeoIpService::new(Box::new(TestGeoIpProvider {
             country_code: "CN",
         })));
@@ -239,5 +247,7 @@ mod tests {
             Some("direct")
         );
         drop(installed);
+
+        clear_default_for_test();
     }
 }

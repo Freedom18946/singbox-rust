@@ -189,7 +189,7 @@
   - 点名高风险文件里的生产态 `super::` 已收口到测试域外零命中
   - 本轮未强行继续下探的剩余全局状态，主要落在 `app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-core/src/geoip/mod.rs` 以及 `crates/sb-metrics` 内部静态指标定义层
   - `app/src/admin_debug/security_metrics.rs` / `app/src/logging.rs` 的默认全局 owner 已收敛为 `Weak` 注册表；其中 subs/prefetch/breaker/security_async 主链、CLI prefetch 路径、真实 admin server 的 `/subs/` 入口、`Prefetcher` runtime 路径以及 `main` logging 启动/退出路径都已优先改走显式 owner；legacy `enqueue_prefetch(...)` / async DNS helper 也已改成入口处升级 owner 后继续沿显式 `Arc` 透传
-  - `crates/sb-core/src/geoip/mod.rs` 的全局服务仍保留为兼容壳，但现已收敛为“弱默认 owner 优先、强全局 fallback”；`router/engine.rs` / `router/explain_util.rs` 主路径以及 `router/mod.rs` 的 `decide_udp_with_rules()` helper 都已优先改走 `RouterHandle` 自有 geo owner；compat fallback 也已改成单次 `lookup_country_code(...)` 查询
+  - `crates/sb-core/src/geoip/mod.rs` — **hard global 已删除**（2026-03-25）：`GEOIP_SERVICE` OnceLock + `init()` + `service()` 已移除。`lookup_country_code()` 只走 `DEFAULT_GEOIP_SERVICE` weak-owner lookup，不再回落 hard global。Router-local provider（`RouterHandle::enhanced_geoip_lookup`）不受影响。
   - `crates/sb-metrics/src/lib.rs` 的 shared registry owner 已收敛为 `AppRuntimeDeps`、`metrics-serve` binary 和 `sb-metrics` example 的显式持有；`AppRuntimeDeps::metrics_registry()` 也已直接返回 owner handle；`shared_registry()` 现保留“弱默认 owner 优先、强全局 fallback，并合并 owner 安装前旧全局指标”的兼容入口；`export_prometheus()` / `maybe_spawn_http_exporter_from_env()` / `sb-core` legacy `run_exporter()` 也已退到显式 handle helper 外侧的 compat 壳
   - 这些保留项当前记为 maintenance follow-up，不把本轮结果表述成 dual-kernel parity 完成
 

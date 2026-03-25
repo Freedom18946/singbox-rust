@@ -13,40 +13,40 @@
 
 ## 最近完成（2026-03-25）
 
-### http_client hard global fallback 收口 — 已完成
+### geoip hard global fallback 收口 — 已完成
 
-- `crates/sb-core/src/http_client.rs`:
-  - 删除 `GLOBAL_HTTP_CLIENT` (`OnceLock<Box<dyn HttpClient>>`) — hard global singleton
-  - 删除 `install_http_client()` / `global_http_client()` — hard global API
-  - `http_execute()` 只走 weak-owner lookup（`DEFAULT_HTTP_CLIENT`）
-  - 错误信息只提 `install_default_http_client()`
-  - 测试新增负断言：错误文案不再含 `install_http_client()`
-- `app/src/reqwest_http.rs`:
-  - 删除 `install_global_http_client()`（零调用方）
+- `crates/sb-core/src/geoip/mod.rs`:
+  - 删除 `GEOIP_SERVICE` (`OnceLock<GeoIpService>`) — hard global singleton
+  - 删除 `init()` / `service()` — hard global API
+  - `lookup_country_code()` 只走 weak-owner lookup（`DEFAULT_GEOIP_SERVICE`），不再回落 hard global
+  - 新增 `clear_default_for_test()` 测试工具
+  - 模块文档更新为 weak-owner model 描述
+- Router-local provider 路径（`enhanced_geoip_lookup`）不受影响
 
-**保留的 compat**: `DEFAULT_HTTP_CLIENT` weak-owner 机制（`LazyLock<Mutex<Option<Weak<dyn HttpClient>>>>`）不变，`install_default_http_client()` 仍是唯一安装入口。
+**保留的 compat**: `DEFAULT_GEOIP_SERVICE` weak-owner 机制不变，`install_default_geoip_service()` 仍是唯一安装入口。
+
+**不需要补 owner 安装承接**：生产路径通过 router-local GeoIP provider（`RouterHandle::geoip_mux` / `geoip_db`），`init()` 和 `service()` 在生产代码中零调用方。
 
 **验证**:
 - `cargo check -p sb-core` ✅
 - `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
 - `cargo test -p sb-core --lib weak_default_registry_uses_explicit_owner` ✅
-- `cargo test -p app --lib build_redactor_avoids_runtime_dependency_side_effects --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
-- `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` ✅
-- `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
-- `cargo test -p sb-core` ✅ (504+ tests)
+- `cargo test -p sb-core --lib --features geoip_mmdb enhanced_geoip_lookup_uses_router_local_provider_without_global_service` ✅
+- `cargo clippy -p sb-core --features geoip_mmdb --all-targets -- -D warnings` ✅
+- `cargo test -p sb-core` ✅ (512 tests)
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-### http_client follow-up: docs alignment + report restore — 已完成
+### http_client hard global fallback 收口 — 已完成（earlier）
 
-- 恢复 `d3a0b1e7` 误删的 `reports/l18/.../l18_capstone_status.json`
-- 更新 `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`：http_client 从 P1→Done，从第一波移出
-- 更新 `重构package相关/singbox_rust_rebuild_workpackage.md`：§1.1 和 WP-20 分波说明同步校正
+- 删除 `GLOBAL_HTTP_CLIENT` + `install_http_client()` / `global_http_client()`
+- `http_execute()` 只走 weak-owner
 
 ## Compat 债务评估结论（四项）
 
 | 项目 | 残留 | 决策 |
 |------|------|------|
 | http_client | weak-owner only，hard global 已删 | **完成** — 仅 `install_default_http_client()` 入口 |
+| geoip | weak-owner only，hard global 已删 | **完成** — 仅 `install_default_geoip_service()` 入口 |
 | logging compat | `ACTIVE_RUNTIME` 薄壳 | **保留** — public API |
 | security_metrics compat | public wrapper + legacy boundary 单次 owner upgrade | **保留** — public API / legacy default-owner 兼容 |
 | sb-metrics LazyLock | registry plumbing 已收口；指标静态仍保留 | **部分完成** — 不继续全量去全局化 |
@@ -68,7 +68,7 @@
 ## 剩余 Maintenance 债务（非阻塞）
 
 - ~~`http_client` hard global~~ → **已收口**（2026-03-25），仅剩 weak-owner compat
+- ~~`geoip` hard global~~ → **已收口**（2026-03-25），仅剩 weak-owner compat
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托；legacy public 边界保留默认 owner compat 语义
 - `sb-metrics` LazyLock 指标静态：registry plumbing 和部分 helper 已收口；不继续做全量去全局化
-- `geoip/mod.rs` compat 全局注册点：已收敛为弱默认 owner 优先
