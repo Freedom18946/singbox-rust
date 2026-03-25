@@ -618,12 +618,11 @@
 
 ### 2026-03-25 核验说明
 
-- 这一组在当前仓库里仍是 **P1 级别** 的真实问题，不是审计噪声。
-- `app/src/admin_debug/http_server.rs` 的 accept loop 和 per-connection 处理仍是裸 `tokio::spawn`。
+- ~~`app/src/admin_debug/http_server.rs`~~ — **已收口**（2026-03-25）：accept loop 改为 `JoinSet` + `CancellationToken`，per-connection tracked，`AdminDebugHandle` + runtime shutdown 已接入。
 - `crates/sb-adapters/src/outbound/anytls.rs` 仍存在 session 锁跨 `await` 与多处未跟踪后台 task。
 - `crates/sb-adapters/src/outbound/ssh.rs` 仍存在 pool/session 锁跨 `await` 与桥接 task 裸 `tokio::spawn`。
 
-因此 `WP-41` 不应后移到 mega-file 治理之后。
+`WP-41` 中 http_server 部分已关闭。anytls / ssh 部分仍是 P1。
 
 ### 完美实践下的联调修复要求
 

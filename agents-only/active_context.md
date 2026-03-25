@@ -13,34 +13,31 @@
 
 ## 最近完成（2026-03-25）
 
-### prefetch hard global + lifecycle 收口 — 已完成
+### http_server accept/connection lifecycle 收口 — 已完成
 
-- `app/src/admin_debug/prefetch.rs`:
-  - 删除 `GLOBAL: OnceCell<Prefetcher>` — hard global singleton
-  - 删除 `Prefetcher::global()` — hard global API
-  - 删除 `global_take()` — placeholder shutdown API
-  - `enqueue_prefetch()` / `enqueue_prefetch_with_metrics()` 不再 fallback 到 `Prefetcher::global()`，无 owner 时返回 `false`
-  - Worker lifecycle 改为 tracked/owned model：
-    - 单 dispatcher task 直接拥有 `Receiver`（不再 `Arc<Mutex<Receiver>>`）
-    - `CancellationToken` + `JoinHandle` 存储于 `Prefetcher`
-    - `JoinSet` 管理并发 worker（不再裸 `tokio::spawn` N 个 worker）
-    - `shutdown()` 是真实的 async shutdown（cancel + await handle）
-    - `Drop` impl 触发 cancel
-  - 模块文档更新为 explicit-owner + tracked-worker 描述
-- `app/Cargo.toml`: `admin_debug` feature 新增 `tokio-util` 依赖（`CancellationToken`）
-
-**保留的 compat**: `DEFAULT_PREFETCHER` weak-owner 机制不变，`install_default_prefetcher()` 仍是唯一安装入口。
-
-**owner 安装点未改动**：`AppRuntimeDeps::new()` 和 `build_prefetch_runtime_deps()` 保持原样。
+- `app/src/admin_debug/http_server.rs`:
+  - 新增 `AdminDebugHandle` (CancellationToken + JoinHandle)
+  - `serve()` / `serve_plain()` / `spawn()` 底层改为 tracked accept loop：
+    - `tokio::select!` on CancellationToken vs listener.accept
+    - per-connection tasks 进 `JoinSet<()>`（非裸 `tokio::spawn`）
+    - shutdown 时：cancel → stop accept → drain JoinSet
+  - `spawn()` 改为 `async fn` 返回 `AdminDebugHandle`
+  - `serve_plain()` 改为返回 `AdminDebugHandle`
+  - 新增 `spawn_plain_sync()` 供非 async 调用方使用
+  - 抽取 `route_full_request()` 消除 serve/serve_with_config 间的路由重复
+- `app/src/admin_debug/mod.rs`: `init()` 返回 `AdminDebugHandle`（不再裸 `tokio::spawn`）
+- `app/src/run_engine.rs`: `admin_debug_handle` 变量持有 handle，section 11 显式 shutdown
+- `app/src/cli/run.rs`: `_admin_debug_handle` 存活至 run_supervisor 退出
+- `app/src/telemetry.rs`: `init_and_listen()` 返回 `Option<AdminDebugHandle>`
 
 **验证**:
 - `cargo check -p app --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅
-- `cargo test -p app --lib --features "admin_debug sbcore_rules_tool dev-cli prefetch"` ✅ (52 passed)
-- `cargo test -p app --lib "admin_debug::prefetch"` ✅ (10 passed, 含 lifecycle 测试)
+- `cargo test -p app --lib "admin_debug::http_server"` ✅ (14 passed, 含 4 新 lifecycle 测试)
+- `cargo test -p app --test admin_auth_contract` ✅ (7 passed)
 - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
-### geoip / http_client hard global 收口 — 已完成（earlier today）
+### prefetch / geoip / http_client — 已完成（earlier today）
 
 - 详见本文件历史快照
 
@@ -51,6 +48,7 @@
 | http_client | weak-owner only，hard global 已删 | **完成** |
 | geoip | weak-owner only，hard global 已删 | **完成** |
 | prefetch | weak-owner only，hard global 已删，worker lifecycle tracked | **完成** |
+| http_server | accept/conn lifecycle tracked，runtime shutdown 已接入 | **完成** |
 | logging compat | `ACTIVE_RUNTIME` 薄壳 | **保留** — public API |
 | security_metrics compat | public wrapper + legacy boundary | **保留** — public API |
 | sb-metrics LazyLock | registry plumbing 已收口 | **部分完成** |
@@ -60,8 +58,8 @@
 - ~~`http_client` hard global~~ → **已收口**
 - ~~`geoip` hard global~~ → **已收口**
 - ~~`prefetch` hard global + lifecycle~~ → **已收口**
+- ~~`http_server` accept loop 裸 spawn~~ → **已收口**
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `http_server.rs` accept loop 裸 spawn：仍是第一波 blocker
 - `outbound/anytls.rs` / `ssh`：仍是第一波 blocker

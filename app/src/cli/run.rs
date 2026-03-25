@@ -87,10 +87,10 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
 
     // Initialize admin debug server if enabled (separate from core admin)
     #[cfg(all(feature = "observe", feature = "admin_debug"))]
-    {
+    let _admin_debug_handle = {
         let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
-        app::admin_debug::init(None, runtime_deps.admin_state());
-    }
+        app::admin_debug::init(None, runtime_deps.admin_state())
+    };
 
     // Build ConfigInputs (entries collected dynamically in run_supervisor)
     let config_inputs = app::run_engine::ConfigInputs {

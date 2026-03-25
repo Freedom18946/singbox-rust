@@ -16,6 +16,20 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-25 23:30] Agent: Claude Opus 4.6
+
+**任务**: 收口 admin_debug::http_server 的 accept/connection lifecycle
+**变更**:
+- `app/src/admin_debug/http_server.rs` — 新增 AdminDebugHandle (CancellationToken + JoinHandle)；serve/serve_plain/spawn 全部改为 tracked accept loop (JoinSet + select on cancel)；抽取 route_full_request 和 handle_middleware_connection/handle_env_auth_connection 消除重复；新增 spawn_plain_sync 供 sync 调用方；4 个新 lifecycle 测试
+- `app/src/admin_debug/mod.rs` — init() 返回 AdminDebugHandle，不再裸 tokio::spawn
+- `app/src/run_engine.rs` — 新增 admin_debug_handle 变量，section 11 显式 shutdown
+- `app/src/cli/run.rs` — 存储 _admin_debug_handle
+- `app/src/telemetry.rs` — init_and_listen() 返回 Option<AdminDebugHandle>
+- `app/tests/admin_auth_contract.rs` — start_test_server 改用 serve_plain 新 API（返回 handle）
+- `agents-only/active_context.md` — 更新 http_server 为已完成
+**结果**: 成功。14 unit tests passed (含 4 新 lifecycle tests)，7 integration tests passed，clippy clean，inbound-errors baseline pass。http_server 从第一波 blocker 列表移出。
+**备注**: 剩余第一波 blocker：outbound/anytls.rs、ssh
+
 ### [2026-03-25 22:00] Agent: Claude Opus 4.6
 
 **任务**: prefetch hard global fallback 删除 + worker lifecycle 收口

@@ -80,8 +80,10 @@ pub struct AdminDebugState {
 // Note: http_server contains the plain HTTP admin server functionality
 // while http/ contains redirect policies and other HTTP utilities
 
-/// Initialize admin debug server if enabled
-pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) {
+/// Initialize admin debug server if enabled.
+/// Returns a handle that must be held alive; dropping or calling `shutdown()`
+/// on it will stop the server and drain in-flight connections.
+pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) -> http_server::AdminDebugHandle {
     let bind_addr = match addr {
         Some(a) => a.to_string(),
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
@@ -90,9 +92,5 @@ pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) {
     // Initialize SIGHUP signal handler for configuration reloading
     reloadable::init_signal_handler();
 
-    tokio::spawn(async move {
-        if let Err(e) = http_server::serve_plain(&bind_addr, state).await {
-            tracing::error!(error = %e, "failed to start admin debug server");
-        }
-    });
+    http_server::spawn_plain_sync(bind_addr, state)
 }

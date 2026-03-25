@@ -958,6 +958,9 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
     let clash_api_handle = start_clash_api_from_supervisor(&supervisor).await;
 
     // 7) Admin server (core or debug)
+    #[cfg(feature = "admin_debug")]
+    let mut admin_debug_handle: Option<app::admin_debug::http_server::AdminDebugHandle> = None;
+
     if let Some(ref addr) = opts.admin_listen {
         #[cfg(feature = "clash_api")]
         if let Some(handle) = clash_api_handle.as_ref() {
@@ -989,14 +992,16 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
                         None
                     };
 
-                    app::admin_debug::http_server::spawn(
+                    let handle = app::admin_debug::http_server::spawn(
                         socket_addr,
                         tls_opt,
                         auth_conf,
                         runtime_deps.admin_state(),
                     )
-                        .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {e}"))?;
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {e}"))?;
                     info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
+                    admin_debug_handle = Some(handle);
                 }
                 #[cfg(not(feature = "admin_debug"))]
                 {
@@ -1162,6 +1167,11 @@ pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
 
     #[cfg(feature = "clash_api")]
     if let Some(handle) = clash_api_handle {
+        handle.shutdown().await;
+    }
+
+    #[cfg(feature = "admin_debug")]
+    if let Some(handle) = admin_debug_handle {
         handle.shutdown().await;
     }
 

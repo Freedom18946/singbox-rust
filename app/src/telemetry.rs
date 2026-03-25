@@ -57,10 +57,20 @@ mod imp {
         }
     }
 
-    pub fn init_and_listen(deps: &crate::runtime_deps::AppRuntimeDeps) {
+    #[must_use]
+    pub fn init_and_listen(
+        deps: &crate::runtime_deps::AppRuntimeDeps,
+    ) -> Option<crate::admin_debug::http_server::AdminDebugHandle> {
         // Metrics exporter integration point - admin_debug provides HTTP metrics endpoint
         #[cfg(feature = "admin_debug")]
-        crate::admin_debug::init(None, Arc::clone(&deps.admin_state()));
+        {
+            Some(crate::admin_debug::init(None, Arc::clone(&deps.admin_state())))
+        }
+        #[cfg(not(feature = "admin_debug"))]
+        {
+            let _ = deps;
+            None
+        }
     }
 }
 
