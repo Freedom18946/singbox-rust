@@ -221,22 +221,62 @@ mod inner {
 
     // ── Post-auth session wrapper ────────────────────────────────────
 
-    /// Wrapper making `russh::client::Handle` shareable across tasks post-authentication.
+    /// Minimum-capability wrapper around a post-authentication SSH session.
     ///
-    /// SAFETY: After authentication completes in `SshConnection::new`, the Handle is only
-    /// used via `channel_open_direct_tcpip(&self, ...)` which internally accesses only
-    /// `self.sender` — a `tokio::mpsc::Sender<Msg>` that is `Send + Sync + Clone`.
-    /// The `receiver` field (which is `!Sync`) is only consumed during authentication,
-    /// never accessed post-construction. This makes concurrent `&self` access sound.
-    struct SyncSessionHandle(russh::client::Handle<SshClient>);
+    /// The raw `russh::client::Handle` is kept private and inaccessible from
+    /// outside this struct. The only exposed capability is [`open_direct_tcpip`],
+    /// which delegates to `Handle::channel_open_direct_tcpip(&self, ...)`.
+    ///
+    /// # Why `unsafe impl Sync`
+    ///
+    /// `Handle` is `!Sync` because it contains an `UnboundedReceiver<Reply>`
+    /// (used only during authentication) and a `JoinHandle` (for the background
+    /// session loop). Neither field is accessed by `channel_open_direct_tcpip`;
+    /// that method sends a message through `self.sender` (a `tokio::mpsc::Sender`,
+    /// which is `Send + Sync + Clone`) and awaits a *local* per-channel receiver
+    /// it creates on the spot.
+    ///
+    /// Because the wrapper never exposes the raw Handle, future code cannot
+    /// accidentally call `&mut self` methods (like `authenticate_*`) or touch
+    /// the `!Sync` receiver. Adding a new method to this wrapper requires
+    /// re-auditing the safety invariant.
+    pub(super) struct PostAuthSession {
+        /// Private — never exposed outside this struct.
+        handle: russh::client::Handle<SshClient>,
+    }
 
-    // SAFETY: see doc comment above — only Sync fields are accessed post-auth.
-    unsafe impl Sync for SyncSessionHandle {}
+    // SAFETY: The only method on PostAuthSession is open_direct_tcpip, which
+    // calls Handle::channel_open_direct_tcpip(&self). That method exclusively
+    // uses Handle.sender (Sender<Msg>: Send + Sync + Clone) and a freshly
+    // created local receiver. The !Sync fields (receiver, join) are never
+    // accessed through this wrapper.
+    unsafe impl Sync for PostAuthSession {}
+
+    impl PostAuthSession {
+        fn new(handle: russh::client::Handle<SshClient>) -> Self {
+            Self { handle }
+        }
+
+        /// Open a direct-tcpip channel on the SSH session.
+        ///
+        /// This is the **only** capability exposed by this wrapper. It delegates
+        /// to `Handle::channel_open_direct_tcpip(&self, ...)` which only accesses
+        /// the Sync `sender` field internally.
+        async fn open_direct_tcpip(
+            &self,
+            host: &str,
+            port: u32,
+        ) -> Result<russh::Channel<russh::client::Msg>, russh::Error> {
+            self.handle
+                .channel_open_direct_tcpip(host, port, "127.0.0.1", 0)
+                .await
+        }
+    }
 
     // ── Connection wrapper ───────────────────────────────────────────
 
     pub(super) struct SshConnection {
-        session: Arc<SyncSessionHandle>,
+        session: Arc<PostAuthSession>,
         shared: Arc<SshShared>,
     }
 
@@ -312,9 +352,9 @@ mod inner {
             }
 
             // After authentication, Handle is only used via &self methods.
-            // Wrap in SyncSessionHandle + Arc to allow lock-free concurrent access.
+            // Wrap in PostAuthSession + Arc for lock-free concurrent access.
             Ok(Self {
-                session: Arc::new(SyncSessionHandle(session)),
+                session: Arc::new(PostAuthSession::new(session)),
                 shared,
             })
         }
@@ -322,7 +362,7 @@ mod inner {
         /// Open a direct-tcpip channel and bridge it to a local TcpStream.
         ///
         /// No lock is held across the channel open await — `session` is behind
-        /// `Arc<SyncSessionHandle>` which allows concurrent `&self` access.
+        /// `Arc<PostAuthSession>` which exposes only `open_direct_tcpip`.
         /// The bridge task is spawned into the caller-provided `JoinSet`.
         pub(super) async fn create_tunnel_tcp(
             &self,
@@ -330,11 +370,10 @@ mod inner {
             port: u16,
             bridge_tasks: &AsyncMutex<JoinSet<()>>,
         ) -> io::Result<TcpStream> {
-            // No lock needed — SyncSessionHandle allows concurrent &self access
+            // No lock — PostAuthSession::open_direct_tcpip is the only capability
             let channel = self
                 .session
-                .0
-                .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+                .open_direct_tcpip(host, port as u32)
                 .await
                 .map_err(|e| {
                     io::Error::new(
@@ -690,5 +729,22 @@ mod tests {
             let bridges = c2.bridge_tasks.lock().await;
             assert_eq!(bridges.len(), 1);
         }
+    }
+
+    /// Compile-time proof that PostAuthSession encapsulates the raw Handle.
+    ///
+    /// PostAuthSession has a single private field (`handle`) and exposes only
+    /// `open_direct_tcpip()`. This test exists to document and anchor that
+    /// invariant: if someone adds a public accessor or makes the field pub,
+    /// this test's rationale comment should trigger review of the unsafe
+    /// impl Sync boundary.
+    #[cfg(feature = "adapter-ssh")]
+    #[test]
+    fn test_post_auth_session_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        // PostAuthSession must be Send + Sync for Arc<PostAuthSession> to work.
+        // Sync comes from our unsafe impl — if that impl is ever removed,
+        // this line will fail to compile, surfacing the issue.
+        assert_send_sync::<inner::PostAuthSession>();
     }
 }

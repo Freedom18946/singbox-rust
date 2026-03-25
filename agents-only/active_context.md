@@ -16,7 +16,7 @@
 ### outbound/ssh.rs lifecycle 收口 — 已完成
 
 - `crates/sb-adapters/src/outbound/ssh.rs`:
-  - **Session lock 消除**：`Mutex<Handle>` → `Arc<SyncSessionHandle>`（`unsafe impl Sync` 包装器，post-auth 只用 `&self` 方法）
+  - **Session lock 消除**：`Mutex<Handle>` → `Arc<PostAuthSession>`（最小能力封装，handle 字段私有，仅暴露 `open_direct_tcpip()`；`unsafe impl Sync` 边界仅服务于该单一方法）
   - **Pool lock-across-await 消除**：三阶段锁（短锁检查→锁外 connect→短锁安装，含竞争处理）
   - **Bridge lifecycle tracked**：`bridge_tasks: Arc<Mutex<JoinSet<()>>>` 持有所有 bridge task
   - 零 `tokio::spawn` 调用：所有任务通过 `JoinSet::spawn`
@@ -56,4 +56,4 @@
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
 - ~~`outbound/anytls.rs`~~ → **已收口**（`JoinSet` owner + `shutdown()` join + bridge tracked + lock-across-await 消除，零 `tokio::spawn`）
-- ~~`outbound/ssh.rs`~~ → **已收口**（`SyncSessionHandle` 消除 session 锁 + 三阶段 pool 锁 + `JoinSet` bridge owner，零 `tokio::spawn`）
+- ~~`outbound/ssh.rs`~~ → **已收口**（`PostAuthSession` 最小能力封装消除 session 锁 + 三阶段 pool 锁 + `JoinSet` bridge owner，零 `tokio::spawn`）

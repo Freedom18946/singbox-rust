@@ -8378,3 +8378,16 @@ L2.8.4-6 Handlers + WebSocket:
 - `agents-only/active_context.md`: ssh 移入已收口
 **验证**: check/clippy/test/inbound-errors 全部通过
 **结果**: 成功。ssh outbound 两个 lock-across-await 消除，bridge task 有明确 owner。
+
+### [2026-03-26 06:00] Agent: Claude Opus 4.6
+
+**任务**: follow-up — 收窄 ssh outbound unsafe 边界 + 文档残留修正
+**变更**:
+- `crates/sb-adapters/src/outbound/ssh.rs`:
+  - `SyncSessionHandle` → `PostAuthSession`：handle 字段私有，仅暴露 `open_direct_tcpip()` 方法
+  - `create_tunnel_tcp()` 改为调用 `self.session.open_direct_tcpip(...)` 而非 `.0.channel_open_direct_tcpip(...)`
+  - 新增 `test_post_auth_session_is_send_and_sync` 编译时断言
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 去掉"ssh 这类链路"旧表述
+- `agents-only/active_context.md`: 更新 session wrapper 描述
+**验证**: check/clippy/test(8 passed)/inbound-errors 全部通过
+**结果**: 成功。unsafe 边界从 raw Handle 暴露收窄为单一方法封装。
