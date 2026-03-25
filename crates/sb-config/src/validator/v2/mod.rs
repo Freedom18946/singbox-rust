@@ -1,3 +1,4 @@
+mod dns;
 mod outbound;
 mod route;
 
@@ -38,35 +39,6 @@ pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     for key in keys {
         set.insert((*key).to_string());
     }
-}
-
-fn allowed_dns_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::DnsIR::default());
-    insert_keys(
-        &mut set,
-        &["ttl", "fakeip", "pool", "hosts", "hosts_ttl", "static_ttl"],
-    );
-    set
-}
-
-fn allowed_dns_server_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::DnsServerIR::default());
-    insert_keys(&mut set, &["name", "type", "server"]);
-    set
-}
-
-fn allowed_dns_rule_keys() -> HashSet<String> {
-    let mut set = object_keys(crate::ir::DnsRuleIR::default());
-    insert_keys(
-        &mut set,
-        &[
-            "domain_keyword",
-            "process",
-            "rule_set_ipcidr_match_source",
-            "rule_set_ipcidr_accept_empty",
-        ],
-    );
-    set
 }
 
 fn allowed_service_keys() -> HashSet<String> {
@@ -1059,59 +1031,8 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     // 4) route unknown-field and rule_set validation (delegated to route submodule)
     route::validate_route(doc, allow_unknown, &mut issues);
 
-    if let Some(dns) = doc.get("dns").and_then(|v| v.as_object()) {
-        let allowed = allowed_dns_keys();
-        for k in dns.keys() {
-            if !allowed.contains(k) {
-                let kind = if allow_unknown { "warning" } else { "error" };
-                issues.push(emit_issue(
-                    kind,
-                    IssueCode::UnknownField,
-                    &format!("/dns/{}", k),
-                    "unknown field",
-                    "remove it",
-                ));
-            }
-        }
-        if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
-            let allowed_server = allowed_dns_server_keys();
-            for (i, server) in servers.iter().enumerate() {
-                if let Some(map) = server.as_object() {
-                    for k in map.keys() {
-                        if !allowed_server.contains(k) {
-                            let kind = if allow_unknown { "warning" } else { "error" };
-                            issues.push(emit_issue(
-                                kind,
-                                IssueCode::UnknownField,
-                                &format!("/dns/servers/{}/{}", i, k),
-                                "unknown field",
-                                "remove it",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        if let Some(rules) = dns.get("rules").and_then(|v| v.as_array()) {
-            let allowed_rules = allowed_dns_rule_keys();
-            for (i, rule) in rules.iter().enumerate() {
-                if let Some(map) = rule.as_object() {
-                    for k in map.keys() {
-                        if !allowed_rules.contains(k) {
-                            let kind = if allow_unknown { "warning" } else { "error" };
-                            issues.push(emit_issue(
-                                kind,
-                                IssueCode::UnknownField,
-                                &format!("/dns/rules/{}/{}", i, k),
-                                "unknown field",
-                                "remove it",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 5) dns unknown-field validation (delegated to dns submodule)
+    dns::validate_dns(doc, allow_unknown, &mut issues);
 
     if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
         let allowed = allowed_service_keys();

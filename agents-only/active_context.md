@@ -13,6 +13,32 @@
 
 ## 最近完成（2026-03-26）
 
+### validator/v2 dns 子域拆分 — 已完成
+
+- 新增 `crates/sb-config/src/validator/v2/dns.rs`（200 行）
+- **搬到 `dns.rs` 的逻辑**：
+  - `allowed_dns_keys()` — dns 顶层允许字段集
+  - `allowed_dns_server_keys()` — dns server 允许字段集
+  - `allowed_dns_rule_keys()` — dns rule 允许字段集
+  - `validate_dns()` — `/dns` 顶层 + `/dns/servers` + `/dns/rules` unknown-field 校验
+- **`validate_v2()` 仍为统一 orchestration 入口**，dns 部分 dispatch 到子模块
+- **语义冻结**：issue ptr / code / severity / message / hint 完全不变
+- **mod.rs 从 4836 行瘦身至 4757 行**（-79 行），dns.rs 200 行（含 8 个新定点测试）
+- 新增 8 个 dns 定点测试：unknown-field strict/allow_unknown（dns/server/rule）、无 dns 无误报、ptr 精确命中全层级
+
+**注意**：`validator/v2` 已完成 outbound + route + dns 三个子域拆分，service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。
+
+**验证**:
+- `cargo fmt --all` ✅
+- `cargo check -p sb-config` ✅
+- `cargo check -p app --features parity` ✅
+- `cargo test -p sb-config --lib validator::v2` ✅ (82 passed，含 8 个新 dns 测试)
+- `cargo test -p sb-config --test compatibility_matrix` ✅ (6 passed)
+- `cargo test -p sb-config --test dns_config_parity` ✅ (2 passed)
+- `cargo test -p sb-config --test dns_rule_parity` ✅ (2 passed)
+- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
+- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+
 ### validator/v2 route 子域拆分 — 已完成
 
 - 新增 `crates/sb-config/src/validator/v2/route.rs`（362 行）
@@ -27,7 +53,7 @@
 - **mod.rs 从 5048 行瘦身至 4836 行**（-212 行），route.rs 362 行（含 14 个新定点测试）
 - 新增 14 个 route 定点测试：unknown-field strict/allow_unknown（route/rule/rule_set）、rule_set 结构校验（not-object/missing-tag/invalid-type/missing-format/format-inference/invalid-version/valid-versions/no-route）
 
-**注意**：`validator/v2` 已完成 outbound + route 两个子域拆分，dns/service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。sb-config 整体仍在第一波 blocker 列表中。
+**注意**：`validator/v2` 已完成 outbound + route + dns 三个子域拆分，service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。sb-config 整体仍在第一波 blocker 列表中。
 
 **验证**:
 - `cargo check -p sb-config` ✅
@@ -40,27 +66,8 @@
 
 ### validator/v2 outbound 子域拆分 — 已完成
 
-- `crates/sb-config/src/validator/v2.rs` 转为目录模块 `v2/mod.rs` + `v2/outbound.rs`
-- **搬到 `outbound.rs` 的逻辑**：
-  - `allowed_outbound_keys()` — outbound 允许字段集
-  - `validate_outbounds()` — `/outbounds` 数组结构、type/tag/unknown-field 校验
-  - `check_tls_capabilities()` — uTLS/ECH/REALITY TLS 诊断（含 QUIC+ECH 拦截）
-- **`validate_v2()` 仍为统一 orchestration 入口**，outbound 部分 dispatch 到子模块
-- **语义冻结**：issue ptr / code / severity / message 完全不变
-- **mod.rs 从 5384 行瘦身至 5048 行**（-336 行），outbound.rs 610 行（含 13 个新定点测试）
-- 新增 13 个 outbound 定点测试：数组校验、item 类型、type/tag 类型、unknown-field strict/allow_unknown、utls/reality/ECH
-
-**注意**：`validator/v2` 已完成 outbound + route 两个子域拆分，dns/service/endpoint 尚未拆出。`ir/mod.rs` 仍未动。sb-config 整体仍在第一波 blocker 列表中。
-
-**注意（历史）**：这是 sb-config 的第一刀。`ir/mod.rs` 与 `validator/v2/` 其余子域（dns/service/endpoint）仍是结构 blocker，sb-config 整体仍在第一波 blocker 列表中。
-
-**验证**:
-- `cargo check -p sb-config` ✅
-- `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config` ✅ (全部通过，含 27 个新 boundary 测试)
-- `cargo test -p sb-config --test vless_config_test` ✅ (5 passed，现有测试未被打坏)
-- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
-- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+- `v2/outbound.rs`（610 行）：`allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试
+- mod.rs 5384→5048 行（-336 行），语义冻结，验证全通过
 
 ### outbound/ssh.rs / anytls.rs / http_server / prefetch / geoip / http_client — 已完成
 

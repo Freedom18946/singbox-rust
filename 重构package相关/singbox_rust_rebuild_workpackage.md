@@ -50,7 +50,7 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / `validator/v2` 其余子域 dns/service/endpoint）
+  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / `validator/v2` 其余子域 service/endpoint）
 - **已完成 hard global + lifecycle 收口**：
   - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
@@ -503,7 +503,7 @@
 ### 目标模块结构
 
 - `validator/v2/root.rs`
-- `validator/v2/dns.rs`
+- ~~`validator/v2/dns.rs`~~ ✅ 已完成 2026-03-26（200 行，含 `allowed_dns_keys` + `allowed_dns_server_keys` + `allowed_dns_rule_keys` + `validate_dns` + 8 定点测试）
 - ~~`validator/v2/route.rs`~~ ✅ 已完成 2026-03-26（362 行，含 `allowed_route_keys` + `allowed_route_rule_keys` + `allowed_rule_set_keys` + `rule_set_format_from_path/url` + `validate_route` + 14 定点测试）
 - `validator/v2/inbound.rs`
 - ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26（610 行，含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试）
