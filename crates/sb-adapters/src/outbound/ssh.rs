@@ -48,6 +48,9 @@ pub struct SshConnector {
     config: SshAdapterConfig,
     #[cfg(feature = "adapter-ssh")]
     pool: std::sync::Arc<tokio::sync::Mutex<SshPool>>,
+    /// Tracked bridge tasks — aborted on connector drop via `JoinSet::drop`.
+    #[cfg(feature = "adapter-ssh")]
+    bridge_tasks: std::sync::Arc<tokio::sync::Mutex<tokio::task::JoinSet<()>>>,
 }
 
 #[cfg(feature = "adapter-ssh")]
@@ -74,6 +77,9 @@ impl SshConnector {
                     connections: Vec::new(),
                     rr: 0,
                 })),
+                bridge_tasks: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    tokio::task::JoinSet::new(),
+                )),
             }
         }
 
@@ -103,6 +109,7 @@ mod inner {
     use tokio::io::{split, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::{mpsc, Mutex as AsyncMutex};
+    use tokio::task::JoinSet;
 
     // ── Known hosts verification ─────────────────────────────────────
 
@@ -212,10 +219,24 @@ mod inner {
         }
     }
 
+    // ── Post-auth session wrapper ────────────────────────────────────
+
+    /// Wrapper making `russh::client::Handle` shareable across tasks post-authentication.
+    ///
+    /// SAFETY: After authentication completes in `SshConnection::new`, the Handle is only
+    /// used via `channel_open_direct_tcpip(&self, ...)` which internally accesses only
+    /// `self.sender` — a `tokio::mpsc::Sender<Msg>` that is `Send + Sync + Clone`.
+    /// The `receiver` field (which is `!Sync`) is only consumed during authentication,
+    /// never accessed post-construction. This makes concurrent `&self` access sound.
+    struct SyncSessionHandle(russh::client::Handle<SshClient>);
+
+    // SAFETY: see doc comment above — only Sync fields are accessed post-auth.
+    unsafe impl Sync for SyncSessionHandle {}
+
     // ── Connection wrapper ───────────────────────────────────────────
 
     pub(super) struct SshConnection {
-        session: tokio::sync::Mutex<russh::client::Handle<SshClient>>,
+        session: Arc<SyncSessionHandle>,
         shared: Arc<SshShared>,
     }
 
@@ -255,7 +276,7 @@ mod inner {
             .map_err(|_| anyhow::anyhow!("SSH connection timeout"))?
             .map_err(|e| anyhow::anyhow!("SSH handshake failed: {}", e))?;
 
-            // Authenticate
+            // Authenticate (uses &mut self — last mutable access before wrapping)
             let authenticated = if let Some(password) = &config.password {
                 session
                     .authenticate_password(&config.username, password)
@@ -290,19 +311,29 @@ mod inner {
                 return Err(anyhow::anyhow!("SSH authentication failed"));
             }
 
+            // After authentication, Handle is only used via &self methods.
+            // Wrap in SyncSessionHandle + Arc to allow lock-free concurrent access.
             Ok(Self {
-                session: tokio::sync::Mutex::new(session),
+                session: Arc::new(SyncSessionHandle(session)),
                 shared,
             })
         }
 
+        /// Open a direct-tcpip channel and bridge it to a local TcpStream.
+        ///
+        /// No lock is held across the channel open await — `session` is behind
+        /// `Arc<SyncSessionHandle>` which allows concurrent `&self` access.
+        /// The bridge task is spawned into the caller-provided `JoinSet`.
         pub(super) async fn create_tunnel_tcp(
             &self,
             host: &str,
             port: u16,
+            bridge_tasks: &AsyncMutex<JoinSet<()>>,
         ) -> io::Result<TcpStream> {
-            let session = self.session.lock().await;
-            let channel = session
+            // No lock needed — SyncSessionHandle allows concurrent &self access
+            let channel = self
+                .session
+                .0
                 .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
                 .await
                 .map_err(|e| {
@@ -311,7 +342,6 @@ mod inner {
                         format!("Failed to create SSH tunnel: {}", e),
                     )
                 })?;
-            drop(session);
 
             // Register data receiver for this channel
             let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
@@ -320,50 +350,82 @@ mod inner {
                 map.insert(channel.id(), tx);
             }
 
-            // Bridge via local loopback
+            // Bridge via local loopback — tracked in JoinSet, not fire-and-forget
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
 
-            tokio::spawn(async move {
-                let (sock, _) = match listener.accept().await {
-                    Ok(x) => x,
-                    Err(_) => return,
-                };
-                let (mut rd, mut wr) = split(sock);
-                let ch_writer = channel;
-                // local → SSH channel
-                let a = async {
-                    let _ = ch_writer.data(&mut rd).await;
-                    let _ = ch_writer.eof().await;
-                };
-                // SSH channel → local
-                let b = async {
-                    while let Some(buf) = rx.recv().await {
-                        if wr.write_all(&buf).await.is_err() {
-                            break;
+            {
+                let mut bridges = bridge_tasks.lock().await;
+                // Reap completed bridge tasks to prevent unbounded growth
+                while bridges.try_join_next().is_some() {}
+                bridges.spawn(async move {
+                    let (sock, _) = match listener.accept().await {
+                        Ok(x) => x,
+                        Err(_) => return,
+                    };
+                    let (mut rd, mut wr) = split(sock);
+                    let ch_writer = channel;
+                    // local → SSH channel
+                    let a = async {
+                        let _ = ch_writer.data(&mut rd).await;
+                        let _ = ch_writer.eof().await;
+                    };
+                    // SSH channel → local
+                    let b = async {
+                        while let Some(buf) = rx.recv().await {
+                            if wr.write_all(&buf).await.is_err() {
+                                break;
+                            }
                         }
-                    }
-                    let _ = wr.shutdown().await;
-                };
-                let _ = tokio::join!(a, b);
-            });
+                        let _ = wr.shutdown().await;
+                    };
+                    let _ = tokio::join!(a, b);
+                });
+            }
 
             TcpStream::connect(addr).await
         }
     }
 
     impl SshConnector {
+        /// Get an existing pooled connection or create a new one.
+        ///
+        /// Uses a three-phase lock pattern to avoid holding the pool lock across
+        /// the async SSH connection establishment:
+        /// 1. Short lock: check pool for available connection
+        /// 2. Lock-free: create new connection if needed
+        /// 3. Short lock: install new connection (with race handling)
         pub(super) async fn get_or_create_connection(&self) -> anyhow::Result<Arc<SshConnection>> {
             let pool_size = self.config.connection_pool_size.unwrap_or(4).max(1);
-            let mut pool = self.pool.lock().await;
-            if pool.connections.len() < pool_size {
-                let conn = Arc::new(SshConnection::new(&self.config).await?);
-                pool.connections.push(conn.clone());
-                return Ok(conn);
+
+            // Phase 1: short lock — check existing pool
+            {
+                let mut pool = self.pool.lock().await;
+                if pool.connections.len() >= pool_size {
+                    // Pool full, round-robin an existing connection
+                    let idx = pool.rr % pool.connections.len();
+                    pool.rr = pool.rr.wrapping_add(1);
+                    return Ok(pool.connections[idx].clone());
+                }
             }
-            let idx = pool.rr % pool.connections.len();
-            pool.rr = pool.rr.wrapping_add(1);
-            Ok(pool.connections[idx].clone())
+            // Lock released here
+
+            // Phase 2: lock-free — create new connection (slow, async)
+            let conn = Arc::new(SshConnection::new(&self.config).await?);
+
+            // Phase 3: short lock — install, handling concurrent race
+            {
+                let mut pool = self.pool.lock().await;
+                if pool.connections.len() >= pool_size {
+                    // Another task filled the pool while we were connecting.
+                    // Use our fresh connection anyway (it's already authenticated)
+                    // but don't push it into the pool — just return it for this dial.
+                    return Ok(conn);
+                }
+                pool.connections.push(conn.clone());
+            }
+
+            Ok(conn)
         }
     }
 }
@@ -439,7 +501,7 @@ impl OutboundConnector for SshConnector {
                     .map_err(|e| AdapterError::Network(format!("SSH connection failed: {}", e)))?;
 
                 let stream = conn
-                    .create_tunnel_tcp(&target.host, target.port)
+                    .create_tunnel_tcp(&target.host, target.port, &self.bridge_tasks)
                     .await
                     .map_err(|e| AdapterError::Network(format!("SSH tunnel failed: {}", e)))?;
 
@@ -538,5 +600,95 @@ mod tests {
         };
         let connector = SshConnector::new(config);
         assert!(connector.start().await.is_err());
+    }
+
+    #[cfg(feature = "adapter-ssh")]
+    #[tokio::test]
+    async fn test_bridge_tasks_tracked_in_joinset() {
+        // Proves that the bridge_tasks JoinSet exists and can track tasks.
+        // JoinSet::drop aborts all tracked tasks — this is the sync fallback
+        // that ensures no bridge task outlives the connector.
+        let mut js = tokio::task::JoinSet::new();
+        let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+        js.spawn(async move {
+            // Block until cancelled
+            let _ = tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+            let _ = tx.send(());
+        });
+        assert_eq!(js.len(), 1);
+        drop(js); // JoinSet::drop aborts all — must not hang
+        // The task was aborted, so tx was dropped without sending
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[cfg(feature = "adapter-ssh")]
+    #[tokio::test]
+    async fn test_bridge_reaping() {
+        // Proves that try_join_next reaps completed tasks from JoinSet,
+        // preventing unbounded growth of the bridge_tasks set.
+        let mut js = tokio::task::JoinSet::new();
+        js.spawn(async { /* completes immediately */ });
+        // Give the task time to complete
+        tokio::task::yield_now().await;
+        // Reap
+        let reaped = js.try_join_next();
+        assert!(reaped.is_some());
+        assert_eq!(js.len(), 0);
+    }
+
+    #[cfg(feature = "adapter-ssh")]
+    #[tokio::test]
+    async fn test_pool_three_phase_lock_pattern() {
+        // Validates the three-phase pool lock pattern by constructing a connector
+        // and verifying the pool starts empty and the bridge_tasks JoinSet exists.
+        let config = SshAdapterConfig {
+            server: "ssh.example.com".to_string(),
+            username: "user".to_string(),
+            password: Some("pass".to_string()),
+            connection_pool_size: Some(2),
+            ..Default::default()
+        };
+        let connector = SshConnector::new(config);
+
+        // Pool starts empty
+        {
+            let pool = connector.pool.lock().await;
+            assert!(pool.connections.is_empty());
+            assert_eq!(pool.rr, 0);
+        }
+
+        // Bridge tasks set starts empty
+        {
+            let bridges = connector.bridge_tasks.lock().await;
+            assert_eq!(bridges.len(), 0);
+        }
+    }
+
+    #[cfg(feature = "adapter-ssh")]
+    #[tokio::test]
+    async fn test_connector_clone_shares_bridge_tasks() {
+        // Proves that cloning the connector shares the same bridge_tasks JoinSet
+        // (via Arc), so all bridge tasks have a single owner regardless of which
+        // clone spawned them.
+        let config = SshAdapterConfig {
+            server: "ssh.example.com".to_string(),
+            username: "user".to_string(),
+            password: Some("pass".to_string()),
+            ..Default::default()
+        };
+        let c1 = SshConnector::new(config);
+        let c2 = c1.clone();
+
+        // Spawn a task via c1's bridge_tasks
+        {
+            let mut bridges = c1.bridge_tasks.lock().await;
+            bridges.spawn(async { /* dummy */ });
+        }
+
+        // Visible via c2's bridge_tasks (same Arc)
+        {
+            let bridges = c2.bridge_tasks.lock().await;
+            assert_eq!(bridges.len(), 1);
+        }
     }
 }

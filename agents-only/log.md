@@ -8364,3 +8364,17 @@ L2.8.4-6 Handlers + WebSocket:
    - §1.1 第一波 blocker 列表：移除 http_client.rs，新增"已完成"分类
    - WP-20 分波说明：http_client 移入"已完成"，从第一波移出
 4. `agents-only/active_context.md`: 追加 follow-up 记录
+
+### [2026-03-26 05:00] Agent: Claude Opus 4.6
+
+**任务**: outbound/ssh.rs lifecycle 收口（maintenance 卡）
+**变更**:
+- `crates/sb-adapters/src/outbound/ssh.rs`:
+  - Session lock 消除：`Mutex<Handle>` → `Arc<SyncSessionHandle>`（`unsafe impl Sync`，post-auth 仅用 `&self`）
+  - Pool lock-across-await 消除：三阶段锁（短锁检查→锁外 connect→短锁安装+竞争处理）
+  - Bridge lifecycle：`bridge_tasks: Arc<Mutex<JoinSet<()>>>` 替代裸 `tokio::spawn`
+  - 零 `tokio::spawn`：所有 bridge 通过 `JoinSet::spawn`
+  - 新增 4 个 lifecycle 测试
+- `agents-only/active_context.md`: ssh 移入已收口
+**验证**: check/clippy/test/inbound-errors 全部通过
+**结果**: 成功。ssh outbound 两个 lock-across-await 消除，bridge task 有明确 owner。
