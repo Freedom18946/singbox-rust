@@ -52,7 +52,7 @@
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
   - `sb-config` Raw 边界（`outbound.rs` / `ir/mod.rs` / `validator/v2.rs`）
 - **已完成 hard global + lifecycle 收口**：
-  - `outbound/ssh.rs` — session lock 消除（`Arc<SyncSessionHandle>`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
+  - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
   - `http_server.rs` — accept/connection lifecycle tracked（`AdminDebugHandle` + `JoinSet` + `CancellationToken`），runtime shutdown 已接入（`15093767`）
   - `prefetch.rs` — hard global 已删，worker lifecycle 改为 tracked/owned（dispatcher + CancellationToken + JoinSet），仅剩 `DEFAULT_PREFETCHER` weak-owner compat
@@ -620,7 +620,7 @@
 
 - ~~`app/src/admin_debug/http_server.rs`~~ — **已收口**（2026-03-25）：accept loop 改为 `JoinSet` + `CancellationToken`，per-connection tracked，`AdminDebugHandle` + runtime shutdown 已接入。
 - ~~`crates/sb-adapters/src/outbound/anytls.rs`~~ — **已收口**（2026-03-26）：`SessionRuntime` owner + `AbortHandle` Drop，`get_or_create_session()` 三阶段锁无 lock-across-await，bridge tasks 改为 `JoinSet` tracked，loopback accept 无 spawn。
-- ~~`crates/sb-adapters/src/outbound/ssh.rs`~~ — **已收口**（2026-03-26）：session lock 消除（`Arc<SyncSessionHandle>` unsafe impl Sync），pool 三阶段锁无 lock-across-await，bridge tasks 改为 `JoinSet` tracked，零 `tokio::spawn`。
+- ~~`crates/sb-adapters/src/outbound/ssh.rs`~~ — **已收口**（2026-03-26）：session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`；`unsafe impl Sync` 仅服务于该方法），pool 三阶段锁无 lock-across-await，bridge tasks 改为 `JoinSet` tracked，零 `tokio::spawn`。
 
 `WP-41` 中 http_server + anytls + ssh 部分均已关闭。
 

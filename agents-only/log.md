@@ -8391,3 +8391,11 @@ L2.8.4-6 Handlers + WebSocket:
 - `agents-only/active_context.md`: 更新 session wrapper 描述
 **验证**: check/clippy/test(8 passed)/inbound-errors 全部通过
 **结果**: 成功。unsafe 边界从 raw Handle 暴露收窄为单一方法封装。
+
+### [2026-03-26 07:00] Agent: Claude Opus 4.6
+
+**任务**: docs follow-up — 对齐 ssh session wrapper 命名（`SyncSessionHandle` → `PostAuthSession`）
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: 2 处 SyncSessionHandle → PostAuthSession
+- `重构package相关/singbox_rust_rebuild_workpackage.md`: 2 处 SyncSessionHandle → PostAuthSession
+**结果**: 纯文档对齐，无代码变更。
