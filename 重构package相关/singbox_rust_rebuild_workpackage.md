@@ -50,7 +50,7 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs` / ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` service 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` endpoint 子域~~ ✅ 已拆分 2026-03-26 / **validator/v2 第一轮子域拆分已完成，剩余主战场转为 `ir/mod.rs`**）
+  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs`（已完成 endpoint + service 第一刀子模块拆分 2026-03-26，剩余 dns IR + raw/validated/planned/normalize 三相边界治理）/ ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` service 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` endpoint 子域~~ ✅ 已拆分 2026-03-26 / **validator/v2 第一轮子域拆分已完成，ir/mod.rs 已完成 endpoint + service 第一刀，下一战场仍是 ir/mod.rs 的 dns / 更大三相边界治理**）
 - **已完成 hard global + lifecycle 收口**：
   - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
