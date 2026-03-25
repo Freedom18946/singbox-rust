@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-25 21:00] Agent: Claude Opus 4.6
+
+**任务**: 对齐 geoip 收口后的残留文档排序，移除"第一波 blocker"旧表述
+**变更**:
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`: §3.1 移除 `geoip/mod.rs`；§3.2 补入 geoip 已收口条目；§1 表格和 §2 表格中 geoip 比较基准更新
+- `重构package相关/singbox_rust_rebuild_workpackage.md`: §1.1 第一波 blocker 移除 `geoip`；已完成分组补入 geoip
+- `agents-only/active_context.md`: 补记 docs alignment follow-up
+- `agents-only/log.md`: 记录本轮执行
+**结果**: 成功；纯文档对齐，代码此前已完成（`f5297845`）
+**备注**: 仍是 maintenance / Layer 1/2 收口，不表述成 parity 完成
+
 ### [2026-03-25 20:00] Agent: Claude Opus 4.6
 
 **任务**: 收口 `geoip` hard global fallback，改成 weak-owner compat only

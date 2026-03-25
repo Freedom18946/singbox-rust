@@ -36,6 +36,10 @@
 - `cargo test -p sb-core` ✅ (512 tests)
 - `bash scripts/ci/tasks/inbound-errors.sh` ✅
 
+### geoip docs alignment follow-up — 已完成
+
+- `重构package相关/` 两份文档中"第一波 blocker"列表已移除 `geoip`，与代码收口状态对齐
+
 ### http_client hard global fallback 收口 — 已完成（earlier）
 
 - 删除 `GLOBAL_HTTP_CLIENT` + `install_http_client()` / `global_http_client()`

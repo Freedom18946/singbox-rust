@@ -50,7 +50,6 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `geoip/mod.rs`
   - `prefetch.rs`
   - `http_server.rs`
   - `outbound/anytls.rs`
@@ -58,13 +57,14 @@
   - `sb-config` Raw 边界（`outbound.rs` / `ir/mod.rs` / `validator/v2.rs`）
 - **已完成 hard global 收口，保留为 weak-owner compat 债务**：
   - `http_client.rs` — hard global 已删（`d3a0b1e7`），仅剩 `DEFAULT_HTTP_CLIENT` weak-owner
+  - `geoip/mod.rs` — hard global 已删（`f5297845`），仅剩 `DEFAULT_GEOIP_SERVICE` weak-owner
 - **保留为债务，但下调优先级**：
   - `logging.rs`
   - `security_metrics.rs`
   - `sb-metrics/src/lib.rs`
   - `metrics/registry_ext.rs`
 
-原因见 `2026-03-25_5.4pro第三次审计核验记录.md`：`http_client.rs` 已完成 hard global fallback 收口（2026-03-25），不再是第一波 blocker。其余模块在 2026-03-24 维护期已做过 compat shell 瘦身、owner-first 收口或 registry plumbing 收口，问题仍在，但不应继续压过当前更硬的稳定性链路。
+原因见 `2026-03-25_5.4pro第三次审计核验记录.md`：`http_client.rs` 和 `geoip/mod.rs` 已完成 hard global fallback 收口（2026-03-25），不再是第一波 blocker。其余模块在 2026-03-24 维护期已做过 compat shell 瘦身、owner-first 收口或 registry plumbing 收口，问题仍在，但不应继续压过当前更硬的稳定性链路。
 
 ---
 
