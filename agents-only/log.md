@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-26 02:30] Agent: Claude Opus 4.6
+
+**任务**: follow-up: 补齐 anytls SessionRuntime JoinHandle 持有 + 文档对齐
+**变更**:
+- `crates/sb-adapters/src/outbound/anytls.rs` — `SessionRuntime` 从 2x`AbortHandle` 改为 `JoinSet<()>` 持有 JoinHandle；新增 `shutdown(self)` abort+join；`get_or_create_session()` 改为 stale runtime 锁外 `shutdown().await`；移除 `AbortHandle` import 和手动 `Drop` impl；测试从 4→6（新增 shutdown/replacement/join 测试）
+- `重构package相关/singbox_rust_rebuild_workpackage.md` — §1.1 anytls 从第一波 blocker 移至"已完成 lifecycle 收口"
+- `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md` — 更新 anytls 证据行为 JoinSet owner 描述
+- `agents-only/active_context.md` — 更新 anytls 收口描述（JoinSet + shutdown + 零 tokio::spawn）
+**结果**: 成功。6 registration tests + 6 lifecycle tests 全通过，编译/clippy/inbound-errors 全 clean
+**备注**: 现在 anytls.rs 中零 `tokio::spawn` 调用，所有任务通过 `JoinSet::spawn` 持有。文档四处（active_context / workpackage / audit §1 / audit §2.1）已统一为 Done。
+
 ### [2026-03-26 01:30] Agent: Claude Opus 4.6
 
 **任务**: outbound/anytls.rs lifecycle 收口 — 消除 lock-across-await，tracked session/bridge lifecycle

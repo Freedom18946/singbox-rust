@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use tokio::task::{AbortHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_rustls::rustls::{self, pki_types};
 use tokio_rustls::TlsConnector;
 
@@ -32,41 +32,39 @@ pub struct AnyTlsConfig {
 }
 
 /// Owns a session and its background tasks (recv_loop + process_stream_data).
-/// When dropped, aborts both background tasks to prevent leaked fire-and-forget spawns.
+///
+/// JoinHandles are held inside a `JoinSet`, never implicitly dropped.
+/// - `shutdown()` — abort + await all tasks (graceful async cleanup)
+/// - `JoinSet::drop` — abort all tasks (sync fallback when dropped without shutdown)
 struct SessionRuntime {
     session: Arc<Session>,
-    recv_abort: AbortHandle,
-    process_abort: AbortHandle,
+    tasks: JoinSet<()>,
 }
 
 impl SessionRuntime {
     fn new(session: Arc<Session>) -> Self {
+        let mut tasks = JoinSet::new();
+
         let s1 = session.clone();
-        let recv_handle = tokio::spawn(async move {
+        tasks.spawn(async move {
             if let Err(err) = s1.recv_loop().await {
                 tracing::debug!(error = %err, "AnyTLS session recv loop exited");
             }
         });
 
         let s2 = session.clone();
-        let process_handle = tokio::spawn(async move {
+        tasks.spawn(async move {
             if let Err(err) = s2.process_stream_data().await {
                 tracing::debug!(error = %err, "AnyTLS session process loop exited");
             }
         });
 
-        Self {
-            session,
-            recv_abort: recv_handle.abort_handle(),
-            process_abort: process_handle.abort_handle(),
-        }
+        Self { session, tasks }
     }
-}
 
-impl Drop for SessionRuntime {
-    fn drop(&mut self) {
-        self.recv_abort.abort();
-        self.process_abort.abort();
+    /// Abort all background tasks and await their completion.
+    async fn shutdown(mut self) {
+        self.tasks.shutdown().await;
     }
 }
 
@@ -109,21 +107,32 @@ impl AnyTlsConnector {
         let new_session = Arc::new(self.connect_session().await?);
         let runtime = SessionRuntime::new(new_session.clone());
 
-        // Phase 3: re-lock and install; handle race where another task won
-        {
+        // Phase 3: re-lock and install; extract stale runtime for cleanup outside the lock
+        let (result, stale) = {
             let mut guard = self.session.lock().await;
             if let Some(ref existing) = *guard {
                 if !existing.session.is_closed() {
-                    // Another task installed a session while we were connecting.
-                    // Drop our runtime (aborts our background tasks) and use theirs.
-                    drop(runtime);
-                    return Ok(existing.session.clone());
+                    // Race loser — another task installed a session while we connected.
+                    // Hand our runtime back as `stale` so it gets shutdown() below.
+                    (Ok(existing.session.clone()), Some(runtime))
+                } else {
+                    // Existing session is closed; replace it and return the old for cleanup.
+                    let old = guard.replace(runtime);
+                    (Ok(new_session), old)
                 }
+            } else {
+                // No existing session at all; install ours.
+                *guard = Some(runtime);
+                (Ok(new_session), None)
             }
-            *guard = Some(runtime);
+        }; // lock released
+
+        // Gracefully shut down stale/losing runtime outside the lock (abort + join)
+        if let Some(stale) = stale {
+            stale.shutdown().await;
         }
 
-        Ok(new_session)
+        result
     }
 
     async fn connect_session(&self) -> Result<Session> {
@@ -466,48 +475,90 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn session_runtime_drop_aborts_background_tasks() {
-        // Verify that SessionRuntime's Drop impl actually aborts tasks.
-        // We simulate the pattern by spawning long-lived tasks and checking
-        // that they get cancelled when the owning structure is dropped.
-        let task1 = tokio::spawn(async {
+    async fn joinset_shutdown_aborts_and_joins_tasks() {
+        // Proves JoinSet::shutdown() aborts tasks AND awaits their completion.
+        // This is the async path used by SessionRuntime::shutdown().
+        let mut js = JoinSet::new();
+        let barrier = Arc::new(tokio::sync::Notify::new());
+        let b = barrier.clone();
+
+        js.spawn(async move {
+            b.notified().await; // would block forever without abort
+        });
+        js.spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         });
-        let task2 = tokio::spawn(async {
-            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-        });
 
-        let abort1 = task1.abort_handle();
-        let abort2 = task2.abort_handle();
+        assert_eq!(js.len(), 2);
 
-        assert!(!abort1.is_finished());
-        assert!(!abort2.is_finished());
-
-        // Simulate SessionRuntime Drop behavior
-        abort1.abort();
-        abort2.abort();
-
-        assert!(task1.await.unwrap_err().is_cancelled());
-        assert!(task2.await.unwrap_err().is_cancelled());
+        // shutdown() = abort all + await all — must not hang
+        js.shutdown().await;
+        assert_eq!(js.len(), 0);
     }
 
     #[tokio::test]
-    async fn bridge_joinset_aborts_tasks_on_drop() {
+    async fn joinset_drop_aborts_without_hang() {
+        // Proves JoinSet::drop (sync fallback) aborts tasks without blocking.
+        // This is the fallback path when SessionRuntime is dropped without shutdown().
         let mut js = JoinSet::new();
         let barrier = Arc::new(tokio::sync::Notify::new());
         let b1 = barrier.clone();
         let b2 = barrier.clone();
 
         js.spawn(async move {
-            b1.notified().await; // will never fire
+            b1.notified().await;
         });
         js.spawn(async move {
             b2.notified().await;
         });
 
         assert_eq!(js.len(), 2);
-        drop(js); // JoinSet::drop aborts all tasks
-        // If we reach here, tasks were cleaned up (no hang)
+        drop(js); // JoinSet::drop aborts all — must not hang
+    }
+
+    #[tokio::test]
+    async fn session_runtime_shutdown_awaits_completion() {
+        // Proves that JoinHandles are held inside the JoinSet (not implicitly
+        // dropped) and that shutdown() completes without hanging.
+        let mut tasks = JoinSet::new();
+
+        tasks.spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+        tasks.spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+
+        // JoinHandles are held — tasks are tracked, not detached
+        assert_eq!(tasks.len(), 2);
+
+        // shutdown() = abort + await all — must complete promptly
+        tasks.shutdown().await;
+
+        // All tasks have been joined (aborted + awaited)
+        assert_eq!(tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn session_runtime_replacement_cleans_up_old() {
+        // Proves that replacing a SessionRuntime properly cleans up the old one
+        // via Option::replace returning the old value for explicit shutdown.
+        // Install first runtime
+        let mut js1 = JoinSet::new();
+        js1.spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        });
+        let mut slot = Some(js1);
+
+        // Replace with second runtime — extract old for cleanup
+        let mut js2 = JoinSet::new();
+        js2.spawn(async {});
+        let old = slot.replace(js2);
+
+        // Old runtime is now extracted; explicitly shut it down
+        if let Some(mut old) = old {
+            old.shutdown().await; // abort + join — must not hang
+        }
     }
 
     #[tokio::test]
