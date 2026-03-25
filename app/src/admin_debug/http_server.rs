@@ -30,19 +30,35 @@ type HmacSha256 = Hmac<Sha256>;
 /// Holds a `CancellationToken` to signal shutdown and a `JoinHandle` for the
 /// main server task. The server task internally uses a `JoinSet` for all
 /// per-connection tasks, so shutting down this handle drains all connections.
+///
+/// **Drop behaviour**: dropping the handle fires the cancellation signal,
+/// causing the accept loop to stop and in-flight connections to drain.
+/// The server task then runs to completion on its own (no one awaits it).
+/// For an orderly shutdown that *waits* for the task to finish, call
+/// [`shutdown()`](Self::shutdown) instead.
 pub struct AdminDebugHandle {
     cancel: CancellationToken,
-    join: JoinHandle<()>,
+    join: Option<JoinHandle<()>>,
 }
 
 impl AdminDebugHandle {
-    /// Trigger graceful shutdown: cancel the accept loop, wait for the server
-    /// task (which drains in-flight connections) to finish.
-    pub async fn shutdown(self) {
+    /// Trigger graceful shutdown: cancel the accept loop, then **await** the
+    /// server task (which drains in-flight connections) before returning.
+    pub async fn shutdown(mut self) {
         self.cancel.cancel();
-        if let Err(e) = self.join.await {
-            tracing::warn!(%e, "admin debug server join failed during shutdown");
+        if let Some(join) = self.join.take() {
+            if let Err(e) = join.await {
+                tracing::warn!(%e, "admin debug server join failed during shutdown");
+            }
         }
+    }
+}
+
+impl Drop for AdminDebugHandle {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        // JoinHandle (if still present) is dropped without await — the server
+        // task will still run to completion after seeing the cancel signal.
     }
 }
 
@@ -867,7 +883,7 @@ pub async fn spawn(
         run_configured_accept_loop(listener, cancel_inner, tls_acceptor, auth, middleware_chain, state).await;
     });
 
-    Ok(AdminDebugHandle { cancel, join })
+    Ok(AdminDebugHandle { cancel, join: Some(join) })
 }
 
 /// Accept loop for the middleware-based configured path (TLS + auth).
@@ -983,7 +999,7 @@ pub async fn serve_plain(
         run_plain_accept_loop(listener, cancel_inner, middleware_chain, state).await;
     });
 
-    Ok(AdminDebugHandle { cancel, join })
+    Ok(AdminDebugHandle { cancel, join: Some(join) })
 }
 
 /// Sync entry point: spawns a plain admin server in background.
@@ -1000,7 +1016,7 @@ pub fn spawn_plain_sync(
             tracing::error!(error = %e, "admin debug server failed");
         }
     });
-    AdminDebugHandle { cancel, join }
+    AdminDebugHandle { cancel, join: Some(join) }
 }
 
 /// Internal: bind + setup + run accept loop for plain mode (used by `spawn_plain_sync`).
@@ -1581,6 +1597,40 @@ mod tests {
         shutdown
             .await
             .expect("shutdown with no active connections should complete");
+
+        std::env::remove_var("SB_ADMIN_NO_AUTH");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_drop_triggers_cancel_signal() {
+        std::env::set_var("SB_ADMIN_NO_AUTH", "1");
+        let state = Arc::new(crate::admin_debug::AdminDebugState {
+            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
+            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
+                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+            )),
+            started_at: std::time::Instant::now(),
+        });
+
+        let handle = serve_plain("127.0.0.1:0", state)
+            .await
+            .expect("serve_plain should succeed");
+
+        // Clone the cancel token before dropping — private field accessible in-module test
+        let cancel_witness = handle.cancel.clone();
+        assert!(
+            !cancel_witness.is_cancelled(),
+            "cancel should not fire before drop"
+        );
+
+        drop(handle);
+
+        assert!(
+            cancel_witness.is_cancelled(),
+            "Drop must fire the cancellation signal"
+        );
 
         std::env::remove_var("SB_ADMIN_NO_AUTH");
     }

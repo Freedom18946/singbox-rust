@@ -16,6 +16,17 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-03-26 00:10] Agent: Claude Opus 4.6
+
+**任务**: follow-up: 补齐 AdminDebugHandle Drop 语义 + 对齐 workpackage 顶部优先级
+**变更**:
+- `app/src/admin_debug/http_server.rs` — `join` 改为 `Option<JoinHandle<()>>`，新增 `Drop` impl（cancel only），`shutdown()` 改为 `self.join.take()` + await；新增 `test_drop_triggers_cancel_signal`
+- `app/src/admin_debug/mod.rs` — 修正 `init()` 文档：明确 Drop 发 cancel，shutdown 等 drain
+- `重构package相关/singbox_rust_rebuild_workpackage.md` — §1.1 将 `http_server.rs` 从第一波 blocker 移至"已完成 lifecycle 收口"
+- `agents-only/active_context.md` — 更新 handle 语义描述
+**结果**: 成功。15 tests passed（含新 Drop 测试），编译 clean。
+**备注**: Drop 仅发 cancel 不 await（sync context），与 Prefetcher 同 pattern。
+
 ### [2026-03-25 23:30] Agent: Claude Opus 4.6
 
 **任务**: 收口 admin_debug::http_server 的 accept/connection lifecycle

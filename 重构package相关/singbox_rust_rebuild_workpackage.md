@@ -50,11 +50,11 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `http_server.rs`
   - `outbound/anytls.rs`
   - `outbound/ssh.rs`
   - `sb-config` Raw 边界（`outbound.rs` / `ir/mod.rs` / `validator/v2.rs`）
 - **已完成 hard global + lifecycle 收口**：
+  - `http_server.rs` — accept/connection lifecycle tracked（`AdminDebugHandle` + `JoinSet` + `CancellationToken`），runtime shutdown 已接入（`15093767`）
   - `prefetch.rs` — hard global 已删，worker lifecycle 改为 tracked/owned（dispatcher + CancellationToken + JoinSet），仅剩 `DEFAULT_PREFETCHER` weak-owner compat
   - `http_client.rs` — hard global 已删（`d3a0b1e7`），仅剩 `DEFAULT_HTTP_CLIENT` weak-owner
   - `geoip/mod.rs` — hard global 已删（`f5297845`），仅剩 `DEFAULT_GEOIP_SERVICE` weak-owner

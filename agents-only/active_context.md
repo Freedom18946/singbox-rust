@@ -16,15 +16,12 @@
 ### http_server accept/connection lifecycle 收口 — 已完成
 
 - `app/src/admin_debug/http_server.rs`:
-  - 新增 `AdminDebugHandle` (CancellationToken + JoinHandle)
-  - `serve()` / `serve_plain()` / `spawn()` 底层改为 tracked accept loop：
-    - `tokio::select!` on CancellationToken vs listener.accept
-    - per-connection tasks 进 `JoinSet<()>`（非裸 `tokio::spawn`）
-    - shutdown 时：cancel → stop accept → drain JoinSet
-  - `spawn()` 改为 `async fn` 返回 `AdminDebugHandle`
-  - `serve_plain()` 改为返回 `AdminDebugHandle`
+  - `AdminDebugHandle` (CancellationToken + Option\<JoinHandle\>)
+  - `Drop` impl 触发 cancel（与 Prefetcher 同 pattern）
+  - `shutdown()` cancel + await join；显式 shutdown 更强（等待 drain），drop 仅发信号
+  - `serve()` / `serve_plain()` / `spawn()` 底层改为 tracked accept loop
   - 新增 `spawn_plain_sync()` 供非 async 调用方使用
-  - 抽取 `route_full_request()` 消除 serve/serve_with_config 间的路由重复
+  - 抽取 `route_full_request()` 消除路由重复
 - `app/src/admin_debug/mod.rs`: `init()` 返回 `AdminDebugHandle`（不再裸 `tokio::spawn`）
 - `app/src/run_engine.rs`: `admin_debug_handle` 变量持有 handle，section 11 显式 shutdown
 - `app/src/cli/run.rs`: `_admin_debug_handle` 存活至 run_supervisor 退出

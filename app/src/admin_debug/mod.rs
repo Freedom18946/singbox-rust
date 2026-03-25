@@ -81,8 +81,9 @@ pub struct AdminDebugState {
 // while http/ contains redirect policies and other HTTP utilities
 
 /// Initialize admin debug server if enabled.
-/// Returns a handle that must be held alive; dropping or calling `shutdown()`
-/// on it will stop the server and drain in-flight connections.
+/// Returns a handle whose `Drop` fires the cancellation signal (stopping the
+/// accept loop). For an orderly shutdown that also *awaits* connection drain,
+/// call [`AdminDebugHandle::shutdown()`] instead of just dropping.
 pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) -> http_server::AdminDebugHandle {
     let bind_addr = match addr {
         Some(a) => a.to_string(),
