@@ -13,24 +13,27 @@
 
 ## 最近完成（2026-03-26）
 
-### ir/mod.rs endpoint + service IR 子模块拆分 — 已完成
+### ir/mod.rs dns IR 子模块拆分 — 已完成
 
-- 新增 `crates/sb-config/src/ir/endpoint.rs`（174 行）：`EndpointType`, `EndpointIR`, `WireGuardPeerIR` + 3 个迁移测试
-- 新增 `crates/sb-config/src/ir/service.rs`（322 行）：`ServiceType`, `ServiceIR` + 7 个迁移测试
-- **mod.rs 从 3755 行瘦身至 3283 行**（-472 行）
-- 服务相关共享类型（`InboundTlsOptionsIR`, `DerpStunOptionsIR`, `Listable`, `StringOrObj`, `DerpVerifyClientUrlIR`, `DerpMeshPeerIR` 等）仍留在 `mod.rs`，子模块通过 `super::` 引用
-- public API 通过 `pub use` 保持稳定：`sb_config::ir::EndpointIR` / `EndpointType` / `WireGuardPeerIR` / `ServiceIR` / `ServiceType`
-- serde 语义完全冻结，roundtrip 不变
-- **注意**：这是 `ir/mod.rs` 的第一刀结构拆分。`dns` IR 和更大的 raw/validated/planned/normalize 三相设计仍未动。
+- 新增 `crates/sb-config/src/ir/dns.rs`（615 行）：`DnsServerIR`, `DnsRuleIR`, `DnsIR`, `DnsHostIR` + 16 个迁移测试
+- **mod.rs 从 3283 行瘦身至 3023 行**（-260 行）
+- public API 通过 `pub use dns::{DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR}` 保持稳定
+- serde 语义完全冻结（字段名、rename、default、类型全部不变）
+- 下游引用点（`validator/v2/dns.rs`、`validator/v2/mod.rs`、`sb-core/dns/config_builder.rs` 等）全部通过 `crate::ir::DnsIR` 旧路径正常工作
+- **注意**：这是 `ir/mod.rs` 结构拆分的第三刀（endpoint → service → dns）。更大的 raw/validated/planned/normalize 三相边界治理仍未启动，是后续战场。
 
 **验证**:
 - `cargo fmt --all` ✅
 - `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (42 passed)
-- `cargo test -p sb-config` ✅ (167 lib + 58 integration + 2 doc-tests)
+- `cargo test -p sb-config --lib ir` ✅ (58 passed)
+- `cargo test -p sb-config` ✅ (183 lib + 58 integration + 2 doc-tests)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
-- `bash scripts/ci/tasks/inbound-errors.sh` ✅
+
+### ir/mod.rs endpoint + service IR 子模块拆分 — 已完成（earlier）
+
+- `ir/endpoint.rs`（174 行）+ `ir/service.rs`（322 行）
+- mod.rs 从 3755→3283 行
 
 ### validator/v2 第一轮子域拆分 — 全部完成
 
