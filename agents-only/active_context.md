@@ -13,27 +13,28 @@
 
 ## 最近完成（2026-03-26）
 
-### ir/mod.rs dns IR 子模块拆分 — 已完成
+### ir/mod.rs route IR 子模块拆分 — 已完成
 
-- 新增 `crates/sb-config/src/ir/dns.rs`（615 行）：`DnsServerIR`, `DnsRuleIR`, `DnsIR`, `DnsHostIR` + 16 个迁移测试
-- **mod.rs 从 3283 行瘦身至 3023 行**（-260 行）
-- public API 通过 `pub use dns::{DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR}` 保持稳定
-- serde 语义完全冻结（字段名、rename、default、类型全部不变）
-- 下游引用点（`validator/v2/dns.rs`、`validator/v2/mod.rs`、`sb-core/dns/config_builder.rs` 等）全部通过 `crate::ir::DnsIR` 旧路径正常工作
-- **注意**：这是 `ir/mod.rs` 结构拆分的第三刀（endpoint → service → dns）。更大的 raw/validated/planned/normalize 三相边界治理仍未启动，是后续战场。
+- 新增 `crates/sb-config/src/ir/route.rs`（1091 行）：`RuleAction`, `RuleIR`, `DomainResolveOptionsIR`, `RouteIR`, `RuleSetIR` + 25 个迁移测试
+- **mod.rs 从 3023 行瘦身至 2440 行**（-583 行）
+- public API 通过 `pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR}` 保持稳定
+- serde 语义完全冻结（字段名、rename、alias、default、deserialize_with、类型全部不变）
+- `RuleAction::as_str()` / `from_str_opt()` 行为不变（含下划线别名兼容）
+- 下游引用点全部通过 `crate::ir::*` 旧路径正常工作
+- **注意**：这是 `ir/mod.rs` 结构拆分的第四刀（endpoint → service → dns → route）。更大的 raw/validated/planned/normalize 三相边界治理仍未启动，是后续战场。
 
 **验证**:
 - `cargo fmt --all` ✅
 - `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (58 passed)
-- `cargo test -p sb-config` ✅ (183 lib + 58 integration + 2 doc-tests)
+- `cargo test -p sb-config --lib ir` ✅ (82 passed)
+- `cargo test -p sb-config` ✅ (207 lib + 58 integration + 2 doc-tests)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 
-### ir/mod.rs endpoint + service IR 子模块拆分 — 已完成（earlier）
+### ir/mod.rs endpoint + service + dns IR 子模块拆分 — 已完成（earlier）
 
-- `ir/endpoint.rs`（174 行）+ `ir/service.rs`（322 行）
-- mod.rs 从 3755→3283 行
+- `ir/endpoint.rs`（174 行）+ `ir/service.rs`（322 行）+ `ir/dns.rs`（615 行）
+- mod.rs 从 3755→3023 行
 
 ### validator/v2 第一轮子域拆分 — 全部完成
 
