@@ -15,7 +15,7 @@
 
 ### ir/mod.rs outbound IR 子模块拆分 — 已完成
 
-- 新增 `crates/sb-config/src/ir/outbound.rs`（1205 行）：`OutboundType`, `OutboundIR`, `HeaderEntry`, `is_valid_hex()`, `OutboundIR::ty_str()`, `OutboundIR::validate_reality()` + 31 个迁移测试
+- 新增 `crates/sb-config/src/ir/outbound.rs`（1205 行）：`OutboundType`, `OutboundIR`, `HeaderEntry`, `is_valid_hex()`, `OutboundIR::ty_str()`, `OutboundIR::validate_reality()` + 28 个迁移测试
 - **mod.rs 从 1905 行瘦身至 1104 行**（-801 行）
 - public API 通过 `pub use outbound::{HeaderEntry, OutboundIR, OutboundType}` 保持稳定
 - serde 语义完全冻结（字段名、rename、default、skip_serializing_if、类型全部不变）
