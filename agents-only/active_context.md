@@ -15,7 +15,7 @@
 
 ### ir/mod.rs route IR 子模块拆分 — 已完成
 
-- 新增 `crates/sb-config/src/ir/route.rs`（1091 行）：`RuleAction`, `RuleIR`, `DomainResolveOptionsIR`, `RouteIR`, `RuleSetIR` + 25 个迁移测试
+- 新增 `crates/sb-config/src/ir/route.rs`（1087 行）：`RuleAction`, `RuleIR`, `DomainResolveOptionsIR`, `RouteIR`, `RuleSetIR` + 24 个迁移测试
 - **mod.rs 从 3023 行瘦身至 2440 行**（-583 行）
 - public API 通过 `pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR}` 保持稳定
 - serde 语义完全冻结（字段名、rename、alias、default、deserialize_with、类型全部不变）
