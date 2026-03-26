@@ -13,16 +13,18 @@
 
 ## 最近完成（2026-03-26）
 
-### ir/mod.rs outbound IR 子模块拆分 — 已完成
+### WP-30a skeleton：ir phase-3 namespace 骨架 — 已完成
 
-- 新增 `crates/sb-config/src/ir/outbound.rs`（1205 行）：`OutboundType`, `OutboundIR`, `HeaderEntry`, `is_valid_hex()`, `OutboundIR::ty_str()`, `OutboundIR::validate_reality()` + 28 个迁移测试
-- **mod.rs 从 1905 行瘦身至 1104 行**（-801 行）
-- public API 通过 `pub use outbound::{HeaderEntry, OutboundIR, OutboundType}` 保持稳定
-- serde 语义完全冻结（字段名、rename、default、skip_serializing_if、类型全部不变）
-- `OutboundType::ty_str()` 和 `OutboundIR::validate_reality()` 行为不变
-- `ConfigIR::validate()` 及其 helper（`validate_shadowsocks/shadowtls/tuic/transport_conflicts`）**仍留在 `mod.rs`**，刻意不在此卡搬走
-- 共享类型（`Credentials`, `MultiplexOptionsIR`, `BrutalIR`, `MasqueradeIR`）仍留在 `mod.rs`
-- **注意**：这是 `ir/mod.rs` 结构拆分的第六刀（endpoint → service → dns → route → inbound → outbound）。更大的 raw/validated/planned/normalize 三相边界治理仍未启动，是后续战场。
+- 新增 `crates/sb-config/src/ir/validated.rs`（544 行）：承接 `ConfigIR`, `CertificateIR`, `LogIR`, `NtpIR`, `impl ConfigIR`（validate + has_any_negation + 全部 helper）+ 9 个迁移测试
+- 新增 `crates/sb-config/src/ir/raw.rs`（22 行）：doc-first skeleton，未来承接 serde-facing Raw 层（deny_unknown_fields）
+- 新增 `crates/sb-config/src/ir/planned.rs`（29 行）：doc-first skeleton，未来承接 RuntimePlan 层
+- 新增 `crates/sb-config/src/ir/normalize.rs`（25 行）：doc-first skeleton，未来承接 IR normalize 入口（不影响现有 `src/normalize.rs`）
+- **mod.rs 从 1104 行瘦身至 600 行**（-504 行）
+- public API 通过 `pub use validated::{ConfigIR, CertificateIR, LogIR, NtpIR}` 保持稳定
+- `ConfigIR::validate()` 及全部 helper 行为冻结
+- serde 语义完全冻结
+- **raw.rs / planned.rs / normalize.rs 当前只是 skeleton，不是完成态**
+- **这张卡不是完整三相模型重构，下一步才是 Raw/Validated/Planned 实质接线**
 
 **验证**:
 - `cargo fmt --all` ✅
@@ -32,41 +34,26 @@
 - `cargo test -p sb-config` ✅ (248 lib + 58 integration + 2 doc-tests)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 
-### ir/mod.rs inbound + endpoint + service + dns + route IR 子模块拆分 — 已完成（earlier）
+### ir/mod.rs 六刀结构拆分 — 已完成（earlier today）
 
-- `ir/inbound.rs`（1145 行）+ `ir/endpoint.rs`（174 行）+ `ir/service.rs`（322 行）+ `ir/dns.rs`（615 行）+ `ir/route.rs`（1087 行）
-- mod.rs 从 3755→1905 行
+- endpoint → service → dns → route → inbound → outbound 全部拆出
+- mod.rs 从 3755→1104 行
 
-### validator/v2 第一轮子域拆分 — 全部完成
+### validator/v2 第一轮子域拆分 — 全部完成（earlier today）
 
-- outbound（610 行）+ route（362 行）+ dns（221 行）+ service + endpoint（195 行）五个子域拆分
-- mod.rs 从 5384 行瘦身至 4630 行
-- 语义冻结，所有验证通过
-
-### outbound/ssh.rs / anytls.rs / http_server / prefetch / geoip / http_client — 已完成
-
-- 详见本文件历史快照
-
-## Compat 债务评估结论
-
-| 项目 | 残留 | 决策 |
-|------|------|------|
-| http_client | weak-owner only，hard global 已删 | **完成** |
-| geoip | weak-owner only，hard global 已删 | **完成** |
-| prefetch | weak-owner only，hard global 已删，worker lifecycle tracked | **完成** |
-| http_server | accept/conn lifecycle tracked，runtime shutdown 已接入 | **完成** |
-| logging compat | `ACTIVE_RUNTIME` 薄壳 | **保留** — public API |
-| security_metrics compat | public wrapper + legacy boundary | **保留** — public API |
-| sb-metrics LazyLock | registry plumbing 已收口 | **部分完成** |
+- outbound + route + dns + service + endpoint 五个子域拆分
 
 ## 剩余 Maintenance 债务（非阻塞）
 
-- ~~`http_client` hard global~~ → **已收口**
-- ~~`geoip` hard global~~ → **已收口**
-- ~~`prefetch` hard global + lifecycle~~ → **已收口**
-- ~~`http_server` accept loop 裸 spawn~~ → **已收口**
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- ~~`outbound/anytls.rs`~~ → **已收口**
-- ~~`outbound/ssh.rs`~~ → **已收口**
+
+## 后续战场（未启动）
+
+- **WP-30 Phase 3 实质接线**：Raw → Validated → Planned 三相管道
+  - `raw.rs` 需要定义 `RawConfigRoot` + `deny_unknown_fields`
+  - `planned.rs` 需要定义 `RuntimePlan` builder
+  - `normalize.rs` 需要接入 IR-level normalization
+- validator/v2 mod.rs 进一步瘦身（仍 4630 行）
+- bootstrap.rs / run_engine.rs 职责收口
