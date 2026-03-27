@@ -21,7 +21,7 @@
   - `impl From<RawConfigRoot> for ConfigIR` 提供 raw → validated 桥接
 - `crates/sb-config/src/ir/validated.rs`：`ConfigIR` 不再 `derive(Deserialize)`，改为手写 `impl<'de> Deserialize<'de>` 走 `RawConfigRoot` bridge
 - `crate::ir::RawConfigRoot` 通过 `pub use raw::RawConfigRoot` 暴露
-- 10 个新增测试：unknown field rejection（RawConfigRoot + ConfigIR）、valid config parsing、experimental roundtrip、default semantics、validate() 行为、nested boundary doc test
+- 8 个新增测试（raw.rs）：unknown field rejection（RawConfigRoot + ConfigIR）、minimal empty config、raw→ir conversion、valid root config parsing、experimental roundtrip、default semantics、validate() 行为、nested boundary doc test
 - **nested child types 仍复用 validated IR（InboundIR/OutboundIR/RouteIR/DnsIR 等），这是有意为之**
 - **planned.rs / normalize.rs 仍然只是 skeleton**
 - **这张卡是 root-level strict boundary pilot，不是完整 Raw/Validated/Planned 重构**
