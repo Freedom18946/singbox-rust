@@ -13,17 +13,28 @@
 //! - `impl ConfigIR` — `validate()`, `has_any_negation()`, and per-protocol
 //!   validation helpers
 //!
-//! ## Deserialization (WP-30b)
+//! ## Deserialization (WP-30c)
 //!
-//! `ConfigIR` no longer derives `Deserialize` directly. Instead, deserialization
-//! goes through [`super::raw::RawConfigRoot`] which carries
-//! `#[serde(deny_unknown_fields)]`, ensuring unknown top-level keys are rejected
-//! at parse time. `Serialize` remains derived.
+//! `ConfigIR` deserializes via [`super::raw::RawConfigRoot`] (WP-30b).
+//!
+//! `LogIR`, `NtpIR`, `CertificateIR` each deserialize via their corresponding
+//! Raw type (`RawLogIR`, `RawNtpIR`, `RawCertificateIR`) which carry
+//! `#[serde(deny_unknown_fields)]` (WP-30c). `Serialize` remains derived.
+//!
+//! `ExperimentalIR` is intentionally NOT routed through a Raw bridge — it
+//! uses forward-compatible passthrough semantics and does not reject unknown
+//! fields. This is by design, not an oversight.
+//!
+//! ## What is NOT yet routed through Raw
+//!
+//! `InboundIR`, `OutboundIR`, `RouteIR`, `DnsIR`, `EndpointIR`, `ServiceIR`
+//! still derive `Deserialize` directly. Nested Raw types for these are future
+//! work.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (root-level pilot, WP-30b done)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLogIR/RawNtpIR/RawCertificateIR (WP-30c)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)
@@ -31,7 +42,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::raw::RawConfigRoot;
+use super::raw::{RawCertificateIR, RawConfigRoot, RawLogIR, RawNtpIR};
 use super::{
     DnsIR, EndpointIR, ExperimentalIR, InboundIR, OutboundIR, OutboundType, RouteIR, ServiceIR,
 };
@@ -87,8 +98,11 @@ impl<'de> Deserialize<'de> for ConfigIR {
     }
 }
 
-/// Certificate configuration (global)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+/// Certificate configuration (global).
+///
+/// Deserialization goes through [`RawCertificateIR`](super::raw::RawCertificateIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30c).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct CertificateIR {
     /// Certificate store mode: "system", "mozilla", or "none"
     /// Defaults to "system" (Go parity)
@@ -105,8 +119,20 @@ pub struct CertificateIR {
     pub certificate_directory_path: Option<String>,
 }
 
-/// Log configuration (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+impl<'de> Deserialize<'de> for CertificateIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawCertificateIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Log configuration (IR).
+///
+/// Deserialization goes through [`RawLogIR`](super::raw::RawLogIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30c).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct LogIR {
     /// Log level: error|warn|info|debug|trace
     #[serde(default)]
@@ -125,8 +151,20 @@ pub struct LogIR {
     pub output: Option<String>,
 }
 
-/// NTP service configuration (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+impl<'de> Deserialize<'de> for LogIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawLogIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// NTP service configuration (IR).
+///
+/// Deserialization goes through [`RawNtpIR`](super::raw::RawNtpIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30c).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct NtpIR {
     /// Enable NTP service
     #[serde(default)]
@@ -143,6 +181,15 @@ pub struct NtpIR {
     /// Timeout in milliseconds (optional)
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+}
+
+impl<'de> Deserialize<'de> for NtpIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawNtpIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 impl ConfigIR {

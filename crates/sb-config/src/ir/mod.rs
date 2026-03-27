@@ -29,7 +29,7 @@ pub use inbound::{
     VmessUserIR,
 };
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
-pub use raw::RawConfigRoot;
+pub use raw::{RawCertificateIR, RawConfigRoot, RawLogIR, RawNtpIR};
 pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR};
 pub use service::{ServiceIR, ServiceType};
 pub use validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
