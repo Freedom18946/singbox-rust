@@ -13,36 +13,30 @@
 
 ## 最近完成（2026-03-27）
 
-### WP-30c：root-owned leaf Raw strictness — 已完成
+### WP-30d：DNS nested Raw boundary pilot — 已完成
 
-- `raw.rs` 新增 `RawLogIR` / `RawNtpIR` / `RawCertificateIR`，全部 `#[serde(deny_unknown_fields)]`
-- `validated.rs`：`LogIR` / `NtpIR` / `CertificateIR` 不再 `derive(Deserialize)`，各自手写 `impl Deserialize` 走 Raw bridge
-- `RawConfigRoot` 的 `log` / `ntp` / `certificate` 字段改用 Raw leaf types
-- `From<RawConfigRoot> for ConfigIR` 通过 `.map(Into::into)` 桥接 raw leaf → validated leaf
-- `ir/mod.rs` 新增 `pub use raw::{RawCertificateIR, RawLogIR, RawNtpIR}`
-- 13 个新增测试：Raw leaf unknown field rejection × 3、validated bridge rejection × 3、roundtrip × 3、ConfigIR nested leaf rejection × 3、experimental passthrough、non-leaf boundary doc
-- **`ExperimentalIR` 刻意不动**——保持 forward-compatible passthrough，不加 `deny_unknown_fields`
-- **`InboundIR/OutboundIR/RouteIR/DnsIR/EndpointIR/ServiceIR` 仍未进入 nested Raw**
+- `crates/sb-config/src/ir/raw.rs` 新增 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR`，全部 `#[serde(deny_unknown_fields)]`
+- `crates/sb-config/src/ir/dns.rs`：`DnsServerIR` / `DnsRuleIR` / `DnsHostIR` / `DnsIR` 不再 `derive(Deserialize)`，改为手写 `impl Deserialize` 走 Raw bridge
+- `RawConfigRoot.dns` 从 `Option<DnsIR>` 改为 `Option<RawDnsIR>`；`From<RawConfigRoot> for ConfigIR` 通过 `.map(Into::into)` 桥接 DNS raw → validated
+- `crates/sb-config/src/ir/mod.rs` 新增 `pub use raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR}`，`crate::ir::Dns*` 路径保持稳定
+- 新增/扩充 DNS boundary tests：Raw unknown-field rejection ×4、validated bridge rejection ×4、合法 server/rule/host/top-level roundtrip、`ConfigIR` 合法 DNS subtree 解析、`ConfigIR` DNS nested unknown rejection
+- **DNS nested unknown fields 现在会被严格拒绝**
+- **`RouteIR/InboundIR/OutboundIR/EndpointIR/ServiceIR` 仍未进入 nested Raw**
 - **`planned.rs` / `normalize.rs` 仍然只是 skeleton**
 
 **验证**:
 - `cargo fmt --all` ✅
 - `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (144 passed, +13 vs WP-30b)
-- `cargo test -p sb-config` ✅ (269 lib + integration + doc-tests, 0 failed)
+- `cargo test -p sb-config --lib ir` ✅ (155 passed)
+- `cargo test -p sb-config` ✅ (280 unit + integration + doc-tests, 0 failed)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 
-### WP-30b：RawConfigRoot root boundary — 已完成
+### WP-30c / WP-30b / WP-30a — 已完成
 
-- `RawConfigRoot` struct with `deny_unknown_fields`
-- `ConfigIR` 反序列化走 `RawConfigRoot` bridge
-- 8 个测试
-
-### WP-30a skeleton — 已完成（2026-03-26）
-
-- ir namespace 骨架：validated.rs / raw.rs / planned.rs / normalize.rs
-- ir/mod.rs 六刀结构拆分 + validator/v2 第一轮子域拆分
+- WP-30c：`RawLogIR` / `RawNtpIR` / `RawCertificateIR` root-owned leaf strictness 已完成
+- WP-30b：`RawConfigRoot` root boundary 已完成，未知 top-level 字段严格拒绝
+- WP-30a：`validated.rs` / `raw.rs` / `planned.rs` / `normalize.rs` skeleton 与 `ir/mod.rs` 第一轮拆分已完成
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -53,8 +47,8 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - nested Raw types（RawInbound / RawOutbound / RawRoute / RawDns 等，配合各自 deny_unknown_fields）
-  - `planned.rs` 定义 `RuntimePlan` builder
+  - 继续扩 nested Raw（`RawRoute` / `RawInbound` / `RawOutbound` / 其他未覆盖子树）
+  - 评估 `planned.rs` 前置卡，再决定是否推进 `RuntimePlan` builder
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
 - bootstrap.rs / run_engine.rs 职责收口

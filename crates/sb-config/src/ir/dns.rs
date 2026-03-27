@@ -1,9 +1,27 @@
-//! DNS IR types (servers, rules, hosts, top-level config).
+//! DNS validated IR types and Raw bridges.
+//!
+//! ## Current status (WP-30d)
+//!
+//! The DNS subtree now has a nested Raw boundary:
+//! [`super::raw::RawDnsServerIR`], [`super::raw::RawDnsRuleIR`],
+//! [`super::raw::RawDnsHostIR`], and [`super::raw::RawDnsIR`] all carry
+//! `#[serde(deny_unknown_fields)]`.
+//!
+//! `DnsServerIR`, `DnsRuleIR`, `DnsHostIR`, and `DnsIR` keep their existing
+//! public fields and `Serialize` behavior, but no longer derive
+//! `Deserialize` directly. Deserialization now flows through the Raw bridge,
+//! so unknown DNS nested fields are strictly rejected.
+//!
+//! `RouteIR`, `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still
+//! have not entered nested Raw. `planned.rs` and `normalize.rs` also remain
+//! Phase-3 skeletons.
 
 use serde::{Deserialize, Serialize};
 
+use super::raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};
+
 /// DNS server entry (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
 pub struct DnsServerIR {
     /// Upstream tag (unique)
     pub tag: String,
@@ -75,8 +93,17 @@ pub struct DnsServerIR {
     pub predefined: Option<serde_json::Value>,
 }
 
+impl<'de> Deserialize<'de> for DnsServerIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDnsServerIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DNS routing rule (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DnsRuleIR {
     /// Domain suffix list for this rule
     #[serde(default)]
@@ -173,8 +200,17 @@ pub struct DnsRuleIR {
     pub extra: Option<Vec<String>>,
 }
 
+impl<'de> Deserialize<'de> for DnsRuleIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDnsRuleIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DNS configuration (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
 pub struct DnsIR {
     /// Upstream servers
     #[serde(default)]
@@ -251,14 +287,32 @@ pub struct DnsIR {
     pub hosts_ttl_s: Option<u64>,
 }
 
+impl<'de> Deserialize<'de> for DnsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDnsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Static hosts mapping entry (IR)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DnsHostIR {
     /// Domain
     pub domain: String,
     /// IP list (string form)
     #[serde(default)]
     pub ips: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for DnsHostIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDnsHostIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +413,20 @@ mod tests {
         let ir: DnsServerIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.hosts_path, vec!["/etc/hosts".to_string()]);
         assert!(ir.predefined.is_some());
+    }
+
+    #[test]
+    fn dns_server_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({
+            "tag": "dns-1",
+            "address": "udp://1.1.1.1",
+            "unknown_dns_server_field": true
+        });
+        let result = serde_json::from_value::<DnsServerIR>(data);
+        assert!(
+            result.is_err(),
+            "DnsServerIR should reject unknown fields via Raw bridge"
+        );
     }
 
     // ── DnsRuleIR ────────────────────────────────────────────────────
@@ -466,6 +534,19 @@ mod tests {
         let rt: DnsRuleIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
         assert_eq!(rt.rewrite_ip, ir.rewrite_ip);
         assert_eq!(rt.rcode, ir.rcode);
+    }
+
+    #[test]
+    fn dns_rule_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({
+            "server": "dns-1",
+            "unknown_dns_rule_field": true
+        });
+        let result = serde_json::from_value::<DnsRuleIR>(data);
+        assert!(
+            result.is_err(),
+            "DnsRuleIR should reject unknown fields via Raw bridge"
+        );
     }
 
     // ── DnsIR (top-level) ────────────────────────────────────────────
@@ -588,6 +669,19 @@ mod tests {
         assert_eq!(rt.servers.len(), 0);
     }
 
+    #[test]
+    fn dns_ir_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({
+            "servers": [],
+            "unknown_dns_field": true
+        });
+        let result = serde_json::from_value::<DnsIR>(data);
+        assert!(
+            result.is_err(),
+            "DnsIR should reject unknown fields via Raw bridge"
+        );
+    }
+
     // ── DnsHostIR ────────────────────────────────────────────────────
 
     #[test]
@@ -611,5 +705,18 @@ mod tests {
         let ir: DnsHostIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.domain, "localhost");
         assert!(ir.ips.is_empty());
+    }
+
+    #[test]
+    fn dns_host_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({
+            "domain": "localhost",
+            "unknown_dns_host_field": true
+        });
+        let result = serde_json::from_value::<DnsHostIR>(data);
+        assert!(
+            result.is_err(),
+            "DnsHostIR should reject unknown fields via Raw bridge"
+        );
     }
 }
