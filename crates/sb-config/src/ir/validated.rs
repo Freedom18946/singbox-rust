@@ -13,29 +13,35 @@
 //! - `impl ConfigIR` — `validate()`, `has_any_negation()`, and per-protocol
 //!   validation helpers
 //!
+//! ## Deserialization (WP-30b)
+//!
+//! `ConfigIR` no longer derives `Deserialize` directly. Instead, deserialization
+//! goes through [`super::raw::RawConfigRoot`] which carries
+//! `#[serde(deny_unknown_fields)]`, ensuring unknown top-level keys are rejected
+//! at parse time. `Serialize` remains derived.
+//!
 //! ## Phase-3 roadmap (WP-30)
 //!
-//! The full three-phase configuration pipeline is:
-//!
 //! ```text
-//! raw.rs          →  serde-facing Raw types with deny_unknown_fields
+//! raw.rs          →  RawConfigRoot (root-level pilot, WP-30b done)
 //! validated.rs    →  (this module) strongly-typed Validated IR
-//! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound
-//! normalize.rs    →  IR normalization entry point
+//! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
+//! normalize.rs    →  IR normalization entry point (skeleton)
 //! ```
-//!
-//! **This card (WP-30a)** only establishes the namespace skeleton and migrates
-//! the existing root-level Validated IR here. The complete Raw → Validated →
-//! Planned pipeline is a subsequent effort.
 
 use serde::{Deserialize, Serialize};
 
+use super::raw::RawConfigRoot;
 use super::{
     DnsIR, EndpointIR, ExperimentalIR, InboundIR, OutboundIR, OutboundType, RouteIR, ServiceIR,
 };
 
 /// Complete configuration intermediate representation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+///
+/// Deserialization goes through [`RawConfigRoot`] (which carries
+/// `#[serde(deny_unknown_fields)]`) so unknown top-level keys are
+/// rejected at parse time. `Serialize` remains derived directly.
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
 pub struct ConfigIR {
     /// Inbound listeners.
     #[serde(default)]
@@ -70,6 +76,15 @@ pub struct ConfigIR {
     /// forward-compatible options to be preserved without strong typing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experimental: Option<ExperimentalIR>,
+}
+
+impl<'de> Deserialize<'de> for ConfigIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawConfigRoot::deserialize(deserializer).map(Into::into)
+    }
 }
 
 /// Certificate configuration (global)
