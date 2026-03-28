@@ -55,15 +55,21 @@
 //! intentionally NOT Raw-ified. `Credentials`/`MultiplexOptionsIR`/`BrutalIR`
 //! are bridged because they are direct outbound helpers.
 //!
-//! ## What is NOT yet routed through Raw
+//! ## Masquerade shared helper Raw boundary (WP-30j)
 //!
-//! `MasqueradeIR` and sub-types still derive `Deserialize` directly.
-//! `planned.rs` / `normalize.rs` are still skeletons.
+//! `MasqueradeIR`, `MasqueradeFileIR`, `MasqueradeProxyIR`, and
+//! `MasqueradeStringIR` now deserialize via their Raw bridges, so unknown
+//! masquerade nested fields are rejected at parse time.
+//!
+//! ## What is NOT yet done
+//!
+//! `planned.rs` / `normalize.rs` are still skeletons. This is the WP-30
+//! input boundary small closure, not a `planned.rs` push.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h), RawOutbound* (WP-30i)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h), RawOutbound* (WP-30i), RawMasquerade* (WP-30j)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)

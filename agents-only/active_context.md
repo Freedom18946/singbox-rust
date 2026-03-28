@@ -13,39 +13,31 @@
 
 ## 最近完成（2026-03-28）
 
-### WP-30i：Outbound nested Raw boundary pilot — 已完成
+### WP-30j：Masquerade shared helper Raw closure — 已完成
 
-- `crates/sb-config/src/ir/raw.rs` 新增 5 个 Raw 类型，全部 `#[serde(deny_unknown_fields)]`：
-  - `RawOutboundIR`、`RawHeaderEntry`、`RawCredentials`、`RawBrutalIR`、`RawMultiplexOptionsIR`
+- `crates/sb-config/src/ir/raw.rs` 新增 4 个 Raw 类型，全部 `#[serde(deny_unknown_fields)]`：
+  - `RawMasqueradeIR`、`RawMasqueradeFileIR`、`RawMasqueradeProxyIR`、`RawMasqueradeStringIR`
 - 以下 validated 类型现在通过 Raw bridge 反序列化（不再 derive `Deserialize`）：
-  - `OutboundIR`、`HeaderEntry`（在 `outbound.rs`）
-  - `Credentials`、`MultiplexOptionsIR`、`BrutalIR`（在 `mod.rs`）
-- `RawConfigRoot.outbounds` 从 `Vec<OutboundIR>` 改为 `Vec<RawOutboundIR>`
-- outbound 子树 unknown fields 现在会被严格拒绝
-- **`OutboundType` 仍保持 validated enum（lowercase serde + `ty_str()` 不变）**
-- **`validate_reality()` 行为保持不变**
+  - `MasqueradeIR`、`MasqueradeFileIR`、`MasqueradeProxyIR`、`MasqueradeStringIR`（在 `mod.rs`）
+- `RawInboundIR.masquerade` 从 `Option<MasqueradeIR>` 改为 `Option<RawMasqueradeIR>`
+- inbound/Hysteria2 masquerade 子树 unknown fields 现在会被严格拒绝
+- `MasqueradeProxyIR.rewrite_host` 默认值语义（false）保持不变
+- `MasqueradeStringIR.status_code` 默认值语义（0）保持不变
 - **`planned.rs` / `normalize.rs` 仍然只是 skeleton**
-- 新增 30 个 outbound boundary tests（raw.rs `#[test]` 从 104→134）
+- **这是 WP-30 输入边界小收尾，不是 `planned.rs` 推进**
+- 新增 16 个 masquerade boundary tests（raw.rs `#[test]` 从 134→150）
 
 **验证**:
 - `cargo fmt --all` ✅
 - `cargo check -p sb-config` ✅
 - `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (261 passed)
-- `cargo test -p sb-config` ✅ (386 passed, 0 failed)
+- `cargo test -p sb-config --lib ir` ✅ (277 passed)
+- `cargo test -p sb-config` ✅ (402 passed, 0 failed)
 - `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 
-### WP-30h：Inbound nested Raw boundary pilot — 已完成（earlier）
+### WP-30i：Outbound nested Raw boundary pilot — 已完成（earlier）
 
-### WP-30g / WP-30f / WP-30e / WP-30d / WP-30c / WP-30b / WP-30a — 已完成
-
-- WP-30g：Service nested Raw boundary
-- WP-30f：Endpoint nested Raw boundary
-- WP-30e：Route nested Raw boundary
-- WP-30d：DNS nested Raw boundary
-- WP-30c：Root-owned leaf strictness
-- WP-30b：`RawConfigRoot` root boundary
-- WP-30a：`validated.rs` / `raw.rs` / `planned.rs` / `normalize.rs` skeleton
+### WP-30h ~ WP-30a — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -56,7 +48,7 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - 剩余零散 shared helper（`MasqueradeIR` 及子类型）仍未 Raw 化
+  - 所有 config-facing strict input boundary 已 Raw 化（WP-30a ~ WP-30j）
   - 评估 `planned.rs` 前置卡，再决定是否推进 `RuntimePlan` builder
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）

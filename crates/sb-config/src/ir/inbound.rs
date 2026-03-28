@@ -12,7 +12,12 @@
 //! `InboundType` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with lowercase serde unchanged.
 //!
-//! `OutboundIR` is still NOT routed through a Raw bridge.
+//! ## Masquerade (WP-30j)
+//!
+//! The `masquerade` field on `InboundIR` (Hysteria2) now goes through the
+//! `RawMasqueradeIR` bridge, so unknown masquerade nested fields are rejected
+//! at parse time.
+//!
 //! `planned.rs` / `normalize.rs` are still skeletons.
 
 use serde::{Deserialize, Serialize};

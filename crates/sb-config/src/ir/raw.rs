@@ -99,10 +99,23 @@
 //! semantics so unknown experimental options are preserved, not rejected.
 //! This is intentional, not an oversight.
 //!
-//! ### What is NOT yet Raw-ified
+//! ### Masquerade shared helper Raw boundary (WP-30j — done)
 //!
-//! `MasqueradeIR` and its sub-types still derive `Deserialize` directly.
-//! `planned.rs` / `normalize.rs` remain skeletons.
+//! [`RawMasqueradeIR`], [`RawMasqueradeFileIR`], [`RawMasqueradeProxyIR`], and
+//! [`RawMasqueradeStringIR`] are the strict nested Raw boundary for the
+//! masquerade shared helper subtree. `MasqueradeIR`, `MasqueradeFileIR`,
+//! `MasqueradeProxyIR`, and `MasqueradeStringIR` no longer derive `Deserialize`
+//! directly; each deserializes via its Raw bridge, so unknown masquerade nested
+//! fields are rejected at parse time. This completes the WP-30 input boundary
+//! cleanup for all config-facing strict types.
+//!
+//! `RawInboundIR.masquerade` now uses `Option<RawMasqueradeIR>` so the
+//! inbound/Hysteria2 masquerade subtree also rejects unknown fields.
+//!
+//! ### What is NOT yet done
+//!
+//! `planned.rs` / `normalize.rs` remain skeletons. This card is a WP-30
+//! input boundary small closure, not a `planned.rs` push.
 //!
 //! ## Future work
 //!
@@ -119,10 +132,10 @@ use super::{
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR,
     DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR,
     HeaderEntry, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType,
-    Listable, MasqueradeIR, MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction,
-    RuleIR, RuleSetIR, ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR,
-    ShadowsocksUserIR, StringOrObj, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR,
-    VmessUserIR, WireGuardPeerIR,
+    Listable, MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR,
+    MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR,
+    ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
+    TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -1745,6 +1758,90 @@ impl From<RawServiceIR> for ServiceIR {
     }
 }
 
+// ─────────────────── Masquerade shared helper Raw types (WP-30j) ───────────────────
+
+/// Raw Hysteria2 Masquerade configuration — strict input boundary for [`MasqueradeIR`].
+///
+/// All fields mirror `MasqueradeIR`. Deserialization enters here
+/// (with `deny_unknown_fields`), then converts via `From<RawMasqueradeIR> for MasqueradeIR`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawMasqueradeIR {
+    #[serde(rename = "type")]
+    pub type_: String,
+    #[serde(default)]
+    pub file: Option<RawMasqueradeFileIR>,
+    #[serde(default)]
+    pub proxy: Option<RawMasqueradeProxyIR>,
+    #[serde(default)]
+    pub string: Option<RawMasqueradeStringIR>,
+}
+
+impl From<RawMasqueradeIR> for MasqueradeIR {
+    fn from(raw: RawMasqueradeIR) -> Self {
+        Self {
+            type_: raw.type_,
+            file: raw.file.map(Into::into),
+            proxy: raw.proxy.map(Into::into),
+            string: raw.string.map(Into::into),
+        }
+    }
+}
+
+/// Raw Masquerade file configuration — strict input boundary for [`MasqueradeFileIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawMasqueradeFileIR {
+    pub directory: String,
+}
+
+impl From<RawMasqueradeFileIR> for MasqueradeFileIR {
+    fn from(raw: RawMasqueradeFileIR) -> Self {
+        Self {
+            directory: raw.directory,
+        }
+    }
+}
+
+/// Raw Masquerade proxy configuration — strict input boundary for [`MasqueradeProxyIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawMasqueradeProxyIR {
+    pub url: String,
+    #[serde(default)]
+    pub rewrite_host: bool,
+}
+
+impl From<RawMasqueradeProxyIR> for MasqueradeProxyIR {
+    fn from(raw: RawMasqueradeProxyIR) -> Self {
+        Self {
+            url: raw.url,
+            rewrite_host: raw.rewrite_host,
+        }
+    }
+}
+
+/// Raw Masquerade string configuration — strict input boundary for [`MasqueradeStringIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawMasqueradeStringIR {
+    pub content: String,
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub status_code: u16,
+}
+
+impl From<RawMasqueradeStringIR> for MasqueradeStringIR {
+    fn from(raw: RawMasqueradeStringIR) -> Self {
+        Self {
+            content: raw.content,
+            headers: raw.headers,
+            status_code: raw.status_code,
+        }
+    }
+}
+
 // ─────────────────── Inbound nested Raw types (WP-30h) ───────────────────
 
 fn default_true() -> bool {
@@ -2111,7 +2208,7 @@ pub struct RawInboundIR {
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
     #[serde(default)]
-    pub masquerade: Option<MasqueradeIR>,
+    pub masquerade: Option<RawMasqueradeIR>,
     // TUIC
     #[serde(default)]
     pub users_tuic: Option<Vec<RawTuicUserIR>>,
@@ -2229,7 +2326,7 @@ impl From<RawInboundIR> for InboundIR {
             obfs: raw.obfs,
             brutal_up_mbps: raw.brutal_up_mbps,
             brutal_down_mbps: raw.brutal_down_mbps,
-            masquerade: raw.masquerade,
+            masquerade: raw.masquerade.map(Into::into),
             users_tuic: raw
                 .users_tuic
                 .map(|v| v.into_iter().map(Into::into).collect()),
@@ -5275,6 +5372,265 @@ mod tests {
         assert!(
             result.is_err(),
             "ConfigIR should reject unknown fields in outbound credentials via Raw bridge"
+        );
+    }
+
+    // ─────────────────── Masquerade Raw boundary tests (WP-30j) ───────────────────
+
+    #[test]
+    fn raw_masquerade_ir_rejects_unknown_fields() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com"},
+            "bogus": true
+        });
+        let result = serde_json::from_value::<RawMasqueradeIR>(data);
+        assert!(
+            result.is_err(),
+            "RawMasqueradeIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_masquerade_file_ir_rejects_unknown_fields() {
+        let data = json!({
+            "directory": "/var/www",
+            "bogus": true
+        });
+        let result = serde_json::from_value::<RawMasqueradeFileIR>(data);
+        assert!(
+            result.is_err(),
+            "RawMasqueradeFileIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_masquerade_proxy_ir_rejects_unknown_fields() {
+        let data = json!({
+            "url": "https://example.com",
+            "rewrite_host": true,
+            "bogus": true
+        });
+        let result = serde_json::from_value::<RawMasqueradeProxyIR>(data);
+        assert!(
+            result.is_err(),
+            "RawMasqueradeProxyIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_masquerade_string_ir_rejects_unknown_fields() {
+        let data = json!({
+            "content": "<html>hello</html>",
+            "status_code": 200,
+            "bogus": true
+        });
+        let result = serde_json::from_value::<RawMasqueradeStringIR>(data);
+        assert!(
+            result.is_err(),
+            "RawMasqueradeStringIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn masquerade_ir_bridge_rejects_unknown_fields() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com"},
+            "bogus": true
+        });
+        let result = serde_json::from_value::<MasqueradeIR>(data);
+        assert!(
+            result.is_err(),
+            "MasqueradeIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn masquerade_file_ir_bridge_rejects_unknown_fields() {
+        let data = json!({
+            "directory": "/var/www",
+            "bogus": true
+        });
+        let result = serde_json::from_value::<MasqueradeFileIR>(data);
+        assert!(
+            result.is_err(),
+            "MasqueradeFileIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn masquerade_proxy_ir_bridge_rejects_unknown_fields() {
+        let data = json!({
+            "url": "https://example.com",
+            "bogus": true
+        });
+        let result = serde_json::from_value::<MasqueradeProxyIR>(data);
+        assert!(
+            result.is_err(),
+            "MasqueradeProxyIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn masquerade_string_ir_bridge_rejects_unknown_fields() {
+        let data = json!({
+            "content": "<html>hello</html>",
+            "bogus": true
+        });
+        let result = serde_json::from_value::<MasqueradeStringIR>(data);
+        assert!(
+            result.is_err(),
+            "MasqueradeStringIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn masquerade_file_roundtrip() {
+        let data = json!({
+            "type": "file",
+            "file": {"directory": "/var/www/html"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "file");
+        assert_eq!(ir.file.as_ref().unwrap().directory, "/var/www/html");
+        assert!(ir.proxy.is_none());
+        assert!(ir.string.is_none());
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.type_, ir.type_);
+        assert_eq!(rt.file.as_ref().unwrap().directory, "/var/www/html");
+    }
+
+    #[test]
+    fn masquerade_proxy_roundtrip() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com", "rewrite_host": true}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "proxy");
+        let proxy = ir.proxy.as_ref().unwrap();
+        assert_eq!(proxy.url, "https://example.com");
+        assert!(proxy.rewrite_host);
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.proxy.as_ref().unwrap().url, "https://example.com");
+        assert!(rt.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn masquerade_string_roundtrip() {
+        let data = json!({
+            "type": "string",
+            "string": {
+                "content": "<html>hello</html>",
+                "status_code": 403,
+                "headers": {"Content-Type": "text/html"}
+            }
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "string");
+        let s = ir.string.as_ref().unwrap();
+        assert_eq!(s.content, "<html>hello</html>");
+        assert_eq!(s.status_code, 403);
+        assert_eq!(
+            s.headers
+                .as_ref()
+                .unwrap()
+                .get("Content-Type")
+                .map(String::as_str),
+            Some("text/html")
+        );
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.string.as_ref().unwrap().status_code, 403);
+    }
+
+    #[test]
+    fn masquerade_proxy_rewrite_host_default_false() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert!(!ir.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn masquerade_string_status_code_default_zero() {
+        let data = json!({
+            "type": "string",
+            "string": {"content": "hello"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.string.as_ref().unwrap().status_code, 0);
+    }
+
+    #[test]
+    fn config_ir_parses_hysteria2_masquerade_inbound() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "hysteria2",
+                "listen": "0.0.0.0",
+                "port": 443,
+                "users_hysteria2": [{"name": "u1", "password": "pw"}],
+                "masquerade": {
+                    "type": "proxy",
+                    "proxy": {"url": "https://example.com", "rewrite_host": true}
+                }
+            }],
+            "outbounds": []
+        });
+        let config: ConfigIR = serde_json::from_value(data).unwrap();
+        let ib = &config.inbounds[0];
+        let masq = ib.masquerade.as_ref().unwrap();
+        assert_eq!(masq.type_, "proxy");
+        assert!(masq.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn config_ir_rejects_hysteria2_masquerade_unknown_nested() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "hysteria2",
+                "listen": "0.0.0.0",
+                "port": 443,
+                "users_hysteria2": [{"name": "u1", "password": "pw"}],
+                "masquerade": {
+                    "type": "proxy",
+                    "proxy": {"url": "https://example.com", "bogus_field": true}
+                }
+            }],
+            "outbounds": []
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in masquerade proxy via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_masquerade_unknown_top_field() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "hysteria2",
+                "listen": "0.0.0.0",
+                "port": 443,
+                "users_hysteria2": [{"name": "u1", "password": "pw"}],
+                "masquerade": {
+                    "type": "file",
+                    "file": {"directory": "/var/www"},
+                    "unknown_masq_field": 42
+                }
+            }],
+            "outbounds": []
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in masquerade via Raw bridge"
         );
     }
 }

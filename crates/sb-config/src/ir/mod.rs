@@ -35,6 +35,7 @@ pub use raw::{
     RawDerpStunOptionsIR, RawDerpStunOptionsObj, RawDerpVerifyClientUrlIR, RawDnsHostIR, RawDnsIR,
     RawDnsRuleIR, RawDnsServerIR, RawDomainResolveOptionsIR, RawEndpointIR, RawHeaderEntry,
     RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundTlsOptionsIR, RawLogIR,
+    RawMasqueradeFileIR, RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR,
     RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawRouteIR, RawRuleIR, RawRuleSetIR,
     RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR,
     RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR, RawVmessUserIR,
@@ -145,8 +146,11 @@ impl<'de> Deserialize<'de> for BrutalIR {
     }
 }
 
-/// Hysteria2 Masquerade configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Hysteria2 Masquerade configuration.
+///
+/// Deserialization goes through [`RawMasqueradeIR`](raw::RawMasqueradeIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MasqueradeIR {
     #[serde(rename = "type")]
     pub type_: String,
@@ -158,25 +162,73 @@ pub struct MasqueradeIR {
     pub string: Option<MasqueradeStringIR>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl<'de> Deserialize<'de> for MasqueradeIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawMasqueradeIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade file serving configuration.
+///
+/// Deserialization goes through [`RawMasqueradeFileIR`](raw::RawMasqueradeFileIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MasqueradeFileIR {
     pub directory: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl<'de> Deserialize<'de> for MasqueradeFileIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawMasqueradeFileIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade reverse proxy configuration.
+///
+/// Deserialization goes through [`RawMasqueradeProxyIR`](raw::RawMasqueradeProxyIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MasqueradeProxyIR {
     pub url: String,
     #[serde(default)]
     pub rewrite_host: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl<'de> Deserialize<'de> for MasqueradeProxyIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawMasqueradeProxyIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade static string response configuration.
+///
+/// Deserialization goes through [`RawMasqueradeStringIR`](raw::RawMasqueradeStringIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MasqueradeStringIR {
     pub content: String,
     #[serde(default)]
-    pub headers: Option<std::collections::HashMap<String, String>>, // simplified map
+    pub headers: Option<std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub status_code: u16,
+}
+
+impl<'de> Deserialize<'de> for MasqueradeStringIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawMasqueradeStringIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
