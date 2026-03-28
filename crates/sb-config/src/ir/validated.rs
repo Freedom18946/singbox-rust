@@ -13,7 +13,7 @@
 //! - `impl ConfigIR` — `validate()`, `has_any_negation()`, and per-protocol
 //!   validation helpers
 //!
-//! ## Deserialization (WP-30d)
+//! ## Deserialization (WP-30e)
 //!
 //! `ConfigIR` deserializes via [`super::raw::RawConfigRoot`] (WP-30b).
 //!
@@ -21,10 +21,12 @@
 //! Raw type (`RawLogIR`, `RawNtpIR`, `RawCertificateIR`) which carry
 //! `#[serde(deny_unknown_fields)]` (WP-30c). `Serialize` remains derived.
 //!
-//! `DnsIR`, `DnsServerIR`, `DnsRuleIR`, and `DnsHostIR` now also deserialize
-//! through their corresponding Raw types (`RawDnsIR`, `RawDnsServerIR`,
-//! `RawDnsRuleIR`, `RawDnsHostIR`) so unknown fields across the DNS nested
-//! subtree are rejected (WP-30d).
+//! `DnsIR`, `DnsServerIR`, `DnsRuleIR`, and `DnsHostIR` deserialize through
+//! their corresponding Raw types so unknown DNS fields are rejected (WP-30d).
+//!
+//! `RuleIR`, `DomainResolveOptionsIR`, `RuleSetIR`, and `RouteIR` deserialize
+//! through their corresponding Raw types so unknown route fields are rejected
+//! (WP-30e). `RuleAction` is intentionally NOT Raw-ified.
 //!
 //! `ExperimentalIR` is intentionally NOT routed through a Raw bridge — it
 //! uses forward-compatible passthrough semantics and does not reject unknown
@@ -32,14 +34,13 @@
 //!
 //! ## What is NOT yet routed through Raw
 //!
-//! `InboundIR`, `OutboundIR`, `RouteIR`, `EndpointIR`, and `ServiceIR` still
-//! derive `Deserialize` directly. Nested Raw types for these remain future
-//! work.
+//! `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still derive
+//! `Deserialize` directly. Nested Raw types for these remain future work.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLogIR/RawNtpIR/RawCertificateIR (WP-30c), RawDns* (WP-30d)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)

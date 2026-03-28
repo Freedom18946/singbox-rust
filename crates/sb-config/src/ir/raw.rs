@@ -6,7 +6,7 @@
 //! on-disk JSON/YAML schema. All Raw types derive `Deserialize` with
 //! `#[serde(deny_unknown_fields)]` to enforce strict input boundaries.
 //!
-//! ## Current status (WP-30d)
+//! ## Current status (WP-30e)
 //!
 //! ### Root boundary (WP-30b — done)
 //!
@@ -27,6 +27,17 @@
 //! directly; each deserializes via its Raw bridge, so unknown DNS nested
 //! fields are rejected at parse time.
 //!
+//! ### Route nested boundary pilot (WP-30e — done)
+//!
+//! [`RawRuleIR`], [`RawDomainResolveOptionsIR`], [`RawRuleSetIR`], and
+//! [`RawRouteIR`] are the strict nested Raw boundary for the route subtree.
+//! `RuleIR`, `DomainResolveOptionsIR`, `RuleSetIR`, and `RouteIR` no longer
+//! derive `Deserialize` directly; each deserializes via its Raw bridge, so
+//! unknown route nested fields are rejected at parse time.
+//!
+//! `RuleAction` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with kebab-case serde, `as_str()`, and `from_str_opt()` unchanged.
+//!
 //! ### `ExperimentalIR` — intentional passthrough
 //!
 //! `ExperimentalIR` deliberately does **not** have a Raw counterpart and does
@@ -36,13 +47,13 @@
 //!
 //! ### What is NOT yet Raw-ified
 //!
-//! `InboundIR`, `OutboundIR`, `RouteIR`, `EndpointIR`, and `ServiceIR` still
-//! reuse validated IR directly. Nested Raw types for those remain a separate
+//! `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still reuse
+//! validated IR directly. Nested Raw types for those remain a separate
 //! future effort.
 //!
 //! ## Future work
 //!
-//! - Define nested Raw types (`RawInbound`, `RawOutbound`, `RawRoute`, etc.)
+//! - Define nested Raw types (`RawInbound`, `RawOutbound`, etc.)
 //!   with their own `deny_unknown_fields`
 //! - The existing `outbound.rs` raw types (the outbound Raw/Validated boundary
 //!   pilot completed earlier) remain in their current location
@@ -52,8 +63,8 @@ use serde::Deserialize;
 
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR, EndpointIR, ExperimentalIR, InboundIR, OutboundIR,
-    RouteIR, ServiceIR,
+    DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, ExperimentalIR,
+    InboundIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -511,6 +522,448 @@ impl From<RawDnsIR> for DnsIR {
     }
 }
 
+// ─────────────────── Route nested Raw types ───────────────────
+
+/// Raw routing rule — strict input boundary for [`RuleIR`].
+///
+/// Field set is identical to `RuleIR`. All `deserialize_string_or_list` fields
+/// are preserved. `RuleAction` is NOT Raw-ified; it stays as the validated enum.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRuleIR {
+    // Positive match conditions
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub domain: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub domain_suffix: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub domain_keyword: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub domain_regex: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub geosite: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub geoip: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub ipcidr: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub port: Vec<String>,
+    #[serde(
+        default,
+        alias = "process",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
+    pub process_name: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub process_path: Vec<String>,
+    #[serde(default)]
+    pub network: Vec<String>,
+    #[serde(default)]
+    pub protocol: Vec<String>,
+    #[serde(default)]
+    pub alpn: Vec<String>,
+    #[serde(default)]
+    pub source: Vec<String>,
+    #[serde(default)]
+    pub dest: Vec<String>,
+    #[serde(default)]
+    pub user_agent: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub wifi_ssid: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub wifi_bssid: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub rule_set: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub rule_set_ipcidr: Vec<String>,
+    #[serde(default)]
+    pub user_id: Vec<u32>,
+    #[serde(
+        default,
+        alias = "uid",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
+    pub user: Vec<String>,
+    #[serde(default)]
+    pub group_id: Vec<u32>,
+    #[serde(
+        default,
+        alias = "gid",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
+    pub group: Vec<String>,
+    // P1 Parity fields
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub clash_mode: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub client: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub package_name: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub network_type: Vec<String>,
+    #[serde(default)]
+    pub network_is_expensive: Option<bool>,
+    #[serde(default)]
+    pub network_is_constrained: Option<bool>,
+    #[serde(default)]
+    pub ip_accept_any: Option<bool>,
+    #[serde(default)]
+    pub outbound_tag: Vec<String>,
+    // AdGuard-style rules
+    #[serde(default)]
+    pub adguard: Vec<String>,
+    #[serde(default)]
+    pub not_adguard: Vec<String>,
+    // Negative match conditions
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_domain: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_domain_suffix: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_domain_keyword: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_domain_regex: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_geosite: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_geoip: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_ipcidr: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_port: Vec<String>,
+    #[serde(
+        default,
+        alias = "not_process",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
+    pub not_process_name: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_process_path: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_network: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_protocol: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub not_alpn: Vec<String>,
+    #[serde(default)]
+    pub not_source: Vec<String>,
+    #[serde(default)]
+    pub not_dest: Vec<String>,
+    #[serde(default)]
+    pub not_user_agent: Vec<String>,
+    #[serde(default)]
+    pub not_wifi_ssid: Vec<String>,
+    #[serde(default)]
+    pub not_wifi_bssid: Vec<String>,
+    #[serde(default)]
+    pub not_rule_set: Vec<String>,
+    #[serde(default)]
+    pub not_rule_set_ipcidr: Vec<String>,
+    #[serde(default)]
+    pub not_user_id: Vec<u32>,
+    #[serde(default)]
+    pub not_user: Vec<String>,
+    #[serde(default)]
+    pub not_group_id: Vec<u32>,
+    #[serde(default)]
+    pub not_group: Vec<String>,
+    #[serde(default)]
+    pub not_clash_mode: Vec<String>,
+    #[serde(default)]
+    pub not_client: Vec<String>,
+    #[serde(default)]
+    pub not_package_name: Vec<String>,
+    #[serde(default)]
+    pub not_network_type: Vec<String>,
+    #[serde(default)]
+    pub not_outbound_tag: Vec<String>,
+    // Logical rule support
+    #[serde(default, rename = "type")]
+    pub rule_type: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub rules: Vec<Box<RawRuleIR>>,
+    // Actions — RuleAction stays as validated enum (not Raw-ified)
+    #[serde(default)]
+    pub action: RuleAction,
+    #[serde(default)]
+    pub outbound: Option<String>,
+    #[serde(default)]
+    pub override_address: Option<String>,
+    #[serde(default)]
+    pub override_port: Option<u16>,
+    // DNS specific action fields
+    #[serde(default)]
+    pub query_type: Vec<String>,
+    #[serde(default)]
+    pub rewrite_ttl: Option<u32>,
+    #[serde(default)]
+    pub client_subnet: Option<String>,
+    #[serde(default)]
+    pub invert: bool,
+    // Route Options Action Fields
+    #[serde(default)]
+    pub override_android_vpn: Option<bool>,
+    #[serde(default)]
+    pub find_process: Option<bool>,
+    #[serde(default)]
+    pub auto_detect_interface: Option<bool>,
+    #[serde(default)]
+    pub mark: Option<u32>,
+    #[serde(default)]
+    pub network_strategy: Option<String>,
+    #[serde(default)]
+    pub fallback_network_type: Option<Vec<String>>,
+    #[serde(default)]
+    pub fallback_delay: Option<String>,
+    // Sniff Action Fields
+    #[serde(default)]
+    pub sniffer: Option<String>,
+    #[serde(default)]
+    pub sniff_timeout: Option<String>,
+}
+
+impl From<RawRuleIR> for RuleIR {
+    fn from(raw: RawRuleIR) -> Self {
+        Self {
+            domain: raw.domain,
+            domain_suffix: raw.domain_suffix,
+            domain_keyword: raw.domain_keyword,
+            domain_regex: raw.domain_regex,
+            geosite: raw.geosite,
+            geoip: raw.geoip,
+            ipcidr: raw.ipcidr,
+            port: raw.port,
+            process_name: raw.process_name,
+            process_path: raw.process_path,
+            network: raw.network,
+            protocol: raw.protocol,
+            alpn: raw.alpn,
+            source: raw.source,
+            dest: raw.dest,
+            user_agent: raw.user_agent,
+            wifi_ssid: raw.wifi_ssid,
+            wifi_bssid: raw.wifi_bssid,
+            rule_set: raw.rule_set,
+            rule_set_ipcidr: raw.rule_set_ipcidr,
+            user_id: raw.user_id,
+            user: raw.user,
+            group_id: raw.group_id,
+            group: raw.group,
+            clash_mode: raw.clash_mode,
+            client: raw.client,
+            package_name: raw.package_name,
+            network_type: raw.network_type,
+            network_is_expensive: raw.network_is_expensive,
+            network_is_constrained: raw.network_is_constrained,
+            ip_accept_any: raw.ip_accept_any,
+            outbound_tag: raw.outbound_tag,
+            adguard: raw.adguard,
+            not_adguard: raw.not_adguard,
+            not_domain: raw.not_domain,
+            not_domain_suffix: raw.not_domain_suffix,
+            not_domain_keyword: raw.not_domain_keyword,
+            not_domain_regex: raw.not_domain_regex,
+            not_geosite: raw.not_geosite,
+            not_geoip: raw.not_geoip,
+            not_ipcidr: raw.not_ipcidr,
+            not_port: raw.not_port,
+            not_process_name: raw.not_process_name,
+            not_process_path: raw.not_process_path,
+            not_network: raw.not_network,
+            not_protocol: raw.not_protocol,
+            not_alpn: raw.not_alpn,
+            not_source: raw.not_source,
+            not_dest: raw.not_dest,
+            not_user_agent: raw.not_user_agent,
+            not_wifi_ssid: raw.not_wifi_ssid,
+            not_wifi_bssid: raw.not_wifi_bssid,
+            not_rule_set: raw.not_rule_set,
+            not_rule_set_ipcidr: raw.not_rule_set_ipcidr,
+            not_user_id: raw.not_user_id,
+            not_user: raw.not_user,
+            not_group_id: raw.not_group_id,
+            not_group: raw.not_group,
+            not_clash_mode: raw.not_clash_mode,
+            not_client: raw.not_client,
+            not_package_name: raw.not_package_name,
+            not_network_type: raw.not_network_type,
+            not_outbound_tag: raw.not_outbound_tag,
+            rule_type: raw.rule_type,
+            mode: raw.mode,
+            rules: raw
+                .rules
+                .into_iter()
+                .map(|b| Box::new(RuleIR::from(*b)))
+                .collect(),
+            action: raw.action,
+            outbound: raw.outbound,
+            override_address: raw.override_address,
+            override_port: raw.override_port,
+            query_type: raw.query_type,
+            rewrite_ttl: raw.rewrite_ttl,
+            client_subnet: raw.client_subnet,
+            invert: raw.invert,
+            override_android_vpn: raw.override_android_vpn,
+            find_process: raw.find_process,
+            auto_detect_interface: raw.auto_detect_interface,
+            mark: raw.mark,
+            network_strategy: raw.network_strategy,
+            fallback_network_type: raw.fallback_network_type,
+            fallback_delay: raw.fallback_delay,
+            sniffer: raw.sniffer,
+            sniff_timeout: raw.sniff_timeout,
+        }
+    }
+}
+
+/// Raw domain resolution options — strict input boundary for [`DomainResolveOptionsIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDomainResolveOptionsIR {
+    pub server: String,
+    #[serde(default)]
+    pub strategy: Option<String>,
+    #[serde(default)]
+    pub disable_cache: Option<bool>,
+    #[serde(default)]
+    pub rewrite_ttl: Option<u32>,
+    #[serde(default)]
+    pub client_subnet: Option<String>,
+}
+
+impl From<RawDomainResolveOptionsIR> for DomainResolveOptionsIR {
+    fn from(raw: RawDomainResolveOptionsIR) -> Self {
+        Self {
+            server: raw.server,
+            strategy: raw.strategy,
+            disable_cache: raw.disable_cache,
+            rewrite_ttl: raw.rewrite_ttl,
+            client_subnet: raw.client_subnet,
+        }
+    }
+}
+
+/// Raw rule set configuration — strict input boundary for [`RuleSetIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRuleSetIR {
+    pub tag: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default)]
+    pub format: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub download_detour: Option<String>,
+    #[serde(default)]
+    pub update_interval: Option<String>,
+    #[serde(default)]
+    pub rules: Option<Vec<RawRuleIR>>,
+    #[serde(default)]
+    pub version: Option<u8>,
+}
+
+impl From<RawRuleSetIR> for RuleSetIR {
+    fn from(raw: RawRuleSetIR) -> Self {
+        Self {
+            tag: raw.tag,
+            ty: raw.ty,
+            format: raw.format,
+            path: raw.path,
+            url: raw.url,
+            download_detour: raw.download_detour,
+            update_interval: raw.update_interval,
+            rules: raw.rules.map(|v| v.into_iter().map(Into::into).collect()),
+            version: raw.version,
+        }
+    }
+}
+
+/// Raw route subtree — strict nested input boundary for [`RouteIR`].
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawRouteIR {
+    #[serde(default)]
+    pub rules: Vec<RawRuleIR>,
+    #[serde(default)]
+    pub rule_set: Vec<RawRuleSetIR>,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default, alias = "final")]
+    pub final_outbound: Option<String>,
+    // GeoIP/Geosite
+    #[serde(default)]
+    pub geoip_path: Option<String>,
+    #[serde(default)]
+    pub geoip_download_url: Option<String>,
+    #[serde(default)]
+    pub geoip_download_detour: Option<String>,
+    #[serde(default)]
+    pub geosite_path: Option<String>,
+    #[serde(default)]
+    pub geosite_download_url: Option<String>,
+    #[serde(default)]
+    pub geosite_download_detour: Option<String>,
+    #[serde(default)]
+    pub default_rule_set_download_detour: Option<String>,
+    // Process and Interface Options
+    #[serde(default)]
+    pub override_android_vpn: Option<bool>,
+    #[serde(default)]
+    pub find_process: Option<bool>,
+    #[serde(default)]
+    pub auto_detect_interface: Option<bool>,
+    #[serde(default)]
+    pub default_interface: Option<String>,
+    // Routing Mark
+    #[serde(default)]
+    pub mark: Option<u32>,
+    // DNS and Network Strategy
+    #[serde(default)]
+    pub default_domain_resolver: Option<RawDomainResolveOptionsIR>,
+    #[serde(default)]
+    pub network_strategy: Option<String>,
+    #[serde(default)]
+    pub default_network_type: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_fallback_network_type: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_fallback_delay: Option<String>,
+}
+
+impl From<RawRouteIR> for RouteIR {
+    fn from(raw: RawRouteIR) -> Self {
+        Self {
+            rules: raw.rules.into_iter().map(Into::into).collect(),
+            rule_set: raw.rule_set.into_iter().map(Into::into).collect(),
+            default: raw.default,
+            final_outbound: raw.final_outbound,
+            geoip_path: raw.geoip_path,
+            geoip_download_url: raw.geoip_download_url,
+            geoip_download_detour: raw.geoip_download_detour,
+            geosite_path: raw.geosite_path,
+            geosite_download_url: raw.geosite_download_url,
+            geosite_download_detour: raw.geosite_download_detour,
+            default_rule_set_download_detour: raw.default_rule_set_download_detour,
+            override_android_vpn: raw.override_android_vpn,
+            find_process: raw.find_process,
+            auto_detect_interface: raw.auto_detect_interface,
+            default_interface: raw.default_interface,
+            mark: raw.mark,
+            default_domain_resolver: raw.default_domain_resolver.map(Into::into),
+            network_strategy: raw.network_strategy,
+            default_network_type: raw.default_network_type,
+            default_fallback_network_type: raw.default_fallback_network_type,
+            default_fallback_delay: raw.default_fallback_delay,
+        }
+    }
+}
+
 // ─────────────────── Root-level Raw type ───────────────────
 
 /// Raw top-level configuration root — the serde entry point.
@@ -527,10 +980,11 @@ impl From<RawDnsIR> for DnsIR {
 ///
 /// `log`, `ntp`, and `certificate` use their own Raw types (`RawLogIR`,
 /// `RawNtpIR`, `RawCertificateIR`) so unknown fields inside these leaf
-/// configs are also rejected. `dns` now uses [`RawDnsIR`] and therefore
-/// rejects unknown fields across the DNS nested subtree as well.
+/// configs are also rejected. `dns` uses [`RawDnsIR`] and `route` uses
+/// [`RawRouteIR`], so unknown fields across the DNS and route nested
+/// subtrees are also rejected.
 ///
-/// Other child types (`InboundIR`, `OutboundIR`, `RouteIR`, `EndpointIR`,
+/// Other child types (`InboundIR`, `OutboundIR`, `EndpointIR`,
 /// `ServiceIR`) still reuse validated IR directly —
 /// nested Raw types for those are future work.
 ///
@@ -545,9 +999,9 @@ pub struct RawConfigRoot {
     /// Outbound proxies.
     #[serde(default)]
     pub outbounds: Vec<OutboundIR>,
-    /// Routing configuration.
+    /// Routing configuration (strict: rejects unknown fields).
     #[serde(default)]
-    pub route: RouteIR,
+    pub route: RawRouteIR,
     /// Optional log configuration (strict: rejects unknown fields).
     #[serde(default)]
     pub log: Option<RawLogIR>,
@@ -576,7 +1030,7 @@ impl From<RawConfigRoot> for ConfigIR {
         Self {
             inbounds: raw.inbounds,
             outbounds: raw.outbounds,
-            route: raw.route,
+            route: raw.route.into(),
             log: raw.log.map(Into::into),
             ntp: raw.ntp.map(Into::into),
             certificate: raw.certificate.map(Into::into),
@@ -973,6 +1427,290 @@ mod tests {
         );
     }
 
+    // ─────────────────── Raw Route tests (WP-30e) ───────────────────
+
+    #[test]
+    fn raw_rule_ir_rejects_unknown_field() {
+        let data = json!({
+            "domain": ["example.com"],
+            "outbound": "proxy",
+            "bogus_rule_field": true
+        });
+        let result = serde_json::from_value::<RawRuleIR>(data);
+        assert!(result.is_err(), "RawRuleIR should reject unknown fields");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_rule_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_domain_resolve_options_ir_rejects_unknown_field() {
+        let data = json!({
+            "server": "dns-local",
+            "bogus_resolve_field": true
+        });
+        let result = serde_json::from_value::<RawDomainResolveOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDomainResolveOptionsIR should reject unknown fields"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_resolve_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_rule_set_ir_rejects_unknown_field() {
+        let data = json!({
+            "tag": "my-set",
+            "type": "local",
+            "bogus_ruleset_field": true
+        });
+        let result = serde_json::from_value::<RawRuleSetIR>(data);
+        assert!(result.is_err(), "RawRuleSetIR should reject unknown fields");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_ruleset_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_route_ir_rejects_unknown_field() {
+        let data = json!({
+            "rules": [],
+            "bogus_route_field": true
+        });
+        let result = serde_json::from_value::<RawRouteIR>(data);
+        assert!(result.is_err(), "RawRouteIR should reject unknown fields");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_route_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rule_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::RuleIR;
+        let data = json!({
+            "domain": ["example.com"],
+            "bogus_rule_field": "bad"
+        });
+        let result = serde_json::from_value::<RuleIR>(data);
+        assert!(
+            result.is_err(),
+            "RuleIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn domain_resolve_options_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::DomainResolveOptionsIR;
+        let data = json!({
+            "server": "dns-local",
+            "bogus_resolve_field": 42
+        });
+        let result = serde_json::from_value::<DomainResolveOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "DomainResolveOptionsIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn rule_set_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::RuleSetIR;
+        let data = json!({
+            "tag": "my-set",
+            "type": "local",
+            "bogus_ruleset_field": "bad"
+        });
+        let result = serde_json::from_value::<RuleSetIR>(data);
+        assert!(
+            result.is_err(),
+            "RuleSetIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn route_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::RouteIR;
+        let data = json!({
+            "rules": [],
+            "bogus_route_field": "bad"
+        });
+        let result = serde_json::from_value::<RouteIR>(data);
+        assert!(
+            result.is_err(),
+            "RouteIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn rule_ir_valid_roundtrip() {
+        use super::super::RuleIR;
+        let data = json!({
+            "domain": ["example.com", "test.org"],
+            "domain_suffix": [".cn"],
+            "geoip": ["CN"],
+            "port": ["80", "443"],
+            "action": "route",
+            "outbound": "proxy"
+        });
+        let ir: RuleIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.domain, vec!["example.com", "test.org"]);
+        assert_eq!(ir.geoip, vec!["CN"]);
+        assert_eq!(ir.action, super::super::RuleAction::Route);
+        // roundtrip
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: RuleIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn domain_resolve_options_ir_valid_roundtrip() {
+        use super::super::DomainResolveOptionsIR;
+        let data = json!({
+            "server": "dns-local",
+            "strategy": "prefer_ipv4",
+            "disable_cache": true,
+            "rewrite_ttl": 120,
+            "client_subnet": "10.0.0.0/24"
+        });
+        let ir: DomainResolveOptionsIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.server, "dns-local");
+        assert_eq!(ir.strategy.as_deref(), Some("prefer_ipv4"));
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: DomainResolveOptionsIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn rule_set_ir_valid_roundtrip() {
+        use super::super::RuleSetIR;
+        let data = json!({
+            "tag": "geosite-cn",
+            "type": "remote",
+            "format": "binary",
+            "url": "https://example.com/geosite-cn.srs",
+            "update_interval": "24h"
+        });
+        let ir: RuleSetIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.tag, "geosite-cn");
+        assert_eq!(ir.ty, "remote");
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: RuleSetIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn route_ir_valid_roundtrip() {
+        use super::super::RouteIR;
+        let data = json!({
+            "rules": [
+                {"domain_suffix": [".cn"], "outbound": "direct"}
+            ],
+            "rule_set": [
+                {"tag": "geosite-cn", "type": "remote", "format": "binary",
+                 "url": "https://example.com/geosite-cn.srs"}
+            ],
+            "default": "proxy",
+            "final": "direct",
+            "find_process": true,
+            "mark": 100,
+            "default_domain_resolver": {"server": "local-dns"},
+            "network_strategy": "prefer_ipv4"
+        });
+        let ir: RouteIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.rules.len(), 1);
+        assert_eq!(ir.rule_set.len(), 1);
+        assert_eq!(ir.default.as_deref(), Some("proxy"));
+        assert_eq!(ir.final_outbound.as_deref(), Some("direct"));
+        assert_eq!(ir.mark, Some(100));
+        // roundtrip
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: RouteIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir.rules.len(), ir2.rules.len());
+        assert_eq!(ir.default, ir2.default);
+    }
+
+    #[test]
+    fn rule_action_serde_unchanged_after_route_raw() {
+        use super::super::RuleAction;
+        // Verify RuleAction kebab-case serde still works
+        let parsed: RuleAction = serde_json::from_str("\"reject-drop\"").unwrap();
+        assert_eq!(parsed, RuleAction::RejectDrop);
+        assert_eq!(parsed.as_str(), "reject-drop");
+        assert_eq!(
+            RuleAction::from_str_opt("hijack_dns"),
+            Some(RuleAction::HijackDns)
+        );
+    }
+
+    #[test]
+    fn config_ir_accepts_valid_route_subtree_via_raw_bridge() {
+        let data = json!({
+            "route": {
+                "rules": [
+                    {"domain_suffix": [".cn"], "outbound": "direct"},
+                    {"geoip": ["US"], "outbound": "proxy"}
+                ],
+                "rule_set": [
+                    {"tag": "geosite-cn", "type": "remote", "format": "binary",
+                     "url": "https://example.com/geosite-cn.srs"}
+                ],
+                "final": "direct",
+                "find_process": true,
+                "default_domain_resolver": {"server": "local-dns"}
+            }
+        });
+        let ir = serde_json::from_value::<ConfigIR>(data).unwrap();
+        assert_eq!(ir.route.rules.len(), 2);
+        assert_eq!(ir.route.rule_set.len(), 1);
+        assert_eq!(ir.route.final_outbound.as_deref(), Some("direct"));
+        assert!(ir.route.default_domain_resolver.is_some());
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_inside_route_subtree() {
+        let data = json!({
+            "route": {
+                "rules": [],
+                "unknown_route_field": true
+            }
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields inside route via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_inside_route_rule() {
+        let data = json!({
+            "route": {
+                "rules": [
+                    {
+                        "domain": ["example.com"],
+                        "outbound": "proxy",
+                        "unknown_rule_field": true
+                    }
+                ]
+            }
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields inside route.rules via Raw bridge"
+        );
+    }
+
     // ─────────────────── ConfigIR root with strict nested tests ───────────────────
 
     #[test]
@@ -1103,19 +1841,24 @@ mod tests {
         assert!(result.is_ok(), "experimental should accept known sub-keys");
     }
 
-    /// Boundary documentation: route/inbound/outbound/endpoint/service nested
-    /// trees still do NOT have nested Raw types. DNS is now strict; these
-    /// remaining domains are future work, not regressions from WP-30d.
+    /// Boundary documentation: inbound/outbound/endpoint/service nested
+    /// trees still do NOT have nested Raw types. DNS and route are now strict;
+    /// these remaining domains are future work, not regressions from WP-30e.
     #[test]
     fn nested_non_leaf_unknown_fields_not_yet_strict_boundary_doc() {
+        // Route is now strict (WP-30e): unknown route fields are rejected.
         let data = json!({
             "route": {
                 "rules": [],
                 "some_unknown_route_field": true
             }
         });
-        // RouteIR does not yet have a Raw counterpart, so this succeeds.
         let result = serde_json::from_value::<ConfigIR>(data);
-        assert!(result.is_ok(), "route remains outside nested Raw in WP-30d");
+        assert!(
+            result.is_err(),
+            "route nested unknown fields should be rejected after WP-30e"
+        );
+
+        // Inbound/outbound/endpoint/service remain non-strict (future work).
     }
 }

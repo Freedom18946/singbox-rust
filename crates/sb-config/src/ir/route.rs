@@ -1,6 +1,23 @@
 //! Route/rule IR types (rule actions, routing rules, rule sets).
+//!
+//! ## Deserialization (WP-30e)
+//!
+//! `RuleIR`, `DomainResolveOptionsIR`, `RuleSetIR`, and `RouteIR` each
+//! deserialize via their corresponding Raw type in [`super::raw`] which
+//! carries `#[serde(deny_unknown_fields)]`. Unknown route nested fields
+//! are now rejected at parse time.
+//!
+//! `RuleAction` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with kebab-case serde, `as_str()`, and `from_str_opt()` unchanged.
+//!
+//! `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still derive
+//! `Deserialize` directly — they are NOT yet routed through Raw bridges.
+//!
+//! `planned.rs` / `normalize.rs` remain skeletons.
 
 use serde::{Deserialize, Serialize};
+
+use super::raw::{RawDomainResolveOptionsIR, RawRouteIR, RawRuleIR, RawRuleSetIR};
 
 /// Rule action type (Go parity: option/rule_action.go).
 /// 规则动作类型（Go 对齐：option/rule_action.go）。
@@ -74,7 +91,10 @@ impl RuleAction {
 
 /// Routing rule intermediate representation.
 /// 路由规则中间表示。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawRuleIR`](super::raw::RawRuleIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30e).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct RuleIR {
     // Positive match conditions
     /// Domain exact match list.
@@ -432,8 +452,20 @@ pub struct RuleIR {
     pub sniff_timeout: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for RuleIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawRuleIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Domain resolution options (Go parity: option/domain_resolve.go).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawDomainResolveOptionsIR`](super::raw::RawDomainResolveOptionsIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30e).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DomainResolveOptionsIR {
     /// DNS server address.
     pub server: String,
@@ -451,8 +483,20 @@ pub struct DomainResolveOptionsIR {
     pub client_subnet: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for DomainResolveOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDomainResolveOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Routing table configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawRouteIR`](super::raw::RawRouteIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30e).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct RouteIR {
     /// Routing rules (evaluated in order).
     #[serde(default)]
@@ -556,8 +600,20 @@ pub struct RouteIR {
     pub default_fallback_delay: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for RouteIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawRouteIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Rule set configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawRuleSetIR`](super::raw::RawRuleSetIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30e).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct RuleSetIR {
     /// Rule set tag.
     pub tag: String,
@@ -585,6 +641,15 @@ pub struct RuleSetIR {
     /// Rule set version (for source format).
     #[serde(default)]
     pub version: Option<u8>,
+}
+
+impl<'de> Deserialize<'de> for RuleSetIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawRuleSetIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[cfg(test)]
