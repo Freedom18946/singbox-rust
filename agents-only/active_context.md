@@ -11,32 +11,29 @@
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
-## 最近完成（2026-03-28）
+## 最近完成（2026-03-29）
 
-### WP-30j：Masquerade shared helper Raw closure — 已完成
+### WP-30k：planned.rs preflight seam inventory — 已完成
 
-- `crates/sb-config/src/ir/raw.rs` 新增 4 个 Raw 类型，全部 `#[serde(deny_unknown_fields)]`：
-  - `RawMasqueradeIR`、`RawMasqueradeFileIR`、`RawMasqueradeProxyIR`、`RawMasqueradeStringIR`
-- 以下 validated 类型现在通过 Raw bridge 反序列化（不再 derive `Deserialize`）：
-  - `MasqueradeIR`、`MasqueradeFileIR`、`MasqueradeProxyIR`、`MasqueradeStringIR`（在 `mod.rs`）
-- `RawInboundIR.masquerade` 从 `Option<MasqueradeIR>` 改为 `Option<RawMasqueradeIR>`
-- inbound/Hysteria2 masquerade 子树 unknown fields 现在会被严格拒绝
-- `MasqueradeProxyIR.rewrite_host` 默认值语义（false）保持不变
-- `MasqueradeStringIR.status_code` 默认值语义（0）保持不变
-- **`planned.rs` / `normalize.rs` 仍然只是 skeleton**
-- **这是 WP-30 输入边界小收尾，不是 `planned.rs` 推进**
-- 新增 16 个 masquerade boundary tests（raw.rs `#[test]` 从 134→150）
+- 新增 `agents-only/planned_preflight_inventory.md`，把 planned-layer 候选职责的当前 owner 钉成仓库事实表
+- `crates/sb-config/src/ir/planned.rs` 从泛 skeleton 升级为 **前置契约注释**
+- **没有实现 `RuntimePlan`**
+- **没有新增 public planned API / builder**
+- 当前推荐 first cut：
+  - 先从 `Config::validate()` 现有检查里抽出 private tag/reference inventory
+  - 仅覆盖 outbound/endpoint tag namespace、selector/urltest members、`rule.outbound`、`route.default`
+- 明确暂不搬：
+  - `validator/v2` 的 parse-time defaults / alias fill / ENV resolution
+  - `normalize.rs` / `minimize.rs` / `present.rs`
+  - `bootstrap.rs` selector/urltest 二次绑定
+  - `run_engine.rs` DNS env bridge
+- 新增 3 个 planned preflight pin tests：
+  - `validated.rs` pin `ConfigIR::validate()` 仍负责 selector/urltest member 形状校验
+  - `normalize.rs` pin `normalize_config()` 只改 token，不改 reference strings
+  - `lib.rs` substitute pin `dns.detour` today 仍只 parse/保留，不在 `sb-config` 内绑定
 
-**验证**:
-- `cargo fmt --all` ✅
-- `cargo check -p sb-config` ✅
-- `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (277 passed)
-- `cargo test -p sb-config` ✅ (402 passed, 0 failed)
-- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
-
+### WP-30j：Masquerade shared helper Raw closure — 已完成（earlier）
 ### WP-30i：Outbound nested Raw boundary pilot — 已完成（earlier）
-
 ### WP-30h ~ WP-30a — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
@@ -49,7 +46,9 @@
 
 - **WP-30 Phase 3 后续**：
   - 所有 config-facing strict input boundary 已 Raw 化（WP-30a ~ WP-30j）
-  - 评估 `planned.rs` 前置卡，再决定是否推进 `RuntimePlan` builder
+  - `WP-30k` 已完成前置 seam inventory；下一步才是第一刀 private planned seam
+  - 推荐下一卡：围绕 `Config::validate()` 现有 tag/reference 检查抽 private inventory helper
+  - 仍不是 `RuntimePlan` public 实作卡
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
 - bootstrap.rs / run_engine.rs 职责收口

@@ -132,4 +132,30 @@ mod tests {
         assert_eq!(r.not_domain, vec!["b.test"]);
         assert_eq!(r.port, vec!["80-82", "443"]);
     }
+
+    #[test]
+    fn planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens() {
+        // WP-30k pin: current owner is normalize.rs; it canonicalizes rule tokens but
+        // does not bind or rewrite planned-layer references such as route.default/outbound.
+        let mut cfg = ConfigIR::default();
+        cfg.route.default = Some("Selector-A".to_string());
+        cfg.route.rules.push(RuleIR {
+            domain: vec!["EXAMPLE.COM".into()],
+            port: vec!["443".into(), "80-81".into(), "81".into()],
+            network: vec![" TCP ".into()],
+            protocol: vec![" HTTP ".into()],
+            outbound: Some("Selector-A".to_string()),
+            ..Default::default()
+        });
+
+        normalize_config(&mut cfg);
+
+        let rule = &cfg.route.rules[0];
+        assert_eq!(rule.domain, vec!["example.com"]);
+        assert_eq!(rule.port, vec!["80-81", "443"]);
+        assert_eq!(rule.network, vec!["tcp"]);
+        assert_eq!(rule.protocol, vec!["http"]);
+        assert_eq!(rule.outbound.as_deref(), Some("Selector-A"));
+        assert_eq!(cfg.route.default.as_deref(), Some("Selector-A"));
+    }
 }

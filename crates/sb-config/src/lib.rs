@@ -809,6 +809,42 @@ endpoints:
     }
 
     #[test]
+    fn planned_preflight_pin_current_owner_config_validate_leaves_dns_detour_unbound() {
+        // WP-30k substitute pin for runtime-facing seams:
+        // current sb-config owners parse and preserve dns.detour, but do not bind it yet.
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": {
+                "rules": [],
+                "default": "direct"
+            },
+            "dns": {
+                "servers": [
+                    {
+                        "tag": "dns-upstream",
+                        "address": "udp://1.1.1.1",
+                        "detour": "missing-runtime-owner"
+                    }
+                ]
+            }
+        });
+
+        let cfg = Config::from_value(raw).expect("config parses");
+        assert!(
+            cfg.validate().is_ok(),
+            "Config::validate() should not yet bind runtime-facing dns.detour references"
+        );
+
+        let dns = cfg.ir().dns.as_ref().expect("dns parsed into IR");
+        assert_eq!(
+            dns.servers[0].detour.as_deref(),
+            Some("missing-runtime-owner")
+        );
+    }
+
+    #[test]
     fn test_log_disabled_output_parsed() {
         let json = r#"{"log": {"disabled": true, "output": "/var/log/singbox.log"}}"#;
         let raw: Value = serde_json::from_str(json).unwrap();

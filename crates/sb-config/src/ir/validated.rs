@@ -527,6 +527,25 @@ mod tests {
     }
 
     #[test]
+    fn planned_preflight_pin_current_owner_validated_validate_requires_selector_members() {
+        // WP-30k pin: current owner is validated.rs / ConfigIR::validate(), not planned.rs.
+        let mut cfg = ConfigIR::default();
+        cfg.outbounds.push(OutboundIR {
+            ty: OutboundType::Selector,
+            name: Some("manual".to_string()),
+            members: Some(Vec::new()),
+            ..Default::default()
+        });
+
+        let result = cfg.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e.contains("outbound 'manual': selector/urltest requires at least one member")
+        }));
+    }
+
+    #[test]
     fn tuic_validation_reports_missing_fields() {
         let mut cfg = ConfigIR::default();
         cfg.outbounds.push(OutboundIR {
