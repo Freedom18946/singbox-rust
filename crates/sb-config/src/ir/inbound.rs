@@ -1,12 +1,28 @@
 //! Inbound IR types (listener config, protocol users, TUN options).
+//!
+//! ## Deserialization (WP-30h)
+//!
+//! `InboundIR`, `TunOptionsIR`, and all inbound user types (`ShadowsocksUserIR`,
+//! `VmessUserIR`, `VlessUserIR`, `TrojanUserIR`, `ShadowTlsUserIR`,
+//! `ShadowTlsHandshakeIR`, `AnyTlsUserIR`, `Hysteria2UserIR`, `TuicUserIR`,
+//! `HysteriaUserIR`) deserialize via their corresponding Raw types in
+//! `super::raw` which carry `#[serde(deny_unknown_fields)]`. Unknown inbound
+//! nested fields are rejected at parse time. `Serialize` remains derived.
+//!
+//! `InboundType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with lowercase serde unchanged.
+//!
+//! `OutboundIR` is still NOT routed through a Raw bridge.
+//! `planned.rs` / `normalize.rs` are still skeletons.
 
 use serde::{Deserialize, Serialize};
 
+use super::raw::{
+    RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawShadowTlsHandshakeIR,
+    RawShadowTlsUserIR, RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR,
+    RawVlessUserIR, RawVmessUserIR,
+};
 use super::{Credentials, MasqueradeIR, MultiplexOptionsIR};
-
-fn default_true() -> bool {
-    true
-}
 
 /// Inbound proxy type.
 /// 入站代理类型。
@@ -102,7 +118,10 @@ impl InboundType {
 }
 
 /// Shadowsocks user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawShadowsocksUserIR`](super::raw::RawShadowsocksUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ShadowsocksUserIR {
     /// User name.
     pub name: String,
@@ -110,8 +129,20 @@ pub struct ShadowsocksUserIR {
     pub password: String,
 }
 
+impl<'de> Deserialize<'de> for ShadowsocksUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawShadowsocksUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// VMess user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawVmessUserIR`](super::raw::RawVmessUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VmessUserIR {
     /// User name.
     pub name: String,
@@ -122,8 +153,20 @@ pub struct VmessUserIR {
     pub alter_id: u32,
 }
 
+impl<'de> Deserialize<'de> for VmessUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawVmessUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// VLESS user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawVlessUserIR`](super::raw::RawVlessUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct VlessUserIR {
     /// User name.
     pub name: String,
@@ -143,8 +186,20 @@ pub struct VlessUserIR {
     pub encryption: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for VlessUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawVlessUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Trojan user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawTrojanUserIR`](super::raw::RawTrojanUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TrojanUserIR {
     /// User name.
     pub name: String,
@@ -152,8 +207,20 @@ pub struct TrojanUserIR {
     pub password: String,
 }
 
+impl<'de> Deserialize<'de> for TrojanUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawTrojanUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// ShadowTLS user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawShadowTlsUserIR`](super::raw::RawShadowTlsUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ShadowTlsUserIR {
     /// Optional user name for logging/routing purposes.
     #[serde(default)]
@@ -162,8 +229,20 @@ pub struct ShadowTlsUserIR {
     pub password: String,
 }
 
+impl<'de> Deserialize<'de> for ShadowTlsUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawShadowTlsUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// ShadowTLS handshake target configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawShadowTlsHandshakeIR`](super::raw::RawShadowTlsHandshakeIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ShadowTlsHandshakeIR {
     /// Upstream handshake server hostname or IP.
     pub server: String,
@@ -172,8 +251,20 @@ pub struct ShadowTlsHandshakeIR {
     pub server_port: u16,
 }
 
+impl<'de> Deserialize<'de> for ShadowTlsHandshakeIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawShadowTlsHandshakeIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// AnyTLS user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawAnyTlsUserIR`](super::raw::RawAnyTlsUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AnyTlsUserIR {
     /// Optional user name for logging/routing purposes.
     #[serde(default)]
@@ -182,8 +273,20 @@ pub struct AnyTlsUserIR {
     pub password: String,
 }
 
+impl<'de> Deserialize<'de> for AnyTlsUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawAnyTlsUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Hysteria2 user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawHysteria2UserIR`](super::raw::RawHysteria2UserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Hysteria2UserIR {
     /// User name.
     pub name: String,
@@ -191,8 +294,20 @@ pub struct Hysteria2UserIR {
     pub password: String,
 }
 
+impl<'de> Deserialize<'de> for Hysteria2UserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawHysteria2UserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// TUIC user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawTuicUserIR`](super::raw::RawTuicUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TuicUserIR {
     /// User UUID.
     pub uuid: String,
@@ -200,8 +315,20 @@ pub struct TuicUserIR {
     pub token: String,
 }
 
+impl<'de> Deserialize<'de> for TuicUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawTuicUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Hysteria v1 user configuration for multi-user inbound.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawHysteriaUserIR`](super::raw::RawHysteriaUserIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct HysteriaUserIR {
     /// User name.
     pub name: String,
@@ -209,9 +336,21 @@ pub struct HysteriaUserIR {
     pub auth: String,
 }
 
+impl<'de> Deserialize<'de> for HysteriaUserIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawHysteriaUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Inbound listener configuration.
 /// 入站监听器配置。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawInboundIR`](super::raw::RawInboundIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct InboundIR {
     /// Inbound tag (unique identifier for routing rules, Go parity).
     /// 入站标签（用于路由规则的唯一标识符，Go 对齐）。
@@ -270,9 +409,8 @@ pub struct InboundIR {
     #[serde(default)]
     pub set_system_proxy: bool,
 
-    /// Allow private network access.
-    /// 允许访问私有网络。
-    #[serde(default = "default_true")]
+    /// Allow private network access (defaults to true via Raw bridge).
+    /// 允许访问私有网络（通过 Raw bridge 默认为 true）。
     pub allow_private_network: bool,
 
     // Protocol-specific fields (Shadowsocks)
@@ -500,8 +638,20 @@ pub struct InboundIR {
     pub ssh_host_key_path: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for InboundIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawInboundIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Tun inbound options.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawTunOptionsIR`](super::raw::RawTunOptionsIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct TunOptionsIR {
     #[serde(default)]
     pub platform: Option<String>,
@@ -543,6 +693,15 @@ pub struct TunOptionsIR {
     pub udp_timeout: Option<String>,
     #[serde(default)]
     pub exclude_processes: Option<Vec<String>>,
+}
+
+impl<'de> Deserialize<'de> for TunOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawTunOptionsIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[cfg(test)]

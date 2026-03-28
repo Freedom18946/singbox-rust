@@ -42,15 +42,22 @@
 //! uses forward-compatible passthrough semantics and does not reject unknown
 //! fields. This is by design, not an oversight.
 //!
+//! `InboundIR`, `TunOptionsIR`, and all inbound user types (`ShadowsocksUserIR`,
+//! `VmessUserIR`, `VlessUserIR`, `TrojanUserIR`, `ShadowTlsUserIR`,
+//! `ShadowTlsHandshakeIR`, `AnyTlsUserIR`, `Hysteria2UserIR`, `TuicUserIR`,
+//! `HysteriaUserIR`) deserialize through their corresponding Raw types so
+//! unknown inbound fields are rejected (WP-30h). `InboundType` is intentionally
+//! NOT Raw-ified.
+//!
 //! ## What is NOT yet routed through Raw
 //!
-//! `InboundIR` and `OutboundIR` still derive `Deserialize` directly. Nested
-//! Raw types for these remain future work.
+//! `OutboundIR` still derives `Deserialize` directly. Nested Raw types for
+//! outbound remain future work.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)

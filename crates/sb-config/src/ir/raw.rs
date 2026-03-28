@@ -6,7 +6,7 @@
 //! on-disk JSON/YAML schema. All Raw types derive `Deserialize` with
 //! `#[serde(deny_unknown_fields)]` to enforce strict input boundaries.
 //!
-//! ## Current status (WP-30g)
+//! ## Current status (WP-30h)
 //!
 //! ### Root boundary (WP-30b — done)
 //!
@@ -63,6 +63,20 @@
 //! `ServiceType`, `Listable`, and `StringOrObj` are intentionally NOT
 //! Raw-ified — they remain as validated generic wrappers.
 //!
+//! ### Inbound nested boundary pilot (WP-30h — done)
+//!
+//! [`RawInboundIR`], [`RawTunOptionsIR`], [`RawShadowsocksUserIR`],
+//! [`RawVmessUserIR`], [`RawVlessUserIR`], [`RawTrojanUserIR`],
+//! [`RawShadowTlsUserIR`], [`RawShadowTlsHandshakeIR`], [`RawAnyTlsUserIR`],
+//! [`RawHysteria2UserIR`], [`RawTuicUserIR`], and [`RawHysteriaUserIR`] are the
+//! strict nested Raw boundary for the inbound subtree. `InboundIR`,
+//! `TunOptionsIR`, and all inbound user types no longer derive `Deserialize`
+//! directly; each deserializes via its Raw bridge, so unknown inbound nested
+//! fields are rejected at parse time.
+//!
+//! `InboundType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with lowercase serde unchanged.
+//!
 //! ### `ExperimentalIR` — intentional passthrough
 //!
 //! `ExperimentalIR` deliberately does **not** have a Raw counterpart and does
@@ -72,13 +86,12 @@
 //!
 //! ### What is NOT yet Raw-ified
 //!
-//! `InboundIR` and `OutboundIR` still reuse validated IR directly. Nested
-//! Raw types for those remain a separate future effort.
+//! `OutboundIR` still reuses validated IR directly. Nested Raw types for
+//! outbound remain a separate future effort.
 //!
 //! ## Future work
 //!
-//! - Define nested Raw types (`RawInbound`, `RawOutbound`, etc.)
-//!   with their own `deny_unknown_fields`
+//! - Define nested Raw types for `OutboundIR` with `deny_unknown_fields`
 //! - The existing `outbound.rs` raw types (the outbound Raw/Validated boundary
 //!   pilot completed earlier) remain in their current location
 //! - `planned.rs` / `normalize.rs` remain skeletons
@@ -87,11 +100,13 @@ use serde::Deserialize;
 
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR, DerpOutboundTlsOptionsIR,
-    DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR,
-    DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR, InboundIR,
-    InboundTlsOptionsIR, Listable, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
-    ServiceType, StringOrObj, WireGuardPeerIR,
+    AnyTlsUserIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
+    DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR,
+    DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR,
+    Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType, Listable,
+    MasqueradeIR, MultiplexOptionsIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR,
+    ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
+    TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -1714,6 +1729,523 @@ impl From<RawServiceIR> for ServiceIR {
     }
 }
 
+// ─────────────────── Inbound nested Raw types (WP-30h) ───────────────────
+
+fn default_true() -> bool {
+    true
+}
+
+/// Raw Shadowsocks user — strict input boundary for [`ShadowsocksUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawShadowsocksUserIR {
+    pub name: String,
+    pub password: String,
+}
+
+impl From<RawShadowsocksUserIR> for ShadowsocksUserIR {
+    fn from(raw: RawShadowsocksUserIR) -> Self {
+        Self {
+            name: raw.name,
+            password: raw.password,
+        }
+    }
+}
+
+/// Raw VMess user — strict input boundary for [`VmessUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawVmessUserIR {
+    pub name: String,
+    pub uuid: String,
+    #[serde(default)]
+    pub alter_id: u32,
+}
+
+impl From<RawVmessUserIR> for VmessUserIR {
+    fn from(raw: RawVmessUserIR) -> Self {
+        Self {
+            name: raw.name,
+            uuid: raw.uuid,
+            alter_id: raw.alter_id,
+        }
+    }
+}
+
+/// Raw VLESS user — strict input boundary for [`VlessUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawVlessUserIR {
+    pub name: String,
+    pub uuid: String,
+    #[serde(default)]
+    pub flow: Option<String>,
+    #[serde(default)]
+    pub security: Option<String>,
+    #[serde(default)]
+    pub alter_id: Option<u8>,
+    #[serde(default)]
+    pub encryption: Option<String>,
+}
+
+impl From<RawVlessUserIR> for VlessUserIR {
+    fn from(raw: RawVlessUserIR) -> Self {
+        Self {
+            name: raw.name,
+            uuid: raw.uuid,
+            flow: raw.flow,
+            security: raw.security,
+            alter_id: raw.alter_id,
+            encryption: raw.encryption,
+        }
+    }
+}
+
+/// Raw Trojan user — strict input boundary for [`TrojanUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTrojanUserIR {
+    pub name: String,
+    pub password: String,
+}
+
+impl From<RawTrojanUserIR> for TrojanUserIR {
+    fn from(raw: RawTrojanUserIR) -> Self {
+        Self {
+            name: raw.name,
+            password: raw.password,
+        }
+    }
+}
+
+/// Raw ShadowTLS user — strict input boundary for [`ShadowTlsUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawShadowTlsUserIR {
+    #[serde(default)]
+    pub name: String,
+    pub password: String,
+}
+
+impl From<RawShadowTlsUserIR> for ShadowTlsUserIR {
+    fn from(raw: RawShadowTlsUserIR) -> Self {
+        Self {
+            name: raw.name,
+            password: raw.password,
+        }
+    }
+}
+
+/// Raw ShadowTLS handshake — strict input boundary for [`ShadowTlsHandshakeIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawShadowTlsHandshakeIR {
+    pub server: String,
+    #[serde(rename = "server_port")]
+    pub server_port: u16,
+}
+
+impl From<RawShadowTlsHandshakeIR> for ShadowTlsHandshakeIR {
+    fn from(raw: RawShadowTlsHandshakeIR) -> Self {
+        Self {
+            server: raw.server,
+            server_port: raw.server_port,
+        }
+    }
+}
+
+/// Raw AnyTLS user — strict input boundary for [`AnyTlsUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawAnyTlsUserIR {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub password: String,
+}
+
+impl From<RawAnyTlsUserIR> for AnyTlsUserIR {
+    fn from(raw: RawAnyTlsUserIR) -> Self {
+        Self {
+            name: raw.name,
+            password: raw.password,
+        }
+    }
+}
+
+/// Raw Hysteria2 user — strict input boundary for [`Hysteria2UserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawHysteria2UserIR {
+    pub name: String,
+    pub password: String,
+}
+
+impl From<RawHysteria2UserIR> for Hysteria2UserIR {
+    fn from(raw: RawHysteria2UserIR) -> Self {
+        Self {
+            name: raw.name,
+            password: raw.password,
+        }
+    }
+}
+
+/// Raw TUIC user — strict input boundary for [`TuicUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTuicUserIR {
+    pub uuid: String,
+    pub token: String,
+}
+
+impl From<RawTuicUserIR> for TuicUserIR {
+    fn from(raw: RawTuicUserIR) -> Self {
+        Self {
+            uuid: raw.uuid,
+            token: raw.token,
+        }
+    }
+}
+
+/// Raw Hysteria v1 user — strict input boundary for [`HysteriaUserIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawHysteriaUserIR {
+    pub name: String,
+    pub auth: String,
+}
+
+impl From<RawHysteriaUserIR> for HysteriaUserIR {
+    fn from(raw: RawHysteriaUserIR) -> Self {
+        Self {
+            name: raw.name,
+            auth: raw.auth,
+        }
+    }
+}
+
+/// Raw TUN options — strict input boundary for [`TunOptionsIR`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTunOptionsIR {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub mtu: Option<u32>,
+    #[serde(default)]
+    pub dry_run: Option<bool>,
+    #[serde(default)]
+    pub user_tag: Option<String>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub auto_route: Option<bool>,
+    #[serde(default)]
+    pub auto_redirect: Option<bool>,
+    #[serde(default)]
+    pub strict_route: Option<bool>,
+    #[serde(default)]
+    pub inet4_address: Option<String>,
+    #[serde(default)]
+    pub inet6_address: Option<String>,
+    #[serde(default)]
+    pub table_id: Option<u32>,
+    #[serde(default)]
+    pub fwmark: Option<u32>,
+    #[serde(default)]
+    pub exclude_routes: Option<Vec<String>>,
+    #[serde(default)]
+    pub include_routes: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclude_uids: Option<Vec<u32>>,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub endpoint_independent_nat: Option<bool>,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
+    #[serde(default)]
+    pub exclude_processes: Option<Vec<String>>,
+}
+
+impl From<RawTunOptionsIR> for TunOptionsIR {
+    fn from(raw: RawTunOptionsIR) -> Self {
+        Self {
+            platform: raw.platform,
+            name: raw.name,
+            mtu: raw.mtu,
+            dry_run: raw.dry_run,
+            user_tag: raw.user_tag,
+            timeout_ms: raw.timeout_ms,
+            auto_route: raw.auto_route,
+            auto_redirect: raw.auto_redirect,
+            strict_route: raw.strict_route,
+            inet4_address: raw.inet4_address,
+            inet6_address: raw.inet6_address,
+            table_id: raw.table_id,
+            fwmark: raw.fwmark,
+            exclude_routes: raw.exclude_routes,
+            include_routes: raw.include_routes,
+            exclude_uids: raw.exclude_uids,
+            stack: raw.stack,
+            endpoint_independent_nat: raw.endpoint_independent_nat,
+            udp_timeout: raw.udp_timeout,
+            exclude_processes: raw.exclude_processes,
+        }
+    }
+}
+
+/// Raw inbound configuration — strict input boundary for [`InboundIR`].
+///
+/// Field set is identical to `InboundIR`. `InboundType` is intentionally NOT
+/// Raw-ified — it stays as the validated enum with lowercase serde. User lists
+/// and nested types use their corresponding Raw types for strict boundaries.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawInboundIR {
+    #[serde(default)]
+    pub tag: Option<String>,
+    pub ty: InboundType,
+    pub listen: String,
+    pub port: u16,
+    #[serde(default)]
+    pub sniff: bool,
+    #[serde(default)]
+    pub sniff_override_destination: bool,
+    #[serde(default)]
+    pub udp: bool,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub domain_strategy: Option<String>,
+    #[serde(default)]
+    pub basic_auth: Option<Credentials>,
+    #[serde(default)]
+    pub users: Option<Vec<Credentials>>,
+    #[serde(default)]
+    pub override_host: Option<String>,
+    #[serde(default)]
+    pub override_port: Option<u16>,
+    #[serde(default)]
+    pub set_system_proxy: bool,
+    #[serde(default = "default_true")]
+    pub allow_private_network: bool,
+    // Shadowsocks
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub users_shadowsocks: Option<Vec<RawShadowsocksUserIR>>,
+    #[serde(default)]
+    pub network: Option<String>,
+    // VMess
+    #[serde(default)]
+    pub uuid: Option<String>,
+    #[serde(default)]
+    pub alter_id: Option<u32>,
+    #[serde(default)]
+    pub users_vmess: Option<Vec<RawVmessUserIR>>,
+    #[serde(default)]
+    pub security: Option<String>,
+    // VLESS
+    #[serde(default)]
+    pub flow: Option<String>,
+    #[serde(default)]
+    pub users_vless: Option<Vec<RawVlessUserIR>>,
+    // Trojan
+    #[serde(default)]
+    pub users_trojan: Option<Vec<RawTrojanUserIR>>,
+    #[serde(default)]
+    pub version: Option<u8>,
+    #[serde(default)]
+    pub users_shadowtls: Option<Vec<RawShadowTlsUserIR>>,
+    #[serde(default)]
+    pub shadowtls_handshake: Option<RawShadowTlsHandshakeIR>,
+    #[serde(default)]
+    pub shadowtls_handshake_for_server_name:
+        Option<std::collections::HashMap<String, RawShadowTlsHandshakeIR>>,
+    #[serde(default)]
+    pub shadowtls_strict_mode: Option<bool>,
+    #[serde(default)]
+    pub shadowtls_wildcard_sni: Option<String>,
+    #[serde(default)]
+    pub fallback: Option<String>,
+    #[serde(default)]
+    pub fallback_for_alpn: Option<std::collections::HashMap<String, String>>,
+    // AnyTLS
+    #[serde(default)]
+    pub users_anytls: Option<Vec<RawAnyTlsUserIR>>,
+    #[serde(default)]
+    pub anytls_padding: Option<Vec<String>>,
+    // Hysteria2
+    #[serde(default)]
+    pub users_hysteria2: Option<Vec<RawHysteria2UserIR>>,
+    #[serde(default)]
+    pub congestion_control: Option<String>,
+    #[serde(default)]
+    pub salamander: Option<String>,
+    #[serde(default)]
+    pub obfs: Option<String>,
+    #[serde(default)]
+    pub brutal_up_mbps: Option<u32>,
+    #[serde(default)]
+    pub brutal_down_mbps: Option<u32>,
+    #[serde(default)]
+    pub masquerade: Option<MasqueradeIR>,
+    // TUIC
+    #[serde(default)]
+    pub users_tuic: Option<Vec<RawTuicUserIR>>,
+    // Hysteria v1
+    #[serde(default)]
+    pub users_hysteria: Option<Vec<RawHysteriaUserIR>>,
+    #[serde(default)]
+    pub hysteria_protocol: Option<String>,
+    #[serde(default)]
+    pub hysteria_obfs: Option<String>,
+    #[serde(default)]
+    pub hysteria_up_mbps: Option<u32>,
+    #[serde(default)]
+    pub hysteria_down_mbps: Option<u32>,
+    #[serde(default)]
+    pub hysteria_recv_window_conn: Option<u64>,
+    #[serde(default)]
+    pub hysteria_recv_window: Option<u64>,
+    // Transport and TLS
+    #[serde(default)]
+    pub transport: Option<Vec<String>>,
+    #[serde(default)]
+    pub ws_path: Option<String>,
+    #[serde(default)]
+    pub ws_host: Option<String>,
+    #[serde(default)]
+    pub h2_path: Option<String>,
+    #[serde(default)]
+    pub h2_host: Option<String>,
+    #[serde(default)]
+    pub grpc_service: Option<String>,
+    #[serde(default)]
+    pub tls_enabled: Option<bool>,
+    #[serde(default)]
+    pub tls_cert_path: Option<String>,
+    #[serde(default)]
+    pub tls_key_path: Option<String>,
+    #[serde(default)]
+    pub tls_cert_pem: Option<String>,
+    #[serde(default)]
+    pub tls_key_pem: Option<String>,
+    #[serde(default)]
+    pub tls_server_name: Option<String>,
+    pub tls_alpn: Option<Vec<String>>,
+    // Multiplex
+    #[serde(default)]
+    pub multiplex: Option<MultiplexOptionsIR>,
+    // TUN
+    #[serde(default)]
+    pub tun: Option<RawTunOptionsIR>,
+    // SSH
+    #[serde(default)]
+    pub ssh_host_key_path: Option<String>,
+}
+
+impl From<RawInboundIR> for InboundIR {
+    fn from(raw: RawInboundIR) -> Self {
+        Self {
+            tag: raw.tag,
+            ty: raw.ty,
+            listen: raw.listen,
+            port: raw.port,
+            sniff: raw.sniff,
+            sniff_override_destination: raw.sniff_override_destination,
+            udp: raw.udp,
+            udp_timeout: raw.udp_timeout,
+            detour: raw.detour,
+            domain_strategy: raw.domain_strategy,
+            basic_auth: raw.basic_auth,
+            users: raw.users,
+            override_host: raw.override_host,
+            override_port: raw.override_port,
+            set_system_proxy: raw.set_system_proxy,
+            allow_private_network: raw.allow_private_network,
+            method: raw.method,
+            password: raw.password,
+            users_shadowsocks: raw
+                .users_shadowsocks
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            network: raw.network,
+            uuid: raw.uuid,
+            alter_id: raw.alter_id,
+            users_vmess: raw
+                .users_vmess
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            security: raw.security,
+            flow: raw.flow,
+            users_vless: raw
+                .users_vless
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            users_trojan: raw
+                .users_trojan
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            version: raw.version,
+            users_shadowtls: raw
+                .users_shadowtls
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            shadowtls_handshake: raw.shadowtls_handshake.map(Into::into),
+            shadowtls_handshake_for_server_name: raw
+                .shadowtls_handshake_for_server_name
+                .map(|m| m.into_iter().map(|(k, v)| (k, v.into())).collect()),
+            shadowtls_strict_mode: raw.shadowtls_strict_mode,
+            shadowtls_wildcard_sni: raw.shadowtls_wildcard_sni,
+            fallback: raw.fallback,
+            fallback_for_alpn: raw.fallback_for_alpn,
+            users_anytls: raw
+                .users_anytls
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            anytls_padding: raw.anytls_padding,
+            users_hysteria2: raw
+                .users_hysteria2
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            congestion_control: raw.congestion_control,
+            salamander: raw.salamander,
+            obfs: raw.obfs,
+            brutal_up_mbps: raw.brutal_up_mbps,
+            brutal_down_mbps: raw.brutal_down_mbps,
+            masquerade: raw.masquerade,
+            users_tuic: raw
+                .users_tuic
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            users_hysteria: raw
+                .users_hysteria
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            hysteria_protocol: raw.hysteria_protocol,
+            hysteria_obfs: raw.hysteria_obfs,
+            hysteria_up_mbps: raw.hysteria_up_mbps,
+            hysteria_down_mbps: raw.hysteria_down_mbps,
+            hysteria_recv_window_conn: raw.hysteria_recv_window_conn,
+            hysteria_recv_window: raw.hysteria_recv_window,
+            transport: raw.transport,
+            ws_path: raw.ws_path,
+            ws_host: raw.ws_host,
+            h2_path: raw.h2_path,
+            h2_host: raw.h2_host,
+            grpc_service: raw.grpc_service,
+            tls_enabled: raw.tls_enabled,
+            tls_cert_path: raw.tls_cert_path,
+            tls_key_path: raw.tls_key_path,
+            tls_cert_pem: raw.tls_cert_pem,
+            tls_key_pem: raw.tls_key_pem,
+            tls_server_name: raw.tls_server_name,
+            tls_alpn: raw.tls_alpn,
+            multiplex: raw.multiplex,
+            tun: raw.tun.map(Into::into),
+            ssh_host_key_path: raw.ssh_host_key_path,
+        }
+    }
+}
+
 // ─────────────────── Root-level Raw type ───────────────────
 
 /// Raw top-level configuration root — the serde entry point.
@@ -1735,8 +2267,9 @@ impl From<RawServiceIR> for ServiceIR {
 /// fields across the DNS, route, and endpoint nested subtrees are also
 /// rejected.
 ///
-/// Other child types (`InboundIR`, `OutboundIR`) still reuse validated
-/// IR directly — nested Raw types for those are future work.
+/// `OutboundIR` still reuses validated IR directly — nested Raw types for
+/// outbound are future work.
+/// `inbounds` uses [`RawInboundIR`] so unknown inbound fields are rejected (WP-30h).
 /// `services` uses [`RawServiceIR`] so unknown service fields are rejected.
 ///
 /// `ExperimentalIR` intentionally does NOT have a Raw counterpart;
@@ -1744,9 +2277,9 @@ impl From<RawServiceIR> for ServiceIR {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawConfigRoot {
-    /// Inbound listeners.
+    /// Inbound listeners (strict: rejects unknown fields).
     #[serde(default)]
-    pub inbounds: Vec<InboundIR>,
+    pub inbounds: Vec<RawInboundIR>,
     /// Outbound proxies.
     #[serde(default)]
     pub outbounds: Vec<OutboundIR>,
@@ -1779,7 +2312,7 @@ pub struct RawConfigRoot {
 impl From<RawConfigRoot> for ConfigIR {
     fn from(raw: RawConfigRoot) -> Self {
         Self {
-            inbounds: raw.inbounds,
+            inbounds: raw.inbounds.into_iter().map(Into::into).collect(),
             outbounds: raw.outbounds,
             route: raw.route.into(),
             log: raw.log.map(Into::into),
@@ -3239,6 +3772,493 @@ mod tests {
         assert!(
             result.is_err(),
             "RawConfigRoot should reject unknown nested STUN fields in services"
+        );
+    }
+
+    // ─────────────────── Raw Inbound tests (WP-30h) ───────────────────
+
+    #[test]
+    fn raw_tun_options_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "tun0",
+            "mtu": 1500,
+            "bogus_tun_field": true
+        });
+        let result = serde_json::from_value::<RawTunOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawTunOptionsIR should reject unknown fields"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_tun_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_inbound_ir_rejects_unknown_field() {
+        let data = json!({
+            "ty": "socks",
+            "listen": "0.0.0.0",
+            "port": 1080,
+            "bogus_inbound_field": true
+        });
+        let result = serde_json::from_value::<RawInboundIR>(data);
+        assert!(result.is_err(), "RawInboundIR should reject unknown fields");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_inbound_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_shadowsocks_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_ss_user_field": true
+        });
+        let result = serde_json::from_value::<RawShadowsocksUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawShadowsocksUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_vmess_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "uuid": "aaaa-bbbb",
+            "bogus_vmess_user_field": true
+        });
+        let result = serde_json::from_value::<RawVmessUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawVmessUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_vless_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "uuid": "aaaa-bbbb",
+            "bogus_vless_user_field": true
+        });
+        let result = serde_json::from_value::<RawVlessUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawVlessUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_trojan_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_trojan_user_field": true
+        });
+        let result = serde_json::from_value::<RawTrojanUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawTrojanUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_shadowtls_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "password": "pw",
+            "bogus_stls_user_field": true
+        });
+        let result = serde_json::from_value::<RawShadowTlsUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawShadowTlsUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_shadowtls_handshake_ir_rejects_unknown_field() {
+        let data = json!({
+            "server": "example.com",
+            "server_port": 443,
+            "bogus_hs_field": true
+        });
+        let result = serde_json::from_value::<RawShadowTlsHandshakeIR>(data);
+        assert!(
+            result.is_err(),
+            "RawShadowTlsHandshakeIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_anytls_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "password": "pw",
+            "bogus_anytls_user_field": true
+        });
+        let result = serde_json::from_value::<RawAnyTlsUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawAnyTlsUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_hysteria2_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_hy2_user_field": true
+        });
+        let result = serde_json::from_value::<RawHysteria2UserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawHysteria2UserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_tuic_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "uuid": "aaaa",
+            "token": "tok",
+            "bogus_tuic_user_field": true
+        });
+        let result = serde_json::from_value::<RawTuicUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawTuicUserIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_hysteria_user_ir_rejects_unknown_field() {
+        let data = json!({
+            "name": "alice",
+            "auth": "authstr",
+            "bogus_hy1_user_field": true
+        });
+        let result = serde_json::from_value::<RawHysteriaUserIR>(data);
+        assert!(
+            result.is_err(),
+            "RawHysteriaUserIR should reject unknown fields"
+        );
+    }
+
+    // ── Validated inbound types reject unknown fields via Raw bridge ──
+
+    #[test]
+    fn tun_options_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::TunOptionsIR;
+        let data = json!({
+            "name": "tun0",
+            "bogus_tun_field": "bad"
+        });
+        let result = serde_json::from_value::<TunOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "TunOptionsIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn inbound_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::InboundIR;
+        let data = json!({
+            "ty": "socks",
+            "listen": "0.0.0.0",
+            "port": 1080,
+            "bogus_inbound_field": 42
+        });
+        let result = serde_json::from_value::<InboundIR>(data);
+        assert!(
+            result.is_err(),
+            "InboundIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn shadowsocks_user_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::ShadowsocksUserIR;
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_field": true
+        });
+        let result = serde_json::from_value::<ShadowsocksUserIR>(data);
+        assert!(
+            result.is_err(),
+            "ShadowsocksUserIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn vmess_user_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::VmessUserIR;
+        let data = json!({
+            "name": "alice",
+            "uuid": "aaaa",
+            "bogus_field": true
+        });
+        let result = serde_json::from_value::<VmessUserIR>(data);
+        assert!(
+            result.is_err(),
+            "VmessUserIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn trojan_user_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::TrojanUserIR;
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_field": true
+        });
+        let result = serde_json::from_value::<TrojanUserIR>(data);
+        assert!(
+            result.is_err(),
+            "TrojanUserIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn hysteria2_user_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::Hysteria2UserIR;
+        let data = json!({
+            "name": "alice",
+            "password": "pw",
+            "bogus_field": true
+        });
+        let result = serde_json::from_value::<Hysteria2UserIR>(data);
+        assert!(
+            result.is_err(),
+            "Hysteria2UserIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    // ── Valid roundtrip tests ──
+
+    #[test]
+    fn tun_options_ir_valid_roundtrip() {
+        use super::super::TunOptionsIR;
+        let data = json!({
+            "name": "tun0",
+            "mtu": 1500,
+            "auto_route": true,
+            "strict_route": true,
+            "inet4_address": "172.19.0.1/30",
+            "stack": "gvisor"
+        });
+        let ir: TunOptionsIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.name.as_deref(), Some("tun0"));
+        assert_eq!(ir.mtu, Some(1500));
+        assert_eq!(ir.auto_route, Some(true));
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: TunOptionsIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn inbound_ir_basic_roundtrip_via_raw() {
+        use super::super::InboundIR;
+        let data = json!({
+            "ty": "http",
+            "listen": "127.0.0.1",
+            "port": 8080,
+            "sniff": true,
+            "tag": "http-in"
+        });
+        let ir: InboundIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, super::super::InboundType::Http);
+        assert_eq!(ir.listen, "127.0.0.1");
+        assert_eq!(ir.port, 8080);
+        assert!(ir.sniff);
+        // allow_private_network defaults to true via Raw bridge
+        assert!(ir.allow_private_network);
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: InboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir.ty, ir2.ty);
+        assert_eq!(ir.listen, ir2.listen);
+        assert_eq!(ir.tag, ir2.tag);
+    }
+
+    #[test]
+    fn inbound_ir_shadowtls_roundtrip_via_raw() {
+        use super::super::InboundIR;
+        let data = json!({
+            "ty": "shadowtls",
+            "listen": "0.0.0.0",
+            "port": 443,
+            "version": 3,
+            "users_shadowtls": [
+                {"name": "user1", "password": "stlspass"}
+            ],
+            "shadowtls_handshake": {
+                "server": "www.example.com",
+                "server_port": 443
+            },
+            "shadowtls_handshake_for_server_name": {
+                "alt.example.com": {
+                    "server": "alt.example.com",
+                    "server_port": 443
+                }
+            },
+            "shadowtls_strict_mode": true
+        });
+        let ir: InboundIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.version, Some(3));
+        let users = ir.users_shadowtls.as_ref().unwrap();
+        assert_eq!(users[0].name, "user1");
+        let hs = ir.shadowtls_handshake.as_ref().unwrap();
+        assert_eq!(hs.server, "www.example.com");
+        assert_eq!(hs.server_port, 443);
+        let hs_map = ir.shadowtls_handshake_for_server_name.as_ref().unwrap();
+        assert!(hs_map.contains_key("alt.example.com"));
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: InboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir2.version, ir.version);
+    }
+
+    #[test]
+    fn inbound_ir_tun_roundtrip_via_raw() {
+        use super::super::InboundIR;
+        let data = json!({
+            "ty": "tun",
+            "listen": "0.0.0.0",
+            "port": 0,
+            "tun": {
+                "name": "utun5",
+                "mtu": 9000,
+                "auto_route": true,
+                "stack": "gvisor"
+            }
+        });
+        let ir: InboundIR = serde_json::from_value(data).unwrap();
+        let tun = ir.tun.as_ref().unwrap();
+        assert_eq!(tun.name.as_deref(), Some("utun5"));
+        assert_eq!(tun.mtu, Some(9000));
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: InboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir2.tun.as_ref().unwrap().name, tun.name);
+    }
+
+    #[test]
+    fn inbound_ir_multi_user_shadowsocks_roundtrip_via_raw() {
+        use super::super::InboundIR;
+        let data = json!({
+            "ty": "shadowsocks",
+            "listen": "0.0.0.0",
+            "port": 8388,
+            "method": "aes-256-gcm",
+            "users_shadowsocks": [
+                {"name": "alice", "password": "pw1"},
+                {"name": "bob", "password": "pw2"}
+            ]
+        });
+        let ir: InboundIR = serde_json::from_value(data).unwrap();
+        let users = ir.users_shadowsocks.as_ref().unwrap();
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].name, "alice");
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: InboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir2.users_shadowsocks.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn inbound_type_serde_unchanged_after_inbound_raw() {
+        use super::super::InboundType;
+        let parsed: InboundType = serde_json::from_str("\"shadowtls\"").unwrap();
+        assert_eq!(parsed, InboundType::Shadowtls);
+        assert_eq!(parsed.ty_str(), "shadowtls");
+    }
+
+    #[test]
+    fn config_ir_accepts_valid_inbound_subtree_via_raw_bridge() {
+        let data = json!({
+            "inbounds": [
+                {
+                    "ty": "socks",
+                    "listen": "0.0.0.0",
+                    "port": 1080,
+                    "udp": true
+                },
+                {
+                    "ty": "http",
+                    "listen": "127.0.0.1",
+                    "port": 8080
+                }
+            ]
+        });
+        let ir = serde_json::from_value::<ConfigIR>(data).unwrap();
+        assert_eq!(ir.inbounds.len(), 2);
+        assert_eq!(ir.inbounds[0].ty, super::super::InboundType::Socks);
+        assert_eq!(ir.inbounds[1].ty, super::super::InboundType::Http);
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_inside_inbound_subtree() {
+        let data = json!({
+            "inbounds": [
+                {
+                    "ty": "socks",
+                    "listen": "0.0.0.0",
+                    "port": 1080,
+                    "unknown_inbound_field": true
+                }
+            ]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields inside inbound via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_in_nested_tun() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "tun",
+                "listen": "0.0.0.0",
+                "port": 0,
+                "tun": {
+                    "name": "utun0",
+                    "bogus_nested_tun_field": true
+                }
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in nested tun via inbound Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_in_inbound_user() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "shadowsocks",
+                "listen": "0.0.0.0",
+                "port": 8388,
+                "users_shadowsocks": [{
+                    "name": "alice",
+                    "password": "pw",
+                    "bogus_user_field": true
+                }]
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in inbound user types via Raw bridge"
         );
     }
 }
