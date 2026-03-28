@@ -6,7 +6,7 @@
 //! on-disk JSON/YAML schema. All Raw types derive `Deserialize` with
 //! `#[serde(deny_unknown_fields)]` to enforce strict input boundaries.
 //!
-//! ## Current status (WP-30f)
+//! ## Current status (WP-30g)
 //!
 //! ### Root boundary (WP-30b — done)
 //!
@@ -48,6 +48,21 @@
 //! `EndpointType` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with lowercase serde unchanged.
 //!
+//! ### Service nested boundary pilot (WP-30g — done)
+//!
+//! [`RawServiceIR`], [`RawInboundTlsOptionsIR`], [`RawDerpStunOptionsIR`],
+//! [`RawDerpDomainResolverIR`], [`RawDerpDialOptionsIR`],
+//! [`RawDerpVerifyClientUrlIR`], [`RawDerpOutboundTlsOptionsIR`], and
+//! [`RawDerpMeshPeerIR`] are the strict nested Raw boundary for the service
+//! subtree. `ServiceIR`, `InboundTlsOptionsIR`, `DerpStunOptionsIR`,
+//! `DerpDomainResolverIR`, `DerpDialOptionsIR`, `DerpVerifyClientUrlIR`,
+//! `DerpOutboundTlsOptionsIR`, and `DerpMeshPeerIR` no longer derive
+//! `Deserialize` directly; each deserializes via its Raw bridge, so unknown
+//! service nested fields are rejected at parse time.
+//!
+//! `ServiceType`, `Listable`, and `StringOrObj` are intentionally NOT
+//! Raw-ified — they remain as validated generic wrappers.
+//!
 //! ### `ExperimentalIR` — intentional passthrough
 //!
 //! `ExperimentalIR` deliberately does **not** have a Raw counterpart and does
@@ -57,12 +72,12 @@
 //!
 //! ### What is NOT yet Raw-ified
 //!
-//! `InboundIR`, `OutboundIR`, and `ServiceIR` still reuse validated IR
-//! directly. Nested Raw types for those remain a separate future effort.
+//! `InboundIR` and `OutboundIR` still reuse validated IR directly. Nested
+//! Raw types for those remain a separate future effort.
 //!
 //! ## Future work
 //!
-//! - Define nested Raw types (`RawInbound`, `RawOutbound`, `RawService`, etc.)
+//! - Define nested Raw types (`RawInbound`, `RawOutbound`, etc.)
 //!   with their own `deny_unknown_fields`
 //! - The existing `outbound.rs` raw types (the outbound Raw/Validated boundary
 //!   pilot completed earlier) remain in their current location
@@ -72,9 +87,11 @@ use serde::Deserialize;
 
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType,
-    ExperimentalIR, InboundIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
-    WireGuardPeerIR,
+    DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR, DerpOutboundTlsOptionsIR,
+    DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR,
+    DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR, InboundIR,
+    InboundTlsOptionsIR, Listable, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
+    ServiceType, StringOrObj, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -1135,6 +1152,568 @@ impl From<RawEndpointIR> for EndpointIR {
     }
 }
 
+// ─────────────────── Service nested Raw types (WP-30g) ───────────────────
+
+/// Raw inbound TLS options (Go parity: `option.InboundTLSOptions`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawInboundTlsOptionsIR {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub insecure: Option<bool>,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub min_version: Option<String>,
+    #[serde(default)]
+    pub max_version: Option<String>,
+    #[serde(default)]
+    pub cipher_suites: Option<Vec<String>>,
+    #[serde(default)]
+    pub certificate: Option<Vec<String>>,
+    #[serde(default)]
+    pub certificate_path: Option<String>,
+    #[serde(default)]
+    pub key: Option<Vec<String>>,
+    #[serde(default)]
+    pub key_path: Option<String>,
+}
+
+impl From<RawInboundTlsOptionsIR> for InboundTlsOptionsIR {
+    fn from(raw: RawInboundTlsOptionsIR) -> Self {
+        Self {
+            enabled: raw.enabled,
+            server_name: raw.server_name,
+            insecure: raw.insecure,
+            alpn: raw.alpn,
+            min_version: raw.min_version,
+            max_version: raw.max_version,
+            cipher_suites: raw.cipher_suites,
+            certificate: raw.certificate,
+            certificate_path: raw.certificate_path,
+            key: raw.key,
+            key_path: raw.key_path,
+        }
+    }
+}
+
+/// Raw DERP STUN options object form (strict: rejects unknown fields).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpStunOptionsObj {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub listen: Option<String>,
+    #[serde(default)]
+    pub listen_port: Option<u16>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+}
+
+/// Raw DERP STUN options (bool / port / object untagged).
+#[derive(Debug, Clone)]
+pub struct RawDerpStunOptionsIR {
+    pub enabled: bool,
+    pub listen: Option<String>,
+    pub listen_port: Option<u16>,
+    pub bind_interface: Option<String>,
+    pub routing_mark: Option<u32>,
+    pub reuse_addr: Option<bool>,
+    pub netns: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for RawDerpStunOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Bool(bool),
+            Port(u16),
+            Obj(RawDerpStunOptionsObj),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Bool(enabled) => Ok(Self {
+                enabled,
+                listen: None,
+                listen_port: None,
+                bind_interface: None,
+                routing_mark: None,
+                reuse_addr: None,
+                netns: None,
+            }),
+            Repr::Port(port) => Ok(Self {
+                enabled: true,
+                listen: None,
+                listen_port: Some(port),
+                bind_interface: None,
+                routing_mark: None,
+                reuse_addr: None,
+                netns: None,
+            }),
+            Repr::Obj(v) => Ok(Self {
+                enabled: v.enabled,
+                listen: v.listen,
+                listen_port: v.listen_port,
+                bind_interface: v.bind_interface,
+                routing_mark: v.routing_mark,
+                reuse_addr: v.reuse_addr,
+                netns: v.netns,
+            }),
+        }
+    }
+}
+
+impl From<RawDerpStunOptionsIR> for DerpStunOptionsIR {
+    fn from(raw: RawDerpStunOptionsIR) -> Self {
+        Self {
+            enabled: raw.enabled,
+            listen: raw.listen,
+            listen_port: raw.listen_port,
+            bind_interface: raw.bind_interface,
+            routing_mark: raw.routing_mark,
+            reuse_addr: raw.reuse_addr,
+            netns: raw.netns,
+        }
+    }
+}
+
+/// Raw DERP domain resolver options (strict: no `extra` BTreeMap).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpDomainResolverIR {
+    #[serde(default)]
+    pub server: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
+}
+
+impl From<String> for RawDerpDomainResolverIR {
+    fn from(s: String) -> Self {
+        Self {
+            server: Some(s),
+            strategy: None,
+        }
+    }
+}
+
+impl From<RawDerpDomainResolverIR> for DerpDomainResolverIR {
+    fn from(raw: RawDerpDomainResolverIR) -> Self {
+        Self {
+            server: raw.server,
+            strategy: raw.strategy,
+            extra: Default::default(),
+        }
+    }
+}
+
+/// Raw DERP dial options (strict: no `extra` BTreeMap, no `flatten`).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpDialOptionsIR {
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_resolver: Option<StringOrObj<RawDerpDomainResolverIR>>,
+}
+
+impl From<RawDerpDialOptionsIR> for DerpDialOptionsIR {
+    fn from(raw: RawDerpDialOptionsIR) -> Self {
+        Self {
+            detour: raw.detour,
+            bind_interface: raw.bind_interface,
+            inet4_bind_address: raw.inet4_bind_address,
+            inet6_bind_address: raw.inet6_bind_address,
+            routing_mark: raw.routing_mark,
+            reuse_addr: raw.reuse_addr,
+            netns: raw.netns,
+            connect_timeout: raw.connect_timeout,
+            tcp_fast_open: raw.tcp_fast_open,
+            tcp_multi_path: raw.tcp_multi_path,
+            udp_fragment: raw.udp_fragment,
+            domain_resolver: raw
+                .domain_resolver
+                .map(|soo| StringOrObj(soo.into_inner().into())),
+            extra: Default::default(),
+        }
+    }
+}
+
+/// Raw DERP verify_client_url options (strict: dial fields inlined, no `flatten`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpVerifyClientUrlIR {
+    #[serde(default)]
+    pub url: String,
+    // Inlined dial fields (no flatten for deny_unknown_fields compat)
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_resolver: Option<StringOrObj<RawDerpDomainResolverIR>>,
+}
+
+impl From<String> for RawDerpVerifyClientUrlIR {
+    fn from(s: String) -> Self {
+        Self {
+            url: s,
+            detour: None,
+            bind_interface: None,
+            inet4_bind_address: None,
+            inet6_bind_address: None,
+            routing_mark: None,
+            reuse_addr: None,
+            netns: None,
+            connect_timeout: None,
+            tcp_fast_open: None,
+            tcp_multi_path: None,
+            udp_fragment: None,
+            domain_resolver: None,
+        }
+    }
+}
+
+impl From<RawDerpVerifyClientUrlIR> for DerpVerifyClientUrlIR {
+    fn from(raw: RawDerpVerifyClientUrlIR) -> Self {
+        Self {
+            url: raw.url,
+            dial: DerpDialOptionsIR {
+                detour: raw.detour,
+                bind_interface: raw.bind_interface,
+                inet4_bind_address: raw.inet4_bind_address,
+                inet6_bind_address: raw.inet6_bind_address,
+                routing_mark: raw.routing_mark,
+                reuse_addr: raw.reuse_addr,
+                netns: raw.netns,
+                connect_timeout: raw.connect_timeout,
+                tcp_fast_open: raw.tcp_fast_open,
+                tcp_multi_path: raw.tcp_multi_path,
+                udp_fragment: raw.udp_fragment,
+                domain_resolver: raw
+                    .domain_resolver
+                    .map(|soo| StringOrObj(soo.into_inner().into())),
+                extra: Default::default(),
+            },
+        }
+    }
+}
+
+/// Raw DERP outbound TLS options (strict: rejects unknown fields).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpOutboundTlsOptionsIR {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub insecure: Option<bool>,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub ca_paths: Vec<String>,
+    #[serde(default)]
+    pub ca_pem: Vec<String>,
+}
+
+impl From<RawDerpOutboundTlsOptionsIR> for DerpOutboundTlsOptionsIR {
+    fn from(raw: RawDerpOutboundTlsOptionsIR) -> Self {
+        Self {
+            enabled: raw.enabled,
+            server_name: raw.server_name,
+            insecure: raw.insecure,
+            alpn: raw.alpn,
+            ca_paths: raw.ca_paths,
+            ca_pem: raw.ca_pem,
+        }
+    }
+}
+
+/// Raw DERP mesh peer options (strict: dial fields inlined, no `flatten`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawDerpMeshPeerIR {
+    #[serde(default)]
+    pub server: String,
+    #[serde(default)]
+    pub server_port: Option<u16>,
+    #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
+    pub tls: Option<RawDerpOutboundTlsOptionsIR>,
+    // Inlined dial fields (no flatten for deny_unknown_fields compat)
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_resolver: Option<StringOrObj<RawDerpDomainResolverIR>>,
+}
+
+impl From<String> for RawDerpMeshPeerIR {
+    fn from(s: String) -> Self {
+        // Parse `host:port` shorthand — mirrors DerpMeshPeerIR::From<String>.
+        let mut out = Self {
+            server: s.clone(),
+            server_port: None,
+            host: None,
+            tls: None,
+            detour: None,
+            bind_interface: None,
+            inet4_bind_address: None,
+            inet6_bind_address: None,
+            routing_mark: None,
+            reuse_addr: None,
+            netns: None,
+            connect_timeout: None,
+            tcp_fast_open: None,
+            tcp_multi_path: None,
+            udp_fragment: None,
+            domain_resolver: None,
+        };
+        let raw = s.trim();
+        if raw.is_empty() {
+            return out;
+        }
+        // Support `[v6]:port` and `host:port`.
+        if let Some(rest) = raw.strip_prefix('[') {
+            if let Some(end) = rest.find(']') {
+                let host = &rest[..end];
+                let tail = &rest[end + 1..];
+                if let Some(port_str) = tail.strip_prefix(':') {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        out.server = host.to_string();
+                        out.server_port = Some(port);
+                    }
+                }
+                return out;
+            }
+        }
+        if let Some((host, port_str)) = raw.rsplit_once(':') {
+            if let Ok(port) = port_str.parse::<u16>() {
+                if !host.is_empty() {
+                    out.server = host.to_string();
+                    out.server_port = Some(port);
+                }
+            }
+        }
+        out
+    }
+}
+
+impl From<RawDerpMeshPeerIR> for DerpMeshPeerIR {
+    fn from(raw: RawDerpMeshPeerIR) -> Self {
+        Self {
+            server: raw.server,
+            server_port: raw.server_port,
+            host: raw.host,
+            tls: raw.tls.map(Into::into),
+            dial: DerpDialOptionsIR {
+                detour: raw.detour,
+                bind_interface: raw.bind_interface,
+                inet4_bind_address: raw.inet4_bind_address,
+                inet6_bind_address: raw.inet6_bind_address,
+                routing_mark: raw.routing_mark,
+                reuse_addr: raw.reuse_addr,
+                netns: raw.netns,
+                connect_timeout: raw.connect_timeout,
+                tcp_fast_open: raw.tcp_fast_open,
+                tcp_multi_path: raw.tcp_multi_path,
+                udp_fragment: raw.udp_fragment,
+                domain_resolver: raw
+                    .domain_resolver
+                    .map(|soo| StringOrObj(soo.into_inner().into())),
+                extra: Default::default(),
+            },
+        }
+    }
+}
+
+/// Raw service configuration IR (strict: rejects unknown fields).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawServiceIR {
+    #[serde(rename = "type")]
+    pub ty: ServiceType,
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default)]
+    pub listen: Option<String>,
+    #[serde(default)]
+    pub listen_port: Option<u16>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub sniff: Option<bool>,
+    #[serde(default)]
+    pub sniff_override_destination: Option<bool>,
+    #[serde(default)]
+    pub sniff_timeout: Option<String>,
+    #[serde(default)]
+    pub domain_strategy: Option<String>,
+    #[serde(default)]
+    pub udp_disable_domain_unmapping: Option<bool>,
+    #[serde(default)]
+    pub tls: Option<RawInboundTlsOptionsIR>,
+    #[serde(default)]
+    pub servers: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub cache_path: Option<String>,
+    #[serde(default)]
+    pub auth_token: Option<String>,
+    #[serde(default)]
+    pub config_path: Option<String>,
+    #[serde(default)]
+    pub verify_client_endpoint: Option<Listable<String>>,
+    #[serde(default)]
+    pub verify_client_url: Option<Listable<StringOrObj<RawDerpVerifyClientUrlIR>>>,
+    #[serde(default)]
+    pub home: Option<String>,
+    #[serde(default)]
+    pub mesh_with: Option<Listable<StringOrObj<RawDerpMeshPeerIR>>>,
+    #[serde(default)]
+    pub mesh_psk: Option<String>,
+    #[serde(default)]
+    pub mesh_psk_file: Option<String>,
+    #[serde(default)]
+    pub stun: Option<RawDerpStunOptionsIR>,
+}
+
+impl From<RawServiceIR> for ServiceIR {
+    fn from(raw: RawServiceIR) -> Self {
+        Self {
+            ty: raw.ty,
+            tag: raw.tag,
+            listen: raw.listen,
+            listen_port: raw.listen_port,
+            bind_interface: raw.bind_interface,
+            routing_mark: raw.routing_mark,
+            reuse_addr: raw.reuse_addr,
+            netns: raw.netns,
+            tcp_fast_open: raw.tcp_fast_open,
+            tcp_multi_path: raw.tcp_multi_path,
+            udp_fragment: raw.udp_fragment,
+            udp_timeout: raw.udp_timeout,
+            detour: raw.detour,
+            sniff: raw.sniff,
+            sniff_override_destination: raw.sniff_override_destination,
+            sniff_timeout: raw.sniff_timeout,
+            domain_strategy: raw.domain_strategy,
+            udp_disable_domain_unmapping: raw.udp_disable_domain_unmapping,
+            tls: raw.tls.map(Into::into),
+            servers: raw.servers,
+            cache_path: raw.cache_path,
+            auth_token: raw.auth_token,
+            config_path: raw.config_path,
+            verify_client_endpoint: raw.verify_client_endpoint,
+            home: raw.home,
+            verify_client_url: raw.verify_client_url.map(|l| Listable {
+                items: l
+                    .items
+                    .into_iter()
+                    .map(|soo| StringOrObj(soo.into_inner().into()))
+                    .collect(),
+            }),
+            mesh_with: raw.mesh_with.map(|l| Listable {
+                items: l
+                    .items
+                    .into_iter()
+                    .map(|soo| StringOrObj(soo.into_inner().into()))
+                    .collect(),
+            }),
+            mesh_psk: raw.mesh_psk,
+            mesh_psk_file: raw.mesh_psk_file,
+            stun: raw.stun.map(Into::into),
+        }
+    }
+}
+
 // ─────────────────── Root-level Raw type ───────────────────
 
 /// Raw top-level configuration root — the serde entry point.
@@ -1156,9 +1735,9 @@ impl From<RawEndpointIR> for EndpointIR {
 /// fields across the DNS, route, and endpoint nested subtrees are also
 /// rejected.
 ///
-/// Other child types (`InboundIR`, `OutboundIR`, `ServiceIR`) still
-/// reuse validated IR directly — nested Raw types for those are future
-/// work.
+/// Other child types (`InboundIR`, `OutboundIR`) still reuse validated
+/// IR directly — nested Raw types for those are future work.
+/// `services` uses [`RawServiceIR`] so unknown service fields are rejected.
 ///
 /// `ExperimentalIR` intentionally does NOT have a Raw counterpart;
 /// it uses forward-compatible passthrough semantics.
@@ -1191,7 +1770,7 @@ pub struct RawConfigRoot {
     pub endpoints: Vec<RawEndpointIR>,
     /// Service configurations (Resolved, DERP, SSM, etc.).
     #[serde(default)]
-    pub services: Vec<ServiceIR>,
+    pub services: Vec<RawServiceIR>,
     /// Optional experimental configuration blob (schema v2 passthrough).
     #[serde(default)]
     pub experimental: Option<ExperimentalIR>,
@@ -1208,7 +1787,7 @@ impl From<RawConfigRoot> for ConfigIR {
             certificate: raw.certificate.map(Into::into),
             dns: raw.dns.map(Into::into),
             endpoints: raw.endpoints.into_iter().map(Into::into).collect(),
-            services: raw.services,
+            services: raw.services.into_iter().map(Into::into).collect(),
             experimental: raw.experimental,
         }
     }
@@ -2284,6 +2863,382 @@ mod tests {
             "endpoint nested unknown fields should be rejected after WP-30f"
         );
 
-        // Inbound/outbound/service remain non-strict (future work).
+        // Service is now strict (WP-30g): unknown service fields are rejected.
+        let data = json!({
+            "services": [{
+                "type": "resolved",
+                "bogus_service_field": true
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "service nested unknown fields should be rejected after WP-30g"
+        );
+
+        // Inbound/outbound remain non-strict (future work).
+    }
+
+    // ─────────────────── Service Raw boundary tests (WP-30g) ───────────────────
+
+    #[test]
+    fn raw_service_ir_rejects_unknown_field() {
+        let data = json!({
+            "type": "resolved",
+            "tag": "dns-svc",
+            "bogus_service_field": true
+        });
+        let result = serde_json::from_value::<RawServiceIR>(data);
+        assert!(result.is_err(), "RawServiceIR should reject unknown fields");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_service_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn service_ir_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({
+            "type": "resolved",
+            "tag": "dns-svc",
+            "bogus_service_field": 42
+        });
+        let result = serde_json::from_value::<ServiceIR>(data);
+        assert!(
+            result.is_err(),
+            "ServiceIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn raw_service_ir_parses_resolved_service() {
+        let data = json!({
+            "type": "resolved",
+            "tag": "dns-svc",
+            "listen": "127.0.0.53",
+            "listen_port": 53
+        });
+        let raw: RawServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(raw.ty, ServiceType::Resolved);
+        assert_eq!(raw.tag, Some("dns-svc".to_string()));
+        let ir: ServiceIR = raw.into();
+        assert_eq!(ir.listen, Some("127.0.0.53".to_string()));
+        assert_eq!(ir.listen_port, Some(53));
+    }
+
+    #[test]
+    fn raw_service_ir_parses_ssmapi_service() {
+        let data = json!({
+            "type": "ssm-api",
+            "tag": "ssm",
+            "listen": "127.0.0.1",
+            "listen_port": 6001,
+            "servers": { "/": "ss-in" },
+            "auth_token": "secret"
+        });
+        let raw: RawServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(raw.ty, ServiceType::Ssmapi);
+        let ir: ServiceIR = raw.into();
+        assert_eq!(ir.auth_token.as_deref(), Some("secret"));
+        assert!(ir.servers.is_some());
+    }
+
+    #[test]
+    fn raw_service_ir_parses_derp_with_tls_and_stun() {
+        let data = json!({
+            "type": "derp",
+            "tag": "derp-relay",
+            "listen": "0.0.0.0",
+            "listen_port": 3478,
+            "config_path": "derper.key",
+            "tls": {
+                "enabled": true,
+                "certificate_path": "c.pem",
+                "key_path": "k.pem"
+            },
+            "stun": { "enabled": true, "listen_port": 3479 }
+        });
+        let raw: RawServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(raw.ty, ServiceType::Derp);
+        let ir: ServiceIR = raw.into();
+        let tls = ir.tls.as_ref().unwrap();
+        assert!(tls.enabled);
+        assert_eq!(tls.certificate_path.as_deref(), Some("c.pem"));
+        let stun = ir.stun.as_ref().unwrap();
+        assert!(stun.enabled);
+        assert_eq!(stun.listen_port, Some(3479));
+    }
+
+    #[test]
+    fn raw_inbound_tls_options_rejects_unknown_field() {
+        let data = json!({
+            "enabled": true,
+            "server_name": "example.com",
+            "bogus_tls_field": true
+        });
+        let result = serde_json::from_value::<RawInboundTlsOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawInboundTlsOptionsIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn inbound_tls_options_rejects_unknown_via_raw_bridge() {
+        let data = json!({
+            "enabled": true,
+            "bogus_tls_field": true
+        });
+        let result = serde_json::from_value::<super::InboundTlsOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "InboundTlsOptionsIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn raw_derp_stun_bool_port_object() {
+        // Bool form
+        let raw: RawDerpStunOptionsIR = serde_json::from_value(json!(true)).unwrap();
+        assert!(raw.enabled);
+        assert!(raw.listen_port.is_none());
+
+        // Port form
+        let raw: RawDerpStunOptionsIR = serde_json::from_value(json!(3479)).unwrap();
+        assert!(raw.enabled);
+        assert_eq!(raw.listen_port, Some(3479));
+
+        // Object form
+        let raw: RawDerpStunOptionsIR = serde_json::from_value(json!({
+            "enabled": false,
+            "listen": "::",
+            "listen_port": 3478
+        }))
+        .unwrap();
+        assert!(!raw.enabled);
+        assert_eq!(raw.listen.as_deref(), Some("::"));
+
+        // Object form rejects unknown fields
+        let result = serde_json::from_value::<RawDerpStunOptionsIR>(json!({
+            "enabled": true,
+            "bogus_stun_field": true
+        }));
+        assert!(
+            result.is_err(),
+            "RawDerpStunOptionsObj should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_domain_resolver_rejects_unknown_field() {
+        let data = json!({
+            "server": "dns-out",
+            "strategy": "ipv4_only",
+            "bogus_resolver_field": true
+        });
+        let result = serde_json::from_value::<RawDerpDomainResolverIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDerpDomainResolverIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_dial_options_rejects_unknown_field() {
+        let data = json!({
+            "detour": "d1",
+            "bogus_dial_field": true
+        });
+        let result = serde_json::from_value::<RawDerpDialOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDerpDialOptionsIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_verify_client_url_rejects_unknown_field() {
+        let data = json!({
+            "url": "https://example.com/verify",
+            "detour": "d1",
+            "bogus_verify_field": true
+        });
+        let result = serde_json::from_value::<RawDerpVerifyClientUrlIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDerpVerifyClientUrlIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_verify_client_url_inlines_dial_fields() {
+        let data = json!({
+            "url": "https://example.com/verify",
+            "detour": "d1",
+            "routing_mark": 123,
+            "reuse_addr": true,
+            "connect_timeout": "3s"
+        });
+        let raw: RawDerpVerifyClientUrlIR = serde_json::from_value(data).unwrap();
+        let ir: DerpVerifyClientUrlIR = raw.into();
+        assert_eq!(ir.url, "https://example.com/verify");
+        assert_eq!(ir.dial.detour.as_deref(), Some("d1"));
+        assert_eq!(ir.dial.routing_mark, Some(123));
+        assert_eq!(ir.dial.reuse_addr, Some(true));
+        assert_eq!(ir.dial.connect_timeout.as_deref(), Some("3s"));
+    }
+
+    #[test]
+    fn raw_derp_outbound_tls_rejects_unknown_field() {
+        let data = json!({
+            "enabled": true,
+            "server_name": "derp.example.com",
+            "bogus_outbound_tls_field": true
+        });
+        let result = serde_json::from_value::<RawDerpOutboundTlsOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDerpOutboundTlsOptionsIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_mesh_peer_rejects_unknown_field() {
+        let data = json!({
+            "server": "10.0.0.2",
+            "server_port": 443,
+            "bogus_mesh_field": true
+        });
+        let result = serde_json::from_value::<RawDerpMeshPeerIR>(data);
+        assert!(
+            result.is_err(),
+            "RawDerpMeshPeerIR should reject unknown fields"
+        );
+    }
+
+    #[test]
+    fn raw_derp_mesh_peer_inlines_dial_fields() {
+        let data = json!({
+            "server": "10.0.0.2",
+            "server_port": 443,
+            "host": "derp.example.com",
+            "tls": { "enabled": true, "server_name": "derp.example.com", "insecure": true, "alpn": ["h2"] },
+            "detour": "d2"
+        });
+        let raw: RawDerpMeshPeerIR = serde_json::from_value(data).unwrap();
+        let ir: DerpMeshPeerIR = raw.into();
+        assert_eq!(ir.server, "10.0.0.2");
+        assert_eq!(ir.server_port, Some(443));
+        assert_eq!(ir.host.as_deref(), Some("derp.example.com"));
+        let tls = ir.tls.as_ref().unwrap();
+        assert!(tls.enabled);
+        assert_eq!(tls.insecure, Some(true));
+        assert_eq!(ir.dial.detour.as_deref(), Some("d2"));
+    }
+
+    #[test]
+    fn raw_derp_mesh_peer_from_string_host_port() {
+        let raw = RawDerpMeshPeerIR::from("peer.example.com:443".to_string());
+        assert_eq!(raw.server, "peer.example.com");
+        assert_eq!(raw.server_port, Some(443));
+    }
+
+    #[test]
+    fn raw_service_verify_client_url_listable_string_or_object() {
+        let data = json!({
+            "type": "derp",
+            "config_path": "derper.key",
+            "tls": { "enabled": true, "certificate_path": "c.pem", "key_path": "k.pem" },
+            "verify_client_url": [
+                "https://a/verify",
+                { "url": "http://b/verify", "detour": "d1", "routing_mark": 123 }
+            ]
+        });
+        let ir: ServiceIR = serde_json::from_value(data).unwrap();
+        let list = ir.verify_client_url.expect("verify_client_url");
+        assert_eq!(list.items.len(), 2);
+        let a = list.items[0].clone().into_inner();
+        assert_eq!(a.url, "https://a/verify");
+        let b = list.items[1].clone().into_inner();
+        assert_eq!(b.url, "http://b/verify");
+        assert_eq!(b.dial.detour.as_deref(), Some("d1"));
+        assert_eq!(b.dial.routing_mark, Some(123));
+    }
+
+    #[test]
+    fn raw_service_mesh_with_string_or_object() {
+        let data = json!({
+            "type": "derp",
+            "config_path": "derper.key",
+            "tls": { "enabled": true, "certificate_path": "c.pem", "key_path": "k.pem" },
+            "mesh_with": [
+                "peer.example.com:443",
+                {
+                    "server": "10.0.0.2",
+                    "server_port": 443,
+                    "tls": { "enabled": true, "server_name": "derp.example.com" },
+                    "detour": "d2"
+                }
+            ]
+        });
+        let ir: ServiceIR = serde_json::from_value(data).unwrap();
+        let mesh = ir.mesh_with.expect("mesh_with");
+        assert_eq!(mesh.items.len(), 2);
+        let p0 = mesh.items[0].clone().into_inner();
+        assert_eq!(p0.server, "peer.example.com");
+        assert_eq!(p0.server_port, Some(443));
+        let p1 = mesh.items[1].clone().into_inner();
+        assert_eq!(p1.server, "10.0.0.2");
+        assert_eq!(p1.dial.detour.as_deref(), Some("d2"));
+    }
+
+    #[test]
+    fn raw_config_root_service_unknown_field_rejected() {
+        let data = json!({
+            "services": [{
+                "type": "resolved",
+                "tag": "dns",
+                "bogus_field": true
+            }]
+        });
+        let result = serde_json::from_value::<RawConfigRoot>(data);
+        assert!(
+            result.is_err(),
+            "RawConfigRoot should reject unknown service fields via RawServiceIR"
+        );
+    }
+
+    #[test]
+    fn raw_config_root_service_tls_unknown_field_rejected() {
+        let data = json!({
+            "services": [{
+                "type": "derp",
+                "config_path": "k",
+                "tls": { "enabled": true, "bogus_tls_nested": true }
+            }]
+        });
+        let result = serde_json::from_value::<RawConfigRoot>(data);
+        assert!(
+            result.is_err(),
+            "RawConfigRoot should reject unknown nested TLS fields in services"
+        );
+    }
+
+    #[test]
+    fn raw_config_root_service_stun_unknown_field_rejected() {
+        let data = json!({
+            "services": [{
+                "type": "derp",
+                "config_path": "k",
+                "tls": { "enabled": true, "certificate_path": "c", "key_path": "k" },
+                "stun": { "enabled": true, "bogus_stun_nested": true }
+            }]
+        });
+        let result = serde_json::from_value::<RawConfigRoot>(data);
+        assert!(
+            result.is_err(),
+            "RawConfigRoot should reject unknown nested STUN fields in services"
+        );
     }
 }

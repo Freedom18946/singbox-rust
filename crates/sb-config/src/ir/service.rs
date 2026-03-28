@@ -23,7 +23,7 @@ pub enum ServiceType {
 }
 
 /// Service configuration IR.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct ServiceIR {
     /// Service type.
     #[serde(rename = "type")]
@@ -120,6 +120,15 @@ pub struct ServiceIR {
     /// STUN server listen options (Go: `stun`).
     #[serde(default)]
     pub stun: Option<DerpStunOptionsIR>,
+}
+
+impl<'de> Deserialize<'de> for ServiceIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        super::raw::RawServiceIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[cfg(test)]

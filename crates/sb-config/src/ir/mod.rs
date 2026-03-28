@@ -30,9 +30,11 @@ pub use inbound::{
 };
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
 pub use raw::{
-    RawCertificateIR, RawConfigRoot, RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR,
-    RawDomainResolveOptionsIR, RawEndpointIR, RawLogIR, RawNtpIR, RawRouteIR, RawRuleIR,
-    RawRuleSetIR, RawWireGuardPeerIR,
+    RawCertificateIR, RawConfigRoot, RawDerpDialOptionsIR, RawDerpDomainResolverIR,
+    RawDerpMeshPeerIR, RawDerpOutboundTlsOptionsIR, RawDerpStunOptionsIR, RawDerpStunOptionsObj,
+    RawDerpVerifyClientUrlIR, RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR,
+    RawDomainResolveOptionsIR, RawEndpointIR, RawInboundTlsOptionsIR, RawLogIR, RawNtpIR,
+    RawRouteIR, RawRuleIR, RawRuleSetIR, RawServiceIR, RawWireGuardPeerIR,
 };
 pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR};
 pub use service::{ServiceIR, ServiceType};
@@ -143,7 +145,7 @@ pub struct MasqueradeStringIR {
 
 /// Inbound TLS options (Go parity: `option.InboundTLSOptions`).
 /// 入站 TLS 选项（对齐 Go `option.InboundTLSOptions`）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct InboundTlsOptionsIR {
     /// Enable TLS (Go: `enabled`).
     /// 启用 TLS（Go: `enabled`）。
@@ -193,6 +195,15 @@ pub struct InboundTlsOptionsIR {
     // added when the corresponding runtime integrations land.
 }
 
+impl<'de> Deserialize<'de> for InboundTlsOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawInboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DERP STUN listen options (Go parity: `option.DERPSTUNListenOptions`).
 /// DERP STUN 监听选项（对齐 Go `option.DERPSTUNListenOptions`）。
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
@@ -227,63 +238,12 @@ pub struct DerpStunOptionsIR {
     pub netns: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-struct DerpStunOptionsObj {
-    #[serde(default)]
-    enabled: bool,
-    #[serde(default)]
-    listen: Option<String>,
-    #[serde(default)]
-    listen_port: Option<u16>,
-    #[serde(default)]
-    bind_interface: Option<String>,
-    #[serde(default)]
-    routing_mark: Option<u32>,
-    #[serde(default)]
-    reuse_addr: Option<bool>,
-    #[serde(default)]
-    netns: Option<String>,
-}
-
-impl From<DerpStunOptionsObj> for DerpStunOptionsIR {
-    fn from(v: DerpStunOptionsObj) -> Self {
-        Self {
-            enabled: v.enabled,
-            listen: v.listen,
-            listen_port: v.listen_port,
-            bind_interface: v.bind_interface,
-            routing_mark: v.routing_mark,
-            reuse_addr: v.reuse_addr,
-            netns: v.netns,
-        }
-    }
-}
-
 impl<'de> Deserialize<'de> for DerpStunOptionsIR {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr {
-            Bool(bool),
-            Port(u16),
-            Obj(DerpStunOptionsObj),
-        }
-
-        match Repr::deserialize(deserializer)? {
-            Repr::Bool(enabled) => Ok(Self {
-                enabled,
-                ..Default::default()
-            }),
-            Repr::Port(port) => Ok(Self {
-                enabled: true,
-                listen_port: Some(port),
-                ..Default::default()
-            }),
-            Repr::Obj(v) => Ok(v.into()),
-        }
+        RawDerpStunOptionsIR::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -378,7 +338,7 @@ where
 }
 
 /// DERP Dial domain_resolver options (subset; Go parity: Dial Fields `domain_resolver`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DerpDomainResolverIR {
     /// DNS server tag.
     #[serde(default)]
@@ -400,8 +360,17 @@ impl From<String> for DerpDomainResolverIR {
     }
 }
 
+impl<'de> Deserialize<'de> for DerpDomainResolverIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpDomainResolverIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DERP Dial Fields (Go parity: shared/dial.md) used by verify_client_url and mesh_with.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DerpDialOptionsIR {
     #[serde(default)]
     pub detour: Option<String>,
@@ -432,8 +401,17 @@ pub struct DerpDialOptionsIR {
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
+impl<'de> Deserialize<'de> for DerpDialOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpDialOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DERP verify_client_url options (Go parity: option.DERPVerifyClientURLOptions).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DerpVerifyClientUrlIR {
     #[serde(default)]
     pub url: String,
@@ -450,8 +428,17 @@ impl From<String> for DerpVerifyClientUrlIR {
     }
 }
 
+impl<'de> Deserialize<'de> for DerpVerifyClientUrlIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpVerifyClientUrlIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DERP mesh peer outbound TLS options (minimal subset).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DerpOutboundTlsOptionsIR {
     #[serde(default)]
     pub enabled: bool,
@@ -467,8 +454,17 @@ pub struct DerpOutboundTlsOptionsIR {
     pub ca_pem: Vec<String>,
 }
 
+impl<'de> Deserialize<'de> for DerpOutboundTlsOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpOutboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// DERP mesh peer options (Go parity: option.DERPMeshOptions).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DerpMeshPeerIR {
     /// DERP server address (host or ip).
     #[serde(default)]
@@ -521,6 +517,15 @@ impl From<String> for DerpMeshPeerIR {
             }
         }
         out
+    }
+}
+
+impl<'de> Deserialize<'de> for DerpMeshPeerIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpMeshPeerIR::deserialize(deserializer).map(Into::into)
     }
 }
 
