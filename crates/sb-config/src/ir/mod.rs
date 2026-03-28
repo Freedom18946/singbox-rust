@@ -31,7 +31,8 @@ pub use inbound::{
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
 pub use raw::{
     RawCertificateIR, RawConfigRoot, RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR,
-    RawDomainResolveOptionsIR, RawLogIR, RawNtpIR, RawRouteIR, RawRuleIR, RawRuleSetIR,
+    RawDomainResolveOptionsIR, RawEndpointIR, RawLogIR, RawNtpIR, RawRouteIR, RawRuleIR,
+    RawRuleSetIR, RawWireGuardPeerIR,
 };
 pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR};
 pub use service::{ServiceIR, ServiceType};

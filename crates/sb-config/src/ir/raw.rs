@@ -6,7 +6,7 @@
 //! on-disk JSON/YAML schema. All Raw types derive `Deserialize` with
 //! `#[serde(deny_unknown_fields)]` to enforce strict input boundaries.
 //!
-//! ## Current status (WP-30e)
+//! ## Current status (WP-30f)
 //!
 //! ### Root boundary (WP-30b — done)
 //!
@@ -38,6 +38,16 @@
 //! `RuleAction` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with kebab-case serde, `as_str()`, and `from_str_opt()` unchanged.
 //!
+//! ### Endpoint nested boundary pilot (WP-30f — done)
+//!
+//! [`RawWireGuardPeerIR`] and [`RawEndpointIR`] are the strict nested Raw
+//! boundary for the endpoint subtree. `WireGuardPeerIR` and `EndpointIR` no
+//! longer derive `Deserialize` directly; each deserializes via its Raw bridge,
+//! so unknown endpoint nested fields are rejected at parse time.
+//!
+//! `EndpointType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with lowercase serde unchanged.
+//!
 //! ### `ExperimentalIR` — intentional passthrough
 //!
 //! `ExperimentalIR` deliberately does **not** have a Raw counterpart and does
@@ -47,13 +57,12 @@
 //!
 //! ### What is NOT yet Raw-ified
 //!
-//! `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still reuse
-//! validated IR directly. Nested Raw types for those remain a separate
-//! future effort.
+//! `InboundIR`, `OutboundIR`, and `ServiceIR` still reuse validated IR
+//! directly. Nested Raw types for those remain a separate future effort.
 //!
 //! ## Future work
 //!
-//! - Define nested Raw types (`RawInbound`, `RawOutbound`, etc.)
+//! - Define nested Raw types (`RawInbound`, `RawOutbound`, `RawService`, etc.)
 //!   with their own `deny_unknown_fields`
 //! - The existing `outbound.rs` raw types (the outbound Raw/Validated boundary
 //!   pilot completed earlier) remain in their current location
@@ -63,8 +72,9 @@ use serde::Deserialize;
 
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, ExperimentalIR,
-    InboundIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
+    DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType,
+    ExperimentalIR, InboundIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
+    WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -964,6 +974,167 @@ impl From<RawRouteIR> for RouteIR {
     }
 }
 
+// ─────────────────── Endpoint nested Raw types ───────────────────
+
+/// Raw WireGuard peer configuration — strict input boundary for [`WireGuardPeerIR`].
+///
+/// Field set is identical to `WireGuardPeerIR`. Deserialization enters here
+/// (with `deny_unknown_fields`), then converts via `From<RawWireGuardPeerIR> for WireGuardPeerIR`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawWireGuardPeerIR {
+    /// Peer endpoint address
+    #[serde(default)]
+    pub address: Option<String>,
+    /// Peer endpoint port
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Peer public key (base64)
+    #[serde(default)]
+    pub public_key: Option<String>,
+    /// Pre-shared key (base64)
+    #[serde(default)]
+    pub pre_shared_key: Option<String>,
+    /// Allowed IPs (CIDR format)
+    #[serde(default)]
+    pub allowed_ips: Option<Vec<String>>,
+    /// Persistent keepalive interval (seconds)
+    #[serde(default)]
+    pub persistent_keepalive_interval: Option<u16>,
+    /// Reserved bytes for connection ID
+    #[serde(default)]
+    pub reserved: Option<Vec<u8>>,
+}
+
+impl From<RawWireGuardPeerIR> for WireGuardPeerIR {
+    fn from(raw: RawWireGuardPeerIR) -> Self {
+        Self {
+            address: raw.address,
+            port: raw.port,
+            public_key: raw.public_key,
+            pre_shared_key: raw.pre_shared_key,
+            allowed_ips: raw.allowed_ips,
+            persistent_keepalive_interval: raw.persistent_keepalive_interval,
+            reserved: raw.reserved,
+        }
+    }
+}
+
+/// Raw endpoint configuration — strict input boundary for [`EndpointIR`].
+///
+/// Field set is identical to `EndpointIR`. `EndpointType` is intentionally NOT
+/// Raw-ified — it stays as the validated enum with lowercase serde. WireGuard
+/// peers use [`RawWireGuardPeerIR`] for nested strict boundaries.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawEndpointIR {
+    /// Endpoint type.
+    #[serde(rename = "type")]
+    pub ty: EndpointType,
+    /// Unique tag identifier.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Network protocols supported (e.g., ["tcp", "udp"]).
+    #[serde(default)]
+    pub network: Option<Vec<String>>,
+
+    // WireGuard-specific fields
+    /// WireGuard: Use system WireGuard interface
+    #[serde(default)]
+    pub wireguard_system: Option<bool>,
+    /// WireGuard: Interface name
+    #[serde(default)]
+    pub wireguard_name: Option<String>,
+    /// WireGuard: MTU size
+    #[serde(default)]
+    pub wireguard_mtu: Option<u32>,
+    /// WireGuard: Local addresses (CIDR format)
+    #[serde(default)]
+    pub wireguard_address: Option<Vec<String>>,
+    /// WireGuard: Private key (base64)
+    #[serde(default)]
+    pub wireguard_private_key: Option<String>,
+    /// WireGuard: Listen port
+    #[serde(default)]
+    pub wireguard_listen_port: Option<u16>,
+    /// WireGuard: Peer configurations (strict: rejects unknown fields)
+    #[serde(default)]
+    pub wireguard_peers: Option<Vec<RawWireGuardPeerIR>>,
+    /// WireGuard: UDP timeout (e.g., "30s")
+    #[serde(default)]
+    pub wireguard_udp_timeout: Option<String>,
+    /// WireGuard: Number of worker threads
+    #[serde(default)]
+    pub wireguard_workers: Option<i32>,
+
+    // Tailscale-specific fields
+    /// Tailscale: State directory path
+    #[serde(default)]
+    pub tailscale_state_directory: Option<String>,
+    /// Tailscale: Authentication key
+    #[serde(default)]
+    pub tailscale_auth_key: Option<String>,
+    /// Tailscale: Control server URL
+    #[serde(default)]
+    pub tailscale_control_url: Option<String>,
+    /// Tailscale: Ephemeral mode
+    #[serde(default)]
+    pub tailscale_ephemeral: Option<bool>,
+    /// Tailscale: Hostname
+    #[serde(default)]
+    pub tailscale_hostname: Option<String>,
+    /// Tailscale: Accept routes from network
+    #[serde(default)]
+    pub tailscale_accept_routes: Option<bool>,
+    /// Tailscale: Exit node address
+    #[serde(default)]
+    pub tailscale_exit_node: Option<String>,
+    /// Tailscale: Allow LAN access when using exit node
+    #[serde(default)]
+    pub tailscale_exit_node_allow_lan_access: Option<bool>,
+    /// Tailscale: Routes to advertise (CIDR format)
+    #[serde(default)]
+    pub tailscale_advertise_routes: Option<Vec<String>>,
+    /// Tailscale: Advertise as exit node
+    #[serde(default)]
+    pub tailscale_advertise_exit_node: Option<bool>,
+    /// Tailscale: UDP timeout (e.g., "30s")
+    #[serde(default)]
+    pub tailscale_udp_timeout: Option<String>,
+}
+
+impl From<RawEndpointIR> for EndpointIR {
+    fn from(raw: RawEndpointIR) -> Self {
+        Self {
+            ty: raw.ty,
+            tag: raw.tag,
+            network: raw.network,
+            wireguard_system: raw.wireguard_system,
+            wireguard_name: raw.wireguard_name,
+            wireguard_mtu: raw.wireguard_mtu,
+            wireguard_address: raw.wireguard_address,
+            wireguard_private_key: raw.wireguard_private_key,
+            wireguard_listen_port: raw.wireguard_listen_port,
+            wireguard_peers: raw
+                .wireguard_peers
+                .map(|v| v.into_iter().map(Into::into).collect()),
+            wireguard_udp_timeout: raw.wireguard_udp_timeout,
+            wireguard_workers: raw.wireguard_workers,
+            tailscale_state_directory: raw.tailscale_state_directory,
+            tailscale_auth_key: raw.tailscale_auth_key,
+            tailscale_control_url: raw.tailscale_control_url,
+            tailscale_ephemeral: raw.tailscale_ephemeral,
+            tailscale_hostname: raw.tailscale_hostname,
+            tailscale_accept_routes: raw.tailscale_accept_routes,
+            tailscale_exit_node: raw.tailscale_exit_node,
+            tailscale_exit_node_allow_lan_access: raw.tailscale_exit_node_allow_lan_access,
+            tailscale_advertise_routes: raw.tailscale_advertise_routes,
+            tailscale_advertise_exit_node: raw.tailscale_advertise_exit_node,
+            tailscale_udp_timeout: raw.tailscale_udp_timeout,
+        }
+    }
+}
+
 // ─────────────────── Root-level Raw type ───────────────────
 
 /// Raw top-level configuration root — the serde entry point.
@@ -980,13 +1151,14 @@ impl From<RawRouteIR> for RouteIR {
 ///
 /// `log`, `ntp`, and `certificate` use their own Raw types (`RawLogIR`,
 /// `RawNtpIR`, `RawCertificateIR`) so unknown fields inside these leaf
-/// configs are also rejected. `dns` uses [`RawDnsIR`] and `route` uses
-/// [`RawRouteIR`], so unknown fields across the DNS and route nested
-/// subtrees are also rejected.
+/// configs are also rejected. `dns` uses [`RawDnsIR`], `route` uses
+/// [`RawRouteIR`], and `endpoints` uses [`RawEndpointIR`], so unknown
+/// fields across the DNS, route, and endpoint nested subtrees are also
+/// rejected.
 ///
-/// Other child types (`InboundIR`, `OutboundIR`, `EndpointIR`,
-/// `ServiceIR`) still reuse validated IR directly —
-/// nested Raw types for those are future work.
+/// Other child types (`InboundIR`, `OutboundIR`, `ServiceIR`) still
+/// reuse validated IR directly — nested Raw types for those are future
+/// work.
 ///
 /// `ExperimentalIR` intentionally does NOT have a Raw counterpart;
 /// it uses forward-compatible passthrough semantics.
@@ -1014,9 +1186,9 @@ pub struct RawConfigRoot {
     /// Optional DNS configuration (strict: rejects unknown fields).
     #[serde(default)]
     pub dns: Option<RawDnsIR>,
-    /// Endpoint configurations (WireGuard, Tailscale, etc.).
+    /// Endpoint configurations (strict: rejects unknown fields).
     #[serde(default)]
-    pub endpoints: Vec<EndpointIR>,
+    pub endpoints: Vec<RawEndpointIR>,
     /// Service configurations (Resolved, DERP, SSM, etc.).
     #[serde(default)]
     pub services: Vec<ServiceIR>,
@@ -1035,7 +1207,7 @@ impl From<RawConfigRoot> for ConfigIR {
             ntp: raw.ntp.map(Into::into),
             certificate: raw.certificate.map(Into::into),
             dns: raw.dns.map(Into::into),
-            endpoints: raw.endpoints,
+            endpoints: raw.endpoints.into_iter().map(Into::into).collect(),
             services: raw.services,
             experimental: raw.experimental,
         }
@@ -1711,6 +1883,246 @@ mod tests {
         );
     }
 
+    // ─────────────────── Raw Endpoint tests (WP-30f) ───────────────────
+
+    #[test]
+    fn raw_wireguard_peer_ir_rejects_unknown_field() {
+        let data = json!({
+            "address": "192.168.1.1",
+            "port": 51820,
+            "bogus_peer_field": true
+        });
+        let result = serde_json::from_value::<RawWireGuardPeerIR>(data);
+        assert!(
+            result.is_err(),
+            "RawWireGuardPeerIR should reject unknown fields"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_peer_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn raw_endpoint_ir_rejects_unknown_field() {
+        let data = json!({
+            "type": "wireguard",
+            "tag": "wg0",
+            "bogus_endpoint_field": true
+        });
+        let result = serde_json::from_value::<RawEndpointIR>(data);
+        assert!(
+            result.is_err(),
+            "RawEndpointIR should reject unknown fields"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("unknown field") || err.contains("bogus_endpoint_field"),
+            "error should mention unknown field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn wireguard_peer_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::WireGuardPeerIR;
+        let data = json!({
+            "address": "10.0.0.1",
+            "bogus_peer_field": "bad"
+        });
+        let result = serde_json::from_value::<WireGuardPeerIR>(data);
+        assert!(
+            result.is_err(),
+            "WireGuardPeerIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn endpoint_ir_rejects_unknown_field_via_raw_bridge() {
+        use super::super::EndpointIR;
+        let data = json!({
+            "type": "wireguard",
+            "tag": "wg0",
+            "bogus_endpoint_field": 42
+        });
+        let result = serde_json::from_value::<EndpointIR>(data);
+        assert!(
+            result.is_err(),
+            "EndpointIR should reject unknown fields via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn wireguard_peer_ir_valid_roundtrip() {
+        use super::super::WireGuardPeerIR;
+        let data = json!({
+            "address": "192.168.1.1",
+            "port": 51820,
+            "public_key": "peer-pubkey-base64",
+            "pre_shared_key": "psk-base64",
+            "allowed_ips": ["0.0.0.0/0", "::/0"],
+            "persistent_keepalive_interval": 25,
+            "reserved": [1, 2, 3]
+        });
+        let ir: WireGuardPeerIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.address.as_deref(), Some("192.168.1.1"));
+        assert_eq!(ir.port, Some(51820));
+        assert_eq!(ir.public_key.as_deref(), Some("peer-pubkey-base64"));
+        assert_eq!(ir.pre_shared_key.as_deref(), Some("psk-base64"));
+        assert_eq!(
+            ir.allowed_ips,
+            Some(vec!["0.0.0.0/0".to_string(), "::/0".to_string()])
+        );
+        assert_eq!(ir.persistent_keepalive_interval, Some(25));
+        assert_eq!(ir.reserved, Some(vec![1, 2, 3]));
+        // roundtrip
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: WireGuardPeerIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn endpoint_ir_wireguard_valid_roundtrip() {
+        use super::super::EndpointIR;
+        let data = json!({
+            "type": "wireguard",
+            "tag": "wg0",
+            "network": ["tcp", "udp"],
+            "wireguard_private_key": "priv-key-base64",
+            "wireguard_address": ["10.0.0.1/24"],
+            "wireguard_mtu": 1420,
+            "wireguard_listen_port": 51820,
+            "wireguard_peers": [
+                {
+                    "address": "192.168.1.1",
+                    "port": 51820,
+                    "public_key": "peer-pubkey",
+                    "allowed_ips": ["0.0.0.0/0"]
+                }
+            ],
+            "wireguard_udp_timeout": "30s",
+            "wireguard_workers": 4
+        });
+        let ir: EndpointIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, super::super::EndpointType::Wireguard);
+        assert_eq!(ir.tag.as_deref(), Some("wg0"));
+        assert_eq!(ir.wireguard_private_key.as_deref(), Some("priv-key-base64"));
+        assert_eq!(ir.wireguard_peers.as_ref().unwrap().len(), 1);
+        // roundtrip
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: EndpointIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn endpoint_ir_tailscale_valid_roundtrip() {
+        use super::super::EndpointIR;
+        let data = json!({
+            "type": "tailscale",
+            "tag": "ts0",
+            "tailscale_auth_key": "tskey-xyz",
+            "tailscale_hostname": "my-node",
+            "tailscale_control_url": "https://controlplane.tailscale.com",
+            "tailscale_ephemeral": true,
+            "tailscale_accept_routes": true,
+            "tailscale_exit_node": "100.64.0.1",
+            "tailscale_exit_node_allow_lan_access": true,
+            "tailscale_advertise_routes": ["192.168.0.0/24"],
+            "tailscale_advertise_exit_node": false,
+            "tailscale_udp_timeout": "60s",
+            "tailscale_state_directory": "/var/lib/tailscale"
+        });
+        let ir: EndpointIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, super::super::EndpointType::Tailscale);
+        assert_eq!(ir.tag.as_deref(), Some("ts0"));
+        assert_eq!(ir.tailscale_auth_key.as_deref(), Some("tskey-xyz"));
+        assert_eq!(ir.tailscale_hostname.as_deref(), Some("my-node"));
+        assert_eq!(ir.tailscale_ephemeral, Some(true));
+        // roundtrip
+        let json = serde_json::to_value(&ir).unwrap();
+        let ir2: EndpointIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    #[test]
+    fn endpoint_type_lowercase_serde_unchanged() {
+        use super::super::EndpointType;
+        let wg: EndpointType = serde_json::from_str("\"wireguard\"").unwrap();
+        assert_eq!(wg, EndpointType::Wireguard);
+        let ts: EndpointType = serde_json::from_str("\"tailscale\"").unwrap();
+        assert_eq!(ts, EndpointType::Tailscale);
+        // Serialize back
+        assert_eq!(serde_json::to_string(&wg).unwrap(), "\"wireguard\"");
+        assert_eq!(serde_json::to_string(&ts).unwrap(), "\"tailscale\"");
+    }
+
+    #[test]
+    fn config_ir_accepts_valid_endpoint_subtree_via_raw_bridge() {
+        let data = json!({
+            "endpoints": [
+                {
+                    "type": "wireguard",
+                    "tag": "wg0",
+                    "wireguard_private_key": "key123",
+                    "wireguard_address": ["10.0.0.1/24"],
+                    "wireguard_peers": [
+                        {
+                            "address": "1.2.3.4",
+                            "port": 51820,
+                            "public_key": "peer-pub",
+                            "allowed_ips": ["0.0.0.0/0"]
+                        }
+                    ]
+                },
+                {
+                    "type": "tailscale",
+                    "tag": "ts0",
+                    "tailscale_auth_key": "tskey-abc"
+                }
+            ]
+        });
+        let ir = serde_json::from_value::<ConfigIR>(data).unwrap();
+        assert_eq!(ir.endpoints.len(), 2);
+        assert_eq!(ir.endpoints[0].ty, super::super::EndpointType::Wireguard);
+        assert_eq!(ir.endpoints[1].ty, super::super::EndpointType::Tailscale);
+        assert_eq!(ir.endpoints[0].wireguard_peers.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_inside_endpoint_subtree() {
+        let data = json!({
+            "endpoints": [{
+                "type": "wireguard",
+                "tag": "wg0",
+                "unknown_endpoint_field": true
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields inside endpoints via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_inside_endpoint_peer() {
+        let data = json!({
+            "endpoints": [{
+                "type": "wireguard",
+                "tag": "wg0",
+                "wireguard_peers": [{
+                    "address": "1.2.3.4",
+                    "unknown_peer_field": true
+                }]
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields inside endpoint peers via Raw bridge"
+        );
+    }
+
     // ─────────────────── ConfigIR root with strict nested tests ───────────────────
 
     #[test]
@@ -1841,9 +2253,9 @@ mod tests {
         assert!(result.is_ok(), "experimental should accept known sub-keys");
     }
 
-    /// Boundary documentation: inbound/outbound/endpoint/service nested
-    /// trees still do NOT have nested Raw types. DNS and route are now strict;
-    /// these remaining domains are future work, not regressions from WP-30e.
+    /// Boundary documentation: inbound/outbound/service nested trees still
+    /// do NOT have nested Raw types. DNS, route, and endpoint are now strict;
+    /// these remaining domains are future work, not regressions from WP-30f.
     #[test]
     fn nested_non_leaf_unknown_fields_not_yet_strict_boundary_doc() {
         // Route is now strict (WP-30e): unknown route fields are rejected.
@@ -1859,6 +2271,19 @@ mod tests {
             "route nested unknown fields should be rejected after WP-30e"
         );
 
-        // Inbound/outbound/endpoint/service remain non-strict (future work).
+        // Endpoint is now strict (WP-30f): unknown endpoint fields are rejected.
+        let data = json!({
+            "endpoints": [{
+                "type": "wireguard",
+                "bogus_endpoint_field": true
+            }]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "endpoint nested unknown fields should be rejected after WP-30f"
+        );
+
+        // Inbound/outbound/service remain non-strict (future work).
     }
 }

@@ -13,7 +13,7 @@
 //! - `impl ConfigIR` — `validate()`, `has_any_negation()`, and per-protocol
 //!   validation helpers
 //!
-//! ## Deserialization (WP-30e)
+//! ## Deserialization (WP-30f)
 //!
 //! `ConfigIR` deserializes via [`super::raw::RawConfigRoot`] (WP-30b).
 //!
@@ -28,19 +28,23 @@
 //! through their corresponding Raw types so unknown route fields are rejected
 //! (WP-30e). `RuleAction` is intentionally NOT Raw-ified.
 //!
+//! `EndpointIR` and `WireGuardPeerIR` deserialize through their corresponding
+//! Raw types so unknown endpoint fields are rejected (WP-30f). `EndpointType`
+//! is intentionally NOT Raw-ified.
+//!
 //! `ExperimentalIR` is intentionally NOT routed through a Raw bridge — it
 //! uses forward-compatible passthrough semantics and does not reject unknown
 //! fields. This is by design, not an oversight.
 //!
 //! ## What is NOT yet routed through Raw
 //!
-//! `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still derive
-//! `Deserialize` directly. Nested Raw types for these remain future work.
+//! `InboundIR`, `OutboundIR`, and `ServiceIR` still derive `Deserialize`
+//! directly. Nested Raw types for these remain future work.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)

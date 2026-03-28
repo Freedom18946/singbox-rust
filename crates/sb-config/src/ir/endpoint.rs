@@ -1,6 +1,23 @@
 //! Endpoint IR types (WireGuard, Tailscale).
+//!
+//! ## Deserialization (WP-30f)
+//!
+//! `EndpointIR` and `WireGuardPeerIR` no longer derive `Deserialize` directly.
+//! Each deserializes via its corresponding Raw type (`RawEndpointIR`,
+//! `RawWireGuardPeerIR`) which carries `#[serde(deny_unknown_fields)]`, so
+//! unknown endpoint nested fields are rejected at parse time.
+//!
+//! `EndpointType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with `#[serde(rename_all = "lowercase")]` unchanged.
+//!
+//! `ServiceIR`, `InboundIR`, `OutboundIR` still derive `Deserialize` directly
+//! and are NOT yet routed through Raw bridges.
+//!
+//! `planned.rs` / `normalize.rs` remain skeletons.
 
 use serde::{Deserialize, Serialize};
+
+use super::raw::{RawEndpointIR, RawWireGuardPeerIR};
 
 /// Endpoint type enumeration (WireGuard, Tailscale).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,7 +30,10 @@ pub enum EndpointType {
 }
 
 /// Endpoint configuration IR.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawEndpointIR`](super::raw::RawEndpointIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30f).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct EndpointIR {
     /// Endpoint type.
     #[serde(rename = "type")]
@@ -90,8 +110,20 @@ pub struct EndpointIR {
     pub tailscale_udp_timeout: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for EndpointIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawEndpointIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// WireGuard peer configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawWireGuardPeerIR`](super::raw::RawWireGuardPeerIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30f).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WireGuardPeerIR {
     /// Peer endpoint address
     #[serde(default)]
@@ -114,6 +146,15 @@ pub struct WireGuardPeerIR {
     /// Reserved bytes for connection ID
     #[serde(default)]
     pub reserved: Option<Vec<u8>>,
+}
+
+impl<'de> Deserialize<'de> for WireGuardPeerIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawWireGuardPeerIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 #[cfg(test)]
