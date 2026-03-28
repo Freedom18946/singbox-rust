@@ -6,7 +6,7 @@
 //! on-disk JSON/YAML schema. All Raw types derive `Deserialize` with
 //! `#[serde(deny_unknown_fields)]` to enforce strict input boundaries.
 //!
-//! ## Current status (WP-30h)
+//! ## Current status (WP-30i)
 //!
 //! ### Root boundary (WP-30b — done)
 //!
@@ -77,6 +77,21 @@
 //! `InboundType` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with lowercase serde unchanged.
 //!
+//! ### Outbound nested boundary pilot (WP-30i — done)
+//!
+//! [`RawOutboundIR`], [`RawHeaderEntry`], [`RawCredentials`], [`RawBrutalIR`],
+//! and [`RawMultiplexOptionsIR`] are the strict nested Raw boundary for the
+//! outbound subtree. `OutboundIR`, `HeaderEntry`, `Credentials`,
+//! `MultiplexOptionsIR`, and `BrutalIR` no longer derive `Deserialize`
+//! directly; each deserializes via its Raw bridge, so unknown outbound nested
+//! fields are rejected at parse time.
+//!
+//! `OutboundType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with lowercase serde and `ty_str()` unchanged.
+//!
+//! `Credentials`, `MultiplexOptionsIR`, and `BrutalIR` are bridged because
+//! they are direct outbound helpers, not as a broader shared-type cleanup.
+//!
 //! ### `ExperimentalIR` — intentional passthrough
 //!
 //! `ExperimentalIR` deliberately does **not** have a Raw counterpart and does
@@ -86,27 +101,28 @@
 //!
 //! ### What is NOT yet Raw-ified
 //!
-//! `OutboundIR` still reuses validated IR directly. Nested Raw types for
-//! outbound remain a separate future effort.
+//! `MasqueradeIR` and its sub-types still derive `Deserialize` directly.
+//! `planned.rs` / `normalize.rs` remain skeletons.
 //!
 //! ## Future work
 //!
-//! - Define nested Raw types for `OutboundIR` with `deny_unknown_fields`
+//! - Evaluate `planned.rs` prerequisites before pushing `RuntimePlan` builder
+//! - `normalize.rs` IR normalization entry point (skeleton)
 //! - The existing `outbound.rs` raw types (the outbound Raw/Validated boundary
 //!   pilot completed earlier) remain in their current location
-//! - `planned.rs` / `normalize.rs` remain skeletons
 
 use serde::Deserialize;
 
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    AnyTlsUserIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
+    AnyTlsUserIR, BrutalIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR,
     DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR,
-    Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType, Listable,
-    MasqueradeIR, MultiplexOptionsIR, OutboundIR, RouteIR, RuleAction, RuleIR, RuleSetIR,
-    ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
-    TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
+    HeaderEntry, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType,
+    Listable, MasqueradeIR, MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction,
+    RuleIR, RuleSetIR, ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR,
+    ShadowsocksUserIR, StringOrObj, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR,
+    VmessUserIR, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -2246,6 +2262,526 @@ impl From<RawInboundIR> for InboundIR {
     }
 }
 
+// ─────────────────── Outbound nested Raw types (WP-30i) ───────────────────
+
+/// Raw HTTP header entry — strict input boundary for [`HeaderEntry`].
+///
+/// Field set is identical to `HeaderEntry`. Deserialization enters here
+/// (with `deny_unknown_fields`), then converts via `From<RawHeaderEntry> for HeaderEntry`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawHeaderEntry {
+    /// Header key/name.
+    pub key: String,
+    /// Header value.
+    pub value: String,
+}
+
+impl From<RawHeaderEntry> for HeaderEntry {
+    fn from(raw: RawHeaderEntry) -> Self {
+        Self {
+            key: raw.key,
+            value: raw.value,
+        }
+    }
+}
+
+/// Raw authentication credentials — strict input boundary for [`Credentials`].
+///
+/// Field set is identical to `Credentials`. Deserialization enters here
+/// (with `deny_unknown_fields`), then converts via `From<RawCredentials> for Credentials`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawCredentials {
+    /// Username (literal value).
+    #[serde(default)]
+    pub username: Option<String>,
+    /// Password (literal value).
+    #[serde(default)]
+    pub password: Option<String>,
+    /// Read username from this environment variable (takes precedence over `username`).
+    #[serde(default)]
+    pub username_env: Option<String>,
+    /// Read password from this environment variable (takes precedence over `password`).
+    #[serde(default)]
+    pub password_env: Option<String>,
+}
+
+impl From<RawCredentials> for Credentials {
+    fn from(raw: RawCredentials) -> Self {
+        Self {
+            username: raw.username,
+            password: raw.password,
+            username_env: raw.username_env,
+            password_env: raw.password_env,
+        }
+    }
+}
+
+/// Raw brutal congestion control configuration — strict input boundary for [`BrutalIR`].
+///
+/// Field set is identical to `BrutalIR`. Deserialization enters here
+/// (with `deny_unknown_fields`), then converts via `From<RawBrutalIR> for BrutalIR`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBrutalIR {
+    /// Upload bandwidth in Mbps.
+    pub up: u64,
+    /// Download bandwidth in Mbps.
+    pub down: u64,
+}
+
+impl From<RawBrutalIR> for BrutalIR {
+    fn from(raw: RawBrutalIR) -> Self {
+        Self {
+            up: raw.up,
+            down: raw.down,
+        }
+    }
+}
+
+/// Raw multiplex options — strict input boundary for [`MultiplexOptionsIR`].
+///
+/// Field set is identical to `MultiplexOptionsIR` except `brutal` uses
+/// [`RawBrutalIR`]. Deserialization enters here (with `deny_unknown_fields`),
+/// then converts via `From<RawMultiplexOptionsIR> for MultiplexOptionsIR`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawMultiplexOptionsIR {
+    /// Enable multiplex support.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Protocol (typically "yamux" or "h2mux").
+    #[serde(default)]
+    pub protocol: Option<String>,
+    /// Maximum number of concurrent connections in pool.
+    #[serde(default)]
+    pub max_connections: Option<usize>,
+    /// Minimum number of streams per connection.
+    #[serde(default)]
+    pub min_streams: Option<usize>,
+    /// Maximum number of streams per connection.
+    #[serde(default)]
+    pub max_streams: Option<usize>,
+    /// Enable padding.
+    #[serde(default)]
+    pub padding: Option<bool>,
+    /// Brutal congestion control configuration.
+    #[serde(default)]
+    pub brutal: Option<RawBrutalIR>,
+    /// Initial stream window size.
+    #[serde(default)]
+    pub initial_stream_window: Option<u32>,
+    /// Maximum stream window size.
+    #[serde(default)]
+    pub max_stream_window: Option<u32>,
+    /// Enable keepalive.
+    #[serde(default)]
+    pub enable_keepalive: Option<bool>,
+    /// Keepalive interval in seconds.
+    #[serde(default)]
+    pub keepalive_interval: Option<u64>,
+}
+
+impl From<RawMultiplexOptionsIR> for MultiplexOptionsIR {
+    fn from(raw: RawMultiplexOptionsIR) -> Self {
+        Self {
+            enabled: raw.enabled,
+            protocol: raw.protocol,
+            max_connections: raw.max_connections,
+            min_streams: raw.min_streams,
+            max_streams: raw.max_streams,
+            padding: raw.padding,
+            brutal: raw.brutal.map(Into::into),
+            initial_stream_window: raw.initial_stream_window,
+            max_stream_window: raw.max_stream_window,
+            enable_keepalive: raw.enable_keepalive,
+            keepalive_interval: raw.keepalive_interval,
+        }
+    }
+}
+
+/// Raw outbound proxy configuration — strict input boundary for [`OutboundIR`].
+///
+/// Field set is identical to `OutboundIR` except nested types use their Raw
+/// counterparts (`RawCredentials`, `RawMultiplexOptionsIR`, `RawHeaderEntry`).
+/// `OutboundType` is intentionally reused as the validated enum — it is NOT
+/// Raw-ified (WP-30i design decision, same pattern as `InboundType`/`EndpointType`).
+///
+/// Deserialization enters here (with `deny_unknown_fields`), then converts
+/// via `From<RawOutboundIR> for OutboundIR`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawOutboundIR {
+    pub ty: OutboundType,
+    #[serde(default)]
+    pub server: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub udp: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub members: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_member: Option<String>,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub credentials: Option<RawCredentials>,
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub uuid: Option<String>,
+    #[serde(default)]
+    pub flow: Option<String>,
+    #[serde(default)]
+    pub encryption: Option<String>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_strategy: Option<String>,
+    #[serde(default)]
+    pub multiplex: Option<RawMultiplexOptionsIR>,
+    #[serde(default)]
+    pub mux_max_streams: Option<usize>,
+    #[serde(default)]
+    pub mux_window_size: Option<u32>,
+    #[serde(default)]
+    pub mux_padding: Option<bool>,
+    #[serde(default)]
+    pub mux_reuse_timeout: Option<u64>,
+    #[serde(default)]
+    pub security: Option<String>,
+    #[serde(default)]
+    pub alter_id: Option<u8>,
+    #[serde(default)]
+    pub network: Option<String>,
+    #[serde(default)]
+    pub packet_encoding: Option<String>,
+    #[serde(default)]
+    pub transport: Option<Vec<String>>,
+    #[serde(default)]
+    pub congestion_control: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub ws_path: Option<String>,
+    #[serde(default)]
+    pub ws_host: Option<String>,
+    #[serde(default)]
+    pub h2_path: Option<String>,
+    #[serde(default)]
+    pub h2_host: Option<String>,
+    #[serde(default)]
+    pub grpc_service: Option<String>,
+    #[serde(default)]
+    pub grpc_method: Option<String>,
+    #[serde(default)]
+    pub grpc_authority: Option<String>,
+    #[serde(default)]
+    pub grpc_metadata: Vec<RawHeaderEntry>,
+    #[serde(default)]
+    pub http_upgrade_path: Option<String>,
+    #[serde(default)]
+    pub http_upgrade_headers: Vec<RawHeaderEntry>,
+    #[serde(default)]
+    pub tls_sni: Option<String>,
+    #[serde(default)]
+    pub tls_alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub dns_transport: Option<String>,
+    #[serde(default)]
+    pub dns_tls_server_name: Option<String>,
+    #[serde(default)]
+    pub dns_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub dns_query_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub dns_enable_edns0: Option<bool>,
+    #[serde(default)]
+    pub dns_edns0_buffer_size: Option<u16>,
+    #[serde(default)]
+    pub dns_doh_url: Option<String>,
+    #[serde(default)]
+    pub tls_ca_paths: Vec<String>,
+    #[serde(default)]
+    pub tls_ca_pem: Vec<String>,
+    #[serde(default)]
+    pub tls_client_cert_path: Option<String>,
+    #[serde(default)]
+    pub tls_client_key_path: Option<String>,
+    #[serde(default)]
+    pub tls_client_cert_pem: Option<String>,
+    #[serde(default)]
+    pub tls_client_key_pem: Option<String>,
+    #[serde(default)]
+    pub alpn: Option<String>,
+    #[serde(default)]
+    pub skip_cert_verify: Option<bool>,
+    #[serde(default)]
+    pub udp_relay_mode: Option<String>,
+    #[serde(default)]
+    pub udp_over_tcp: Option<bool>,
+    #[serde(default)]
+    pub udp_over_tcp_version: Option<u8>,
+    #[serde(default)]
+    pub utls_fingerprint: Option<String>,
+    #[serde(default)]
+    pub obfs_param: Option<String>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub protocol_param: Option<String>,
+    #[serde(default)]
+    pub tor_executable_path: Option<String>,
+    #[serde(default)]
+    pub tor_extra_args: Vec<String>,
+    #[serde(default)]
+    pub tor_data_directory: Option<String>,
+    #[serde(default)]
+    pub udp_over_stream: Option<bool>,
+    #[serde(default)]
+    pub zero_rtt_handshake: Option<bool>,
+    #[serde(default)]
+    pub up_mbps: Option<u32>,
+    #[serde(default)]
+    pub down_mbps: Option<u32>,
+    #[serde(default)]
+    pub obfs: Option<String>,
+    #[serde(default)]
+    pub salamander: Option<String>,
+    #[serde(default)]
+    pub brutal_up_mbps: Option<u32>,
+    #[serde(default)]
+    pub brutal_down_mbps: Option<u32>,
+    #[serde(default)]
+    pub hysteria_protocol: Option<String>,
+    #[serde(default)]
+    pub hysteria_auth: Option<String>,
+    #[serde(default)]
+    pub hysteria_recv_window_conn: Option<u64>,
+    #[serde(default)]
+    pub hysteria_recv_window: Option<u64>,
+    #[serde(default)]
+    pub reality_enabled: Option<bool>,
+    #[serde(default)]
+    pub reality_public_key: Option<String>,
+    #[serde(default)]
+    pub reality_short_id: Option<String>,
+    #[serde(default)]
+    pub reality_server_name: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub version: Option<u8>,
+    #[serde(default)]
+    pub plugin: Option<String>,
+    #[serde(default)]
+    pub plugin_opts: Option<String>,
+    #[serde(default)]
+    pub ssh_private_key: Option<String>,
+    #[serde(default)]
+    pub ssh_private_key_path: Option<String>,
+    #[serde(default)]
+    pub ssh_private_key_passphrase: Option<String>,
+    #[serde(default)]
+    pub ssh_host_key_verification: Option<bool>,
+    #[serde(default)]
+    pub ssh_known_hosts_path: Option<String>,
+    #[serde(default)]
+    pub ssh_connection_pool_size: Option<usize>,
+    #[serde(default)]
+    pub ssh_compression: Option<bool>,
+    #[serde(default)]
+    pub ssh_keepalive_interval: Option<u64>,
+    #[serde(default)]
+    pub connect_timeout_sec: Option<u32>,
+    #[serde(default)]
+    pub wireguard_system_interface: Option<bool>,
+    #[serde(default)]
+    pub wireguard_interface: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireguard_local_address: Vec<String>,
+    #[serde(default)]
+    pub wireguard_source_v4: Option<String>,
+    #[serde(default)]
+    pub wireguard_source_v6: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireguard_allowed_ips: Vec<String>,
+    #[serde(default)]
+    pub wireguard_private_key: Option<String>,
+    #[serde(default)]
+    pub wireguard_peer_public_key: Option<String>,
+    #[serde(default)]
+    pub wireguard_pre_shared_key: Option<String>,
+    #[serde(default)]
+    pub wireguard_persistent_keepalive: Option<u16>,
+    #[serde(default)]
+    pub tor_proxy_addr: Option<String>,
+    #[serde(default)]
+    pub tor_options: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub test_url: Option<String>,
+    #[serde(default)]
+    pub test_interval_ms: Option<u64>,
+    #[serde(default)]
+    pub test_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub test_tolerance_ms: Option<u64>,
+    #[serde(default)]
+    pub interrupt_exist_connections: Option<bool>,
+    #[serde(default)]
+    pub anytls_padding: Option<Vec<String>>,
+}
+
+impl From<RawOutboundIR> for OutboundIR {
+    fn from(raw: RawOutboundIR) -> Self {
+        Self {
+            ty: raw.ty,
+            server: raw.server,
+            port: raw.port,
+            udp: raw.udp,
+            name: raw.name,
+            members: raw.members,
+            default_member: raw.default_member,
+            method: raw.method,
+            credentials: raw.credentials.map(Into::into),
+            detour: raw.detour,
+            uuid: raw.uuid,
+            flow: raw.flow,
+            encryption: raw.encryption,
+            bind_interface: raw.bind_interface,
+            inet4_bind_address: raw.inet4_bind_address,
+            inet6_bind_address: raw.inet6_bind_address,
+            routing_mark: raw.routing_mark,
+            reuse_addr: raw.reuse_addr,
+            connect_timeout: raw.connect_timeout,
+            tcp_fast_open: raw.tcp_fast_open,
+            tcp_multi_path: raw.tcp_multi_path,
+            udp_fragment: raw.udp_fragment,
+            domain_strategy: raw.domain_strategy,
+            multiplex: raw.multiplex.map(Into::into),
+            mux_max_streams: raw.mux_max_streams,
+            mux_window_size: raw.mux_window_size,
+            mux_padding: raw.mux_padding,
+            mux_reuse_timeout: raw.mux_reuse_timeout,
+            security: raw.security,
+            alter_id: raw.alter_id,
+            network: raw.network,
+            packet_encoding: raw.packet_encoding,
+            transport: raw.transport,
+            congestion_control: raw.congestion_control,
+            token: raw.token,
+            ws_path: raw.ws_path,
+            ws_host: raw.ws_host,
+            h2_path: raw.h2_path,
+            h2_host: raw.h2_host,
+            grpc_service: raw.grpc_service,
+            grpc_method: raw.grpc_method,
+            grpc_authority: raw.grpc_authority,
+            grpc_metadata: raw.grpc_metadata.into_iter().map(Into::into).collect(),
+            http_upgrade_path: raw.http_upgrade_path,
+            http_upgrade_headers: raw
+                .http_upgrade_headers
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            tls_sni: raw.tls_sni,
+            tls_alpn: raw.tls_alpn,
+            dns_transport: raw.dns_transport,
+            dns_tls_server_name: raw.dns_tls_server_name,
+            dns_timeout_ms: raw.dns_timeout_ms,
+            dns_query_timeout_ms: raw.dns_query_timeout_ms,
+            dns_enable_edns0: raw.dns_enable_edns0,
+            dns_edns0_buffer_size: raw.dns_edns0_buffer_size,
+            dns_doh_url: raw.dns_doh_url,
+            tls_ca_paths: raw.tls_ca_paths,
+            tls_ca_pem: raw.tls_ca_pem,
+            tls_client_cert_path: raw.tls_client_cert_path,
+            tls_client_key_path: raw.tls_client_key_path,
+            tls_client_cert_pem: raw.tls_client_cert_pem,
+            tls_client_key_pem: raw.tls_client_key_pem,
+            alpn: raw.alpn,
+            skip_cert_verify: raw.skip_cert_verify,
+            udp_relay_mode: raw.udp_relay_mode,
+            udp_over_tcp: raw.udp_over_tcp,
+            udp_over_tcp_version: raw.udp_over_tcp_version,
+            utls_fingerprint: raw.utls_fingerprint,
+            obfs_param: raw.obfs_param,
+            protocol: raw.protocol,
+            protocol_param: raw.protocol_param,
+            tor_executable_path: raw.tor_executable_path,
+            tor_extra_args: raw.tor_extra_args,
+            tor_data_directory: raw.tor_data_directory,
+            udp_over_stream: raw.udp_over_stream,
+            zero_rtt_handshake: raw.zero_rtt_handshake,
+            up_mbps: raw.up_mbps,
+            down_mbps: raw.down_mbps,
+            obfs: raw.obfs,
+            salamander: raw.salamander,
+            brutal_up_mbps: raw.brutal_up_mbps,
+            brutal_down_mbps: raw.brutal_down_mbps,
+            hysteria_protocol: raw.hysteria_protocol,
+            hysteria_auth: raw.hysteria_auth,
+            hysteria_recv_window_conn: raw.hysteria_recv_window_conn,
+            hysteria_recv_window: raw.hysteria_recv_window,
+            reality_enabled: raw.reality_enabled,
+            reality_public_key: raw.reality_public_key,
+            reality_short_id: raw.reality_short_id,
+            reality_server_name: raw.reality_server_name,
+            password: raw.password,
+            version: raw.version,
+            plugin: raw.plugin,
+            plugin_opts: raw.plugin_opts,
+            ssh_private_key: raw.ssh_private_key,
+            ssh_private_key_path: raw.ssh_private_key_path,
+            ssh_private_key_passphrase: raw.ssh_private_key_passphrase,
+            ssh_host_key_verification: raw.ssh_host_key_verification,
+            ssh_known_hosts_path: raw.ssh_known_hosts_path,
+            ssh_connection_pool_size: raw.ssh_connection_pool_size,
+            ssh_compression: raw.ssh_compression,
+            ssh_keepalive_interval: raw.ssh_keepalive_interval,
+            connect_timeout_sec: raw.connect_timeout_sec,
+            wireguard_system_interface: raw.wireguard_system_interface,
+            wireguard_interface: raw.wireguard_interface,
+            wireguard_local_address: raw.wireguard_local_address,
+            wireguard_source_v4: raw.wireguard_source_v4,
+            wireguard_source_v6: raw.wireguard_source_v6,
+            wireguard_allowed_ips: raw.wireguard_allowed_ips,
+            wireguard_private_key: raw.wireguard_private_key,
+            wireguard_peer_public_key: raw.wireguard_peer_public_key,
+            wireguard_pre_shared_key: raw.wireguard_pre_shared_key,
+            wireguard_persistent_keepalive: raw.wireguard_persistent_keepalive,
+            tor_proxy_addr: raw.tor_proxy_addr,
+            tor_options: raw.tor_options,
+            test_url: raw.test_url,
+            test_interval_ms: raw.test_interval_ms,
+            test_timeout_ms: raw.test_timeout_ms,
+            test_tolerance_ms: raw.test_tolerance_ms,
+            interrupt_exist_connections: raw.interrupt_exist_connections,
+            anytls_padding: raw.anytls_padding,
+        }
+    }
+}
+
 // ─────────────────── Root-level Raw type ───────────────────
 
 /// Raw top-level configuration root — the serde entry point.
@@ -2267,8 +2803,7 @@ impl From<RawInboundIR> for InboundIR {
 /// fields across the DNS, route, and endpoint nested subtrees are also
 /// rejected.
 ///
-/// `OutboundIR` still reuses validated IR directly — nested Raw types for
-/// outbound are future work.
+/// `outbounds` uses [`RawOutboundIR`] so unknown outbound fields are rejected (WP-30i).
 /// `inbounds` uses [`RawInboundIR`] so unknown inbound fields are rejected (WP-30h).
 /// `services` uses [`RawServiceIR`] so unknown service fields are rejected.
 ///
@@ -2280,9 +2815,9 @@ pub struct RawConfigRoot {
     /// Inbound listeners (strict: rejects unknown fields).
     #[serde(default)]
     pub inbounds: Vec<RawInboundIR>,
-    /// Outbound proxies.
+    /// Outbound proxies (strict: rejects unknown fields, WP-30i).
     #[serde(default)]
-    pub outbounds: Vec<OutboundIR>,
+    pub outbounds: Vec<RawOutboundIR>,
     /// Routing configuration (strict: rejects unknown fields).
     #[serde(default)]
     pub route: RawRouteIR,
@@ -2313,7 +2848,7 @@ impl From<RawConfigRoot> for ConfigIR {
     fn from(raw: RawConfigRoot) -> Self {
         Self {
             inbounds: raw.inbounds.into_iter().map(Into::into).collect(),
-            outbounds: raw.outbounds,
+            outbounds: raw.outbounds.into_iter().map(Into::into).collect(),
             route: raw.route.into(),
             log: raw.log.map(Into::into),
             ntp: raw.ntp.map(Into::into),
@@ -4259,6 +4794,487 @@ mod tests {
         assert!(
             result.is_err(),
             "ConfigIR should reject unknown fields in inbound user types via Raw bridge"
+        );
+    }
+
+    // ─────────────────── Outbound nested Raw boundary tests (WP-30i) ───────────────────
+
+    // ── Raw types reject unknown fields ──
+
+    #[test]
+    fn raw_header_entry_rejects_unknown_field() {
+        let data = json!({"key": "Host", "value": "example.com", "bogus": true});
+        let result = serde_json::from_value::<RawHeaderEntry>(data);
+        assert!(
+            result.is_err(),
+            "RawHeaderEntry should reject unknown field"
+        );
+    }
+
+    #[test]
+    fn raw_credentials_rejects_unknown_field() {
+        let data = json!({"username": "user", "password": "pass", "extra": "nope"});
+        let result = serde_json::from_value::<RawCredentials>(data);
+        assert!(
+            result.is_err(),
+            "RawCredentials should reject unknown field"
+        );
+    }
+
+    #[test]
+    fn raw_brutal_ir_rejects_unknown_field() {
+        let data = json!({"up": 100, "down": 200, "mystery": 42});
+        let result = serde_json::from_value::<RawBrutalIR>(data);
+        assert!(result.is_err(), "RawBrutalIR should reject unknown field");
+    }
+
+    #[test]
+    fn raw_multiplex_options_ir_rejects_unknown_field() {
+        let data = json!({"enabled": true, "protocol": "yamux", "fake_knob": 99});
+        let result = serde_json::from_value::<RawMultiplexOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "RawMultiplexOptionsIR should reject unknown field"
+        );
+    }
+
+    #[test]
+    fn raw_outbound_ir_rejects_unknown_field() {
+        let data = json!({"ty": "direct", "bogus_outbound_field": true});
+        let result = serde_json::from_value::<RawOutboundIR>(data);
+        assert!(result.is_err(), "RawOutboundIR should reject unknown field");
+    }
+
+    // ── Validated types reject unknown fields via Raw bridge ──
+
+    #[test]
+    fn header_entry_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({"key": "Host", "value": "example.com", "extra": "bad"});
+        let result = serde_json::from_value::<super::HeaderEntry>(data);
+        assert!(
+            result.is_err(),
+            "HeaderEntry should reject unknown field via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn credentials_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({"username": "u", "password": "p", "token": "bad"});
+        let result = serde_json::from_value::<super::Credentials>(data);
+        assert!(
+            result.is_err(),
+            "Credentials should reject unknown field via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn brutal_ir_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({"up": 10, "down": 20, "lateral": 30});
+        let result = serde_json::from_value::<super::BrutalIR>(data);
+        assert!(
+            result.is_err(),
+            "BrutalIR should reject unknown field via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn multiplex_options_ir_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({"enabled": true, "protocol": "yamux", "invented": true});
+        let result = serde_json::from_value::<super::MultiplexOptionsIR>(data);
+        assert!(
+            result.is_err(),
+            "MultiplexOptionsIR should reject unknown field via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn outbound_ir_rejects_unknown_field_via_raw_bridge() {
+        let data = json!({"ty": "direct", "phantom_field": "oops"});
+        let result = serde_json::from_value::<super::OutboundIR>(data);
+        assert!(
+            result.is_err(),
+            "OutboundIR should reject unknown field via Raw bridge"
+        );
+    }
+
+    // ── Validated types roundtrip (serialize → deserialize) still works ──
+
+    #[test]
+    fn header_entry_roundtrip_via_raw_bridge() {
+        let entry = super::HeaderEntry {
+            key: "Authorization".to_string(),
+            value: "Bearer tok".to_string(),
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        let back: super::HeaderEntry = serde_json::from_value(json).unwrap();
+        assert_eq!(back.key, "Authorization");
+        assert_eq!(back.value, "Bearer tok");
+    }
+
+    #[test]
+    fn credentials_roundtrip_via_raw_bridge() {
+        let cred = super::Credentials {
+            username: Some("user".to_string()),
+            password: Some("pass".to_string()),
+            username_env: Some("USER_ENV".to_string()),
+            password_env: None,
+        };
+        let json = serde_json::to_value(&cred).unwrap();
+        let back: super::Credentials = serde_json::from_value(json).unwrap();
+        assert_eq!(back.username.as_deref(), Some("user"));
+        assert_eq!(back.username_env.as_deref(), Some("USER_ENV"));
+        assert!(back.password_env.is_none());
+    }
+
+    #[test]
+    fn multiplex_options_ir_roundtrip_via_raw_bridge() {
+        let mux = super::MultiplexOptionsIR {
+            enabled: true,
+            protocol: Some("yamux".to_string()),
+            max_connections: Some(8),
+            brutal: Some(super::BrutalIR { up: 100, down: 200 }),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&mux).unwrap();
+        let back: super::MultiplexOptionsIR = serde_json::from_value(json).unwrap();
+        assert!(back.enabled);
+        assert_eq!(back.protocol.as_deref(), Some("yamux"));
+        assert_eq!(back.max_connections, Some(8));
+        let b = back.brutal.unwrap();
+        assert_eq!(b.up, 100);
+        assert_eq!(b.down, 200);
+    }
+
+    #[test]
+    fn brutal_ir_roundtrip_via_raw_bridge() {
+        let brutal = super::BrutalIR { up: 50, down: 100 };
+        let json = serde_json::to_value(&brutal).unwrap();
+        let back: super::BrutalIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.up, 50);
+        assert_eq!(back.down, 100);
+    }
+
+    // ── OutboundIR roundtrip scenarios ──
+
+    #[test]
+    fn outbound_ir_basic_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Direct,
+            name: Some("direct-out".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Direct);
+        assert_eq!(back.name.as_deref(), Some("direct-out"));
+    }
+
+    #[test]
+    fn outbound_ir_transport_tls_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Vmess,
+            server: Some("vmess.example.com".to_string()),
+            port: Some(443),
+            transport: Some(vec!["tls".into(), "ws".into()]),
+            ws_path: Some("/chat".to_string()),
+            tls_sni: Some("sni.example.com".to_string()),
+            tls_alpn: Some(vec!["h2".into()]),
+            utls_fingerprint: Some("chrome".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Vmess);
+        assert_eq!(back.ws_path.as_deref(), Some("/chat"));
+        assert_eq!(back.tls_sni.as_deref(), Some("sni.example.com"));
+        assert_eq!(back.utls_fingerprint.as_deref(), Some("chrome"));
+    }
+
+    #[test]
+    fn outbound_ir_dns_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Dns,
+            dns_transport: Some("udp".to_string()),
+            dns_timeout_ms: Some(5000),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Dns);
+        assert_eq!(back.dns_transport.as_deref(), Some("udp"));
+        assert_eq!(back.dns_timeout_ms, Some(5000));
+    }
+
+    #[test]
+    fn outbound_ir_wireguard_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Wireguard,
+            name: Some("wg-out".to_string()),
+            wireguard_interface: Some("wg0".to_string()),
+            wireguard_local_address: vec!["10.0.0.2/32".to_string()],
+            wireguard_persistent_keepalive: Some(25),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Wireguard);
+        assert_eq!(back.wireguard_interface.as_deref(), Some("wg0"));
+        assert_eq!(back.wireguard_persistent_keepalive, Some(25));
+    }
+
+    #[test]
+    fn outbound_ir_ssh_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Ssh,
+            server: Some("ssh.example.com".to_string()),
+            port: Some(22),
+            credentials: Some(super::Credentials {
+                username: Some("user".to_string()),
+                password: Some("pass".to_string()),
+                ..Default::default()
+            }),
+            ssh_connection_pool_size: Some(4),
+            ssh_compression: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Ssh);
+        assert_eq!(
+            back.credentials.as_ref().unwrap().username.as_deref(),
+            Some("user")
+        );
+        assert_eq!(back.ssh_connection_pool_size, Some(4));
+    }
+
+    #[test]
+    fn outbound_ir_tuic_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Tuic,
+            server: Some("tuic.example.com".to_string()),
+            port: Some(443),
+            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            token: Some("secret".to_string()),
+            congestion_control: Some("bbr".to_string()),
+            udp_relay_mode: Some("native".to_string()),
+            zero_rtt_handshake: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Tuic);
+        assert_eq!(back.congestion_control.as_deref(), Some("bbr"));
+        assert_eq!(back.zero_rtt_handshake, Some(true));
+    }
+
+    #[test]
+    fn outbound_ir_hysteria2_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Hysteria2,
+            server: Some("hy2.example.com".to_string()),
+            port: Some(443),
+            up_mbps: Some(100),
+            down_mbps: Some(200),
+            obfs: Some("salamander".to_string()),
+            brutal_up_mbps: Some(50),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Hysteria2);
+        assert_eq!(back.up_mbps, Some(100));
+        assert_eq!(back.obfs.as_deref(), Some("salamander"));
+    }
+
+    #[test]
+    fn outbound_ir_anytls_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Anytls,
+            server: Some("anytls.example.com".to_string()),
+            port: Some(443),
+            password: Some("pw".to_string()),
+            anytls_padding: Some(vec!["0-100".to_string()]),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Anytls);
+        assert_eq!(back.anytls_padding.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn outbound_ir_hysteria_v1_roundtrip_via_raw_bridge() {
+        let ir = super::OutboundIR {
+            ty: super::OutboundType::Hysteria,
+            server: Some("hy1.example.com".to_string()),
+            port: Some(443),
+            hysteria_protocol: Some("udp".to_string()),
+            hysteria_auth: Some("auth-str".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&ir).unwrap();
+        let back: super::OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(back.ty, super::OutboundType::Hysteria);
+        assert_eq!(back.hysteria_protocol.as_deref(), Some("udp"));
+    }
+
+    // ── OutboundType serde / ty_str() stability ──
+
+    #[test]
+    fn outbound_type_serde_stable_after_raw_bridge() {
+        let variants = [
+            ("direct", super::OutboundType::Direct),
+            ("http", super::OutboundType::Http),
+            ("socks", super::OutboundType::Socks),
+            ("block", super::OutboundType::Block),
+            ("selector", super::OutboundType::Selector),
+            ("shadowsocks", super::OutboundType::Shadowsocks),
+            ("shadowtls", super::OutboundType::Shadowtls),
+            ("urltest", super::OutboundType::UrlTest),
+            ("hysteria2", super::OutboundType::Hysteria2),
+            ("tuic", super::OutboundType::Tuic),
+            ("vless", super::OutboundType::Vless),
+            ("vmess", super::OutboundType::Vmess),
+            ("trojan", super::OutboundType::Trojan),
+            ("ssh", super::OutboundType::Ssh),
+            ("dns", super::OutboundType::Dns),
+            ("tor", super::OutboundType::Tor),
+            ("anytls", super::OutboundType::Anytls),
+            ("hysteria", super::OutboundType::Hysteria),
+            ("wireguard", super::OutboundType::Wireguard),
+            ("tailscale", super::OutboundType::Tailscale),
+            ("shadowsocksr", super::OutboundType::ShadowsocksR),
+        ];
+        for (expected_str, variant) in &variants {
+            assert_eq!(variant.ty_str(), *expected_str);
+            let json_val = serde_json::to_value(variant).unwrap();
+            assert_eq!(json_val.as_str().unwrap(), *expected_str);
+            let back: super::OutboundType = serde_json::from_value(json_val).unwrap();
+            assert_eq!(&back, variant);
+        }
+    }
+
+    // ── validate_reality() stability ──
+
+    #[test]
+    fn validate_reality_success_after_raw_bridge() {
+        let outbound = super::OutboundIR {
+            ty: super::OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn validate_reality_failure_after_raw_bridge() {
+        let outbound = super::OutboundIR {
+            ty: super::OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: None,
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+        let err = outbound.validate_reality().unwrap_err();
+        assert!(err.contains("public_key is required"));
+    }
+
+    // ── ConfigIR root with outbound subtree ──
+
+    #[test]
+    fn config_ir_parses_valid_outbound_subtree() {
+        let data = json!({
+            "outbounds": [
+                {
+                    "ty": "direct",
+                    "name": "direct-out"
+                },
+                {
+                    "ty": "vmess",
+                    "server": "example.com",
+                    "port": 443,
+                    "uuid": "abcdef00-1234-5678-9abc-def012345678",
+                    "multiplex": {
+                        "enabled": true,
+                        "protocol": "yamux"
+                    }
+                }
+            ]
+        });
+        let config: ConfigIR = serde_json::from_value(data).unwrap();
+        assert_eq!(config.outbounds.len(), 2);
+        assert_eq!(config.outbounds[0].ty, super::OutboundType::Direct);
+        assert_eq!(config.outbounds[1].ty, super::OutboundType::Vmess);
+        assert!(config.outbounds[1].multiplex.as_ref().unwrap().enabled);
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_outbound_nested_field() {
+        let data = json!({
+            "outbounds": [
+                {
+                    "ty": "direct",
+                    "name": "direct-out",
+                    "not_a_real_field": true
+                }
+            ]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in outbound subtree via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_in_outbound_multiplex() {
+        let data = json!({
+            "outbounds": [
+                {
+                    "ty": "vmess",
+                    "server": "example.com",
+                    "port": 443,
+                    "multiplex": {
+                        "enabled": true,
+                        "fake_knob": 99
+                    }
+                }
+            ]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in outbound multiplex via Raw bridge"
+        );
+    }
+
+    #[test]
+    fn config_ir_rejects_unknown_field_in_outbound_credentials() {
+        let data = json!({
+            "outbounds": [
+                {
+                    "ty": "socks",
+                    "server": "example.com",
+                    "port": 1080,
+                    "credentials": {
+                        "username": "user",
+                        "password": "pass",
+                        "extra_field": "bad"
+                    }
+                }
+            ]
+        });
+        let result = serde_json::from_value::<ConfigIR>(data);
+        assert!(
+            result.is_err(),
+            "ConfigIR should reject unknown fields in outbound credentials via Raw bridge"
         );
     }
 }

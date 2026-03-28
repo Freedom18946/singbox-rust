@@ -30,14 +30,15 @@ pub use inbound::{
 };
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
 pub use raw::{
-    RawAnyTlsUserIR, RawCertificateIR, RawConfigRoot, RawDerpDialOptionsIR,
-    RawDerpDomainResolverIR, RawDerpMeshPeerIR, RawDerpOutboundTlsOptionsIR, RawDerpStunOptionsIR,
-    RawDerpStunOptionsObj, RawDerpVerifyClientUrlIR, RawDnsHostIR, RawDnsIR, RawDnsRuleIR,
-    RawDnsServerIR, RawDomainResolveOptionsIR, RawEndpointIR, RawHysteria2UserIR,
-    RawHysteriaUserIR, RawInboundIR, RawInboundTlsOptionsIR, RawLogIR, RawNtpIR, RawRouteIR,
-    RawRuleIR, RawRuleSetIR, RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR,
-    RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR,
-    RawVmessUserIR, RawWireGuardPeerIR,
+    RawAnyTlsUserIR, RawBrutalIR, RawCertificateIR, RawConfigRoot, RawCredentials,
+    RawDerpDialOptionsIR, RawDerpDomainResolverIR, RawDerpMeshPeerIR, RawDerpOutboundTlsOptionsIR,
+    RawDerpStunOptionsIR, RawDerpStunOptionsObj, RawDerpVerifyClientUrlIR, RawDnsHostIR, RawDnsIR,
+    RawDnsRuleIR, RawDnsServerIR, RawDomainResolveOptionsIR, RawEndpointIR, RawHeaderEntry,
+    RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundTlsOptionsIR, RawLogIR,
+    RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawRouteIR, RawRuleIR, RawRuleSetIR,
+    RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR,
+    RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR, RawVmessUserIR,
+    RawWireGuardPeerIR,
 };
 pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR};
 pub use service::{ServiceIR, ServiceType};
@@ -45,7 +46,10 @@ pub use validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 
 /// Authentication credentials with optional environment variable support.
 /// 带有可选环境变量支持的认证凭据。
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Deserialization goes through [`RawCredentials`](raw::RawCredentials)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 pub struct Credentials {
     /// Username (literal value).
     #[serde(default)]
@@ -61,8 +65,20 @@ pub struct Credentials {
     pub password_env: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for Credentials {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawCredentials::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Multiplex options for inbound connections (yamux-based stream multiplexing).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawMultiplexOptionsIR`](raw::RawMultiplexOptionsIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct MultiplexOptionsIR {
     /// Enable multiplex support.
     #[serde(default)]
@@ -99,13 +115,34 @@ pub struct MultiplexOptionsIR {
     pub keepalive_interval: Option<u64>,
 }
 
+impl<'de> Deserialize<'de> for MultiplexOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawMultiplexOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
 /// Brutal congestion control configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawBrutalIR`](raw::RawBrutalIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct BrutalIR {
     /// Upload bandwidth in Mbps.
     pub up: u64,
     /// Download bandwidth in Mbps.
     pub down: u64,
+}
+
+impl<'de> Deserialize<'de> for BrutalIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        raw::RawBrutalIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 /// Hysteria2 Masquerade configuration

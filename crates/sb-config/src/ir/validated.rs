@@ -49,15 +49,21 @@
 //! unknown inbound fields are rejected (WP-30h). `InboundType` is intentionally
 //! NOT Raw-ified.
 //!
+//! `OutboundIR`, `HeaderEntry`, `Credentials`, `MultiplexOptionsIR`, and
+//! `BrutalIR` deserialize through their corresponding Raw types so unknown
+//! outbound nested fields are rejected (WP-30i). `OutboundType` is
+//! intentionally NOT Raw-ified. `Credentials`/`MultiplexOptionsIR`/`BrutalIR`
+//! are bridged because they are direct outbound helpers.
+//!
 //! ## What is NOT yet routed through Raw
 //!
-//! `OutboundIR` still derives `Deserialize` directly. Nested Raw types for
-//! outbound remain future work.
+//! `MasqueradeIR` and sub-types still derive `Deserialize` directly.
+//! `planned.rs` / `normalize.rs` are still skeletons.
 //!
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h)
+//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h), RawOutbound* (WP-30i)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)

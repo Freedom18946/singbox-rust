@@ -1,7 +1,21 @@
 //! Outbound IR types (proxy protocols, transport, TLS, DNS outbound).
+//!
+//! ## Deserialization (WP-30i)
+//!
+//! `OutboundIR` and `HeaderEntry` no longer derive `Deserialize` directly.
+//! Each deserializes via its corresponding Raw bridge (`RawOutboundIR`,
+//! `RawHeaderEntry`) which carries `#[serde(deny_unknown_fields)]`, so
+//! unknown outbound nested fields are rejected at parse time.
+//!
+//! `OutboundType` is intentionally NOT Raw-ified — it stays as the validated
+//! enum with lowercase serde and `ty_str()` unchanged.
+//!
+//! `Credentials`, `MultiplexOptionsIR`, and `BrutalIR` (defined in `mod.rs`)
+//! are also bridged through Raw because they are direct outbound helpers.
 
 use serde::{Deserialize, Serialize};
 
+use super::raw::{RawHeaderEntry, RawOutboundIR};
 use super::{Credentials, MultiplexOptionsIR};
 
 /// Outbound proxy type.
@@ -112,7 +126,7 @@ impl OutboundType {
 /// with protocol-specific fields marked as optional.
 /// 支持多种协议（HTTP, SOCKS, Shadowsocks, VLESS 等），
 /// 协议特定字段标记为可选。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct OutboundIR {
     pub ty: OutboundType,
     /// Server address (IP or hostname).
@@ -542,12 +556,33 @@ pub struct OutboundIR {
 }
 
 /// HTTP header entry (for gRPC metadata or HTTP Upgrade headers).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// Deserialization goes through [`RawHeaderEntry`](super::raw::RawHeaderEntry)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct HeaderEntry {
     /// Header key/name.
     pub key: String,
     /// Header value.
     pub value: String,
+}
+
+impl<'de> Deserialize<'de> for HeaderEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawHeaderEntry::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl<'de> Deserialize<'de> for OutboundIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawOutboundIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 impl OutboundIR {
