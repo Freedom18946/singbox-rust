@@ -13,33 +13,41 @@
 
 ## 最近完成（2026-03-28）
 
-### WP-30f：Endpoint nested Raw boundary pilot — 已完成
+### WP-30g：Service nested Raw boundary pilot — 已完成
 
-- `crates/sb-config/src/ir/raw.rs` 新增 `RawWireGuardPeerIR` / `RawEndpointIR`，全部 `#[serde(deny_unknown_fields)]`
-- `crates/sb-config/src/ir/endpoint.rs`：`EndpointIR` / `WireGuardPeerIR` 不再 `derive(Deserialize)`，改为手写 `impl Deserialize` 走 Raw bridge
-- `RawConfigRoot.endpoints` 从 `Vec<EndpointIR>` 改为 `Vec<RawEndpointIR>`；`From<RawConfigRoot> for ConfigIR` 通过 `.into_iter().map(Into::into).collect()` 桥接 endpoint raw → validated
-- `crates/sb-config/src/ir/mod.rs` 新增 `pub use raw::{RawEndpointIR, RawWireGuardPeerIR}`，`crate::ir::Endpoint*` / `WireGuardPeerIR` 路径保持稳定
-- 新增 11 个 endpoint boundary tests（raw.rs `#[test]` 从 44→55）：Raw unknown-field rejection ×2、validated bridge rejection ×2、合法 roundtrip ×3（WireGuardPeer / WireGuard endpoint / Tailscale endpoint）、EndpointType lowercase serde 验证、ConfigIR endpoint subtree 解析、ConfigIR endpoint nested unknown rejection ×2（endpoint 级 + peer 级）
-- **Endpoint nested unknown fields 现在会被严格拒绝**
-- **`EndpointType` 仍保持现有 validated enum 形态（lowercase serde 不变）**
-- **`InboundIR/OutboundIR/ServiceIR` 仍未进入 nested Raw**
+- `crates/sb-config/src/ir/raw.rs` 新增 8 个 Raw 类型，全部 `#[serde(deny_unknown_fields)]`：
+  - `RawServiceIR`、`RawInboundTlsOptionsIR`、`RawDerpStunOptionsIR`（bool/port/obj untagged）
+  - `RawDerpDomainResolverIR`、`RawDerpDialOptionsIR`
+  - `RawDerpVerifyClientUrlIR`、`RawDerpOutboundTlsOptionsIR`、`RawDerpMeshPeerIR`
+- 使用 `flatten` 的类型（`DerpVerifyClientUrlIR`、`DerpMeshPeerIR`）在 Raw 版本中内联 12 个 dial 字段，规避 `flatten` + `deny_unknown_fields` 不兼容
+- `extra: BTreeMap` 前向兼容字段在 Raw 版本中被丢弃，`From` impl 使用 `Default::default()`
+- 以下 validated 类型现在通过 Raw bridge 反序列化（不再 derive `Deserialize`）：
+  - `ServiceIR`、`InboundTlsOptionsIR`、`DerpStunOptionsIR`、`DerpDomainResolverIR`
+  - `DerpDialOptionsIR`、`DerpVerifyClientUrlIR`、`DerpOutboundTlsOptionsIR`、`DerpMeshPeerIR`
+- `mod.rs` 旧的 `DerpStunOptionsObj` 及其 `From` impl / 手写 `Deserialize` impl 已删除，替换为 `RawDerpStunOptionsIR` bridge
+- `RawConfigRoot.services` 从 `Vec<ServiceIR>` 改为 `Vec<RawServiceIR>`
+- **`ServiceType` 仍保持 validated enum（lowercase serde 不变）**
+- **`Listable` / `StringOrObj` 仍保持 generic helper（不 Raw-ify）**
+- **`InboundIR` / `OutboundIR` 仍未进入 nested Raw**
 - **`planned.rs` / `normalize.rs` 仍然只是 skeleton**
+- 新增 21 个 service boundary tests（raw.rs `#[test]` 从 55→76）
 
 **验证**:
-- `cargo fmt --all` ✅
-- `cargo check -p sb-config` ✅
-- `cargo check -p app --features parity` ✅
-- `cargo test -p sb-config --lib ir` ✅ (182 passed)
-- `cargo test -p sb-config` ✅ (all unit + integration + doc-tests, 0 failed)
-- `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
+- `cargo check --workspace` ✅
+- `cargo test -p sb-config --lib ir` ✅ (203 passed)
+- `cargo test -p sb-config` ✅ (328 passed, 0 failed)
+- `cargo test -p sb-core` ✅ (512 passed)
+- `cargo test -p interop-lab` ✅ (29 passed)
+- `cargo clippy --workspace --all-features --all-targets -- -D warnings` ✅
 
-### WP-30e / WP-30d / WP-30c / WP-30b / WP-30a — 已完成
+### WP-30f / WP-30e / WP-30d / WP-30c / WP-30b / WP-30a — 已完成
 
-- WP-30e：Route nested Raw boundary pilot（`RawRuleIR` / `RawDomainResolveOptionsIR` / `RawRuleSetIR` / `RawRouteIR`）
-- WP-30d：DNS nested Raw boundary pilot（`RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR`）
+- WP-30f：Endpoint nested Raw boundary（`RawWireGuardPeerIR` / `RawEndpointIR`）
+- WP-30e：Route nested Raw boundary（`RawRuleIR` / `RawDomainResolveOptionsIR` / `RawRuleSetIR` / `RawRouteIR`）
+- WP-30d：DNS nested Raw boundary（`RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR`）
 - WP-30c：`RawLogIR` / `RawNtpIR` / `RawCertificateIR` root-owned leaf strictness
-- WP-30b：`RawConfigRoot` root boundary，未知 top-level 字段严格拒绝
-- WP-30a：`validated.rs` / `raw.rs` / `planned.rs` / `normalize.rs` skeleton 与 `ir/mod.rs` 第一轮拆分
+- WP-30b：`RawConfigRoot` root boundary
+- WP-30a：`validated.rs` / `raw.rs` / `planned.rs` / `normalize.rs` skeleton
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -50,7 +58,7 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - 继续扩 nested Raw（`RawInbound` / `RawOutbound` / `RawService` / 其他未覆盖子树）
+  - 继续扩 nested Raw（`RawInbound` / `RawOutbound` / 其他未覆盖子树）
   - 评估 `planned.rs` 前置卡，再决定是否推进 `RuntimePlan` builder
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
