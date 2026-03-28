@@ -19,11 +19,11 @@
 - `crates/sb-config/src/ir/endpoint.rs`：`EndpointIR` / `WireGuardPeerIR` 不再 `derive(Deserialize)`，改为手写 `impl Deserialize` 走 Raw bridge
 - `RawConfigRoot.endpoints` 从 `Vec<EndpointIR>` 改为 `Vec<RawEndpointIR>`；`From<RawConfigRoot> for ConfigIR` 通过 `.into_iter().map(Into::into).collect()` 桥接 endpoint raw → validated
 - `crates/sb-config/src/ir/mod.rs` 新增 `pub use raw::{RawEndpointIR, RawWireGuardPeerIR}`，`crate::ir::Endpoint*` / `WireGuardPeerIR` 路径保持稳定
-- 新增 13 个 endpoint boundary tests：Raw unknown-field rejection ×2、validated bridge rejection ×2、合法 roundtrip ×3（WireGuardPeer / WireGuard endpoint / Tailscale endpoint）、EndpointType lowercase serde 验证、ConfigIR endpoint subtree 解析、ConfigIR endpoint nested unknown rejection ×2（endpoint 级 + peer 级）、boundary doc 更新
+- 新增 11 个 endpoint boundary tests（raw.rs `#[test]` 从 44→55）：Raw unknown-field rejection ×2、validated bridge rejection ×2、合法 roundtrip ×3（WireGuardPeer / WireGuard endpoint / Tailscale endpoint）、EndpointType lowercase serde 验证、ConfigIR endpoint subtree 解析、ConfigIR endpoint nested unknown rejection ×2（endpoint 级 + peer 级）
 - **Endpoint nested unknown fields 现在会被严格拒绝**
 - **`EndpointType` 仍保持现有 validated enum 形态（lowercase serde 不变）**
 - **`InboundIR/OutboundIR/ServiceIR` 仍未进入 nested Raw**
-- **`planned.ps` / `normalize.rs` 仍然只是 skeleton**
+- **`planned.rs` / `normalize.rs` 仍然只是 skeleton**
 
 **验证**:
 - `cargo fmt --all` ✅
