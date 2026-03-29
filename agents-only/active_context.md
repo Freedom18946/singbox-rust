@@ -13,34 +13,21 @@
 
 ## 最近完成（2026-03-29）
 
-### WP-30n：private planned DNS server references expansion seam — 已完成
+### WP-30o：crate-private planned fact graph seam — 已完成
 
-- 在 `crates/sb-config/src/ir/planned.rs` 第三刀扩展 private seam，新增三类 DNS server tag reference 检查
-- `validate_cross_references()` 现在额外承接：
-  - `DnsRuleIR.server` → DNS server tag namespace
-  - `DnsIR.default` → DNS server tag namespace
-  - `DnsIR.final_server` → DNS server tag namespace
-- 复用已有的 `DnsServerNamespace` 和 `CrossReferenceValidator`，新增三个方法
-- WP-30l 原有四类检查 + WP-30m 原有四类检查完全不变
-- **没有新增 public `RuntimePlan` / `PlannedConfigIR` / builder API**
-- **runtime-facing DNS env bridge 仍在 `app::run_engine`，未搬进 planned.rs**
+- 将 WP-30l/m/n 的离散 helper 收成 **crate-private structured fact graph** `PlannedFacts`
+- `PlannedFacts::collect(&ConfigIR)` 扫描全部 4 个 namespace（outbound/endpoint、inbound、DNS server、service）
+- `PlannedFacts::validate(&self, &ConfigIR)` 校验全部 11 类引用关系
+- 单一入口 `validate_planned_facts()` 替代之前的 `validate_outbound_references()` + `validate_cross_references()`
+- `Config::validate()` 现在只调用一次 planned seam
+- **仍然不是 public `RuntimePlan` / `PlannedConfigIR` / builder**
+- **runtime-facing DNS env bridge 仍在 `app::run_engine`**
+- **inbound tag uniqueness 仍留在 `Config::validate()` (lib.rs)**
 - **validator/v2、normalize、minimize、present 职责仍未搬**
-- 新增 14 个 planned.rs unit tests + 4 个 lib.rs integration tests + 2 个 pin tests
+- 新增/重写 38 个 planned.rs unit tests + 6 个 pin tests，lib.rs integration tests 全部保留不变
 
-### WP-30m：private planned cross-reference expansion seam — 已完成（earlier）
-
-- second-cut：DNS/service detour + address_resolver + service ref 四类检查
-
-### WP-30l：private planned tag/reference inventory seam — 已完成（earlier）
-
-- first-cut private seam：`TagNamespace` + `ReferenceValidator` + `validate_outbound_references()`
-- 承接四类责任：tag namespace uniqueness, selector/urltest members, rule outbound, route.default
-
-### WP-30k：planned.rs preflight seam inventory — 已完成（earlier）
-
-### WP-30j：Masquerade shared helper Raw closure — 已完成（earlier）
-### WP-30i：Outbound nested Raw boundary pilot — 已完成（earlier）
-### WP-30h ~ WP-30a — 已完成（earlier）
+### WP-30n/m/l/k：planned seam 三刀 — 已完成（earlier）
+### WP-30j ~ WP-30a：Raw boundary + seam inventory — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -53,12 +40,12 @@
 - **WP-30 Phase 3 后续**：
   - 所有 config-facing strict input boundary 已 Raw 化（WP-30a ~ WP-30j）
   - `WP-30k` 已完成前置 seam inventory
-  - `WP-30l` 已落地 first-cut private planned seam（tag/reference inventory）
-  - `WP-30m` 已落地 second-cut cross-reference expansion（DNS/service detour + address_resolver + service ref）
-  - `WP-30n` 已落地 third-cut DNS server references（DnsRuleIR.server + DnsIR.default + DnsIR.final_server）
+  - `WP-30l/m/n` 三刀已落地 private planned seam
+  - `WP-30o` 已将离散 helper 收成 crate-private `PlannedFacts` fact graph
   - 下一步若继续 planned.rs，可考虑：
-    - 将 planned seam 扩展为 full planned fact graph（跨 namespace 引用已接近完整）
-    - 或抽取 inbound tag uniqueness 也进 planned.rs（目前故意留在 lib.rs）
+    - 抽取 inbound tag uniqueness 进 `PlannedFacts`（目前故意留在 lib.rs）
+    - 让 `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
+    - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）

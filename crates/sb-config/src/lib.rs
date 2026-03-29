@@ -466,16 +466,13 @@ impl Config {
             }
         }
 
-        // Delegate outbound/endpoint tag namespace + reference checks to the
-        // private planned inventory seam (WP-30l). This covers:
+        // Delegate all planned fact graph validation to the crate-private
+        // planned seam (WP-30o). This builds a PlannedFacts inventory from
+        // validated IR, then validates all 11 reference categories:
         //   1) outbound/endpoint shared tag namespace uniqueness
         //   2) selector/urltest member reference existence
         //   3) route rule outbound reference existence
         //   4) route.default reference existence
-        crate::ir::planned::validate_outbound_references(&self.ir)?;
-
-        // Delegate cross-namespace reference checks to the private planned
-        // inventory seam (WP-30m + WP-30n). This covers:
         //   5) DnsServerIR.detour → outbound/endpoint shared tag namespace
         //   6) DnsServerIR.address_resolver → DNS server tag namespace
         //   7) DnsServerIR.service → service tag namespace
@@ -483,7 +480,7 @@ impl Config {
         //   9) DnsRuleIR.server → DNS server tag namespace
         //  10) DnsIR.default → DNS server tag namespace
         //  11) DnsIR.final_server → DNS server tag namespace
-        crate::ir::planned::validate_cross_references(&self.ir)?;
+        crate::ir::planned::validate_planned_facts(&self.ir)?;
 
         Ok(())
     }
@@ -784,8 +781,8 @@ endpoints:
     #[test]
     fn planned_preflight_pin_current_owner_dns_detour_validated_but_not_env_bound() {
         // WP-30k original: dns.detour was only parsed, not validated.
-        // WP-30m update: dns.detour reference existence is now checked by
-        // planned.rs (validate_cross_references), but runtime env binding
+        // WP-30m/WP-30o update: dns.detour reference existence is now checked by
+        // planned.rs (PlannedFacts fact graph), but runtime env binding
         // still stays in app::run_engine::apply_dns_env_from_config().
         //
         // This pin confirms: missing detour target is NOW rejected at validate time,

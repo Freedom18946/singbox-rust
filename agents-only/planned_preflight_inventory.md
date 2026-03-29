@@ -110,6 +110,49 @@ WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 
 | DNS server | `DnsServerIR.tag` | `DnsServerIR.address_resolver`, `DnsRuleIR.server`, `DnsIR.default`, `DnsIR.final_server` |
 | service | `ServiceIR.tag` | `DnsServerIR.service` |
 
+## Fact Graph Status (WP-30o implemented)
+
+WP-30o 将 WP-30l/m/n 的离散 helper（`TagNamespace` + `ReferenceValidator` + `CrossReferenceValidator` + 两个入口函数）收成一个 **crate-private structured fact graph** `PlannedFacts`。
+
+### 核心变更
+
+- 引入 `PlannedFacts` struct，持有全部四个 namespace inventory：`TagNamespace`、`InboundNamespace`、`DnsServerNamespace`、`ServiceNamespace`
+- 清晰分离两个阶段：
+  - **Collect** — `PlannedFacts::collect(&ConfigIR)` 扫描所有 namespace facts，检查 outbound/endpoint tag 唯一性
+  - **Validate** — `PlannedFacts::validate(&self, &ConfigIR)` 校验全部 11 类引用关系
+- 单一入口函数 `validate_planned_facts(&ConfigIR)` 替代之前的 `validate_outbound_references()` + `validate_cross_references()` 两步调用
+- `Config::validate()` 现在只调用一次 `crate::ir::planned::validate_planned_facts(&self.ir)`
+- 原有 `ReferenceValidator` 和 `CrossReferenceValidator` 被内化为 `PlannedFacts` 的 private methods
+- namespace scan 方法从 `pub(crate)` 降级为 `fn`（仅 `PlannedFacts` 需要调用）
+
+### Namespace facts（4 域）
+
+1. **outbound/endpoint shared** — `OutboundIR.name` + `EndpointIR.tag`（含唯一性检查）
+2. **inbound** — `InboundIR.tag`（仅收集，唯一性仍在 lib.rs）
+3. **DNS server** — `DnsServerIR.tag`
+4. **service** — `ServiceIR.tag`
+
+### Reference facts（11 类）
+
+1. outbound/endpoint shared tag namespace uniqueness
+2. selector/urltest member → outbound/endpoint namespace
+3. route rule outbound → outbound/endpoint namespace
+4. route.default → outbound/endpoint namespace
+5. DnsServerIR.detour → outbound/endpoint namespace
+6. DnsServerIR.address_resolver → DNS server namespace
+7. DnsServerIR.service → service namespace
+8. ServiceIR.detour → inbound namespace
+9. DnsRuleIR.server → DNS server namespace
+10. DnsIR.default → DNS server namespace
+11. DnsIR.final_server → DNS server namespace
+
+### 这仍然不是 public RuntimePlan
+
+- `PlannedFacts` 是 `pub(crate)`，不通过 `ir/mod.rs` 或 `lib.rs` re-export
+- 没有 public builder API
+- 没有 public `PlannedConfigIR`
+- 但内部结构已经足够清楚，可以作为未来 `RuntimePlan` 的前体
+
 ### 仍未搬的责任面
 
 - **Inbound tag uniqueness** — 故意留在 `Config::validate()` (lib.rs)，因为 inbound 和 outbound/endpoint 是独立 namespace
@@ -139,11 +182,11 @@ WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 
   - `planned_preflight_pin_current_owner_dns_detour_validated_but_not_env_bound`
   - **WP-30m updated**: dns.detour reference existence 现在已由 planned.rs 校验（`validate_cross_references`），但 runtime env binding 仍不在 sb-config 内。此 pin 确认 missing detour 被拒绝，且 IR 保留原始字符串。
 
-### WP-30l 新增 pins
+### WP-30l 新增 pins（WP-30o renamed/superseded）
 
 - `crates/sb-config/src/ir/planned.rs`（unit tests）：
-  - `planned_pin_tag_namespace_owned_by_planned_seam` — pin: tag namespace check 现在由 planned.rs seam 持有
-  - `planned_pin_member_ref_owned_by_planned_seam` — pin: member reference check 现在由 planned.rs seam 持有
+  - ~~`planned_pin_tag_namespace_owned_by_planned_seam`~~ → superseded by `planned_pin_fact_graph_owns_tag_namespace`
+  - ~~`planned_pin_member_ref_owned_by_planned_seam`~~ → superseded by `planned_pin_fact_graph_owns_member_refs`
 - `crates/sb-config/src/lib.rs`（integration tests）：
   - `wp30l_duplicate_outbound_tag_error_unchanged` — pin: 错误文案不变
   - `wp30l_selector_missing_member_error_unchanged` — pin: 错误文案不变
@@ -152,12 +195,12 @@ WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 
   - `wp30l_valid_outbound_selector_route_passes` — 合法组合仍通过
   - `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate` — pin: inbound duplicate tag 仍留在 lib.rs
 
-### WP-30m 新增 pins
+### WP-30m 新增 pins（WP-30o renamed/superseded）
 
 - `crates/sb-config/src/ir/planned.rs`（unit tests）：
-  - `planned_pin_cross_ref_owned_by_planned_seam` — pin: DNS detour cross-reference check 现在由 planned.rs seam 持有
-  - `planned_pin_service_detour_owned_by_planned_seam` — pin: service detour → inbound 现在由 planned.rs seam 持有
-  - `planned_pin_dns_env_bridge_not_in_planned` — pin: runtime-facing DNS env bridge 仍不在 planned.rs
+  - ~~`planned_pin_cross_ref_owned_by_planned_seam`~~ → superseded by `planned_pin_fact_graph_owns_cross_refs`
+  - ~~`planned_pin_service_detour_owned_by_planned_seam`~~ → merged into `planned_pin_fact_graph_owns_cross_refs`
+  - `planned_pin_dns_env_bridge_not_in_planned` — pin: runtime-facing DNS env bridge 仍不在 planned.rs（保留，名称不变）
 - `crates/sb-config/src/lib.rs`（integration tests）：
   - `wp30m_dns_detour_missing_outbound_rejected` — dns server detour 指向缺失 outbound 被拒绝
   - `wp30m_dns_address_resolver_missing_rejected` — address_resolver 指向缺失 dns server 被拒绝
@@ -166,13 +209,25 @@ WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 
   - `wp30m_valid_cross_references_pass` — 合法 cross-reference 组合仍通过
   - `wp30m_pin_dns_env_bridge_not_in_planned_seam` — pin: runtime-facing DNS env bridge 仍不在 planned.rs
 
-### WP-30n 新增 pins
+### WP-30n 新增 pins（WP-30o renamed/superseded）
 
 - `crates/sb-config/src/ir/planned.rs`（unit tests）：
-  - `planned_pin_dns_rule_server_owned_by_planned_seam` — pin: DNS rule server reference check 现在由 planned.rs seam 持有
-  - `planned_pin_dns_default_final_owned_by_planned_seam` — pin: DnsIR.default/final_server reference check 现在由 planned.rs seam 持有
-- `crates/sb-config/src/lib.rs`（integration tests）：
+  - ~~`planned_pin_dns_rule_server_owned_by_planned_seam`~~ → superseded by `planned_pin_fact_graph_owns_dns_server_refs`
+  - ~~`planned_pin_dns_default_final_owned_by_planned_seam`~~ → merged into `planned_pin_fact_graph_owns_dns_server_refs`
+- `crates/sb-config/src/lib.rs`（integration tests，保留不变）：
   - `wp30n_dns_rule_server_missing_rejected` — dns rule server 指向缺失 dns server 被拒绝
   - `wp30n_dns_default_missing_rejected` — dns default 指向缺失 dns server 被拒绝
   - `wp30n_dns_final_server_missing_rejected` — dns final_server 指向缺失 dns server 被拒绝
   - `wp30n_valid_dns_rule_default_final_pass` — 合法 dns rule server + default + final 组合仍通过
+
+### WP-30o 新增 pins
+
+- `crates/sb-config/src/ir/planned.rs`（unit tests）：
+  - `planned_pin_fact_graph_owns_tag_namespace` — pin: tag namespace uniqueness 现在由 PlannedFacts fact graph 持有
+  - `planned_pin_fact_graph_owns_member_refs` — pin: selector/urltest member reference check 现在由 PlannedFacts fact graph 持有
+  - `planned_pin_fact_graph_owns_cross_refs` — pin: DNS/service cross-reference check 现在由 PlannedFacts fact graph 持有
+  - `planned_pin_fact_graph_owns_dns_server_refs` — pin: DNS rule server + DnsIR.default/final_server reference check 现在由 PlannedFacts fact graph 持有
+  - `planned_pin_dns_env_bridge_not_in_planned` — pin: runtime-facing DNS env bridge 仍不在 planned.rs（保留自 WP-30m）
+  - `planned_pin_inbound_uniqueness_not_in_fact_graph` — pin: inbound tag uniqueness 仍留在 Config::validate() (lib.rs)，PlannedFacts 仅收集 inbound tags 用于 cross-reference
+- `crates/sb-config/src/lib.rs`（integration tests，WP-30l/m/n 全部保留不变）：
+  - 所有 `wp30l_*`、`wp30m_*`、`wp30n_*` integration tests 继续通过，确认错误文案和外部行为不变
