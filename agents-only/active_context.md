@@ -13,19 +13,21 @@
 
 ## 最近完成（2026-03-29）
 
-### WP-30o：crate-private planned fact graph seam — 已完成
+### WP-30p：inbound uniqueness absorption seam — 已完成
 
-- 将 WP-30l/m/n 的离散 helper 收成 **crate-private structured fact graph** `PlannedFacts`
-- `PlannedFacts::collect(&ConfigIR)` 扫描全部 4 个 namespace（outbound/endpoint、inbound、DNS server、service）
-- `PlannedFacts::validate(&self, &ConfigIR)` 校验全部 11 类引用关系
-- 单一入口 `validate_planned_facts()` 替代之前的 `validate_outbound_references()` + `validate_cross_references()`
-- `Config::validate()` 现在只调用一次 planned seam
-- **仍然不是 public `RuntimePlan` / `PlannedConfigIR` / builder**
+- 将 inbound tag uniqueness 从 `Config::validate()` (lib.rs) 吸收入 `PlannedFacts::collect()`
+- `InboundNamespace::scan()` 现在返回 `Result`，检查 inbound tag 唯一性
+- `Config::validate()` 现在是 **thin entry point**，不再持有任何自己的校验逻辑
+- inbound 与 outbound/endpoint 仍是**独立 namespace**（Go parity）
+- 错误文案 `duplicate inbound tag: {tag}` 保持不变
+- lib.rs 中 `HashSet` import 已移除（不再需要）
+- 迁移 pin: `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate` → `wp30p_pin_inbound_duplicate_tag_owned_by_fact_graph`
+- 迁移 pin: `planned_pin_inbound_uniqueness_not_in_fact_graph` → `planned_pin_fact_graph_owns_inbound_uniqueness`
+- 新增 pin: `planned_pin_validate_is_thin_entry_point` + `planned_pin_inbound_outbound_independent_namespaces`
+- **仍然不是 public `RuntimePlan` / `PlannedConfigIR` / builder / crate-internal query API**
 - **runtime-facing DNS env bridge 仍在 `app::run_engine`**
-- **inbound tag uniqueness 仍留在 `Config::validate()` (lib.rs)**
-- **validator/v2、normalize、minimize、present 职责仍未搬**
-- 新增/重写 38 个 planned.rs unit tests + 6 个 pin tests，lib.rs integration tests 全部保留不变
 
+### WP-30o：crate-private planned fact graph seam — 已完成（earlier）
 ### WP-30n/m/l/k：planned seam 三刀 — 已完成（earlier）
 ### WP-30j ~ WP-30a：Raw boundary + seam inventory — 已完成（earlier）
 
@@ -43,10 +45,11 @@
   - `WP-30l/m/n` 三刀已落地 private planned seam
   - `WP-30o` 已将离散 helper 收成 crate-private `PlannedFacts` fact graph
   - 下一步若继续 planned.rs，可考虑：
-    - 抽取 inbound tag uniqueness 进 `PlannedFacts`（目前故意留在 lib.rs）
-    - 让 `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
+    - ~~抽取 inbound tag uniqueness 进 `PlannedFacts`~~ ✅ WP-30p 已完成
+    - 让 `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用（需要先有稳定 crate 内消费者）
     - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
-  - 仍不是 `RuntimePlan` public 实作卡
+    - DNS server / service namespace 唯一性检查（目前仅收集，不检查唯一性）
+  - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
 - bootstrap.rs / run_engine.rs 职责收口

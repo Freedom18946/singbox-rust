@@ -1,4 +1,4 @@
-//! Planning layer — crate-private fact graph (WP-30o).
+//! Planning layer — crate-private fact graph (WP-30p).
 //!
 //! ## Purpose
 //!
@@ -8,26 +8,33 @@
 //! Raw → Validated (ConfigIR) → Planned (RuntimePlan) → Runtime owners
 //! ```
 //!
-//! ## Current status (WP-30o fact graph)
+//! ## Current status (WP-30p inbound uniqueness absorption)
 //!
 //! WP-30o consolidated the discrete helpers from WP-30l/m/n into a **crate-private
-//! structured fact graph** (`PlannedFacts`). The fact graph cleanly separates two
-//! phases:
+//! structured fact graph** (`PlannedFacts`). WP-30p absorbed inbound tag uniqueness
+//! into the fact graph, making `Config::validate()` a thin entry point that
+//! delegates entirely to `validate_planned_facts()`.
+//!
+//! The fact graph cleanly separates two phases:
 //!
 //! 1. **Collect** — `PlannedFacts::collect(&ConfigIR)` scans all namespace facts
-//!    from validated IR and checks tag uniqueness.
+//!    from validated IR and checks tag uniqueness for both the outbound/endpoint
+//!    shared namespace and the inbound namespace (independent namespaces).
 //! 2. **Validate** — `PlannedFacts::validate(&self, &ConfigIR)` checks all 11
 //!    reference categories against the collected namespace inventories.
 //!
 //! These are invoked via a single crate-private entry point:
 //! `validate_planned_facts(&ConfigIR)`.
 //!
-//! ## Namespace facts (4 domains)
+//! ## Namespace facts (4 domains, 2 with uniqueness)
 //!
-//! 1. **Outbound/endpoint shared** — `OutboundIR.name` + `EndpointIR.tag`
-//! 2. **Inbound** — `InboundIR.tag`
+//! 1. **Outbound/endpoint shared** — `OutboundIR.name` + `EndpointIR.tag` (uniqueness checked)
+//! 2. **Inbound** — `InboundIR.tag` (uniqueness checked, WP-30p)
 //! 3. **DNS server** — `DnsServerIR.tag`
 //! 4. **Service** — `ServiceIR.tag`
+//!
+//! Inbound and outbound/endpoint are **independent namespaces** — the same tag
+//! string may appear in both without conflict (Go parity).
 //!
 //! ## Reference facts (11 categories)
 //!
@@ -50,14 +57,16 @@
 //!
 //! - is `pub(crate)` only, not re-exported through `ir/mod.rs` or `lib.rs`
 //! - consumes validated IR (`ConfigIR`) as input
-//! - preserves all existing error messages verbatim (WP-30l/m/n)
+//! - preserves all existing error messages verbatim (WP-30l/m/n/p)
 //! - does not introduce new public types or builder API
+//! - does not expose crate-internal namespace query API
 //!
 //! ## What is NOT yet implemented
 //!
 //! - No public `RuntimePlan`
 //! - No public `PlannedConfigIR`
 //! - No public builder/helper entry point
+//! - No crate-internal namespace query API (no stable consumers yet)
 //! - No runtime connector binding
 //! - No runtime-facing DNS env bridge (still in `app::run_engine`)
 //! - `validator/v2`, `normalize`, `minimize`, `present` responsibilities not moved
@@ -65,8 +74,6 @@
 //!
 //! ## Responsibilities that still stay elsewhere
 //!
-//! - `Config::validate()` in `lib.rs`: inbound tag uniqueness (intentionally kept
-//!   separate — inbound tags use their own namespace, not the outbound/endpoint one)
 //! - `validated.rs`: planning-adjacent IR self-checks (selector/urltest non-empty
 //!   members, transport conflict validation)
 //! - `validator/v2/mod.rs`: parse-time defaults, alias fill, credential ENV
@@ -132,18 +139,22 @@ pub(crate) struct InboundNamespace {
 }
 
 impl InboundNamespace {
-    /// Scan inbound tags from validated IR (no uniqueness check here —
-    /// that responsibility stays in `Config::validate()` in lib.rs).
-    fn scan(ir: &ConfigIR) -> Self {
+    /// Scan inbound tags from validated IR and check uniqueness (WP-30p).
+    ///
+    /// Returns `Err` on the first duplicate inbound tag encountered,
+    /// preserving the exact error message that `Config::validate()` has
+    /// always produced. Inbound tags use their own namespace — they are
+    /// NOT merged with the outbound/endpoint shared namespace.
+    fn scan(ir: &ConfigIR) -> Result<Self> {
         let mut tags = HashSet::new();
         for ib in &ir.inbounds {
             if let Some(tag) = &ib.tag {
-                if !tag.is_empty() {
-                    tags.insert(tag.clone());
+                if !tag.is_empty() && !tags.insert(tag.clone()) {
+                    return Err(anyhow!("duplicate inbound tag: {}", tag));
                 }
             }
         }
-        Self { tags }
+        Ok(Self { tags })
     }
 
     fn contains(&self, tag: &str) -> bool {
@@ -226,13 +237,13 @@ impl PlannedFacts {
     /// Collect all namespace facts from validated IR.
     ///
     /// This is the "build" phase of the fact graph. It scans all four namespace
-    /// domains and checks outbound/endpoint tag uniqueness (the only namespace
-    /// that requires uniqueness checking at this stage).
+    /// domains and checks tag uniqueness for both the outbound/endpoint shared
+    /// namespace and the inbound namespace (WP-30p absorbed inbound uniqueness).
     ///
-    /// Returns `Err` if duplicate outbound/endpoint tags are detected.
+    /// Returns `Err` if duplicate outbound/endpoint or inbound tags are detected.
     pub(crate) fn collect(ir: &ConfigIR) -> Result<Self> {
         let outbound_ns = TagNamespace::scan(ir)?;
-        let inbound_ns = InboundNamespace::scan(ir);
+        let inbound_ns = InboundNamespace::scan(ir)?;
         let dns_server_ns = DnsServerNamespace::scan(ir);
         let service_ns = ServiceNamespace::scan(ir);
 
@@ -441,8 +452,12 @@ impl PlannedFacts {
 /// `validate_cross_references()` pattern with a unified collect-then-validate
 /// approach via `PlannedFacts`.
 ///
-/// Covers all 11 reference categories:
-///   1) outbound/endpoint shared tag namespace uniqueness
+/// The collect phase checks tag uniqueness for two independent namespaces:
+///   - outbound/endpoint shared namespace
+///   - inbound namespace (WP-30p)
+///
+/// The validate phase checks all 11 reference categories:
+///   1) outbound/endpoint shared tag namespace uniqueness (collect phase)
 ///   2) selector/urltest member reference existence
 ///   3) route rule outbound reference existence
 ///   4) route.default reference existence
@@ -453,9 +468,6 @@ impl PlannedFacts {
 ///   9) `DnsRuleIR.server` → DNS server tag namespace
 ///  10) `DnsIR.default` → DNS server tag namespace
 ///  11) `DnsIR.final_server` → DNS server tag namespace
-///
-/// Inbound tag uniqueness is intentionally **not** included here — it stays
-/// in `Config::validate()`.
 pub(crate) fn validate_planned_facts(ir: &ConfigIR) -> Result<()> {
     let facts = PlannedFacts::collect(ir)?;
     facts.validate(ir)?;
@@ -626,6 +638,19 @@ mod tests {
         let facts = PlannedFacts::collect(&ir).unwrap();
         assert!(facts.outbound_ns.contains("direct"));
         assert!(facts.outbound_ns.contains("wg-ep"));
+    }
+
+    #[test]
+    fn fact_graph_collect_duplicate_inbound_rejected() {
+        let mut ir = ConfigIR::default();
+        add_inbounds(&mut ir, &["dup-ib"]);
+        add_inbounds(&mut ir, &["dup-ib"]);
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert!(
+            err.to_string().contains("duplicate inbound tag: dup-ib"),
+            "error message must match existing format: {}",
+            err
+        );
     }
 
     #[test]
@@ -1044,26 +1069,49 @@ mod tests {
         );
     }
 
-    /// Pin: inbound tag uniqueness is NOT owned by the planned fact graph —
-    /// it stays in `Config::validate()` in lib.rs. PlannedFacts only collects
-    /// inbound tags for cross-reference lookup, not uniqueness checking.
+    /// Pin (WP-30p): inbound tag uniqueness IS now owned by the planned fact
+    /// graph. `PlannedFacts::collect()` checks inbound uniqueness during the
+    /// scan phase, rejecting duplicate inbound tags with the same error message
+    /// that `Config::validate()` previously produced.
     #[test]
-    fn planned_pin_inbound_uniqueness_not_in_fact_graph() {
-        // Build IR with duplicate inbound tags — PlannedFacts should NOT reject this,
-        // because inbound tag uniqueness is handled by Config::validate() in lib.rs.
+    fn planned_pin_fact_graph_owns_inbound_uniqueness() {
         let mut ir = ConfigIR::default();
         add_inbounds(&mut ir, &["dup-ib"]);
         add_inbounds(&mut ir, &["dup-ib"]);
-        // PlannedFacts.collect() should succeed (it does not check inbound uniqueness)
+        // PlannedFacts.collect() must now reject duplicate inbound tags
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate inbound tag: dup-ib",
+            "inbound uniqueness must be owned by planned fact graph (WP-30p)"
+        );
+    }
+
+    /// Pin (WP-30p): `Config::validate()` is now a thin entry point — it no
+    /// longer holds the inbound tag uniqueness rule itself. The rule lives in
+    /// `PlannedFacts::collect()`.
+    #[test]
+    fn planned_pin_validate_is_thin_entry_point() {
+        // A valid config should pass through the thin entry point
+        let mut ir = ir_with_outbounds(&["direct"]);
+        add_inbounds(&mut ir, &["mixed-in"]);
         let facts = PlannedFacts::collect(&ir).unwrap();
         assert!(
-            facts.inbound_ns.contains("dup-ib"),
-            "inbound tags are collected for cross-reference lookup"
-        );
-        // validate should also pass since there are no reference violations
-        assert!(
             facts.validate(&ir).is_ok(),
-            "planned fact graph must not check inbound tag uniqueness"
+            "Config::validate() delegates entirely to planned fact graph"
+        );
+    }
+
+    /// Pin: inbound and outbound/endpoint are independent namespaces —
+    /// the same tag string appearing in both is allowed (Go parity).
+    #[test]
+    fn planned_pin_inbound_outbound_independent_namespaces() {
+        let mut ir = ir_with_outbounds(&["shared-tag"]);
+        add_inbounds(&mut ir, &["shared-tag"]);
+        // Both namespaces contain "shared-tag" — this must be allowed
+        assert!(
+            validate_planned_facts(&ir).is_ok(),
+            "inbound and outbound namespaces must be independent"
         );
     }
 }

@@ -110,27 +110,29 @@ WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 
 | DNS server | `DnsServerIR.tag` | `DnsServerIR.address_resolver`, `DnsRuleIR.server`, `DnsIR.default`, `DnsIR.final_server` |
 | service | `ServiceIR.tag` | `DnsServerIR.service` |
 
-## Fact Graph Status (WP-30o implemented)
+## Fact Graph Status (WP-30p: inbound uniqueness absorbed)
 
-WP-30o 将 WP-30l/m/n 的离散 helper（`TagNamespace` + `ReferenceValidator` + `CrossReferenceValidator` + 两个入口函数）收成一个 **crate-private structured fact graph** `PlannedFacts`。
+WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 进一步吸收了 inbound tag uniqueness，使 `Config::validate()` 变成纯粹的 thin entry point。
 
 ### 核心变更
 
 - 引入 `PlannedFacts` struct，持有全部四个 namespace inventory：`TagNamespace`、`InboundNamespace`、`DnsServerNamespace`、`ServiceNamespace`
 - 清晰分离两个阶段：
-  - **Collect** — `PlannedFacts::collect(&ConfigIR)` 扫描所有 namespace facts，检查 outbound/endpoint tag 唯一性
+  - **Collect** — `PlannedFacts::collect(&ConfigIR)` 扫描所有 namespace facts，检查 outbound/endpoint 和 inbound tag 唯一性（两个独立 namespace）
   - **Validate** — `PlannedFacts::validate(&self, &ConfigIR)` 校验全部 11 类引用关系
 - 单一入口函数 `validate_planned_facts(&ConfigIR)` 替代之前的 `validate_outbound_references()` + `validate_cross_references()` 两步调用
-- `Config::validate()` 现在只调用一次 `crate::ir::planned::validate_planned_facts(&self.ir)`
+- `Config::validate()` 现在是 thin entry point，只做一次 `validate_planned_facts(&self.ir)` 调用，不持有任何自己的校验逻辑
 - 原有 `ReferenceValidator` 和 `CrossReferenceValidator` 被内化为 `PlannedFacts` 的 private methods
 - namespace scan 方法从 `pub(crate)` 降级为 `fn`（仅 `PlannedFacts` 需要调用）
 
-### Namespace facts（4 域）
+### Namespace facts（4 域，2 个含唯一性检查）
 
 1. **outbound/endpoint shared** — `OutboundIR.name` + `EndpointIR.tag`（含唯一性检查）
-2. **inbound** — `InboundIR.tag`（仅收集，唯一性仍在 lib.rs）
+2. **inbound** — `InboundIR.tag`（含唯一性检查，WP-30p 从 lib.rs 吸收）
 3. **DNS server** — `DnsServerIR.tag`
 4. **service** — `ServiceIR.tag`
+
+**注意**: inbound 与 outbound/endpoint 仍是**独立 namespace**，同名 tag 分别出现在两个 namespace 中不冲突（Go parity）。
 
 ### Reference facts（11 类）
 
@@ -155,11 +157,12 @@ WP-30o 将 WP-30l/m/n 的离散 helper（`TagNamespace` + `ReferenceValidator` +
 
 ### 仍未搬的责任面
 
-- **Inbound tag uniqueness** — 故意留在 `Config::validate()` (lib.rs)，因为 inbound 和 outbound/endpoint 是独立 namespace
+- ~~**Inbound tag uniqueness**~~ — WP-30p 已吸收入 `PlannedFacts::collect()`
 - **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
 - **normalize/minimize/present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
 - **runtime-facing DNS env bridge** — 仍在 `app::run_engine::apply_dns_env_from_config()`
+- **crate-internal namespace query API** — 仍不暴露（没有稳定的 crate 内消费者）
 
 ### 约束（不变）
 
@@ -193,7 +196,7 @@ WP-30o 将 WP-30l/m/n 的离散 helper（`TagNamespace` + `ReferenceValidator` +
   - `wp30l_rule_outbound_missing_error_unchanged` — pin: 错误文案不变
   - `wp30l_route_default_missing_error_unchanged` — pin: 错误文案不变
   - `wp30l_valid_outbound_selector_route_passes` — 合法组合仍通过
-  - `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate` — pin: inbound duplicate tag 仍留在 lib.rs
+  - ~~`wp30l_pin_inbound_duplicate_tag_still_in_lib_validate`~~ → WP-30p superseded by `wp30p_pin_inbound_duplicate_tag_owned_by_fact_graph`
 
 ### WP-30m 新增 pins（WP-30o renamed/superseded）
 
@@ -228,6 +231,19 @@ WP-30o 将 WP-30l/m/n 的离散 helper（`TagNamespace` + `ReferenceValidator` +
   - `planned_pin_fact_graph_owns_cross_refs` — pin: DNS/service cross-reference check 现在由 PlannedFacts fact graph 持有
   - `planned_pin_fact_graph_owns_dns_server_refs` — pin: DNS rule server + DnsIR.default/final_server reference check 现在由 PlannedFacts fact graph 持有
   - `planned_pin_dns_env_bridge_not_in_planned` — pin: runtime-facing DNS env bridge 仍不在 planned.rs（保留自 WP-30m）
-  - `planned_pin_inbound_uniqueness_not_in_fact_graph` — pin: inbound tag uniqueness 仍留在 Config::validate() (lib.rs)，PlannedFacts 仅收集 inbound tags 用于 cross-reference
+  - ~~`planned_pin_inbound_uniqueness_not_in_fact_graph`~~ → WP-30p superseded by `planned_pin_fact_graph_owns_inbound_uniqueness`
 - `crates/sb-config/src/lib.rs`（integration tests，WP-30l/m/n 全部保留不变）：
   - 所有 `wp30l_*`、`wp30m_*`、`wp30n_*` integration tests 继续通过，确认错误文案和外部行为不变
+
+### WP-30p 新增/迁移 pins
+
+- `crates/sb-config/src/ir/planned.rs`（unit tests）：
+  - `planned_pin_fact_graph_owns_inbound_uniqueness` — pin: inbound tag uniqueness 现在由 PlannedFacts fact graph 持有（WP-30p，supersedes `planned_pin_inbound_uniqueness_not_in_fact_graph`）
+  - `planned_pin_validate_is_thin_entry_point` — pin: `Config::validate()` 现在是 thin entry point，不持有自己的校验逻辑
+  - `planned_pin_inbound_outbound_independent_namespaces` — pin: inbound 与 outbound/endpoint 仍是独立 namespace
+  - `fact_graph_collect_duplicate_inbound_rejected` — unit test: duplicate inbound tag 被 collect 阶段拒绝
+- `crates/sb-config/src/lib.rs`（integration tests）：
+  - `wp30p_pin_inbound_duplicate_tag_owned_by_fact_graph` — pin: inbound duplicate tag 错误文案不变，owner 已迁移到 fact graph（supersedes `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate`）
+  - `wp30p_pin_inbound_outbound_same_tag_allowed` — pin: inbound/outbound 同名 tag 允许共存（独立 namespace，Go parity）
+  - `wp30p_pin_dns_env_bridge_still_not_moved` — pin: runtime-facing DNS env bridge 仍不在 planned.rs
+  - 所有 `wp30l_*`、`wp30m_*`、`wp30n_*` integration tests 继续通过

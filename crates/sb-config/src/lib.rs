@@ -28,7 +28,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashSet;
 use std::fs;
 // use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
@@ -453,33 +452,12 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        let mut inbound_tags = HashSet::new();
-
-        // Go parity: validate inbound tags are unique (inbound scope only).
-        // Intentionally kept here — inbound tags have their own namespace,
-        // separate from the outbound/endpoint namespace managed by planned.rs.
-        for ib in &self.ir.inbounds {
-            if let Some(tag) = &ib.tag {
-                if !tag.is_empty() && !inbound_tags.insert(tag.clone()) {
-                    return Err(anyhow!("duplicate inbound tag: {}", tag));
-                }
-            }
-        }
-
-        // Delegate all planned fact graph validation to the crate-private
-        // planned seam (WP-30o). This builds a PlannedFacts inventory from
-        // validated IR, then validates all 11 reference categories:
-        //   1) outbound/endpoint shared tag namespace uniqueness
-        //   2) selector/urltest member reference existence
-        //   3) route rule outbound reference existence
-        //   4) route.default reference existence
-        //   5) DnsServerIR.detour → outbound/endpoint shared tag namespace
-        //   6) DnsServerIR.address_resolver → DNS server tag namespace
-        //   7) DnsServerIR.service → service tag namespace
-        //   8) ServiceIR.detour → inbound tag namespace
-        //   9) DnsRuleIR.server → DNS server tag namespace
-        //  10) DnsIR.default → DNS server tag namespace
-        //  11) DnsIR.final_server → DNS server tag namespace
+        // WP-30p: Config::validate() is now a thin entry point that delegates
+        // all planned fact graph validation — including inbound tag uniqueness —
+        // to the crate-private planned seam. PlannedFacts::collect() checks
+        // tag uniqueness for both namespaces (outbound/endpoint shared AND
+        // inbound), then PlannedFacts::validate() checks all 11 reference
+        // categories. See planned.rs module doc for the full list.
         crate::ir::planned::validate_planned_facts(&self.ir)?;
 
         Ok(())
@@ -1120,10 +1098,12 @@ endpoints:
         );
     }
 
-    /// Pin: inbound duplicate tag detection is still owned by `Config::validate()`
-    /// in lib.rs, NOT by the planned seam. This must stay here.
+    /// Pin (WP-30p): inbound duplicate tag detection is now owned by the planned
+    /// fact graph (`PlannedFacts::collect()`), not by `Config::validate()` directly.
+    /// `Config::validate()` is now a thin entry point that delegates to
+    /// `validate_planned_facts()`.
     #[test]
-    fn wp30l_pin_inbound_duplicate_tag_still_in_lib_validate() {
+    fn wp30p_pin_inbound_duplicate_tag_owned_by_fact_graph() {
         let raw = serde_json::json!({
             "inbounds": [
                 { "type": "http", "tag": "dup-ib", "listen": "127.0.0.1", "listen_port": 8080 },
@@ -1138,7 +1118,43 @@ endpoints:
         assert_eq!(
             err.to_string(),
             "duplicate inbound tag: dup-ib",
-            "inbound tag uniqueness must still be checked in Config::validate(), not planned seam"
+            "inbound tag uniqueness error message must be unchanged (WP-30p)"
+        );
+    }
+
+    /// Pin (WP-30p): inbound and outbound/endpoint namespaces are independent —
+    /// the same tag appearing in both is allowed (Go parity).
+    #[test]
+    fn wp30p_pin_inbound_outbound_same_tag_allowed() {
+        let raw = serde_json::json!({
+            "inbounds": [
+                { "type": "http", "tag": "shared", "listen": "127.0.0.1", "listen_port": 8080 }
+            ],
+            "outbounds": [
+                { "type": "direct", "tag": "shared" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "inbound and outbound/endpoint are independent namespaces (Go parity)"
+        );
+    }
+
+    /// Pin (WP-30p): runtime-facing DNS env bridge is still NOT in planned.rs.
+    /// This pin confirms the boundary hasn't moved.
+    #[test]
+    fn wp30p_pin_dns_env_bridge_still_not_moved() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [{ "tag": "dns1", "address": "udp://1.1.1.1", "detour": "direct" }]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "DNS env bridge stays in app::run_engine, not in planned.rs"
         );
     }
 
