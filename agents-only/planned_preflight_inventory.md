@@ -67,20 +67,48 @@ WP-30l 已实现 first-cut private planned seam。`Config::validate()` 现在将
 3. **route rule outbound reference existence** — `ReferenceValidator::check_rule_outbounds()` 校验 `route.rules[*].outbound`
 4. **`route.default` reference existence** — `ReferenceValidator::check_route_default()` 校验默认出站
 
-### 已落地的 seam 结构
+### 已落地的 seam 结构（first-cut）
 
 - `TagNamespace`：crate-private struct，持有扫描到的 outbound/endpoint tag set
 - `ReferenceValidator`：crate-private struct，对 tag namespace 做引用存在性校验
 - `validate_outbound_references()`：crate-private 入口函数，供 `Config::validate()` 调用
 - 所有类型均 `pub(crate)`，不通过 `ir/mod.rs` 或 `lib.rs` re-export
 
+## Second-Cut Status (WP-30m implemented)
+
+WP-30m 将 planned seam 扩展为多 namespace cross-reference inventory。`Config::validate()` 现在额外调用 `crate::ir::planned::validate_cross_references()`，承接四类新增检查：
+
+5. **`DnsServerIR.detour` → outbound/endpoint shared tag namespace** — `CrossReferenceValidator::check_dns_server_detour()`
+6. **`DnsServerIR.address_resolver` → DNS server tag namespace** — `CrossReferenceValidator::check_dns_server_address_resolver()`
+7. **`DnsServerIR.service` → service tag namespace** — `CrossReferenceValidator::check_dns_server_service()`
+8. **`ServiceIR.detour` → inbound tag namespace** — `CrossReferenceValidator::check_service_detour()`
+
+### 已落地的 seam 结构（second-cut 新增）
+
+- `InboundNamespace`：crate-private struct，持有扫描到的 inbound tag set
+- `DnsServerNamespace`：crate-private struct，持有扫描到的 DNS server tag set
+- `ServiceNamespace`：crate-private struct，持有扫描到的 service tag set
+- `CrossReferenceValidator`：crate-private struct，对四个 namespace 做跨域引用存在性校验
+- `validate_cross_references()`：crate-private 入口函数，供 `Config::validate()` 调用（在 `validate_outbound_references()` 之后）
+
+### 四个 namespace 域
+
+| Namespace | 来源 | 引用者 |
+| --- | --- | --- |
+| outbound/endpoint shared | `OutboundIR.name` + `EndpointIR.tag` | selector members, rule outbound, route.default, `DnsServerIR.detour` |
+| inbound | `InboundIR.tag` | `ServiceIR.detour` |
+| DNS server | `DnsServerIR.tag` | `DnsServerIR.address_resolver` |
+| service | `ServiceIR.tag` | `DnsServerIR.service` |
+
 ### 仍未搬的责任面
 
 - **Inbound tag uniqueness** — 故意留在 `Config::validate()` (lib.rs)，因为 inbound 和 outbound/endpoint 是独立 namespace
-- **DNS/service detour cross-reference** — 第二刀候选，需要更大的 tag domain 设计
+- **DNS rule `server` reference** — DNS rule 的 `server` 字段指向 DNS server tag，尚未加入 cross-reference check
+- **DnsIR `default` / `final_server` reference** — 顶层 DNS default/final 指向 DNS server tag，尚未加入
 - **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
 - **normalize/minimize/present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
+- **runtime-facing DNS env bridge** — 仍在 `app::run_engine::apply_dns_env_from_config()`
 
 ### 约束（不变）
 
@@ -100,8 +128,8 @@ WP-30l 已实现 first-cut private planned seam。`Config::validate()` 现在将
   - `planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens`
   - pin 当前 owner：`normalize_config()` 只做规则 token canonicalization，不重写 `rule.outbound` / `route.default` 这类 planned references。
 - `crates/sb-config/src/lib.rs`
-  - `planned_preflight_pin_current_owner_config_validate_leaves_dns_detour_unbound`
-  - substitute pin：`Config::from_value()` / `Config::validate()` 仍只保留 `dns.detour` 字符串，不在 `sb-config` 内绑定 runtime-facing references。
+  - `planned_preflight_pin_current_owner_dns_detour_validated_but_not_env_bound`
+  - **WP-30m updated**: dns.detour reference existence 现在已由 planned.rs 校验（`validate_cross_references`），但 runtime env binding 仍不在 sb-config 内。此 pin 确认 missing detour 被拒绝，且 IR 保留原始字符串。
 
 ### WP-30l 新增 pins
 
@@ -116,7 +144,16 @@ WP-30l 已实现 first-cut private planned seam。`Config::validate()` 现在将
   - `wp30l_valid_outbound_selector_route_passes` — 合法组合仍通过
   - `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate` — pin: inbound duplicate tag 仍留在 lib.rs
 
-补充说明：
+### WP-30m 新增 pins
 
-- runtime/bootstrap 责任面没有直接加到 `app/src/run_engine.rs`。
-- 原因是 `apply_dns_env_from_config()` 直接改进程环境，而 `app/src/bootstrap.rs` 当前又不在 active lib test target 里；因此本卡用 `dns.detour` 的”只 parse、不绑定”边界测试做可执行替代 pin。
+- `crates/sb-config/src/ir/planned.rs`（unit tests）：
+  - `planned_pin_cross_ref_owned_by_planned_seam` — pin: DNS detour cross-reference check 现在由 planned.rs seam 持有
+  - `planned_pin_service_detour_owned_by_planned_seam` — pin: service detour → inbound 现在由 planned.rs seam 持有
+  - `planned_pin_dns_env_bridge_not_in_planned` — pin: runtime-facing DNS env bridge 仍不在 planned.rs
+- `crates/sb-config/src/lib.rs`（integration tests）：
+  - `wp30m_dns_detour_missing_outbound_rejected` — dns server detour 指向缺失 outbound 被拒绝
+  - `wp30m_dns_address_resolver_missing_rejected` — address_resolver 指向缺失 dns server 被拒绝
+  - `wp30m_dns_service_missing_rejected` — service 指向缺失 service tag 被拒绝
+  - `wp30m_service_detour_missing_inbound_rejected` — service detour 指向缺失 inbound 被拒绝
+  - `wp30m_valid_cross_references_pass` — 合法 cross-reference 组合仍通过
+  - `wp30m_pin_dns_env_bridge_not_in_planned_seam` — pin: runtime-facing DNS env bridge 仍不在 planned.rs

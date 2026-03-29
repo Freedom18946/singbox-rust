@@ -474,6 +474,14 @@ impl Config {
         //   4) route.default reference existence
         crate::ir::planned::validate_outbound_references(&self.ir)?;
 
+        // Delegate cross-namespace reference checks to the private planned
+        // inventory seam (WP-30m). This covers:
+        //   5) DnsServerIR.detour → outbound/endpoint shared tag namespace
+        //   6) DnsServerIR.address_resolver → DNS server tag namespace
+        //   7) DnsServerIR.service → service tag namespace
+        //   8) ServiceIR.detour → inbound tag namespace
+        crate::ir::planned::validate_cross_references(&self.ir)?;
+
         Ok(())
     }
 
@@ -771,9 +779,14 @@ endpoints:
     }
 
     #[test]
-    fn planned_preflight_pin_current_owner_config_validate_leaves_dns_detour_unbound() {
-        // WP-30k substitute pin for runtime-facing seams:
-        // current sb-config owners parse and preserve dns.detour, but do not bind it yet.
+    fn planned_preflight_pin_current_owner_dns_detour_validated_but_not_env_bound() {
+        // WP-30k original: dns.detour was only parsed, not validated.
+        // WP-30m update: dns.detour reference existence is now checked by
+        // planned.rs (validate_cross_references), but runtime env binding
+        // still stays in app::run_engine::apply_dns_env_from_config().
+        //
+        // This pin confirms: missing detour target is NOW rejected at validate time,
+        // but no env variable binding happens in sb-config.
         let raw = serde_json::json!({
             "outbounds": [
                 { "type": "direct", "tag": "direct" }
@@ -794,11 +807,16 @@ endpoints:
         });
 
         let cfg = Config::from_value(raw).expect("config parses");
+        // WP-30m: dns.detour reference existence is now validated
+        let err = cfg.validate().unwrap_err();
         assert!(
-            cfg.validate().is_ok(),
-            "Config::validate() should not yet bind runtime-facing dns.detour references"
+            err.to_string()
+                .contains("detour 'missing-runtime-owner' not found in outbounds"),
+            "dns.detour should now be validated by planned.rs cross-reference seam: {}",
+            err
         );
 
+        // But the IR still preserves the string — no env binding happens here
         let dns = cfg.ir().dns.as_ref().expect("dns parsed into IR");
         assert_eq!(
             dns.servers[0].detour.as_deref(),
@@ -1121,6 +1139,140 @@ endpoints:
             err.to_string(),
             "duplicate inbound tag: dup-ib",
             "inbound tag uniqueness must still be checked in Config::validate(), not planned seam"
+        );
+    }
+
+    // ── WP-30m integration tests: cross-reference validation via Config::validate() ──
+
+    #[test]
+    fn wp30m_dns_detour_missing_outbound_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [{
+                    "tag": "google",
+                    "address": "udp://8.8.8.8",
+                    "detour": "nonexistent-outbound"
+                }]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("detour 'nonexistent-outbound' not found in outbounds"),
+            "dns server detour must be validated against outbound namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30m_dns_address_resolver_missing_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8", "address_resolver": "ghost-dns" },
+                    { "tag": "local", "address": "local" }
+                ]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("address_resolver 'ghost-dns' not found in dns servers"),
+            "dns address_resolver must be validated against dns server namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30m_dns_service_missing_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [{
+                    "tag": "resolved-dns",
+                    "address": "resolved",
+                    "service": "nonexistent-service"
+                }]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("service 'nonexistent-service' not found in services"),
+            "dns service must be validated against service namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30m_service_detour_missing_inbound_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "services": [{
+                "type": "resolved",
+                "tag": "resolved-svc",
+                "detour": "nonexistent-inbound"
+            }]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("detour 'nonexistent-inbound' not found in inbounds"),
+            "service detour must be validated against inbound namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30m_valid_cross_references_pass() {
+        let raw = serde_json::json!({
+            "inbounds": [
+                { "type": "http", "tag": "http-in", "listen": "127.0.0.1", "listen_port": 8080 }
+            ],
+            "outbounds": [
+                { "type": "direct", "tag": "direct" },
+                { "type": "socks", "tag": "proxy" }
+            ],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8", "detour": "proxy", "address_resolver": "local" },
+                    { "tag": "local", "address": "local" }
+                ]
+            },
+            "services": [
+                { "type": "resolved", "tag": "resolved-svc", "detour": "http-in" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "valid cross-references must pass validation"
+        );
+    }
+
+    /// Pin: dns.detour as a string is still parsed but NOT bound to runtime env.
+    /// planned.rs only checks reference existence, not env bridging.
+    /// Runtime-facing DNS env bridge is still in `app::run_engine::apply_dns_env_from_config()`.
+    #[test]
+    fn wp30m_pin_dns_env_bridge_not_in_planned_seam() {
+        // A valid config with dns.detour should pass planned.rs validation.
+        // No env variable binding happens in sb-config — that's a runtime concern.
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [{ "tag": "dns1", "address": "udp://1.1.1.1", "detour": "direct" }]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "planned.rs must not attempt DNS env binding — that stays in app::run_engine"
         );
     }
 }
