@@ -15,7 +15,7 @@ mod endpoint;
 mod inbound;
 mod normalize;
 mod outbound;
-mod planned;
+pub(crate) mod planned;
 mod raw;
 mod route;
 mod service;

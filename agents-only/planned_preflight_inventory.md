@@ -58,17 +58,40 @@
 - `ir_to_router_rules_text()` 这类字符串化 adapter 还不该并入 planned。
   - 这是 legacy router adapter seam，不是 `sb-config` 内的 runtime-neutral plan fact。
 
-## First-Cut Recommendation
+## First-Cut Status (WP-30l implemented)
 
-- 推荐的第一刀：在 `planned.rs` 先引入 **private-only** 的“tag namespace + cross-reference inventory” seam。
-- 数据来源：`ConfigIR`，覆盖 `outbounds`、`endpoints`、`route.rules[*].outbound`、`route.default`、selector/urltest `members`。
-- 约束：
-  - 不新增 public `RuntimePlan` / `PlannedConfigIR` / builder API。
-  - 不搬 runtime connector construction。
-  - 不碰 `validator/v2` 业务逻辑与 parse-time defaults。
-  - 不改变 `normalize` / `minimize` / `present` 现有行为。
+WP-30l 已实现 first-cut private planned seam。`Config::validate()` 现在将以下四类检查委托给 `crate::ir::planned::validate_outbound_references()`：
+
+1. **outbound/endpoint shared tag namespace uniqueness** — `TagNamespace::scan()` 扫描 `ConfigIR.outbounds` + `ConfigIR.endpoints`，检测重复 tag
+2. **selector/urltest member reference existence** — `ReferenceValidator::check_selector_members()` 校验每个 member 是否存在于 tag namespace
+3. **route rule outbound reference existence** — `ReferenceValidator::check_rule_outbounds()` 校验 `route.rules[*].outbound`
+4. **`route.default` reference existence** — `ReferenceValidator::check_route_default()` 校验默认出站
+
+### 已落地的 seam 结构
+
+- `TagNamespace`：crate-private struct，持有扫描到的 outbound/endpoint tag set
+- `ReferenceValidator`：crate-private struct，对 tag namespace 做引用存在性校验
+- `validate_outbound_references()`：crate-private 入口函数，供 `Config::validate()` 调用
+- 所有类型均 `pub(crate)`，不通过 `ir/mod.rs` 或 `lib.rs` re-export
+
+### 仍未搬的责任面
+
+- **Inbound tag uniqueness** — 故意留在 `Config::validate()` (lib.rs)，因为 inbound 和 outbound/endpoint 是独立 namespace
+- **DNS/service detour cross-reference** — 第二刀候选，需要更大的 tag domain 设计
+- **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
+- **normalize/minimize/present** — 仍是独立边界
+- **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
+
+### 约束（不变）
+
+- 不新增 public `RuntimePlan` / `PlannedConfigIR` / builder API
+- 不搬 runtime connector construction
+- 不碰 `validator/v2` 业务逻辑与 parse-time defaults
+- 不改变 `normalize` / `minimize` / `present` 现有行为
 
 ## Test Pins
+
+### WP-30k 原有 pins（仍有效）
 
 - `crates/sb-config/src/ir/validated.rs`
   - `planned_preflight_pin_current_owner_validated_validate_requires_selector_members`
@@ -80,7 +103,20 @@
   - `planned_preflight_pin_current_owner_config_validate_leaves_dns_detour_unbound`
   - substitute pin：`Config::from_value()` / `Config::validate()` 仍只保留 `dns.detour` 字符串，不在 `sb-config` 内绑定 runtime-facing references。
 
+### WP-30l 新增 pins
+
+- `crates/sb-config/src/ir/planned.rs`（unit tests）：
+  - `planned_pin_tag_namespace_owned_by_planned_seam` — pin: tag namespace check 现在由 planned.rs seam 持有
+  - `planned_pin_member_ref_owned_by_planned_seam` — pin: member reference check 现在由 planned.rs seam 持有
+- `crates/sb-config/src/lib.rs`（integration tests）：
+  - `wp30l_duplicate_outbound_tag_error_unchanged` — pin: 错误文案不变
+  - `wp30l_selector_missing_member_error_unchanged` — pin: 错误文案不变
+  - `wp30l_rule_outbound_missing_error_unchanged` — pin: 错误文案不变
+  - `wp30l_route_default_missing_error_unchanged` — pin: 错误文案不变
+  - `wp30l_valid_outbound_selector_route_passes` — 合法组合仍通过
+  - `wp30l_pin_inbound_duplicate_tag_still_in_lib_validate` — pin: inbound duplicate tag 仍留在 lib.rs
+
 补充说明：
 
 - runtime/bootstrap 责任面没有直接加到 `app/src/run_engine.rs`。
-- 原因是 `apply_dns_env_from_config()` 直接改进程环境，而 `app/src/bootstrap.rs` 当前又不在 active lib test target 里；因此本卡用 `dns.detour` 的“只 parse、不绑定”边界测试做可执行替代 pin。
+- 原因是 `apply_dns_env_from_config()` 直接改进程环境，而 `app/src/bootstrap.rs` 当前又不在 active lib test target 里；因此本卡用 `dns.detour` 的”只 parse、不绑定”边界测试做可执行替代 pin。

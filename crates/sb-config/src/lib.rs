@@ -453,11 +453,11 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        use crate::ir::OutboundType;
         let mut inbound_tags = HashSet::new();
-        let mut outbound_tags = HashSet::new();
 
-        // Go parity: validate inbound tags are unique (inbound scope only)
+        // Go parity: validate inbound tags are unique (inbound scope only).
+        // Intentionally kept here — inbound tags have their own namespace,
+        // separate from the outbound/endpoint namespace managed by planned.rs.
         for ib in &self.ir.inbounds {
             if let Some(tag) = &ib.tag {
                 if !tag.is_empty() && !inbound_tags.insert(tag.clone()) {
@@ -466,52 +466,14 @@ impl Config {
             }
         }
 
-        // Go parity: outbound/endpoint tags share a namespace
-        for ob in &self.ir.outbounds {
-            if let Some(name) = &ob.name {
-                if !name.is_empty() && !outbound_tags.insert(name.clone()) {
-                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", name));
-                }
-            }
-        }
-        for ep in &self.ir.endpoints {
-            if let Some(tag) = &ep.tag {
-                if !tag.is_empty() && !outbound_tags.insert(tag.clone()) {
-                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", tag));
-                }
-            }
-        }
+        // Delegate outbound/endpoint tag namespace + reference checks to the
+        // private planned inventory seam (WP-30l). This covers:
+        //   1) outbound/endpoint shared tag namespace uniqueness
+        //   2) selector/urltest member reference existence
+        //   3) route rule outbound reference existence
+        //   4) route.default reference existence
+        crate::ir::planned::validate_outbound_references(&self.ir)?;
 
-        // 2) Selector/URLTest 成员必须指向已存在的出站
-        for ob in &self.ir.outbounds {
-            if matches!(ob.ty, OutboundType::Selector | OutboundType::UrlTest) {
-                if let Some(members) = &ob.members {
-                    for member in members {
-                        if !outbound_tags.contains(member) {
-                            return Err(anyhow!(
-                                "outbound '{}': member '{}' not found",
-                                ob.name.as_deref().unwrap_or("unnamed"),
-                                member
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        // 3) 规则指向存在
-        for r in &self.ir.route.rules {
-            if let Some(outbound) = &r.outbound {
-                if !outbound_tags.contains(outbound) {
-                    return Err(anyhow!("rule outbound not found: {}", outbound));
-                }
-            }
-        }
-        // 4) default_outbound（若存在）必须存在于 outbounds
-        if let Some(def) = &self.ir.route.default {
-            if !outbound_tags.contains(def) {
-                return Err(anyhow!("default_outbound not found in outbounds: {}", def));
-            }
-        }
         Ok(())
     }
 
@@ -1030,6 +992,135 @@ endpoints:
             result.is_ok(),
             "Go-format config should parse: {:?}",
             result.err()
+        );
+    }
+
+    // ── WP-30l: planned private seam integration tests ──
+
+    /// Integration: duplicate outbound/endpoint tag is still rejected with exact
+    /// same error message, now delegated to `ir::planned` seam.
+    #[test]
+    fn wp30l_duplicate_outbound_tag_error_unchanged() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "dup" },
+                { "type": "direct", "tag": "dup" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate outbound/endpoint tag: dup",
+            "error message must be identical after planned seam migration"
+        );
+    }
+
+    /// Integration: selector member referencing nonexistent outbound is still
+    /// rejected with exact same error message.
+    #[test]
+    fn wp30l_selector_missing_member_error_unchanged() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" },
+                { "type": "selector", "tag": "select", "outbounds": ["direct", "ghost"] }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("member 'ghost' not found"),
+            "error message must be identical after planned seam migration: {}",
+            err
+        );
+    }
+
+    /// Integration: route rule referencing nonexistent outbound is still rejected
+    /// with exact same error message.
+    #[test]
+    fn wp30l_rule_outbound_missing_error_unchanged() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": {
+                "rules": [
+                    { "domain_suffix": [".example.com"], "outbound": "nonexistent" }
+                ]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "rule outbound not found: nonexistent",
+            "error message must be identical after planned seam migration"
+        );
+    }
+
+    /// Integration: `route.default` referencing nonexistent outbound is still
+    /// rejected with exact same error message.
+    #[test]
+    fn wp30l_route_default_missing_error_unchanged() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ],
+            "route": {
+                "default": "missing"
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "default_outbound not found in outbounds: missing",
+            "error message must be identical after planned seam migration"
+        );
+    }
+
+    /// Integration: valid outbound + selector + route combo still passes.
+    #[test]
+    fn wp30l_valid_outbound_selector_route_passes() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" },
+                { "type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": 1080 },
+                { "type": "selector", "tag": "select", "outbounds": ["direct", "proxy"] }
+            ],
+            "route": {
+                "rules": [
+                    { "domain_suffix": [".example.com"], "outbound": "proxy" }
+                ],
+                "default": "direct"
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "valid outbound/selector/route combo must pass"
+        );
+    }
+
+    /// Pin: inbound duplicate tag detection is still owned by `Config::validate()`
+    /// in lib.rs, NOT by the planned seam. This must stay here.
+    #[test]
+    fn wp30l_pin_inbound_duplicate_tag_still_in_lib_validate() {
+        let raw = serde_json::json!({
+            "inbounds": [
+                { "type": "http", "tag": "dup-ib", "listen": "127.0.0.1", "listen_port": 8080 },
+                { "type": "http", "tag": "dup-ib", "listen": "127.0.0.1", "listen_port": 8081 }
+            ],
+            "outbounds": [
+                { "type": "direct", "tag": "direct" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate inbound tag: dup-ib",
+            "inbound tag uniqueness must still be checked in Config::validate(), not planned seam"
         );
     }
 }

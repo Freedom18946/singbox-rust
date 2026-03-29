@@ -13,24 +13,18 @@
 
 ## 最近完成（2026-03-29）
 
-### WP-30k：planned.rs preflight seam inventory — 已完成
+### WP-30l：private planned tag/reference inventory seam — 已完成
 
-- 新增 `agents-only/planned_preflight_inventory.md`，把 planned-layer 候选职责的当前 owner 钉成仓库事实表
-- `crates/sb-config/src/ir/planned.rs` 从泛 skeleton 升级为 **前置契约注释**
-- **没有实现 `RuntimePlan`**
-- **没有新增 public planned API / builder**
-- 当前推荐 first cut：
-  - 先从 `Config::validate()` 现有检查里抽出 private tag/reference inventory
-  - 仅覆盖 outbound/endpoint tag namespace、selector/urltest members、`rule.outbound`、`route.default`
-- 明确暂不搬：
-  - `validator/v2` 的 parse-time defaults / alias fill / ENV resolution
-  - `normalize.rs` / `minimize.rs` / `present.rs`
-  - `bootstrap.rs` selector/urltest 二次绑定
-  - `run_engine.rs` DNS env bridge
-- 新增 3 个 planned preflight pin tests：
-  - `validated.rs` pin `ConfigIR::validate()` 仍负责 selector/urltest member 形状校验
-  - `normalize.rs` pin `normalize_config()` 只改 token，不改 reference strings
-  - `lib.rs` substitute pin `dns.detour` today 仍只 parse/保留，不在 `sb-config` 内绑定
+- 在 `crates/sb-config/src/ir/planned.rs` 落地了 **crate-private** tag/reference inventory seam
+- `Config::validate()` 现在把四类 outbound/endpoint/reference 检查委托给 `planned::validate_outbound_references()`
+- seam 结构：`TagNamespace`（tag 扫描）+ `ReferenceValidator`（引用校验）+ `validate_outbound_references()`（入口）
+- 承接了四类责任：tag namespace uniqueness, selector/urltest members, rule outbound, route.default
+- **inbound tag uniqueness 故意留在 `Config::validate()` 原位**
+- **没有新增 public `RuntimePlan` / `PlannedConfigIR` / builder API**
+- 新增 10 个 planned.rs unit tests + 6 个 lib.rs integration tests
+- 错误文案完全不变
+
+### WP-30k：planned.rs preflight seam inventory — 已完成（earlier）
 
 ### WP-30j：Masquerade shared helper Raw closure — 已完成（earlier）
 ### WP-30i：Outbound nested Raw boundary pilot — 已完成（earlier）
@@ -46,8 +40,10 @@
 
 - **WP-30 Phase 3 后续**：
   - 所有 config-facing strict input boundary 已 Raw 化（WP-30a ~ WP-30j）
-  - `WP-30k` 已完成前置 seam inventory；下一步才是第一刀 private planned seam
-  - 推荐下一卡：围绕 `Config::validate()` 现有 tag/reference 检查抽 private inventory helper
+  - `WP-30k` 已完成前置 seam inventory
+  - `WP-30l` 已落地 first-cut private planned seam（tag/reference inventory）
+  - 下一步若继续 planned.rs，推荐第二刀：DNS/service detour cross-reference expansion
+  - 或可考虑：将 planned seam 扩展为 full planned fact graph（含 address_resolver, dns detour 等）
   - 仍不是 `RuntimePlan` public 实作卡
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
