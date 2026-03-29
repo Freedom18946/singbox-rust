@@ -91,20 +91,28 @@ WP-30m 将 planned seam 扩展为多 namespace cross-reference inventory。`Conf
 - `CrossReferenceValidator`：crate-private struct，对四个 namespace 做跨域引用存在性校验
 - `validate_cross_references()`：crate-private 入口函数，供 `Config::validate()` 调用（在 `validate_outbound_references()` 之后）
 
-### 四个 namespace 域
+## Third-Cut Status (WP-30n implemented)
+
+WP-30n 将 planned seam 进一步扩展，新增三类 DNS server tag reference 检查。复用已有的 `DnsServerNamespace` 和 `CrossReferenceValidator`：
+
+9. **`DnsRuleIR.server` → DNS server tag namespace** — `CrossReferenceValidator::check_dns_rule_server()`
+10. **`DnsIR.default` → DNS server tag namespace** — `CrossReferenceValidator::check_dns_default()`
+11. **`DnsIR.final_server` → DNS server tag namespace** — `CrossReferenceValidator::check_dns_final_server()`
+
+这三类检查都复用 `DnsServerNamespace`，在 `validate_cross_references()` 中于 WP-30m 四类检查之后执行。
+
+### 四个 namespace 域（updated）
 
 | Namespace | 来源 | 引用者 |
 | --- | --- | --- |
 | outbound/endpoint shared | `OutboundIR.name` + `EndpointIR.tag` | selector members, rule outbound, route.default, `DnsServerIR.detour` |
 | inbound | `InboundIR.tag` | `ServiceIR.detour` |
-| DNS server | `DnsServerIR.tag` | `DnsServerIR.address_resolver` |
+| DNS server | `DnsServerIR.tag` | `DnsServerIR.address_resolver`, `DnsRuleIR.server`, `DnsIR.default`, `DnsIR.final_server` |
 | service | `ServiceIR.tag` | `DnsServerIR.service` |
 
 ### 仍未搬的责任面
 
 - **Inbound tag uniqueness** — 故意留在 `Config::validate()` (lib.rs)，因为 inbound 和 outbound/endpoint 是独立 namespace
-- **DNS rule `server` reference** — DNS rule 的 `server` 字段指向 DNS server tag，尚未加入 cross-reference check
-- **DnsIR `default` / `final_server` reference** — 顶层 DNS default/final 指向 DNS server tag，尚未加入
 - **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
 - **normalize/minimize/present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
@@ -157,3 +165,14 @@ WP-30m 将 planned seam 扩展为多 namespace cross-reference inventory。`Conf
   - `wp30m_service_detour_missing_inbound_rejected` — service detour 指向缺失 inbound 被拒绝
   - `wp30m_valid_cross_references_pass` — 合法 cross-reference 组合仍通过
   - `wp30m_pin_dns_env_bridge_not_in_planned_seam` — pin: runtime-facing DNS env bridge 仍不在 planned.rs
+
+### WP-30n 新增 pins
+
+- `crates/sb-config/src/ir/planned.rs`（unit tests）：
+  - `planned_pin_dns_rule_server_owned_by_planned_seam` — pin: DNS rule server reference check 现在由 planned.rs seam 持有
+  - `planned_pin_dns_default_final_owned_by_planned_seam` — pin: DnsIR.default/final_server reference check 现在由 planned.rs seam 持有
+- `crates/sb-config/src/lib.rs`（integration tests）：
+  - `wp30n_dns_rule_server_missing_rejected` — dns rule server 指向缺失 dns server 被拒绝
+  - `wp30n_dns_default_missing_rejected` — dns default 指向缺失 dns server 被拒绝
+  - `wp30n_dns_final_server_missing_rejected` — dns final_server 指向缺失 dns server 被拒绝
+  - `wp30n_valid_dns_rule_default_final_pass` — 合法 dns rule server + default + final 组合仍通过

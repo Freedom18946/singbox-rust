@@ -475,11 +475,14 @@ impl Config {
         crate::ir::planned::validate_outbound_references(&self.ir)?;
 
         // Delegate cross-namespace reference checks to the private planned
-        // inventory seam (WP-30m). This covers:
+        // inventory seam (WP-30m + WP-30n). This covers:
         //   5) DnsServerIR.detour → outbound/endpoint shared tag namespace
         //   6) DnsServerIR.address_resolver → DNS server tag namespace
         //   7) DnsServerIR.service → service tag namespace
         //   8) ServiceIR.detour → inbound tag namespace
+        //   9) DnsRuleIR.server → DNS server tag namespace
+        //  10) DnsIR.default → DNS server tag namespace
+        //  11) DnsIR.final_server → DNS server tag namespace
         crate::ir::planned::validate_cross_references(&self.ir)?;
 
         Ok(())
@@ -1253,6 +1256,107 @@ endpoints:
         assert!(
             cfg.validate().is_ok(),
             "valid cross-references must pass validation"
+        );
+    }
+
+    // ── WP-30n integration tests: DNS server tag reference validation via Config::validate() ──
+
+    #[test]
+    fn wp30n_dns_rule_server_missing_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8" }
+                ],
+                "rules": [
+                    { "domain_suffix": [".cn"], "server": "nonexistent-dns" }
+                ]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("dns rule: server 'nonexistent-dns' not found in dns servers"),
+            "dns rule server must be validated against dns server namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30n_dns_default_missing_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8" }
+                ],
+                "default": "ghost-default"
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("dns: default server 'ghost-default' not found in dns servers"),
+            "dns default must be validated against dns server namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30n_dns_final_server_missing_rejected() {
+        // Note: the validator/v2 maps "final" to both DnsIR.default and DnsIR.final_server.
+        // Through the pipeline, check_dns_default fires first (since they share the same tag).
+        // The unit test in planned.rs covers final_server independently.
+        // Here we verify that "final" pointing to a missing server is rejected.
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8" }
+                ],
+                "final": "ghost-final"
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        // "final" populates both default and final_server in the validator;
+        // check_dns_default fires first with the same tag.
+        assert!(
+            err.to_string()
+                .contains("'ghost-final' not found in dns servers"),
+            "dns final must be validated against dns server namespace: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn wp30n_valid_dns_rule_default_final_pass() {
+        let raw = serde_json::json!({
+            "outbounds": [
+                { "type": "direct", "tag": "direct" },
+                { "type": "socks", "tag": "proxy" }
+            ],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8", "detour": "proxy", "address_resolver": "local" },
+                    { "tag": "local", "address": "local" },
+                    { "tag": "fallback", "address": "udp://1.1.1.1" }
+                ],
+                "rules": [
+                    { "domain_suffix": [".cn"], "server": "local" },
+                    { "domain_suffix": [".com"], "server": "google" }
+                ],
+                "default": "google",
+                "final": "fallback"
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "valid dns rule server + default + final must pass"
         );
     }
 

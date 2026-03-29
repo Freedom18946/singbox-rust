@@ -1,4 +1,4 @@
-//! Planning layer — private inventory seam (WP-30l first-cut + WP-30m second-cut expansion).
+//! Planning layer — private inventory seam (WP-30l first-cut + WP-30m second-cut + WP-30n third-cut).
 //!
 //! ## Purpose
 //!
@@ -8,7 +8,7 @@
 //! Raw → Validated (ConfigIR) → Planned (RuntimePlan) → Runtime owners
 //! ```
 //!
-//! ## Current status (WP-30l + WP-30m)
+//! ## Current status (WP-30l + WP-30m + WP-30n)
 //!
 //! WP-30l implemented a **crate-private** tag/reference inventory seam that
 //! `Config::validate()` delegates to for four categories of post-validated
@@ -26,6 +26,13 @@
 //! 6. `DnsServerIR.address_resolver` → DNS server tag namespace
 //! 7. `DnsServerIR.service` → service tag namespace
 //! 8. `ServiceIR.detour` → inbound tag namespace
+//!
+//! WP-30n expanded the seam with **DNS server tag references** (third-cut),
+//! adding three more categories:
+//!
+//!  9. `DnsRuleIR.server` → DNS server tag namespace
+//! 10. `DnsIR.default` → DNS server tag namespace
+//! 11. `DnsIR.final_server` → DNS server tag namespace
 //!
 //! This is still a crate-private seam — **not** a public `RuntimePlan` or
 //! `PlannedConfigIR`. The seam:
@@ -51,6 +58,8 @@
 //! - No public builder/helper entry point
 //! - No runtime connector binding
 //! - No runtime-facing DNS env bridge (still in `app::run_engine`)
+//! - `validator/v2`, `normalize`, `minimize`, `present` responsibilities not moved
+//! - `bootstrap` / `run_engine` runtime responsibilities not moved
 //!
 //! ## Responsibilities that still stay elsewhere
 //!
@@ -358,6 +367,55 @@ impl<'a> CrossReferenceValidator<'a> {
         }
         Ok(())
     }
+
+    // ── WP-30n third-cut: DNS server tag references ──
+
+    /// Check `DnsRuleIR.server` → DNS server tag namespace.
+    pub(crate) fn check_dns_rule_server(&self, ir: &ConfigIR) -> Result<()> {
+        if let Some(dns) = &ir.dns {
+            for rule in &dns.rules {
+                if let Some(server) = &rule.server {
+                    if !server.is_empty() && !self.dns_server_ns.contains(server) {
+                        return Err(anyhow!(
+                            "dns rule: server '{}' not found in dns servers",
+                            server
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Check `DnsIR.default` → DNS server tag namespace.
+    pub(crate) fn check_dns_default(&self, ir: &ConfigIR) -> Result<()> {
+        if let Some(dns) = &ir.dns {
+            if let Some(default) = &dns.default {
+                if !default.is_empty() && !self.dns_server_ns.contains(default) {
+                    return Err(anyhow!(
+                        "dns: default server '{}' not found in dns servers",
+                        default
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Check `DnsIR.final_server` → DNS server tag namespace.
+    pub(crate) fn check_dns_final_server(&self, ir: &ConfigIR) -> Result<()> {
+        if let Some(dns) = &ir.dns {
+            if let Some(final_srv) = &dns.final_server {
+                if !final_srv.is_empty() && !self.dns_server_ns.contains(final_srv) {
+                    return Err(anyhow!(
+                        "dns: final server '{}' not found in dns servers",
+                        final_srv
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -383,13 +441,18 @@ pub(crate) fn validate_outbound_references(ir: &ConfigIR) -> Result<()> {
     Ok(())
 }
 
-/// Run the WP-30m cross-reference inventory check on validated IR.
+/// Run the WP-30m/WP-30n cross-reference inventory check on validated IR.
 ///
-/// This covers the second-cut four categories:
+/// This covers the second-cut four categories (WP-30m):
 ///   5) `DnsServerIR.detour` → outbound/endpoint shared tag namespace
 ///   6) `DnsServerIR.address_resolver` → DNS server tag namespace
 ///   7) `DnsServerIR.service` → service tag namespace
 ///   8) `ServiceIR.detour` → inbound tag namespace
+///
+/// And the third-cut three categories (WP-30n):
+///   9) `DnsRuleIR.server` → DNS server tag namespace
+///  10) `DnsIR.default` → DNS server tag namespace
+///  11) `DnsIR.final_server` → DNS server tag namespace
 ///
 /// This must be called **after** `validate_outbound_references` so that the
 /// outbound/endpoint tag namespace is already known to be duplicate-free.
@@ -401,10 +464,15 @@ pub(crate) fn validate_cross_references(ir: &ConfigIR) -> Result<()> {
 
     let validator =
         CrossReferenceValidator::new(&outbound_ns, &dns_server_ns, &service_ns, &inbound_ns);
+    // WP-30m second-cut
     validator.check_dns_server_detour(ir)?;
     validator.check_dns_server_address_resolver(ir)?;
     validator.check_dns_server_service(ir)?;
     validator.check_service_detour(ir)?;
+    // WP-30n third-cut: DNS server tag references
+    validator.check_dns_rule_server(ir)?;
+    validator.check_dns_default(ir)?;
+    validator.check_dns_final_server(ir)?;
     Ok(())
 }
 
@@ -863,6 +931,170 @@ mod tests {
         assert!(
             validate_cross_references(&ir).is_ok(),
             "planned.rs must not attempt DNS env binding — that stays in run_engine"
+        );
+    }
+
+    // ── WP-30n: third-cut DNS server tag reference unit tests ──
+
+    /// Helper: add DNS rules with given server references to an IR that already has DNS.
+    fn add_dns_rules(ir: &mut ConfigIR, servers: &[Option<&str>]) {
+        use super::super::dns::DnsRuleIR;
+        let dns = ir.dns.get_or_insert_with(Default::default);
+        for srv in servers {
+            dns.rules.push(DnsRuleIR {
+                server: srv.map(String::from),
+                ..Default::default()
+            });
+        }
+    }
+
+    #[test]
+    fn dns_rule_server_missing_rejected() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google"), DnsSpec::new("local")]);
+        add_dns_rules(&mut ir, &[Some("nonexistent-dns")]);
+        let err = validate_cross_references(&ir).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("dns rule: server 'nonexistent-dns' not found in dns servers"),
+            "actual: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn dns_rule_server_valid_passes() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google"), DnsSpec::new("local")]);
+        add_dns_rules(&mut ir, &[Some("google"), Some("local")]);
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_rule_server_none_ignored() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        add_dns_rules(&mut ir, &[None]);
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_rule_server_empty_string_ignored() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        add_dns_rules(&mut ir, &[Some("")]);
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_default_missing_rejected() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        ir.dns.as_mut().unwrap().default = Some("ghost-default".to_string());
+        let err = validate_cross_references(&ir).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("dns: default server 'ghost-default' not found in dns servers"),
+            "actual: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn dns_default_valid_passes() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        ir.dns.as_mut().unwrap().default = Some("google".to_string());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_default_none_ignored() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        assert!(ir.dns.as_ref().unwrap().default.is_none());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_default_empty_string_ignored() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        ir.dns.as_mut().unwrap().default = Some(String::new());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_final_server_missing_rejected() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        ir.dns.as_mut().unwrap().final_server = Some("ghost-final".to_string());
+        let err = validate_cross_references(&ir).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("dns: final server 'ghost-final' not found in dns servers"),
+            "actual: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn dns_final_server_valid_passes() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google"), DnsSpec::new("fallback")]);
+        ir.dns.as_mut().unwrap().final_server = Some("fallback".to_string());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_final_server_none_ignored() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        assert!(ir.dns.as_ref().unwrap().final_server.is_none());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_final_server_empty_string_ignored() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("google")]);
+        ir.dns.as_mut().unwrap().final_server = Some(String::new());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    #[test]
+    fn dns_server_ref_combined_valid_config() {
+        let mut ir = ir_with_dns_servers(&[
+            DnsSpec::new("google").detour("proxy").resolver("local"),
+            DnsSpec::new("local").service("resolved-svc"),
+            DnsSpec::new("fallback"),
+        ]);
+        ir.outbounds = ir_with_outbounds(&["direct", "proxy"]).outbounds;
+        add_inbounds(&mut ir, &["mixed-in"]);
+        add_services(&mut ir, &["resolved-svc"]);
+        ir.services[0].detour = Some("mixed-in".to_string());
+        // WP-30n: add dns rule server + default + final_server
+        add_dns_rules(&mut ir, &[Some("google"), Some("local")]);
+        ir.dns.as_mut().unwrap().default = Some("google".to_string());
+        ir.dns.as_mut().unwrap().final_server = Some("fallback".to_string());
+        assert!(validate_cross_references(&ir).is_ok());
+    }
+
+    // ── WP-30n pin tests ──
+
+    /// Pin: `validate_cross_references` is the current owner of DNS rule server
+    /// reference checks, added in WP-30n.
+    #[test]
+    fn planned_pin_dns_rule_server_owned_by_planned_seam() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("dns1")]);
+        add_dns_rules(&mut ir, &[Some("phantom-dns")]);
+        let err = validate_cross_references(&ir).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("server 'phantom-dns' not found in dns servers"),
+            "dns rule server reference check must be owned by planned.rs seam"
+        );
+    }
+
+    /// Pin: `validate_cross_references` is the current owner of DnsIR.default
+    /// and DnsIR.final_server reference checks, added in WP-30n.
+    #[test]
+    fn planned_pin_dns_default_final_owned_by_planned_seam() {
+        let mut ir = ir_with_dns_servers(&[DnsSpec::new("dns1")]);
+        ir.dns.as_mut().unwrap().default = Some("phantom-default".to_string());
+        let err = validate_cross_references(&ir).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("default server 'phantom-default' not found in dns servers"),
+            "dns default reference check must be owned by planned.rs seam"
         );
     }
 }

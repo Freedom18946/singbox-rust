@@ -13,21 +13,23 @@
 
 ## 最近完成（2026-03-29）
 
-### WP-30m：private planned cross-reference expansion seam — 已完成
+### WP-30n：private planned DNS server references expansion seam — 已完成
 
-- 在 `crates/sb-config/src/ir/planned.rs` 把 private seam 从"单 namespace"扩展为"多 namespace cross-reference inventory"
-- `Config::validate()` 现在额外调用 `planned::validate_cross_references()` 承接四类新增检查：
-  - `DnsServerIR.detour` → outbound/endpoint shared tag namespace
-  - `DnsServerIR.address_resolver` → DNS server tag namespace
-  - `DnsServerIR.service` → service tag namespace
-  - `ServiceIR.detour` → inbound tag namespace
-- 新增 crate-private 类型：`InboundNamespace`、`DnsServerNamespace`、`ServiceNamespace`、`CrossReferenceValidator`
-- WP-30l 原有四类检查（`validate_outbound_references`）完全不变
-- **inbound tag uniqueness 仍留在 `Config::validate()` 原位**
+- 在 `crates/sb-config/src/ir/planned.rs` 第三刀扩展 private seam，新增三类 DNS server tag reference 检查
+- `validate_cross_references()` 现在额外承接：
+  - `DnsRuleIR.server` → DNS server tag namespace
+  - `DnsIR.default` → DNS server tag namespace
+  - `DnsIR.final_server` → DNS server tag namespace
+- 复用已有的 `DnsServerNamespace` 和 `CrossReferenceValidator`，新增三个方法
+- WP-30l 原有四类检查 + WP-30m 原有四类检查完全不变
 - **没有新增 public `RuntimePlan` / `PlannedConfigIR` / builder API**
 - **runtime-facing DNS env bridge 仍在 `app::run_engine`，未搬进 planned.rs**
-- 新增 13 个 planned.rs unit tests + 6 个 lib.rs integration tests
-- 更新了 WP-30k pin test（dns.detour 现在被校验，但仍不做 env binding）
+- **validator/v2、normalize、minimize、present 职责仍未搬**
+- 新增 14 个 planned.rs unit tests + 4 个 lib.rs integration tests + 2 个 pin tests
+
+### WP-30m：private planned cross-reference expansion seam — 已完成（earlier）
+
+- second-cut：DNS/service detour + address_resolver + service ref 四类检查
 
 ### WP-30l：private planned tag/reference inventory seam — 已完成（earlier）
 
@@ -53,8 +55,10 @@
   - `WP-30k` 已完成前置 seam inventory
   - `WP-30l` 已落地 first-cut private planned seam（tag/reference inventory）
   - `WP-30m` 已落地 second-cut cross-reference expansion（DNS/service detour + address_resolver + service ref）
-  - 下一步若继续 planned.rs，推荐第三刀：DNS rule `server` reference + DnsIR `default`/`final_server` reference
-  - 或可考虑：将 planned seam 扩展为 full planned fact graph
+  - `WP-30n` 已落地 third-cut DNS server references（DnsRuleIR.server + DnsIR.default + DnsIR.final_server）
+  - 下一步若继续 planned.rs，可考虑：
+    - 将 planned seam 扩展为 full planned fact graph（跨 namespace 引用已接近完整）
+    - 或抽取 inbound tag uniqueness 也进 planned.rs（目前故意留在 lib.rs）
   - 仍不是 `RuntimePlan` public 实作卡
   - `normalize.rs` 接入 IR-level normalization
 - validator/v2 mod.rs 进一步瘦身（仍 4630 行）
