@@ -13,6 +13,7 @@ pub mod diff;
 mod dns;
 mod endpoint;
 mod inbound;
+pub(crate) mod minimize;
 pub(crate) mod normalize;
 mod outbound;
 pub(crate) mod planned;

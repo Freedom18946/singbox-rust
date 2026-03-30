@@ -160,7 +160,8 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - ~~**Inbound tag uniqueness**~~ — WP-30p 已吸收入 `PlannedFacts::collect()`
 - **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
 - ~~**normalize owner**~~ — WP-30r 已迁移到 `ir/normalize.rs`，原 `normalize.rs` 保留为 thin compat shell
-- **minimize/present** — 仍是独立边界
+- ~~**minimize owner**~~ — WP-30s 已迁移到 `ir/minimize.rs`，原 `minimize.rs` 保留为 thin compat shell
+- **present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
 - **runtime-facing DNS env bridge** — 仍在 `app::run_engine::apply_dns_env_from_config()`
 - **crate-internal namespace query API** — 仍不暴露（没有稳定的 crate 内消费者）
@@ -170,7 +171,7 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - 不新增 public `RuntimePlan` / `PlannedConfigIR` / builder API
 - 不搬 runtime connector construction
 - 不碰 `validator/v2` 业务逻辑与 parse-time defaults
-- 不改变 `normalize` / `minimize` / `present` 现有行为（WP-30r 只做 owner 迁移，不改语义）
+- 不改变 `normalize` / `minimize` / `present` 现有行为（WP-30r/30s 只做 owner 迁移，不改语义）
 
 ## Test Pins
 
@@ -278,3 +279,15 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - `crates/sb-config/src/normalize.rs`（compat shell tests）：
   - `wp30r_pin_compat_shell_is_pure_delegate` — pin: normalize.rs 现在是 thin compat shell，只转发
   - `wp30r_pin_compat_shell_normalize_config_delegates` — pin: normalize_config 通过 compat shell 正常工作
+
+### WP-30s 新增 pins
+
+- `crates/sb-config/src/ir/minimize.rs`（unit tests）：
+  - `wp30s_pin_owner_is_ir_minimize` — pin: minimization 实际 owner 在 ir/minimize.rs
+  - `wp30s_pin_minimize_is_not_planned` — pin: minimize 是 post-validated optimization，不是 planned contract
+  - `wp30s_pin_negation_only_normalizes` — pin: negation 存在时只做 normalization，不做 fold/dedup
+  - `skip_when_neg` — unit test: negation 触发 SkippedByNegation（从旧 minimize.rs 迁移）
+  - `apply_when_no_neg` — unit test: 无 negation 时 fold/dedup 正常执行
+- `crates/sb-config/src/minimize.rs`（compat shell tests）：
+  - `wp30s_pin_compat_shell_is_pure_delegate` — pin: minimize.rs 现在是 thin compat shell，只转发
+  - `wp30s_pin_compat_shell_minimize_config_delegates` — pin: minimize_config 通过 compat shell 正常工作
