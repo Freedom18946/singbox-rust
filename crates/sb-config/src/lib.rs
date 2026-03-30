@@ -1392,4 +1392,107 @@ endpoints:
             "planned.rs must not attempt DNS env binding — that stays in app::run_engine"
         );
     }
+
+    // ── WP-30q integration tests: DNS server / service tag uniqueness via Config::validate() ──
+
+    #[test]
+    fn wp30q_duplicate_dns_server_tag_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8" },
+                    { "tag": "google", "address": "udp://8.8.4.4" }
+                ]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate dns server tag: google",
+            "dns server tag uniqueness error message must be stable (WP-30q)"
+        );
+    }
+
+    #[test]
+    fn wp30q_distinct_dns_server_tags_pass() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8" },
+                    { "tag": "cloudflare", "address": "udp://1.1.1.1" }
+                ]
+            }
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(cfg.validate().is_ok(), "distinct dns server tags must pass");
+    }
+
+    #[test]
+    fn wp30q_duplicate_service_tag_rejected() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "services": [
+                { "type": "resolved", "tag": "my-svc" },
+                { "type": "resolved", "tag": "my-svc" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate service tag: my-svc",
+            "service tag uniqueness error message must be stable (WP-30q)"
+        );
+    }
+
+    #[test]
+    fn wp30q_distinct_service_tags_pass() {
+        let raw = serde_json::json!({
+            "outbounds": [{ "type": "direct", "tag": "direct" }],
+            "services": [
+                { "type": "resolved", "tag": "svc-a" },
+                { "type": "resolved", "tag": "svc-b" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(cfg.validate().is_ok(), "distinct service tags must pass");
+    }
+
+    /// Pin (WP-30q): Config::validate() still remains a thin entry point after
+    /// DNS server / service uniqueness was absorbed into the fact graph.
+    #[test]
+    fn wp30q_pin_validate_still_thin_entry_point() {
+        let raw = serde_json::json!({
+            "inbounds": [
+                { "type": "http", "tag": "http-in", "listen": "127.0.0.1", "listen_port": 8080 }
+            ],
+            "outbounds": [
+                { "type": "direct", "tag": "direct" },
+                { "type": "socks", "tag": "proxy" }
+            ],
+            "dns": {
+                "servers": [
+                    { "tag": "google", "address": "udp://8.8.8.8", "detour": "proxy", "address_resolver": "local" },
+                    { "tag": "local", "address": "local", "service": "resolved-svc" },
+                    { "tag": "fallback", "address": "udp://1.1.1.1" }
+                ],
+                "rules": [
+                    { "domain_suffix": [".cn"], "server": "local" }
+                ],
+                "default": "google",
+                "final": "fallback"
+            },
+            "services": [
+                { "type": "resolved", "tag": "resolved-svc", "detour": "http-in" }
+            ]
+        });
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(
+            cfg.validate().is_ok(),
+            "full multi-namespace config with all uniqueness checks must pass through thin entry point"
+        );
+    }
 }

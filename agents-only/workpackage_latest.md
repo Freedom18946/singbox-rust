@@ -26,6 +26,13 @@
 
 **全部阶段关闭**。项目进入稳定维护。
 
+### 维护卡（2026-03-30）
+
+- **WP-30q**: DNS server / service namespace uniqueness — collect-phase completeness maintenance 卡
+  - `DnsServerNamespace::scan()` / `ServiceNamespace::scan()` 现在含唯一性校验
+  - `PlannedFacts::collect()` 对全部 4 个 namespace 做唯一性检查
+  - 这不是 public RuntimePlan / PlannedConfigIR / builder / query API 卡
+
 ### 构建基线（2026-03-17，L25 后）
 
 | 构建 | 状态 |

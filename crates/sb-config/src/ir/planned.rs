@@ -8,30 +8,31 @@
 //! Raw → Validated (ConfigIR) → Planned (RuntimePlan) → Runtime owners
 //! ```
 //!
-//! ## Current status (WP-30p inbound uniqueness absorption)
+//! ## Current status (WP-30q DNS server / service uniqueness)
 //!
 //! WP-30o consolidated the discrete helpers from WP-30l/m/n into a **crate-private
 //! structured fact graph** (`PlannedFacts`). WP-30p absorbed inbound tag uniqueness
-//! into the fact graph, making `Config::validate()` a thin entry point that
+//! into the fact graph. WP-30q completes collect-phase uniqueness by adding
+//! duplicate tag rejection to `DnsServerNamespace::scan()` and
+//! `ServiceNamespace::scan()`, making `Config::validate()` a thin entry point that
 //! delegates entirely to `validate_planned_facts()`.
 //!
 //! The fact graph cleanly separates two phases:
 //!
 //! 1. **Collect** — `PlannedFacts::collect(&ConfigIR)` scans all namespace facts
-//!    from validated IR and checks tag uniqueness for both the outbound/endpoint
-//!    shared namespace and the inbound namespace (independent namespaces).
+//!    from validated IR and checks tag uniqueness for all four namespaces.
 //! 2. **Validate** — `PlannedFacts::validate(&self, &ConfigIR)` checks all 11
 //!    reference categories against the collected namespace inventories.
 //!
 //! These are invoked via a single crate-private entry point:
 //! `validate_planned_facts(&ConfigIR)`.
 //!
-//! ## Namespace facts (4 domains, 2 with uniqueness)
+//! ## Namespace facts (4 domains, all with uniqueness)
 //!
 //! 1. **Outbound/endpoint shared** — `OutboundIR.name` + `EndpointIR.tag` (uniqueness checked)
 //! 2. **Inbound** — `InboundIR.tag` (uniqueness checked, WP-30p)
-//! 3. **DNS server** — `DnsServerIR.tag`
-//! 4. **Service** — `ServiceIR.tag`
+//! 3. **DNS server** — `DnsServerIR.tag` (uniqueness checked, WP-30q)
+//! 4. **Service** — `ServiceIR.tag` (uniqueness checked, WP-30q)
 //!
 //! Inbound and outbound/endpoint are **independent namespaces** — the same tag
 //! string may appear in both without conflict (Go parity).
@@ -169,17 +170,19 @@ pub(crate) struct DnsServerNamespace {
 }
 
 impl DnsServerNamespace {
-    /// Scan DNS server tags from validated IR.
-    fn scan(ir: &ConfigIR) -> Self {
+    /// Scan DNS server tags from validated IR and check uniqueness.
+    ///
+    /// Returns `Err` on the first duplicate DNS server tag encountered.
+    fn scan(ir: &ConfigIR) -> Result<Self> {
         let mut tags = HashSet::new();
         if let Some(dns) = &ir.dns {
             for srv in &dns.servers {
-                if !srv.tag.is_empty() {
-                    tags.insert(srv.tag.clone());
+                if !srv.tag.is_empty() && !tags.insert(srv.tag.clone()) {
+                    return Err(anyhow!("duplicate dns server tag: {}", srv.tag));
                 }
             }
         }
-        Self { tags }
+        Ok(Self { tags })
     }
 
     fn contains(&self, tag: &str) -> bool {
@@ -194,17 +197,19 @@ pub(crate) struct ServiceNamespace {
 }
 
 impl ServiceNamespace {
-    /// Scan service tags from validated IR.
-    fn scan(ir: &ConfigIR) -> Self {
+    /// Scan service tags from validated IR and check uniqueness.
+    ///
+    /// Returns `Err` on the first duplicate service tag encountered.
+    fn scan(ir: &ConfigIR) -> Result<Self> {
         let mut tags = HashSet::new();
         for svc in &ir.services {
             if let Some(tag) = &svc.tag {
-                if !tag.is_empty() {
-                    tags.insert(tag.clone());
+                if !tag.is_empty() && !tags.insert(tag.clone()) {
+                    return Err(anyhow!("duplicate service tag: {}", tag));
                 }
             }
         }
-        Self { tags }
+        Ok(Self { tags })
     }
 
     fn contains(&self, tag: &str) -> bool {
@@ -237,15 +242,14 @@ impl PlannedFacts {
     /// Collect all namespace facts from validated IR.
     ///
     /// This is the "build" phase of the fact graph. It scans all four namespace
-    /// domains and checks tag uniqueness for both the outbound/endpoint shared
-    /// namespace and the inbound namespace (WP-30p absorbed inbound uniqueness).
+    /// domains and checks tag uniqueness for each namespace independently.
     ///
-    /// Returns `Err` if duplicate outbound/endpoint or inbound tags are detected.
+    /// Returns `Err` if duplicate tags are detected in any namespace.
     pub(crate) fn collect(ir: &ConfigIR) -> Result<Self> {
         let outbound_ns = TagNamespace::scan(ir)?;
         let inbound_ns = InboundNamespace::scan(ir)?;
-        let dns_server_ns = DnsServerNamespace::scan(ir);
-        let service_ns = ServiceNamespace::scan(ir);
+        let dns_server_ns = DnsServerNamespace::scan(ir)?;
+        let service_ns = ServiceNamespace::scan(ir)?;
 
         Ok(Self {
             outbound_ns,
@@ -452,9 +456,11 @@ impl PlannedFacts {
 /// `validate_cross_references()` pattern with a unified collect-then-validate
 /// approach via `PlannedFacts`.
 ///
-/// The collect phase checks tag uniqueness for two independent namespaces:
+/// The collect phase checks tag uniqueness for all four namespaces:
 ///   - outbound/endpoint shared namespace
 ///   - inbound namespace (WP-30p)
+///   - DNS server namespace (WP-30q)
+///   - service namespace (WP-30q)
 ///
 /// The validate phase checks all 11 reference categories:
 ///   1) outbound/endpoint shared tag namespace uniqueness (collect phase)
@@ -994,6 +1000,101 @@ mod tests {
         assert!(validate_planned_facts(&ir).is_ok());
     }
 
+    // ── Fact graph collect tests: DNS server tag uniqueness (WP-30q) ──
+
+    #[test]
+    fn fact_graph_collect_duplicate_dns_server_rejected() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("dup-dns"), DnsSpec::new("dup-dns")]);
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate dns server tag: dup-dns",
+            "error message must be stable"
+        );
+    }
+
+    #[test]
+    fn fact_graph_collect_distinct_dns_servers_pass() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("dns-a"), DnsSpec::new("dns-b")]);
+        assert!(PlannedFacts::collect(&ir).is_ok());
+    }
+
+    #[test]
+    fn fact_graph_collect_empty_dns_tag_not_checked() {
+        // Empty tags are silently skipped, not treated as duplicates.
+        use super::super::dns::{DnsIR, DnsServerIR};
+        let mut ir = ConfigIR::default();
+        let mut dns = DnsIR::default();
+        dns.servers.push(DnsServerIR {
+            tag: String::new(),
+            address: "udp://8.8.8.8".to_string(),
+            ..Default::default()
+        });
+        dns.servers.push(DnsServerIR {
+            tag: String::new(),
+            address: "udp://1.1.1.1".to_string(),
+            ..Default::default()
+        });
+        ir.dns = Some(dns);
+        assert!(PlannedFacts::collect(&ir).is_ok());
+    }
+
+    // ── Fact graph collect tests: service tag uniqueness (WP-30q) ──
+
+    #[test]
+    fn fact_graph_collect_duplicate_service_rejected() {
+        let mut ir = ConfigIR::default();
+        add_services(&mut ir, &["dup-svc"]);
+        add_services(&mut ir, &["dup-svc"]);
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate service tag: dup-svc",
+            "error message must be stable"
+        );
+    }
+
+    #[test]
+    fn fact_graph_collect_distinct_services_pass() {
+        let mut ir = ConfigIR::default();
+        add_services(&mut ir, &["svc-a", "svc-b"]);
+        assert!(PlannedFacts::collect(&ir).is_ok());
+    }
+
+    #[test]
+    fn fact_graph_collect_empty_service_tag_not_checked() {
+        use super::super::service::{ServiceIR, ServiceType};
+        let mut ir = ConfigIR::default();
+        ir.services.push(ServiceIR {
+            ty: ServiceType::Resolved,
+            tag: Some(String::new()),
+            ..Default::default()
+        });
+        ir.services.push(ServiceIR {
+            ty: ServiceType::Resolved,
+            tag: Some(String::new()),
+            ..Default::default()
+        });
+        assert!(PlannedFacts::collect(&ir).is_ok());
+    }
+
+    #[test]
+    fn fact_graph_collect_none_service_tag_not_checked() {
+        use super::super::service::{ServiceIR, ServiceType};
+        let mut ir = ConfigIR::default();
+        ir.services.push(ServiceIR {
+            ty: ServiceType::Resolved,
+            tag: None,
+            ..Default::default()
+        });
+        ir.services.push(ServiceIR {
+            ty: ServiceType::Resolved,
+            tag: None,
+            ..Default::default()
+        });
+        assert!(PlannedFacts::collect(&ir).is_ok());
+    }
+
     // ── Pin tests: confirm current ownership ──
 
     /// Pin: `PlannedFacts` is the current owner of the planned fact graph seam.
@@ -1112,6 +1213,36 @@ mod tests {
         assert!(
             validate_planned_facts(&ir).is_ok(),
             "inbound and outbound namespaces must be independent"
+        );
+    }
+
+    /// Pin (WP-30q): DNS server tag uniqueness IS now owned by the planned fact
+    /// graph. `PlannedFacts::collect()` checks DNS server uniqueness during the
+    /// scan phase, rejecting duplicate DNS server tags.
+    #[test]
+    fn planned_pin_fact_graph_owns_dns_server_uniqueness() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("dup-dns"), DnsSpec::new("dup-dns")]);
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate dns server tag: dup-dns",
+            "dns server uniqueness must be owned by planned fact graph (WP-30q)"
+        );
+    }
+
+    /// Pin (WP-30q): service tag uniqueness IS now owned by the planned fact
+    /// graph. `PlannedFacts::collect()` checks service uniqueness during the
+    /// scan phase, rejecting duplicate service tags.
+    #[test]
+    fn planned_pin_fact_graph_owns_service_uniqueness() {
+        let mut ir = ConfigIR::default();
+        add_services(&mut ir, &["dup-svc"]);
+        add_services(&mut ir, &["dup-svc"]);
+        let err = PlannedFacts::collect(&ir).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "duplicate service tag: dup-svc",
+            "service uniqueness must be owned by planned fact graph (WP-30q)"
         );
     }
 }
