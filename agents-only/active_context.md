@@ -13,29 +13,25 @@
 
 ## 最近完成（2026-03-31）
 
-### WP-30s：minimize seam owner 迁移 — 已完成
+### WP-30t：inbound validation owner 迁移 — 已完成
 
-- `crates/sb-config/src/ir/minimize.rs` 现在是 minimization 的实际 owner
-  - 收纳全部 post-validated optimization 逻辑（`MinimizeAction`、`minimize_config`、`fold_domains`、`fold_cidrs`、CIDR helpers）
-  - 声明为 `pub(crate)`，`ir/mod.rs` 中 `pub(crate) mod minimize`
-- `crates/sb-config/src/minimize.rs` 现在是 thin compat shell（pure delegate）
-  - 保留 `pub enum MinimizeAction` / `pub fn minimize_config` 的 public surface
-  - 不含任何逻辑，只转发到 `crate::ir::minimize`
-- minimize 仍是 post-validated optimization，不是 planned contract
-- negation-aware skip 语义保持不变（`SkippedByNegation` / `Applied`）
-- 仍先调用 normalization（via `ir::normalize`），再决定是否继续 fold
-- **这是 minimize seam 的 owner 迁移卡，不是 planning 语义扩张卡**
-- 新增 pin tests：
-  - `wp30s_pin_owner_is_ir_minimize` — owner 在 ir/minimize.rs
-  - `wp30s_pin_minimize_is_not_planned` — minimize 不是 planned contract
-  - `wp30s_pin_negation_only_normalizes` — negation 存在时只做 normalization
-  - `wp30s_pin_compat_shell_is_pure_delegate` — compat shell 只是转发
-  - `wp30s_pin_compat_shell_minimize_config_delegates` — minimize_config 通过 compat shell 正常工作
-  - `apply_when_no_neg` — 无 negation 时 fold/dedup 正常执行
+- `crates/sb-config/src/validator/v2/inbound.rs` 现在是 inbound validation 的实际 owner
+  - 收纳 `/inbounds` schema/type/required/unknown-field 校验逻辑
+  - 导出 `pub(crate) fn validate_inbounds(doc, allow_unknown, issues)`
+  - `allowed_inbound_keys()` 基于 `object_keys(InboundIR::default())` + raw-only extras
+- `validator/v2/mod.rs` 中 `validate_v2()` 通过 `inbound::validate_inbounds()` 委托
+- mod.rs 从 4630 → 4497 行（-133 行）
+- **这是 validator/v2 inbound 子模块拆分卡，不是 inbound lowering 卡**
+- 不迁移 `to_ir_v1()` 里的 inbound lowering
+- 不改 parse-time defaults / alias / ENV resolution
+- 不引入 planning / RuntimePlan / query API
+- 新增 15 个测试，含 pin：
+  - `wp30t_pin_inbound_validation_owner_is_inbound_rs` — owner 在 inbound.rs
+  - 覆盖：非数组、非 object、type 缺失/非 string、非 tun 缺 listen、listen 非 string、port/listen_port 非数字、unknown field strict/allow_unknown、ptr 精度、valid passes
 
+### WP-30s：minimize seam owner 迁移 — 已完成（earlier）
 ### WP-30r：normalize seam owner 迁移 — 已完成（earlier）
-### WP-30q：DNS server / service namespace uniqueness — 已完成（earlier）
-### WP-30p ~ WP-30k：planned seam 系列 — 已完成（earlier）
+### WP-30q ~ WP-30k：planned seam 系列 — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -54,5 +50,5 @@
     - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
     - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
-- validator/v2 mod.rs 进一步瘦身（仍 4630 行）
+- validator/v2 mod.rs 进一步瘦身（4497 行，inbound 已拆出）
 - bootstrap.rs / run_engine.rs 职责收口

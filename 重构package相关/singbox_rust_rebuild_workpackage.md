@@ -505,7 +505,7 @@
 - `validator/v2/root.rs`
 - ~~`validator/v2/dns.rs`~~ ✅ 已完成 2026-03-26（221 行，含 `allowed_dns_keys` + `allowed_dns_server_keys` + `allowed_dns_rule_keys` + `validate_dns` + 8 定点测试）
 - ~~`validator/v2/route.rs`~~ ✅ 已完成 2026-03-26（362 行，含 `allowed_route_keys` + `allowed_route_rule_keys` + `allowed_rule_set_keys` + `rule_set_format_from_path/url` + `validate_route` + 14 定点测试）
-- `validator/v2/inbound.rs`
+- ~~`validator/v2/inbound.rs`~~ ✅ 已完成 2026-03-31（372 行，含 `allowed_inbound_keys` + `validate_inbounds` + 15 定点测试）
 - ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26（610 行，含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试）
 - ~~`validator/v2/service.rs`~~ ✅ 已完成 2026-03-26（135 行，含 `allowed_service_keys` + `validate_services` + 4 定点测试）
 - ~~`validator/v2/endpoint.rs`~~ ✅ 已完成 2026-03-26（195 行，含 `allowed_endpoint_keys` + `allowed_endpoint_peer_keys` + `validate_endpoints` + 6 定点测试）

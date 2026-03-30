@@ -1,5 +1,6 @@
 mod dns;
 mod endpoint;
+mod inbound;
 mod outbound;
 mod route;
 mod service;
@@ -814,143 +815,9 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             }
         }
     }
-    // 2) inbounds type and structure validation
-    if let Some(inbounds_val) = doc.get("inbounds") {
-        if !inbounds_val.is_array() {
-            issues.push(emit_issue(
-                "error",
-                IssueCode::TypeMismatch,
-                "/inbounds",
-                "inbounds must be an array",
-                "use []",
-            ));
-        }
-    }
-    if let Some(arr) = doc.get("inbounds").and_then(|v| v.as_array()) {
-        for (i, ib) in arr.iter().enumerate() {
-            // Each inbound must be an object
-            if !ib.is_object() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::TypeMismatch,
-                    &format!("/inbounds/{}", i),
-                    "inbound item must be an object",
-                    "use {}",
-                ));
-                continue;
-            }
+    // 2) inbounds type and structure validation (delegated to inbound submodule)
+    inbound::validate_inbounds(doc, allow_unknown, &mut issues);
 
-            // required: type (always required)
-            if ib.get("type").is_none() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::MissingRequired,
-                    &format!("/inbounds/{}/type", i),
-                    "missing required field",
-                    "add it",
-                ));
-            } else if let Some(ty) = ib.get("type") {
-                if !ty.is_string() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/inbounds/{}/type", i),
-                        "type must be a string",
-                        "use string value",
-                    ));
-                }
-            }
-
-            // listen is only required for non-tun inbounds
-            let is_tun = ib.get("type").and_then(|v| v.as_str()) == Some("tun");
-            if !is_tun && ib.get("listen").is_none() {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::MissingRequired,
-                    &format!("/inbounds/{}/listen", i),
-                    "missing required field (except for tun type)",
-                    "add it",
-                ));
-            }
-            if let Some(listen_val) = ib.get("listen") {
-                if !listen_val.is_string() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/inbounds/{}/listen", i),
-                        "listen must be a string",
-                        "use string value",
-                    ));
-                }
-            }
-            if let Some(port_val) = ib.get("port") {
-                if !port_val.is_u64() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/inbounds/{}/port", i),
-                        "port must be a number",
-                        "use numeric value",
-                    ));
-                }
-            }
-            if let Some(port_val) = ib.get("listen_port") {
-                if !port_val.is_u64() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/inbounds/{}/listen_port", i),
-                        "listen_port must be a number",
-                        "use numeric value",
-                    ));
-                }
-            }
-
-            // additionalProperties=false (V2 allowed fields)
-            if let Some(map) = ib.as_object() {
-                for k in map.keys() {
-                    match k.as_str() {
-                        // Go parity: include 'tag' for inbound identification
-                        "tag"
-                        | "name"
-                        | "type"
-                        | "listen"
-                        | "port"
-                        | "udp"
-                        | "network"
-                        | "sniff"
-                        | "sniff_override_destination"
-                        | "override_address"
-                        | "override_host"
-                        | "override_port"
-                        | "interface_name"
-                        | "inet4_address"
-                        | "inet6_address"
-                        | "auto_route"
-                        | "auth"
-                        | "users"
-                        | "cert"
-                        | "key"
-                        | "congestion_control"
-                        | "salamander"
-                        | "obfs"
-                        | "up_mbps"
-                        | "down_mbps" => {}
-                        _ => {
-                            let kind = if allow_unknown { "warning" } else { "error" };
-                            issues.push(emit_issue(
-                                kind,
-                                IssueCode::UnknownField,
-                                &format!("/inbounds/{}/{}", i, k),
-                                "unknown field",
-                                "remove it",
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
     // 3) outbounds type and structure validation (delegated to outbound submodule)
     outbound::validate_outbounds(doc, allow_unknown, &mut issues);
 

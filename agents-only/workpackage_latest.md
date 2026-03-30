@@ -28,11 +28,13 @@
 
 ### 维护卡（2026-03-31）
 
-- **WP-30s**: minimize seam owner 迁移 — 已完成
-  - `ir/minimize.rs` 现在是 minimization 的实际 owner（`pub(crate)`）
-  - `minimize.rs` 保留为 thin compat shell（pure delegate）
-  - minimize 仍是 post-validated optimization，不是 planned contract
-  - 这是 owner 迁移卡，不是 planning 语义扩张卡
+- **WP-30t**: inbound validation owner 迁移 — 已完成
+  - `validator/v2/inbound.rs` 现在是 inbound validation 的实际 owner
+  - `validate_v2()` 通过 `inbound::validate_inbounds()` 委托
+  - mod.rs 从 4630 → 4497 行（-133 行）
+  - 这是 validator/v2 inbound 子模块拆分卡，不是 inbound lowering 卡
+  - 15 个新测试，含 pin `wp30t_pin_inbound_validation_owner_is_inbound_rs`
+- **WP-30s**: minimize seam owner 迁移 — 已完成（earlier）
 - **WP-30r**: normalize seam owner 迁移 — 已完成（earlier）
 - **WP-30q**: DNS server / service namespace uniqueness — 已完成（earlier）
 
