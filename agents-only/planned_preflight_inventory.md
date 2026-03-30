@@ -159,7 +159,8 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 
 - ~~**Inbound tag uniqueness**~~ — WP-30p 已吸收入 `PlannedFacts::collect()`
 - **validator/v2 parse-time defaults/alias/ENV** — 仍留在 validator
-- **normalize/minimize/present** — 仍是独立边界
+- ~~**normalize owner**~~ — WP-30r 已迁移到 `ir/normalize.rs`，原 `normalize.rs` 保留为 thin compat shell
+- **minimize/present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
 - **runtime-facing DNS env bridge** — 仍在 `app::run_engine::apply_dns_env_from_config()`
 - **crate-internal namespace query API** — 仍不暴露（没有稳定的 crate 内消费者）
@@ -169,7 +170,7 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - 不新增 public `RuntimePlan` / `PlannedConfigIR` / builder API
 - 不搬 runtime connector construction
 - 不碰 `validator/v2` 业务逻辑与 parse-time defaults
-- 不改变 `normalize` / `minimize` / `present` 现有行为
+- 不改变 `normalize` / `minimize` / `present` 现有行为（WP-30r 只做 owner 迁移，不改语义）
 
 ## Test Pins
 
@@ -179,8 +180,8 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
   - `planned_preflight_pin_current_owner_validated_validate_requires_selector_members`
   - pin 当前 owner：`ConfigIR::validate()` 仍负责 selector/urltest 的 planning-adjacent member 形状校验。
 - `crates/sb-config/src/normalize.rs`
-  - `planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens`
-  - pin 当前 owner：`normalize_config()` 只做规则 token canonicalization，不重写 `rule.outbound` / `route.default` 这类 planned references。
+  - ~~`planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens`~~ → WP-30r superseded by `wp30r_pin_compat_shell_is_pure_delegate` + `wp30r_pin_compat_shell_normalize_config_delegates`
+  - pin: `normalize.rs` 现在是 thin compat shell，只转发到 `crate::ir::normalize`
 - `crates/sb-config/src/lib.rs`
   - `planned_preflight_pin_current_owner_dns_detour_validated_but_not_env_bound`
   - **WP-30m updated**: dns.detour reference existence 现在已由 planned.rs 校验（`validate_cross_references`），但 runtime env binding 仍不在 sb-config 内。此 pin 确认 missing detour 被拒绝，且 IR 保留原始字符串。
@@ -267,3 +268,13 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
   - `wp30q_distinct_service_tags_pass` — distinct service tags 通过
   - `wp30q_pin_validate_still_thin_entry_point` — pin: Config::validate() 仍是 thin entry point，全 namespace 唯一性检查完成后仍通过
   - 所有 `wp30l_*`、`wp30m_*`、`wp30n_*`、`wp30p_*` integration tests 继续通过
+
+### WP-30r 新增/迁移 pins
+
+- `crates/sb-config/src/ir/normalize.rs`（unit tests）：
+  - `wp30r_pin_normalize_only_rewrites_rule_tokens` — pin: normalize 只做 token canonicalization，不碰 planned references（取代旧 `planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens`）
+  - `wp30r_pin_owner_is_ir_normalize` — pin: normalization 实际 owner 在 ir/normalize.rs
+  - `domain_norm_and_ports` — unit test: 基础 domain/port normalization（从旧 normalize.rs 迁移）
+- `crates/sb-config/src/normalize.rs`（compat shell tests）：
+  - `wp30r_pin_compat_shell_is_pure_delegate` — pin: normalize.rs 现在是 thin compat shell，只转发
+  - `wp30r_pin_compat_shell_normalize_config_delegates` — pin: normalize_config 通过 compat shell 正常工作

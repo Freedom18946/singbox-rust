@@ -28,6 +28,10 @@
 
 ### 维护卡（2026-03-30）
 
+- **WP-30r**: normalize seam owner 迁移 — 已完成
+  - `ir/normalize.rs` 现在是 normalization 的实际 owner（`pub(crate)`）
+  - `normalize.rs` 保留为 thin compat shell（pure delegate）
+  - 这是 owner 迁移卡，不是 planning 语义扩张卡
 - **WP-30q**: DNS server / service namespace uniqueness — collect-phase completeness maintenance 卡
   - `DnsServerNamespace::scan()` / `ServiceNamespace::scan()` 现在含唯一性校验
   - `PlannedFacts::collect()` 对全部 4 个 namespace 做唯一性检查

@@ -1,161 +1,60 @@
-//! Canonical normalization helpers for IR.
+//! Public compat shell for normalization.
 //!
-//! - Domain: lowercase and trim dots
-//! - Wildcard: normalize leading `*.*` → `*.`
-//! - Ports: normalize ranges (expand/merge, maintain stable ordering)
-//! - CIDR: quick validity check (strict handling deferred to validator)
+//! The actual implementation lives in [`crate::ir::normalize`].
+//! This module exists solely to preserve the `pub mod normalize` surface
+//! declared in `lib.rs`.  All calls delegate directly.
+//!
+//! ## WP-30r
+//!
+//! Owner migrated to `ir/normalize.rs`.  This file is a thin delegate and
+//! must not contain any logic beyond forwarding.
 
 use crate::ir::{ConfigIR, RuleIR};
-use std::net::Ipv4Addr;
 
-/// Normalize domain: lowercase, trim dots, handle wildcards.
-fn norm_domain(s: &str) -> String {
-    let t = s.trim().to_ascii_lowercase();
-    let t = t.trim_matches('.');
-    if t.starts_with("*.") || t == "*" {
-        t.into()
-    } else {
-        t.to_string()
-    }
-}
-
-/// Normalize port list: expand ranges (e.g., `"80-82"` → `[80,81,82]`),
-/// then merge back to stable string representation.
-fn norm_port_vec(v: &mut Vec<String>) {
-    if v.is_empty() {
-        return;
-    }
-    // Expand "80-82" to [80,81,82], merge to intervals, store as strings with stable order
-    let mut acc = Vec::<u16>::new();
-    for item in v.iter() {
-        if let Some((a, b)) = item.split_once('-') {
-            if let (Ok(a), Ok(b)) = (a.parse::<u16>(), b.parse::<u16>()) {
-                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-                for p in lo..=hi {
-                    acc.push(p);
-                }
-                continue;
-            }
-        }
-        if let Ok(p) = item.parse::<u16>() {
-            acc.push(p);
-        }
-    }
-    acc.sort_unstable();
-    acc.dedup();
-    // Compress back to interval strings
-    let mut out = Vec::<String>::new();
-    let mut i = 0usize;
-    while i < acc.len() {
-        let start = acc[i];
-        let mut end = start;
-        let mut j = i + 1;
-        while j < acc.len() && acc[j] == end + 1 {
-            end = acc[j];
-            j += 1;
-        }
-        if start == end {
-            out.push(start.to_string());
-        } else {
-            out.push(format!("{}-{}", start, end));
-        }
-        i = j;
-    }
-    *v = out;
-}
-
-#[allow(dead_code)]
-fn looks_like_cidr(s: &str) -> bool {
-    // 极简检查，仅用于规范化排序；严格性由 v2 校验器负责
-    let parts: Vec<_> = s.split('/').collect();
-    if parts.len() != 2 {
-        return false;
-    }
-    if parts[1].parse::<u8>().ok().filter(|m| *m <= 32).is_none() {
-        return false;
-    }
-    parts[0].parse::<Ipv4Addr>().is_ok()
-}
-
+/// Normalize a single rule's tokens (domain, port, network, protocol).
+///
+/// Delegates to [`crate::ir::normalize::normalize_rule`].
 pub fn normalize_rule(r: &mut RuleIR) {
-    for d in &mut r.domain {
-        *d = norm_domain(d);
-    }
-    for d in &mut r.not_domain {
-        *d = norm_domain(d);
-    }
-    // 去重 + 排序
-    r.domain.sort();
-    r.domain.dedup();
-    r.not_domain.sort();
-    r.not_domain.dedup();
-    // 端口规范化
-    norm_port_vec(&mut r.port);
-    norm_port_vec(&mut r.not_port);
-    // CIDR 粗校排序
-    r.ipcidr.sort();
-    r.not_ipcidr.sort();
-    // 其他维度小写化
-    for x in [&mut r.network, &mut r.protocol] {
-        for v in x.iter_mut() {
-            *v = v.trim().to_ascii_lowercase();
-        }
-        x.sort();
-        x.dedup();
-    }
+    crate::ir::normalize::normalize_rule(r);
 }
 
+/// Normalize all route rules in a config IR.
+///
+/// Delegates to [`crate::ir::normalize::normalize_config`].
 pub fn normalize_config(cfg: &mut ConfigIR) {
-    for r in &mut cfg.route.rules {
-        normalize_rule(r);
-    }
+    crate::ir::normalize::normalize_config(cfg);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ir::RuleIR;
+
     #[test]
-    fn domain_norm_and_ports() {
+    fn wp30r_pin_compat_shell_is_pure_delegate() {
+        // WP-30r pin: this module is a thin compat shell.  It must not contain
+        // any logic — only forwarding to crate::ir::normalize.
+        // If this test compiles and passes, the delegate wiring is intact.
         let mut r = RuleIR {
-            domain: vec![
-                "EXAMPLE.COM".into(),
-                "a.Example.com".into(),
-                "*.Foo.Bar".into(),
-            ],
-            not_domain: vec![".b.test.".into()],
-            port: vec!["80-82".into(), "81".into(), "443".into()],
+            domain: vec!["DELEGATE.COM".into()],
             ..Default::default()
         };
         normalize_rule(&mut r);
-        assert_eq!(r.domain, vec!["*.foo.bar", "a.example.com", "example.com"]);
-        assert_eq!(r.not_domain, vec!["b.test"]);
-        assert_eq!(r.port, vec!["80-82", "443"]);
+        assert_eq!(r.domain, vec!["delegate.com"]);
     }
 
     #[test]
-    fn planned_preflight_pin_current_owner_normalize_only_rewrites_rule_tokens() {
-        // WP-30k pin: current owner is normalize.rs; it canonicalizes rule tokens but
-        // does not bind or rewrite planned-layer references such as route.default/outbound.
-        let mut cfg = ConfigIR::default();
-        cfg.route.default = Some("Selector-A".to_string());
+    fn wp30r_pin_compat_shell_normalize_config_delegates() {
+        // WP-30r pin: normalize_config through compat shell produces identical
+        // results to direct ir::normalize call.
+        let mut cfg = crate::ir::ConfigIR::default();
         cfg.route.rules.push(RuleIR {
-            domain: vec!["EXAMPLE.COM".into()],
-            port: vec!["443".into(), "80-81".into(), "81".into()],
-            network: vec![" TCP ".into()],
-            protocol: vec![" HTTP ".into()],
-            outbound: Some("Selector-A".to_string()),
+            domain: vec!["UPPER.COM".into()],
+            port: vec!["80-82".into(), "81".into()],
             ..Default::default()
         });
-
         normalize_config(&mut cfg);
-
-        let rule = &cfg.route.rules[0];
-        assert_eq!(rule.domain, vec!["example.com"]);
-        assert_eq!(rule.port, vec!["80-81", "443"]);
-        assert_eq!(rule.network, vec!["tcp"]);
-        assert_eq!(rule.protocol, vec!["http"]);
-        assert_eq!(rule.outbound.as_deref(), Some("Selector-A"));
-        assert_eq!(cfg.route.default.as_deref(), Some("Selector-A"));
+        assert_eq!(cfg.route.rules[0].domain, vec!["upper.com"]);
+        assert_eq!(cfg.route.rules[0].port, vec!["80-82"]);
     }
 }

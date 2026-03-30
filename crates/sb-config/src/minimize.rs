@@ -4,7 +4,7 @@
 //! (parent layer prints `MINIMIZE_SKIPPED`).
 
 use crate::ir::ConfigIR;
-use crate::normalize::normalize_config;
+use crate::ir::normalize::normalize_config;
 
 /// Deduplicate domain list (assumes already normalized/sorted).
 fn fold_domains(v: &mut Vec<String>) {
