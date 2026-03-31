@@ -28,6 +28,14 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30y**: route lowering owner 迁移 — 已完成
+  - `validator/v2/route.rs` 现在是 route validation + lowering 的实际 owner
+  - `to_ir_v1()` 对 route 只做一行委托 `route::lower_route(doc, &mut ir)`
+  - route-only helper `parse_rule_entry()` 已迁入 `route.rs`，既有 `rule_set_format_from_path/url` 继续复用
+  - 覆盖：geoip/geosite、rules/logical rules、rule_set lowering、default/final、resolver、mark、network strategy/fallback 等 route 专属 lowering
+  - mod.rs 从 3391 → 3093 行（-298）
+  - 这是 validator/v2 route lowering owner 迁移卡，不是 RuntimePlan 卡
+  - 24 个 route 子模块测试（13 validation + 9 lowering + 2 pins），含 pins `wp30y_pin_route_lowering_owner_is_route_rs` + `wp30y_pin_mod_rs_to_ir_v1_delegates_route`
 - **WP-30x**: DNS lowering owner 迁移 — 已完成
   - `validator/v2/dns.rs` 现在是 DNS validation + lowering 的实际 owner
   - `to_ir_v1()` 对 DNS 只做一行委托 `dns::lower_dns(doc, &mut ir)`
