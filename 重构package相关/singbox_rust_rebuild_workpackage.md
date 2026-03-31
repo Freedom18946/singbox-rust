@@ -508,7 +508,7 @@
 - ~~`validator/v2/inbound.rs`~~ ✅ 已完成 2026-03-31（906 行，含 `allowed_inbound_keys` + `validate_inbounds` + `lower_inbounds` + `parse_listen_host_port` + 44 定点测试）
 - ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26（610 行，含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试）
 - ~~`validator/v2/service.rs`~~ ✅ 已完成 2026-03-26（135 行，含 `allowed_service_keys` + `validate_services` + 4 定点测试）
-- ~~`validator/v2/endpoint.rs`~~ ✅ 已完成 2026-03-26（195 行，含 `allowed_endpoint_keys` + `allowed_endpoint_peer_keys` + `validate_endpoints` + 6 定点测试）
+- ~~`validator/v2/endpoint.rs`~~ ✅ 已完成 2026-03-26 validation（195 行），2026-03-31 lowering（536 行，含 `allowed_endpoint_keys` + `allowed_endpoint_peer_keys` + `validate_endpoints` + `lower_endpoints` + 21 定点测试）
 
 ### 必做任务
 

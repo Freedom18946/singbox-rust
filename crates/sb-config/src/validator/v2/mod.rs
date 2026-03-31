@@ -44,7 +44,7 @@ pub(crate) fn insert_keys(set: &mut HashSet<String>, keys: &[&str]) {
     }
 }
 
-fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
+pub(super) fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
     match value? {
         Value::Array(arr) => {
             let collected: Vec<String> = arr
@@ -1711,109 +1711,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
     }
 
-    if let Some(eps) = doc.get("endpoints").and_then(|v| v.as_array()) {
-        for e in eps {
-            let ty = match e
-                .get("type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("wireguard")
-            {
-                "wireguard" => crate::ir::EndpointType::Wireguard,
-                "tailscale" => crate::ir::EndpointType::Tailscale,
-                _ => crate::ir::EndpointType::Wireguard,
-            };
-
-            let peers = e.get("peers").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter()
-                    .map(|p| crate::ir::WireGuardPeerIR {
-                        address: p
-                            .get("address")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        port: p.get("port").and_then(|v| v.as_u64()).map(|x| x as u16),
-                        public_key: p
-                            .get("public_key")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        pre_shared_key: p
-                            .get("pre_shared_key")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        allowed_ips: extract_string_list(p.get("allowed_ips")),
-                        persistent_keepalive_interval: p
-                            .get("persistent_keepalive_interval")
-                            .and_then(|v| v.as_u64())
-                            .map(|x| x as u16),
-                        reserved: p.get("reserved").and_then(|v| v.as_array()).map(|arr| {
-                            arr.iter()
-                                .filter_map(|x| x.as_u64().map(|b| b as u8))
-                                .collect()
-                        }),
-                    })
-                    .collect()
-            });
-
-            ir.endpoints.push(crate::ir::EndpointIR {
-                ty,
-                tag: e.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                network: extract_string_list(e.get("network")),
-                wireguard_system: e.get("system_interface").and_then(|v| v.as_bool()),
-                wireguard_name: e
-                    .get("interface_name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                wireguard_mtu: e.get("mtu").and_then(|v| v.as_u64()).map(|x| x as u32),
-                wireguard_address: extract_string_list(e.get("address")),
-                wireguard_private_key: e
-                    .get("private_key")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                wireguard_listen_port: e
-                    .get("listen_port")
-                    .and_then(|v| v.as_u64())
-                    .map(|x| x as u16),
-                wireguard_peers: peers,
-                wireguard_udp_timeout: e
-                    .get("udp_timeout")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                wireguard_workers: e.get("workers").and_then(|v| v.as_i64()).map(|x| x as i32),
-                tailscale_state_directory: e
-                    .get("state_directory")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                tailscale_auth_key: e
-                    .get("auth_key")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                tailscale_control_url: e
-                    .get("control_url")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                tailscale_ephemeral: e.get("ephemeral").and_then(|v| v.as_bool()),
-                tailscale_hostname: e
-                    .get("hostname")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                tailscale_accept_routes: e.get("accept_routes").and_then(|v| v.as_bool()),
-                tailscale_exit_node: e
-                    .get("exit_node")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                tailscale_exit_node_allow_lan_access: e
-                    .get("exit_node_allow_lan_access")
-                    .and_then(|v| v.as_bool()),
-                tailscale_advertise_routes: extract_string_list(e.get("advertise_routes")),
-                tailscale_advertise_exit_node: e
-                    .get("advertise_exit_node")
-                    .and_then(|v| v.as_bool()),
-                tailscale_udp_timeout: e
-                    .get("udp_timeout")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-            });
-        }
-    }
+    // Endpoint lowering — delegated to endpoint.rs (WP-30v)
+    endpoint::lower_endpoints(doc, &mut ir);
 
     if let Some(route) = doc.get("route") {
         // GeoIP/Geosite options
