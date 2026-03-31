@@ -13,21 +13,24 @@
 
 ## 最近完成（2026-03-31）
 
-### WP-30t：inbound validation owner 迁移 — 已完成
+### WP-30u：inbound lowering owner 迁移 — 已完成
 
-- `crates/sb-config/src/validator/v2/inbound.rs` 现在是 inbound validation 的实际 owner
-  - 收纳 `/inbounds` schema/type/required/unknown-field 校验逻辑
-  - 导出 `pub(crate) fn validate_inbounds(doc, allow_unknown, issues)`
-  - `allowed_inbound_keys()` 基于 `object_keys(InboundIR::default())` + raw-only extras
-- `validator/v2/mod.rs` 中 `validate_v2()` 通过 `inbound::validate_inbounds()` 委托
-- mod.rs 从 4630 → 4497 行（-133 行）
-- **这是 validator/v2 inbound 子模块拆分卡，不是 inbound lowering 卡**
-- 不迁移 `to_ir_v1()` 里的 inbound lowering
-- 不改 parse-time defaults / alias / ENV resolution
+- `crates/sb-config/src/validator/v2/inbound.rs` 现在是 inbound validation + lowering 的实际 owner
+  - 新增 `pub(crate) fn lower_inbounds(doc, ir)` — 承接 `to_ir_v1()` 中全部 inbound lowering
+  - `parse_listen_host_port()` 从 mod.rs 迁入（仅被 inbound lowering 使用）
+  - 覆盖：type→InboundType 映射、listen/port/listen_port 优先级、host:port 解析、sniff/sniff_override_destination/udp、basicAuth、direct-only override、set_system_proxy/allow_private_network、ssh_host_key_path 等全部 inbound IR 字段
+- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 inbound 只做一行委托：`inbound::lower_inbounds(doc, &mut ir)`
+- mod.rs 从 4497 → 4269 行（-228 行），inbound.rs 从 372 → 906 行
+- **这是 validator/v2 inbound lowering owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 outbound/dns/service/endpoint lowering owner
+- 不改 parse-time defaults / alias / ENV resolution 的现有语义
 - 不引入 planning / RuntimePlan / query API
-- 新增 15 个测试，含 pin：
-  - `wp30t_pin_inbound_validation_owner_is_inbound_rs` — owner 在 inbound.rs
-  - 覆盖：非数组、非 object、type 缺失/非 string、非 tun 缺 listen、listen 非 string、port/listen_port 非数字、unknown field strict/allow_unknown、ptr 精度、valid passes
+- 新增 29 个测试（含 3 个 parse_listen_host_port 单元测试），含 pins：
+  - `wp30u_pin_inbound_lowering_owner_is_inbound_rs` — lowering owner 在 inbound.rs
+  - `wp30u_pin_mod_rs_to_ir_v1_delegates_inbound` — to_ir_v1() 对 inbound 只做委托
+  - 覆盖：type 映射、listen_port/port 优先级、host:port 解析、IPv6 解析、默认端口、direct override、non-direct 无 override、override_host alias、basicAuth/env、sniff、udp via network/flag、set_system_proxy、allow_private_network、ssh_host_key_path
+
+### WP-30t：inbound validation owner 迁移 — 已完成（earlier）
 
 ### WP-30s：minimize seam owner 迁移 — 已完成（earlier）
 ### WP-30r：normalize seam owner 迁移 — 已完成（earlier）
