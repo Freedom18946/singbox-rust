@@ -9,10 +9,7 @@ mod service;
 pub use outbound::check_tls_capabilities;
 
 use crate::deprecation::{deprecation_directory, DeprecationSeverity};
-use crate::ir::{
-    ConfigIR, Credentials, DerpMeshPeerIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, HeaderEntry,
-    InboundTlsOptionsIR, Listable, StringOrObj,
-};
+use crate::ir::{ConfigIR, Credentials, HeaderEntry, InboundTlsOptionsIR, Listable};
 use sb_types::IssueCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -113,31 +110,16 @@ fn infer_dns_server_type_from_address(address: &str) -> Option<String> {
     }
 }
 
-fn extract_listable_strings(value: Option<&Value>) -> Option<Listable<String>> {
+pub(super) fn extract_listable_strings(value: Option<&Value>) -> Option<Listable<String>> {
     extract_string_list(value).map(|items| Listable { items })
 }
 
-fn parse_listable<T>(value: Option<&Value>) -> Option<Listable<T>>
+pub(super) fn parse_listable<T>(value: Option<&Value>) -> Option<Listable<T>>
 where
     T: DeserializeOwned,
 {
     let v = value?.clone();
     serde_json::from_value::<Listable<T>>(v).ok()
-}
-
-fn parse_derp_verify_client_urls(
-    value: Option<&Value>,
-) -> Option<Listable<StringOrObj<DerpVerifyClientUrlIR>>> {
-    if let Some(parsed) = parse_listable::<StringOrObj<DerpVerifyClientUrlIR>>(value) {
-        return Some(parsed);
-    }
-    // Legacy fallback: keep accepting strings/arrays of strings.
-    extract_string_list(value).map(|items| Listable {
-        items: items
-            .into_iter()
-            .map(|s| StringOrObj(DerpVerifyClientUrlIR::from(s)))
-            .collect(),
-    })
 }
 
 fn parse_seconds_field_to_millis(value: Option<&Value>) -> Option<u64> {
@@ -192,7 +174,7 @@ fn parse_u32_field(value: Option<&Value>) -> Option<u32> {
     }
 }
 
-fn parse_u16_field(value: Option<&Value>) -> Option<u16> {
+pub(super) fn parse_u16_field(value: Option<&Value>) -> Option<u16> {
     match value {
         Some(Value::Number(num)) => num.as_u64().and_then(|v| u16::try_from(v).ok()),
         Some(Value::String(s)) => {
@@ -207,7 +189,7 @@ fn parse_u16_field(value: Option<&Value>) -> Option<u16> {
     }
 }
 
-fn parse_fwmark_field(value: Option<&Value>) -> Option<u32> {
+pub(super) fn parse_fwmark_field(value: Option<&Value>) -> Option<u32> {
     match value {
         Some(Value::Number(num)) => num.as_u64().and_then(|v| u32::try_from(v).ok()),
         Some(Value::String(s)) => {
@@ -228,7 +210,7 @@ fn parse_fwmark_field(value: Option<&Value>) -> Option<u32> {
     }
 }
 
-fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsIR> {
+pub(super) fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsIR> {
     let obj = value.and_then(|v| v.as_object())?;
 
     Some(InboundTlsOptionsIR {
@@ -262,100 +244,6 @@ fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsI
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
     })
-}
-
-fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Listable<StringOrObj<DerpMeshPeerIR>>> {
-    if let Some(parsed) = parse_listable::<StringOrObj<DerpMeshPeerIR>>(value) {
-        return Some(parsed);
-    }
-
-    // Legacy fallback: accept strings and array entries as strings; also accept object
-    // entries with `server` + optional `server_port`, and convert to the string shorthand.
-    let value = value?;
-    let mut out: Vec<StringOrObj<DerpMeshPeerIR>> = Vec::new();
-    match value {
-        Value::String(s) => {
-            let s = s.trim();
-            if !s.is_empty() {
-                out.push(StringOrObj(DerpMeshPeerIR::from(s.to_string())));
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                match item {
-                    Value::String(s) => {
-                        let s = s.trim();
-                        if !s.is_empty() {
-                            out.push(StringOrObj(DerpMeshPeerIR::from(s.to_string())));
-                        }
-                    }
-                    Value::Object(obj) => {
-                        let server = obj.get("server").and_then(|v| v.as_str()).map(str::trim);
-                        let port = parse_u16_field(obj.get("server_port"));
-                        if let Some(server) = server {
-                            if server.is_empty() {
-                                continue;
-                            }
-                            let shorthand = if let Some(port) = port {
-                                format!("{server}:{port}")
-                            } else {
-                                server.to_string()
-                            };
-                            out.push(StringOrObj(DerpMeshPeerIR::from(shorthand)));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        _ => {}
-    }
-    if out.is_empty() {
-        None
-    } else {
-        Some(Listable { items: out })
-    }
-}
-
-fn parse_derp_stun_options(value: Option<&Value>) -> Option<DerpStunOptionsIR> {
-    let value = value?;
-    match value {
-        Value::Number(num) => {
-            let port = num.as_u64().and_then(|v| u16::try_from(v).ok())?;
-            Some(DerpStunOptionsIR {
-                enabled: true,
-                listen: None,
-                listen_port: Some(port),
-                ..Default::default()
-            })
-        }
-        Value::Bool(enabled) => Some(DerpStunOptionsIR {
-            enabled: *enabled,
-            ..Default::default()
-        }),
-        Value::Object(obj) => Some(DerpStunOptionsIR {
-            enabled: obj
-                .get("enabled")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            listen: obj
-                .get("listen")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            listen_port: parse_u16_field(obj.get("listen_port")),
-            bind_interface: obj
-                .get("bind_interface")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            routing_mark: parse_fwmark_field(obj.get("routing_mark")),
-            reuse_addr: obj.get("reuse_addr").and_then(|v| v.as_bool()),
-            netns: obj
-                .get("netns")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-        }),
-        _ => None,
-    }
 }
 
 fn push_transport_token(tokens: &mut Vec<String>, token: &str) {
@@ -2425,199 +2313,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
     }
 
-    // Parse services
-    if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
-        for s in services {
-            let ty_str = s.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            let ty = match ty_str {
-                "resolved" => crate::ir::ServiceType::Resolved,
-                "ssm-api" | "ssmapi" => crate::ir::ServiceType::Ssmapi,
-                "derp" => crate::ir::ServiceType::Derp,
-                _ => continue,
-            };
-
-            let mut service_ir = crate::ir::ServiceIR {
-                ty,
-                tag: s.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                ..Default::default()
-            };
-
-            let legacy_listen_key = match ty {
-                crate::ir::ServiceType::Resolved => "resolved_listen",
-                crate::ir::ServiceType::Ssmapi => "ssmapi_listen",
-                crate::ir::ServiceType::Derp => "derp_listen",
-            };
-            let legacy_listen_port_key = match ty {
-                crate::ir::ServiceType::Resolved => "resolved_listen_port",
-                crate::ir::ServiceType::Ssmapi => "ssmapi_listen_port",
-                crate::ir::ServiceType::Derp => "derp_listen_port",
-            };
-
-            service_ir.listen = s
-                .get("listen")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    s.get(legacy_listen_key)
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                });
-            service_ir.listen_port = parse_u16_field(s.get("listen_port")).or_else(|| {
-                parse_u16_field(s.get(legacy_listen_port_key)).or_else(|| {
-                    s.get(legacy_listen_port_key)
-                        .and_then(|v| v.as_u64())
-                        .map(|x| x as u16)
-                })
-            });
-            service_ir.bind_interface = s
-                .get("bind_interface")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.routing_mark = parse_fwmark_field(s.get("routing_mark"));
-            service_ir.reuse_addr = s.get("reuse_addr").and_then(|v| v.as_bool());
-            service_ir.netns = s
-                .get("netns")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.tcp_fast_open = s.get("tcp_fast_open").and_then(|v| v.as_bool());
-            service_ir.tcp_multi_path = s.get("tcp_multi_path").and_then(|v| v.as_bool());
-            service_ir.udp_fragment = s.get("udp_fragment").and_then(|v| v.as_bool());
-            service_ir.udp_timeout = s
-                .get("udp_timeout")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.detour = s
-                .get("detour")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.sniff = s.get("sniff").and_then(|v| v.as_bool());
-            service_ir.sniff_override_destination = s
-                .get("sniff_override_destination")
-                .and_then(|v| v.as_bool());
-            service_ir.sniff_timeout = s
-                .get("sniff_timeout")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.domain_strategy = s
-                .get("domain_strategy")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.udp_disable_domain_unmapping = s
-                .get("udp_disable_domain_unmapping")
-                .and_then(|v| v.as_bool());
-
-            service_ir.tls = parse_inbound_tls_options(s.get("tls"));
-
-            // Legacy TLS path fields (Rust-only schema) → Go-style `tls`.
-            match ty {
-                crate::ir::ServiceType::Ssmapi => {
-                    let legacy_cert = s
-                        .get("ssmapi_tls_cert_path")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let legacy_key = s
-                        .get("ssmapi_tls_key_path")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    if (legacy_cert.is_some() || legacy_key.is_some()) && service_ir.tls.is_none() {
-                        service_ir.tls = Some(InboundTlsOptionsIR {
-                            enabled: true,
-                            certificate_path: legacy_cert,
-                            key_path: legacy_key,
-                            ..Default::default()
-                        });
-                    }
-                    if let Some(cache) = s
-                        .get("cache_path")
-                        .or_else(|| s.get("ssmapi_cache_path"))
-                        .and_then(|v| v.as_str())
-                    {
-                        service_ir.cache_path = Some(cache.to_string());
-                    }
-                    if let Some(servers) = s.get("servers").and_then(|v| v.as_object()) {
-                        let mut map = std::collections::HashMap::new();
-                        for (k, v) in servers {
-                            if let Some(tag) = v.as_str() {
-                                map.insert(k.to_string(), tag.to_string());
-                            }
-                        }
-                        if !map.is_empty() {
-                            service_ir.servers = Some(map);
-                        }
-                    }
-                }
-                crate::ir::ServiceType::Derp => {
-                    let legacy_cert = s
-                        .get("derp_tls_cert_path")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let legacy_key = s
-                        .get("derp_tls_key_path")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    if (legacy_cert.is_some() || legacy_key.is_some()) && service_ir.tls.is_none() {
-                        service_ir.tls = Some(InboundTlsOptionsIR {
-                            enabled: true,
-                            certificate_path: legacy_cert,
-                            key_path: legacy_key,
-                            ..Default::default()
-                        });
-                    }
-
-                    service_ir.config_path = s
-                        .get("config_path")
-                        .or_else(|| s.get("derp_config_path"))
-                        .or_else(|| s.get("derp_server_key_path"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    service_ir.verify_client_endpoint = extract_listable_strings(
-                        s.get("verify_client_endpoint")
-                            .or_else(|| s.get("derp_verify_client_endpoint")),
-                    );
-                    service_ir.verify_client_url = parse_derp_verify_client_urls(
-                        s.get("verify_client_url")
-                            .or_else(|| s.get("derp_verify_client_url")),
-                    );
-                    service_ir.home = s
-                        .get("home")
-                        .or_else(|| s.get("derp_home"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    service_ir.mesh_psk = s
-                        .get("mesh_psk")
-                        .or_else(|| s.get("derp_mesh_psk"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    service_ir.mesh_psk_file = s
-                        .get("mesh_psk_file")
-                        .or_else(|| s.get("derp_mesh_psk_file"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    service_ir.mesh_with = parse_derp_mesh_with(
-                        s.get("mesh_with").or_else(|| s.get("derp_mesh_with")),
-                    );
-                    service_ir.stun = parse_derp_stun_options(s.get("stun")).or_else(|| {
-                        let enabled = s.get("derp_stun_enabled").and_then(|v| v.as_bool());
-                        let port = parse_u16_field(s.get("derp_stun_listen_port"));
-                        if enabled.is_none() && port.is_none() {
-                            return None;
-                        }
-                        Some(DerpStunOptionsIR {
-                            enabled: enabled.unwrap_or(true),
-                            listen: None,
-                            listen_port: port,
-                            ..Default::default()
-                        })
-                    });
-                }
-                crate::ir::ServiceType::Resolved => {
-                    // Resolved service has only Listen Fields; defaults applied at runtime.
-                }
-            }
-
-            ir.services.push(service_ir);
-        }
-    }
+    service::lower_services(doc, &mut ir);
 
     normalize_credentials(&mut ir);
     ir

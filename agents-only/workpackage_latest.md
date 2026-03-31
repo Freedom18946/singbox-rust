@@ -28,13 +28,14 @@
 
 ### 维护卡（2026-03-31）
 
-- **WP-30v**: endpoint lowering owner 迁移 — 已完成
-  - `validator/v2/endpoint.rs` 现在是 endpoint validation + lowering 的实际 owner
-  - `to_ir_v1()` 对 endpoint 只做一行委托 `endpoint::lower_endpoints(doc, &mut ir)`
-  - `extract_string_list` 升级为 `pub(super)`（共享 helper，仍在 mod.rs）
-  - mod.rs 从 4269 → 4168 行（-101 行）
-  - 这是 validator/v2 endpoint lowering owner 迁移卡，不是 RuntimePlan 卡
-  - 15 个新测试，含 pins `wp30v_pin_endpoint_lowering_owner_is_endpoint_rs` + `wp30v_pin_mod_rs_to_ir_v1_delegates_endpoint`
+- **WP-30w**: service lowering owner 迁移 — 已完成
+  - `validator/v2/service.rs` 现在是 service validation + lowering 的实际 owner
+  - `to_ir_v1()` 对 service 只做一行委托 `service::lower_services(doc, &mut ir)`
+  - 3 个 service-only helpers 迁入，5 个共享 helper 升级为 `pub(super)`
+  - mod.rs 从 4168 → 3864 行（-304 行）
+  - 这是 validator/v2 service lowering owner 迁移卡，不是 RuntimePlan 卡
+  - 29 个测试（4 validation + 25 lowering），含 pins `wp30w_pin_service_lowering_owner_is_service_rs` + `wp30w_pin_mod_rs_to_ir_v1_delegates_service`
+- **WP-30v**: endpoint lowering owner 迁移 — 已完成（earlier）
 - **WP-30u**: inbound lowering owner 迁移 — 已完成（earlier）
 - **WP-30t**: inbound validation owner 迁移 — 已完成（earlier）
 - **WP-30s**: minimize seam owner 迁移 — 已完成（earlier）
