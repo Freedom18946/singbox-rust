@@ -50,7 +50,7 @@
 保持上述总顺序不变，但要把维护期已经收口过一轮的条目和仍会直接影响稳定性的条目分开：
 
 - **仍是 Phase 2 / Phase 4 第一波 blocker**：
-  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs`（已完成 endpoint + service 第一刀子模块拆分 2026-03-26，剩余 dns IR + raw/validated/planned/normalize 三相边界治理）/ ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` route 子域~~ ✅ 已拆分且已在 2026-04-01 收口 route lowering owner / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` service 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` endpoint 子域~~ ✅ 已拆分 2026-03-26 / **validator/v2 第一轮子域拆分已完成，route/dns/service/endpoint/inbound lowering owner 持续收口，下一战场仍是 ir/mod.rs 与更大三相边界治理**）
+  - `sb-config` Raw 边界（~~`outbound.rs`~~ ✅ 已完成 Raw/Validated 边界试点 2026-03-26 / `ir/mod.rs`（已完成 endpoint + service 第一刀子模块拆分 2026-03-26，剩余 dns IR + raw/validated/planned/normalize 三相边界治理）/ ~~`validator/v2` outbound 子域~~ ✅ 已拆分 2026-03-26，且已在 2026-04-01 收口 outbound lowering owner / ~~`validator/v2` route 子域~~ ✅ 已拆分且已在 2026-04-01 收口 route lowering owner / ~~`validator/v2` dns 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` service 子域~~ ✅ 已拆分 2026-03-26 / ~~`validator/v2` endpoint 子域~~ ✅ 已拆分 2026-03-26 / **validator/v2 第一轮子域拆分已完成，outbound/route/dns/service/endpoint/inbound lowering owner 持续收口，下一战场仍是 ir/mod.rs 与更大三相边界治理**）
 - **已完成 hard global + lifecycle 收口**：
   - `outbound/ssh.rs` — session lock 消除（`Arc<PostAuthSession>` 最小能力封装，handle 私有，仅暴露 `open_direct_tcpip()`），pool 三阶段锁无 lock-across-await，bridge `JoinSet` tracked，零 `tokio::spawn`
   - `outbound/anytls.rs` — `SessionRuntime`（`JoinSet` owner + `shutdown()` abort+join），三阶段锁无 lock-across-await，bridge `JoinSet` tracked（`264cb5a2` + follow-up）
@@ -452,7 +452,7 @@
 - 这一组结论在当前仓库上 **没有被维护期修正推翻**。
 - ~~`crates/sb-config/src/outbound.rs` 仍是直接 `Deserialize` 的 Raw 边界模型。~~ → ✅ 2026-03-26 已完成 Raw/Validated 边界试点（`deny_unknown_fields` + 自定义 `Deserialize` via Raw bridge）
 - `crates/sb-config/src/ir/mod.rs` 巨石问题仍未根治，但已完成 endpoint + service 第一刀结构拆分（2026-03-26，`ir/endpoint.rs` 174 行 + `ir/service.rs` 322 行，mod.rs 3755→3283 行）。剩余重点仍是 dns IR 与更大的 raw/validated/planned/normalize 三相边界治理。
-- ~~`crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。~~ → ✅ 2026-03-26 已完成 outbound + route + dns + service + endpoint 子域拆分；其后 2026-03-31/2026-04-01 继续把 inbound / route lowering owner 下沉到对应子模块。当前 `v2/route.rs` 已是 route validation + lowering owner，`v2/mod.rs` 已收至 3093 行，**validator/v2 第一轮子域拆分已完成，剩余主战场转为 `ir/mod.rs` 与更大三相边界治理**。
+- ~~`crates/sb-config/src/validator/v2.rs` 仍是 5384 LOC 巨石校验器。~~ → ✅ 2026-03-26 已完成 outbound + route + dns + service + endpoint 子域拆分；其后 2026-03-31/2026-04-01 继续把 inbound / route / outbound lowering owner 下沉到对应子模块。当前 `v2/outbound.rs` 已是 outbound validation + lowering owner，`v2/route.rs` 已是 route validation + lowering owner，`v2/mod.rs` 已收至 1607 行，**validator/v2 第一轮子域拆分已完成，剩余主战场转为 `ir/mod.rs` 与更大三相边界治理**。
 
 因此 `WP-30` / `WP-31` 仍是中期主线，不建议因为 `logging` / `security_metrics` 的 compat 壳残留而后移。
 
@@ -504,6 +504,7 @@
 
 - `validator/v2/root.rs`
 - ~~`validator/v2/dns.rs`~~ ✅ 已完成 2026-03-26（221 行，含 `allowed_dns_keys` + `allowed_dns_server_keys` + `allowed_dns_rule_keys` + `validate_dns` + 8 定点测试）
+- ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26，并在 2026-04-01 继续承接 outbound lowering owner（当前含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + `lower_outbounds` + transport/header/urltest 专属 helper；`to_ir_v1()` 对 outbound 只剩委托）
 - ~~`validator/v2/route.rs`~~ ✅ 已完成 2026-03-26，并在 2026-04-01 继续承接 route lowering owner（当前含 `allowed_route_keys` + `allowed_route_rule_keys` + `allowed_rule_set_keys` + `rule_set_format_from_path/url` + `validate_route` + `parse_rule_entry` + `lower_route`；`to_ir_v1()` 对 route 只剩委托）
 - ~~`validator/v2/inbound.rs`~~ ✅ 已完成 2026-03-31（906 行，含 `allowed_inbound_keys` + `validate_inbounds` + `lower_inbounds` + `parse_listen_host_port` + 44 定点测试）
 - ~~`validator/v2/outbound.rs`~~ ✅ 已完成 2026-03-26（610 行，含 `allowed_outbound_keys` + `validate_outbounds` + `check_tls_capabilities` + 13 定点测试）

@@ -28,6 +28,15 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30z**: outbound lowering owner 迁移 — 已完成
+  - `validator/v2/outbound.rs` 现在是 outbound validation + lowering 的实际 owner
+  - `to_ir_v1()` 对 outbound 只做一行委托 `outbound::lower_outbounds(doc, &mut ir)`
+  - outbound-only helper 已迁入：transport token/header 解析、`parse_transport_object()`、selector/urltest 默认值与 alias lowering
+  - 共享 helper `extract_string_list` / `parse_u32_field` / `parse_seconds_field_to_millis` / `parse_millis_field` 继续留在 mod.rs
+  - 覆盖：type mapping、selector/urltest、Shadowsocks default method、Hysteria/Hysteria2 alias、SSH top-level auth alias、WireGuard peer fallback、transport/tls/reality lowering
+  - mod.rs 从 3093 → 1607 行（-1486）
+  - 这是 validator/v2 outbound lowering owner 迁移卡，不是 RuntimePlan 卡
+  - 31 个 outbound 子模块测试（29 个域测试 + 2 个 pins），含 pins `wp30z_pin_outbound_lowering_owner_is_outbound_rs` + `wp30z_pin_mod_rs_to_ir_v1_delegates_outbounds`
 - **WP-30y**: route lowering owner 迁移 — 已完成
   - `validator/v2/route.rs` 现在是 route validation + lowering 的实际 owner
   - `to_ir_v1()` 对 route 只做一行委托 `route::lower_route(doc, &mut ir)`

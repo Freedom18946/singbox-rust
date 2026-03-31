@@ -13,7 +13,24 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30y：route lowering owner 迁移 — 已完成
+### WP-30z：outbound lowering owner 迁移 — 已完成
+
+- `crates/sb-config/src/validator/v2/outbound.rs` 现在是 outbound validation + lowering 的实际 owner
+  - 新增 `pub(super) fn lower_outbounds(doc, ir)` — 承接 `to_ir_v1()` 中全部 outbound lowering
+  - outbound-only helper 已迁入：transport token/header 解析、`parse_transport_object()`、selector/urltest 默认值与 alias lowering
+  - 继续复用既有共享 helper：`extract_string_list()`、`parse_u32_field()`、`parse_seconds_field_to_millis()`、`parse_millis_field()`
+  - 覆盖：type mapping、selector/urltest、Shadowsocks default method、Hysteria/Hysteria2 alias、SSH top-level auth alias、WireGuard peer fallback、transport/tls/reality lowering
+- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 outbound 只做一行委托：`outbound::lower_outbounds(doc, &mut ir)`
+- mod.rs 从 3093 → 1607 行（-1486），outbound.rs 从 606 → 2130 行
+- **这是 validator/v2 outbound lowering owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 inbound/endpoint/service/dns/route lowering owner
+- 不改 planning / RuntimePlan / query API
+- 不改 parse-time defaults / alias / ENV resolution 的现有语义
+- 新增/迁移 29 个 outbound 子模块测试 + 2 个 pins：
+  - `wp30z_pin_outbound_lowering_owner_is_outbound_rs` — lowering owner 在 outbound.rs
+  - `wp30z_pin_mod_rs_to_ir_v1_delegates_outbounds` — to_ir_v1() 对 outbound 只做委托，mod.rs 不再持有 outbound lowering 实现
+
+### WP-30y：route lowering owner 迁移 — 已完成（earlier）
 
 - `crates/sb-config/src/validator/v2/route.rs` 现在是 route validation + lowering 的实际 owner
   - 新增 `pub(super) fn lower_route(doc, ir)` — 承接 `to_ir_v1()` 中全部 route lowering
@@ -43,8 +60,7 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（3093 行，inbound + endpoint + service + dns + route lowering 已拆出）
-  - 可考虑 outbound lowering owner 迁移
+  - validator/v2 mod.rs 进一步瘦身（1607 行，inbound + outbound + endpoint + service + dns + route lowering 已拆出）
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
