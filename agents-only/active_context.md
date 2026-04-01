@@ -13,8 +13,27 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30ae：root schema core owner 迁移 — 已完成
+### WP-30af：validator/v2 facade owner 迁移 — 已完成
 
+- 新增 `crates/sb-config/src/validator/v2/facade.rs`，现在收纳 `validate_v2()` / `to_ir_v1()` / `pack_output()` 的实际 owner
+- `validator/v2/mod.rs` 新增 `mod facade;`，对外 API 改成 thin delegate，继续保留 shared helper 与 `pub use outbound::check_tls_capabilities;`
+- `validate_v2()` 现在继续只做 facade 装配：root schema + inbound/outbound/route/dns/service/endpoint validation + deprecation + security + TLS capability
+- `to_ir_v1()` 现在继续只做 facade 装配：inbound/outbound/endpoint/route/top_level/dns/service lowering + credentials normalization
+- `pack_output()` 继续只是 facade 层输出打包；外部 API 签名与行为不变
+- `validator/v2/mod.rs` 从 742 → 260 行（-482），shared helper 仍留在 mod.rs；`facade.rs` 759 行（含测试）
+- 17 个 facade 定点测试（功能 + pins）：
+  - `validate_v2_assembles_validation_facade_passes`
+  - `to_ir_v1_assembles_lowering_facade_and_credentials_normalization`
+  - `pack_output_preserves_output_shape`
+  - `wp30af_pin_facade_owner_is_facade_rs`
+  - `wp30af_pin_mod_rs_facade_api_is_delegate_only`
+- 兼容更新旧 pins：`credentials.rs` / `outbound.rs` / `route.rs` 的 source pin 现改为接受 “mod.rs -> facade.rs -> owner module” 的新委托链
+- **这是 validator/v2 facade owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 inbound/outbound/endpoint/service/dns/route/top_level/deprecation/security/schema_core/credentials owner
+- 不改 shared helper 语义
+- 不引入 planning / RuntimePlan / query API
+
+### WP-30ae：root schema core owner 迁移 — 已完成（earlier）
 - `crates/sb-config/src/validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner
   - `validate_root_schema(doc, allow_unknown, issues) -> bool` pub(super) 入口
   - 收纳 schema load + fallback、`schema_version` 检查、root unknown field 检查（含 `$schema` 例外）
@@ -41,8 +60,8 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（742 行，deprecation + security + credentials + schema_core + inbound + outbound + endpoint + service + dns + route + top-level 已拆出）
-  - 剩余 mod.rs 内容：TLS capability matrix pass（re-export `check_tls_capabilities`）、`validate_v2()` / `to_ir_v1()` 入口 + 通用 shared helper
+  - validator/v2 facade seam 已收口；`mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
+  - 若继续细拆，应明确是 helper seam / compat seam 卡，而不是再把 facade 迁移误写成 RuntimePlan 卡
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

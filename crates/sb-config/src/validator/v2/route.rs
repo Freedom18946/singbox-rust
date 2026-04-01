@@ -980,25 +980,30 @@ mod tests {
     #[test]
     fn wp30y_pin_mod_rs_to_ir_v1_delegates_route() {
         let mod_source = include_str!("mod.rs");
-        let start = mod_source
+        assert!(
+            mod_source.contains("facade::to_ir_v1(doc)"),
+            "mod.rs to_ir_v1() must remain a thin facade delegate"
+        );
+
+        let facade_source = include_str!("facade.rs");
+        let start = facade_source
             .find("endpoint::lower_endpoints(doc, &mut ir);")
             .expect("endpoint lowering marker");
-        let end = mod_source
-            .find("// Top-level block lowering")
-            .expect("top-level block lowering marker");
-        let route_window = &mod_source[start..end];
-
+        let end = facade_source
+            .find("top_level::lower_top_level_blocks(doc, &mut ir);")
+            .expect("top-level lowering marker");
+        let route_window = &facade_source[start..end];
         assert!(
             route_window.contains("route::lower_route(doc, &mut ir);"),
-            "to_ir_v1 should delegate route lowering to route::lower_route"
+            "facade.rs to_ir_v1() should delegate route lowering to route::lower_route"
         );
         assert!(
             !route_window.contains("doc.get(\"route\")"),
-            "mod.rs route section should no longer hold inline lowering logic"
+            "facade.rs route section should no longer hold inline lowering logic"
         );
         assert!(
             !route_window.contains("ir.route."),
-            "mod.rs route section should no longer mutate ir.route directly"
+            "facade.rs route section should no longer mutate ir.route directly"
         );
 
         let doc = json!({

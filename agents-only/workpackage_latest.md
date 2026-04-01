@@ -28,6 +28,12 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30af**: validator/v2 facade owner 迁移 — 已完成
+  - 新增 `validator/v2/facade.rs`，收纳 `validate_v2()` / `to_ir_v1()` / `pack_output()` 实际 owner
+  - `validator/v2/mod.rs` 改成 thin delegate + shared helper + TLS re-export
+  - mod.rs 从 742 → 260 行（-482），`facade.rs` 759 行（含测试）
+  - 这是 validator/v2 facade owner 迁移卡，不是 RuntimePlan 卡
+  - 17 个 facade 定点测试（含 2 个 facade pins）
 - **WP-30ae**: root schema core owner 迁移 — 已完成
   - `validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner
   - `validate_v2()` 对 root schema validation 只做一行委托 `schema_core::validate_root_schema()`
@@ -40,9 +46,9 @@
 - **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
 - **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
-### 构建基线（2026-04-01，WP-30ae 后）
+### 构建基线（2026-04-01，WP-30af 后）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-config --lib` | ✅ 632 passed |
+| `cargo test -p sb-config --lib` | ✅ 637 passed |

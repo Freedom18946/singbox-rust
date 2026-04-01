@@ -2077,25 +2077,23 @@ mod tests {
     #[test]
     fn wp30z_pin_mod_rs_to_ir_v1_delegates_outbounds() {
         let mod_source = include_str!("mod.rs");
-        let start = mod_source
-            .find("inbound::lower_inbounds(doc, &mut ir);")
-            .expect("inbound lowering marker");
-        let end = mod_source
-            .find("// Endpoint lowering")
-            .expect("endpoint lowering marker");
-        let outbound_window = &mod_source[start..end];
+        assert!(
+            mod_source.contains("facade::to_ir_v1(doc)"),
+            "mod.rs to_ir_v1() must remain a thin facade delegate"
+        );
 
+        let facade_source = include_str!("facade.rs");
         assert!(
-            outbound_window.contains("outbound::lower_outbounds(doc, &mut ir);"),
-            "to_ir_v1 should delegate outbound lowering to outbound::lower_outbounds"
+            facade_source.contains("outbound::lower_outbounds(doc, &mut ir);"),
+            "facade.rs to_ir_v1() should delegate outbound lowering to outbound::lower_outbounds"
         );
         assert!(
-            !outbound_window.contains("let mut ob = crate::ir::OutboundIR"),
-            "mod.rs outbound section should no longer construct OutboundIR inline"
+            !facade_source.contains("let mut ob = crate::ir::OutboundIR"),
+            "facade.rs should no longer construct OutboundIR inline"
         );
         assert!(
-            !outbound_window.contains("ir.outbounds.push(ob);"),
-            "mod.rs outbound section should no longer push outbound entries directly"
+            !facade_source.contains("ir.outbounds.push(ob);"),
+            "facade.rs should not push outbound entries directly"
         );
 
         let doc = json!({

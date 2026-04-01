@@ -227,12 +227,18 @@ mod tests {
 
     #[test]
     fn wp30ad_pin_to_ir_v1_delegates_credential_normalization() {
-        // WP-30ad pin: to_ir_v1() delegates credential normalization to
-        // credentials::normalize_credentials, it does not inline the logic.
+        // WP-30ad pin: the public to_ir_v1() entry still delegates credential
+        // normalization instead of inlining it. After WP-30af, mod.rs delegates
+        // to facade.rs, and facade.rs delegates to credentials::normalize_credentials.
         let mod_source = include_str!("mod.rs");
         assert!(
-            mod_source.contains("credentials::normalize_credentials"),
-            "to_ir_v1() must delegate to credentials::normalize_credentials"
+            mod_source.contains("facade::to_ir_v1(doc)"),
+            "mod.rs to_ir_v1() must remain a thin facade delegate"
+        );
+        let facade_source = include_str!("facade.rs");
+        assert!(
+            facade_source.contains("credentials::normalize_credentials(&mut ir);"),
+            "facade.rs to_ir_v1() must delegate to credentials::normalize_credentials"
         );
     }
 }
