@@ -28,37 +28,19 @@
 
 ### 维护卡（2026-04-01）
 
-- **WP-30z**: outbound lowering owner 迁移 — 已完成
-  - `validator/v2/outbound.rs` 现在是 outbound validation + lowering 的实际 owner
-  - `to_ir_v1()` 对 outbound 只做一行委托 `outbound::lower_outbounds(doc, &mut ir)`
-  - outbound-only helper 已迁入：transport token/header 解析、`parse_transport_object()`、selector/urltest 默认值与 alias lowering
-  - 共享 helper `extract_string_list` / `parse_u32_field` / `parse_seconds_field_to_millis` / `parse_millis_field` 继续留在 mod.rs
-  - 覆盖：type mapping、selector/urltest、Shadowsocks default method、Hysteria/Hysteria2 alias、SSH top-level auth alias、WireGuard peer fallback、transport/tls/reality lowering
-  - mod.rs 从 3093 → 1607 行（-1486）
-  - 这是 validator/v2 outbound lowering owner 迁移卡，不是 RuntimePlan 卡
-  - 31 个 outbound 子模块测试（29 个域测试 + 2 个 pins），含 pins `wp30z_pin_outbound_lowering_owner_is_outbound_rs` + `wp30z_pin_mod_rs_to_ir_v1_delegates_outbounds`
-- **WP-30y**: route lowering owner 迁移 — 已完成
-  - `validator/v2/route.rs` 现在是 route validation + lowering 的实际 owner
-  - `to_ir_v1()` 对 route 只做一行委托 `route::lower_route(doc, &mut ir)`
-  - route-only helper `parse_rule_entry()` 已迁入 `route.rs`，既有 `rule_set_format_from_path/url` 继续复用
-  - 覆盖：geoip/geosite、rules/logical rules、rule_set lowering、default/final、resolver、mark、network strategy/fallback 等 route 专属 lowering
-  - mod.rs 从 3391 → 3093 行（-298）
-  - 这是 validator/v2 route lowering owner 迁移卡，不是 RuntimePlan 卡
-  - 24 个 route 子模块测试（13 validation + 9 lowering + 2 pins），含 pins `wp30y_pin_route_lowering_owner_is_route_rs` + `wp30y_pin_mod_rs_to_ir_v1_delegates_route`
-- **WP-30x**: DNS lowering owner 迁移 — 已完成
-  - `validator/v2/dns.rs` 现在是 DNS validation + lowering 的实际 owner
-  - `to_ir_v1()` 对 DNS 只做一行委托 `dns::lower_dns(doc, &mut ir)`
-  - 1 个 DNS-only helper 迁入，1 个共享 helper 升级为 `pub(super)`
-  - mod.rs 从 3864 → 3391 行（-473 行）
-  - 这是 validator/v2 DNS lowering owner 迁移卡，不是 RuntimePlan 卡
-  - 30 个测试（8 validation + 22 lowering），含 pins `wp30x_pin_dns_lowering_owner_is_dns_rs` + `wp30x_pin_mod_rs_to_ir_v1_delegates_dns`
+- **WP-30aa**: deprecation detection owner 迁移 — 已完成
+  - `validator/v2/deprecation.rs` 现在是 deprecation detection 的实际 owner
+  - `validate_v2()` 对 deprecation 只做一行委托 `deprecation::check_deprecations(doc)`
+  - `check_deprecations()` + `resolve_deprecation_pattern()` + `resolve_pattern_recursive()` 已迁入
+  - mod.rs 从 1607 → 1204 行（-403）
+  - 这是 validator/v2 deprecation detection owner 迁移卡，不是 RuntimePlan 卡
+  - 10 个 deprecation 子模块测试（8 域测试 + 2 pins），含 pins `wp30aa_pin_deprecation_owner_is_deprecation_rs` + `wp30aa_pin_validate_v2_delegates_deprecation`
+- **WP-30z**: outbound lowering owner 迁移 — 已完成（earlier）
+- **WP-30y**: route lowering owner 迁移 — 已完成（earlier）
+- **WP-30x**: DNS lowering owner 迁移 — 已完成（earlier）
 - **WP-30w**: service lowering owner 迁移 — 已完成（earlier）
 - **WP-30v**: endpoint lowering owner 迁移 — 已完成（earlier）
-- **WP-30u**: inbound lowering owner 迁移 — 已完成（earlier）
-- **WP-30t**: inbound validation owner 迁移 — 已完成（earlier）
-- **WP-30s**: minimize seam owner 迁移 — 已完成（earlier）
-- **WP-30r**: normalize seam owner 迁移 — 已完成（earlier）
-- **WP-30q**: DNS server / service namespace uniqueness — 已完成（earlier）
+- **WP-30u ~ WP-30q**: inbound/planned seam 系列 — 已完成（earlier）
 
 ### 构建基线（2026-03-17，L25 后）
 

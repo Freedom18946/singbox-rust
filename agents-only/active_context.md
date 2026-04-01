@@ -13,43 +13,26 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30z：outbound lowering owner 迁移 — 已完成
+### WP-30aa：deprecation detection owner 迁移 — 已完成
 
-- `crates/sb-config/src/validator/v2/outbound.rs` 现在是 outbound validation + lowering 的实际 owner
-  - 新增 `pub(super) fn lower_outbounds(doc, ir)` — 承接 `to_ir_v1()` 中全部 outbound lowering
-  - outbound-only helper 已迁入：transport token/header 解析、`parse_transport_object()`、selector/urltest 默认值与 alias lowering
-  - 继续复用既有共享 helper：`extract_string_list()`、`parse_u32_field()`、`parse_seconds_field_to_millis()`、`parse_millis_field()`
-  - 覆盖：type mapping、selector/urltest、Shadowsocks default method、Hysteria/Hysteria2 alias、SSH top-level auth alias、WireGuard peer fallback、transport/tls/reality lowering
-- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 outbound 只做一行委托：`outbound::lower_outbounds(doc, &mut ir)`
-- mod.rs 从 3093 → 1607 行（-1486），outbound.rs 从 606 → 2130 行
-- **这是 validator/v2 outbound lowering owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 inbound/endpoint/service/dns/route lowering owner
+- `crates/sb-config/src/validator/v2/deprecation.rs` 现在是 deprecation detection 的实际 owner
+  - `check_deprecations()`、`resolve_deprecation_pattern()`、`resolve_pattern_recursive()` 已迁入
+  - 通过 `super::emit_issue` 引用共享 helper
+  - 依赖 `crate::deprecation::{deprecation_directory, DeprecationSeverity}` 数据源
+- `validator/v2/mod.rs` 中 `validate_v2()` 对 deprecation 只做一行委托：`deprecation::check_deprecations(doc)`
+- mod.rs 从 1607 → 1204 行（-403），deprecation.rs 427 行
+- **这是 validator/v2 deprecation detection owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 inbound/outbound/endpoint/service/dns/route validation/lowering owner
 - 不改 planning / RuntimePlan / query API
-- 不改 parse-time defaults / alias / ENV resolution 的现有语义
-- 新增/迁移 29 个 outbound 子模块测试 + 2 个 pins：
-  - `wp30z_pin_outbound_lowering_owner_is_outbound_rs` — lowering owner 在 outbound.rs
-  - `wp30z_pin_mod_rs_to_ir_v1_delegates_outbounds` — to_ir_v1() 对 outbound 只做委托，mod.rs 不再持有 outbound lowering 实现
+- 不改 deprecation directory 数据源、issue 文案、匹配语义
+- 迁移 8 个 deprecation 测试 + 2 个 pins：
+  - `wp30aa_pin_deprecation_owner_is_deprecation_rs` — deprecation detection owner 在 deprecation.rs
+  - `wp30aa_pin_validate_v2_delegates_deprecation` — validate_v2() 对 deprecation 只做委托
 
+### WP-30z：outbound lowering owner 迁移 — 已完成（earlier）
 ### WP-30y：route lowering owner 迁移 — 已完成（earlier）
-
-- `crates/sb-config/src/validator/v2/route.rs` 现在是 route validation + lowering 的实际 owner
-  - 新增 `pub(super) fn lower_route(doc, ir)` — 承接 `to_ir_v1()` 中全部 route lowering
-  - `parse_rule_entry()` 已迁入 `route.rs`，当前只由 route lowering 使用
-  - 继续复用既有 `rule_set_format_from_path/url`
-  - 覆盖：`route.geoip` / `route.geosite`、`rules[*] -> RuleIR`、logical rule lowering、`rule_set[*] -> RuleSetIR`、`default/final/final_outbound`、`find_process` / `override_android_vpn` / `auto_detect_interface` / `default_interface` / `mark`、`default_domain_resolver` / `default_resolver`、`default_network_strategy` / `network_strategy`、`default_network_type` / `default_fallback_network_type` / `default_fallback_delay` / `fallback_delay`
-- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 route 只做一行委托：`route::lower_route(doc, &mut ir)`
-- mod.rs 从 3391 → 3093 行（-298），route.rs 从验证 owner 扩展为 validation + lowering owner
-- **这是 validator/v2 route lowering owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 inbound/endpoint/service/dns/outbound lowering owner
-- 不改 parse-time defaults / alias / ENV resolution 的现有语义
-- 不引入 planning / RuntimePlan / query API
-- 新增 9 个 lowering 测试 + 2 个 pins（validation 13 个测试保留）：
-  - `wp30y_pin_route_lowering_owner_is_route_rs` — lowering owner 在 route.rs
-  - `wp30y_pin_mod_rs_to_ir_v1_delegates_route` — to_ir_v1() 对 route 只做委托，mod.rs 不再持有 route 实现
-
-### WP-30w：service lowering owner 迁移 — 已完成（earlier）
-### WP-30v：endpoint lowering owner 迁移 — 已完成（earlier）
-### WP-30u ~ WP-30k：inbound/planned seam 系列 — 已完成（earlier）
+### WP-30x：DNS lowering owner 迁移 — 已完成（earlier）
+### WP-30w ~ WP-30k：service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -60,7 +43,7 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（1607 行，inbound + outbound + endpoint + service + dns + route lowering 已拆出）
+  - validator/v2 mod.rs 进一步瘦身（1204 行，deprecation + inbound + outbound + endpoint + service + dns + route 已拆出）
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
