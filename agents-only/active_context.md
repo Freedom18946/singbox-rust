@@ -13,25 +13,24 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30ac：top-level lowering owner 迁移 — 已完成
+### WP-30ad：credential normalization owner 迁移 — 已完成
 
-- `crates/sb-config/src/validator/v2/top_level.rs` 现在是 experimental/log/ntp/certificate lowering 的实际 owner
-  - `lower_top_level_blocks(doc, ir)` 统一入口
-  - 通过 `super::parse_seconds_field_to_millis` / `super::parse_millis_field` 引用共享 helper
-- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 top-level lowering 只做一行委托：`top_level::lower_top_level_blocks(doc, &mut ir)`
-- mod.rs 从 975 → 819 行（-156），top_level.rs 347 行（含测试）
-- **这是 validator/v2 top-level lowering owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 inbound/outbound/endpoint/service/dns/route validation/lowering owner
+- `crates/sb-config/src/validator/v2/credentials.rs` 现在是 credential ENV normalization 的实际 owner
+  - `resolve_cred(c)` private helper + `normalize_credentials(ir)` pub(super) 入口
+  - 处理 outbound `credentials` + inbound `basic_auth` 的 `username_env` / `password_env` 解析写回
+- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 credential normalization 只做一行委托：`credentials::normalize_credentials(&mut ir)`
+- mod.rs 从 819 → 793 行（-26），credentials.rs 238 行（含测试）
+- **这是 validator/v2 credential normalization owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 inbound/outbound/endpoint/service/dns/route/top_level validation/lowering owner
 - 不改 deprecation / security / TLS capability pass owner
-- 不改 planning / RuntimePlan / query API
-- 共享 helper（`parse_seconds_field_to_millis` / `parse_millis_field`）+ `normalize_credentials()` 保留在 mod.rs
-- 迁移 3 个既有测试 + 8 个新测试 + 2 个 pins：
-  - `wp30ac_pin_top_level_lowering_owner_is_top_level_rs` — top-level lowering owner 在 top_level.rs
-  - `wp30ac_pin_to_ir_v1_delegates_top_level_lowering` — to_ir_v1() 对 top-level lowering 只做委托
-- 修正 `route.rs` 中 `wp30y_pin_mod_rs_to_ir_v1_delegates_route` 的源码标记（适配新注释）
+- 不改 ENV 优先级语义：仍是 `username_env/password_env` 命中时写回明文字段
+- 不引入 planning / RuntimePlan / query API
+- 10 个测试（8 功能 + 2 pins）：
+  - `wp30ad_pin_credential_normalization_owner_is_credentials_rs` — credential normalization owner 在 credentials.rs
+  - `wp30ad_pin_to_ir_v1_delegates_credential_normalization` — to_ir_v1() 对 credential normalization 只做委托
 
-### WP-30ab：security warning owner 迁移 — 已完成（earlier）
-### WP-30aa ~ WP-30k：deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
+### WP-30ac：top-level lowering owner 迁移 — 已完成（earlier）
+### WP-30ab ~ WP-30k：security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -42,8 +41,8 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（819 行，deprecation + security + inbound + outbound + endpoint + service + dns + route + top-level 已拆出）
-  - 剩余 mod.rs 内容：TLS capability matrix pass、schema validation core、`to_ir_v1()` 入口 + 通用 helper、`normalize_credentials()`
+  - validator/v2 mod.rs 进一步瘦身（793 行，deprecation + security + credentials + inbound + outbound + endpoint + service + dns + route + top-level 已拆出）
+  - 剩余 mod.rs 内容：TLS capability matrix pass、schema validation core、`to_ir_v1()` 入口 + 通用 shared helper
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

@@ -1,3 +1,4 @@
+mod credentials;
 mod deprecation;
 mod dns;
 mod endpoint;
@@ -11,7 +12,7 @@ mod top_level;
 // Re-export outbound TLS capability check for public API stability
 pub use outbound::check_tls_capabilities;
 
-use crate::ir::{ConfigIR, Credentials, InboundTlsOptionsIR, Listable};
+use crate::ir::{InboundTlsOptionsIR, Listable};
 use sb_types::IssueCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -226,34 +227,6 @@ pub(super) fn parse_inbound_tls_options(value: Option<&Value>) -> Option<Inbound
     })
 }
 
-fn resolve_cred(c: &mut Credentials) {
-    if let Some(key) = &c.username_env {
-        if let Ok(v) = std::env::var(key) {
-            c.username = Some(v);
-        }
-    }
-    if let Some(key) = &c.password_env {
-        if let Ok(v) = std::env::var(key) {
-            c.password = Some(v);
-        }
-    }
-}
-
-/// Parse and normalize credentials (ENV > Plaintext), avoiding downstream duplicate checks.
-/// 解析并归一化认证字段（ENV > 明文），避免下游重复判断。
-fn normalize_credentials(ir: &mut ConfigIR) {
-    for ob in &mut ir.outbounds {
-        if let Some(c) = &mut ob.credentials {
-            resolve_cred(c);
-        }
-    }
-    for ib in &mut ir.inbounds {
-        if let Some(c) = &mut ib.basic_auth {
-            resolve_cred(c);
-        }
-    }
-}
-
 /// Convert internal errors to a unified structure.
 /// 将内部错误统一转换为固定结构。
 pub fn emit_issue(kind: &str, code: IssueCode, ptr: &str, msg: &str, hint: &str) -> Value {
@@ -383,7 +356,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     service::lower_services(doc, &mut ir);
 
-    normalize_credentials(&mut ir);
+    // Credential ENV normalization — delegated to credentials.rs (WP-30ad)
+    credentials::normalize_credentials(&mut ir);
     ir
 }
 
