@@ -1,102 +1,13 @@
 use anyhow::{anyhow, Context, Result};
 use sb_config::Config;
-use tracing::{error, info, warn};
-
 use std::sync::Arc;
+use tracing::{error, info};
 
-use tokio::time::Duration;
-
+use sb_core::outbound::{health as ob_health, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
 use sb_core::router::router_build_index_from_str;
-#[cfg(feature = "router")]
-use sb_core::router::RouterHandle;
-use sb_core::outbound::{endpoint::ProxyEndpoint, health as ob_health, registry as ob_registry};
-use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 
-/// The Runtime struct holds the core components of the running proxy.
-/// Runtime 结构体持有运行中代理的核心组件。
-pub struct Runtime {
-    #[cfg(feature = "router")]
-    pub router: Arc<sb_core::router::engine::RouterHandle>,
-    pub outbounds: Arc<OutboundRegistryHandle>,
-    pub inbounds: Vec<app::inbound_starter::InboundHandle>,
-    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-    services: Vec<ServiceHandle>,
-}
-
-#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-struct ServiceHandle {
-    #[allow(dead_code)]
-    name: &'static str,
-    shutdown: tokio::sync::oneshot::Sender<()>,
-    join: tokio::task::JoinHandle<()>,
-}
-
-#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-impl ServiceHandle {
-    async fn shutdown(self) {
-        let _ = self.shutdown.send(());
-        let _ = self.join.await;
-    }
-}
-
-impl Runtime {
-    /// # Errors
-    /// Returns an error if shutdown exceeds the provided timeout.
-    pub async fn shutdown(self, timeout: Duration) -> Result<()> {
-        let Self {
-            inbounds,
-            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-            services,
-            ..
-        } = self;
-
-        let shutdown = async {
-            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-            {
-                for handle in services {
-                    handle.shutdown().await;
-                }
-            }
-            for handle in inbounds {
-                handle.shutdown().await;
-            }
-        };
-
-        tokio::time::timeout(timeout, shutdown)
-            .await
-            .map_err(|_| anyhow!("shutdown timeout after {timeout:?}"))?;
-        Ok(())
-    }
-}
-
-/// Initialize proxy registry from environment variables.
-fn init_proxy_registry_from_env() {
-    if let Ok(s) = std::env::var("SB_ROUTER_DEFAULT_PROXY") {
-        if let Some(ep) = ProxyEndpoint::parse(&s) {
-            let pools = load_pools_from_env().unwrap_or_default();
-            let r = ob_registry::Registry {
-                default: Some(ProxyEndpoint {
-                    weight: 1,
-                    max_fail: 3,
-                    open_ms: 5000,
-                    half_open_ms: 1000,
-                    ..ep
-                }),
-                pools,
-            };
-            ob_registry::install_global(r);
-        }
-    }
-}
-
-/// Create router handle based on feature flags.
-#[cfg(feature = "router")]
-fn create_router_handle() -> Arc<sb_core::router::engine::RouterHandle> {
-    // Prefer DNS-integrated handle if enabled via env
-    use sb_core::router::dns_integration::setup_dns_routing;
-    Arc::new(setup_dns_routing())
-}
+pub use crate::bootstrap_runtime::runtime_shell::Runtime;
 
 /// Build `OutboundRegistry` from `ConfigIR` (minimal: direct/block/http/socks)
 ///
@@ -119,8 +30,9 @@ fn create_router_handle() -> Arc<sb_core::router::engine::RouterHandle> {
 pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> OutboundRegistry {
     let cache_file = ir.experimental.as_ref().and_then(|exp| {
         exp.cache_file.as_ref().map(|cache_cfg| {
-            Arc::new(sb_core::services::cache_file::CacheFileService::new(cache_cfg))
-                as Arc<dyn sb_core::context::CacheFile>
+            Arc::new(sb_core::services::cache_file::CacheFileService::new(
+                cache_cfg,
+            )) as Arc<dyn sb_core::context::CacheFile>
         })
     });
     let urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage> =
@@ -158,7 +70,8 @@ fn build_outbound_registry_from_ir_with_runtime_services(
 pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::router::RouterIndex>> {
     let cfg_ir = sb_config::present::to_ir(cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
     let text = crate::router_text::ir_to_router_rules_text(&cfg_ir);
-    let max_rules = parse_env_usize("SB_ROUTER_RULES_MAX", 100_000);
+    let max_rules =
+        crate::bootstrap_runtime::router_helpers::parse_env_usize("SB_ROUTER_RULES_MAX", 100_000);
     let idx = router_build_index_from_str(&text, max_rules)
         .map_err(|e| anyhow!("router index build failed: {e}"))?;
     Ok(idx)
@@ -197,7 +110,7 @@ pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::route
 #[allow(clippy::cognitive_complexity)]
 pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Install proxy health registry (from default proxy env + proxy pools)
-    init_proxy_registry_from_env();
+    crate::bootstrap_runtime::proxy_registry::init_proxy_registry_from_env();
 
     // Start health checking (behind env)
     ob_health::spawn_if_enabled().await;
@@ -210,12 +123,15 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     cfg.validate()?; // Configuration validation (IR compiled inside)
 
     // Convert to IR once
-    let cfg_ir = Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
+    let cfg_ir =
+        Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
 
     // Initialize CacheFile service (Experiment)
     let cache_service = cfg_ir.experimental.as_ref().and_then(|exp| {
         exp.cache_file.as_ref().map(|cache_cfg| {
-            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(cache_cfg));
+            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(
+                cache_cfg,
+            ));
 
             // Wire to FakeIP persistence
             sb_core::dns::fakeip::set_storage(svc.clone());
@@ -234,7 +150,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     ctx = ctx.with_urltest_history(urltest_history.clone());
 
     // Optionally configure DNS via config (env bridge for sb-core)
-    apply_dns_from_config(&cfg);
+    crate::bootstrap_runtime::dns_apply::apply_dns_from_config(&cfg);
 
     // Build outbounds registry from IR (minimal phase 1 set)
     let reg = build_outbound_registry_from_ir_with_runtime_services(
@@ -246,7 +162,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // Validate outbound dependency topology (L2.9)
     let outbound_deps = sb_core::outbound::manager::compute_outbound_deps(&cfg_ir.outbounds);
-    let all_tags: Vec<String> = cfg_ir.outbounds.iter()
+    let all_tags: Vec<String> = cfg_ir
+        .outbounds
+        .iter()
         .filter_map(|ob| ob.name.clone())
         .filter(|n| !n.is_empty())
         .collect();
@@ -255,18 +173,23 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // Resolve default outbound in context (L2.9)
     // Note: this bootstrap path does not auto-inject fallback connectors.
-    let default_tag = cfg_ir.route.final_outbound.as_deref()
+    let default_tag = cfg_ir
+        .route
+        .final_outbound
+        .as_deref()
         .or(cfg_ir.route.default.as_deref());
     if let Some(tag) = default_tag {
         if !tag.is_empty() {
-            ctx.outbound_manager.set_default(Some(tag.to_string())).await;
+            ctx.outbound_manager
+                .set_default(Some(tag.to_string()))
+                .await;
         }
     }
 
     // Create router and install index from IR
     #[cfg(feature = "router")]
     let rh = {
-        let handle = create_router_handle();
+        let handle = crate::bootstrap_runtime::router_helpers::create_router_handle();
         match build_router_index_from_config(&cfg) {
             Ok(idx) => {
                 if let Err(e) = handle.replace_index(idx).await {
@@ -285,7 +208,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // 2) 起入站（HTTP / SOCKS / TUN）：每个入站一个 stop 通道；当前不做热更新/回收
     // 2) Start Inbounds (HTTP / SOCKS / TUN): One stop channel per inbound; currently no hot-reload/reclaim
-    let inbound_handles = start_inbounds_from_ir(
+    let inbound_handles = crate::bootstrap_runtime::inbounds::start_inbounds_from_ir(
         &cfg_ir.inbounds,
         #[cfg(feature = "router")]
         &rh,
@@ -297,15 +220,14 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // 3) Start experimental services if configured
     // 3) 如果配置了实验性服务则启动
     #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-    let mut service_handles: Vec<ServiceHandle> = Vec::new();
+    let mut service_handles = Vec::new();
     #[cfg(feature = "clash_api")]
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref clash) = exp.clash_api {
             if let Some(ref listen) = clash.external_controller {
-                if let Some(handle) = start_clash_api_server(
+                if let Some(handle) = crate::bootstrap_runtime::api_services::start_clash_api_server(
                     listen.as_str(),
                     clash.secret.clone(),
-                    #[cfg(feature = "router")]
                     rh.clone(),
                     oh.clone(),
                     cfg_ir.clone(),
@@ -322,7 +244,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref v2ray) = exp.v2ray_api {
             if let Some(ref listen) = v2ray.listen {
-                if let Some(handle) = start_v2ray_api_server(listen.as_str()) {
+                if let Some(handle) =
+                    crate::bootstrap_runtime::api_services::start_v2ray_api_server(listen.as_str())
+                {
                     service_handles.push(handle);
                 }
             }
@@ -337,773 +261,4 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
         services: service_handles,
     })
-}
-
-/// Start HTTP/SOCKS inbounds based on legacy inbounds list
-/// Delegates to `inbound_starter` module to reduce complexity
-fn start_inbounds_from_ir(
-    inbounds: &[sb_config::ir::InboundIR],
-    #[cfg(feature = "router")] router: &Arc<RouterHandle>,
-    outbounds: &Arc<OutboundRegistryHandle>,
-    #[cfg(feature = "adapters")] conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
-) -> Vec<app::inbound_starter::InboundHandle> {
-    app::inbound_starter::start_inbounds_from_ir(
-        inbounds,
-        #[cfg(feature = "router")]
-        router,
-        outbounds,
-        #[cfg(feature = "adapters")]
-        conn_tracker,
-    )
-}
-
-/// Start Clash API server in background task.
-/// 在后台任务中启动 Clash API 服务器。
-#[cfg(feature = "clash_api")]
-fn start_clash_api_server(
-    listen: &str,
-    secret: Option<String>,
-    #[cfg(feature = "router")] router: Arc<RouterHandle>,
-    outbounds: Arc<OutboundRegistryHandle>,
-    config_ir: Arc<sb_config::ir::ConfigIR>,
-    cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
-    urltest_history: Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
-) -> Option<ServiceHandle> {
-    use std::net::SocketAddr;
-
-    let listen_addr: SocketAddr = match listen.parse() {
-        Ok(addr) => addr,
-        Err(e) => {
-            warn!(error = %e, listen = %listen, "Invalid Clash API listen address, skipping");
-            return None;
-        }
-    };
-
-    let config = sb_api::types::ApiConfig {
-        listen_addr,
-        enable_cors: true,
-        cors_origins: None,
-        auth_token: secret,
-        enable_traffic_ws: true,
-        enable_logs_ws: true,
-        traffic_broadcast_interval_ms: 1000,
-        log_buffer_size: 100,
-    };
-
-    match sb_api::clash::ClashApiServer::new(config) {
-        Ok(server) => {
-            let provider_manager = Arc::new(sb_api::managers::ProviderManager::default());
-            let mut server = server
-                .with_dns_resolver(Arc::new(sb_api::managers::DnsResolver::new()))
-                .with_provider_manager(provider_manager)
-                .with_outbound_registry(outbounds)
-                .with_config_ir(config_ir);
-
-            if let Some(c) = cache_file {
-                server = server.with_cache_file(c);
-            }
-
-            if let Some(h) = urltest_history {
-                server = server.with_urltest_history(h);
-            }
-
-            #[cfg(feature = "router")]
-            let server = server.with_router(router);
-
-            info!(listen = %listen_addr, "Starting Clash API server");
-            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-            let join = tokio::spawn(async move {
-                if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
-                    error!(error = %e, "Clash API server error");
-                }
-            });
-            Some(ServiceHandle {
-                name: "clash_api",
-                shutdown: shutdown_tx,
-                join,
-            })
-        }
-        Err(e) => {
-            error!(error = %e, "Failed to create Clash API server");
-            None
-        }
-    }
-}
-
-/// Start `V2Ray` API server in background task.
-/// 在后台任务中启动 `V2Ray` API 服务器。
-#[cfg(feature = "v2ray_api")]
-fn start_v2ray_api_server(listen: &str) -> Option<ServiceHandle> {
-    use std::net::SocketAddr;
-
-    let listen_addr: SocketAddr = match listen.parse() {
-        Ok(addr) => addr,
-        Err(e) => {
-            warn!(error = %e, listen = %listen, "Invalid V2Ray API listen address, skipping");
-            return None;
-        }
-    };
-
-    let config = sb_api::types::ApiConfig {
-        listen_addr,
-        enable_cors: false,
-        cors_origins: None,
-        auth_token: None,
-        enable_traffic_ws: false,
-        enable_logs_ws: false,
-        traffic_broadcast_interval_ms: 1000,
-        log_buffer_size: 100,
-    };
-
-    match sb_api::v2ray::SimpleV2RayApiServer::new(config) {
-        Ok(server) => {
-            info!(listen = %listen_addr, "Starting V2Ray API server");
-            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-            let join = tokio::spawn(async move {
-                if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
-                    error!(error = %e, "V2Ray API server error");
-                }
-            });
-            Some(ServiceHandle {
-                name: "v2ray_api",
-                shutdown: shutdown_tx,
-                join,
-            })
-        }
-        Err(e) => {
-            error!(error = %e, "Failed to create V2Ray API server");
-            None
-        }
-    }
-}
-
-fn load_pools_from_env(
-) -> anyhow::Result<std::collections::HashMap<String, sb_core::outbound::registry::ProxyPool>> {
-    use std::fs;
-    if let Ok(txt) = std::env::var("SB_PROXY_POOL_JSON") {
-        return parse_pool_json(&txt);
-    }
-    if let Ok(path) = std::env::var("SB_PROXY_POOL_FILE") {
-        let txt = fs::read_to_string(path)?;
-        return parse_pool_json(&txt);
-    }
-    Ok(std::collections::HashMap::new())
-}
-
-fn parse_pool_json(
-    txt: &str,
-) -> anyhow::Result<std::collections::HashMap<String, sb_core::outbound::registry::ProxyPool>> {
-    use sb_core::outbound::{
-        endpoint::ProxyKind,
-        registry::{PoolPolicy, ProxyPool, StickyCfg},
-    };
-
-    #[derive(serde::Deserialize)]
-    struct Ep {
-        kind: String,
-        addr: String,
-        weight: Option<u32>,
-        max_fail: Option<u32>,
-        open_ms: Option<u64>,
-        half_open_ms: Option<u64>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct Pool {
-        name: String,
-        policy: Option<String>,
-        sticky_ttl_ms: Option<u64>,
-        sticky_cap: Option<usize>,
-        endpoints: Vec<Ep>,
-    }
-
-    let v: Vec<Pool> = serde_json::from_str(txt)?;
-    let mut map = std::collections::HashMap::new();
-
-    for p in v {
-        let eps = p
-            .endpoints
-            .into_iter()
-            .filter_map(|e| {
-                let kind = match e.kind.to_ascii_lowercase().as_str() {
-                    "http" => ProxyKind::Http,
-                    "socks5" => ProxyKind::Socks5,
-                    _ => return None,
-                };
-                let addr = e.addr.parse().ok()?;
-                Some(ProxyEndpoint {
-                    kind,
-                    addr,
-                    auth: None,
-                    weight: e.weight.unwrap_or(1),
-                    max_fail: e.max_fail.unwrap_or(3),
-                    open_ms: e.open_ms.unwrap_or(5000),
-                    half_open_ms: e.half_open_ms.unwrap_or(1000),
-                })
-            })
-            .collect();
-
-        let pool = ProxyPool {
-            name: p.name.clone(),
-            endpoints: eps,
-            policy: match p.policy.as_deref() {
-                Some("latency_bias") => PoolPolicy::WeightedRRWithLatencyBias,
-                _ => PoolPolicy::WeightedRR,
-            },
-            sticky: StickyCfg {
-                ttl_ms: p.sticky_ttl_ms.unwrap_or(10_000),
-                cap: p.sticky_cap.unwrap_or(4096),
-            },
-        };
-        map.insert(p.name, pool);
-    }
-    Ok(map)
-}
-
-/// Apply DNS configuration from `config.raw()` via env for sb-core DNS resolver
-fn apply_dns_from_config(cfg: &Config) {
-    use serde_json::Value;
-    let raw = cfg.raw();
-    let mut pool_tokens: Vec<String> = Vec::new();
-
-    if let Some(dns) = raw.get("dns").and_then(Value::as_object) {
-        if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
-            for sv in servers {
-                if let Some(tok) = server_to_token(sv) {
-                    push_dedup(&mut pool_tokens, tok);
-                }
-            }
-        }
-
-        // Optional strategy: race | sequential
-        if let Some(strategy) = dns.get("strategy").and_then(Value::as_str) {
-            std::env::set_var("SB_DNS_POOL_STRATEGY", strategy);
-        }
-        // Optional race window (ms)
-        if let Some(win_ms) = dns.get("race_window_ms").and_then(Value::as_u64) {
-            std::env::set_var("SB_DNS_RACE_WINDOW_MS", win_ms.to_string());
-        }
-        // Optional default timeout (ms)
-        if let Some(timeout_ms) = dns.get("timeout_ms").and_then(Value::as_u64) {
-            std::env::set_var("SB_DNS_TIMEOUT_MS", timeout_ms.to_string());
-        }
-        // Optional IPv6 enable
-        if let Some(ipv6) = dns.get("ipv6").and_then(Value::as_bool) {
-            if ipv6 {
-                std::env::set_var("SB_DNS_IPV6", "1");
-            }
-        }
-        // Optional HE order: A_FIRST | AAAA_FIRST
-        if let Some(he) = dns.get("he_order").and_then(Value::as_str) {
-            std::env::set_var("SB_DNS_HE_ORDER", he);
-        }
-    }
-
-    if pool_tokens.is_empty() {
-        // Default to system resolver when no dns.servers provided
-        pool_tokens.push("system".to_string());
-    }
-
-    // Enable DNS and router DNS integration
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_ROUTER_DNS", "1");
-    std::env::set_var("SB_DNS_POOL", pool_tokens.join(","));
-}
-
-// Helper: dedup push ignoring ASCII case
-fn push_dedup(v: &mut Vec<String>, s: String) {
-    if !v.iter().any(|x| x.eq_ignore_ascii_case(&s)) {
-        v.push(s);
-    }
-}
-
-// Convert a single server value to SB_DNS_POOL token
-fn server_to_token(v: &serde_json::Value) -> Option<String> {
-    match v {
-        serde_json::Value::String(s) => normalize_addr(s),
-        serde_json::Value::Object(m) => m
-            .get("address")
-            .and_then(serde_json::Value::as_str)
-            .and_then(normalize_addr),
-        _ => None,
-    }
-}
-
-// Normalize to supported tokens: system | udp:host:port | tcp:host:port | doh:https://... | dot:host:port | doq:host:port[@sni]
-fn normalize_addr(addr: &str) -> Option<String> {
-    let a = addr.trim();
-    if a.is_empty() {
-        return None;
-    }
-    // Pass through when already tokenized
-    for pref in ["system", "udp:", "tcp:", "doh:", "dot:", "doq:"] {
-        if a.eq_ignore_ascii_case("system") || a.starts_with(pref) {
-            return Some(a.to_string());
-        }
-    }
-    // URL schemes
-    if a.starts_with("https://") {
-        return Some(format!("doh:{a}"));
-    }
-    if a.starts_with("udp://") {
-        return Some(format!("udp:{}", a.trim_start_matches("udp://")));
-    }
-    if a.starts_with("tcp://") {
-        return Some(format!("tcp:{}", a.trim_start_matches("tcp://")));
-    }
-    if a.starts_with("dot://") {
-        return Some(format!("dot:{}", a.trim_start_matches("dot://")));
-    }
-    if a.starts_with("doq://") {
-        return Some(format!("doq:{}", a.trim_start_matches("doq://")));
-    }
-    // host:port -> default to UDP
-    if a.contains(':') {
-        return Some(format!("udp:{a}"));
-    }
-    // Fallback
-    Some("system".to_string())
-}
-
-fn parse_env_usize(key: &str, default: usize) -> usize {
-    let raw = match std::env::var(key) {
-        Ok(v) => v,
-        Err(_) => return default,
-    };
-    let trimmed = raw.trim();
-    match trimmed.parse::<usize>() {
-        Ok(v) => v,
-        Err(err) => {
-            tracing::warn!(
-                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
-            );
-            default
-        }
-    }
-}
-
-#[cfg(all(test, feature = "router"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tuic_outbound_registry_includes_runtime_config() {
-        let mut ir = sb_config::ir::ConfigIR::default();
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Tuic,
-            server: Some("tuic.example.com".to_string()),
-            port: Some(443),
-            name: Some("tuic-out".to_string()),
-            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
-            token: Some("secret-token".to_string()),
-            password: Some("optional-pass".to_string()),
-            congestion_control: Some("bbr".to_string()),
-            alpn: Some("h3".to_string()),
-            skip_cert_verify: Some(true),
-            udp_relay_mode: Some("quic".to_string()),
-            udp_over_stream: Some(true),
-            ..Default::default()
-        });
-
-        let registry = build_outbound_registry_from_ir(&ir);
-        let entry = registry
-            .get("tuic-out")
-            .expect("tuic outbound should be registered");
-
-        match entry {
-            sb_core::outbound::OutboundImpl::Tuic(cfg) => {
-                assert_eq!(cfg.server, "tuic.example.com");
-                assert_eq!(cfg.port, 443);
-                assert_eq!(cfg.token, "secret-token");
-                assert_eq!(cfg.congestion_control.as_deref(), Some("bbr"));
-                assert_eq!(
-                    cfg.alpn
-                        .as_ref()
-                        .and_then(|v| v.first())
-                        .map(String::as_str),
-                    Some("h3")
-                );
-                assert!(cfg.skip_cert_verify);
-                assert!(matches!(
-                    cfg.udp_relay_mode,
-                    sb_core::outbound::tuic::UdpRelayMode::Quic
-                ));
-                assert!(cfg.udp_over_stream);
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn selector_outbound_becomes_connector() {
-        let mut ir = sb_config::ir::ConfigIR::default();
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Direct,
-            name: Some("direct-a".to_string()),
-            ..Default::default()
-        });
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Direct,
-            name: Some("direct-b".to_string()),
-            ..Default::default()
-        });
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Selector,
-            name: Some("manual".to_string()),
-            members: Some(vec!["direct-a".to_string(), "direct-b".to_string()]),
-            default_member: Some("direct-a".to_string()),
-            ..Default::default()
-        });
-
-        let registry = build_outbound_registry_from_ir(&ir);
-        let entry = registry.get("manual").expect("manual selector registered");
-        matches!(entry, sb_core::outbound::OutboundImpl::Connector(_))
-            .then_some(())
-            .expect("manual selector should be connector variant");
-    }
-
-    #[test]
-    fn urltest_outbound_becomes_connector() {
-        let mut ir = sb_config::ir::ConfigIR::default();
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Direct,
-            name: Some("direct-a".to_string()),
-            ..Default::default()
-        });
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::UrlTest,
-            name: Some("auto".to_string()),
-            members: Some(vec!["direct-a".to_string()]),
-            test_url: Some("https://example.com/test".to_string()),
-            test_interval_ms: Some(10_000),
-            test_timeout_ms: Some(3_000),
-            test_tolerance_ms: Some(40),
-            ..Default::default()
-        });
-
-        let registry = build_outbound_registry_from_ir(&ir);
-        let entry = registry.get("auto").expect("urltest selector registered");
-        matches!(entry, sb_core::outbound::OutboundImpl::Connector(_))
-            .then_some(())
-            .expect("urltest selector should be connector variant");
-    }
-
-    #[test]
-    fn shadowsocks_outbound_is_registered() {
-        let mut ir = sb_config::ir::ConfigIR::default();
-        ir.outbounds.push(sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Shadowsocks,
-            name: Some("ss-out".to_string()),
-            server: Some("127.0.0.1".to_string()),
-            port: Some(8388),
-            password: Some("secret".to_string()),
-            method: Some("aes-256-gcm".to_string()),
-            ..Default::default()
-        });
-
-        let registry = build_outbound_registry_from_ir(&ir);
-        let entry = registry.get("ss-out").expect("shadowsocks registered");
-        match entry {
-            sb_core::outbound::OutboundImpl::Shadowsocks(cfg) => {
-                assert_eq!(cfg.server, "127.0.0.1");
-                assert_eq!(cfg.port, 8388);
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn hysteria2_outbound_registry_preserves_bandwidth() -> anyhow::Result<()> {
-        use sb_core::outbound::OutboundImpl;
-        use serde_json::json;
-        use tempfile::NamedTempFile;
-
-        let doc = json!({
-            "schema_version": 2,
-            "outbounds": [
-                {
-                    "type": "hysteria2",
-                    "name": "hy2",
-                    "server": "hy2.example.com",
-                    "port": 443,
-                    "password": "secret",
-                    "congestion_control": "brutal",
-                    "up_mbps": 150,
-                    "down_mbps": "200Mbps",
-                    "obfs": "obfs-key",
-                    "salamander": "fingerprint",
-                    "brutal": {
-                        "up_mbps": 300,
-                        "down_mbps": 400
-                    }
-                },
-                { "type": "direct", "name": "direct" }
-            ],
-            "route": {
-                "rules": [],
-                "default": "direct"
-            }
-        });
-
-        let tmp = NamedTempFile::new()?;
-        std::fs::write(tmp.path(), serde_json::to_vec_pretty(&doc)?)?;
-
-        let cfg = sb_config::Config::load(tmp.path())?;
-        let ir = sb_config::present::to_ir(&cfg)?;
-        let registry = build_outbound_registry_from_ir(&ir);
-
-        let outbound = registry
-            .get("hy2")
-            .expect("hysteria2 outbound should be registered");
-
-        match outbound {
-            OutboundImpl::Hysteria2(cfg) => {
-                assert_eq!(cfg.up_mbps, Some(150));
-                assert_eq!(cfg.down_mbps, Some(200));
-                assert_eq!(cfg.obfs.as_deref(), Some("obfs-key"));
-                assert_eq!(cfg.salamander.as_deref(), Some("fingerprint"));
-                assert_eq!(cfg.congestion_control.as_deref(), Some("brutal"));
-                let brutal = cfg.brutal.as_ref().expect("brutal config present");
-                assert_eq!(brutal.up_mbps, 300);
-                assert_eq!(brutal.down_mbps, 400);
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn trojan_outbound_respects_tls_options() -> anyhow::Result<()> {
-        use sb_core::outbound::OutboundImpl;
-        use serde_json::json;
-        use tempfile::NamedTempFile;
-
-        let doc = json!({
-            "schema_version": 2,
-            "outbounds": [
-                {
-                    "type": "trojan",
-                    "name": "trojan-out",
-                    "server": "trojan.example.com",
-                    "port": 443,
-                    "password": "s3cret",
-                    "tls": {
-                        "sni": "auth.example.com",
-                        "alpn": "h2, http/1.1",
-                        "skip_cert_verify": true
-                    }
-                },
-                { "type": "direct", "name": "direct" }
-            ],
-            "route": {
-                "rules": [],
-                "default": "direct"
-            }
-        });
-
-        let tmp = NamedTempFile::new()?;
-        std::fs::write(tmp.path(), serde_json::to_vec_pretty(&doc)?)?;
-
-        let cfg = sb_config::Config::load(tmp.path())?;
-        let ir = sb_config::present::to_ir(&cfg)?;
-        let registry = build_outbound_registry_from_ir(&ir);
-
-        let outbound = registry
-            .get("trojan-out")
-            .expect("trojan outbound should be registered");
-
-        match outbound {
-            OutboundImpl::Trojan(cfg) => {
-                assert_eq!(cfg.sni, "auth.example.com");
-                assert!(cfg.skip_cert_verify);
-                let alpn = cfg.alpn.as_ref().expect("alpn configured");
-                assert_eq!(alpn, &vec!["h2".to_string(), "http/1.1".to_string()]);
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn vless_transport_ws_preserved() -> anyhow::Result<()> {
-        use sb_core::outbound::OutboundImpl;
-        use serde_json::json;
-        use tempfile::NamedTempFile;
-
-        let doc = json!({
-            "schema_version": 2,
-            "outbounds": [
-                {
-                    "type": "vless",
-                    "name": "vless-ws",
-                    "server": "vless.example.com",
-                    "port": 443,
-                    "uuid": "12345678-1234-1234-1234-123456789abc",
-                    "transport": {
-                        "type": "ws",
-                        "path": "/vless",
-                        "headers": {
-                            "Host": "vless.example.com"
-                        }
-                    }
-                },
-                { "type": "direct", "name": "direct" }
-            ],
-            "route": {
-                "rules": [],
-                "default": "direct"
-            }
-        });
-
-        let tmp = NamedTempFile::new()?;
-        std::fs::write(tmp.path(), serde_json::to_vec_pretty(&doc)?)?;
-
-        let cfg = sb_config::Config::load(tmp.path())?;
-        let ir = sb_config::present::to_ir(&cfg)?;
-        let registry = build_outbound_registry_from_ir(&ir);
-
-        let outbound = registry
-            .get("vless-ws")
-            .expect("vless outbound should be registered");
-
-        match outbound {
-            OutboundImpl::Vless(cfg) => {
-                let transport = cfg.transport.as_ref().expect("transport tokens present");
-                assert_eq!(transport.len(), 1);
-                assert_eq!(transport[0], "ws");
-                assert_eq!(cfg.ws_path.as_deref(), Some("/vless"));
-                assert_eq!(cfg.ws_host.as_deref(), Some("vless.example.com"));
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn vless_transport_grpc_preserved() -> anyhow::Result<()> {
-        use sb_core::outbound::OutboundImpl;
-        use serde_json::json;
-        use tempfile::NamedTempFile;
-
-        let doc = json!({
-            "schema_version": 2,
-            "outbounds": [
-                {
-                    "type": "vless",
-                    "name": "vless-grpc",
-                    "server": "grpc.example.com",
-                    "port": 443,
-                    "uuid": "12345678-1234-1234-1234-123456789abc",
-                    "transport": {
-                        "type": "grpc",
-                        "service_name": "TunnelService",
-                        "method_name": "Tunnel",
-                        "authority": "grpc.example.com",
-                        "metadata": {
-                            "auth": "token",
-                            "foo": "bar"
-                        }
-                    }
-                },
-                { "type": "direct", "name": "direct" }
-            ],
-            "route": {
-                "rules": [],
-                "default": "direct"
-            }
-        });
-
-        let tmp = NamedTempFile::new()?;
-        std::fs::write(tmp.path(), serde_json::to_vec_pretty(&doc)?)?;
-
-        let cfg = sb_config::Config::load(tmp.path())?;
-        let ir = sb_config::present::to_ir(&cfg)?;
-        let registry = build_outbound_registry_from_ir(&ir);
-
-        let outbound = registry
-            .get("vless-grpc")
-            .expect("vless outbound should be registered");
-
-        match outbound {
-            OutboundImpl::Vless(cfg) => {
-                assert_eq!(cfg.transport.as_ref().expect("transport").len(), 1);
-                assert_eq!(cfg.transport.as_ref().unwrap()[0], "grpc");
-                assert_eq!(cfg.grpc_service.as_deref(), Some("TunnelService"));
-                assert_eq!(cfg.grpc_method.as_deref(), Some("Tunnel"));
-                assert_eq!(cfg.grpc_authority.as_deref(), Some("grpc.example.com"));
-                assert!(cfg
-                    .grpc_metadata
-                    .contains(&("auth".to_string(), "token".to_string())));
-                assert!(cfg
-                    .grpc_metadata
-                    .contains(&("foo".to_string(), "bar".to_string())));
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn vless_transport_httpupgrade_preserved() -> anyhow::Result<()> {
-        use sb_core::outbound::OutboundImpl;
-        use serde_json::json;
-        use tempfile::NamedTempFile;
-
-        let doc = json!({
-            "schema_version": 2,
-            "outbounds": [
-                {
-                    "type": "vless",
-                    "name": "vless-hup",
-                    "server": "upgrade.example.com",
-                    "port": 80,
-                    "uuid": "12345678-1234-1234-1234-123456789abc",
-                    "transport": {
-                        "type": "httpupgrade",
-                        "path": "/upgrade",
-                        "headers": {
-                            "User-Agent": "singbox",
-                            "Authorization": "Bearer token"
-                        }
-                    }
-                },
-                { "type": "direct", "name": "direct" }
-            ],
-            "route": {
-                "rules": [],
-                "default": "direct"
-            }
-        });
-
-        let tmp = NamedTempFile::new()?;
-        std::fs::write(tmp.path(), serde_json::to_vec_pretty(&doc)?)?;
-
-        let cfg = sb_config::Config::load(tmp.path())?;
-        let ir = sb_config::present::to_ir(&cfg)?;
-        let registry = build_outbound_registry_from_ir(&ir);
-
-        let outbound = registry
-            .get("vless-hup")
-            .expect("vless outbound should be registered");
-
-        match outbound {
-            OutboundImpl::Vless(cfg) => {
-                assert_eq!(cfg.transport.as_ref().expect("transport")[0], "httpupgrade");
-                assert_eq!(cfg.http_upgrade_path.as_deref(), Some("/upgrade"));
-                assert!(cfg
-                    .http_upgrade_headers
-                    .contains(&("User-Agent".to_string(), "singbox".to_string())));
-                assert!(cfg
-                    .http_upgrade_headers
-                    .contains(&("Authorization".to_string(), "Bearer token".to_string())));
-            }
-            other => panic!("unexpected outbound variant: {:?}", other),
-        }
-
-        Ok(())
-    }
 }

@@ -28,6 +28,12 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30an**: bootstrap runtime helper/starter owner 超级卡 — 已完成
+  - 新增 `app/src/bootstrap_runtime/{mod.rs,proxy_registry.rs,router_helpers.rs,dns_apply.rs,inbounds.rs,api_services.rs,runtime_shell.rs}`，迁入 proxy registry env/pool parsing、router helper、legacy DNS apply helper、inbound starter facade、Clash/V2Ray API starter、`ServiceHandle` 与 `Runtime`/`shutdown()` owner
+  - `app/src/bootstrap.rs` 现仅保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 等高层 facade，并把剩余 runtime helper/starter 统一委托给 `crate::bootstrap_runtime::*`
+  - 当前仓库事实是 `bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `bootstrap_runtime` 与 `outbound_builder` 一样以 test-only legacy runtime owner module + source pins 形式收口；这张卡是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` / RuntimePlan 卡
+  - `bootstrap.rs` 从 1109 → 255 行（-854）；新增 21 个定点测试（默认 feature 16 个，`--features parity` 21 个），覆盖 proxy registry env/pool parsing、DNS token/dedup/normalize、inbound facade、Clash/V2Ray API invalid listen + shutdown handle、runtime shutdown timeout 与 owner pins
+  - 自验证：`cargo test -p app --lib bootstrap_runtime` + `cargo test -p app --lib bootstrap_runtime --features parity` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
 - **WP-30am**: bootstrap first-pass concrete outbound builder owner 收口 — 已完成
   - 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，迁入 legacy bootstrap first-pass concrete builder owner，按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分；`resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并下沉
   - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现把 first-pass 委托给 `crate::outbound_builder::build_first_pass_concrete_outbounds(...)`，并继续把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`

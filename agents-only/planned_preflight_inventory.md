@@ -39,6 +39,7 @@
 | Selector / URLTest second-pass connector binding | `app::outbound_groups::bind_selector_outbound_groups()` | `app/src/outbound_groups.rs` | runtime construction | 这里直接实例化 `sb-core` connectors，并带 runtime-only side effects（health check / connector conversion）；`bootstrap.rs` 现只保留第一遍 concrete builder + second-pass 委托 | 暂留 runtime owner；planned 未来最多提供输入事实，不负责构造 connector |
 | Legacy bootstrap first-pass concrete outbound builder | `app::outbound_builder::build_first_pass_concrete_outbounds()` | `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}` | runtime maintenance seam | 这里负责 simple proxy / QUIC / Shadowsocks / V2Ray family 的 runtime-flavored config build；`bootstrap.rs` 现只保留 thin delegate，但该 bootstrap 路径本身仍是 legacy owner，不是 live runtime plan | 暂留 runtime owner；planned 未来最多提供输入事实，不负责 protocol runtime config build |
 | Router rules text emission with `unresolved` fallback | `app::router_text::ir_to_router_rules_text()` | `app/src/router_text.rs` | runtime construction | 这是 legacy router adapter path，仍输出字符串协议；`bootstrap.rs` 现只做委托 | 暂留 runtime owner |
+| Legacy bootstrap runtime helper/starter seams | `app::bootstrap_runtime::*` | `app/src/bootstrap_runtime/{proxy_registry,router_helpers,dns_apply,inbounds,api_services,runtime_shell}.rs` | runtime maintenance seam | 这里直接改 env、启动 inbound/API task、持有 shutdown handle/runtime shell；虽已从 `bootstrap.rs` 下沉，但仍明确属于 legacy runtime/bootstrap owner，而不是 planned fact graph | 暂留 runtime owner |
 | DNS env bridge from raw config (`dns` -> env vars) | `app::dns_env::apply_dns_env_from_config()` | `app/src/dns_env.rs` | runtime startup | 直接读 raw JSON 并改进程环境，完全是 runtime/bootstrap concern；`run_engine.rs` 现只做委托 | 暂留 runtime owner |
 
 ## Candidate Moves Into planned.rs
@@ -57,7 +58,7 @@
   - 代表点：`crates/sb-config/src/validator/v2/mod.rs:1669-1714`, `crates/sb-config/src/validator/v2/mod.rs:2283-2295`, `crates/sb-config/src/validator/v2/mod.rs:529-542`.
 - `normalize.rs` / `minimize.rs` / `present.rs` 仍是独立边界，不该被包装成 planned。
   - 它们分别负责 token canonicalization、输出优化策略、legacy projection。
-- `app/src/outbound_groups.rs` 的 selector/urltest connector 组装、`app/src/outbound_builder/*` 的 legacy bootstrap first-pass concrete builder、`app/src/router_text.rs` 的 legacy router text emission 与 `app/src/dns_env.rs` 的 DNS env bridge 仍是 runtime/bootstrap 责任。
+- `app/src/outbound_groups.rs` 的 selector/urltest connector 组装、`app/src/outbound_builder/*` 的 legacy bootstrap first-pass concrete builder、`app/src/router_text.rs` 的 legacy router text emission、`app/src/bootstrap_runtime/*` 的 helper/starter seams，以及 `app/src/dns_env.rs` 的 DNS env bridge 仍是 runtime/bootstrap 责任。
   - 它们 today 直接依赖 runtime types、Tokio runtime、进程 env side effects。
 - `ir_to_router_rules_text()` 这类字符串化 adapter 还不该并入 planned。
   - 这是 legacy router adapter seam，不是 `sb-config` 内的 runtime-neutral plan fact。

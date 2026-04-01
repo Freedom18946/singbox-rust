@@ -13,6 +13,14 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30an：bootstrap runtime helper/starter owner 超级卡 — 已完成
+
+- 新增 `app/src/bootstrap_runtime/{mod.rs,proxy_registry.rs,router_helpers.rs,dns_apply.rs,inbounds.rs,api_services.rs,runtime_shell.rs}`，现收纳 proxy registry env/pool parsing、router helper、legacy DNS apply helper、inbound starter facade、Clash/V2Ray API starter、`ServiceHandle`、`Runtime`/`shutdown()` owner；`app/src/bootstrap.rs` 改成高层 facade + 委托
+- 当前仓库事实：`bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `bootstrap_runtime` 延续 `outbound_builder` 模式，以 test-only legacy runtime owner module + source pins 收口；这张卡是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` / RuntimePlan 卡
+- `bootstrap.rs` 从 1109 行降到 255 行；新增 21 个定点测试（默认 feature 16 个，`--features parity` 21 个），覆盖 proxy registry env/pool parsing、DNS token/dedup/normalize、inbound facade、Clash/V2Ray API invalid listen + shutdown handle、runtime shutdown timeout，以及 owner/source pins
+- 自验证：`cargo test -p app --lib bootstrap_runtime` ✅ 16 passed；`cargo test -p app --lib bootstrap_runtime --features parity` ✅ 21 passed；`cargo test -p app --lib` ✅ 97 passed；`cargo test -p app` ❌ 当前仓库默认 feature 组合下 `app/tests/e2e_subs_security.rs` 直接引用 `app::admin_debug::*`（既有问题，不是本卡回归）；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
+- **这是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
+
 ### WP-30am：bootstrap first-pass concrete outbound builder owner 收口 — 已完成
 
 - 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，现在收纳 legacy bootstrap first-pass concrete outbound builder owner；按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分，并把 `resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并收口
@@ -61,7 +69,7 @@
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `bootstrap.rs` 仍约 1109 行，且仍是 legacy runtime 文件；first-pass concrete outbound builder owner 已迁到 `app/src/outbound_builder/*`，但其余 runtime orchestration 与 API server 启动仍在同文件
+- `bootstrap.rs` 现 255 行，保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 高层 facade；剩余 helper/starter owner 已迁到 `app/src/bootstrap_runtime/*`，但该 bootstrap 路径本身仍是 legacy runtime 壳
 - `run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
 
 ## 后续战场（未启动）
@@ -77,3 +85,4 @@
 - runtime/bootstrap seam 继续收口，但 legacy router text emission 已迁入 `app/src/router_text.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 selector/urltest second-pass binding 已迁入 `app/src/outbound_groups.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 `app/src/outbound_builder/*` 当前是 legacy bootstrap 的 first-pass owner 模块，不是 RuntimePlan/query API seam
+- runtime/bootstrap seam 继续收口，但 `app/src/bootstrap_runtime/*` 当前承接的 proxy registry/router helper/DNS apply/inbound starter/API starter/runtime shell 仍明确属于 runtime owner，**不**搬进 `planned.rs`

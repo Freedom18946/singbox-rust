@@ -72,6 +72,8 @@ pub mod panic;
 pub mod redact;
 #[cfg(feature = "router")]
 pub mod reqwest_http;
+#[cfg(all(feature = "router", test))]
+mod bootstrap_runtime;
 #[cfg(feature = "router")]
 mod router_text;
 pub mod run_engine;

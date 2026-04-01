@@ -821,7 +821,7 @@
 ### 2026-03-25 核验说明
 
 - `app/src/bootstrap.rs`、`app/src/run_engine.rs`、`crates/sb-core/src/dns/upstream.rs`、`crates/sb-core/src/router/mod.rs` 的 mega-file 判断仍成立。
-- 维护期补充：2026-04-01（WP-30am）已将 legacy bootstrap first-pass concrete outbound builder owner 迁入 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`；后续 `bootstrap.rs` 若继续拆，应聚焦剩余 orchestration / service startup，而不是再把 first-pass family builder 误记为同一 owner。
+- 维护期补充：2026-04-01（WP-30am）已将 legacy bootstrap first-pass concrete outbound builder owner 迁入 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`；2026-04-01（WP-30an）又将 proxy registry/router helper/DNS apply/inbound starter/API starter/runtime shell owner 迁入 `app/src/bootstrap_runtime/*`。后续 `bootstrap.rs` 若继续拆，应聚焦剩余高层 orchestration facade，而不是再把上述 helper/starter/builder owner 误记回同一文件。
 - 但 `bootstrap.rs` / `run_engine.rs` 至少已有一部分 `JoinHandle` / shutdown 承接，不应把它们和裸全局 / 裸 spawn 主链放在同一优先级。
 - 因此 `WP-61` 仍然重要，但排序应稳定在 `WP-20` / `WP-41` 之后，而不是抢前。
 
