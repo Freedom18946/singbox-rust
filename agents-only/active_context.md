@@ -13,6 +13,15 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30am：bootstrap first-pass concrete outbound builder owner 收口 — 已完成
+
+- 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，现在收纳 legacy bootstrap first-pass concrete outbound builder owner；按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分，并把 `resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并收口
+- `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现把 first-pass 委托给 `crate::outbound_builder::build_first_pass_concrete_outbounds(...)`，second-pass selector/urltest binding 继续委托 `crate::outbound_groups::bind_selector_outbound_groups(...)`；这张卡不触碰 `router_text.rs` / `dns_env.rs` / `planned.rs` / RuntimePlan
+- 当前仓库事实：`bootstrap.rs` 仍是未接入 `lib.rs` / `run_engine` 主路径的 legacy runtime 文件，因此 `outbound_builder` 以 test-only runtime owner module + source pins 形式收口，避免向 `app(lib)` target 引入新的未接线 warning
+- 新增 15 个 first-pass 定点测试：覆盖 Direct/Block/Socks/Http、Hysteria2 brutal/ALPN、Tuic relay mode/zero-rtt、Shadowsocks method+multiplex、Vless/Vmess/Trojan transport/TLS，以及 2 个 owner pins
+- 自验证：`cargo test -p app --lib outbound_builder` ✅ 15 passed；`cargo test -p app --lib outbound_groups` ✅ 11 passed；`cargo test -p app --lib` ✅ 81 passed；`cargo test -p app` ❌ 当前仓库默认 feature 组合下 `app/tests/e2e_subs_security.rs` 直接引用 `app::admin_debug::*`（既有问题，不是本卡回归）；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
+- **这是 runtime/bootstrap first-pass concrete outbound builder 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
+
 ### WP-30al：selector/urltest second-pass runtime owner 收口 — 已完成
 
 - 新增 `app/src/outbound_groups.rs`，现在收纳 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
@@ -52,7 +61,7 @@
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `bootstrap.rs` 仍约 1443 行；first-pass concrete outbound 构建与其他 runtime orchestration 仍在同文件
+- `bootstrap.rs` 仍约 1109 行，且仍是 legacy runtime 文件；first-pass concrete outbound builder owner 已迁到 `app/src/outbound_builder/*`，但其余 runtime orchestration 与 API server 启动仍在同文件
 - `run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
 
 ## 后续战场（未启动）
@@ -67,3 +76,4 @@
 - runtime/bootstrap seam 继续收口，但 DNS env bridge 仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 legacy router text emission 已迁入 `app/src/router_text.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 selector/urltest second-pass binding 已迁入 `app/src/outbound_groups.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
+- runtime/bootstrap seam 继续收口，但 `app/src/outbound_builder/*` 当前是 legacy bootstrap 的 first-pass owner 模块，不是 RuntimePlan/query API seam

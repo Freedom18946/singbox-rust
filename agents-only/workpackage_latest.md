@@ -28,6 +28,12 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30am**: bootstrap first-pass concrete outbound builder owner 收口 — 已完成
+  - 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，迁入 legacy bootstrap first-pass concrete builder owner，按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分；`resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并下沉
+  - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现把 first-pass 委托给 `crate::outbound_builder::build_first_pass_concrete_outbounds(...)`，并继续把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`
+  - 当前仓库事实是 `bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `outbound_builder` 以 test-only runtime owner module + source pins 形式收口；这张卡是 runtime/bootstrap seam 超级卡，不是 `planned.rs` / RuntimePlan 卡
+  - `bootstrap.rs` 从 1443 → 1109 行（-334）；新增 15 个 first-pass 定点测试（simple/QUIC/Shadowsocks/V2Ray family + 2 pins）
+  - 自验证：`cargo test -p app --lib outbound_builder` + `cargo test -p app --lib outbound_groups` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
 - **WP-30al**: selector/urltest second-pass runtime owner 收口 — 已完成
   - 新增 `app/src/outbound_groups.rs`，迁入 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动
   - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现保留第一遍 concrete outbound 构建，并把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`

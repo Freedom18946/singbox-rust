@@ -63,6 +63,8 @@ pub mod env_dump;
 pub mod hardening;
 #[cfg(any(feature = "explain", feature = "rule_coverage"))]
 pub mod http_util;
+#[cfg(all(feature = "router", test))]
+mod outbound_builder;
 #[cfg(feature = "router")]
 mod outbound_groups;
 #[cfg(feature = "panic_log")]
