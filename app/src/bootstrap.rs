@@ -11,15 +11,15 @@ use tokio::time::Duration;
 // This is a minimal stub to allow compilation for subs security tests
 use sb_core::adapter::OutboundConnector as AdapterConnector;
 #[cfg(feature = "router")]
-use sb_core::outbound::selector_group::{ProxyMember as GroupMember, SelectorGroup, UrlTestOptions};
-use sb_core::outbound::{endpoint::ProxyEndpoint, health as ob_health, registry as ob_registry};
-use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
-#[cfg(feature = "router")]
 use sb_core::router::router_build_index_from_str;
 #[cfg(feature = "router")]
 use sb_core::router::RouterHandle;
 #[cfg(feature = "router")]
 use std::collections::HashMap;
+#[cfg(feature = "router")]
+use sb_core::outbound::selector_group::{ProxyMember as GroupMember, SelectorGroup, UrlTestOptions};
+use sb_core::outbound::{endpoint::ProxyEndpoint, health as ob_health, registry as ob_registry};
+use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 
 const DEFAULT_URLTEST_URL: &str = "https://www.gstatic.com/generate_204";
 const DEFAULT_URLTEST_INTERVAL_MS: u64 = 180_000;
@@ -705,59 +705,6 @@ fn to_adapter_connector(
     }
 }
 
-/// Convert `ConfigIR` to router rules text
-#[cfg(feature = "router")]
-fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
-    let mut rules = Vec::new();
-
-    for rule in &config.route.rules {
-        let outbound = rule.outbound.as_deref().unwrap_or("unresolved");
-
-        for domain in &rule.domain {
-            rules.push(format!("exact:{domain}={outbound}"));
-        }
-        for geosite in &rule.geosite {
-            rules.push(format!("geosite:{geosite}={outbound}"));
-        }
-        for geoip in &rule.geoip {
-            rules.push(format!("geoip:{geoip}={outbound}"));
-        }
-        for ipcidr in &rule.ipcidr {
-            let rule_type = if ipcidr.contains(':') {
-                "cidr6"
-            } else {
-                "cidr4"
-            };
-            rules.push(format!("{rule_type}:{ipcidr}={outbound}"));
-        }
-        for port in &rule.port {
-            if port.contains('-') {
-                rules.push(format!("portrange:{port}={outbound}"));
-            } else {
-                rules.push(format!("port:{port}={outbound}"));
-            }
-        }
-        for process in &rule.process_name {
-            rules.push(format!("process:{process}={outbound}"));
-        }
-        for network in &rule.network {
-            rules.push(format!("transport:{network}={outbound}"));
-        }
-        for protocol in &rule.protocol {
-            rules.push(format!("protocol:{protocol}={outbound}"));
-        }
-        // alpn/user-agent/source/dest can be added later when routed
-    }
-
-    if let Some(default) = &config.route.default {
-        rules.push(format!("default={default}"));
-    } else {
-        rules.push("default=unresolved".to_string());
-    }
-
-    rules.join("\n")
-}
-
 /// Build a `RouterIndex` from Config using IR rules
 ///
 /// # Errors
@@ -765,7 +712,7 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
 #[cfg(feature = "router")]
 pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::router::RouterIndex>> {
     let cfg_ir = sb_config::present::to_ir(cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
-    let text = ir_to_router_rules_text(&cfg_ir);
+    let text = crate::router_text::ir_to_router_rules_text(&cfg_ir);
     let max_rules = parse_env_usize("SB_ROUTER_RULES_MAX", 100_000);
     let idx = router_build_index_from_str(&text, max_rules)
         .map_err(|e| anyhow!("router index build failed: {e}"))?;

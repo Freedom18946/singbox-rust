@@ -28,6 +28,12 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30ak**: legacy router rules text emission owner 收口 — 已完成
+  - 新增 `app/src/router_text.rs`，迁入 `ir_to_router_rules_text()` 与专属 helper；`app/src/bootstrap.rs` 的 `build_router_index_from_config()` 改为 `to_ir` → `router_text` → `router_build_index_from_str()` 的薄委托
+  - legacy router text emission 仍是 runtime/legacy adapter seam：继续输出供 `router_build_index_from_str()` 消费的字符串协议，保留 missing `rule.outbound` / missing `route.default` 的 `unresolved` fallback 语义
+  - `bootstrap.rs` 从 1722 → 1685 行（-37），`router_text.rs` 189 行（含测试）；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡
+  - 新增 7 个 router text 定点测试（domain/geosite/geoip/cidr4/cidr6/port/portrange/process/transport/protocol、missing outbound/default fallback、consumer 兼容性 + 2 pins）
+  - 自验证：`cargo test -p app --lib router_text` + `cargo test -p app --lib wp30ak` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ pass（仅提示既有 `admin_debug/mod.rs` doc warning）
 - **WP-30aj**: runtime-facing DNS env bridge owner 收口 — 已完成
   - 新增 `app/src/dns_env.rs`，迁入 `apply_dns_env_from_config()` 与专属 helper；`app/src/run_engine.rs` 改为 `opts.dns_env_bridge` 下的一行委托
   - `run_engine.rs` 从 1500+ 行降到 1188 行；`bootstrap.rs` DNS env 写入逻辑保持不动；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡

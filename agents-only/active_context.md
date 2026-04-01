@@ -13,6 +13,15 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30ak：legacy router rules text emission owner 收口 — 已完成
+
+- 新增 `app/src/router_text.rs`，现在收纳 `ir_to_router_rules_text()` 与专属 helper；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
+- `app/src/bootstrap.rs` 的 `build_router_index_from_config()` 现只保留 `to_ir` → `crate::router_text::ir_to_router_rules_text()` → `router_build_index_from_str()` 的薄委托；`unresolved` fallback、default 行、consumer 协议均保持不变
+- `bootstrap.rs` 从 1722 行降到 1685 行；这张卡只收口 legacy router adapter/runtime owner，**不是** `planned.rs` 卡，也不是 bootstrap 大拆卡
+- 新增 7 个 router text 定点测试：覆盖 domain / geosite / geoip / cidr4 / cidr6 / port / portrange / process / transport / protocol、missing `rule.outbound` → `unresolved`、missing `route.default` → `default=unresolved`、configured default 行、router consumer 兼容性，以及 2 个 owner pins
+- 自验证：`cargo test -p app --lib router_text` ✅ 7 passed；`cargo test -p app --lib wp30ak` ✅ 2 passed；`cargo test -p app --lib` ✅ 55 passed；`cargo test -p app` ❌ 当前仓库默认 feature 组合下 `app/tests/e2e_subs_security.rs` 直接引用 `app::admin_debug::*`（不是本卡回归）；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ pass（仅提示既有 `admin_debug/mod.rs` doc 段落 warning）
+- **这是 legacy router adapter/runtime owner 收口卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
+
 ### WP-30aj：runtime-facing DNS env bridge owner 收口 — 已完成
 
 - 新增 `app/src/dns_env.rs`，现在收纳 `apply_dns_env_from_config()` 与专属 helper；owner 已从 `app/src/run_engine.rs` 下沉到独立 runtime 模块
@@ -34,7 +43,8 @@
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `bootstrap.rs` 仍约 1722 行；`run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
+- `bootstrap.rs` 仍约 1685 行；selector/urltest registry owner 与其他 runtime orchestration 仍在同文件
+- `run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
 
 ## 后续战场（未启动）
 
@@ -46,3 +56,4 @@
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
 - runtime/bootstrap seam 继续收口，但 DNS env bridge 仍明确属于 runtime owner，**不**搬进 `planned.rs`
+- runtime/bootstrap seam 继续收口，但 legacy router text emission 已迁入 `app/src/router_text.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
