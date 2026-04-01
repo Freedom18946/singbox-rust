@@ -5,8 +5,8 @@ use crate::ir::ConfigIR;
 /// Lower top-level blocks (experimental, log, ntp, certificate) from raw JSON into IR.
 ///
 /// This is the actual owner of top-level block lowering. `to_ir_v1()` delegates here.
-/// Shared helpers (`parse_seconds_field_to_millis`, `parse_millis_field`) remain in the
-/// parent module since they are also used by outbound lowering.
+/// Shared duration helpers are owned by `validator/v2/helpers.rs` and re-exported through the
+/// parent module so outbound/top-level lowering can keep the existing call sites.
 pub(crate) fn lower_top_level_blocks(doc: &Value, ir: &mut ConfigIR) {
     lower_experimental(doc, ir);
     lower_log(doc, ir);
@@ -297,10 +297,16 @@ mod tests {
         });
         let mut ir = ConfigIR::default();
         lower_top_level_blocks(&json, &mut ir);
-        assert!(ir.experimental.is_some(), "experimental should be lowered by top_level.rs");
+        assert!(
+            ir.experimental.is_some(),
+            "experimental should be lowered by top_level.rs"
+        );
         assert!(ir.log.is_some(), "log should be lowered by top_level.rs");
         assert!(ir.ntp.is_some(), "ntp should be lowered by top_level.rs");
-        assert!(ir.certificate.is_some(), "certificate should be lowered by top_level.rs");
+        assert!(
+            ir.certificate.is_some(),
+            "certificate should be lowered by top_level.rs"
+        );
     }
 
     #[test]
@@ -324,8 +330,14 @@ mod tests {
 
         // Compare top-level fields
         assert_eq!(
-            ir_full.experimental.as_ref().and_then(|e| e.quic_ech_mode.as_deref()),
-            ir_direct.experimental.as_ref().and_then(|e| e.quic_ech_mode.as_deref()),
+            ir_full
+                .experimental
+                .as_ref()
+                .and_then(|e| e.quic_ech_mode.as_deref()),
+            ir_direct
+                .experimental
+                .as_ref()
+                .and_then(|e| e.quic_ech_mode.as_deref()),
             "experimental mismatch"
         );
         assert_eq!(
@@ -339,8 +351,14 @@ mod tests {
             "ntp.enabled mismatch"
         );
         assert_eq!(
-            ir_full.certificate.as_ref().and_then(|c| c.store.as_deref()),
-            ir_direct.certificate.as_ref().and_then(|c| c.store.as_deref()),
+            ir_full
+                .certificate
+                .as_ref()
+                .and_then(|c| c.store.as_deref()),
+            ir_direct
+                .certificate
+                .as_ref()
+                .and_then(|c| c.store.as_deref()),
             "certificate.store mismatch"
         );
     }

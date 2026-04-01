@@ -13,6 +13,11 @@
 
 ## 最近完成（2026-04-02）
 
+### WP-30aq：sb-config tail stabilization 超级卡 — 已完成
+- 新增 `crates/sb-config/src/ir/{credentials.rs,value_wrappers.rs}` 与 `crates/sb-config/src/validator/v2/helpers.rs`，把 `Credentials`、`Listable<T>`、`StringOrObj<T>`、shared parse/list helpers、`emit_issue` owner 下沉到明确子模块；`ir/mod.rs` 现收至 134 行、`validator/v2/mod.rs` 收至 49 行，均退为 thin compat/re-export facade
+- `crate::ir::*` 路径、`validator::v2::emit_issue` public 面、`pub use outbound::check_tls_capabilities;` 与 `experimental` 暴露保持稳定；这张卡是 **sb-config shared compat/helper seam** 收口，不是 `planned.rs` / RuntimePlan / query API 卡
+- 新增 16 个定点测试，覆盖 `Credentials` raw bridge + env roundtrip、`Listable<T>` / `StringOrObj<T>` 反序列化语义、validator shared helper 行为 pin，以及 `ir/mod.rs` / `validator/v2/mod.rs` 薄壳 source pins；自验证：`cargo test -p sb-config --lib` ✅ 665 passed，`cargo test -p sb-config --test outbound_raw_boundary_test` ✅ 27 passed，`cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
+
 ### WP-30ap：app crate baseline stabilization 超级卡 — 已完成
 - `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific integration suite；新增 `app/tests/wp30ap_baseline_gates.rs` source pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，`cargo test -p app --test e2e_subs_security --features admin_debug` ✅ 23 passed
 - `app/src/lib.rs` 现将 `outbound_groups` 与 `outbound_builder` / `bootstrap_runtime` 对齐为 `#[cfg(all(feature = "router", test))]` legacy runtime owner seam；`app/src/admin_debug/mod.rs` doc 段落 warning 已修正；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 0 warning output
@@ -34,7 +39,6 @@
 - **这是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30am：bootstrap first-pass concrete outbound builder owner 收口 — 已完成
-
 - 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，现在收纳 legacy bootstrap first-pass concrete outbound builder owner；按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分，并把 `resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并收口
 - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现把 first-pass 委托给 `crate::outbound_builder::build_first_pass_concrete_outbounds(...)`，second-pass selector/urltest binding 继续委托 `crate::outbound_groups::bind_selector_outbound_groups(...)`；这张卡不触碰 `router_text.rs` / `dns_env.rs` / `planned.rs` / RuntimePlan
 - 当前仓库事实：`bootstrap.rs` 仍是未接入 `lib.rs` / `run_engine` 主路径的 legacy runtime 文件，因此 `outbound_builder` 以 test-only runtime owner module + source pins 形式收口，避免向 `app(lib)` target 引入新的未接线 warning
@@ -43,7 +47,6 @@
 - **这是 runtime/bootstrap first-pass concrete outbound builder 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30al：selector/urltest second-pass runtime owner 收口 — 已完成
-
 - 新增 `app/src/outbound_groups.rs`，现在收纳 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
 - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现保留第一遍 concrete outbound 构建，并把 second-pass selector/urltest binding 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`；空 members / 缺失 member / 不可转换 member 的 skip+warn 语义保持不变
 - `bootstrap.rs` 从 1685 行降到 1443 行；`outbound_groups.rs` 411 行（含测试）；这张卡只收口 selector/urltest second-pass runtime owner，**不是** `planned.rs` 卡，也不是 outbound registry builder 大拆卡
@@ -71,8 +74,7 @@
 
 ### Earlier（2026-04-01）
 
-- `WP-30ai` / `WP-30ah` / `WP-30ag`：`ir/multiplex.rs`、`ir/inbound.rs`、`ir/service.rs` owner 收口已完成；`ir/mod.rs` 现 252 行，主剩余是共享类型与 compat 暴露
-- `WP-30af` / `WP-30ae`：`validator/v2` facade 与 root schema core owner 收口已完成；`validator/v2/mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
+- `WP-30ai` / `WP-30ah` / `WP-30ag` / `WP-30af` / `WP-30ae`：`ir` service/inbound/multiplex owner 与 validator facade/schema core 收口已完成；这些成果在 2026-04-02 的 `WP-30aq` 中继续被薄壳化为稳定 compat facade
 - `WP-30ad` ~ `WP-30k`：credentials/top-level/security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列均已完成；`normalize` / `minimize` owner 已迁入 `ir/normalize.rs` / `ir/minimize.rs`
 
 ## 剩余 Maintenance 债务（非阻塞）
@@ -86,9 +88,7 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 facade seam 已收口；`mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
-  - `ir/service.rs` / `ir/inbound.rs` / `ir/multiplex.rs` owner 已收口；`ir/mod.rs` 现 252 行，主剩余是 `Credentials` / `Listable<T>` / `StringOrObj<T>` + experimental / compat 暴露
-  - 若继续细拆，应明确是 helper seam / compat seam 卡，而不是再把 facade 迁移误写成 RuntimePlan 卡
+  - `WP-30aq` 已把 `ir/mod.rs` / `validator/v2/mod.rs` 收成稳定薄层；若继续推进，应聚焦 dns IR / raw-validated-planned 边界，而不是回退成重拆 facade
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

@@ -7,8 +7,7 @@
 //! V1 和 V2 格式都会被转换为 IR，然后由路由和适配器层消费。
 //! 字段命名与 Go sing-box 保持一致；新字段的扩展不会改变默认行为。
 
-use serde::{Deserialize, Serialize};
-
+mod credentials;
 pub mod diff;
 mod dns;
 mod endpoint;
@@ -22,7 +21,9 @@ mod raw;
 mod route;
 mod service;
 mod validated;
+mod value_wrappers;
 
+pub use credentials::Credentials;
 pub use dns::{DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR};
 pub use endpoint::{EndpointIR, EndpointType, WireGuardPeerIR};
 pub use inbound::{
@@ -50,126 +51,7 @@ pub use service::{
     DerpStunOptionsIR, DerpVerifyClientUrlIR, InboundTlsOptionsIR, ServiceIR, ServiceType,
 };
 pub use validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
-
-/// Authentication credentials with optional environment variable support.
-/// 带有可选环境变量支持的认证凭据。
-///
-/// Deserialization goes through [`RawCredentials`](raw::RawCredentials)
-/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
-#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
-pub struct Credentials {
-    /// Username (literal value).
-    #[serde(default)]
-    pub username: Option<String>,
-    /// Password (literal value).
-    #[serde(default)]
-    pub password: Option<String>,
-    /// Read username from this environment variable (takes precedence over `username`).
-    #[serde(default)]
-    pub username_env: Option<String>,
-    /// Read password from this environment variable (takes precedence over `password`).
-    #[serde(default)]
-    pub password_env: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for Credentials {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        raw::RawCredentials::deserialize(deserializer).map(Into::into)
-    }
-}
-
-/// Listable value wrapper (Go parity: `badoption.Listable[T]`).
-///
-/// Accepts either `T` or `[T]` in JSON/YAML; deserializes to `Vec<T>`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Listable<T> {
-    pub items: Vec<T>,
-}
-
-impl<T> Listable<T> {
-    #[must_use]
-    pub fn into_vec(self) -> Vec<T> {
-        self.items
-    }
-}
-
-impl<'de, T> Deserialize<'de> for Listable<T>
-where
-    T: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr<T> {
-            One(T),
-            Many(Vec<T>),
-        }
-
-        let items = match Repr::deserialize(deserializer)? {
-            Repr::One(v) => vec![v],
-            Repr::Many(v) => v,
-        };
-        Ok(Self { items })
-    }
-}
-
-impl<T> Serialize for Listable<T>
-where
-    T: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.items.serialize(serializer)
-    }
-}
-
-/// String-or-object wrapper (Go parity: many options accept `"x"` as shorthand for `{...}`).
-///
-/// Accepts either a string or an object; converts string via `T: From<String>`.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct StringOrObj<T>(pub T);
-
-impl<T> From<T> for StringOrObj<T> {
-    fn from(v: T) -> Self {
-        Self(v)
-    }
-}
-
-impl<T> StringOrObj<T> {
-    #[must_use]
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<'de, T> Deserialize<'de> for StringOrObj<T>
-where
-    T: Deserialize<'de> + From<String>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Repr<T> {
-            Str(String),
-            Obj(T),
-        }
-        match Repr::deserialize(deserializer)? {
-            Repr::Str(s) => Ok(Self(T::from(s))),
-            Repr::Obj(v) => Ok(Self(v)),
-        }
-    }
-}
+pub use value_wrappers::{Listable, StringOrObj};
 
 pub mod experimental;
 pub use experimental::*;
