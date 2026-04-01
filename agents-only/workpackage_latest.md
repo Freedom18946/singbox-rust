@@ -2,7 +2,7 @@
 # 工作阶段总览（Workpackage Map）
 > **用途**：阶段划分 + 当前位置。S-tier，每次会话必读。
 > **纪律**：Phase 关闭后压缩为一行状态。本文件严格 ≤120 行。
-> **对比**：本文件管"在哪"；`active_context.md` 管"刚做了什么 / 下一步"。
+> **对比**：本文件管“在哪”；`active_context.md` 管“刚做了什么 / 当前基线”。
 ---
 ## 已关闭阶段（一行总结）
 | 阶段 | 交付 | 关闭时间 |
@@ -20,101 +20,33 @@
 
 ## 当前状态：维护模式（L1-L25 全部 Closed）
 
-**全部阶段关闭**。项目进入稳定维护。
+**全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。
 
-### 维护卡（2026-04-02）
+### 维护归档（2026-04-02）
 
-- **WP-30as**: sb-config validated/planned consumer seam 超级卡 — 已完成
-  - `crates/sb-config/src/ir/planned.rs` 现把 crate-private staged seam 明确为 `collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts` 三层；`Config::validate()` 继续是 thin entry，只消费 orchestration facade
-  - 当前仓库事实再次确认：`PlannedFacts` 已具备稳定 collect/validate 两段结构，但仓库内仍无稳定 crate-private consumer，因此这张卡 **不** 引入 exact accessor、generic query API、public `RuntimePlan`、public `PlannedConfigIR` 或 builder API；新增 pins 继续把 `normalize` / `minimize` / `present` / `app` runtime seams pin 在 planned consumer owner 之外
-  - 自验证：`cargo test -p sb-config --lib wp30as` + `cargo test -p sb-config --lib planned` + `cargo test -p sb-config --lib wp30` + `cargo test -p sb-config --test outbound_raw_boundary_test` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
-- **WP-30ar**: sb-config DNS phase-boundary stabilization 超级卡 — 已完成
-  - 新增 `ir/dns_raw.rs`，把 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR` 与 `From<RawDns*> for Dns*` bridge 从 `ir/raw.rs` 巨石抽出；`ir/raw.rs` 现仅保留 `RawConfigRoot` broader boundary + DNS Raw compat/re-export，`crate::ir::*` 既有路径保持稳定
-  - `ir/dns.rs` 现明确为 validated DNS owner，并直接从 `dns_raw` 委托 `Deserialize`；`validator/v2/dns.rs` 继续只承接 DNS validation + lowering owner，`planned.rs` 继续只持有 DNS namespace/reference facts，`ir/normalize.rs` / `ir/minimize.rs` 继续不是 DNS planning owner
-  - 新增并迁移 DNS subtree 专属测试与 source pins，覆盖 Raw unknown-field rejection、Raw->Validated bridge、validated `Deserialize` 语义，以及 planned/normalize/minimize 的 DNS 边界 pin
-  - 自验证：`cargo test -p sb-config --lib dns` + `cargo test -p sb-config --test outbound_raw_boundary_test` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
-- **WP-30ap**: app crate baseline stabilization 超级卡 — 已完成
-  - 这张卡只收口 `app` crate baseline / feature-gate / module wiring / test target seam：不是 `planned.rs` / RuntimePlan 卡，也不改 sb-config 语义
-  - `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific suite；新增 `app/tests/wp30ap_baseline_gates.rs` pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，同时 `cargo test -p app --test e2e_subs_security --features admin_debug` 继续覆盖 23 个安全/observability/auth 用例
-  - `app/src/lib.rs` 现将 `outbound_groups` 调整为 `#[cfg(all(feature = "router", test))]`，与 `outbound_builder` / `bootstrap_runtime` 保持一致的 legacy runtime owner seam wiring；`app/src/admin_debug/mod.rs` doc warning 已修正
-  - 另同步更新 `app/tests/dns_transport_comprehensive_test.rs` 的 resolver baseline pin（`cached_resolver`）并修正 `comprehensive_security_integration` 的 metrics owner 安装前置；这些都是 baseline/test 收口，不是 runtime 语义变更
-  - 自验证：`cargo test -p app --lib` + `cargo test -p app` + `cargo test -p app --test e2e_subs_security --features admin_debug` + `cargo clippy -p app --all-features --all-targets -- -D warnings` 全部通过，且 clippy 已真正静默
+- **WP-30at**: `WP-30k` ~ `WP-30as` maintenance line 总体验收 / 归档收口 — 已完成
+  - 已按仓库当前事实复核 owner/facade：`ir/mod.rs` / `validator/v2/mod.rs` 为稳定 facade，`planned.rs` 为 staged crate-private seam，`dns_raw.rs` / `dns.rs` 为 DNS Raw/Validated boundary，`run_engine.rs` / `bootstrap.rs` 为 app runtime facade/legacy shell
+  - 已确认 `WP-30k` ~ `WP-30as` 的主要 owner 收口都已落在代码，而不只是文档；对应 source pins / 回归测试分布在 `crates/sb-config/src/ir/*.rs`、`crates/sb-config/src/validator/v2/*.rs`、`app/src/*` 与 `app/tests/wp30ap_baseline_gates.rs`
+  - 强制基线通过：`cargo test -p sb-config --lib`、`cargo clippy -p sb-config --all-features --all-targets -- -D warnings`、`cargo test -p app --lib`、`cargo test -p app`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
+  - 文档已压缩归档：`active_context.md`、`workpackage_latest.md`、`planned_preflight_inventory.md` 与审计 / rebuild 文档均改成 archive-safe 口径，不再保留“下一卡继续拆 facade / 既有 app baseline 失败”之类过期叙述
 
-- **WP-30ao**: run_engine runtime orchestration seam 超级卡 — 已完成
-  - 新增 `app/src/run_engine_runtime/{mod.rs,config_load.rs,debug_env.rs,output.rs,admin_start.rs,watch.rs,supervisor.rs}`，迁入 config/raw loading、debug env、startup/reload output glue、admin/clash/api startup、watch/reload handle 与 supervisor startup/shutdown orchestration owner
-  - `app/src/run_engine.rs` 现仅保留 public facade / option types / thin delegates；`run_supervisor()` 实际 owner 已迁到 `crate::run_engine_runtime::supervisor::run_supervisor(...)`
-  - `run_engine.rs` 从 1188 → 129 行（-1059）；新增 15 个定点测试（默认 feature 13 个，`--features parity` 15 个），覆盖 config/raw merge、debug env、watch snapshot/change detection、clash_api listen parsing 与 facade/source pins
-  - 这张卡是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` / RuntimePlan 卡；不触碰 `bootstrap_runtime/*`、`router_text.rs`、`dns_env.rs`、`planned.rs`
-  - 自验证：`cargo test -p app --lib run_engine_runtime` + `cargo test -p app --lib run_engine_runtime::admin_start --features parity` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code / needless_pass_by_value 类 warning
+### WP-30 Maintenance Archive（compressed）
 
-- **WP-30an**: bootstrap runtime helper/starter owner 超级卡 — 已完成
-  - 新增 `app/src/bootstrap_runtime/{mod.rs,proxy_registry.rs,router_helpers.rs,dns_apply.rs,inbounds.rs,api_services.rs,runtime_shell.rs}`，迁入 proxy registry env/pool parsing、router helper、legacy DNS apply helper、inbound starter facade、Clash/V2Ray API starter、`ServiceHandle` 与 `Runtime`/`shutdown()` owner
-  - `app/src/bootstrap.rs` 现仅保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 等高层 facade，并把剩余 runtime helper/starter 统一委托给 `crate::bootstrap_runtime::*`
-  - 当前仓库事实是 `bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `bootstrap_runtime` 与 `outbound_builder` 一样以 test-only legacy runtime owner module + source pins 形式收口；这张卡是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` / RuntimePlan 卡
-  - `bootstrap.rs` 从 1109 → 255 行（-854）；新增 21 个定点测试（默认 feature 16 个，`--features parity` 21 个），覆盖 proxy registry env/pool parsing、DNS token/dedup/normalize、inbound facade、Clash/V2Ray API invalid listen + shutdown handle、runtime shutdown timeout 与 owner pins
-  - 自验证：`cargo test -p app --lib bootstrap_runtime` + `cargo test -p app --lib bootstrap_runtime --features parity` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
-- **WP-30am**: bootstrap first-pass concrete outbound builder owner 收口 — 已完成
-  - 新增 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`，迁入 legacy bootstrap first-pass concrete builder owner，按 simple proxy / QUIC / Shadowsocks / V2Ray family 拆分；`resolve_host_port()`、ALPN/header mapping、default alias fill 等 shared helper 一并下沉
-  - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现把 first-pass 委托给 `crate::outbound_builder::build_first_pass_concrete_outbounds(...)`，并继续把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`
-  - 当前仓库事实是 `bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `outbound_builder` 以 test-only runtime owner module + source pins 形式收口；这张卡是 runtime/bootstrap seam 超级卡，不是 `planned.rs` / RuntimePlan 卡
-  - `bootstrap.rs` 从 1443 → 1109 行（-334）；新增 15 个 first-pass 定点测试（simple/QUIC/Shadowsocks/V2Ray family + 2 pins）
-  - 自验证：`cargo test -p app --lib outbound_builder` + `cargo test -p app --lib outbound_groups` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code 类 warning
-- **WP-30al**: selector/urltest second-pass runtime owner 收口 — 已完成
-  - 新增 `app/src/outbound_groups.rs`，迁入 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动
-  - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现保留第一遍 concrete outbound 构建，并把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`
-  - second-pass selector/urltest binding 仍是 runtime/bootstrap seam：继续依赖 runtime connector types、Tokio runtime、cache/urltest history 服务；这张卡不是 `planned.rs` / RuntimePlan 卡
-  - `bootstrap.rs` 从 1685 → 1443 行（-242），`outbound_groups.rs` 411 行（含测试）
-  - 新增 11 个 selector/urltest 定点测试（正常绑定、missing/unusable/empty members skip、`to_adapter_connector()` pin + 2 个 owner pins）
-  - 自验证：`cargo test -p app --lib outbound_groups` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning，且 `bootstrap.rs` 未接入 `lib.rs` 模块树导致 `app(lib)` target 对 `outbound_groups.rs` 报 dead_code 类 warning
-- **WP-30ak**: legacy router rules text emission owner 收口 — 已完成
-  - 新增 `app/src/router_text.rs`，迁入 `ir_to_router_rules_text()` 与专属 helper；`app/src/bootstrap.rs` 的 `build_router_index_from_config()` 改为 `to_ir` → `router_text` → `router_build_index_from_str()` 的薄委托
-  - legacy router text emission 仍是 runtime/legacy adapter seam：继续输出供 `router_build_index_from_str()` 消费的字符串协议，保留 missing `rule.outbound` / missing `route.default` 的 `unresolved` fallback 语义
-  - `bootstrap.rs` 从 1722 → 1685 行（-37），`router_text.rs` 189 行（含测试）；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡
-  - 新增 7 个 router text 定点测试（domain/geosite/geoip/cidr4/cidr6/port/portrange/process/transport/protocol、missing outbound/default fallback、consumer 兼容性 + 2 pins）
-  - 自验证：`cargo test -p app --lib router_text` + `cargo test -p app --lib wp30ak` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ pass（仅提示既有 `admin_debug/mod.rs` doc warning）
-- **WP-30aj**: runtime-facing DNS env bridge owner 收口 — 已完成
-  - 新增 `app/src/dns_env.rs`，迁入 `apply_dns_env_from_config()` 与专属 helper；初始调用点在 `app/src/run_engine.rs`，当前已随 `WP-30ao` 下沉到 `app/src/run_engine_runtime/supervisor.rs`
-  - `run_engine.rs` 从 1500+ 行降到 1188 行；`bootstrap.rs` DNS env 写入逻辑保持不动；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡
-  - 新增 11 个 DNS env 定点测试（server 形态、strategy/HE、TTL/hosts/static、`set_if_unset`、`bool` 语义 + 2 pins）
-  - 自验证：`cargo test -p app --lib dns_env` + `cargo test -p app --lib`；`cargo test -p app` 受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 暴露的是既有 `admin_debug/mod.rs` / `telemetry.rs` warnings
-- **WP-30ai**: `ir/multiplex.rs` multiplex/brutal owner 收口 — 已完成
-  - 新增 `ir/multiplex.rs`，迁入 `MultiplexOptionsIR` / `BrutalIR` owner 与 `Deserialize` impl；`ir/mod.rs` 改为 `mod multiplex;` + `pub use multiplex::{...}` 薄壳
-  - `ir/mod.rs` 从 321 → 252 行（-69），`ir/multiplex.rs` 199 行（含测试）；`Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为更宽共享类型
-  - 这是 `ir/multiplex.rs` owner 收口卡，不是 RuntimePlan 卡
-  - 自验证：`cargo test -p sb-config --lib ir::multiplex` + `cargo test -p sb-config --lib multiplex` + `cargo test -p sb-config --test outbound_raw_boundary_test multiplex` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings`
-- **WP-30ah**: `ir/inbound.rs` masquerade owner 收口 — 已完成
-  - `MasqueradeIR` + 3 个 leaf 类型迁入 `ir/inbound.rs`；`ir/mod.rs` 改为 `pub use inbound::{...}` 薄壳
-  - `ir/mod.rs` 从 406 → 321 行（-85）；`raw.rs` 继续持有 strict Raw bridge，语义不变
-  - `MultiplexOptionsIR` / `BrutalIR` / `Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为跨域共享类型
-  - 这是 `ir/inbound.rs` owner 收口卡，不是 RuntimePlan 卡
-  - 自验证：inbound/masquerade 定点测试 + raw bridge 定点测试 + `cargo test -p sb-config --lib ir::inbound` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings`
-- **WP-30ag**: `ir/service.rs` service/DERP owner 收口 — 已完成
-  - `InboundTlsOptionsIR` + 6 个 `Derp*` 类型迁入 `ir/service.rs`；`ir/mod.rs` 改为 `pub use service::{...}` 薄壳
-  - `ir/mod.rs` 从 703 → 406 行（-297），`ir/service.rs` 从 331 → 694 行（含测试）
-  - `Listable<T>` / `StringOrObj<T>` / `Credentials` 仍留在 `ir/mod.rs` 作为跨域共享类型
-  - 这是 `ir/service.rs` owner 收口卡，不是 RuntimePlan 卡
-  - 自验证：service/DERP 定点测试 + raw bridge 定点测试 + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings`
-- **WP-30af**: validator/v2 facade owner 迁移 — 已完成
-  - 新增 `validator/v2/facade.rs`，收纳 `validate_v2()` / `to_ir_v1()` / `pack_output()` 实际 owner
-  - `validator/v2/mod.rs` 改成 thin delegate + shared helper + TLS re-export
-  - mod.rs 从 742 → 260 行（-482），`facade.rs` 759 行（含测试）
-  - 这是 validator/v2 facade owner 迁移卡，不是 RuntimePlan 卡
-  - 17 个 facade 定点测试（含 2 个 facade pins）
-- **WP-30ae**: root schema core owner 迁移 — 已完成
-  - `validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner
-  - `validate_v2()` 对 root schema validation 只做一行委托 `schema_core::validate_root_schema()`
-  - mod.rs 从 793 → 742 行（-51）
-  - 这是 validator/v2 root schema core owner 迁移卡，不是 RuntimePlan 卡
-  - 9 个测试（7 功能 + 2 pins）
-- **WP-30ad**: credential normalization owner 迁移 — 已完成（earlier）
-- **WP-30ac**: top-level lowering owner 迁移 — 已完成（earlier）
-- **WP-30ab**: security warning owner 迁移 — 已完成（earlier）
-- **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
-- **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
+- `WP-30k` ~ `WP-30as`：`planned.rs` fact graph、`normalize/minimize` compat seam、`validator-v2` facade/helpers、`ir` shared compat seam、app runtime seam、DNS raw/validated/planned boundary、baseline stabilization 全部已收口并通过回归
+- 这条线的性质是 maintenance stabilization / archive，不是 parity completion，也不是 `RuntimePlan` 实现线
+- 当前明确未做且继续保留为 future work：public `RuntimePlan`、public `PlannedConfigIR`、generic query API、exact private accessor、更大的 runtime actor/context 化
 
-### 构建基线（2026-04-01，WP-30ai 后）
+### 当前维护重点（高层）
+
+- 后续 maintenance work 继续围绕质量/稳定性债务推进：runtime actorization、DNS/router mega-file、TUN 热路径、metrics compat/global 进一步治理
+- 若开启新卡，按高层主题立项，不再恢复 `WP-30k` ~ `WP-30as` 式逐卡排程
+
+### 构建基线（2026-04-02 / WP-30at）
 
 | 构建 | 状态 |
 |------|------|
+| `cargo test -p sb-config --lib` | ✅ pass |
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-config --lib` | ✅ 649 passed |
+| `cargo test -p app --lib` | ✅ pass |
+| `cargo test -p app` | ✅ pass |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass |

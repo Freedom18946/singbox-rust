@@ -66,6 +66,22 @@
 
 原因见 `2026-03-25_5.4pro第三次审计核验记录.md`：`http_client.rs` 和 `geoip/mod.rs` 已完成 hard global fallback 收口（2026-03-25），不再是第一波 blocker。其余模块在 2026-03-24 维护期已做过 compat shell 瘦身、owner-first 收口或 registry plumbing 收口，问题仍在，但不应继续压过当前更硬的稳定性链路。
 
+### 1.2 2026-04-02 `WP-30at` maintenance archive note
+
+- `WP-30k` ~ `WP-30as` 已在 2026-04-02 通过 `WP-30at` 做过总体验收 / 归档收口。
+- 这条线的当前定位是 **maintenance archive / stabilization baseline**，不是新的 `RuntimePlan` 实现线，也不是 parity completion 线。
+- 当前稳定事实：
+  - `crates/sb-config/src/ir/mod.rs` / `crates/sb-config/src/validator/v2/mod.rs` 已稳定为 thin facade
+  - `crates/sb-config/src/ir/planned.rs` 已稳定停在 staged crate-private seam
+  - `crates/sb-config/src/ir/dns_raw.rs` / `crates/sb-config/src/ir/dns.rs` 已稳定 DNS Raw / Validated boundary
+  - `app/src/run_engine.rs` 为 active runtime facade，`app/src/bootstrap.rs` 为 legacy high-level facade
+- 当前明确未做且继续保留为 future work：
+  - public `RuntimePlan`
+  - public `PlannedConfigIR`
+  - generic query API
+  - 更大的 runtime actor/context 化
+- 因此，后续如继续推进，请按高层 maintenance 主题立项；不要再把 `WP-30k` ~ `WP-30as` 当成持续拆分排程，也不要把它们误写成 parity 完成证据。
+
 ---
 
 ## 2. 北极星目标架构

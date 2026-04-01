@@ -9,3 +9,13 @@ fn wp30ap_pin_outbound_groups_remains_test_only_legacy_runtime_seam() {
     let lib = include_str!("../src/lib.rs");
     assert!(lib.contains("#[cfg(all(feature = \"router\", test))]\nmod outbound_groups;"));
 }
+
+#[test]
+fn wp30at_pin_run_engine_is_active_facade_and_bootstrap_seams_stay_legacy_test_only() {
+    let lib = include_str!("../src/lib.rs");
+    assert!(lib.contains("#[cfg(all(feature = \"router\", test))]\nmod bootstrap_runtime;"));
+    assert!(lib.contains("#[cfg(all(feature = \"router\", test))]\nmod outbound_builder;"));
+    assert!(lib.contains("pub mod run_engine;"));
+    assert!(lib.contains("pub(crate) mod run_engine_runtime;"));
+    assert!(!lib.contains("mod bootstrap;"));
+}
