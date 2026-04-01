@@ -13,6 +13,7 @@
   - `crates/sb-config/src/minimize.rs`
   - `crates/sb-config/src/present.rs`
   - `app/src/bootstrap.rs`
+  - `app/src/dns_env.rs`
   - `app/src/run_engine.rs`
 - 本文不把维护工作表述成 parity completion，也不把 runtime/bootstrap 现状误写成 `planned.rs` 已实现。
 
@@ -35,7 +36,7 @@
 | Legacy JSON view projection (`ConfigIR -> Value`) | `to_view()` | `crates/sb-config/src/present.rs:13-279` | presentation/export | 这里只做 literal projection，不做 reference binding 或 defaults replay | 暂留 `present.rs` |
 | Selector / URLTest second-pass connector binding | `build_outbound_registry_from_ir()` | `app/src/bootstrap.rs:174-479,482-610` | runtime construction | 这里直接实例化 `sb-core` connectors，并带 runtime-only side effects（health check / connector conversion） | 暂留 runtime owner；planned 未来最多提供输入事实，不负责构造 connector |
 | Router rules text emission with `unresolved` fallback | `ir_to_router_rules_text()` | `app/src/bootstrap.rs:708-758` | runtime construction | 这是 legacy router adapter path，仍输出字符串协议 | 暂留 runtime owner |
-| DNS env bridge from raw config (`dns` -> env vars) | `apply_dns_env_from_config()` | `app/src/run_engine.rs:1198-1471` | runtime startup | 直接读 raw JSON 并改进程环境，完全是 runtime/bootstrap concern | 暂留 runtime owner |
+| DNS env bridge from raw config (`dns` -> env vars) | `app::dns_env::apply_dns_env_from_config()` | `app/src/dns_env.rs` | runtime startup | 直接读 raw JSON 并改进程环境，完全是 runtime/bootstrap concern；`run_engine.rs` 现只做委托 | 暂留 runtime owner |
 
 ## Candidate Moves Into planned.rs
 
@@ -53,7 +54,7 @@
   - 代表点：`crates/sb-config/src/validator/v2/mod.rs:1669-1714`, `crates/sb-config/src/validator/v2/mod.rs:2283-2295`, `crates/sb-config/src/validator/v2/mod.rs:529-542`.
 - `normalize.rs` / `minimize.rs` / `present.rs` 仍是独立边界，不该被包装成 planned。
   - 它们分别负责 token canonicalization、输出优化策略、legacy projection。
-- `app/src/bootstrap.rs` 的 selector/urltest connector 组装与 `app/src/run_engine.rs` 的 DNS env bridge 仍是 runtime/bootstrap 责任。
+- `app/src/bootstrap.rs` 的 selector/urltest connector 组装与 `app/src/dns_env.rs` 的 DNS env bridge 仍是 runtime/bootstrap 责任。
   - 它们 today 直接依赖 runtime types、Tokio runtime、进程 env side effects。
 - `ir_to_router_rules_text()` 这类字符串化 adapter 还不该并入 planned。
   - 这是 legacy router adapter seam，不是 `sb-config` 内的 runtime-neutral plan fact。
@@ -163,7 +164,7 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - ~~**minimize owner**~~ — WP-30s 已迁移到 `ir/minimize.rs`，原 `minimize.rs` 保留为 thin compat shell
 - **present** — 仍是独立边界
 - **bootstrap/run_engine runtime binding** — 仍是 runtime owner 责任
-- **runtime-facing DNS env bridge** — 仍在 `app::run_engine::apply_dns_env_from_config()`
+- **runtime-facing DNS env bridge** — 仍在 `app::dns_env::apply_dns_env_from_config()`
 - **crate-internal namespace query API** — 仍不暴露（没有稳定的 crate 内消费者）
 
 ### 约束（不变）

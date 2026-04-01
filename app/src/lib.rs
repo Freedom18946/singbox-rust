@@ -55,6 +55,8 @@ pub mod analyze;
 pub mod capability_probe;
 pub mod cli;
 pub mod config_loader;
+#[cfg(feature = "router")]
+pub(crate) mod dns_env;
 #[cfg(feature = "dev-cli")]
 pub mod env_dump;
 #[cfg(feature = "hardening")]
@@ -63,9 +65,9 @@ pub mod hardening;
 pub mod http_util;
 #[cfg(feature = "panic_log")]
 pub mod panic;
+pub mod redact;
 #[cfg(feature = "router")]
 pub mod reqwest_http;
-pub mod redact;
 pub mod run_engine;
 pub mod runtime_deps;
 pub mod telemetry;

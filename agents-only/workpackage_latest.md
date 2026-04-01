@@ -28,6 +28,11 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30aj**: runtime-facing DNS env bridge owner 收口 — 已完成
+  - 新增 `app/src/dns_env.rs`，迁入 `apply_dns_env_from_config()` 与专属 helper；`app/src/run_engine.rs` 改为 `opts.dns_env_bridge` 下的一行委托
+  - `run_engine.rs` 从 1500+ 行降到 1188 行；`bootstrap.rs` DNS env 写入逻辑保持不动；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡
+  - 新增 11 个 DNS env 定点测试（server 形态、strategy/HE、TTL/hosts/static、`set_if_unset`、`bool` 语义 + 2 pins）
+  - 自验证：`cargo test -p app --lib dns_env` + `cargo test -p app --lib`；`cargo test -p app` 受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 暴露的是既有 `admin_debug/mod.rs` / `telemetry.rs` warnings
 - **WP-30ai**: `ir/multiplex.rs` multiplex/brutal owner 收口 — 已完成
   - 新增 `ir/multiplex.rs`，迁入 `MultiplexOptionsIR` / `BrutalIR` owner 与 `Deserialize` impl；`ir/mod.rs` 改为 `mod multiplex;` + `pub use multiplex::{...}` 薄壳
   - `ir/mod.rs` 从 321 → 252 行（-69），`ir/multiplex.rs` 199 行（含测试）；`Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为更宽共享类型
