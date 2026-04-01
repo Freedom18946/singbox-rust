@@ -37,7 +37,7 @@
 3. **配置边界没有完成“原始输入 -> 领域模型 -> 运行计划”转换**
    - `Deserialize` 类型缺 `deny_unknown_fields`，原始 `String/Option<String>` 下沉到 runtime，在 [AUDIT-4.5] 被点名。
 4. **组合根和控制面过厚，导致无关职责在联调时互相牵扯**
-   - `bootstrap.rs`、`run_engine.rs`、`admin_debug`、`sb-api` 与 runtime owner 混在一起，[AUDIT-4.6]、[AUDIT-5.4] 已明确。
+   - `bootstrap.rs`、`run_engine` runtime seam、`admin_debug`、`sb-api` 与 runtime owner 混在一起，[AUDIT-4.6]、[AUDIT-5.4] 已明确。到 2026-04-02（WP-30ao）为止，`run_engine.rs` 已收成 facade，但更大的 orchestration seam 仍存在于 `app/src/run_engine_runtime/*`。
 5. **工具链治理没有变成“硬闸门”**
    - 当前更像“靠人自觉”，而不是“CI 自动卡死”，见 [AUDIT-4.7] 与 [RULE-L4]。
 
@@ -801,7 +801,7 @@
 
 1. 按 [AUDIT-5.4] 的建议目录拆分：
    - `bootstrap/{config,compose,services,startup}.rs`
-   - `run_engine/{load,build,run,report}.rs`
+   - `run_engine/{load,build,run,report}.rs` 或沿当前已落地的 `run_engine_runtime/{config_load,debug_env,output,admin_start,watch,supervisor}.rs` 继续收口
    - `validator/v2/{root,dns,route,inbound,outbound,service,endpoint}.rs`
    - `ir/{raw,validated,planned,normalize}.rs`
    - `dns/upstream/{exchange,cache,transport,rules}.rs`
@@ -820,7 +820,7 @@
 
 ### 2026-03-25 核验说明
 
-- `app/src/bootstrap.rs`、`app/src/run_engine.rs`、`crates/sb-core/src/dns/upstream.rs`、`crates/sb-core/src/router/mod.rs` 的 mega-file 判断仍成立。
+- `app/src/bootstrap.rs`、`crates/sb-core/src/dns/upstream.rs`、`crates/sb-core/src/router/mod.rs` 的 mega-file 判断仍成立；`run_engine.rs` 已在 2026-04-02（WP-30ao）降为 facade，但 runtime orchestration seam 仍待继续治理。
 - 维护期补充：2026-04-01（WP-30am）已将 legacy bootstrap first-pass concrete outbound builder owner 迁入 `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}`；2026-04-01（WP-30an）又将 proxy registry/router helper/DNS apply/inbound starter/API starter/runtime shell owner 迁入 `app/src/bootstrap_runtime/*`。后续 `bootstrap.rs` 若继续拆，应聚焦剩余高层 orchestration facade，而不是再把上述 helper/starter/builder owner 误记回同一文件。
 - 但 `bootstrap.rs` / `run_engine.rs` 至少已有一部分 `JoinHandle` / shutdown 承接，不应把它们和裸全局 / 裸 spawn 主链放在同一优先级。
 - 因此 `WP-61` 仍然重要，但排序应稳定在 `WP-20` / `WP-41` 之后，而不是抢前。

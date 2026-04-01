@@ -11,7 +11,15 @@
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
 
-## 最近完成（2026-04-01）
+## 最近完成（2026-04-02）
+
+### WP-30ao：run_engine runtime orchestration seam 超级卡 — 已完成
+
+- 新增 `app/src/run_engine_runtime/{mod.rs,config_load.rs,debug_env.rs,output.rs,admin_start.rs,watch.rs,supervisor.rs}`，现收纳 config/raw loading、debug/pprof env、startup/reload output glue、admin/clash/api startup、watch/reload handle、signal/shutdown 与 `run_supervisor()` orchestration owner；`app/src/run_engine.rs` 改成 public facade + 委托
+- `run_engine.rs` 从 1188 行降到 129 行；当前仓库事实：高层 public entry / option types 仍留在 `run_engine.rs`，但 runtime helper/starter owner 已迁入 `run_engine_runtime/*`；这张卡是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` / RuntimePlan 卡，也不触碰 `bootstrap_runtime/*` / `router_text.rs` / `dns_env.rs`
+- 新增 15 个定点测试（默认 feature 13 个，`--features parity` 15 个），覆盖 config/raw loading 语义、debug env 应用、watch snapshot/change detection、clash_api listen parsing，以及 run_engine facade/source pins；`dns_env.rs` source pin 也已同步到新的 `run_engine_runtime::supervisor` 调用点
+- 自验证：`cargo test -p app --lib run_engine_runtime` ✅ 13 passed；`cargo test -p app --lib run_engine_runtime::admin_start --features parity` ✅ 3 passed；`cargo test -p app --lib` ✅ 110 passed；`cargo test -p app` ❌ 当前仓库默认 feature 组合下 `app/tests/e2e_subs_security.rs` 直接引用 `app::admin_debug::*`（既有问题，不是本卡回归）；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code / needless_pass_by_value 类 warning
+- **这是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30an：bootstrap runtime helper/starter owner 超级卡 — 已完成
 
@@ -70,7 +78,7 @@
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
 - `bootstrap.rs` 现 255 行，保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 高层 facade；剩余 helper/starter owner 已迁到 `app/src/bootstrap_runtime/*`，但该 bootstrap 路径本身仍是 legacy runtime 壳
-- `run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
+- `run_engine.rs` 现 129 行 public facade；剩余 runtime orchestration owner 已迁入 `app/src/run_engine_runtime/*`，但更大的 runtime seam 仍未 actor 化 / RuntimeContext 化
 
 ## 后续战场（未启动）
 
@@ -86,3 +94,4 @@
 - runtime/bootstrap seam 继续收口，但 selector/urltest second-pass binding 已迁入 `app/src/outbound_groups.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 `app/src/outbound_builder/*` 当前是 legacy bootstrap 的 first-pass owner 模块，不是 RuntimePlan/query API seam
 - runtime/bootstrap seam 继续收口，但 `app/src/bootstrap_runtime/*` 当前承接的 proxy registry/router helper/DNS apply/inbound starter/API starter/runtime shell 仍明确属于 runtime owner，**不**搬进 `planned.rs`
+- runtime/run_engine seam 已以 `app/src/run_engine_runtime/*` 收口 helper/starter owner；若继续推进，应聚焦 runtime context / manager lifecycle，而不是回退成重新拆 `planned.rs`

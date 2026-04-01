@@ -591,8 +591,10 @@ mod tests {
     #[serial]
     fn wp30aj_pin_run_engine_delegates_dns_env_bridge() {
         let run_engine = include_str!("run_engine.rs");
+        let supervisor = include_str!("run_engine_runtime/supervisor.rs");
 
-        assert!(run_engine.contains("crate::dns_env::apply_dns_env_from_config(&raw)"));
+        assert!(supervisor.contains("crate::dns_env::apply_dns_env_from_config(&raw)"));
+        assert!(run_engine.contains("run_engine_runtime::supervisor::run_supervisor(opts).await"));
         assert!(!run_engine.contains("SB_DNS_"));
     }
 }

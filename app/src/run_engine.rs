@@ -1,171 +1,64 @@
-//! Shared run engine helpers for CLI and bin run commands.
+//! Shared run engine facade for CLI and bin run commands.
 //!
-//! This module consolidates common startup, configuration loading, and reload
-//! logic to avoid duplication between cli/run.rs and bin/run.rs.
+//! This module now keeps the public entry points and option types thin while
+//! delegating runtime orchestration owners to `run_engine_runtime/*`.
 
-use anyhow::{Context, Result};
-use std::fs;
-use std::path::Path;
+use anyhow::Result;
+use std::path::{Path, PathBuf};
+#[cfg(feature = "router")]
 use std::sync::Arc;
-use tracing::info;
 
-use app::config_loader::{self, ConfigEntry};
+use crate::config_loader::ConfigEntry;
 use sb_config::ir::ConfigIR;
 
 /// Apply debug/pprof options from config's experimental.debug section.
-/// Sets environment variables for `SB_DEBUG_ADDR`, `SB_PPROF`, `SB_PPROF_FREQ`, `SB_PPROF_MAX_SEC`.
 pub fn apply_debug_options(ir: &ConfigIR) {
-    if let Some(exp) = ir.experimental.as_ref() {
-        if let Some(debug) = exp.debug.as_ref() {
-            if let Some(listen) = debug.listen.as_ref() {
-                std::env::set_var("SB_DEBUG_ADDR", listen);
-                // Enable pprof collection path in sb-explaind if present.
-                std::env::set_var("SB_PPROF", "1");
-                // Provide sane defaults for sb-explaind if not set.
-                if std::env::var("SB_PPROF_FREQ").is_err() {
-                    std::env::set_var("SB_PPROF_FREQ", "100"); // 100 Hz sampling
-                }
-                if std::env::var("SB_PPROF_MAX_SEC").is_err() {
-                    std::env::set_var("SB_PPROF_MAX_SEC", "60"); // align with docs default
-                }
-            }
-            if let Some(freq) = debug.gc_percent {
-                tracing::info!(
-                    gc_percent = freq,
-                    "debug option gc_percent recorded (Go parity, no-op)"
-                );
-            }
-            if let Some(limit) = debug.memory_limit {
-                tracing::info!(
-                    memory_limit = limit,
-                    "debug option memory_limit recorded (Go parity, no-op)"
-                );
-            }
-            if debug.panic_on_fault.is_some()
-                || debug.max_stack.is_some()
-                || debug.max_threads.is_some()
-                || debug.trace_back.is_some()
-                || debug.oom_killer.is_some()
-            {
-                tracing::info!(
-                    "debug options recorded for parity; behavior is platform-dependent/no-op in Rust build"
-                );
-            }
-        }
-    }
+    crate::run_engine_runtime::debug_env::apply_debug_options(ir);
 }
 
 /// Load config with optional subscription import.
 ///
-/// - Uses `config_loader::load_config` to load and merge config entries
-/// - Optionally imports a subscription file and merges it
-/// - Validates the merged config
-/// - Converts to `ConfigIR`
-///
-/// Returns (Config, `ConfigIR`) tuple.
+/// Returns `(Config, ConfigIR)`.
 ///
 /// # Errors
-/// Returns an error if loading, importing, validation, or IR conversion fails.
+///
+/// Returns an error if config loading, optional subscription import, validation,
+/// or IR conversion fails.
 pub fn load_config_with_import(
     entries: &[ConfigEntry],
     import_path: Option<&Path>,
 ) -> Result<(sb_config::Config, ConfigIR)> {
-    let mut cfg = config_loader::load_config(entries)?;
-    if let Some(subfile) = import_path {
-        info!(path=%subfile.display(), "importing subscription");
-        let text = fs::read_to_string(subfile)
-            .with_context(|| format!("read subscription file {}", subfile.display()))?;
-        let subcfg = sb_config::subscribe::from_subscription(&text)
-            .with_context(|| "parse subscription failed")?;
-        cfg.merge_in_place(subcfg);
-        cfg.validate()
-            .with_context(|| "config after import invalid")?;
-    }
-    // Convert to IR once here, avoiding repeated to_ir calls at call sites
-    let ir = sb_config::present::to_ir(&cfg).context("to_ir failed")?;
-    Ok((cfg, ir))
+    crate::run_engine_runtime::config_load::load_config_with_import(entries, import_path)
 }
 
-/// Load config with optional subscription import, returning raw Value for DNS env bridge.
+/// Load config with optional subscription import, returning merged raw `Value`.
 ///
-/// - Uses `config_loader::load_merged_value` to get raw Value (JSON/YAML)
-/// - Uses `sb_config::config_from_raw_value` for migration + validation
-/// - Optionally imports a subscription file and merges it
-/// - Returns merged raw Value (`cfg.raw()`) for DNS env bridge compatibility
-///
-/// Returns (Config, `ConfigIR`, `serde_json::Value`) tuple.
+/// Returns `(Config, ConfigIR, raw_value)`.
 ///
 /// # Errors
-/// Returns an error if loading, importing, validation, or IR conversion fails.
+///
+/// Returns an error if raw loading, optional subscription import, validation,
+/// or IR conversion fails.
 pub fn load_config_with_import_raw(
     entries: &[ConfigEntry],
     import_path: Option<&Path>,
 ) -> Result<(sb_config::Config, ConfigIR, serde_json::Value)> {
-    let raw = config_loader::load_merged_value(entries)?;
-    let (mut cfg, mut ir) = sb_config::config_from_raw_value(raw)?;
-
-    if let Some(subfile) = import_path {
-        info!(path=%subfile.display(), "importing subscription");
-        let text = fs::read_to_string(subfile)
-            .with_context(|| format!("read subscription file {}", subfile.display()))?;
-        let subcfg = sb_config::subscribe::from_subscription(&text)
-            .with_context(|| "parse subscription failed")?;
-        cfg.merge_in_place(subcfg);
-        cfg.validate()
-            .with_context(|| "config after import invalid")?;
-        // Regenerate IR after subscription merge
-        ir = sb_config::present::to_ir(&cfg).context("to_ir after merge failed")?;
-    }
-
-    // Return merged raw from cfg for DNS env bridge (reflects merged state)
-    let merged_raw = cfg.raw().clone();
-    Ok((cfg, ir, merged_raw))
+    crate::run_engine_runtime::config_load::load_config_with_import_raw(entries, import_path)
 }
 
 /// Unified reload helper for watch mode and SIGHUP.
 ///
-/// - Loads config with optional subscription import
-/// - Applies debug options from the new config
-/// - Reloads the Supervisor with the new IR
-///
 /// # Errors
 ///
-/// Returns an error if config loading/validation fails, or if `Supervisor::reload` fails.
+/// Returns an error if config reloading or `Supervisor::reload` fails.
 #[cfg(feature = "router")]
 pub async fn reload_with_supervisor(
     entries: &[ConfigEntry],
     import_path: Option<&Path>,
     supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
 ) -> Result<()> {
-    let (_cfg, ir) = load_config_with_import(entries, import_path)?;
-    apply_debug_options(&ir);
-    supervisor
-        .reload(ir)
+    crate::run_engine_runtime::config_load::reload_with_supervisor(entries, import_path, supervisor)
         .await
-        .context("Supervisor reload failed")?;
-    Ok(())
-}
-
-// ============================================================================
-// Unified Supervisor Run Loop
-// ============================================================================
-
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
-use tracing::error;
-
-/// Compute a stable fingerprint of the merged config for change detection.
-/// Uses `sb_config::json_norm::fingerprint_hex8` for canonical SHA256-8 fingerprint.
-/// Returns (numeric for fast comparison, hex-8 for display).
-#[cfg(feature = "router")]
-fn config_fingerprint(raw: &serde_json::Value) -> (u64, String) {
-    let hex = sb_config::json_norm::fingerprint_hex8(raw);
-    // Derive numeric from hex for fast comparison
-    let numeric = u64::from_str_radix(&hex, 16).unwrap_or(0);
-    (numeric, hex)
 }
 
 /// Source of a reload request.
@@ -179,36 +72,16 @@ pub enum ReloadSource {
 /// Outcome of a reload attempt.
 #[cfg(feature = "router")]
 pub enum ReloadOutcome {
-    /// Reload applied successfully; contains config fingerprint hex
     Applied(String),
-    /// Reload skipped because config fingerprint unchanged; contains hex
     SkippedNoChange(String),
-    /// Reload failed with error
     Failed(anyhow::Error),
 }
 
-/// Shared reload state for fingerprint tracking across all reload sources.
-/// Used with Arc<Mutex> to serialize reloads and prevent concurrent races.
-#[cfg(feature = "router")]
-struct ReloadState {
-    /// Numeric fingerprint for fast comparison
-    fingerprint: u64,
-    /// Hex string for output display
-    fingerprint_hex: String,
-}
-
-/// Alias for tokio's async Mutex (distinguished from `std::sync::Mutex`).
-#[cfg(feature = "router")]
-type TokioMutex<T> = tokio::sync::Mutex<T>;
-
 /// Configuration input sources for dynamic entry resolution.
-/// Used instead of pre-built entries to support dynamic config directory scanning.
 #[cfg(feature = "router")]
 #[derive(Clone, Debug, Default)]
 pub struct ConfigInputs {
-    /// Config file paths (-c flags)
     pub config_paths: Vec<PathBuf>,
-    /// Config directories (-C flags)
     pub config_dirs: Vec<PathBuf>,
 }
 
@@ -217,43 +90,21 @@ pub struct ConfigInputs {
 #[derive(Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct RunOptions {
-    /// Config input sources for dynamic entry resolution.
-    /// Entries are collected dynamically at startup, watch, and reload.
     pub config_inputs: ConfigInputs,
-    /// Optional subscription import path (-i flag)
     pub import_path: Option<PathBuf>,
-    /// Enable watch mode (poll for config changes every 2s)
     pub watch: bool,
-    /// Optional reload path override for SIGHUP (uses this instead of `config_inputs`)
     pub reload_path: Option<PathBuf>,
-    /// Optional admin HTTP listen address
     pub admin_listen: Option<String>,
-    /// Optional admin HTTP token
     pub admin_token: Option<String>,
-    /// Admin server implementation (core or debug)
     pub admin_impl: AdminImpl,
-    /// Print startup message (controlled by `startup_output`)
     pub print_startup: bool,
-    /// Startup output mode
     pub startup_output: StartupOutputMode,
-    /// Reload output mode
     pub reload_output: ReloadOutputMode,
-    /// Grace period for shutdown (in milliseconds)
     pub grace_ms: u64,
-    /// Optional prometheus exporter listen address
     pub prom_listen: Option<String>,
-    /// Enable DNS stub init from env (--dns-from-env / `DNS_STUB=1`)
     pub dns_from_env: bool,
-    /// Print transport plan for outbounds at startup (info level).
-    /// When false, still outputs debug-level "derived transport chain".
     pub print_transport: bool,
-    /// Enable health task (sets `SB_HEALTH_ENABLE=1` for Supervisor).
-    /// bin/run: true when --health flag or `HEALTH=1` env.
-    /// CLI run: false by default.
     pub health_enable: bool,
-    /// Enable DNS environment bridge from config.
-    /// When true, calls `apply_dns_env_from_config()` to derive DNS env vars.
-    /// bin/run: true (full featured); CLI run: false (avoid side effects).
     pub dns_env_bridge: bool,
 }
 
@@ -261,12 +112,9 @@ pub struct RunOptions {
 #[cfg(feature = "router")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum StartupOutputMode {
-    /// Log via `tracing::info` (CLI run default)
     #[default]
     LogOnly,
-    /// Print to stdout in text format: "started pid=... fingerprint=..."
     TextStdout,
-    /// Print to stdout in JSON format: {"event":"started",...}
     JsonStdout,
 }
 
@@ -274,10 +122,8 @@ pub enum StartupOutputMode {
 #[cfg(feature = "router")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum AdminImpl {
-    /// Core admin server (`sb_core::admin::http`)
     #[default]
     Core,
-    /// Debug admin server (`app::admin_debug`)
     Debug,
 }
 
@@ -285,904 +131,18 @@ pub enum AdminImpl {
 #[cfg(feature = "router")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ReloadOutputMode {
-    /// Log only (info/error level tracing)
     #[default]
     LogOnly,
-    /// JSON output to stderr (for bin/run compatibility)
     JsonStderr,
 }
 
-#[cfg(feature = "router")]
-const FATAL_STOP_TIMEOUT: Duration = Duration::from_secs(10);
-
-#[cfg(feature = "router")]
-struct WatchHandle {
-    stop: oneshot::Sender<()>,
-    join: JoinHandle<()>,
-}
-
-#[cfg(feature = "router")]
-impl WatchHandle {
-    async fn shutdown(self) {
-        if self.stop.send(()).is_err() {
-            tracing::debug!("watch stop signal dropped before shutdown");
-        }
-        if let Err(error) = self.join.await {
-            tracing::warn!(%error, "watch task join failed during shutdown");
-        }
-    }
-}
-
-#[cfg(feature = "router")]
-struct CloseMonitor {
-    stop: oneshot::Sender<()>,
-    join: JoinHandle<()>,
-}
-
-#[cfg(feature = "router")]
-impl CloseMonitor {
-    fn start() -> Self {
-        let (stop, mut stop_rx) = oneshot::channel();
-        let join = tokio::spawn(async move {
-            tokio::select! {
-                () = tokio::time::sleep(FATAL_STOP_TIMEOUT) => {
-                    error!("Supervisor did not close in time!");
-                    std::process::exit(1);
-                }
-                _ = &mut stop_rx => {}
-            }
-        });
-        Self { stop, join }
-    }
-
-    async fn shutdown(self) {
-        if self.stop.send(()).is_err() {
-            tracing::debug!("close monitor stop signal dropped before shutdown");
-        }
-        if let Err(error) = self.join.await {
-            tracing::warn!(%error, "close monitor join failed during shutdown");
-        }
-    }
-}
-
-#[cfg(all(feature = "router", feature = "clash_api"))]
-struct ClashApiHandle {
-    listen_addr: std::net::SocketAddr,
-    shutdown: oneshot::Sender<()>,
-    join: JoinHandle<()>,
-}
-
-#[cfg(all(feature = "router", feature = "clash_api"))]
-impl ClashApiHandle {
-    async fn shutdown(self) {
-        if self.shutdown.send(()).is_err() {
-            tracing::debug!("clash api shutdown signal dropped before shutdown");
-        }
-        if let Err(error) = self.join.await {
-            tracing::warn!(%error, "clash api join failed during shutdown");
-        }
-    }
-}
-
-#[cfg(all(feature = "router", feature = "clash_api"))]
-fn build_outbound_registry_handle(
-    bridge: &sb_core::adapter::Bridge,
-) -> Arc<sb_core::outbound::OutboundRegistryHandle> {
-    let mut reg = sb_core::outbound::OutboundRegistry::default();
-    for (name, _kind, conn) in &bridge.outbounds {
-        reg.insert(
-            name.clone(),
-            sb_core::outbound::OutboundImpl::Connector(conn.clone()),
-        );
-    }
-    Arc::new(sb_core::outbound::OutboundRegistryHandle::new(reg))
-}
-
-#[cfg(all(feature = "router", feature = "clash_api"))]
-async fn start_clash_api_from_supervisor(
-    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
-) -> Option<ClashApiHandle> {
-    let state_lock = supervisor.handle().state().await;
-    let state_guard = state_lock.read().await;
-
-    let clash_cfg = state_guard
-        .current_ir
-        .experimental
-        .as_ref()
-        .and_then(|exp| exp.clash_api.as_ref())?;
-    let listen = clash_cfg
-        .external_controller
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())?;
-
-    let listen_addr: std::net::SocketAddr = match listen.parse() {
-        Ok(addr) => addr,
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                listen = %listen,
-                "invalid clash_api listen address, skipping clash api startup"
-            );
-            return None;
-        }
-    };
-
-    let config = sb_api::types::ApiConfig {
-        listen_addr,
-        enable_cors: true,
-        cors_origins: None,
-        auth_token: clash_cfg.secret.clone(),
-        enable_traffic_ws: true,
-        enable_logs_ws: true,
-        traffic_broadcast_interval_ms: 1000,
-        log_buffer_size: 100,
-    };
-
-    let mut server = match sb_api::clash::ClashApiServer::new(config) {
-        Ok(server) => server,
-        Err(e) => {
-            error!(error = %e, "failed to create clash api server");
-            return None;
-        }
-    };
-
-    if let Some(router) = state_guard.bridge.router.clone() {
-        server = server.with_router(router);
-    }
-
-    let provider_manager = Arc::new(
-        sb_api::managers::ProviderManager::default()
-            .with_reload_channel(supervisor.handle().reload_sender()),
-    );
-
-    server = server
-        .with_dns_resolver(Arc::new(sb_api::managers::DnsResolver::new()))
-        .with_provider_manager(provider_manager)
-        .with_outbound_registry(build_outbound_registry_handle(&state_guard.bridge))
-        .with_config_ir(Arc::new(state_guard.current_ir.clone()));
-
-    if let Some(cache) = state_guard.context.cache_file.clone() {
-        server = server.with_cache_file(cache);
-    }
-    if let Some(history) = state_guard.context.urltest_history.clone() {
-        server = server.with_urltest_history(history);
-    }
-
-    drop(state_guard);
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let join = tokio::spawn(async move {
-        if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
-            error!(error = %e, "clash api server exited with error");
-        }
-    });
-
-    info!(listen = %listen_addr, "started clash api server from run_engine");
-    Some(ClashApiHandle {
-        listen_addr,
-        shutdown: shutdown_tx,
-        join,
-    })
-}
-
-#[cfg(feature = "router")]
-fn file_mtime(path: &std::path::Path) -> SystemTime {
-    fs::metadata(path)
-        .and_then(|m| m.modified())
-        .unwrap_or(SystemTime::UNIX_EPOCH)
-}
-
-#[cfg(feature = "router")]
-fn snapshot_mtimes(
-    entries: &[ConfigEntry],
-    import_path: Option<&Path>,
-) -> HashMap<PathBuf, SystemTime> {
-    let mut snapshot = HashMap::new();
-    for path in config_loader::entry_files(entries) {
-        snapshot.insert(path.clone(), file_mtime(&path));
-    }
-    // Include import file in watch set
-    if let Some(import) = import_path {
-        if import.exists() {
-            snapshot.insert(import.to_path_buf(), file_mtime(import));
-        }
-    }
-    snapshot
-}
-
-#[cfg(feature = "router")]
-fn snapshot_changed(
-    prev: &HashMap<PathBuf, SystemTime>,
-    entries: &[ConfigEntry],
-    import_path: Option<&Path>,
-) -> (bool, HashMap<PathBuf, SystemTime>) {
-    let mut changed = false;
-    let mut current = HashMap::new();
-
-    // Check config entry files
-    for path in config_loader::entry_files(entries) {
-        let now = file_mtime(&path);
-        match prev.get(&path) {
-            Some(old) => {
-                if now > *old {
-                    changed = true;
-                }
-            }
-            None => changed = true, // New file detected
-        }
-        current.insert(path, now);
-    }
-
-    // Check import file
-    if let Some(import) = import_path {
-        if import.exists() {
-            let now = file_mtime(import);
-            match prev.get(&import.to_path_buf()) {
-                Some(old) => {
-                    if now > *old {
-                        changed = true;
-                    }
-                }
-                None => changed = true,
-            }
-            current.insert(import.to_path_buf(), now);
-        }
-    }
-
-    // Entry list changed (files added/removed from config dirs)
-    if prev.len() != current.len() {
-        changed = true;
-    }
-    // Also check if any file was removed
-    for path in prev.keys() {
-        if !current.contains_key(path) {
-            changed = true;
-            break;
-        }
-    }
-
-    (changed, current)
-}
-
-#[cfg(feature = "router")]
-enum RunSignal {
-    Reload,
-    Terminate,
-}
-
-#[cfg(feature = "router")]
-async fn wait_for_signal() -> RunSignal {
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => RunSignal::Terminate,
-        () = term_signal() => RunSignal::Terminate,
-        () = hup_signal() => RunSignal::Reload,
-    }
-}
-
-#[cfg(all(feature = "router", unix))]
-async fn term_signal() {
-    let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-    else {
-        tracing::warn!("failed to register SIGTERM handler");
-        return;
-    };
-    term.recv().await;
-}
-
-#[cfg(all(feature = "router", not(unix)))]
-async fn term_signal() {
-    std::future::pending::<()>().await;
-}
-
-#[cfg(all(feature = "router", unix))]
-async fn hup_signal() {
-    let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) else {
-        tracing::warn!("failed to register SIGHUP handler");
-        return;
-    };
-    hup.recv().await;
-}
-
-#[cfg(all(feature = "router", not(unix)))]
-async fn hup_signal() {
-    std::future::pending::<()>().await;
-}
-
-#[cfg(feature = "router")]
-fn report_reload_result(outcome: &ReloadOutcome, source: ReloadSource, mode: ReloadOutputMode) {
-    let source_str = match source {
-        ReloadSource::Watch => "watch",
-        ReloadSource::Sighup => "SIGHUP",
-    };
-
-    match (outcome, mode) {
-        (ReloadOutcome::Applied(cfg_fp), ReloadOutputMode::LogOnly) => {
-            info!(source=%source_str, config_fingerprint=%cfg_fp, "hot-reload applied");
-        }
-        (ReloadOutcome::SkippedNoChange(cfg_fp), ReloadOutputMode::LogOnly) => {
-            info!(source=%source_str, config_fingerprint=%cfg_fp, "reload skipped (config unchanged)");
-        }
-        (ReloadOutcome::Failed(e), ReloadOutputMode::LogOnly) => {
-            error!(source=%source_str, error=%e, "reload failed");
-        }
-        (ReloadOutcome::Applied(cfg_fp), ReloadOutputMode::JsonStderr) => {
-            let obj = serde_json::json!({
-                "event": "reload",
-                "ok": true,
-                "source": source_str,
-                "applied": true,
-                "config_fingerprint": cfg_fp,
-                "fingerprint": env!("CARGO_PKG_VERSION")
-            });
-            eprintln!("{}", serde_json::to_string(&obj).unwrap_or_default());
-        }
-        (ReloadOutcome::SkippedNoChange(cfg_fp), ReloadOutputMode::JsonStderr) => {
-            let obj = serde_json::json!({
-                "event": "reload",
-                "ok": true,
-                "source": source_str,
-                "applied": false,
-                "reason": "no_change",
-                "config_fingerprint": cfg_fp,
-                "fingerprint": env!("CARGO_PKG_VERSION")
-            });
-            eprintln!("{}", serde_json::to_string(&obj).unwrap_or_default());
-        }
-        (ReloadOutcome::Failed(e), ReloadOutputMode::JsonStderr) => {
-            let obj = serde_json::json!({
-                "event": "reload",
-                "ok": false,
-                "source": source_str,
-                "applied": false,
-                "error": format!("{}", e),
-                "fingerprint": env!("CARGO_PKG_VERSION")
-            });
-            eprintln!("{}", serde_json::to_string(&obj).unwrap_or_default());
-        }
-    }
-}
-
-/// Reload with shared state for serialization and fingerprint-based change detection.
-/// Acquires lock to prevent concurrent reloads from racing.
-#[cfg(feature = "router")]
-async fn reload_with_state(
-    state: Arc<TokioMutex<ReloadState>>,
-    entries: &[ConfigEntry],
-    import_path: Option<&Path>,
-    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
-) -> ReloadOutcome {
-    // Acquire lock to serialize reloads (prevents concurrent watch + SIGHUP races)
-    let mut guard = state.lock().await;
-
-    // Load config with raw value for fingerprinting
-    let (_, ir, raw) = match load_config_with_import_raw(entries, import_path) {
-        Ok(v) => v,
-        Err(e) => return ReloadOutcome::Failed(e),
-    };
-
-    let (new_fp_numeric, new_fp_hex) = config_fingerprint(&raw);
-
-    // Skip reload if config unchanged (compare numeric fingerprint for speed)
-    if new_fp_numeric == guard.fingerprint {
-        return ReloadOutcome::SkippedNoChange(guard.fingerprint_hex.clone());
-    }
-
-    // Apply debug options and reload
-    apply_debug_options(&ir);
-    match supervisor.reload(ir).await {
-        Ok(_) => {
-            guard.fingerprint = new_fp_numeric;
-            guard.fingerprint_hex.clone_from(&new_fp_hex);
-            drop(guard);
-            ReloadOutcome::Applied(new_fp_hex)
-        }
-        Err(e) => ReloadOutcome::Failed(e),
-    }
-}
-
-/// Unified supervisor run loop.
-///
-/// Handles:
-/// - Optional prometheus exporter startup
-/// - Config loading with optional subscription import (raw for DNS env bridge)
-/// - DNS environment bridge from config
-/// - DNS stub initialization
-/// - Print transport plan for outbounds
-/// - Debug options application
-/// - Supervisor startup
-/// - Admin server (core or debug implementation)
-/// - Startup output (log/text/json)
-/// - Optional watch mode (polls for config changes every 2s)
-/// - Signal handling (SIGHUP for reload, SIGTERM/CTRL+C for shutdown)
-/// - Graceful shutdown
+/// Unified supervisor run loop facade.
 ///
 /// # Errors
 ///
-/// Returns an error if config collection/loading fails, supervisor startup fails, or any critical
-/// runtime components fail to initialize.
+/// Returns an error if startup configuration, runtime dependency setup, or
+/// runtime orchestration initialization fails.
 #[cfg(feature = "router")]
-#[allow(clippy::too_many_lines)]
 pub async fn run_supervisor(opts: RunOptions) -> Result<()> {
-    // 0) Health enable env var (Supervisor uses SB_HEALTH_ENABLE to spawn health task)
-    if opts.health_enable {
-        std::env::set_var("SB_HEALTH_ENABLE", "1");
-    }
-
-    let runtime_deps =
-        app::runtime_deps::AppRuntimeDeps::new().context("failed to build runtime deps")?;
-
-    // 1) Optional Prom exporter
-    if let Some(ref addr) = opts.prom_listen {
-        #[cfg(feature = "sb-metrics")]
-        match addr.parse() {
-            Ok(sa) => {
-                let _jh = sb_metrics::spawn_http_exporter(runtime_deps.metrics_registry(), sa);
-            }
-            Err(err) => {
-                tracing::warn!(addr = %addr, error = %err, "invalid prom exporter listen addr");
-            }
-        }
-        #[cfg(not(feature = "sb-metrics"))]
-        {
-            let addr_clone = addr.clone();
-            std::thread::spawn(move || {
-                #[allow(deprecated)]
-                let _ = sb_core::metrics::http_exporter::run_exporter(&addr_clone);
-            });
-        }
-    }
-
-    // 1.5) Dynamically collect config entries from inputs
-    let entries = config_loader::collect_config_entries(
-        &opts.config_inputs.config_paths,
-        &opts.config_inputs.config_dirs,
-    )?;
-
-    // 1.6) Detect stdin config and disable watch/reload if present
-    let has_stdin = config_loader::entries_have_stdin(&entries);
-    if has_stdin && opts.watch {
-        // Stdin config is not reloadable - warn/error based on output mode
-        match opts.reload_output {
-            ReloadOutputMode::LogOnly => {
-                tracing::warn!("stdin config detected; watch mode disabled (stdin not reloadable)");
-            }
-            ReloadOutputMode::JsonStderr => {
-                let obj = serde_json::json!({
-                    "event": "watch_disabled",
-                    "reason": "stdin config not reloadable",
-                    "fingerprint": env!("CARGO_PKG_VERSION")
-                });
-                eprintln!("{}", serde_json::to_string(&obj).unwrap_or_default());
-            }
-        }
-    }
-
-    // 2) Load config with raw Value for DNS env bridge
-    let (_cfg, ir, raw) = load_config_with_import_raw(&entries, opts.import_path.as_deref())?;
-
-    // 2.0) Rustls crypto provider decision (single-point).
-    // Must happen before transport/runtime startup to avoid provider race and hidden fallback.
-    let tls_provider = app::tls_provider::ensure_default_provider()
-        .context("failed to select/install rustls crypto provider")?;
-
-    // 2.0) Capability probe (startup-static).
-    // Emits structured logs and can optionally write probe JSON for capability ledger aggregation.
-    let mut capability_probe = app::capability_probe::collect_report(&raw, &ir);
-    for id in ["tls.ech.tcp", "tls.ech.quic"] {
-        if let Some(probe) = capability_probe
-            .probes
-            .iter_mut()
-            .find(|probe| probe.capability_id == id)
-        {
-            probe.details.insert(
-                "tls_provider".to_string(),
-                tls_provider.provider.as_str().to_string(),
-            );
-            probe.details.insert(
-                "tls_provider_source".to_string(),
-                tls_provider.source.to_string(),
-            );
-            probe.details.insert(
-                "tls_provider_install".to_string(),
-                tls_provider.install_result.to_string(),
-            );
-            probe.details.insert(
-                "tls_provider_requested".to_string(),
-                tls_provider.requested.clone(),
-            );
-            probe.details.insert(
-                "tls_provider_fallback_reason".to_string(),
-                tls_provider
-                    .fallback_reason
-                    .clone()
-                    .unwrap_or_else(|| "-".to_string()),
-            );
-        }
-    }
-    app::capability_probe::log_report(&capability_probe);
-
-    let find_probe = |id: &str| {
-        capability_probe
-            .probes
-            .iter()
-            .find(|probe| probe.capability_id == id)
-    };
-    let ech_tcp_requested = find_probe("tls.ech.tcp").is_some_and(|probe| probe.requested);
-    let ech_tcp_runtime =
-        find_probe("tls.ech.tcp").map_or("unsupported", |probe| probe.runtime_state.as_str());
-    let ech_tcp_compile =
-        find_probe("tls.ech.tcp").map_or("absent", |probe| probe.compile_state.as_str());
-    let ech_quic_requested = find_probe("tls.ech.quic").is_some_and(|probe| probe.requested);
-    let ech_quic_runtime =
-        find_probe("tls.ech.quic").map_or("unsupported", |probe| probe.runtime_state.as_str());
-    tracing::info!(
-        target: "app::tls_provider",
-        provider = tls_provider.provider.as_str(),
-        requested = %tls_provider.requested,
-        source = tls_provider.source,
-        install = tls_provider.install_result,
-        fallback = tls_provider.fallback_reason.as_deref().unwrap_or("-"),
-        ech_feature_enabled = cfg!(feature = "tls_ech"),
-        ech_tcp_requested,
-        ech_tcp_compile,
-        ech_tcp_runtime,
-        ech_quic_requested,
-        ech_quic_runtime,
-        aws_lc_compiled = app::tls_provider::aws_lc_compiled(),
-        "tls provider decision"
-    );
-
-    if let Some(path) = app::capability_probe::probe_output_path_from_env() {
-        let out_path = PathBuf::from(&path);
-        match app::capability_probe::write_report(&capability_probe, &out_path) {
-            Ok(()) => tracing::info!(
-                path = %out_path.display(),
-                probe_count = capability_probe.probes.len(),
-                "capability probe report written"
-            ),
-            Err(e) => tracing::warn!(
-                path = %out_path.display(),
-                error = %e,
-                "failed to write capability probe report"
-            ),
-        }
-    }
-
-    if app::capability_probe::probe_only_enabled() {
-        tracing::info!("capability probe only mode enabled; skipping supervisor startup");
-        return Ok(());
-    }
-
-    // 2.0.1) Create shared reload state with initial fingerprint (shared across watch + SIGHUP)
-    let (initial_fp_numeric, initial_fp_hex) = config_fingerprint(&raw);
-    let startup_config_fingerprint = initial_fp_hex.clone(); // Keep copy for startup output
-    let reload_state = Arc::new(TokioMutex::new(ReloadState {
-        fingerprint: initial_fp_numeric,
-        fingerprint_hex: initial_fp_hex,
-    }));
-
-    // 2.1) DNS environment bridge from config (only if enabled)
-    let dns_applied = if opts.dns_env_bridge {
-        crate::dns_env::apply_dns_env_from_config(&raw)
-    } else {
-        false
-    };
-
-    // 2.2) DNS stub init if needed
-    if !dns_applied && (opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
-    {
-        let ttl_secs: u64 = std::env::var("DNS_CACHE_TTL").map_or(30, |raw| {
-            let t = raw.trim();
-            match t.parse::<u64>() {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!("env 'DNS_CACHE_TTL' value '{t}' is not a valid u64; silent parse fallback is disabled; using default 30: {e}");
-                    30
-                }
-            }
-        });
-        sb_core::dns::stub::init_global(ttl_secs);
-    }
-
-    // 3) Print transport plan for outbounds
-    // - print_transport=true or SB_TRANSPORT_PLAN=1: info level "transport plan"
-    // - otherwise: debug level "derived transport chain" (restore old bin/run behavior)
-    let want_transport_info = opts.print_transport
-        || std::env::var("SB_TRANSPORT_PLAN")
-            .ok()
-            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    for ob in &ir.outbounds {
-        let name = ob.name.clone().unwrap_or_else(|| ob.ty_str().to_string());
-        let kind = ob.ty_str();
-        let chain = sb_core::runtime::transport::map::chain_from_ir(ob);
-        let sni = ob.tls_sni.clone().unwrap_or_default();
-        let alpn = ob
-            .tls_alpn
-            .as_ref()
-            .map(|v| v.join(","))
-            .unwrap_or_default();
-        if want_transport_info {
-            info!(
-                target: "sb_transport",
-                outbound = %name,
-                kind = %kind,
-                chain = %chain.join(","),
-                sni = %sni,
-                alpn = %alpn,
-                "transport plan"
-            );
-        } else {
-            tracing::debug!(
-                target: "sb_transport",
-                outbound = %name,
-                kind = %kind,
-                chain = %chain.join(","),
-                sni = %sni,
-                alpn = %alpn,
-                "derived transport chain"
-            );
-        }
-    }
-
-    // 4) Apply debug options
-    apply_debug_options(&ir);
-
-    // 5) Start Supervisor
-    #[cfg(feature = "adapters")]
-    info!("Calling Supervisor::start_with_registry");
-    #[cfg(not(feature = "adapters"))]
-    info!("Calling Supervisor::start");
-
-    #[cfg(feature = "adapters")]
-    let supervisor = Arc::new(
-        sb_core::runtime::supervisor::Supervisor::start_with_registry(
-            ir,
-            Some(sb_adapters::build_default_registry()),
-        )
-        .await
-        .context("Supervisor::start_with_registry failed")?,
-    );
-
-    #[cfg(not(feature = "adapters"))]
-    let supervisor = Arc::new(
-        sb_core::runtime::supervisor::Supervisor::start(ir)
-            .await
-            .context("Supervisor::start failed")?,
-    );
-
-    info!("Supervisor startup returned");
-
-    // 6) Optional Clash API server (from config.experimental.clash_api)
-    #[cfg(feature = "clash_api")]
-    let clash_api_handle = start_clash_api_from_supervisor(&supervisor).await;
-
-    // 7) Admin server (core or debug)
-    #[cfg(feature = "admin_debug")]
-    let mut admin_debug_handle: Option<app::admin_debug::http_server::AdminDebugHandle> = None;
-
-    if let Some(ref addr) = opts.admin_listen {
-        #[cfg(feature = "clash_api")]
-        if let Some(handle) = clash_api_handle.as_ref() {
-            if let Ok(admin_addr) = addr.parse::<std::net::SocketAddr>() {
-                if admin_addr == handle.listen_addr {
-                    tracing::warn!(
-                        admin_addr = %admin_addr,
-                        clash_addr = %handle.listen_addr,
-                        "admin_listen conflicts with clash_api listen address; admin may fail to bind"
-                    );
-                }
-            }
-        }
-
-        match opts.admin_impl {
-            AdminImpl::Debug => {
-                #[cfg(feature = "admin_debug")]
-                {
-                    let socket_addr: std::net::SocketAddr = addr
-                        .parse()
-                        .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {e}"))?;
-
-                    let tls_conf = app::admin_debug::http_server::TlsConf::from_env();
-                    let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
-
-                    let tls_opt = if tls_conf.enabled {
-                        Some(tls_conf)
-                    } else {
-                        None
-                    };
-
-                    let handle = app::admin_debug::http_server::spawn(
-                        socket_addr,
-                        tls_opt,
-                        auth_conf,
-                        runtime_deps.admin_state(),
-                    )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {e}"))?;
-                    info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
-                    admin_debug_handle = Some(handle);
-                }
-                #[cfg(not(feature = "admin_debug"))]
-                {
-                    return Err(anyhow::anyhow!(
-                        "admin_debug feature not enabled, cannot use admin_impl=debug"
-                    ));
-                }
-            }
-            AdminImpl::Core => {
-                if let Err(e) = app::util::spawn_core_admin_from_supervisor(
-                    addr,
-                    opts.admin_token.clone(),
-                    supervisor.clone(),
-                )
-                .await
-                {
-                    error!(error=%e, "failed to start core admin server");
-                }
-            }
-        }
-    }
-
-    // 8) Startup output
-    match opts.startup_output {
-        StartupOutputMode::LogOnly => {
-            if opts.print_startup {
-                info!("singbox-rust booted; press Ctrl+C to quit");
-            }
-        }
-        StartupOutputMode::TextStdout => {
-            println!(
-                "started pid={} fingerprint={}",
-                std::process::id(),
-                env!("CARGO_PKG_VERSION")
-            );
-        }
-        StartupOutputMode::JsonStdout => {
-            let obj = serde_json::json!({
-                "event": "started",
-                "pid": std::process::id(),
-                "config_fingerprint": startup_config_fingerprint,
-                "fingerprint": env!("CARGO_PKG_VERSION")
-            });
-            println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
-        }
-    }
-
-    // 9) Optional watch mode (disabled if stdin config detected)
-    let watch_handle = if opts.watch && !has_stdin {
-        let (stop_tx, mut stop_rx) = oneshot::channel();
-        let sup_for_watch = supervisor.clone();
-        let config_inputs_clone = opts.config_inputs.clone();
-        let import_clone = opts.import_path.clone();
-        let reload_output = opts.reload_output;
-        let state_for_watch = reload_state.clone();
-
-        // Initial snapshot with current entries and import
-        let mut snapshot = snapshot_mtimes(&entries, opts.import_path.as_deref());
-
-        let join = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = &mut stop_rx => break,
-                    () = tokio::time::sleep(Duration::from_secs(2)) => {
-                        // Dynamically re-collect entries each tick (detects dir changes)
-                        let current_entries = match config_loader::collect_config_entries(
-                            &config_inputs_clone.config_paths,
-                            &config_inputs_clone.config_dirs,
-                        ) {
-                            Ok(e) => e,
-                            Err(e) => {
-                                tracing::warn!(error=%e, "failed to collect config entries");
-                                continue;
-                            }
-                        };
-
-                        let (changed, next_snapshot) = snapshot_changed(
-                            &snapshot,
-                            &current_entries,
-                            import_clone.as_deref(),
-                        );
-                        snapshot = next_snapshot;
-                        if !changed {
-                            continue;
-                        }
-                        info!("config change detected; checking for reload…");
-                        let outcome = reload_with_state(
-                            state_for_watch.clone(),
-                            &current_entries,
-                            import_clone.as_deref(),
-                            &sup_for_watch,
-                        ).await;
-                        report_reload_result(&outcome, ReloadSource::Watch, reload_output);
-                    }
-                }
-            }
-        });
-        Some(WatchHandle {
-            stop: stop_tx,
-            join,
-        })
-    } else {
-        None
-    };
-
-    // 10) Signal handling loop
-    loop {
-        match wait_for_signal().await {
-            RunSignal::Reload => {}
-            RunSignal::Terminate => break,
-        }
-        info!("SIGHUP received; reloading configuration…");
-
-        // Determine entries for reload
-        let reload_entries = if let Some(ref path) = opts.reload_path {
-            vec![ConfigEntry {
-                path: path.display().to_string(),
-                source: config_loader::ConfigSource::File(path.clone()),
-            }]
-        } else {
-            // Dynamically re-collect entries
-            match config_loader::collect_config_entries(
-                &opts.config_inputs.config_paths,
-                &opts.config_inputs.config_dirs,
-            ) {
-                Ok(e) => e,
-                Err(e) => {
-                    let outcome = ReloadOutcome::Failed(e);
-                    report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
-                    continue;
-                }
-            }
-        };
-
-        // Check for stdin in reload entries
-        if config_loader::entries_have_stdin(&reload_entries) {
-            let outcome = ReloadOutcome::Failed(anyhow::anyhow!("stdin config not reloadable"));
-            report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
-            continue;
-        }
-
-        let import_for_reload = if opts.reload_path.is_some() {
-            None
-        } else {
-            opts.import_path.as_deref()
-        };
-
-        let outcome = reload_with_state(
-            reload_state.clone(),
-            &reload_entries,
-            import_for_reload,
-            &supervisor,
-        )
-        .await;
-        report_reload_result(&outcome, ReloadSource::Sighup, opts.reload_output);
-    }
-
-    // 11) Graceful shutdown
-    let close_monitor = CloseMonitor::start();
-    if let Some(watch) = watch_handle {
-        watch.shutdown().await;
-    }
-
-    #[cfg(feature = "clash_api")]
-    if let Some(handle) = clash_api_handle {
-        handle.shutdown().await;
-    }
-
-    #[cfg(feature = "admin_debug")]
-    if let Some(handle) = admin_debug_handle {
-        handle.shutdown().await;
-    }
-
-    let grace_duration = Duration::from_millis(opts.grace_ms);
-    let shutdown_result = supervisor.handle().shutdown_graceful(grace_duration).await;
-    close_monitor.shutdown().await;
-
-    if let Err(e) = shutdown_result {
-        error!(error=%e, "Supervisor did not close properly");
-        std::process::exit(1);
-    }
-
-    Ok(())
+    crate::run_engine_runtime::supervisor::run_supervisor(opts).await
 }

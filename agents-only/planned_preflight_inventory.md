@@ -40,7 +40,7 @@
 | Legacy bootstrap first-pass concrete outbound builder | `app::outbound_builder::build_first_pass_concrete_outbounds()` | `app/src/outbound_builder/{mod.rs,simple.rs,quic.rs,shadowsocks.rs,v2ray.rs}` | runtime maintenance seam | 这里负责 simple proxy / QUIC / Shadowsocks / V2Ray family 的 runtime-flavored config build；`bootstrap.rs` 现只保留 thin delegate，但该 bootstrap 路径本身仍是 legacy owner，不是 live runtime plan | 暂留 runtime owner；planned 未来最多提供输入事实，不负责 protocol runtime config build |
 | Router rules text emission with `unresolved` fallback | `app::router_text::ir_to_router_rules_text()` | `app/src/router_text.rs` | runtime construction | 这是 legacy router adapter path，仍输出字符串协议；`bootstrap.rs` 现只做委托 | 暂留 runtime owner |
 | Legacy bootstrap runtime helper/starter seams | `app::bootstrap_runtime::*` | `app/src/bootstrap_runtime/{proxy_registry,router_helpers,dns_apply,inbounds,api_services,runtime_shell}.rs` | runtime maintenance seam | 这里直接改 env、启动 inbound/API task、持有 shutdown handle/runtime shell；虽已从 `bootstrap.rs` 下沉，但仍明确属于 legacy runtime/bootstrap owner，而不是 planned fact graph | 暂留 runtime owner |
-| DNS env bridge from raw config (`dns` -> env vars) | `app::dns_env::apply_dns_env_from_config()` | `app/src/dns_env.rs` | runtime startup | 直接读 raw JSON 并改进程环境，完全是 runtime/bootstrap concern；`run_engine.rs` 现只做委托 | 暂留 runtime owner |
+| DNS env bridge from raw config (`dns` -> env vars) | `app::dns_env::apply_dns_env_from_config()` | `app/src/dns_env.rs` | runtime startup | 直接读 raw JSON 并改进程环境，完全是 runtime/bootstrap concern；当前由 `app/src/run_engine_runtime/supervisor.rs` 调用，`run_engine.rs` 仅保留 facade | 暂留 runtime owner |
 
 ## Candidate Moves Into planned.rs
 

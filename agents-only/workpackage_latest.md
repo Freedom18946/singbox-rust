@@ -26,7 +26,14 @@
 
 **全部阶段关闭**。项目进入稳定维护。
 
-### 维护卡（2026-04-01）
+### 维护卡（2026-04-02）
+
+- **WP-30ao**: run_engine runtime orchestration seam 超级卡 — 已完成
+  - 新增 `app/src/run_engine_runtime/{mod.rs,config_load.rs,debug_env.rs,output.rs,admin_start.rs,watch.rs,supervisor.rs}`，迁入 config/raw loading、debug env、startup/reload output glue、admin/clash/api startup、watch/reload handle 与 supervisor startup/shutdown orchestration owner
+  - `app/src/run_engine.rs` 现仅保留 public facade / option types / thin delegates；`run_supervisor()` 实际 owner 已迁到 `crate::run_engine_runtime::supervisor::run_supervisor(...)`
+  - `run_engine.rs` 从 1188 → 129 行（-1059）；新增 15 个定点测试（默认 feature 13 个，`--features parity` 15 个），覆盖 config/raw merge、debug env、watch snapshot/change detection、clash_api listen parsing 与 facade/source pins
+  - 这张卡是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` / RuntimePlan 卡；不触碰 `bootstrap_runtime/*`、`router_text.rs`、`dns_env.rs`、`planned.rs`
+  - 自验证：`cargo test -p app --lib run_engine_runtime` + `cargo test -p app --lib run_engine_runtime::admin_start --features parity` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning 与 `outbound_groups.rs` dead_code / needless_pass_by_value 类 warning
 
 - **WP-30an**: bootstrap runtime helper/starter owner 超级卡 — 已完成
   - 新增 `app/src/bootstrap_runtime/{mod.rs,proxy_registry.rs,router_helpers.rs,dns_apply.rs,inbounds.rs,api_services.rs,runtime_shell.rs}`，迁入 proxy registry env/pool parsing、router helper、legacy DNS apply helper、inbound starter facade、Clash/V2Ray API starter、`ServiceHandle` 与 `Runtime`/`shutdown()` owner
@@ -54,7 +61,7 @@
   - 新增 7 个 router text 定点测试（domain/geosite/geoip/cidr4/cidr6/port/portrange/process/transport/protocol、missing outbound/default fallback、consumer 兼容性 + 2 pins）
   - 自验证：`cargo test -p app --lib router_text` + `cargo test -p app --lib wp30ak` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ pass（仅提示既有 `admin_debug/mod.rs` doc warning）
 - **WP-30aj**: runtime-facing DNS env bridge owner 收口 — 已完成
-  - 新增 `app/src/dns_env.rs`，迁入 `apply_dns_env_from_config()` 与专属 helper；`app/src/run_engine.rs` 改为 `opts.dns_env_bridge` 下的一行委托
+  - 新增 `app/src/dns_env.rs`，迁入 `apply_dns_env_from_config()` 与专属 helper；初始调用点在 `app/src/run_engine.rs`，当前已随 `WP-30ao` 下沉到 `app/src/run_engine_runtime/supervisor.rs`
   - `run_engine.rs` 从 1500+ 行降到 1188 行；`bootstrap.rs` DNS env 写入逻辑保持不动；这张卡是 runtime/bootstrap seam 收口，不是 `planned.rs` / RuntimePlan 卡
   - 新增 11 个 DNS env 定点测试（server 形态、strategy/HE、TTL/hosts/static、`set_if_unset`、`bool` 语义 + 2 pins）
   - 自验证：`cargo test -p app --lib dns_env` + `cargo test -p app --lib`；`cargo test -p app` 受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 暴露的是既有 `admin_debug/mod.rs` / `telemetry.rs` warnings

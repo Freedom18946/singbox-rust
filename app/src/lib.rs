@@ -52,6 +52,8 @@
 pub mod admin_debug;
 #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 pub mod analyze;
+#[cfg(all(feature = "router", test))]
+mod bootstrap_runtime;
 pub mod capability_probe;
 pub mod cli;
 pub mod config_loader;
@@ -72,11 +74,10 @@ pub mod panic;
 pub mod redact;
 #[cfg(feature = "router")]
 pub mod reqwest_http;
-#[cfg(all(feature = "router", test))]
-mod bootstrap_runtime;
 #[cfg(feature = "router")]
 mod router_text;
 pub mod run_engine;
+pub(crate) mod run_engine_runtime;
 pub mod runtime_deps;
 pub mod telemetry;
 pub mod tls_provider;
