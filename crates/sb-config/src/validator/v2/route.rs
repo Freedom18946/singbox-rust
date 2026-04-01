@@ -984,8 +984,8 @@ mod tests {
             .find("endpoint::lower_endpoints(doc, &mut ir);")
             .expect("endpoint lowering marker");
         let end = mod_source
-            .find("// Preserve optional experimental block")
-            .expect("experimental block marker");
+            .find("// Top-level block lowering")
+            .expect("top-level block lowering marker");
         let route_window = &mod_source[start..end];
 
         assert!(

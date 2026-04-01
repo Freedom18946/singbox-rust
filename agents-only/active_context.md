@@ -13,23 +13,25 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30ab：security warning owner 迁移 — 已完成
+### WP-30ac：top-level lowering owner 迁移 — 已完成
 
-- `crates/sb-config/src/validator/v2/security.rs` 现在是 non-localhost binding security warning 的实际 owner
-  - `check_non_localhost_binding_warnings()` + `is_localhost_addr()` 已迁入
-  - 通过 `super::emit_issue` 引用共享 helper
-  - 覆盖：`experimental.clash_api.external_controller` 无 secret 绑定检测 + `services[*].listen` 无 auth_token 绑定检测
-- `validator/v2/mod.rs` 中 `validate_v2()` 对 security warning 只做一行委托：`security::check_non_localhost_binding_warnings(doc)`
-- mod.rs 从 1204 → 975 行（-229），security.rs 262 行
-- **这是 validator/v2 security warning owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 deprecation / TLS capability / parse-time lowering / domain validation/lowering owner
+- `crates/sb-config/src/validator/v2/top_level.rs` 现在是 experimental/log/ntp/certificate lowering 的实际 owner
+  - `lower_top_level_blocks(doc, ir)` 统一入口
+  - 通过 `super::parse_seconds_field_to_millis` / `super::parse_millis_field` 引用共享 helper
+- `validator/v2/mod.rs` 中 `to_ir_v1()` 对 top-level lowering 只做一行委托：`top_level::lower_top_level_blocks(doc, &mut ir)`
+- mod.rs 从 975 → 819 行（-156），top_level.rs 347 行（含测试）
+- **这是 validator/v2 top-level lowering owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 inbound/outbound/endpoint/service/dns/route validation/lowering owner
+- 不改 deprecation / security / TLS capability pass owner
 - 不改 planning / RuntimePlan / query API
-- 迁移 5 个 security warning 测试 + 1 个 integration 测试 + 2 个 pins：
-  - `wp30ab_pin_security_warning_owner_is_security_rs` — security warning owner 在 security.rs
-  - `wp30ab_pin_validate_v2_delegates_security_warnings` — validate_v2() 对 security warning 只做委托
+- 共享 helper（`parse_seconds_field_to_millis` / `parse_millis_field`）+ `normalize_credentials()` 保留在 mod.rs
+- 迁移 3 个既有测试 + 8 个新测试 + 2 个 pins：
+  - `wp30ac_pin_top_level_lowering_owner_is_top_level_rs` — top-level lowering owner 在 top_level.rs
+  - `wp30ac_pin_to_ir_v1_delegates_top_level_lowering` — to_ir_v1() 对 top-level lowering 只做委托
+- 修正 `route.rs` 中 `wp30y_pin_mod_rs_to_ir_v1_delegates_route` 的源码标记（适配新注释）
 
-### WP-30aa：deprecation detection owner 迁移 — 已完成（earlier）
-### WP-30z ~ WP-30k：outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
+### WP-30ab：security warning owner 迁移 — 已完成（earlier）
+### WP-30aa ~ WP-30k：deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -40,8 +42,8 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（975 行，deprecation + security + inbound + outbound + endpoint + service + dns + route 已拆出）
-  - 剩余 mod.rs 内容：TLS capability matrix pass、schema validation core、`to_ir_v1()` 入口 + 通用 helper、experimental/ntp/certificate lowering
+  - validator/v2 mod.rs 进一步瘦身（819 行，deprecation + security + inbound + outbound + endpoint + service + dns + route + top-level 已拆出）
+  - 剩余 mod.rs 内容：TLS capability matrix pass、schema validation core、`to_ir_v1()` 入口 + 通用 helper、`normalize_credentials()`
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

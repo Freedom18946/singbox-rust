@@ -6,6 +6,7 @@ mod outbound;
 mod route;
 mod security;
 mod service;
+mod top_level;
 
 // Re-export outbound TLS capability check for public API stability
 pub use outbound::check_tls_capabilities;
@@ -375,113 +376,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     route::lower_route(doc, &mut ir);
 
-    // Preserve optional experimental block (schema v2 passthrough).
-    if let Some(exp) = doc.get("experimental") {
-        ir.experimental = serde_json::from_value(exp.clone()).ok();
-    }
-
-    // Parse optional log block (top-level)
-    if let Some(log) = doc.get("log").and_then(|v| v.as_object()) {
-        let l = crate::ir::LogIR {
-            level: log
-                .get("level")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            timestamp: log.get("timestamp").and_then(|v| v.as_bool()),
-            // Non-standard extension for rust build: allow format override
-            format: log
-                .get("format")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            // Go parity: log.disabled
-            disabled: log.get("disabled").and_then(|v| v.as_bool()),
-            // Go parity: log.output (stdout/stderr/path)
-            output: log
-                .get("output")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-        };
-        ir.log = Some(l);
-    }
-
-    // Parse optional NTP block (top-level)
-    if let Some(ntp) = doc.get("ntp").and_then(|v| v.as_object()) {
-        let n = crate::ir::NtpIR {
-            enabled: ntp
-                .get("enabled")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            server: ntp
-                .get("server")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            server_port: ntp
-                .get("server_port")
-                .and_then(|v| v.as_u64())
-                .and_then(|x| u16::try_from(x).ok()),
-            // Support either interval (string like "30m") or interval_ms (number)
-            interval_ms: parse_seconds_field_to_millis(ntp.get("interval"))
-                .or_else(|| ntp.get("interval_ms").and_then(|v| v.as_u64())),
-            // Optional timeout_ms (number or duration string)
-            timeout_ms: parse_millis_field(ntp.get("timeout_ms"))
-                .or_else(|| parse_seconds_field_to_millis(ntp.get("timeout"))),
-        };
-        ir.ntp = Some(n);
-    }
-
-    // Parse optional certificate block (top-level)
-    if let Some(cert) = doc.get("certificate").and_then(|v| v.as_object()) {
-        // Parse store mode ("system", "mozilla", or "none")
-        let mut c = crate::ir::CertificateIR {
-            store: cert
-                .get("store")
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
-            ..Default::default()
-        };
-        if let Some(arr) = cert.get("ca_paths").and_then(|v| v.as_array()) {
-            for p in arr {
-                if let Some(s) = p.as_str() {
-                    let s = s.trim();
-                    if !s.is_empty() {
-                        c.ca_paths.push(s.to_string());
-                    }
-                }
-            }
-        }
-        // Support both array and single-string for ca_pem
-        match cert.get("ca_pem") {
-            Some(v) if v.is_array() => {
-                if let Some(arr) = v.as_array() {
-                    for it in arr {
-                        if let Some(s) = it.as_str() {
-                            let s = s.trim();
-                            if !s.is_empty() {
-                                c.ca_pem.push(s.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-            Some(v) if v.is_string() => {
-                if let Some(s) = v.as_str() {
-                    let s = s.trim();
-                    if !s.is_empty() {
-                        c.ca_pem.push(s.to_string());
-                    }
-                }
-            }
-            _ => {}
-        }
-        // Parse certificate directory path
-        c.certificate_directory_path = cert
-            .get("certificate_directory_path")
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        ir.certificate = Some(c);
-    }
+    // Top-level block lowering (experimental/log/ntp/certificate) — delegated to top_level.rs (WP-30ac)
+    top_level::lower_top_level_blocks(doc, &mut ir);
 
     dns::lower_dns(doc, &mut ir);
 
@@ -494,58 +390,6 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_experimental_block() {
-        let json = serde_json::json!({
-            "schema_version": 2,
-            "experimental": {
-                "quic_ech_mode": "experimental"
-            }
-        });
-
-        let ir = to_ir_v1(&json);
-        let exp = ir
-            .experimental
-            .expect("experimental block should be present");
-        assert_eq!(exp.quic_ech_mode.as_deref(), Some("experimental"));
-    }
-
-    #[test]
-    fn test_parse_ntp_block() {
-        let json = serde_json::json!({
-            "schema_version": 2,
-            "ntp": {
-                "enabled": true,
-                "server": "time.apple.com",
-                "server_port": 123,
-                "interval": "30m",
-                "timeout_ms": 2500
-            }
-        });
-        let ir = to_ir_v1(&json);
-        let ntp = ir.ntp.expect("ntp should be present");
-        assert!(ntp.enabled);
-        assert_eq!(ntp.server.as_deref(), Some("time.apple.com"));
-        assert_eq!(ntp.server_port, Some(123));
-        assert_eq!(ntp.interval_ms, Some(30 * 60 * 1000));
-        assert_eq!(ntp.timeout_ms, Some(2500));
-    }
-
-    #[test]
-    fn test_parse_top_level_certificate_block() {
-        let json = serde_json::json!({
-            "schema_version": 2,
-            "certificate": {
-                "ca_paths": ["/etc/custom/root.pem"],
-                "ca_pem": ["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"]
-            }
-        });
-        let ir = to_ir_v1(&json);
-        let cert = ir.certificate.expect("certificate should be parsed");
-        assert_eq!(cert.ca_paths, vec!["/etc/custom/root.pem".to_string()]);
-        assert_eq!(cert.ca_pem.len(), 1);
-    }
 
     // ───── TLS fragment route key acceptance test ─────
 

@@ -28,13 +28,14 @@
 
 ### 维护卡（2026-04-01）
 
-- **WP-30ab**: security warning owner 迁移 — 已完成
-  - `validator/v2/security.rs` 现在是 non-localhost binding security warning 的实际 owner
-  - `validate_v2()` 对 security warning 只做一行委托 `security::check_non_localhost_binding_warnings(doc)`
-  - `check_non_localhost_binding_warnings()` + `is_localhost_addr()` 已迁入
-  - mod.rs 从 1204 → 975 行（-229）
-  - 这是 validator/v2 security warning owner 迁移卡，不是 RuntimePlan 卡
-  - 7 个 security 子模块测试（5 域测试 + 2 pins），含 pins `wp30ab_pin_security_warning_owner_is_security_rs` + `wp30ab_pin_validate_v2_delegates_security_warnings`
+- **WP-30ac**: top-level lowering owner 迁移 — 已完成
+  - `validator/v2/top_level.rs` 现在是 experimental/log/ntp/certificate lowering 的实际 owner
+  - `to_ir_v1()` 对 top-level lowering 只做一行委托 `top_level::lower_top_level_blocks(doc, &mut ir)`
+  - `lower_top_level_blocks()` + 4 个 `lower_*` private fn 已迁入
+  - mod.rs 从 975 → 819 行（-156）
+  - 这是 validator/v2 top-level lowering owner 迁移卡，不是 RuntimePlan 卡
+  - 11 个 top_level 子模块测试（3 迁移 + 6 新增 + 2 pins），含 pins `wp30ac_pin_top_level_lowering_owner_is_top_level_rs` + `wp30ac_pin_to_ir_v1_delegates_top_level_lowering`
+- **WP-30ab**: security warning owner 迁移 — 已完成（earlier）
 - **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
 - **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
@@ -47,3 +48,4 @@
 | `cargo test -p sb-api` | ✅ pass |
 | `cargo test -p sb-subscribe --all-features --lib` | ✅ 16 passed |
 | `cargo test -p sb-adapters` | ✅ 144 non-ignored passed |
+| `cargo test -p sb-config --lib` | ✅ 613 passed |
