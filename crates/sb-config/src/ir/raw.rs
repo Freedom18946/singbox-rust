@@ -99,11 +99,11 @@
 //! semantics so unknown experimental options are preserved, not rejected.
 //! This is intentional, not an oversight.
 //!
-//! ### Masquerade shared helper Raw boundary (WP-30j — done)
+//! ### Masquerade inbound helper Raw boundary (WP-30j — done)
 //!
 //! [`RawMasqueradeIR`], [`RawMasqueradeFileIR`], [`RawMasqueradeProxyIR`], and
 //! [`RawMasqueradeStringIR`] are the strict nested Raw boundary for the
-//! masquerade shared helper subtree. `MasqueradeIR`, `MasqueradeFileIR`,
+//! Hysteria2 masquerade inbound helper subtree. `MasqueradeIR`, `MasqueradeFileIR`,
 //! `MasqueradeProxyIR`, and `MasqueradeStringIR` no longer derive `Deserialize`
 //! directly; each deserializes via its Raw bridge, so unknown masquerade nested
 //! fields are rejected at parse time. This completes the WP-30 input boundary
@@ -126,14 +126,14 @@
 
 use serde::Deserialize;
 
+use super::inbound::{MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR};
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
     AnyTlsUserIR, BrutalIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR,
     DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR,
     HeaderEntry, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType,
-    Listable, MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR,
-    MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR,
+    Listable, MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR,
     ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
     TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
@@ -5483,110 +5483,6 @@ mod tests {
             result.is_err(),
             "MasqueradeStringIR should reject unknown fields via Raw bridge"
         );
-    }
-
-    #[test]
-    fn masquerade_file_roundtrip() {
-        let data = json!({
-            "type": "file",
-            "file": {"directory": "/var/www/html"}
-        });
-        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
-        assert_eq!(ir.type_, "file");
-        assert_eq!(ir.file.as_ref().unwrap().directory, "/var/www/html");
-        assert!(ir.proxy.is_none());
-        assert!(ir.string.is_none());
-
-        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        assert_eq!(rt.type_, ir.type_);
-        assert_eq!(rt.file.as_ref().unwrap().directory, "/var/www/html");
-    }
-
-    #[test]
-    fn masquerade_proxy_roundtrip() {
-        let data = json!({
-            "type": "proxy",
-            "proxy": {"url": "https://example.com", "rewrite_host": true}
-        });
-        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
-        assert_eq!(ir.type_, "proxy");
-        let proxy = ir.proxy.as_ref().unwrap();
-        assert_eq!(proxy.url, "https://example.com");
-        assert!(proxy.rewrite_host);
-
-        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        assert_eq!(rt.proxy.as_ref().unwrap().url, "https://example.com");
-        assert!(rt.proxy.as_ref().unwrap().rewrite_host);
-    }
-
-    #[test]
-    fn masquerade_string_roundtrip() {
-        let data = json!({
-            "type": "string",
-            "string": {
-                "content": "<html>hello</html>",
-                "status_code": 403,
-                "headers": {"Content-Type": "text/html"}
-            }
-        });
-        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
-        assert_eq!(ir.type_, "string");
-        let s = ir.string.as_ref().unwrap();
-        assert_eq!(s.content, "<html>hello</html>");
-        assert_eq!(s.status_code, 403);
-        assert_eq!(
-            s.headers
-                .as_ref()
-                .unwrap()
-                .get("Content-Type")
-                .map(String::as_str),
-            Some("text/html")
-        );
-
-        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        assert_eq!(rt.string.as_ref().unwrap().status_code, 403);
-    }
-
-    #[test]
-    fn masquerade_proxy_rewrite_host_default_false() {
-        let data = json!({
-            "type": "proxy",
-            "proxy": {"url": "https://example.com"}
-        });
-        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
-        assert!(!ir.proxy.as_ref().unwrap().rewrite_host);
-    }
-
-    #[test]
-    fn masquerade_string_status_code_default_zero() {
-        let data = json!({
-            "type": "string",
-            "string": {"content": "hello"}
-        });
-        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
-        assert_eq!(ir.string.as_ref().unwrap().status_code, 0);
-    }
-
-    #[test]
-    fn config_ir_parses_hysteria2_masquerade_inbound() {
-        let data = json!({
-            "inbounds": [{
-                "ty": "hysteria2",
-                "listen": "0.0.0.0",
-                "port": 443,
-                "users_hysteria2": [{"name": "u1", "password": "pw"}],
-                "masquerade": {
-                    "type": "proxy",
-                    "proxy": {"url": "https://example.com", "rewrite_host": true}
-                }
-            }],
-            "outbounds": []
-        });
-        let config: ConfigIR = serde_json::from_value(data).unwrap();
-        let ib = &config.inbounds[0];
-        let masq = ib.masquerade.as_ref().unwrap();
-        assert_eq!(masq.type_, "proxy");
-        assert!(masq.proxy.as_ref().unwrap().rewrite_host);
     }
 
     #[test]

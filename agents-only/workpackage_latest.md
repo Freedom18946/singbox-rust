@@ -28,6 +28,12 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30ah**: `ir/inbound.rs` masquerade owner 收口 — 已完成
+  - `MasqueradeIR` + 3 个 leaf 类型迁入 `ir/inbound.rs`；`ir/mod.rs` 改为 `pub use inbound::{...}` 薄壳
+  - `ir/mod.rs` 从 406 → 321 行（-85）；`raw.rs` 继续持有 strict Raw bridge，语义不变
+  - `MultiplexOptionsIR` / `BrutalIR` / `Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为跨域共享类型
+  - 这是 `ir/inbound.rs` owner 收口卡，不是 RuntimePlan 卡
+  - 自验证：inbound/masquerade 定点测试 + raw bridge 定点测试 + `cargo test -p sb-config --lib ir::inbound` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings`
 - **WP-30ag**: `ir/service.rs` service/DERP owner 收口 — 已完成
   - `InboundTlsOptionsIR` + 6 个 `Derp*` 类型迁入 `ir/service.rs`；`ir/mod.rs` 改为 `pub use service::{...}` 薄壳
   - `ir/mod.rs` 从 703 → 406 行（-297），`ir/service.rs` 从 331 → 694 行（含测试）
@@ -52,9 +58,9 @@
 - **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
 - **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
-### 构建基线（2026-04-01，WP-30ag 后）
+### 构建基线（2026-04-01，WP-30ah 后）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-config --lib` | ✅ 641 passed |
+| `cargo test -p sb-config --lib` | ✅ 643 passed |

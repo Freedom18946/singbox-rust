@@ -12,22 +12,26 @@
 //! `InboundType` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with lowercase serde unchanged.
 //!
-//! ## Masquerade (WP-30j)
+//! ## Masquerade (WP-30j / WP-30ah)
 //!
 //! The `masquerade` field on `InboundIR` (Hysteria2) now goes through the
 //! `RawMasqueradeIR` bridge, so unknown masquerade nested fields are rejected
 //! at parse time.
+//!
+//! `MasqueradeIR`, `MasqueradeFileIR`, `MasqueradeProxyIR`, and
+//! `MasqueradeStringIR` now live in this module as Hysteria2 inbound helpers.
 //!
 //! `planned.rs` / `normalize.rs` are still skeletons.
 
 use serde::{Deserialize, Serialize};
 
 use super::raw::{
-    RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawShadowTlsHandshakeIR,
+    RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawMasqueradeFileIR,
+    RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR, RawShadowTlsHandshakeIR,
     RawShadowTlsUserIR, RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR,
     RawVlessUserIR, RawVmessUserIR,
 };
-use super::{Credentials, MasqueradeIR, MultiplexOptionsIR};
+use super::{Credentials, MultiplexOptionsIR};
 
 /// Inbound proxy type.
 /// 入站代理类型。
@@ -347,6 +351,91 @@ impl<'de> Deserialize<'de> for HysteriaUserIR {
         D: serde::Deserializer<'de>,
     {
         RawHysteriaUserIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Hysteria2 Masquerade configuration.
+///
+/// Deserialization goes through [`RawMasqueradeIR`](super::raw::RawMasqueradeIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j / WP-30ah).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MasqueradeIR {
+    #[serde(rename = "type")]
+    pub type_: String,
+    #[serde(default)]
+    pub file: Option<MasqueradeFileIR>,
+    #[serde(default)]
+    pub proxy: Option<MasqueradeProxyIR>,
+    #[serde(default)]
+    pub string: Option<MasqueradeStringIR>,
+}
+
+impl<'de> Deserialize<'de> for MasqueradeIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawMasqueradeIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade file serving configuration.
+///
+/// Deserialization goes through [`RawMasqueradeFileIR`](super::raw::RawMasqueradeFileIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j / WP-30ah).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MasqueradeFileIR {
+    pub directory: String,
+}
+
+impl<'de> Deserialize<'de> for MasqueradeFileIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawMasqueradeFileIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade reverse proxy configuration.
+///
+/// Deserialization goes through [`RawMasqueradeProxyIR`](super::raw::RawMasqueradeProxyIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j / WP-30ah).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MasqueradeProxyIR {
+    pub url: String,
+    #[serde(default)]
+    pub rewrite_host: bool,
+}
+
+impl<'de> Deserialize<'de> for MasqueradeProxyIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawMasqueradeProxyIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Masquerade static string response configuration.
+///
+/// Deserialization goes through [`RawMasqueradeStringIR`](super::raw::RawMasqueradeStringIR)
+/// which carries `#[serde(deny_unknown_fields)]` (WP-30j / WP-30ah).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MasqueradeStringIR {
+    pub content: String,
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub status_code: u16,
+}
+
+impl<'de> Deserialize<'de> for MasqueradeStringIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawMasqueradeStringIR::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -1183,6 +1272,154 @@ mod tests {
         let rt: InboundIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
         assert_eq!(rt.users_hysteria2.as_ref().unwrap().len(), 1);
         assert_eq!(rt.masquerade.as_ref().unwrap().type_, "proxy");
+    }
+
+    #[test]
+    fn config_ir_parses_hysteria2_masquerade_inbound() {
+        let data = json!({
+            "inbounds": [{
+                "ty": "hysteria2",
+                "listen": "0.0.0.0",
+                "port": 443,
+                "users_hysteria2": [{"name": "u1", "password": "pw"}],
+                "masquerade": {
+                    "type": "proxy",
+                    "proxy": {"url": "https://example.com", "rewrite_host": true}
+                }
+            }],
+            "outbounds": []
+        });
+        let config: crate::ir::ConfigIR = serde_json::from_value(data).unwrap();
+        let ib = &config.inbounds[0];
+        let masq = ib.masquerade.as_ref().unwrap();
+        assert_eq!(masq.type_, "proxy");
+        assert!(masq.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn masquerade_file_roundtrip() {
+        let data = json!({
+            "type": "file",
+            "file": {"directory": "/var/www/html"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "file");
+        assert_eq!(ir.file.as_ref().unwrap().directory, "/var/www/html");
+        assert!(ir.proxy.is_none());
+        assert!(ir.string.is_none());
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.type_, ir.type_);
+        assert_eq!(rt.file.as_ref().unwrap().directory, "/var/www/html");
+    }
+
+    #[test]
+    fn masquerade_proxy_roundtrip() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com", "rewrite_host": true}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "proxy");
+        let proxy = ir.proxy.as_ref().unwrap();
+        assert_eq!(proxy.url, "https://example.com");
+        assert!(proxy.rewrite_host);
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.proxy.as_ref().unwrap().url, "https://example.com");
+        assert!(rt.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn masquerade_string_roundtrip() {
+        let data = json!({
+            "type": "string",
+            "string": {
+                "content": "<html>hello</html>",
+                "status_code": 403,
+                "headers": {"Content-Type": "text/html"}
+            }
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.type_, "string");
+        let s = ir.string.as_ref().unwrap();
+        assert_eq!(s.content, "<html>hello</html>");
+        assert_eq!(s.status_code, 403);
+        assert_eq!(
+            s.headers
+                .as_ref()
+                .unwrap()
+                .get("Content-Type")
+                .map(String::as_str),
+            Some("text/html")
+        );
+
+        let rt: MasqueradeIR = serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        assert_eq!(rt.string.as_ref().unwrap().status_code, 403);
+    }
+
+    #[test]
+    fn masquerade_proxy_rewrite_host_default_false() {
+        let data = json!({
+            "type": "proxy",
+            "proxy": {"url": "https://example.com"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert!(!ir.proxy.as_ref().unwrap().rewrite_host);
+    }
+
+    #[test]
+    fn masquerade_string_status_code_default_zero() {
+        let data = json!({
+            "type": "string",
+            "string": {"content": "hello"}
+        });
+        let ir: MasqueradeIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.string.as_ref().unwrap().status_code, 0);
+    }
+
+    #[test]
+    fn wp30ah_pin_masquerade_owner_is_inbound_rs() {
+        let source = include_str!("inbound.rs");
+        for needle in [
+            "pub struct MasqueradeIR",
+            "pub struct MasqueradeFileIR",
+            "pub struct MasqueradeProxyIR",
+            "pub struct MasqueradeStringIR",
+            "RawMasqueradeIR::deserialize(deserializer).map(Into::into)",
+            "RawMasqueradeFileIR::deserialize(deserializer).map(Into::into)",
+            "RawMasqueradeProxyIR::deserialize(deserializer).map(Into::into)",
+            "RawMasqueradeStringIR::deserialize(deserializer).map(Into::into)",
+        ] {
+            assert!(
+                source.contains(needle),
+                "expected `{needle}` to live in ir/inbound.rs"
+            );
+        }
+    }
+
+    #[test]
+    fn wp30ah_pin_mod_rs_only_reexports_masquerade_types() {
+        let source = include_str!("mod.rs");
+        assert!(
+            source.contains("pub use inbound::{")
+                && source.contains("MasqueradeFileIR")
+                && source.contains("MasqueradeIR")
+                && source.contains("MasqueradeProxyIR")
+                && source.contains("MasqueradeStringIR"),
+            "expected ir/mod.rs to re-export masquerade types"
+        );
+        for needle in [
+            "pub struct MasqueradeIR",
+            "pub struct MasqueradeFileIR",
+            "pub struct MasqueradeProxyIR",
+            "pub struct MasqueradeStringIR",
+        ] {
+            assert!(
+                !source.contains(needle),
+                "expected ir/mod.rs to stop owning `{needle}`"
+            );
+        }
     }
 
     // ── TUIC inbound ────────────────────────────────────────────────
