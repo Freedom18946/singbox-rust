@@ -25,7 +25,7 @@ fn test_system_resolver_creates_successfully() {
     assert!(resolver.is_ok(), "System resolver  should instantiate");
 
     let resolver = resolver.unwrap();
-    assert_eq!(resolver.name(), "dns_ir");
+    assert_eq!(resolver.name(), "cached_resolver");
 }
 
 // ============================================================================

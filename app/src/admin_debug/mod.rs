@@ -81,6 +81,7 @@ pub struct AdminDebugState {
 // while http/ contains redirect policies and other HTTP utilities
 
 /// Initialize admin debug server if enabled.
+///
 /// Returns a handle whose `Drop` fires the cancellation signal (stopping the
 /// accept loop). For an orderly shutdown that also *awaits* connection drain,
 /// call [`AdminDebugHandle::shutdown()`] instead of just dropping.

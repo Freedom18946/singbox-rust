@@ -13,8 +13,13 @@
 
 ## 最近完成（2026-04-02）
 
-### WP-30ao：run_engine runtime orchestration seam 超级卡 — 已完成
+### WP-30ap：app crate baseline stabilization 超级卡 — 已完成
+- `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific integration suite；新增 `app/tests/wp30ap_baseline_gates.rs` source pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，`cargo test -p app --test e2e_subs_security --features admin_debug` ✅ 23 passed
+- `app/src/lib.rs` 现将 `outbound_groups` 与 `outbound_builder` / `bootstrap_runtime` 对齐为 `#[cfg(all(feature = "router", test))]` legacy runtime owner seam；`app/src/admin_debug/mod.rs` doc 段落 warning 已修正；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 0 warning output
+- `app/tests/dns_transport_comprehensive_test.rs` 的 system resolver baseline pin 已按当前 `sb-core::dns::config_builder` 事实更新为 `cached_resolver`；`comprehensive_security_integration` 现先安装 `security_metrics` owner 再断言 snapshot，这两处都属于 test/baseline 收口，不改 runtime 语义；**这仍是 app baseline stabilization 卡，不是 `planned.rs` / RuntimePlan / sb-config 语义卡**
+- 自验证：`cargo test -p app --lib` ✅ 110 passed；`cargo test -p app` ✅ 全量通过；`cargo test -p app --test e2e_subs_security --features admin_debug` ✅ 23 passed；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
 
+### WP-30ao：run_engine runtime orchestration seam 超级卡 — 已完成
 - 新增 `app/src/run_engine_runtime/{mod.rs,config_load.rs,debug_env.rs,output.rs,admin_start.rs,watch.rs,supervisor.rs}`，现收纳 config/raw loading、debug/pprof env、startup/reload output glue、admin/clash/api startup、watch/reload handle、signal/shutdown 与 `run_supervisor()` orchestration owner；`app/src/run_engine.rs` 改成 public facade + 委托
 - `run_engine.rs` 从 1188 行降到 129 行；当前仓库事实：高层 public entry / option types 仍留在 `run_engine.rs`，但 runtime helper/starter owner 已迁入 `run_engine_runtime/*`；这张卡是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` / RuntimePlan 卡，也不触碰 `bootstrap_runtime/*` / `router_text.rs` / `dns_env.rs`
 - 新增 15 个定点测试（默认 feature 13 个，`--features parity` 15 个），覆盖 config/raw loading 语义、debug env 应用、watch snapshot/change detection、clash_api listen parsing，以及 run_engine facade/source pins；`dns_env.rs` source pin 也已同步到新的 `run_engine_runtime::supervisor` 调用点
@@ -22,7 +27,6 @@
 - **这是 runtime/run_engine helper-starter 超级卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30an：bootstrap runtime helper/starter owner 超级卡 — 已完成
-
 - 新增 `app/src/bootstrap_runtime/{mod.rs,proxy_registry.rs,router_helpers.rs,dns_apply.rs,inbounds.rs,api_services.rs,runtime_shell.rs}`，现收纳 proxy registry env/pool parsing、router helper、legacy DNS apply helper、inbound starter facade、Clash/V2Ray API starter、`ServiceHandle`、`Runtime`/`shutdown()` owner；`app/src/bootstrap.rs` 改成高层 facade + 委托
 - 当前仓库事实：`bootstrap.rs` 仍未接入 `lib.rs` / `run_engine` 主路径，因此 `bootstrap_runtime` 延续 `outbound_builder` 模式，以 test-only legacy runtime owner module + source pins 收口；这张卡是 runtime/bootstrap helper/starter 超级卡，不是 `planned.rs` / RuntimePlan 卡
 - `bootstrap.rs` 从 1109 行降到 255 行；新增 21 个定点测试（默认 feature 16 个，`--features parity` 21 个），覆盖 proxy registry env/pool parsing、DNS token/dedup/normalize、inbound facade、Clash/V2Ray API invalid listen + shutdown handle、runtime shutdown timeout，以及 owner/source pins
@@ -69,8 +73,7 @@
 
 - `WP-30ai` / `WP-30ah` / `WP-30ag`：`ir/multiplex.rs`、`ir/inbound.rs`、`ir/service.rs` owner 收口已完成；`ir/mod.rs` 现 252 行，主剩余是共享类型与 compat 暴露
 - `WP-30af` / `WP-30ae`：`validator/v2` facade 与 root schema core owner 收口已完成；`validator/v2/mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
-- `WP-30ad` ~ `WP-30k`：credentials/top-level/security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列均已完成
-- `normalize` / `minimize` owner 已迁入 `ir/normalize.rs` / `ir/minimize.rs`；`PlannedFacts` 仍是 crate-private，不新增 public `RuntimePlan` / builder / query API
+- `WP-30ad` ~ `WP-30k`：credentials/top-level/security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列均已完成；`normalize` / `minimize` owner 已迁入 `ir/normalize.rs` / `ir/minimize.rs`
 
 ## 剩余 Maintenance 债务（非阻塞）
 

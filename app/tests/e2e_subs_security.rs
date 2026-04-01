@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_debug")]
 #![allow(unused_imports, dead_code)]
 use serial_test::serial;
 use std::collections::HashSet;
@@ -707,6 +708,7 @@ async fn comprehensive_security_integration() {
     }
     #[cfg(feature = "subs_http")]
     {
+        let _state = admin_debug_state();
         let _env = subs_env_guard(&[
             ("SB_SUBS_MAX_CONCURRENCY", Some("3")),
             ("SB_SUBS_RPS", Some("5")),

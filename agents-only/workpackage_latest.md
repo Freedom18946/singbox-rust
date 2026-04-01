@@ -28,6 +28,13 @@
 
 ### 维护卡（2026-04-02）
 
+- **WP-30ap**: app crate baseline stabilization 超级卡 — 已完成
+  - 这张卡只收口 `app` crate baseline / feature-gate / module wiring / test target seam：不是 `planned.rs` / RuntimePlan 卡，也不改 sb-config 语义
+  - `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific suite；新增 `app/tests/wp30ap_baseline_gates.rs` pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，同时 `cargo test -p app --test e2e_subs_security --features admin_debug` 继续覆盖 23 个安全/observability/auth 用例
+  - `app/src/lib.rs` 现将 `outbound_groups` 调整为 `#[cfg(all(feature = "router", test))]`，与 `outbound_builder` / `bootstrap_runtime` 保持一致的 legacy runtime owner seam wiring；`app/src/admin_debug/mod.rs` doc warning 已修正
+  - 另同步更新 `app/tests/dns_transport_comprehensive_test.rs` 的 resolver baseline pin（`cached_resolver`）并修正 `comprehensive_security_integration` 的 metrics owner 安装前置；这些都是 baseline/test 收口，不是 runtime 语义变更
+  - 自验证：`cargo test -p app --lib` + `cargo test -p app` + `cargo test -p app --test e2e_subs_security --features admin_debug` + `cargo clippy -p app --all-features --all-targets -- -D warnings` 全部通过，且 clippy 已真正静默
+
 - **WP-30ao**: run_engine runtime orchestration seam 超级卡 — 已完成
   - 新增 `app/src/run_engine_runtime/{mod.rs,config_load.rs,debug_env.rs,output.rs,admin_start.rs,watch.rs,supervisor.rs}`，迁入 config/raw loading、debug env、startup/reload output glue、admin/clash/api startup、watch/reload handle 与 supervisor startup/shutdown orchestration owner
   - `app/src/run_engine.rs` 现仅保留 public facade / option types / thin delegates；`run_supervisor()` 实际 owner 已迁到 `crate::run_engine_runtime::supervisor::run_supervisor(...)`

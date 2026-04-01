@@ -67,7 +67,7 @@ pub mod hardening;
 pub mod http_util;
 #[cfg(all(feature = "router", test))]
 mod outbound_builder;
-#[cfg(feature = "router")]
+#[cfg(all(feature = "router", test))]
 mod outbound_groups;
 #[cfg(feature = "panic_log")]
 pub mod panic;
