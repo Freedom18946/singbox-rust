@@ -186,6 +186,36 @@ WP-30o 将 WP-30l/m/n 的离散 helper 收成 `PlannedFacts`。WP-30p 吸收了 
 - 不碰 `validator/v2` 业务逻辑与 parse-time defaults
 - 不改变 `normalize` / `minimize` / `present` 现有行为（WP-30r/30s 只做 owner 迁移，不改语义）
 
+## Staged Seam Status (WP-30as: validated/planned consumer seam)
+
+WP-30as 在不扩大责任面的前提下，把 `PlannedFacts` 从“只在 `Config::validate()` 内一次性消费的 crate-private fact graph”推进为“可被 crate 内稳定消费的 staged seam 前体”，但仍明确停在 private boundary 内。
+
+### 核心变更
+
+- 新增 crate-private staged facade：
+  - `collect_planned_facts(&ConfigIR) -> Result<PlannedFacts>`
+  - `validate_with_planned_facts(&PlannedFacts, &ConfigIR) -> Result<()>`
+  - `validate_planned_facts(&ConfigIR) -> Result<()>`
+- `Config::validate()` 继续保持 thin entry，只委托 `validate_planned_facts(&self.ir)`
+- `PlannedFacts::collect()` / `PlannedFacts::validate()` 继续是 collect/validate 两段 owner，但不再承担 staged facade 语义；crate 内稳定 seam 由上述三个 free functions 表达
+- 当前仓库仍无稳定 crate-private consumer，因此 **没有** 增加 exact accessor，也 **没有** 引入 generic namespace query API
+
+### Non-consumer pins（WP-30as 新增）
+
+- `normalize.rs` / `ir::normalize.rs` 继续只做 canonicalization，不消费 planned facts
+- `minimize.rs` / `ir::minimize.rs` 继续只做 post-validated optimization，不消费 planned facts
+- `present.rs` 现明确为 projection-only seam，不消费 planned facts
+- `app/src/outbound_groups.rs` / `router_text.rs` / `dns_env.rs` / `run_engine.rs` 继续明确属于 runtime owner，不是 planned consumer owner
+
+### 这仍然不是 RuntimePlan / query API 卡
+
+- 没有 public `RuntimePlan`
+- 没有 public `PlannedConfigIR`
+- 没有 builder API
+- 没有 crate-internal generic query API
+- 没有 exact private accessor（当前无稳定消费者）
+- DNS in planned 仍只限 namespace/reference facts，不扩成 transport/runtime binding
+
 ## Test Pins
 
 ### WP-30k 原有 pins（仍有效）

@@ -1,3 +1,9 @@
+//! Runtime-side selector/urltest second-pass binding for the legacy bootstrap
+//! path.
+//!
+//! This module is a runtime owner, not a planned consumer owner: it constructs
+//! connectors, starts URLTest health checks, and depends on runtime services.
+
 #[cfg(feature = "router")]
 use sb_core::adapter::OutboundConnector as AdapterConnector;
 #[cfg(feature = "router")]

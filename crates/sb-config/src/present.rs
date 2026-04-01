@@ -1,7 +1,11 @@
-//! Configuration presentation layer: conversion and formatting utilities.
+//! Configuration projection layer: conversion and formatting utilities.
+//!
+//! This module is a presentation/projection boundary, not a planned consumer
+//! owner. It reads validated IR and emits a legacy JSON-shaped view; it does
+//! not collect or consume `PlannedFacts`, and it does not bind references.
 
-use crate::ir::ConfigIR;
 use crate::Config;
+use crate::ir::ConfigIR;
 use anyhow::Result;
 use serde_json::{Map, Value};
 
@@ -276,4 +280,65 @@ pub fn to_view(ir: &ConfigIR) -> Value {
     }
 
     Value::Object(root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{DnsIR, DnsRuleIR, DnsServerIR, OutboundIR, OutboundType, RouteIR, RuleIR};
+
+    #[test]
+    fn wp30as_pin_present_is_projection_only_not_planned_consumer() {
+        let ir = ConfigIR {
+            outbounds: vec![OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("proxy-a".to_string()),
+                ..Default::default()
+            }],
+            route: RouteIR {
+                default: Some("proxy-a".to_string()),
+                rules: vec![RuleIR {
+                    outbound: Some("proxy-a".to_string()),
+                    domain: vec!["example.com".to_string()],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            dns: Some(DnsIR {
+                servers: vec![DnsServerIR {
+                    tag: "dns-main".to_string(),
+                    address: "udp://1.1.1.1".to_string(),
+                    detour: Some("proxy-a".to_string()),
+                    ..Default::default()
+                }],
+                rules: vec![DnsRuleIR {
+                    server: Some("dns-main".to_string()),
+                    ..Default::default()
+                }],
+                default: Some("dns-main".to_string()),
+                final_server: Some("dns-main".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let view = to_view(&ir);
+        assert_eq!(
+            view.pointer("/route/default").and_then(Value::as_str),
+            Some("proxy-a")
+        );
+        assert_eq!(
+            view.pointer("/route/rules/0/outbound")
+                .and_then(Value::as_str),
+            Some("proxy-a")
+        );
+        let source = include_str!("present.rs");
+        assert!(source.contains("projection layer"));
+        assert!(source.contains("not a planned consumer owner"));
+        assert!(source.contains("does not collect or consume `PlannedFacts`"));
+        let planned_path = ["crate::ir::", "planned::"].concat();
+        let staged_entry = ["validate_", "planned_facts("].concat();
+        assert!(!source.contains(&planned_path));
+        assert!(!source.contains(&staged_entry));
+    }
 }

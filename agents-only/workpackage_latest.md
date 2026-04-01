@@ -1,14 +1,10 @@
 <!-- tier: S -->
 # 工作阶段总览（Workpackage Map）
-
 > **用途**：阶段划分 + 当前位置。S-tier，每次会话必读。
 > **纪律**：Phase 关闭后压缩为一行状态。本文件严格 ≤120 行。
 > **对比**：本文件管"在哪"；`active_context.md` 管"刚做了什么 / 下一步"。
-
 ---
-
 ## 已关闭阶段（一行总结）
-
 | 阶段 | 交付 | 关闭时间 |
 |------|------|----------|
 | L1-L17 | 架构整固、功能对齐、CI / 发布收口 | 2026-01 ~ 2026-02 |
@@ -28,6 +24,10 @@
 
 ### 维护卡（2026-04-02）
 
+- **WP-30as**: sb-config validated/planned consumer seam 超级卡 — 已完成
+  - `crates/sb-config/src/ir/planned.rs` 现把 crate-private staged seam 明确为 `collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts` 三层；`Config::validate()` 继续是 thin entry，只消费 orchestration facade
+  - 当前仓库事实再次确认：`PlannedFacts` 已具备稳定 collect/validate 两段结构，但仓库内仍无稳定 crate-private consumer，因此这张卡 **不** 引入 exact accessor、generic query API、public `RuntimePlan`、public `PlannedConfigIR` 或 builder API；新增 pins 继续把 `normalize` / `minimize` / `present` / `app` runtime seams pin 在 planned consumer owner 之外
+  - 自验证：`cargo test -p sb-config --lib wp30as` + `cargo test -p sb-config --lib planned` + `cargo test -p sb-config --lib wp30` + `cargo test -p sb-config --test outbound_raw_boundary_test` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
 - **WP-30ar**: sb-config DNS phase-boundary stabilization 超级卡 — 已完成
   - 新增 `ir/dns_raw.rs`，把 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR` 与 `From<RawDns*> for Dns*` bridge 从 `ir/raw.rs` 巨石抽出；`ir/raw.rs` 现仅保留 `RawConfigRoot` broader boundary + DNS Raw compat/re-export，`crate::ir::*` 既有路径保持稳定
   - `ir/dns.rs` 现明确为 validated DNS owner，并直接从 `dns_raw` 委托 `Deserialize`；`validator/v2/dns.rs` 继续只承接 DNS validation + lowering owner，`planned.rs` 继续只持有 DNS namespace/reference facts，`ir/normalize.rs` / `ir/minimize.rs` 继续不是 DNS planning owner

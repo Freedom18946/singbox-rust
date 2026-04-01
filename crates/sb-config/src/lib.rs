@@ -25,7 +25,7 @@
 //! - [`compat`]: **Migration Layer** - Handles the transformation from legacy formats.
 //!   **迁移层** - 处理从旧格式的转换。
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -452,12 +452,10 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        // WP-30p: Config::validate() is now a thin entry point that delegates
-        // all planned fact graph validation — including inbound tag uniqueness —
-        // to the crate-private planned seam. PlannedFacts::collect() checks
-        // tag uniqueness for both namespaces (outbound/endpoint shared AND
-        // inbound), then PlannedFacts::validate() checks all 11 reference
-        // categories. See planned.rs module doc for the full list.
+        // WP-30as: Config::validate() remains a thin entry point. It delegates
+        // to the crate-private planned orchestration facade, which keeps the
+        // collect/validate stages explicit without introducing a public
+        // RuntimePlan or generic query API.
         crate::ir::planned::validate_planned_facts(&self.ir)?;
 
         Ok(())
@@ -841,16 +839,22 @@ endpoints:
 
         // The Rule struct's domain_suffix should come from IR's domain_suffix, not domain
         assert_eq!(cfg.rules.len(), 1);
-        assert!(cfg.rules[0]
-            .domain_suffix
-            .contains(&".example.com".to_string()));
-        assert!(cfg.rules[0]
-            .domain_suffix
-            .contains(&".google.com".to_string()));
+        assert!(
+            cfg.rules[0]
+                .domain_suffix
+                .contains(&".example.com".to_string())
+        );
+        assert!(
+            cfg.rules[0]
+                .domain_suffix
+                .contains(&".google.com".to_string())
+        );
         // domain_suffix should NOT contain "exact.com" (that's from domain field)
-        assert!(!cfg.rules[0]
-            .domain_suffix
-            .contains(&"exact.com".to_string()));
+        assert!(
+            !cfg.rules[0]
+                .domain_suffix
+                .contains(&"exact.com".to_string())
+        );
     }
 
     #[test]

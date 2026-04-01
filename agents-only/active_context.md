@@ -1,17 +1,17 @@
 <!-- tier: S -->
 # 当前上下文（Active Context）
-
 > **用途**：高频更新，每次任务结束时维护。**S-tier：每次会话必读。**
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
-
 ---
-
 ## 战略状态
-
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)
-
 ## 最近完成（2026-04-02）
+
+### WP-30as：sb-config validated/planned consumer seam 超级卡 — 已完成
+- `planned.rs` 现把 crate-private staged seam 明确为 `collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts` 三层；`Config::validate()` 继续只是 thin entry；`PlannedFacts::collect()` / `validate()` 继续承接 collect/validate owner
+- 当前仓库事实再次复核：`PlannedFacts` 仍无稳定 crate-private consumer，因此这张卡 **没有** 引入 exact accessor、generic query API、public `RuntimePlan`、public `PlannedConfigIR` 或 builder API；它收口的是 **validated/planned consumer seam 前体**，不是 runtime/app seam，也不是 planning completion
+- 新增 `WP-30as` pins 覆盖 staged facade 与 orchestration 等价、collect 错误面不漂移、`planned.rs` 不经 `ir/mod.rs` / `lib.rs` re-export，以及 `normalize` / `minimize` / `present` / `app` runtime seams 继续不是 planned consumer owner；自验证：`cargo test -p sb-config --lib wp30as`、`--lib planned`、`--lib wp30`、`--test outbound_raw_boundary_test`、`--lib` 与 `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
 
 ### WP-30ar：sb-config DNS phase-boundary stabilization 超级卡 — 已完成
 - 新增 `crates/sb-config/src/ir/dns_raw.rs`，把 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR` 与 `From<RawDns*> for Dns*` bridge 从 5533 行 `ir/raw.rs` 巨石中抽出；`ir/raw.rs` 现仅为 `RawConfigRoot` broader boundary + DNS Raw compat/re-export 壳，`crate::ir::*` 既有路径保持稳定
@@ -84,14 +84,13 @@
 - `bootstrap.rs` 现 255 行，保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 高层 facade；剩余 helper/starter owner 已迁到 `app/src/bootstrap_runtime/*`，但该 bootstrap 路径本身仍是 legacy runtime 壳
 - `run_engine.rs` 现 129 行 public facade；剩余 runtime orchestration owner 已迁入 `app/src/run_engine_runtime/*`，但更大的 runtime seam 仍未 actor 化 / RuntimeContext 化
 - `sb-config` DNS subtree 已完成 Raw owner 稳定化，但 `PlannedFacts` 仍未升级为 public `RuntimePlan`，crate 内也仍无稳定 namespace/query API
+- `sb-config` validated/planned seam 已在 `WP-30as` 收成 staged crate-private facade，但当前仍无稳定 private consumer，因此 exact accessor / generic query API / public `RuntimePlan` 继续留作 future work
 
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - `WP-30aq` + `WP-30ar` 已把 `ir/mod.rs` / `validator/v2/mod.rs` facade 与 DNS Raw owner 稳定化；若继续推进，应聚焦更宽的 validated/planned consumer seam，而不是回退成重拆 facade 或误推 RuntimePlan
-  - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
-  - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
-  - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
+  - `WP-30aq` + `WP-30ar` + `WP-30as` 已把 `ir/mod.rs` / `validator/v2/mod.rs` facade、DNS Raw owner 与 validated/planned staged seam 稳定化；若继续推进，应先等真实 private consumer 出现，再评估 exact accessor，而不是回退成重拆 facade 或误推 RuntimePlan
+  - `PlannedFacts` 的 exact private accessor / namespace 查询方法与 public `RuntimePlan`：仍保留为 future work（当前无稳定消费者）；后续也仍不是 crate-internal generic query API 卡
 - runtime/bootstrap seam 继续收口，但 DNS env bridge 仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 legacy router text emission 已迁入 `app/src/router_text.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 selector/urltest second-pass binding 已迁入 `app/src/outbound_groups.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`

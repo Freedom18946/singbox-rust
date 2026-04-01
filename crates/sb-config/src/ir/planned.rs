@@ -1,4 +1,4 @@
-//! Planning layer — crate-private fact graph (WP-30p).
+//! Planning layer — crate-private staged fact seam (WP-30as).
 //!
 //! ## Purpose
 //!
@@ -8,14 +8,18 @@
 //! Raw → Validated (ConfigIR) → Planned (RuntimePlan) → Runtime owners
 //! ```
 //!
-//! ## Current status (WP-30q DNS server / service uniqueness)
+//! ## Current status (WP-30as staged seam)
 //!
 //! WP-30o consolidated the discrete helpers from WP-30l/m/n into a **crate-private
 //! structured fact graph** (`PlannedFacts`). WP-30p absorbed inbound tag uniqueness
-//! into the fact graph. WP-30q completes collect-phase uniqueness by adding
+//! into the fact graph. WP-30q completed collect-phase uniqueness by adding
 //! duplicate tag rejection to `DnsServerNamespace::scan()` and
-//! `ServiceNamespace::scan()`, making `Config::validate()` a thin entry point that
-//! delegates entirely to `validate_planned_facts()`.
+//! `ServiceNamespace::scan()`. WP-30as keeps that fact graph private, but makes
+//! the crate-private staged seam explicit:
+//!
+//! - `collect_planned_facts(&ConfigIR) -> Result<PlannedFacts>`
+//! - `validate_with_planned_facts(&PlannedFacts, &ConfigIR) -> Result<()>`
+//! - `validate_planned_facts(&ConfigIR) -> Result<()>`
 //!
 //! The fact graph cleanly separates two phases:
 //!
@@ -24,7 +28,7 @@
 //! 2. **Validate** — `PlannedFacts::validate(&self, &ConfigIR)` checks all 11
 //!    reference categories against the collected namespace inventories.
 //!
-//! These are invoked via a single crate-private entry point:
+//! `Config::validate()` remains a thin facade over the orchestration entry
 //! `validate_planned_facts(&ConfigIR)`.
 //!
 //! ## Namespace facts (4 domains, all with uniqueness)
@@ -61,6 +65,8 @@
 //! - preserves all existing error messages verbatim (WP-30l/m/n/p)
 //! - does not introduce new public types or builder API
 //! - does not expose crate-internal namespace query API
+//! - does not add exact read-only accessors yet, because there is still no
+//!   stable crate-private consumer that needs them
 //!
 //! ## What is NOT yet implemented
 //!
@@ -68,6 +74,7 @@
 //! - No public `PlannedConfigIR`
 //! - No public builder/helper entry point
 //! - No crate-internal namespace query API (no stable consumers yet)
+//! - No exact private accessors yet (no stable consumers yet)
 //! - No runtime connector binding
 //! - No runtime-facing DNS env bridge (still in `app::run_engine`)
 //! - `validator/v2`, `normalize`, `minimize`, `present` responsibilities not moved
@@ -86,7 +93,7 @@
 
 use std::collections::HashSet;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use super::outbound::OutboundType;
 use super::validated::ConfigIR;
@@ -245,7 +252,7 @@ impl PlannedFacts {
     /// domains and checks tag uniqueness for each namespace independently.
     ///
     /// Returns `Err` if duplicate tags are detected in any namespace.
-    pub(crate) fn collect(ir: &ConfigIR) -> Result<Self> {
+    fn collect(ir: &ConfigIR) -> Result<Self> {
         let outbound_ns = TagNamespace::scan(ir)?;
         let inbound_ns = InboundNamespace::scan(ir)?;
         let dns_server_ns = DnsServerNamespace::scan(ir)?;
@@ -263,7 +270,7 @@ impl PlannedFacts {
     ///
     /// This is the "validate" phase of the fact graph. It checks all 11 reference
     /// categories, preserving existing error messages verbatim.
-    pub(crate) fn validate(&self, ir: &ConfigIR) -> Result<()> {
+    fn validate(&self, ir: &ConfigIR) -> Result<()> {
         // ── WP-30l first-cut: outbound reference checks ──
         self.check_selector_members(ir)?;
         self.check_rule_outbounds(ir)?;
@@ -474,9 +481,20 @@ impl PlannedFacts {
 ///   9) `DnsRuleIR.server` → DNS server tag namespace
 ///  10) `DnsIR.default` → DNS server tag namespace
 ///  11) `DnsIR.final_server` → DNS server tag namespace
+pub(crate) fn collect_planned_facts(ir: &ConfigIR) -> Result<PlannedFacts> {
+    PlannedFacts::collect(ir)
+}
+
+/// Validate validated IR against a previously collected planned fact graph.
+///
+/// This is intentionally exact and staged, not a generic query API.
+pub(crate) fn validate_with_planned_facts(facts: &PlannedFacts, ir: &ConfigIR) -> Result<()> {
+    facts.validate(ir)
+}
+
 pub(crate) fn validate_planned_facts(ir: &ConfigIR) -> Result<()> {
-    let facts = PlannedFacts::collect(ir)?;
-    facts.validate(ir)?;
+    let facts = collect_planned_facts(ir)?;
+    validate_with_planned_facts(&facts, ir)?;
     Ok(())
 }
 
@@ -1263,5 +1281,62 @@ mod tests {
             "duplicate service tag: dup-svc",
             "service uniqueness must be owned by planned fact graph (WP-30q)"
         );
+    }
+
+    #[test]
+    fn wp30as_pin_staged_private_facade_matches_orchestration_entry() {
+        let mut ir = ir_with_outbounds(&["direct"]);
+        ir.dns = ir_with_dns_servers(&[
+            DnsSpec::new("dns-main").detour("direct"),
+            DnsSpec::new("dns-bootstrap"),
+        ])
+        .dns;
+        let facts = collect_planned_facts(&ir).unwrap();
+        assert!(validate_with_planned_facts(&facts, &ir).is_ok());
+        assert!(validate_planned_facts(&ir).is_ok());
+    }
+
+    #[test]
+    fn wp30as_pin_staged_collect_error_surface_is_stable() {
+        let ir = ir_with_dns_servers(&[DnsSpec::new("dup-dns"), DnsSpec::new("dup-dns")]);
+        let err = collect_planned_facts(&ir).unwrap_err();
+        assert_eq!(err.to_string(), "duplicate dns server tag: dup-dns");
+    }
+
+    #[test]
+    fn wp30as_pin_private_staged_seam_not_reexported_or_generalized() {
+        let planned = include_str!("planned.rs");
+        let ir_mod = include_str!("mod.rs");
+        let lib = include_str!("../lib.rs");
+
+        assert!(planned.contains("collect_planned_facts(&ConfigIR) -> Result<PlannedFacts>"));
+        assert!(planned.contains("validate_with_planned_facts(&PlannedFacts, &ConfigIR)"));
+        assert!(planned.contains("No crate-internal namespace query API"));
+        assert!(planned.contains("No exact private accessors yet"));
+        assert!(ir_mod.contains("pub(crate) mod planned;"));
+        assert!(!ir_mod.contains("pub use planned::PlannedFacts"));
+        assert!(!ir_mod.contains("pub use planned::collect_planned_facts"));
+        assert!(!ir_mod.contains("pub use planned::validate_with_planned_facts"));
+        assert!(!lib.contains("pub use crate::ir::planned::PlannedFacts"));
+    }
+
+    #[test]
+    fn wp30as_pin_non_consumers_stay_outside_planned_owner_boundary() {
+        let ir_normalize = include_str!("normalize.rs");
+        let ir_minimize = include_str!("minimize.rs");
+        let present = include_str!("../present.rs");
+        let runtime_groups = include_str!("../../../../app/src/outbound_groups.rs");
+        let runtime_router = include_str!("../../../../app/src/router_text.rs");
+        let runtime_dns_env = include_str!("../../../../app/src/dns_env.rs");
+        let runtime_run_engine = include_str!("../../../../app/src/run_engine.rs");
+
+        assert!(ir_normalize.contains("does **not** touch planned-layer references"));
+        assert!(ir_minimize.contains("Not a planning-layer owner"));
+        assert!(present.contains("projection layer"));
+        assert!(present.contains("not a planned consumer owner"));
+        assert!(runtime_groups.contains("not a planned consumer owner"));
+        assert!(runtime_router.contains("runtime concern"));
+        assert!(runtime_dns_env.contains("Runtime-facing DNS environment bridge"));
+        assert!(runtime_run_engine.contains("runtime orchestration owners"));
     }
 }
