@@ -3,9 +3,309 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DerpMeshPeerIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, InboundTlsOptionsIR, Listable,
-    StringOrObj,
+    raw::{
+        RawDerpDialOptionsIR, RawDerpDomainResolverIR, RawDerpMeshPeerIR,
+        RawDerpOutboundTlsOptionsIR, RawDerpStunOptionsIR, RawDerpVerifyClientUrlIR,
+        RawInboundTlsOptionsIR,
+    },
+    Listable, StringOrObj,
 };
+
+/// Inbound TLS options (Go parity: `option.InboundTLSOptions`).
+/// 入站 TLS 选项（对齐 Go `option.InboundTLSOptions`）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct InboundTlsOptionsIR {
+    /// Enable TLS (Go: `enabled`).
+    /// 启用 TLS（Go: `enabled`）。
+    #[serde(default)]
+    pub enabled: bool,
+    /// Server name (SNI) used for verification (client-side).
+    /// 用于校验的服务器名 (SNI)（客户端）。
+    #[serde(default)]
+    pub server_name: Option<String>,
+    /// Accept any certificate (client-side).
+    /// 接受任意证书（客户端）。
+    #[serde(default)]
+    pub insecure: Option<bool>,
+    /// ALPN protocol list.
+    /// ALPN 协议列表。
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    /// Minimum TLS version (e.g. "1.2").
+    /// 最小 TLS 版本（例如 "1.2"）。
+    #[serde(default)]
+    pub min_version: Option<String>,
+    /// Maximum TLS version (e.g. "1.3").
+    /// 最大 TLS 版本（例如 "1.3"）。
+    #[serde(default)]
+    pub max_version: Option<String>,
+    /// TLS 1.0–1.2 cipher suites list.
+    /// TLS 1.0–1.2 密码套件列表。
+    #[serde(default)]
+    pub cipher_suites: Option<Vec<String>>,
+    /// Inline server certificate line array (PEM).
+    /// 内联服务端证书行数组（PEM）。
+    #[serde(default)]
+    pub certificate: Option<Vec<String>>,
+    /// Server certificate path (PEM).
+    /// 服务端证书路径（PEM）。
+    #[serde(default)]
+    pub certificate_path: Option<String>,
+    /// Inline server private key line array (PEM).
+    /// 内联服务端私钥行数组（PEM）。
+    #[serde(default)]
+    pub key: Option<Vec<String>>,
+    /// Server private key path (PEM).
+    /// 服务端私钥路径（PEM）。
+    #[serde(default)]
+    pub key_path: Option<String>,
+    // ACME/ECH/Reality fields are intentionally omitted for now; they will be
+    // added when the corresponding runtime integrations land.
+}
+
+impl<'de> Deserialize<'de> for InboundTlsOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawInboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP STUN listen options (Go parity: `option.DERPSTUNListenOptions`).
+/// DERP STUN 监听选项（对齐 Go `option.DERPSTUNListenOptions`）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpStunOptionsIR {
+    /// Enable STUN server.
+    /// 启用 STUN 服务。
+    #[serde(default)]
+    pub enabled: bool,
+    /// Listen address.
+    /// 监听地址。
+    #[serde(default)]
+    pub listen: Option<String>,
+    /// Listen port.
+    /// 监听端口。
+    #[serde(default)]
+    pub listen_port: Option<u16>,
+    /// Bind interface (Linux).
+    /// 绑定网卡（Linux）。
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    /// Routing mark (Linux).
+    /// 路由标记（Linux）。
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    /// Reuse address.
+    /// 复用地址。
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    /// Network namespace name/path (Linux).
+    /// 网络命名空间名称/路径（Linux）。
+    #[serde(default)]
+    pub netns: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for DerpStunOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpStunOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP Dial domain_resolver options (subset; Go parity: Dial Fields `domain_resolver`).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpDomainResolverIR {
+    /// DNS server tag.
+    #[serde(default)]
+    pub server: Option<String>,
+    /// Strategy hint (parsed but not necessarily honored in runtime).
+    #[serde(default)]
+    pub strategy: Option<String>,
+    /// Forward-compatible extra fields.
+    #[serde(default, flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl From<String> for DerpDomainResolverIR {
+    fn from(s: String) -> Self {
+        Self {
+            server: Some(s),
+            ..Default::default()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DerpDomainResolverIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpDomainResolverIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP Dial Fields (Go parity: shared/dial.md) used by verify_client_url and mesh_with.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpDialOptionsIR {
+    #[serde(default)]
+    pub detour: Option<String>,
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub netns: Option<String>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    #[serde(default)]
+    pub domain_resolver: Option<StringOrObj<DerpDomainResolverIR>>,
+    /// Forward-compatible extra fields (network_strategy, etc.).
+    #[serde(default, flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl<'de> Deserialize<'de> for DerpDialOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpDialOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP verify_client_url options (Go parity: option.DERPVerifyClientURLOptions).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpVerifyClientUrlIR {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default, flatten)]
+    pub dial: DerpDialOptionsIR,
+}
+
+impl From<String> for DerpVerifyClientUrlIR {
+    fn from(s: String) -> Self {
+        Self {
+            url: s,
+            ..Default::default()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DerpVerifyClientUrlIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpVerifyClientUrlIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP mesh peer outbound TLS options (minimal subset).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpOutboundTlsOptionsIR {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub insecure: Option<bool>,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub ca_paths: Vec<String>,
+    #[serde(default)]
+    pub ca_pem: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for DerpOutboundTlsOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpOutboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// DERP mesh peer options (Go parity: option.DERPMeshOptions).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct DerpMeshPeerIR {
+    /// DERP server address (host or ip).
+    #[serde(default)]
+    pub server: String,
+    /// DERP server port.
+    #[serde(default)]
+    pub server_port: Option<u16>,
+    /// Optional hostname override for SNI/Host.
+    #[serde(default)]
+    pub host: Option<String>,
+    /// Optional per-peer TLS options.
+    #[serde(default)]
+    pub tls: Option<DerpOutboundTlsOptionsIR>,
+    /// Dial Fields.
+    #[serde(default, flatten)]
+    pub dial: DerpDialOptionsIR,
+}
+
+impl From<String> for DerpMeshPeerIR {
+    fn from(s: String) -> Self {
+        // Parse `host:port` shorthand when possible; keep raw as server otherwise.
+        let mut out = Self {
+            server: s.clone(),
+            ..Default::default()
+        };
+        let raw = s.trim();
+        if raw.is_empty() {
+            return out;
+        }
+        // Support `[v6]:port` and `host:port`.
+        if let Some(rest) = raw.strip_prefix('[') {
+            if let Some(end) = rest.find(']') {
+                let host = &rest[..end];
+                let tail = &rest[end + 1..];
+                if let Some(port_str) = tail.strip_prefix(':') {
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        out.server = host.to_string();
+                        out.server_port = Some(port);
+                    }
+                }
+                return out;
+            }
+        }
+        if let Some((host, port_str)) = raw.rsplit_once(':') {
+            if let Ok(port) = port_str.parse::<u16>() {
+                if !host.is_empty() {
+                    out.server = host.to_string();
+                    out.server_port = Some(port);
+                }
+            }
+        }
+        out
+    }
+}
+
+impl<'de> Deserialize<'de> for DerpMeshPeerIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawDerpMeshPeerIR::deserialize(deserializer).map(Into::into)
+    }
+}
 
 /// Service type enumeration (Resolved, DERP, SSM, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -327,5 +627,68 @@ mod tests {
             Some("::")
         );
         assert_eq!(ir.stun.as_ref().and_then(|s| s.listen_port), Some(3478));
+    }
+
+    #[test]
+    fn derp_mesh_peer_from_string_parses_shorthand() {
+        let peer = DerpMeshPeerIR::from("peer.example.com:443".to_string());
+        assert_eq!(peer.server, "peer.example.com");
+        assert_eq!(peer.server_port, Some(443));
+
+        let ipv6 = DerpMeshPeerIR::from("[2001:db8::1]:8443".to_string());
+        assert_eq!(ipv6.server, "2001:db8::1");
+        assert_eq!(ipv6.server_port, Some(8443));
+    }
+
+    #[test]
+    fn derp_verify_client_url_from_string_parses_shorthand() {
+        let verify = DerpVerifyClientUrlIR::from("https://example.com/verify".to_string());
+        assert_eq!(verify.url, "https://example.com/verify");
+        assert_eq!(verify.dial, DerpDialOptionsIR::default());
+    }
+
+    #[test]
+    fn wp30ag_pin_service_derp_owner_is_service_rs() {
+        let source = include_str!("service.rs");
+        for needle in [
+            "pub struct InboundTlsOptionsIR",
+            "pub struct DerpStunOptionsIR",
+            "pub struct DerpDomainResolverIR",
+            "pub struct DerpDialOptionsIR",
+            "pub struct DerpVerifyClientUrlIR",
+            "pub struct DerpOutboundTlsOptionsIR",
+            "pub struct DerpMeshPeerIR",
+        ] {
+            assert!(
+                source.contains(needle),
+                "expected `{needle}` to live in ir/service.rs"
+            );
+        }
+    }
+
+    #[test]
+    fn wp30ag_pin_mod_rs_only_reexports_service_derp_types() {
+        let source = include_str!("mod.rs");
+        assert!(
+            source.contains("pub use service::{")
+                && source.contains("DerpDialOptionsIR")
+                && source.contains("DerpMeshPeerIR")
+                && source.contains("InboundTlsOptionsIR"),
+            "expected ir/mod.rs to re-export service/DERP types"
+        );
+        for needle in [
+            "pub struct InboundTlsOptionsIR",
+            "pub struct DerpStunOptionsIR",
+            "pub struct DerpDomainResolverIR",
+            "pub struct DerpDialOptionsIR",
+            "pub struct DerpVerifyClientUrlIR",
+            "pub struct DerpOutboundTlsOptionsIR",
+            "pub struct DerpMeshPeerIR",
+        ] {
+            assert!(
+                !source.contains(needle),
+                "expected ir/mod.rs to stop owning `{needle}`"
+            );
+        }
     }
 }

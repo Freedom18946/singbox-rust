@@ -13,6 +13,18 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30ag：ir/service.rs service/DERP owner 收口 — 已完成
+
+- `crates/sb-config/src/ir/service.rs` 现在收纳 `InboundTlsOptionsIR`、`DerpStunOptionsIR`、`DerpDomainResolverIR`、`DerpDialOptionsIR`、`DerpVerifyClientUrlIR`、`DerpOutboundTlsOptionsIR`、`DerpMeshPeerIR` 的实际 owner
+- `crates/sb-config/src/ir/mod.rs` 删除上述实现，改为 `pub use service::{...}` 薄壳兼容面；public type path 继续保持 `crate::ir::*`
+- `ir/mod.rs` 从 703 → 406 行（-297）；`ir/service.rs` 从 331 → 694 行（+363，含 owner pins / shorthand tests）
+- `Listable<T>` / `StringOrObj<T>` / `Credentials` 仍留在 `ir/mod.rs` 作为跨域共享类型；**这张卡不是 generic shared.rs 卡**
+- `validator/v2` service pass/facade 语义不变；`planned.rs` / `PlannedFacts` 不变；不引入 `RuntimePlan` / query API
+- 新增 4 个 service 定点测试（2 shorthand + 2 pins），连同既有 service 行为测试共 10 个通过
+- 补跑 raw bridge 定点测试：`inbound_tls_options_rejects_unknown_via_raw_bridge`、`raw_derp_verify_client_url_inlines_dial_fields`、`raw_derp_mesh_peer_from_string_host_port`
+- 全量自验证：`cargo test -p sb-config --lib` ✅ 641 passed；`cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅ pass
+- **这是 ir/service.rs owner 收口卡，不是 RuntimePlan 卡**
+
 ### WP-30af：validator/v2 facade owner 迁移 — 已完成
 
 - 新增 `crates/sb-config/src/validator/v2/facade.rs`，现在收纳 `validate_v2()` / `to_ir_v1()` / `pack_output()` 的实际 owner
@@ -61,6 +73,7 @@
 
 - **WP-30 Phase 3 后续**：
   - validator/v2 facade seam 已收口；`mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
+  - `ir/service.rs` owner 已收口；`ir/mod.rs` 现 406 行，主剩余是跨域共享 wrapper + experimental / compat 暴露，而不是 service/DERP owner
   - 若继续细拆，应明确是 helper seam / compat seam 卡，而不是再把 facade 迁移误写成 RuntimePlan 卡
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
