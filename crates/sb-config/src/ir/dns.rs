@@ -1,24 +1,23 @@
 //! DNS validated IR types and Raw bridges.
 //!
-//! ## Current status (WP-30d)
+//! ## Current status (WP-30ar)
 //!
-//! The DNS subtree now has a nested Raw boundary:
-//! [`super::raw::RawDnsServerIR`], [`super::raw::RawDnsRuleIR`],
-//! [`super::raw::RawDnsHostIR`], and [`super::raw::RawDnsIR`] all carry
-//! `#[serde(deny_unknown_fields)]`.
+//! The DNS subtree now has an explicit split:
+//! - [`super::dns_raw`] owns `RawDns*` and the Raw -> Validated bridge
+//! - this file owns `Dns*` validated types and `Deserialize` delegation
 //!
 //! `DnsServerIR`, `DnsRuleIR`, `DnsHostIR`, and `DnsIR` keep their existing
 //! public fields and `Serialize` behavior, but no longer derive
 //! `Deserialize` directly. Deserialization now flows through the Raw bridge,
 //! so unknown DNS nested fields are strictly rejected.
 //!
-//! `RouteIR`, `InboundIR`, `OutboundIR`, `EndpointIR`, and `ServiceIR` still
-//! have not entered nested Raw. `planned.rs` and `normalize.rs` also remain
-//! Phase-3 skeletons.
+//! `planned.rs` still owns only DNS namespace/reference facts; it does not
+//! become a runtime DNS plan/binding layer. `normalize.rs` and `minimize.rs`
+//! also remain outside DNS planning ownership.
 
 use serde::{Deserialize, Serialize};
 
-use super::raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};
+use super::dns_raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};
 
 /// DNS server entry (IR)
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
@@ -319,6 +318,7 @@ impl<'de> Deserialize<'de> for DnsHostIR {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
 
     // ── DnsServerIR ──────────────────────────────────────────────────
 
@@ -718,5 +718,18 @@ mod tests {
             result.is_err(),
             "DnsHostIR should reject unknown fields via Raw bridge"
         );
+    }
+
+    #[test]
+    fn wp30ar_pin_validated_dns_uses_dns_raw_bridge() {
+        let source = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ir/dns.rs"))
+            .expect("dns.rs source should be readable");
+        assert!(source.contains(
+            "use super::dns_raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};"
+        ));
+        assert!(source.contains("RawDnsServerIR::deserialize(deserializer).map(Into::into)"));
+        assert!(source.contains("RawDnsRuleIR::deserialize(deserializer).map(Into::into)"));
+        assert!(source.contains("RawDnsIR::deserialize(deserializer).map(Into::into)"));
+        assert!(source.contains("RawDnsHostIR::deserialize(deserializer).map(Into::into)"));
     }
 }

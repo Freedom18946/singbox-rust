@@ -119,7 +119,7 @@ pub(crate) fn normalize_config(cfg: &mut ConfigIR) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::RuleIR;
+    use crate::ir::{DnsIR, DnsServerIR, RuleIR};
 
     #[test]
     fn domain_norm_and_ports() {
@@ -146,6 +146,17 @@ mod tests {
         // selector members, DNS refs).
         let mut cfg = ConfigIR::default();
         cfg.route.default = Some("Selector-A".to_string());
+        cfg.dns = Some(DnsIR {
+            servers: vec![DnsServerIR {
+                tag: "dns-a".to_string(),
+                address: "udp://1.1.1.1".to_string(),
+                detour: Some("Selector-A".to_string()),
+                ..Default::default()
+            }],
+            default: Some("dns-a".to_string()),
+            final_server: Some("dns-a".to_string()),
+            ..Default::default()
+        });
         cfg.route.rules.push(RuleIR {
             domain: vec!["EXAMPLE.COM".into()],
             port: vec!["443".into(), "80-81".into(), "81".into()],
@@ -165,6 +176,10 @@ mod tests {
         // planned references untouched
         assert_eq!(rule.outbound.as_deref(), Some("Selector-A"));
         assert_eq!(cfg.route.default.as_deref(), Some("Selector-A"));
+        let dns = cfg.dns.as_ref().expect("dns should remain present");
+        assert_eq!(dns.default.as_deref(), Some("dns-a"));
+        assert_eq!(dns.final_server.as_deref(), Some("dns-a"));
+        assert_eq!(dns.servers[0].detour.as_deref(), Some("Selector-A"));
     }
 
     #[test]

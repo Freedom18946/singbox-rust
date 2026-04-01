@@ -1170,6 +1170,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn wp30ar_pin_planned_dns_scope_remains_reference_only() {
+        let source =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ir/planned.rs"))
+                .expect("planned.rs source should be readable");
+        assert!(source.contains("DnsServerIR.detour"));
+        assert!(source.contains("DnsServerIR.address_resolver"));
+        assert!(source.contains("DnsServerIR.service"));
+        assert!(source.contains("DnsRuleIR.server"));
+        assert!(source.contains("DnsIR.default"));
+        assert!(source.contains("DnsIR.final_server"));
+        assert!(source.contains("No runtime-facing DNS env bridge"));
+        assert!(
+            source.contains("not** a public `RuntimePlan`")
+                || source.contains("not a public `RuntimePlan`"),
+            "planned.rs should keep documenting that this seam is not a public RuntimePlan"
+        );
+    }
+
     /// Pin (WP-30p): inbound tag uniqueness IS now owned by the planned fact
     /// graph. `PlannedFacts::collect()` checks inbound uniqueness during the
     /// scan phase, rejecting duplicate inbound tags with the same error message

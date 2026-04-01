@@ -10,6 +10,7 @@
 mod credentials;
 pub mod diff;
 mod dns;
+pub(crate) mod dns_raw;
 mod endpoint;
 mod inbound;
 pub(crate) mod minimize;

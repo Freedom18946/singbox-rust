@@ -204,7 +204,7 @@ pub(crate) fn minimize_config(cfg: &mut ConfigIR) -> MinimizeAction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::RuleIR;
+    use crate::ir::{DnsIR, DnsRuleIR, DnsServerIR, RuleIR};
 
     #[test]
     fn skip_when_neg() {
@@ -267,10 +267,7 @@ mod tests {
         let _act = minimize_config(&mut cfg);
         // planned references untouched
         assert_eq!(cfg.route.default.as_deref(), Some("my-proxy"));
-        assert_eq!(
-            cfg.route.rules[0].outbound.as_deref(),
-            Some("my-proxy")
-        );
+        assert_eq!(cfg.route.rules[0].outbound.as_deref(), Some("my-proxy"));
     }
 
     #[test]
@@ -287,14 +284,46 @@ mod tests {
         let act = minimize_config(&mut cfg);
         assert!(matches!(act, MinimizeAction::SkippedByNegation));
         // normalization applied: sorted + deduped by normalize
-        assert_eq!(
-            cfg.route.rules[0].domain,
-            vec!["a.com", "b.com"]
-        );
+        assert_eq!(cfg.route.rules[0].domain, vec!["a.com", "b.com"]);
         // but CIDRs are only sorted (normalize), not folded (minimize skipped)
+        assert_eq!(cfg.route.rules[0].ipcidr, vec!["10.0.0.0/8", "10.0.1.0/24"]);
+    }
+
+    #[test]
+    fn wp30ar_pin_minimize_does_not_take_dns_planning_ownership() {
+        let mut cfg = ConfigIR {
+            dns: Some(DnsIR {
+                servers: vec![DnsServerIR {
+                    tag: "dns-main".to_string(),
+                    address: "udp://1.1.1.1".to_string(),
+                    detour: Some("proxy-a".to_string()),
+                    address_resolver: Some("dns-bootstrap".to_string()),
+                    service: Some("resolved".to_string()),
+                    ..Default::default()
+                }],
+                rules: vec![DnsRuleIR {
+                    server: Some("dns-main".to_string()),
+                    ..Default::default()
+                }],
+                default: Some("dns-main".to_string()),
+                final_server: Some("dns-main".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let act = minimize_config(&mut cfg);
+        assert!(matches!(act, MinimizeAction::Applied));
+
+        let dns = cfg.dns.as_ref().expect("dns should remain present");
+        assert_eq!(dns.servers[0].detour.as_deref(), Some("proxy-a"));
         assert_eq!(
-            cfg.route.rules[0].ipcidr,
-            vec!["10.0.0.0/8", "10.0.1.0/24"]
+            dns.servers[0].address_resolver.as_deref(),
+            Some("dns-bootstrap")
         );
+        assert_eq!(dns.servers[0].service.as_deref(), Some("resolved"));
+        assert_eq!(dns.rules[0].server.as_deref(), Some("dns-main"));
+        assert_eq!(dns.default.as_deref(), Some("dns-main"));
+        assert_eq!(dns.final_server.as_deref(), Some("dns-main"));
     }
 }

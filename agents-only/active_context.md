@@ -13,10 +13,10 @@
 
 ## 最近完成（2026-04-02）
 
-### WP-30aq：sb-config tail stabilization 超级卡 — 已完成
-- 新增 `crates/sb-config/src/ir/{credentials.rs,value_wrappers.rs}` 与 `crates/sb-config/src/validator/v2/helpers.rs`，把 `Credentials`、`Listable<T>`、`StringOrObj<T>`、shared parse/list helpers、`emit_issue` owner 下沉到明确子模块；`ir/mod.rs` 现收至 134 行、`validator/v2/mod.rs` 收至 49 行，均退为 thin compat/re-export facade
-- `crate::ir::*` 路径、`validator::v2::emit_issue` public 面、`pub use outbound::check_tls_capabilities;` 与 `experimental` 暴露保持稳定；这张卡是 **sb-config shared compat/helper seam** 收口，不是 `planned.rs` / RuntimePlan / query API 卡
-- 新增 16 个定点测试，覆盖 `Credentials` raw bridge + env roundtrip、`Listable<T>` / `StringOrObj<T>` 反序列化语义、validator shared helper 行为 pin，以及 `ir/mod.rs` / `validator/v2/mod.rs` 薄壳 source pins；自验证：`cargo test -p sb-config --lib` ✅ 665 passed，`cargo test -p sb-config --test outbound_raw_boundary_test` ✅ 27 passed，`cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
+### WP-30ar：sb-config DNS phase-boundary stabilization 超级卡 — 已完成
+- 新增 `crates/sb-config/src/ir/dns_raw.rs`，把 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR` 与 `From<RawDns*> for Dns*` bridge 从 5533 行 `ir/raw.rs` 巨石中抽出；`ir/raw.rs` 现仅为 `RawConfigRoot` broader boundary + DNS Raw compat/re-export 壳，`crate::ir::*` 既有路径保持稳定
+- `crates/sb-config/src/ir/dns.rs` 现明确为 validated DNS owner，并直接从 `dns_raw` 委托 `Deserialize`；`validator/v2/dns.rs` 仍只承接 DNS validation + lowering owner，`planned.rs` 仍只做 DNS namespace/reference facts，`ir/normalize.rs` / `ir/minimize.rs` 继续明确不是 DNS planning owner；这张卡是 **DNS subtree raw/validated/planned boundary stabilization**，不是 `planned.rs` / RuntimePlan / app runtime 卡
+- 新增并迁移 DNS subtree 专属测试与 source pins，覆盖 Raw unknown-field rejection、Raw->Validated bridge、validated `Deserialize` 语义、`planned.rs` 的 DNS refs-only scope，以及 `normalize` / `minimize` 对 DNS planning 非 owner 的 pin；自验证：`cargo test -p sb-config --lib dns` ✅ 104 passed，`cargo test -p sb-config --test outbound_raw_boundary_test` ✅ 27 passed，`cargo test -p sb-config --lib` ✅ 672 passed，`cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅
 
 ### WP-30ap：app crate baseline stabilization 超级卡 — 已完成
 - `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific integration suite；新增 `app/tests/wp30ap_baseline_gates.rs` source pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，`cargo test -p app --test e2e_subs_security --features admin_debug` ✅ 23 passed
@@ -55,7 +55,6 @@
 - **这是 selector/urltest second-pass runtime owner 收口卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30ak：legacy router rules text emission owner 收口 — 已完成
-
 - 新增 `app/src/router_text.rs`，现在收纳 `ir_to_router_rules_text()` 与专属 helper；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
 - `app/src/bootstrap.rs` 的 `build_router_index_from_config()` 现只保留 `to_ir` → `crate::router_text::ir_to_router_rules_text()` → `router_build_index_from_str()` 的薄委托；`unresolved` fallback、default 行、consumer 协议均保持不变
 - `bootstrap.rs` 从 1722 行降到 1685 行；这张卡只收口 legacy router adapter/runtime owner，**不是** `planned.rs` 卡，也不是 bootstrap 大拆卡
@@ -64,7 +63,6 @@
 - **这是 legacy router adapter/runtime owner 收口卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
 
 ### WP-30aj：runtime-facing DNS env bridge owner 收口 — 已完成
-
 - 新增 `app/src/dns_env.rs`，现在收纳 `apply_dns_env_from_config()` 与专属 helper；owner 已从 `app/src/run_engine.rs` 下沉到独立 runtime 模块
 - `app/src/run_engine.rs` 对 DNS env bridge 现只保留 `opts.dns_env_bridge` gating 下的一行委托；返回值、日志语义与 feature gate 保持不变
 - `run_engine.rs` 从 1500+ 行进一步降到 1188 行；`bootstrap.rs` 里的 DNS env 写入逻辑保持原样，这张卡**不是** bootstrap/run_engine 统一化卡
@@ -74,6 +72,7 @@
 
 ### Earlier（2026-04-01）
 
+- `WP-30aq`：`ir/{credentials,value_wrappers}.rs` 与 `validator/v2/helpers.rs` 已把 shared compat/helper seam 收成稳定薄壳；后续 sb-config 主战场因此转向 DNS subtree 的 raw/validated/planned 边界，并在 2026-04-02 的 `WP-30ar` 完成第一轮稳定化
 - `WP-30ai` / `WP-30ah` / `WP-30ag` / `WP-30af` / `WP-30ae`：`ir` service/inbound/multiplex owner 与 validator facade/schema core 收口已完成；这些成果在 2026-04-02 的 `WP-30aq` 中继续被薄壳化为稳定 compat facade
 - `WP-30ad` ~ `WP-30k`：credentials/top-level/security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列均已完成；`normalize` / `minimize` owner 已迁入 `ir/normalize.rs` / `ir/minimize.rs`
 
@@ -84,11 +83,12 @@
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
 - `bootstrap.rs` 现 255 行，保留 `build_outbound_registry_from_ir()` / `build_router_index_from_config()` / `start_from_config()` 高层 facade；剩余 helper/starter owner 已迁到 `app/src/bootstrap_runtime/*`，但该 bootstrap 路径本身仍是 legacy runtime 壳
 - `run_engine.rs` 现 129 行 public facade；剩余 runtime orchestration owner 已迁入 `app/src/run_engine_runtime/*`，但更大的 runtime seam 仍未 actor 化 / RuntimeContext 化
+- `sb-config` DNS subtree 已完成 Raw owner 稳定化，但 `PlannedFacts` 仍未升级为 public `RuntimePlan`，crate 内也仍无稳定 namespace/query API
 
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - `WP-30aq` 已把 `ir/mod.rs` / `validator/v2/mod.rs` 收成稳定薄层；若继续推进，应聚焦 dns IR / raw-validated-planned 边界，而不是回退成重拆 facade
+  - `WP-30aq` + `WP-30ar` 已把 `ir/mod.rs` / `validator/v2/mod.rs` facade 与 DNS Raw owner 稳定化；若继续推进，应聚焦更宽的 validated/planned consumer seam，而不是回退成重拆 facade 或误推 RuntimePlan
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

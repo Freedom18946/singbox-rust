@@ -28,11 +28,11 @@
 
 ### 维护卡（2026-04-02）
 
-- **WP-30aq**: sb-config tail stabilization 超级卡 — 已完成
-  - 新增 `ir/{credentials.rs,value_wrappers.rs}` 与 `validator/v2/helpers.rs`，把 `Credentials`、`Listable<T>`、`StringOrObj<T>`、shared parse/list helpers、`emit_issue` owner 下沉到明确子模块；`ir/mod.rs` 收至 134 行、`validator/v2/mod.rs` 收至 49 行，均退为 thin compat/re-export facade
-  - `crate::ir::*`、`validator::v2::emit_issue`、`pub use outbound::check_tls_capabilities;` 与 `experimental` 暴露路径保持稳定；这张卡只收口 sb-config shared compat/helper seam，不改 `planned.rs` / RuntimePlan / query API
-  - 新增 16 个定点测试，覆盖 credentials raw bridge/env roundtrip、wrapper 反序列化语义、validator shared helper 行为 pin，以及 `ir/mod.rs` / `validator/v2/mod.rs` 薄壳 source pins
-  - 自验证：`cargo test -p sb-config --lib` + `cargo test -p sb-config --test outbound_raw_boundary_test` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
+- **WP-30ar**: sb-config DNS phase-boundary stabilization 超级卡 — 已完成
+  - 新增 `ir/dns_raw.rs`，把 `RawDnsServerIR` / `RawDnsRuleIR` / `RawDnsHostIR` / `RawDnsIR` 与 `From<RawDns*> for Dns*` bridge 从 `ir/raw.rs` 巨石抽出；`ir/raw.rs` 现仅保留 `RawConfigRoot` broader boundary + DNS Raw compat/re-export，`crate::ir::*` 既有路径保持稳定
+  - `ir/dns.rs` 现明确为 validated DNS owner，并直接从 `dns_raw` 委托 `Deserialize`；`validator/v2/dns.rs` 继续只承接 DNS validation + lowering owner，`planned.rs` 继续只持有 DNS namespace/reference facts，`ir/normalize.rs` / `ir/minimize.rs` 继续不是 DNS planning owner
+  - 新增并迁移 DNS subtree 专属测试与 source pins，覆盖 Raw unknown-field rejection、Raw->Validated bridge、validated `Deserialize` 语义，以及 planned/normalize/minimize 的 DNS 边界 pin
+  - 自验证：`cargo test -p sb-config --lib dns` + `cargo test -p sb-config --test outbound_raw_boundary_test` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` 全部通过
 - **WP-30ap**: app crate baseline stabilization 超级卡 — 已完成
   - 这张卡只收口 `app` crate baseline / feature-gate / module wiring / test target seam：不是 `planned.rs` / RuntimePlan 卡，也不改 sb-config 语义
   - `app/tests/e2e_subs_security.rs` 现以 `#![cfg(feature = "admin_debug")]` gate 整个 feature-specific suite；新增 `app/tests/wp30ap_baseline_gates.rs` pins，默认 `cargo test -p app` 不再被 `admin_debug` feature mismatch 卡住，同时 `cargo test -p app --test e2e_subs_security --features admin_debug` 继续覆盖 23 个安全/observability/auth 用例

@@ -4,11 +4,16 @@
 
 - 这份 inventory 只记录 **仓库当前事实**，用于约束 `planned.rs` 的第一刀切口。
 - 本卡目标是把 `planned.rs` 从泛 skeleton 升级成“前置契约 + 迁移地图”，不是实现 `RuntimePlan`。
+- 2026-04-02 `WP-30ar` 已完成 DNS subtree phase-boundary stabilization：`crates/sb-config/src/ir/dns_raw.rs` 现为 `RawDns*` + Raw->Validated bridge owner，`ir/raw.rs` 对 DNS 只保留 compat/re-export，`ir/dns.rs` 为 validated DNS owner；**这不扩张 `planned.rs` 责任面**。
 - 本文聚焦：
   - `crates/sb-config/src/ir/planned.rs`
+  - `crates/sb-config/src/ir/dns_raw.rs`
+  - `crates/sb-config/src/ir/dns.rs`
   - `crates/sb-config/src/lib.rs`
   - `crates/sb-config/src/ir/validated.rs`
   - `crates/sb-config/src/validator/v2/mod.rs`
+  - `crates/sb-config/src/ir/normalize.rs`
+  - `crates/sb-config/src/ir/minimize.rs`
   - `crates/sb-config/src/normalize.rs`
   - `crates/sb-config/src/minimize.rs`
   - `crates/sb-config/src/present.rs`
@@ -53,6 +58,9 @@
 3. planned.rs 未来应消费 validated IR，而不是替代 `validator/v2` 的 parse-time alias/default 逻辑。
 
 ## Not Yet Safe To Move
+
+- `dns_raw.rs` / `dns.rs` 的 Raw/Validated owner 已在 `WP-30ar` 稳定化，但这不意味着 `planned.rs` 可以接管 DNS runtime semantics。
+  - 当前安全边界仍是：`dns_raw.rs` = strict Raw + bridge，`dns.rs` = validated owner，`planned.rs` = namespace/reference facts only。
 
 - `validator/v2::to_ir_v1()` 的 parse-time defaults / alias fill / ENV resolution 还不安全。
   - 代表点：`crates/sb-config/src/validator/v2/mod.rs:1669-1714`, `crates/sb-config/src/validator/v2/mod.rs:2283-2295`, `crates/sb-config/src/validator/v2/mod.rs:529-542`.

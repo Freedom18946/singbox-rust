@@ -22,7 +22,8 @@
 //! `#[serde(deny_unknown_fields)]` (WP-30c). `Serialize` remains derived.
 //!
 //! `DnsIR`, `DnsServerIR`, `DnsRuleIR`, and `DnsHostIR` deserialize through
-//! their corresponding Raw types so unknown DNS fields are rejected (WP-30d).
+//! their corresponding Raw types in `dns_raw.rs`, so unknown DNS fields are
+//! rejected (WP-30d / WP-30ar).
 //!
 //! `RuleIR`, `DomainResolveOptionsIR`, `RuleSetIR`, and `RouteIR` deserialize
 //! through their corresponding Raw types so unknown route fields are rejected
@@ -69,7 +70,7 @@
 //! ## Phase-3 roadmap (WP-30)
 //!
 //! ```text
-//! raw.rs          →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h), RawOutbound* (WP-30i), RawMasquerade* (WP-30j)
+//! raw.rs / dns_raw.rs →  RawConfigRoot (WP-30b), RawLog/Ntp/Certificate (WP-30c), RawDns* (WP-30d / WP-30ar), RawRoute* (WP-30e), RawEndpoint* (WP-30f), RawService* (WP-30g), RawInbound* (WP-30h), RawOutbound* (WP-30i), RawMasquerade* (WP-30j)
 //! validated.rs    →  (this module) strongly-typed Validated IR
 //! planned.rs      →  RuntimePlan: defaults resolved, tags unique, refs bound (skeleton)
 //! normalize.rs    →  IR normalization entry point (skeleton)
