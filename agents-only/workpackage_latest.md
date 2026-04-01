@@ -28,20 +28,21 @@
 
 ### 维护卡（2026-04-01）
 
-- **WP-30ad**: credential normalization owner 迁移 — 已完成
-  - `validator/v2/credentials.rs` 现在是 credential ENV normalization 的实际 owner
-  - `to_ir_v1()` 对 credential normalization 只做一行委托 `credentials::normalize_credentials(&mut ir)`
-  - mod.rs 从 819 → 793 行（-26）
-  - 这是 validator/v2 credential normalization owner 迁移卡，不是 RuntimePlan 卡
-  - 10 个测试（8 功能 + 2 pins）
+- **WP-30ae**: root schema core owner 迁移 — 已完成
+  - `validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner
+  - `validate_v2()` 对 root schema validation 只做一行委托 `schema_core::validate_root_schema()`
+  - mod.rs 从 793 → 742 行（-51）
+  - 这是 validator/v2 root schema core owner 迁移卡，不是 RuntimePlan 卡
+  - 9 个测试（7 功能 + 2 pins）
+- **WP-30ad**: credential normalization owner 迁移 — 已完成（earlier）
 - **WP-30ac**: top-level lowering owner 迁移 — 已完成（earlier）
 - **WP-30ab**: security warning owner 迁移 — 已完成（earlier）
 - **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
 - **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
-### 构建基线（2026-04-01，WP-30ad 后）
+### 构建基线（2026-04-01，WP-30ae 后）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-config --lib` | ✅ 623 passed |
+| `cargo test -p sb-config --lib` | ✅ 632 passed |

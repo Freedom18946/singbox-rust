@@ -5,6 +5,7 @@ mod endpoint;
 mod inbound;
 mod outbound;
 mod route;
+mod schema_core;
 mod security;
 mod service;
 mod top_level;
@@ -242,66 +243,14 @@ pub fn emit_issue(kind: &str, code: IssueCode, ptr: &str, msg: &str, hint: &str)
 /// * `doc` - The JSON document to validate / 待验证的 JSON 文档
 /// * `allow_unknown` - Whether to treat unknown fields as warnings (true) instead of errors (false) / 是否将未知字段视为警告（true）而非错误（false）
 pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
-    let schema_text = include_str!("../v2_schema.json");
-    let schema: Value = match serde_json::from_str(schema_text) {
-        Ok(v) => v,
-        Err(_) => {
-            return vec![emit_issue(
-                "error",
-                IssueCode::Conflict,
-                "/",
-                "schema load failed",
-                "internal",
-            )];
-        }
-    };
     let mut issues = Vec::<Value>::new();
-    // 0) schema_version check (must be 2)
-    match doc.get("schema_version") {
-        Some(v) => {
-            if v.as_u64() != Some(2) {
-                issues.push(emit_issue(
-                    "error",
-                    IssueCode::TypeMismatch,
-                    "/schema_version",
-                    "schema_version must be 2",
-                    "set to 2",
-                ));
-            }
-        }
-        None => {
-            // Optional: we accept missing but could warn to migrate
-            issues.push(emit_issue(
-                "warning",
-                IssueCode::MissingRequired,
-                "/schema_version",
-                "missing schema_version (assuming v2)",
-                "add: 2",
-            ));
-        }
+
+    // Root schema validation (schema load + schema_version + root unknown fields)
+    // delegated to schema_core submodule (WP-30ae)
+    if !schema_core::validate_root_schema(doc, allow_unknown, &mut issues) {
+        return issues;
     }
-    // 1) 根 additionalProperties=false
-    if let (Some(obj), Some(props)) = (
-        doc.as_object(),
-        schema.get("properties").and_then(|p| p.as_object()),
-    ) {
-        for k in obj.keys() {
-            // Allow $schema (Go optional field for JSON Schema tooling)
-            if k == "$schema" {
-                continue;
-            }
-            if !props.contains_key(k) {
-                let kind = if allow_unknown { "warning" } else { "error" };
-                issues.push(emit_issue(
-                    kind,
-                    IssueCode::UnknownField,
-                    &format!("/{}", k),
-                    "unknown field",
-                    "remove it",
-                ));
-            }
-        }
-    }
+
     // 2) inbounds type and structure validation (delegated to inbound submodule)
     inbound::validate_inbounds(doc, allow_unknown, &mut issues);
 
