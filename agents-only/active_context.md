@@ -13,26 +13,23 @@
 
 ## 最近完成（2026-04-01）
 
-### WP-30aa：deprecation detection owner 迁移 — 已完成
+### WP-30ab：security warning owner 迁移 — 已完成
 
-- `crates/sb-config/src/validator/v2/deprecation.rs` 现在是 deprecation detection 的实际 owner
-  - `check_deprecations()`、`resolve_deprecation_pattern()`、`resolve_pattern_recursive()` 已迁入
+- `crates/sb-config/src/validator/v2/security.rs` 现在是 non-localhost binding security warning 的实际 owner
+  - `check_non_localhost_binding_warnings()` + `is_localhost_addr()` 已迁入
   - 通过 `super::emit_issue` 引用共享 helper
-  - 依赖 `crate::deprecation::{deprecation_directory, DeprecationSeverity}` 数据源
-- `validator/v2/mod.rs` 中 `validate_v2()` 对 deprecation 只做一行委托：`deprecation::check_deprecations(doc)`
-- mod.rs 从 1607 → 1204 行（-403），deprecation.rs 427 行
-- **这是 validator/v2 deprecation detection owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 inbound/outbound/endpoint/service/dns/route validation/lowering owner
+  - 覆盖：`experimental.clash_api.external_controller` 无 secret 绑定检测 + `services[*].listen` 无 auth_token 绑定检测
+- `validator/v2/mod.rs` 中 `validate_v2()` 对 security warning 只做一行委托：`security::check_non_localhost_binding_warnings(doc)`
+- mod.rs 从 1204 → 975 行（-229），security.rs 262 行
+- **这是 validator/v2 security warning owner 迁移卡，不是 RuntimePlan 卡**
+- 不改 deprecation / TLS capability / parse-time lowering / domain validation/lowering owner
 - 不改 planning / RuntimePlan / query API
-- 不改 deprecation directory 数据源、issue 文案、匹配语义
-- 迁移 8 个 deprecation 测试 + 2 个 pins：
-  - `wp30aa_pin_deprecation_owner_is_deprecation_rs` — deprecation detection owner 在 deprecation.rs
-  - `wp30aa_pin_validate_v2_delegates_deprecation` — validate_v2() 对 deprecation 只做委托
+- 迁移 5 个 security warning 测试 + 1 个 integration 测试 + 2 个 pins：
+  - `wp30ab_pin_security_warning_owner_is_security_rs` — security warning owner 在 security.rs
+  - `wp30ab_pin_validate_v2_delegates_security_warnings` — validate_v2() 对 security warning 只做委托
 
-### WP-30z：outbound lowering owner 迁移 — 已完成（earlier）
-### WP-30y：route lowering owner 迁移 — 已完成（earlier）
-### WP-30x：DNS lowering owner 迁移 — 已完成（earlier）
-### WP-30w ~ WP-30k：service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
+### WP-30aa：deprecation detection owner 迁移 — 已完成（earlier）
+### WP-30z ~ WP-30k：outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
 ## 剩余 Maintenance 债务（非阻塞）
 
@@ -43,7 +40,8 @@
 ## 后续战场（未启动）
 
 - **WP-30 Phase 3 后续**：
-  - validator/v2 mod.rs 进一步瘦身（1204 行，deprecation + inbound + outbound + endpoint + service + dns + route 已拆出）
+  - validator/v2 mod.rs 进一步瘦身（975 行，deprecation + security + inbound + outbound + endpoint + service + dns + route 已拆出）
+  - 剩余 mod.rs 内容：TLS capability matrix pass、schema validation core、`to_ir_v1()` 入口 + 通用 helper、experimental/ntp/certificate lowering
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡

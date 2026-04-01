@@ -28,19 +28,15 @@
 
 ### 维护卡（2026-04-01）
 
-- **WP-30aa**: deprecation detection owner 迁移 — 已完成
-  - `validator/v2/deprecation.rs` 现在是 deprecation detection 的实际 owner
-  - `validate_v2()` 对 deprecation 只做一行委托 `deprecation::check_deprecations(doc)`
-  - `check_deprecations()` + `resolve_deprecation_pattern()` + `resolve_pattern_recursive()` 已迁入
-  - mod.rs 从 1607 → 1204 行（-403）
-  - 这是 validator/v2 deprecation detection owner 迁移卡，不是 RuntimePlan 卡
-  - 10 个 deprecation 子模块测试（8 域测试 + 2 pins），含 pins `wp30aa_pin_deprecation_owner_is_deprecation_rs` + `wp30aa_pin_validate_v2_delegates_deprecation`
-- **WP-30z**: outbound lowering owner 迁移 — 已完成（earlier）
-- **WP-30y**: route lowering owner 迁移 — 已完成（earlier）
-- **WP-30x**: DNS lowering owner 迁移 — 已完成（earlier）
-- **WP-30w**: service lowering owner 迁移 — 已完成（earlier）
-- **WP-30v**: endpoint lowering owner 迁移 — 已完成（earlier）
-- **WP-30u ~ WP-30q**: inbound/planned seam 系列 — 已完成（earlier）
+- **WP-30ab**: security warning owner 迁移 — 已完成
+  - `validator/v2/security.rs` 现在是 non-localhost binding security warning 的实际 owner
+  - `validate_v2()` 对 security warning 只做一行委托 `security::check_non_localhost_binding_warnings(doc)`
+  - `check_non_localhost_binding_warnings()` + `is_localhost_addr()` 已迁入
+  - mod.rs 从 1204 → 975 行（-229）
+  - 这是 validator/v2 security warning owner 迁移卡，不是 RuntimePlan 卡
+  - 7 个 security 子模块测试（5 域测试 + 2 pins），含 pins `wp30ab_pin_security_warning_owner_is_security_rs` + `wp30ab_pin_validate_v2_delegates_security_warnings`
+- **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
+- **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
 ### 构建基线（2026-03-17，L25 后）
 
