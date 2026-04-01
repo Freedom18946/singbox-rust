@@ -7,50 +7,12 @@ use std::sync::Arc;
 
 use tokio::time::Duration;
 
-// TEMPORARY: Simplified placeholder router functionality
-// This is a minimal stub to allow compilation for subs security tests
-use sb_core::adapter::OutboundConnector as AdapterConnector;
 #[cfg(feature = "router")]
 use sb_core::router::router_build_index_from_str;
 #[cfg(feature = "router")]
 use sb_core::router::RouterHandle;
-#[cfg(feature = "router")]
-use std::collections::HashMap;
-#[cfg(feature = "router")]
-use sb_core::outbound::selector_group::{ProxyMember as GroupMember, SelectorGroup, UrlTestOptions};
 use sb_core::outbound::{endpoint::ProxyEndpoint, health as ob_health, registry as ob_registry};
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
-
-const DEFAULT_URLTEST_URL: &str = "https://www.gstatic.com/generate_204";
-const DEFAULT_URLTEST_INTERVAL_MS: u64 = 180_000;
-const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 15_000;
-const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
-
-#[cfg(feature = "router")]
-#[derive(Clone, Copy, Debug, Default)]
-struct BootstrapDirectAdapterConnector {
-    inner: sb_adapters::outbound::direct::DirectOutbound,
-}
-
-#[cfg(feature = "router")]
-impl BootstrapDirectAdapterConnector {
-    fn new() -> Self {
-        Self {
-            inner: sb_adapters::outbound::direct::DirectOutbound::new(),
-        }
-    }
-}
-
-#[cfg(feature = "router")]
-#[async_trait::async_trait]
-impl AdapterConnector for BootstrapDirectAdapterConnector {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        use sb_core::pipeline::Outbound as _;
-        self.inner
-            .connect(sb_core::net::Address::Domain(host.to_string(), port))
-            .await
-    }
-}
 
 fn parse_alpn_tokens(src: &str) -> Vec<String> {
     src.split(',')
@@ -172,6 +134,23 @@ fn create_router_handle() -> Arc<sb_core::router::engine::RouterHandle> {
 /// 2. 实例化引用具体出站的选择器。
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> OutboundRegistry {
+    let cache_file = ir.experimental.as_ref().and_then(|exp| {
+        exp.cache_file.as_ref().map(|cache_cfg| {
+            Arc::new(sb_core::services::cache_file::CacheFileService::new(cache_cfg))
+                as Arc<dyn sb_core::context::CacheFile>
+        })
+    });
+    let urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage> =
+        Arc::new(sb_core::services::urltest_history::URLTestHistoryService::new());
+
+    build_outbound_registry_from_ir_with_runtime_services(ir, cache_file, urltest_history)
+}
+
+fn build_outbound_registry_from_ir_with_runtime_services(
+    ir: &sb_config::ir::ConfigIR,
+    cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
+    urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage>,
+) -> OutboundRegistry {
     use sb_core::outbound::{HttpProxyConfig, OutboundImpl, Socks5Config};
 
     let mut map = std::collections::HashMap::new();
@@ -479,143 +458,13 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
         }
     }
 
-    // Build selector connectors in a second pass (requires members to exist first)
     #[cfg(feature = "router")]
-    {
-        // Snapshot of existing connectors for member lookup
-        let mut existing: HashMap<String, OutboundImpl> = map.clone();
-
-        for ob in &ir.outbounds {
-            let name = match &ob.name {
-                Some(n) if !n.is_empty() => n.clone(),
-                _ => continue,
-            };
-            match ob.ty {
-                sb_config::ir::OutboundType::Selector => {
-                    let members = match &ob.members {
-                        Some(v) if !v.is_empty() => v.clone(),
-                        _ => {
-                            tracing::warn!(selector=%name, "selector has no members; skipping");
-                            continue;
-                        }
-                    };
-                    let mut group_members: Vec<GroupMember> = Vec::new();
-                    for member in members {
-                        match existing.get(&member) {
-                            Some(impl_ref) => {
-                                if let Some(conn) = to_adapter_connector(impl_ref) {
-                                    group_members.push(GroupMember::new(
-                                        member.clone(),
-                                        conn,
-                                        None,
-                                    ));
-                                } else {
-                                    tracing::warn!(
-                                        member=%member,
-                                        selector=%name,
-                                        "member outbound cannot be used as connector; skipping"
-                                    );
-                                }
-                            }
-                            None => {
-                                tracing::warn!(
-                                    member=%member,
-                                    selector=%name,
-                                    "member outbound not found"
-                                );
-                            }
-                        }
-                    }
-                    if group_members.is_empty() {
-                        tracing::warn!(
-                            selector=%name,
-                            "no usable members; skipping selector"
-                        );
-                        continue;
-                    }
-                    let selector = SelectorGroup::new_manual(
-                        name.clone(),
-                        group_members,
-                        ob.default_member.clone(),
-                        cache_service.clone(),
-                        Some(urltest_history.clone()),
-                    );
-                    let selector = Arc::new(selector);
-                    map.insert(name.clone(), OutboundImpl::Connector(selector.clone()));
-                    existing.insert(name, OutboundImpl::Connector(selector));
-                }
-                sb_config::ir::OutboundType::UrlTest => {
-                    let members = match &ob.members {
-                        Some(v) if !v.is_empty() => v.clone(),
-                        _ => {
-                            tracing::warn!(selector=%name, "urltest has no members; skipping");
-                            continue;
-                        }
-                    };
-                    let mut group_members: Vec<GroupMember> = Vec::new();
-                    for member in members {
-                        match existing.get(&member) {
-                            Some(impl_ref) => {
-                                if let Some(conn) = to_adapter_connector(impl_ref) {
-                                    group_members.push(GroupMember::new(
-                                        member.clone(),
-                                        conn,
-                                        None,
-                                    ));
-                                } else {
-                                    tracing::warn!(
-                                        member=%member,
-                                        selector=%name,
-                                        "member outbound cannot be used as connector; skipping"
-                                    );
-                                }
-                            }
-                            None => {
-                                tracing::warn!(
-                                    member=%member,
-                                    selector=%name,
-                                    "member outbound not found"
-                                );
-                            }
-                        }
-                    }
-                    if group_members.is_empty() {
-                        tracing::warn!(
-                            selector=%name,
-                            "no usable members; skipping urltest selector"
-                        );
-                        continue;
-                    }
-                    let interval_ms = ob.test_interval_ms.unwrap_or(DEFAULT_URLTEST_INTERVAL_MS);
-                    let timeout_ms = ob.test_timeout_ms.unwrap_or(DEFAULT_URLTEST_TIMEOUT_MS);
-                    let tolerance_ms = ob.test_tolerance_ms.unwrap_or(DEFAULT_URLTEST_TOLERANCE_MS);
-                    let selector = SelectorGroup::new_urltest(
-                        name.clone(),
-                        group_members,
-                        UrlTestOptions {
-                            test_url: ob
-                                .test_url
-                                .clone()
-                                .unwrap_or_else(|| DEFAULT_URLTEST_URL.to_string()),
-                            interval: Duration::from_millis(interval_ms),
-                            timeout: Duration::from_millis(timeout_ms),
-                            tolerance_ms,
-                            cache_file: cache_service.clone(),
-                            urltest_history: Some(urltest_history.clone()),
-                        },
-                    );
-                    let selector = Arc::new(selector);
-                    // Start health checker only if a Tokio runtime is available
-                    if tokio::runtime::Handle::try_current().is_ok() {
-                        selector.clone().start_health_check();
-                    }
-                    map.insert(name.clone(), OutboundImpl::Connector(selector.clone()));
-                    existing.insert(name, OutboundImpl::Connector(selector));
-                }
-                _ => {}
-            }
-        }
-    }
+    crate::outbound_groups::bind_selector_outbound_groups(
+        ir,
+        &mut map,
+        cache_file,
+        urltest_history,
+    );
 
     // Ensure default aliases exist for router decisions
     map.entry("direct".to_string())
@@ -624,85 +473,6 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
         .or_insert(OutboundImpl::Block);
 
     OutboundRegistry::new(map)
-}
-
-#[cfg(feature = "router")]
-fn to_adapter_connector(
-    imp: &sb_core::outbound::OutboundImpl,
-) -> Option<Arc<dyn AdapterConnector>> {
-    match imp {
-        sb_core::outbound::OutboundImpl::Direct => {
-            Some(Arc::new(BootstrapDirectAdapterConnector::new()))
-        }
-        sb_core::outbound::OutboundImpl::Block => {
-            tracing::warn!(
-                "Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Socks5(_cfg) => {
-            tracing::warn!(
-                "SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::HttpProxy(_cfg) => {
-            tracing::warn!(
-                "HTTP proxy selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Vless(_cfg) => {
-            tracing::warn!(
-                "VLESS selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Vmess(_cfg) => {
-            tracing::warn!(
-                "VMess selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Tuic(_cfg) => {
-            tracing::warn!(
-                "TUIC selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Trojan(_cfg) => {
-            tracing::warn!(
-                "Trojan selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Hysteria2(_cfg) => {
-            tracing::warn!(
-                "Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        #[cfg(feature = "out_naive")]
-        sb_core::outbound::OutboundImpl::Naive(_cfg) => {
-            tracing::warn!(
-                "Naive selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        sb_core::outbound::OutboundImpl::Connector(_conn) => {
-            tracing::warn!(
-                "Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-        other => {
-            tracing::warn!(
-                outbound_variant = ?other,
-                "unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-            );
-            None
-        }
-    }
 }
 
 /// Build a `RouterIndex` from Config using IR rules
@@ -801,7 +571,11 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     apply_dns_from_config(&cfg);
 
     // Build outbounds registry from IR (minimal phase 1 set)
-    let reg = build_outbound_registry_from_ir(&cfg_ir);
+    let reg = build_outbound_registry_from_ir_with_runtime_services(
+        &cfg_ir,
+        cache_service.clone(),
+        urltest_history.clone(),
+    );
     let oh = Arc::new(OutboundRegistryHandle::new(reg));
 
     // Validate outbound dependency topology (L2.9)

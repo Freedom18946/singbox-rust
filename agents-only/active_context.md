@@ -13,6 +13,15 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30al：selector/urltest second-pass runtime owner 收口 — 已完成
+
+- 新增 `app/src/outbound_groups.rs`，现在收纳 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
+- `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现保留第一遍 concrete outbound 构建，并把 second-pass selector/urltest binding 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`；空 members / 缺失 member / 不可转换 member 的 skip+warn 语义保持不变
+- `bootstrap.rs` 从 1685 行降到 1443 行；`outbound_groups.rs` 411 行（含测试）；这张卡只收口 selector/urltest second-pass runtime owner，**不是** `planned.rs` 卡，也不是 outbound registry builder 大拆卡
+- 新增 11 个 selector/urltest 定点测试：覆盖 selector/urltest 正常绑定、empty members skip、missing/unusable member skip、`to_adapter_connector()` 行为 pin，以及 2 个 owner pins
+- 自验证：`cargo test -p app --lib outbound_groups` ✅ 11 passed；`cargo test -p app --lib` ✅ 66 passed；`cargo test -p app` ❌ 当前仓库默认 feature 组合下 `app/tests/e2e_subs_security.rs` 直接引用 `app::admin_debug::*`（不是本卡回归）；`cargo clippy -p app --all-features --all-targets -- -D warnings` ✅ 返回 0，但仍打印既有 `admin_debug/mod.rs` doc 段落 warning，且 `bootstrap.rs` 未接入 `lib.rs` 模块树导致 `outbound_groups.rs` 在 `app(lib)` target 下显示 dead_code 类 warning
+- **这是 selector/urltest second-pass runtime owner 收口卡，不是 `planned.rs` 卡，也不是 RuntimePlan/query API 卡**
+
 ### WP-30ak：legacy router rules text emission owner 收口 — 已完成
 
 - 新增 `app/src/router_text.rs`，现在收纳 `ir_to_router_rules_text()` 与专属 helper；owner 已从 `app/src/bootstrap.rs` 下沉到独立 runtime 模块
@@ -43,7 +52,7 @@
 - `logging.rs` public compat 壳：为 Rust API 兼容保留
 - `security_metrics.rs` public compat wrapper：已瘦身为单行委托
 - `sb-metrics` LazyLock 指标静态：不继续做全量去全局化
-- `bootstrap.rs` 仍约 1685 行；selector/urltest registry owner 与其他 runtime orchestration 仍在同文件
+- `bootstrap.rs` 仍约 1443 行；first-pass concrete outbound 构建与其他 runtime orchestration 仍在同文件
 - `run_engine.rs` 虽已剥离 DNS env bridge，但仍是更大的 runtime orchestration 壳
 
 ## 后续战场（未启动）
@@ -57,3 +66,4 @@
   - 仍不是 `RuntimePlan` public 实作卡，也不是 crate-internal query API 卡
 - runtime/bootstrap seam 继续收口，但 DNS env bridge 仍明确属于 runtime owner，**不**搬进 `planned.rs`
 - runtime/bootstrap seam 继续收口，但 legacy router text emission 已迁入 `app/src/router_text.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`
+- runtime/bootstrap seam 继续收口，但 selector/urltest second-pass binding 已迁入 `app/src/outbound_groups.rs`，仍明确属于 runtime owner，**不**搬进 `planned.rs`

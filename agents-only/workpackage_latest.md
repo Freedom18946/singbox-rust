@@ -28,6 +28,13 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30al**: selector/urltest second-pass runtime owner 收口 — 已完成
+  - 新增 `app/src/outbound_groups.rs`，迁入 selector/urltest second-pass connector binding owner、member lookup/filter、`to_adapter_connector()` 与 URLTest health-check 启动
+  - `app/src/bootstrap.rs` 的 `build_outbound_registry_from_ir()` 现保留第一遍 concrete outbound 构建，并把 second-pass 委托给 `crate::outbound_groups::bind_selector_outbound_groups(...)`
+  - second-pass selector/urltest binding 仍是 runtime/bootstrap seam：继续依赖 runtime connector types、Tokio runtime、cache/urltest history 服务；这张卡不是 `planned.rs` / RuntimePlan 卡
+  - `bootstrap.rs` 从 1685 → 1443 行（-242），`outbound_groups.rs` 411 行（含测试）
+  - 新增 11 个 selector/urltest 定点测试（正常绑定、missing/unusable/empty members skip、`to_adapter_connector()` pin + 2 个 owner pins）
+  - 自验证：`cargo test -p app --lib outbound_groups` + `cargo test -p app --lib`；`cargo test -p app` 仍受当前仓库默认 feature 组合下的 `e2e_subs_security` / `admin_debug` 不匹配影响失败；`cargo clippy -p app --all-features --all-targets -- -D warnings` 返回 0，但仍打印既有 `admin_debug/mod.rs` doc warning，且 `bootstrap.rs` 未接入 `lib.rs` 模块树导致 `app(lib)` target 对 `outbound_groups.rs` 报 dead_code 类 warning
 - **WP-30ak**: legacy router rules text emission owner 收口 — 已完成
   - 新增 `app/src/router_text.rs`，迁入 `ir_to_router_rules_text()` 与专属 helper；`app/src/bootstrap.rs` 的 `build_router_index_from_config()` 改为 `to_ir` → `router_text` → `router_build_index_from_str()` 的薄委托
   - legacy router text emission 仍是 runtime/legacy adapter seam：继续输出供 `router_build_index_from_str()` 消费的字符串协议，保留 missing `rule.outbound` / missing `route.default` 的 `unresolved` fallback 语义
