@@ -25,13 +25,14 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::multiplex::MultiplexOptionsIR;
 use super::raw::{
     RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawMasqueradeFileIR,
     RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR, RawShadowTlsHandshakeIR,
     RawShadowTlsUserIR, RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR,
     RawVlessUserIR, RawVmessUserIR,
 };
-use super::{Credentials, MultiplexOptionsIR};
+use super::Credentials;
 
 /// Inbound proxy type.
 /// 入站代理类型。

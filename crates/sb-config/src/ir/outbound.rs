@@ -10,13 +10,14 @@
 //! `OutboundType` is intentionally NOT Raw-ified — it stays as the validated
 //! enum with lowercase serde and `ty_str()` unchanged.
 //!
-//! `Credentials`, `MultiplexOptionsIR`, and `BrutalIR` (defined in `mod.rs`)
-//! are also bridged through Raw because they are direct outbound helpers.
+//! `Credentials` plus the multiplex helpers in `super::multiplex` are also
+//! bridged through Raw because they are direct outbound helpers.
 
 use serde::{Deserialize, Serialize};
 
+use super::multiplex::MultiplexOptionsIR;
 use super::raw::{RawHeaderEntry, RawOutboundIR};
-use super::{Credentials, MultiplexOptionsIR};
+use super::Credentials;
 
 /// Outbound proxy type.
 /// 出站代理类型。

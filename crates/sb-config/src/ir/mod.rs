@@ -14,6 +14,7 @@ mod dns;
 mod endpoint;
 mod inbound;
 pub(crate) mod minimize;
+mod multiplex;
 pub(crate) mod normalize;
 mod outbound;
 pub(crate) mod planned;
@@ -29,6 +30,7 @@ pub use inbound::{
     MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR, ShadowTlsHandshakeIR, ShadowTlsUserIR,
     ShadowsocksUserIR, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR,
 };
+pub use multiplex::{BrutalIR, MultiplexOptionsIR};
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
 pub use raw::{
     RawAnyTlsUserIR, RawBrutalIR, RawCertificateIR, RawConfigRoot, RawCredentials,
@@ -76,77 +78,6 @@ impl<'de> Deserialize<'de> for Credentials {
         D: serde::Deserializer<'de>,
     {
         raw::RawCredentials::deserialize(deserializer).map(Into::into)
-    }
-}
-
-/// Multiplex options for inbound connections (yamux-based stream multiplexing).
-///
-/// Deserialization goes through [`RawMultiplexOptionsIR`](raw::RawMultiplexOptionsIR)
-/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
-pub struct MultiplexOptionsIR {
-    /// Enable multiplex support.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Protocol (typically "yamux" or "h2mux").
-    #[serde(default)]
-    pub protocol: Option<String>,
-    /// Maximum number of concurrent connections in pool.
-    #[serde(default)]
-    pub max_connections: Option<usize>,
-    /// Minimum number of streams per connection.
-    #[serde(default)]
-    pub min_streams: Option<usize>,
-    /// Maximum number of streams per connection.
-    #[serde(default)]
-    pub max_streams: Option<usize>,
-    /// Enable padding.
-    #[serde(default)]
-    pub padding: Option<bool>,
-    /// Brutal congestion control configuration.
-    #[serde(default)]
-    pub brutal: Option<BrutalIR>,
-    /// Initial stream window size.
-    #[serde(default)]
-    pub initial_stream_window: Option<u32>,
-    /// Maximum stream window size.
-    #[serde(default)]
-    pub max_stream_window: Option<u32>,
-    /// Enable keepalive.
-    #[serde(default)]
-    pub enable_keepalive: Option<bool>,
-    /// Keepalive interval in seconds.
-    #[serde(default)]
-    pub keepalive_interval: Option<u64>,
-}
-
-impl<'de> Deserialize<'de> for MultiplexOptionsIR {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        raw::RawMultiplexOptionsIR::deserialize(deserializer).map(Into::into)
-    }
-}
-
-/// Brutal congestion control configuration.
-///
-/// Deserialization goes through [`RawBrutalIR`](raw::RawBrutalIR)
-/// which carries `#[serde(deny_unknown_fields)]` (WP-30i).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
-pub struct BrutalIR {
-    /// Upload bandwidth in Mbps.
-    pub up: u64,
-    /// Download bandwidth in Mbps.
-    pub down: u64,
-}
-
-impl<'de> Deserialize<'de> for BrutalIR {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        raw::RawBrutalIR::deserialize(deserializer).map(Into::into)
     }
 }
 

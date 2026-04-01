@@ -28,6 +28,11 @@
 
 ### 维护卡（2026-04-01）
 
+- **WP-30ai**: `ir/multiplex.rs` multiplex/brutal owner 收口 — 已完成
+  - 新增 `ir/multiplex.rs`，迁入 `MultiplexOptionsIR` / `BrutalIR` owner 与 `Deserialize` impl；`ir/mod.rs` 改为 `mod multiplex;` + `pub use multiplex::{...}` 薄壳
+  - `ir/mod.rs` 从 321 → 252 行（-69），`ir/multiplex.rs` 199 行（含测试）；`Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为更宽共享类型
+  - 这是 `ir/multiplex.rs` owner 收口卡，不是 RuntimePlan 卡
+  - 自验证：`cargo test -p sb-config --lib ir::multiplex` + `cargo test -p sb-config --lib multiplex` + `cargo test -p sb-config --test outbound_raw_boundary_test multiplex` + `cargo test -p sb-config --lib` + `cargo clippy -p sb-config --all-features --all-targets -- -D warnings`
 - **WP-30ah**: `ir/inbound.rs` masquerade owner 收口 — 已完成
   - `MasqueradeIR` + 3 个 leaf 类型迁入 `ir/inbound.rs`；`ir/mod.rs` 改为 `pub use inbound::{...}` 薄壳
   - `ir/mod.rs` 从 406 → 321 行（-85）；`raw.rs` 继续持有 strict Raw bridge，语义不变
@@ -58,9 +63,9 @@
 - **WP-30aa**: deprecation detection owner 迁移 — 已完成（earlier）
 - **WP-30z ~ WP-30q**: outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
 
-### 构建基线（2026-04-01，WP-30ah 后）
+### 构建基线（2026-04-01，WP-30ai 后）
 
 | 构建 | 状态 |
 |------|------|
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass |
-| `cargo test -p sb-config --lib` | ✅ 643 passed |
+| `cargo test -p sb-config --lib` | ✅ 649 passed |

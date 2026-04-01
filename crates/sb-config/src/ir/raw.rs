@@ -127,14 +127,15 @@
 use serde::Deserialize;
 
 use super::inbound::{MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR};
+use super::multiplex::{BrutalIR, MultiplexOptionsIR};
 use super::validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 use super::{
-    AnyTlsUserIR, BrutalIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
+    AnyTlsUserIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DnsHostIR, DnsIR,
     DnsRuleIR, DnsServerIR, DomainResolveOptionsIR, EndpointIR, EndpointType, ExperimentalIR,
     HeaderEntry, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundTlsOptionsIR, InboundType,
-    Listable, MultiplexOptionsIR, OutboundIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR,
-    ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
+    Listable, OutboundIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
+    ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
     TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
 

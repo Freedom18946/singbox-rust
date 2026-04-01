@@ -13,6 +13,17 @@
 
 ## 最近完成（2026-04-01）
 
+### WP-30ai：ir/multiplex.rs multiplex/brutal owner 收口 — 已完成
+
+- 新增 `crates/sb-config/src/ir/multiplex.rs`，现在收纳 `MultiplexOptionsIR` / `BrutalIR` 的实际 owner 与 `Deserialize` impl
+- `crates/sb-config/src/ir/mod.rs` 删除上述实现，改为 `mod multiplex;` + `pub use multiplex::{BrutalIR, MultiplexOptionsIR};` 薄壳兼容面；public type path 继续保持 `crate::ir::*`
+- `crates/sb-config/src/ir/inbound.rs` / `outbound.rs` / `raw.rs` 的引用与 owner 注释已显式对齐 `super::multiplex::{...}`；raw bridge 语义不变
+- `ir/mod.rs` 从 321 → 252 行（-69）；新增 `ir/multiplex.rs` 199 行；`Credentials` / `Listable<T>` / `StringOrObj<T>` 仍留在 `ir/mod.rs` 作为更宽的跨域共享类型；**这张卡不是 generic shared.rs 卡**
+- 新增 6 个 multiplex 定点测试（2 raw-bridge/roundtrip + 2 inbound/outbound 行为 + 2 owner pins）；既有 raw/integration multiplex 定点测试继续保留并通过
+- 不改 `validator/v2` facade / pass 语义；不改 `planned.rs` / `PlannedFacts`；不引入 `RuntimePlan` / query API
+- 全量自验证：`cargo test -p sb-config --lib ir::multiplex` ✅ 6 passed；`cargo test -p sb-config --lib multiplex` ✅ 10 passed；`cargo test -p sb-config --test outbound_raw_boundary_test multiplex` ✅ 2 passed；`cargo test -p sb-config --lib` ✅ 649 passed；`cargo clippy -p sb-config --all-features --all-targets -- -D warnings` ✅ pass
+- **这是 ir/multiplex.rs owner 收口卡，不是 RuntimePlan 卡**
+
 ### WP-30ah：ir/inbound.rs masquerade owner 收口 — 已完成
 
 - `crates/sb-config/src/ir/inbound.rs` 现在收纳 `MasqueradeIR`、`MasqueradeFileIR`、`MasqueradeProxyIR`、`MasqueradeStringIR` 的实际 owner，与 Hysteria2 inbound 字段局部性对齐
@@ -57,19 +68,12 @@
 - 不引入 planning / RuntimePlan / query API
 
 ### WP-30ae：root schema core owner 迁移 — 已完成（earlier）
-- `crates/sb-config/src/validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner
-  - `validate_root_schema(doc, allow_unknown, issues) -> bool` pub(super) 入口
-  - 收纳 schema load + fallback、`schema_version` 检查、root unknown field 检查（含 `$schema` 例外）
+- `crates/sb-config/src/validator/v2/schema_core.rs` 现在是 root schema validation 的实际 owner，收纳 `validate_root_schema()` 入口、schema load + fallback、`schema_version` 检查与 root unknown field 检查（含 `$schema` 例外）
 - `validator/v2/mod.rs` 中 `validate_v2()` 对 root schema validation 只做一行委托：`schema_core::validate_root_schema(doc, allow_unknown, &mut issues)`
 - mod.rs 从 793 → 742 行（-51），schema_core.rs 263 行（含测试）
 - **这是 validator/v2 root schema core owner 迁移卡，不是 RuntimePlan 卡**
-- 不改 inbound/outbound/endpoint/service/dns/route/top_level validation/lowering owner
-- 不改 deprecation / security / TLS capability / credentials pass owner
-- 不改 `to_ir_v1()` / lowering 语义
-- 不引入 planning / RuntimePlan / query API
-- 9 个测试（7 功能 + 2 pins）：
-  - `wp30ae_pin_schema_core_owner_is_schema_core_rs` — root schema validation owner 在 schema_core.rs
-  - `wp30ae_pin_validate_v2_delegates_root_schema` — validate_v2() 对 root schema validation 只做委托
+- 不改 inbound/outbound/endpoint/service/dns/route/top_level validation/lowering owner；不改 deprecation / security / TLS capability / credentials pass owner；不改 `to_ir_v1()` / lowering 语义；不引入 planning / RuntimePlan / query API
+- 9 个测试（7 功能 + 2 pins），包括 `wp30ae_pin_schema_core_owner_is_schema_core_rs` 与 `wp30ae_pin_validate_v2_delegates_root_schema`
 
 ### WP-30ad：credential normalization owner 迁移 — 已完成（earlier）
 ### WP-30ac ~ WP-30k：top-level/security/deprecation/outbound/route/dns/service/endpoint/inbound/planned seam 系列 — 已完成（earlier）
@@ -84,7 +88,7 @@
 
 - **WP-30 Phase 3 后续**：
   - validator/v2 facade seam 已收口；`mod.rs` 现 260 行，主剩余是 shared helper + TLS capability re-export
-  - `ir/service.rs` 与 `ir/inbound.rs` masquerade owner 已收口；`ir/mod.rs` 现 321 行，主剩余是跨域共享 wrapper + experimental / compat 暴露，而不是 service/DERP / masquerade owner
+  - `ir/service.rs` / `ir/inbound.rs` / `ir/multiplex.rs` owner 已收口；`ir/mod.rs` 现 252 行，主剩余是 `Credentials` / `Listable<T>` / `StringOrObj<T>` + experimental / compat 暴露，而不是 service/DERP / masquerade / multiplex owner
   - 若继续细拆，应明确是 helper seam / compat seam 卡，而不是再把 facade 迁移误写成 RuntimePlan 卡
   - `PlannedFacts` 暴露 namespace 查询方法供 crate 内其他模块使用
   - 将 `PlannedFacts` 升级为 public `RuntimePlan`（需要先有稳定外部消费者）
