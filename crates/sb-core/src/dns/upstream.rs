@@ -10,9 +10,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use parking_lot::{Mutex, RwLock};
 use std::{
-    fs,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -22,15 +21,17 @@ use std::{
 
 #[cfg(feature = "metrics")]
 use super::metrics;
+#[cfg(test)]
+use super::upstream_pool::discover_nameservers_from_file;
+use super::upstream_pool::{
+    load_udp_upstreams_from_file, record_upstream_fallback, FileBackedUpstreamPool,
+};
 use super::{DnsAnswer, DnsUpstream, RecordType};
 use crate::dns::message::inject_edns0_client_subnet;
 use crate::dns::transport::{DnsTransport, LocalTransport};
 
 #[cfg(feature = "service_resolved")]
 use crate::dns::transport::resolved::{ResolvedTransport, ResolvedTransportConfig};
-
-#[cfg(any(feature = "dns_dhcp", feature = "dns_resolved"))]
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 // Helper: parse EDNS0 Client Subnet from env (global default)
 fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
@@ -170,35 +171,6 @@ fn parse_resolved_spec(spec: &str) -> PathBuf {
     path
 }
 
-#[cfg(unix)]
-fn discover_nameservers_from_file(path: &Path) -> Result<Vec<SocketAddr>> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("read resolv.conf from {}", path.display()))?;
-    let mut addrs = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("nameserver") {
-            let addr = rest.split_whitespace().next();
-            if let Some(token) = addr {
-                if let Some(sa) = parse_nameserver_addr(token) {
-                    addrs.push(sa);
-                }
-            }
-        }
-    }
-    Ok(addrs)
-}
-
-#[cfg(not(unix))]
-fn discover_nameservers_from_file(_path: &Path) -> Result<Vec<SocketAddr>> {
-    Err(anyhow::anyhow!(
-        "File-based DNS upstreams are only supported on Unix-like platforms"
-    ))
-}
-
 fn parse_nameserver_addr(token: &str) -> Option<SocketAddr> {
     if let Ok(sa) = token.parse::<SocketAddr>() {
         return Some(sa);
@@ -286,61 +258,6 @@ pub(crate) fn parse_tailscale_spec(
     } else {
         Ok((name, addrs))
     }
-}
-
-fn record_upstream_reload(
-    kind: &'static str,
-    upstream: &str,
-    result: &'static str,
-    members: usize,
-) {
-    #[cfg(feature = "metrics")]
-    {
-        ::metrics::counter!(
-            "dns_upstream_reload_total",
-            "kind" => kind,
-            "upstream" => upstream.to_string(),
-            "result" => result
-        )
-        .increment(1);
-        ::metrics::gauge!(
-            "dns_upstream_members",
-            "kind" => kind,
-            "upstream" => upstream.to_string()
-        )
-        .set(members as f64);
-    }
-    let _ = (kind, upstream, result, members);
-}
-
-fn record_upstream_fallback(kind: &'static str, upstream: &str, reason: &'static str) {
-    #[cfg(feature = "metrics")]
-    {
-        ::metrics::counter!(
-            "dns_upstream_fallback_total",
-            "kind" => kind,
-            "upstream" => upstream.to_string(),
-            "reason" => reason
-        )
-        .increment(1);
-    }
-    let _ = (kind, upstream, reason);
-}
-
-fn record_upstream_watch_error(kind: &'static str, upstream: &str, error: &str) {
-    #[cfg(feature = "metrics")]
-    {
-        ::metrics::counter!(
-            "dns_upstream_watch_error_total",
-            "kind" => kind,
-            "upstream" => upstream.to_string(),
-            // We might want to limit cardinality of error strings, but for now use full error or a simplified one.
-            // Using full error might be dangerous. Let's just count.
-            "error" => "watch_error"
-        )
-        .increment(1);
-    }
-    let _ = (kind, upstream, error);
 }
 
 /// UDP DNS 上游实现
@@ -715,13 +632,8 @@ impl DnsUpstream for UdpUpstream {
 /// DHCP-backed upstream that discovers resolver IPs from `/etc/resolv.conf` (or similar).
 #[cfg(feature = "dns_dhcp")]
 pub struct DhcpUpstream {
-    name: String,
     interface: Option<String>,
-    resolv_path: PathBuf,
-    upstreams: Arc<RwLock<Vec<Arc<dyn DnsUpstream>>>>,
-    round_robin: AtomicUsize,
-    fallback: Arc<dyn DnsUpstream>,
-    _watcher: Option<RecommendedWatcher>,
+    pool: FileBackedUpstreamPool,
     transport: Option<Arc<crate::dns::transport::DhcpTransport>>,
 }
 
@@ -729,9 +641,9 @@ pub struct DhcpUpstream {
 impl std::fmt::Debug for DhcpUpstream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DhcpUpstream")
-            .field("name", &self.name)
+            .field("name", &self.pool.name())
             .field("interface", &self.interface)
-            .field("resolv_path", &self.resolv_path)
+            .field("resolv_path", &self.pool.path())
             .finish()
     }
 }
@@ -747,67 +659,13 @@ impl DhcpUpstream {
             .map(|t| format!("dhcp::{t}"))
             .or_else(|| iface.as_ref().map(|ifn| format!("dhcp://{ifn}")))
             .unwrap_or_else(|| "dhcp://auto".to_string());
-
-        let upstreams = Arc::new(RwLock::new(Vec::new()));
-        let fallback = Arc::new(SystemUpstream::new());
-
-        // Initial load
-        reload_dhcp_servers(&name, &resolv_path, &upstreams);
-
-        // Setup watcher
-        let upstreams_clone = upstreams.clone();
-        let path_clone = resolv_path.clone();
-        let name_clone = name.clone();
-
-        // Watch parent directory to handle atomic replacements (e.g. vim, some system tools)
-        let watch_path = resolv_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| resolv_path.clone());
-        let target_filename = resolv_path.file_name().map(|f| f.to_owned());
-
-        let mut watcher =
-            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
-                Ok(event) => {
-                    let should_reload = if let Some(target) = &target_filename {
-                        event.paths.iter().any(|p| p.file_name() == Some(target))
-                    } else {
-                        event.paths.iter().any(|p| p == &path_clone)
-                    };
-
-                    if should_reload {
-                        tracing::debug!(
-                            target: "sb_core::dns",
-                            upstream = %name_clone,
-                            event = ?event.kind,
-                            "resolv.conf changed, reloading"
-                        );
-                        reload_dhcp_servers(&name_clone, &path_clone, &upstreams_clone);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "sb_core::dns",
-                        upstream = %name_clone,
-                        error = %e,
-                        "watch error"
-                    );
-                    record_upstream_watch_error("dhcp", &name_clone, &e.to_string());
-                }
-            })
-            .ok();
-
-        if let Some(w) = &mut watcher {
-            if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
-                tracing::warn!(
-                    target: "sb_core::dns",
-                    upstream = %name,
-                    path = %watch_path.display(),
-                    error = %e,
-                    "failed to watch resolv.conf parent directory"
-                );
-            }
-        }
+        let pool = FileBackedUpstreamPool::new(
+            "dhcp",
+            name.clone(),
+            resolv_path,
+            Arc::new(SystemUpstream::new()),
+            load_udp_upstreams_from_file,
+        );
 
         let transport = if iface.is_some() {
             Some(Arc::new(crate::dns::transport::DhcpTransport::new(
@@ -822,13 +680,8 @@ impl DhcpUpstream {
         }
 
         Ok(Self {
-            name,
             interface: iface,
-            resolv_path,
-            upstreams,
-            round_robin: AtomicUsize::new(0),
-            fallback,
-            _watcher: watcher,
+            pool,
             transport,
         })
     }
@@ -870,7 +723,7 @@ impl DhcpUpstream {
             {
                 tracing::warn!(
                     target: "sb_core::dns",
-                    upstream = %self.name,
+                    upstream = %self.pool.name(),
                     error = %error,
                     "failed to start DHCP transport on demand"
                 );
@@ -879,7 +732,7 @@ impl DhcpUpstream {
     }
 
     fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
-        let mut list = self.upstreams.read().clone();
+        let mut list = self.pool.snapshot();
         if let Some(t) = &self.transport {
             let servers = t.servers();
             if !servers.is_empty() {
@@ -889,7 +742,7 @@ impl DhcpUpstream {
             }
         }
         if list.is_empty() {
-            vec![self.fallback.clone()]
+            vec![self.pool.fallback()]
         } else {
             list
         }
@@ -897,53 +750,13 @@ impl DhcpUpstream {
 
     /// Reload nameservers from resolv.conf file
     pub fn reload_servers(&self) -> Result<()> {
-        reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
-        Ok(())
+        self.pool.reload_servers()
     }
 
     /// Check file modification and reload if needed
     pub fn maybe_reload(&self) {
-        let _ = self.reload_servers();
+        self.pool.maybe_reload();
     }
-}
-
-#[cfg(feature = "dns_dhcp")]
-fn reload_dhcp_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<dyn DnsUpstream>>>) {
-    let servers = match discover_nameservers_from_file(path) {
-        Ok(s) => s,
-        Err(err) => {
-            record_upstream_reload("dhcp", name, "error", 0);
-            tracing::debug!(target: "sb_core::dns", upstream = %name, error = %err, "failed to read resolv.conf");
-            return;
-        }
-    };
-
-    if servers.is_empty() {
-        tracing::warn!(
-            target: "sb_core::dns",
-            upstream = %name,
-            path = %path.display(),
-            "DHCP upstream found no nameservers; using system fallback"
-        );
-        upstreams.write().clear();
-        record_upstream_reload("dhcp", name, "empty", 0);
-        return;
-    }
-
-    let list: Vec<Arc<dyn DnsUpstream>> = servers
-        .into_iter()
-        .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
-        .collect();
-
-    tracing::info!(
-        target: "sb_core::dns",
-        upstream = %name,
-        count = list.len(),
-        path = %path.display(),
-        "DHCP upstream loaded nameservers"
-    );
-    *upstreams.write() = list;
-    record_upstream_reload("dhcp", name, "success", upstreams.read().len());
 }
 
 #[cfg(feature = "dns_dhcp")]
@@ -956,22 +769,22 @@ impl DnsUpstream for DhcpUpstream {
             if upstreams.is_empty() {
                 if attempt == 0 {
                     // Try one immediate reload if empty, just in case watcher missed it or initial load failed
-                    reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    let _ = self.pool.reload_servers();
                     if self.snapshot().is_empty() {
                         tracing::warn!(
                             target: "sb_core::dns",
-                            upstream = %self.name,
+                            upstream = %self.pool.name(),
                             "DHCP upstream has no servers; delegating to system resolver"
                         );
-                        record_upstream_fallback("dhcp", &self.name, "empty");
-                        return self.fallback.query(domain, record_type).await;
+                        record_upstream_fallback("dhcp", self.pool.name(), "empty");
+                        return self.pool.fallback().query(domain, record_type).await;
                     }
                     continue;
                 }
-                return self.fallback.query(domain, record_type).await;
+                return self.pool.fallback().query(domain, record_type).await;
             }
 
-            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let start = self.pool.next_start();
             for offset in 0..upstreams.len() {
                 let idx = (start + offset) % upstreams.len();
                 match upstreams[idx].query(domain, record_type).await {
@@ -979,7 +792,7 @@ impl DnsUpstream for DhcpUpstream {
                     Err(err) => {
                         tracing::debug!(
                             target: "sb_core::dns",
-                            upstream = %self.name,
+                            upstream = %self.pool.name(),
                             member = %upstreams[idx].name(),
                             error = %err,
                             "DHCP upstream member failed; trying next"
@@ -990,17 +803,17 @@ impl DnsUpstream for DhcpUpstream {
 
             // If all members failed, force a reload and retry once
             if attempt == 0 {
-                reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+                let _ = self.pool.reload_servers();
             }
         }
 
         tracing::warn!(
             target: "sb_core::dns",
-            upstream = %self.name,
+            upstream = %self.pool.name(),
             "All DHCP upstream members failed; using system resolver fallback"
         );
-        record_upstream_fallback("dhcp", &self.name, "members_failed");
-        self.fallback.query(domain, record_type).await
+        record_upstream_fallback("dhcp", self.pool.name(), "members_failed");
+        self.pool.fallback().query(domain, record_type).await
     }
 
     async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
@@ -1009,28 +822,28 @@ impl DnsUpstream for DhcpUpstream {
             let upstreams = self.snapshot();
             if upstreams.is_empty() {
                 if attempt == 0 {
-                    reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    let _ = self.pool.reload_servers();
                     if self.snapshot().is_empty() {
                         tracing::warn!(
                             target: "sb_core::dns",
-                            upstream = %self.name,
+                            upstream = %self.pool.name(),
                             "DHCP upstream has no servers; cannot raw-exchange via system resolver"
                         );
-                        record_upstream_fallback("dhcp", &self.name, "empty_exchange");
+                        record_upstream_fallback("dhcp", self.pool.name(), "empty_exchange");
                         return Err(anyhow::anyhow!(
                             "dhcp upstream {} has no servers for raw exchange",
-                            self.name
+                            self.pool.name()
                         ));
                     }
                     continue;
                 }
                 return Err(anyhow::anyhow!(
                     "dhcp upstream {} has no servers for raw exchange",
-                    self.name
+                    self.pool.name()
                 ));
             }
 
-            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let start = self.pool.next_start();
             let mut last_error: Option<anyhow::Error> = None;
             for offset in 0..upstreams.len() {
                 let idx = (start + offset) % upstreams.len();
@@ -1039,7 +852,7 @@ impl DnsUpstream for DhcpUpstream {
                     Err(err) => {
                         tracing::debug!(
                             target: "sb_core::dns",
-                            upstream = %self.name,
+                            upstream = %self.pool.name(),
                             member = %upstreams[idx].name(),
                             error = %err,
                             "DHCP upstream member raw exchange failed; trying next"
@@ -1050,7 +863,7 @@ impl DnsUpstream for DhcpUpstream {
             }
 
             if attempt == 0 {
-                reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
+                let _ = self.pool.reload_servers();
             }
 
             if let Some(err) = last_error {
@@ -1058,7 +871,7 @@ impl DnsUpstream for DhcpUpstream {
                 if attempt == 1 {
                     return Err(err.context(format!(
                         "dhcp upstream {} exhausted {} members for raw exchange",
-                        self.name,
+                        self.pool.name(),
                         upstreams.len()
                     )));
                 }
@@ -1067,12 +880,12 @@ impl DnsUpstream for DhcpUpstream {
 
         Err(anyhow::anyhow!(
             "dhcp upstream {} raw exchange exhausted members",
-            self.name
+            self.pool.name()
         ))
     }
 
     fn name(&self) -> &str {
-        &self.name
+        self.pool.name()
     }
 
     async fn health_check(&self) -> bool {
@@ -1081,7 +894,7 @@ impl DnsUpstream for DhcpUpstream {
         if let Some(up) = snapshot.first() {
             up.health_check().await
         } else {
-            self.fallback.health_check().await
+            self.pool.fallback().health_check().await
         }
     }
 }
@@ -1227,20 +1040,15 @@ impl DnsUpstream for StaticMultiUpstream {
 /// systemd-resolved upstream backed by stub resolv.conf.
 #[cfg(feature = "dns_resolved")]
 pub struct ResolvedUpstream {
-    name: String,
-    resolv_path: PathBuf,
-    upstreams: Arc<RwLock<Vec<Arc<dyn DnsUpstream>>>>,
-    round_robin: AtomicUsize,
-    fallback: Arc<dyn DnsUpstream>,
-    _watcher: Option<RecommendedWatcher>,
+    pool: FileBackedUpstreamPool,
 }
 
 #[cfg(feature = "dns_resolved")]
 impl std::fmt::Debug for ResolvedUpstream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ResolvedUpstream")
-            .field("name", &self.name)
-            .field("resolv_path", &self.resolv_path)
+            .field("name", &self.pool.name())
+            .field("resolv_path", &self.pool.path())
             .finish()
     }
 }
@@ -1254,143 +1062,30 @@ impl ResolvedUpstream {
         let name = tag
             .map(|t| format!("resolved::{t}"))
             .unwrap_or_else(|| format!("resolved://{}", resolv_path.display()));
-
-        let upstreams = Arc::new(RwLock::new(Vec::new()));
-        let fallback = Arc::new(SystemUpstream::new());
-
-        // Initial load
-        reload_resolved_servers(&name, &resolv_path, &upstreams);
-
-        // Setup watcher
-        let upstreams_clone = upstreams.clone();
-        let path_clone = resolv_path.clone();
-        let name_clone = name.clone();
-
-        // Watch parent directory to handle atomic replacements
-        let watch_path = resolv_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| resolv_path.clone());
-        let target_filename = resolv_path.file_name().map(|f| f.to_owned());
-
-        let mut watcher =
-            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
-                Ok(event) => {
-                    let should_reload = if let Some(target) = &target_filename {
-                        event.paths.iter().any(|p| p.file_name() == Some(target))
-                    } else {
-                        event.paths.iter().any(|p| p == &path_clone)
-                    };
-
-                    if should_reload {
-                        tracing::debug!(
-                            target: "sb_core::dns",
-                            upstream = %name_clone,
-                            event = ?event.kind,
-                            "resolved stub changed, reloading"
-                        );
-                        reload_resolved_servers(&name_clone, &path_clone, &upstreams_clone);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "sb_core::dns",
-                        upstream = %name_clone,
-                        error = %e,
-                        "watch error"
-                    );
-                    record_upstream_watch_error("resolved", &name_clone, &e.to_string());
-                }
-            })
-            .ok();
-
-        if let Some(w) = &mut watcher {
-            if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
-                tracing::warn!(
-                    target: "sb_core::dns",
-                    upstream = %name,
-                    path = %watch_path.display(),
-                    error = %e,
-                    "failed to watch resolved stub parent directory"
-                );
-            }
-        }
-
         Ok(Self {
-            name,
-            resolv_path,
-            upstreams,
-            round_robin: AtomicUsize::new(0),
-            fallback,
-            _watcher: watcher,
+            pool: FileBackedUpstreamPool::new(
+                "resolved",
+                name,
+                resolv_path,
+                Arc::new(SystemUpstream::new()),
+                load_udp_upstreams_from_file,
+            ),
         })
     }
 
     fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
-        self.upstreams.read().clone()
+        self.pool.snapshot()
     }
 
     /// Reload nameservers from systemd-resolved stub file
     pub fn reload_servers(&self) -> Result<()> {
-        reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
-        Ok(())
+        self.pool.reload_servers()
     }
 
     /// Check file modification and reload if needed
     pub fn maybe_reload(&self) {
-        let _ = self.reload_servers();
+        self.pool.maybe_reload();
     }
-}
-
-#[cfg(feature = "dns_resolved")]
-fn reload_resolved_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<dyn DnsUpstream>>>) {
-    // ResolvedUpstream logic is slightly different: it tries candidate paths.
-    // But here we are given a specific path from from_spec (or default).
-    // If we want to support multiple candidates, we should probably watch all of them or just the one we found.
-    // For simplicity and "deep integration", we assume the path determined at construction is the one to watch.
-    // If it doesn't exist yet, we might watch the parent.
-    // The original logic tried candidates.
-    // Let's stick to the path we have. If it's the default, it's likely correct.
-
-    let servers = match discover_nameservers_from_file(path) {
-        Ok(s) => s,
-        Err(err) => {
-            // If file doesn't exist, it might be transient.
-            tracing::debug!(target: "sb_core::dns", upstream = %name, error = %err, "failed to read resolved stub");
-            // Don't clear upstreams immediately on read error to avoid flapping?
-            // But if file is gone, maybe we should.
-            // Original logic tried multiple paths.
-            // Let's just try to read.
-            return;
-        }
-    };
-
-    if servers.is_empty() {
-        tracing::warn!(
-            target: "sb_core::dns",
-            upstream = %name,
-            path = %path.display(),
-            "resolved upstream found no nameservers; using system resolver"
-        );
-        upstreams.write().clear();
-        record_upstream_reload("resolved", name, "empty", 0);
-        return;
-    }
-
-    let list: Vec<Arc<dyn DnsUpstream>> = servers
-        .into_iter()
-        .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
-        .collect();
-
-    tracing::info!(
-        target: "sb_core::dns",
-        upstream = %name,
-        path = %path.display(),
-        count = list.len(),
-        "resolved upstream loaded nameservers"
-    );
-    *upstreams.write() = list;
-    record_upstream_reload("resolved", name, "success", upstreams.read().len());
 }
 
 #[cfg(feature = "dns_resolved")]
@@ -1401,24 +1096,24 @@ impl DnsUpstream for ResolvedUpstream {
             let upstreams = self.snapshot();
             if upstreams.is_empty() {
                 if attempt == 0 {
-                    reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    let _ = self.pool.reload_servers();
                     if self.snapshot().is_empty() {
-                        record_upstream_fallback("resolved", &self.name, "empty");
-                        return self.fallback.query(domain, record_type).await;
+                        record_upstream_fallback("resolved", self.pool.name(), "empty");
+                        return self.pool.fallback().query(domain, record_type).await;
                     }
                     continue;
                 }
-                record_upstream_fallback("resolved", &self.name, "empty");
-                return self.fallback.query(domain, record_type).await;
+                record_upstream_fallback("resolved", self.pool.name(), "empty");
+                return self.pool.fallback().query(domain, record_type).await;
             }
-            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let start = self.pool.next_start();
             for offset in 0..upstreams.len() {
                 let idx = (start + offset) % upstreams.len();
                 match upstreams[idx].query(domain, record_type).await {
                     Ok(answer) => return Ok(answer),
                     Err(err) => tracing::debug!(
                         target: "sb_core::dns",
-                        upstream = %self.name,
+                        upstream = %self.pool.name(),
                         member = %upstreams[idx].name(),
                         error = %err,
                         "resolved upstream member failed"
@@ -1426,16 +1121,16 @@ impl DnsUpstream for ResolvedUpstream {
                 }
             }
             if attempt == 0 {
-                reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+                let _ = self.pool.reload_servers();
             }
         }
         tracing::warn!(
             target: "sb_core::dns",
-            upstream = %self.name,
+            upstream = %self.pool.name(),
             "all resolved upstream members failed; falling back to system resolver"
         );
-        record_upstream_fallback("resolved", &self.name, "members_failed");
-        self.fallback.query(domain, record_type).await
+        record_upstream_fallback("resolved", self.pool.name(), "members_failed");
+        self.pool.fallback().query(domain, record_type).await
     }
 
     async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
@@ -1443,17 +1138,17 @@ impl DnsUpstream for ResolvedUpstream {
             let upstreams = self.snapshot();
             if upstreams.is_empty() {
                 if attempt == 0 {
-                    reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+                    let _ = self.pool.reload_servers();
                     continue;
                 }
-                record_upstream_fallback("resolved", &self.name, "empty_exchange");
+                record_upstream_fallback("resolved", self.pool.name(), "empty_exchange");
                 return Err(anyhow::anyhow!(
                     "resolved upstream {} has no nameservers for raw exchange",
-                    self.name
+                    self.pool.name()
                 ));
             }
 
-            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            let start = self.pool.next_start();
             let mut last_error: Option<anyhow::Error> = None;
             for offset in 0..upstreams.len() {
                 let idx = (start + offset) % upstreams.len();
@@ -1462,7 +1157,7 @@ impl DnsUpstream for ResolvedUpstream {
                     Err(err) => {
                         tracing::debug!(
                             target: "sb_core::dns",
-                            upstream = %self.name,
+                            upstream = %self.pool.name(),
                             member = %upstreams[idx].name(),
                             error = %err,
                             "resolved upstream member raw exchange failed"
@@ -1473,13 +1168,13 @@ impl DnsUpstream for ResolvedUpstream {
             }
 
             if attempt == 0 {
-                reload_resolved_servers(&self.name, &self.resolv_path, &self.upstreams);
+                let _ = self.pool.reload_servers();
             }
             if attempt == 1 {
                 return Err(last_error.unwrap_or_else(|| {
                     anyhow::anyhow!(
                         "resolved upstream {} members failed for raw exchange",
-                        self.name
+                        self.pool.name()
                     )
                 }));
             }
@@ -1487,12 +1182,12 @@ impl DnsUpstream for ResolvedUpstream {
 
         Err(anyhow::anyhow!(
             "resolved upstream {} raw exchange exhausted members",
-            self.name
+            self.pool.name()
         ))
     }
 
     fn name(&self) -> &str {
-        &self.name
+        self.pool.name()
     }
 
     async fn health_check(&self) -> bool {
@@ -1500,7 +1195,7 @@ impl DnsUpstream for ResolvedUpstream {
         if let Some(up) = snapshot.first() {
             up.health_check().await
         } else {
-            self.fallback.health_check().await
+            self.pool.fallback().health_check().await
         }
     }
 }
@@ -3347,7 +3042,7 @@ nameserver 2001:4860:4860::8888
             DhcpUpstream::from_spec(&spec, Some("dhcp_test")).expect("dhcp upstream from spec");
 
         assert_eq!(
-            upstream.upstreams.read().len(),
+            upstream.pool.snapshot().len(),
             1,
             "expected DHCP upstream to load one nameserver"
         );
@@ -3355,7 +3050,7 @@ nameserver 2001:4860:4860::8888
         std::fs::write(tmp.path(), "").expect("truncate resolv.conf");
         upstream.reload_servers().expect("reload after truncate");
         assert_eq!(
-            upstream.upstreams.read().len(),
+            upstream.pool.snapshot().len(),
             0,
             "empty resolv.conf should clear DHCP upstream members"
         );
@@ -3501,6 +3196,16 @@ nameserver 2001:4860:4860::8888
             "expected resolved reload to pick new nameserver, got {}",
             snap[0].name()
         );
+    }
+
+    #[test]
+    fn file_backed_upstream_pool_owner_lives_in_upstream_pool_module() {
+        let pool_source = include_str!("upstream_pool.rs");
+        let upstream_source = include_str!("upstream.rs");
+
+        assert!(pool_source.contains("struct FileBackedUpstreamPool"));
+        assert!(upstream_source.contains("pool: FileBackedUpstreamPool"));
+        assert!(upstream_source.contains("load_udp_upstreams_from_file"));
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ use tracing::warn;
 use once_cell::sync::Lazy;
 
 use crate::router::{
-    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
+    empty_router_index, normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
     runtime_override_http, runtime_override_udp, shared_index, RouteTarget, RouterIndex,
 };
 
@@ -204,42 +204,9 @@ fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
 }
 
 fn compat_router_index_from_default(default: &str) -> Arc<RouterIndex> {
-    use crate::router::decision_intern::intern_decision;
-    use std::collections::HashMap;
-
-    Arc::new(RouterIndex {
-        exact: HashMap::new(),
-        suffix: Vec::new(),
-        suffix_map: HashMap::new(),
-        port_rules: HashMap::new(),
-        port_ranges: Vec::new(),
-        transport_tcp: None,
-        transport_udp: None,
-        cidr4: Vec::new(),
-        cidr6: Vec::new(),
-        cidr4_buckets: vec![Vec::new(); 33],
-        cidr6_buckets: vec![Vec::new(); 129],
-        rules: Vec::new(),
-        geoip_rules: Vec::new(),
-        geosite_rules: Vec::new(),
-        wifi_ssid_rules: Default::default(),
-        wifi_bssid_rules: Default::default(),
-        rule_set_rules: Default::default(),
-        process_rules: Default::default(),
-        process_path_rules: Default::default(),
-        protocol_rules: Default::default(),
-        network_rules: Default::default(),
-        source_rules: Vec::new(),
-        dest_rules: Vec::new(),
-        user_agent_rules: Vec::new(),
-        #[cfg(feature = "router_keyword")]
-        keyword_rules: Vec::new(),
-        #[cfg(feature = "router_keyword")]
-        keyword_idx: None,
-        default: intern_decision(default),
-        gen: 1,
-        checksum: [0u8; 32],
-    })
+    let mut idx = (*empty_router_index(default)).clone();
+    idx.gen = 1;
+    Arc::new(idx)
 }
 
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`

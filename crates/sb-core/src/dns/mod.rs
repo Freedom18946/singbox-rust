@@ -43,6 +43,7 @@ pub mod stub;
 pub mod system;
 pub mod transport;
 pub mod upstream;
+mod upstream_pool;
 
 #[cfg(test)]
 mod integration_tests;

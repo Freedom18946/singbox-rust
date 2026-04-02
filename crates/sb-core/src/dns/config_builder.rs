@@ -1105,6 +1105,14 @@ mod tests {
     }
 
     #[test]
+    fn builder_keeps_special_upstream_wiring_in_specialized_helpers() {
+        let source = include_str!("config_builder.rs");
+        assert!(source.contains("build_dhcp_dns_upstream"));
+        assert!(source.contains("build_tailscale_dns_upstream"));
+        assert!(source.contains("build_resolved_dns_upstream"));
+    }
+
+    #[test]
     fn hydrate_dns_ir_reads_env_values() {
         let _ttl = EnvVarGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
         let _timeout = EnvVarGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");

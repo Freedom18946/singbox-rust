@@ -1,19 +1,17 @@
-use super::{RouterHandle, ip_in_v4net, ip_in_v6net};
+use super::{ip_in_v4net, ip_in_v6net, RouterHandle};
 use std::net::IpAddr;
 
 pub fn try_override(
     _r: &RouterHandle,
     _q: &super::explain::ExplainQuery,
 ) -> Option<(String, String)> {
-    // Check if there are any override rules configured
-    // Override rules take precedence over all other routing decisions
-    if let Ok(override_decision) = std::env::var("SB_ROUTER_OVERRIDE") {
-        if !override_decision.is_empty() {
-            return Some((override_decision, "override".to_string()));
+    if let Some(host) = _q.host.as_ref().or(_q.sni.as_ref()) {
+        let host_norm = super::normalize_host(host);
+        if let Some((decision, reason)) = super::runtime_override_http(&host_norm, Some(_q.port)) {
+            return Some((decision.to_string(), reason.to_string()));
         }
     }
 
-    // Check for domain-specific overrides
     if let Some(domain) = &_q.sni {
         if let Ok(domain_overrides) = std::env::var("SB_ROUTER_DOMAIN_OVERRIDES") {
             for override_rule in domain_overrides.split(',') {
@@ -184,4 +182,34 @@ pub fn try_exact(_r: &RouterHandle, sni: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{try_override, RouterHandle};
+    use crate::router::{explain::ExplainQuery, router_build_index_from_str};
+    use crate::testutil::EnvVarGuard;
+
+    #[test]
+    fn try_override_uses_runtime_override_query_seam() {
+        let _override = EnvVarGuard::set(
+            "SB_ROUTER_OVERRIDE",
+            "exact:api.example.com=proxy;default=reject",
+        );
+        let idx = router_build_index_from_str("default=unresolved", 64).expect("router index");
+        let handle = RouterHandle::from_index(idx);
+        let query = ExplainQuery {
+            sni: Some("api.example.com".into()),
+            host: None,
+            ip: None,
+            port: 443,
+            proto: "tcp",
+            transport: Some("tcp"),
+            alpn: None,
+        };
+
+        let result = try_override(&handle, &query).expect("override should match");
+        assert_eq!(result.0, "proxy");
+        assert_eq!(result.1, "override");
+    }
 }

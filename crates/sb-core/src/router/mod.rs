@@ -30,6 +30,8 @@ pub mod route_connection;
 pub mod rule_set;
 pub mod rules;
 pub mod runtime;
+mod runtime_override;
+mod shared_index;
 /// Protocol sniffing (stage 1: no-op stubs)
 pub mod sniff;
 /// QUIC Initial packet decryption for SNI extraction
@@ -113,6 +115,8 @@ pub use self::hot_reload_cli::{
     show_rule_stats, start_hot_reload_cli, validate_rule_files, HotReloadCliConfig,
 };
 pub use self::route_connection::{ConnectionRouter, DirectRouter, RouteResult};
+pub use self::runtime_override::{runtime_override_http, runtime_override_udp};
+pub use self::shared_index::{router_index_from_env_with_reload, shared_index};
 pub use crate::outbound::RouteTarget;
 pub use crate::routing::engine::Input;
 
@@ -219,6 +223,11 @@ use std::{
 };
 use tokio::fs as tfs;
 use tokio::time::sleep;
+
+pub(crate) use self::runtime_override::runtime_override_ip;
+pub(crate) use self::shared_index::empty_router_index;
+#[cfg(test)]
+pub(crate) use self::shared_index::shared_hot_reload_enabled_from_env;
 
 #[cfg(feature = "metrics")]
 #[inline]
@@ -2032,116 +2041,6 @@ pub async fn spawn_rules_hot_reload(
     Ok(h)
 }
 
-fn shared_hot_reload_enabled_from_env() -> bool {
-    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-    !file.is_empty() && router_rules_hot_reload_ms_from_env() > 0
-}
-
-/// 便捷：从 ENV 初始化索引并（可选）热重载
-pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>> {
-    let max_rules = router_rules_max_from_env();
-    let init_rules = if let Ok(p) = std::env::var("SB_ROUTER_RULES_FILE") {
-        tokio::fs::read_to_string(&p).await.unwrap_or_default()
-    } else {
-        std::env::var("SB_ROUTER_RULES").unwrap_or_default()
-    };
-    let idx = router_build_index_from_str(&init_rules, max_rules).unwrap_or_else(|_| {
-        Arc::new(RouterIndex {
-            exact: HashMap::new(),
-            suffix: vec![],
-            suffix_map: HashMap::new(),
-            port_rules: HashMap::new(),
-            port_ranges: vec![],
-            transport_tcp: None,
-            transport_udp: None,
-            cidr4: vec![],
-            cidr6: vec![],
-            cidr4_buckets: vec![Vec::new(); 33],
-            cidr6_buckets: vec![Vec::new(); 129],
-            geoip_rules: vec![],
-            geosite_rules: vec![],
-            wifi_ssid_rules: Default::default(),
-            wifi_bssid_rules: Default::default(),
-            rule_set_rules: Default::default(),
-            process_rules: Default::default(),
-            process_path_rules: Default::default(),
-            protocol_rules: Default::default(),
-            network_rules: Default::default(),
-            source_rules: vec![],
-            dest_rules: vec![],
-            user_agent_rules: vec![],
-
-            #[cfg(feature = "router_keyword")]
-            keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
-            keyword_idx: None,
-            default: "unresolved",
-            gen: 0,
-            checksum: [0; 32],
-            rules: vec![],
-        })
-    });
-    let shared = Arc::new(RwLock::new(idx));
-    // 可选热重载
-    let _ = spawn_rules_hot_reload(shared.clone()).await;
-    shared
-}
-
-// ===== 共享快照（给 RouterHandle / decide_http 复用）=====
-static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
-    // 同步阶段：尽力按 ENV 构造一份索引；失败则显式 unresolved，避免 silent direct fallback
-    let max_rules = router_rules_max_from_env();
-    let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
-    let initial_text = if inline.is_empty() {
-        if let Ok(p) = std::env::var("SB_ROUTER_RULES_FILE") {
-            std::fs::read_to_string(p).unwrap_or_default()
-        } else {
-            String::new()
-        }
-    } else {
-        inline
-    };
-    let idx = router_build_index_from_str(&initial_text, max_rules).unwrap_or_else(|_| {
-        Arc::new(RouterIndex {
-            exact: Default::default(),
-            suffix: vec![],
-            suffix_map: HashMap::new(),
-            port_rules: HashMap::new(),
-            port_ranges: vec![],
-            transport_tcp: None,
-            transport_udp: None,
-            cidr4: vec![],
-            cidr6: vec![],
-            cidr4_buckets: vec![Vec::new(); 33],
-            cidr6_buckets: vec![Vec::new(); 129],
-            geoip_rules: vec![],
-            geosite_rules: vec![],
-            wifi_ssid_rules: Default::default(),
-            wifi_bssid_rules: Default::default(),
-            rule_set_rules: Default::default(),
-            process_rules: Default::default(),
-            process_path_rules: Default::default(),
-            protocol_rules: Default::default(),
-            network_rules: Default::default(),
-            source_rules: vec![],
-            dest_rules: vec![],
-            user_agent_rules: vec![],
-
-            #[cfg(feature = "router_keyword")]
-            keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
-            keyword_idx: None,
-            default: "unresolved",
-            gen: 0,
-            checksum: [0; 32],
-            rules: vec![],
-        })
-    });
-    Arc::new(RwLock::new(idx))
-});
-
-static SHARED_INDEX_ENV_CACHE: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
-
 fn parse_router_rules_max_env(value: Option<&str>) -> Result<usize, Arc<str>> {
     match value {
         Some(raw) => raw.parse::<usize>().map_err(|err| {
@@ -2349,357 +2248,6 @@ fn router_suffix_trie_from_env() -> bool {
             false
         }
     }
-}
-
-fn refresh_shared_index_from_env_if_needed() {
-    let max_rules = router_rules_max_from_env();
-    let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
-    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-
-    let key = format!("max_rules={max_rules}\nfile={file}\ninline={inline}");
-    {
-        let mut w = SHARED_INDEX_ENV_CACHE
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
-        if w.as_deref() == Some(&key) {
-            return;
-        }
-        *w = Some(key);
-    }
-
-    let initial_text = if inline.is_empty() {
-        if file.is_empty() {
-            String::new()
-        } else {
-            std::fs::read_to_string(&file).unwrap_or_default()
-        }
-    } else {
-        inline
-    };
-
-    let idx = router_build_index_from_str(&initial_text, max_rules).unwrap_or_else(|_| {
-        Arc::new(RouterIndex {
-            exact: Default::default(),
-            suffix: vec![],
-            suffix_map: HashMap::new(),
-            port_rules: HashMap::new(),
-            port_ranges: vec![],
-            transport_tcp: None,
-            transport_udp: None,
-            cidr4: vec![],
-            cidr6: vec![],
-            cidr4_buckets: vec![Vec::new(); 33],
-            cidr6_buckets: vec![Vec::new(); 129],
-            geoip_rules: vec![],
-            geosite_rules: vec![],
-            wifi_ssid_rules: Default::default(),
-            wifi_bssid_rules: Default::default(),
-            rule_set_rules: Default::default(),
-            process_rules: Default::default(),
-            process_path_rules: Default::default(),
-            protocol_rules: Default::default(),
-            network_rules: Default::default(),
-            source_rules: vec![],
-            dest_rules: vec![],
-            user_agent_rules: vec![],
-            #[cfg(feature = "router_keyword")]
-            keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
-            keyword_idx: None,
-            default: "unresolved",
-            gen: 0,
-            checksum: [0; 32],
-            rules: vec![],
-        })
-    });
-
-    let mut w = SHARED_INDEX.write().unwrap_or_else(|e| e.into_inner());
-    *w = idx;
-}
-
-/// 提供共享快照（在 Tokio runtime 内自动启动热重载）
-pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
-    refresh_shared_index_from_env_if_needed();
-    // 若在 async 上下文，后台拉起热重载（只尝试一次）
-    if tokio::runtime::Handle::try_current().is_ok() && shared_hot_reload_enabled_from_env() {
-        static STARTED: Lazy<std::sync::Once> = Lazy::new(std::sync::Once::new);
-        STARTED.call_once(|| {
-            let s = SHARED_INDEX.clone();
-            tokio::spawn(async move {
-                let _ = spawn_rules_hot_reload(s).await;
-            });
-        });
-    }
-    SHARED_INDEX.clone()
-}
-
-/// —— 运行时覆盖（仅用于调试）———————————————————————————————————————————————
-#[derive(Debug, Clone)]
-struct RuntimeOverride {
-    exact: HashMap<String, &'static str>,
-    suffix: Vec<(String, &'static str)>,
-    cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>>, // 0..=32
-    cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>>, // 0..=128
-    port: HashMap<u16, &'static str>,
-    port_ranges: Vec<(u16, u16, &'static str)>,
-    transport_tcp: Option<&'static str>,
-    transport_udp: Option<&'static str>,
-    default: Option<&'static str>,
-}
-
-type RuntimeOverrideCacheEntry = Option<(String, Arc<RuntimeOverride>)>;
-static RUNTIME_OVERRIDE_CACHE: Lazy<RwLock<RuntimeOverrideCacheEntry>> =
-    Lazy::new(|| RwLock::new(None));
-
-fn parse_runtime_override(raw: &str) -> RuntimeOverride {
-    let mut exact = HashMap::new();
-    let mut suffix = Vec::new();
-    let mut cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>> = vec![Vec::new(); 33];
-    let mut cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>> = vec![Vec::new(); 129];
-    let mut port = HashMap::new();
-    let mut port_ranges = Vec::new();
-    let mut transport_tcp = None;
-    let mut transport_udp = None;
-    let mut default = None;
-
-    // 支持逗号或分号分隔
-    for seg in raw.split([',', ';']) {
-        let s = seg.trim();
-        if s.is_empty() {
-            continue;
-        }
-        let (k, v) = match s.split_once('=') {
-            Some((a, b)) => (a.trim(), b.trim()),
-            None => continue,
-        };
-        let v = intern_dec(v);
-
-        // k 形如 kind:pattern 或 default
-        if k.eq_ignore_ascii_case("default") {
-            default = Some(v);
-            continue;
-        }
-        let Some((kind, pat)) = k.split_once(':') else {
-            continue;
-        };
-        let kind = kind.to_ascii_lowercase();
-        match kind.as_str() {
-            "exact" => {
-                exact.insert(normalize_host(pat), v);
-            }
-            "suffix" => {
-                let patt = pat.trim_start_matches('.');
-                suffix.push((patt.to_ascii_lowercase().to_string(), v));
-            }
-            "cidr4" => {
-                let mut it = pat.split('/');
-                if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
-                    if let (Ok(net), Ok(mask)) =
-                        (ip.trim().parse::<Ipv4Addr>(), mask.trim().parse::<u8>())
-                    {
-                        if mask <= 32 {
-                            cidr4_buckets[mask as usize].push((Ipv4Net { net, mask }, v));
-                        }
-                    }
-                }
-            }
-            "cidr6" => {
-                let mut it = pat.split('/');
-                if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
-                    if let (Ok(net), Ok(mask)) =
-                        (ip.trim().parse::<Ipv6Addr>(), mask.trim().parse::<u8>())
-                    {
-                        if mask <= 128 {
-                            cidr6_buckets[mask as usize].push((Ipv6Net { net, mask }, v));
-                        }
-                    }
-                }
-            }
-            "port" => {
-                if let Ok(p) = pat.parse::<u16>() {
-                    port.insert(p, v);
-                }
-            }
-            "portrange" => {
-                let mut it = pat.splitn(2, '-');
-                if let (Some(a), Some(b)) = (it.next(), it.next()) {
-                    if let (Ok(s), Ok(e)) = (a.parse::<u16>(), b.parse::<u16>()) {
-                        if e >= s {
-                            port_ranges.push((s, e, v));
-                        }
-                    }
-                }
-            }
-            "portset" => {
-                for t in pat.split(',') {
-                    if let Ok(p) = t.trim().parse::<u16>() {
-                        port.insert(p, v);
-                    }
-                }
-            }
-            "transport" => match pat.to_ascii_lowercase().as_str() {
-                "tcp" => transport_tcp = Some(v),
-                "udp" => transport_udp = Some(v),
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    RuntimeOverride {
-        exact,
-        suffix,
-        cidr4_buckets,
-        cidr6_buckets,
-        port,
-        port_ranges,
-        transport_tcp,
-        transport_udp,
-        default,
-    }
-}
-
-fn runtime_override() -> Option<Arc<RuntimeOverride>> {
-    let raw = match std::env::var("SB_ROUTER_OVERRIDE") {
-        Ok(s) if !s.trim().is_empty() => s,
-        _ => return None,
-    };
-    if let Ok(g) = RUNTIME_OVERRIDE_CACHE.read() {
-        if let Some((cached, ov)) = &*g {
-            if cached == &raw {
-                return Some(Arc::clone(ov));
-            }
-        }
-    }
-    let parsed = Arc::new(parse_runtime_override(&raw));
-    if let Ok(mut g) = RUNTIME_OVERRIDE_CACHE.write() {
-        *g = Some((raw, Arc::clone(&parsed)));
-    }
-    Some(parsed)
-}
-
-pub fn runtime_override_http(
-    host_norm: &str,
-    port: Option<u16>,
-) -> Option<(&'static str, &'static str)> {
-    let ov = runtime_override()?;
-    if let Some(d) = ov.exact.get(host_norm) {
-        return Some((*d, "override"));
-    }
-    // suffix 匹配：检查 host 是否以 suffix 结尾
-    for (s, d) in &ov.suffix {
-        if host_norm.ends_with(s) {
-            return Some((*d, "override"));
-        }
-    }
-    // CIDR 覆盖：仅当 host 为字面量 IP 时生效
-    if let Ok(ip) = host_norm.parse::<IpAddr>() {
-        match ip {
-            IpAddr::V4(v4) => {
-                for m in (0..=32).rev() {
-                    for (n, d) in &ov.cidr4_buckets[m] {
-                        if ip_in_v4net(v4, *n) {
-                            return Some((*d, "override_cidr"));
-                        }
-                    }
-                }
-            }
-            IpAddr::V6(v6) => {
-                for m in (0..=128).rev() {
-                    for (n, d) in &ov.cidr6_buckets[m] {
-                        if ip_in_v6net(v6, *n) {
-                            return Some((*d, "override_cidr"));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if let Some(p) = port {
-        if let Some(d) = ov.port.get(&p) {
-            return Some((*d, "override"));
-        }
-        for (s, e, d) in &ov.port_ranges {
-            if p >= *s && p <= *e {
-                return Some((*d, "override"));
-            }
-        }
-    }
-    if let Some(d) = ov.transport_tcp {
-        return Some((d, "override"));
-    }
-    if let Some(d) = ov.default {
-        return Some((d, "override_default"));
-    }
-    None
-}
-
-pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static str)> {
-    let ov = runtime_override()?;
-    if let Some(d) = ov.exact.get(host_norm) {
-        return Some((*d, "override"));
-    }
-    // suffix 匹配：检查 host 是否以 suffix 结尾
-    for (s, d) in &ov.suffix {
-        if host_norm.ends_with(s) {
-            return Some((*d, "override"));
-        }
-    }
-    // CIDR 覆盖：仅当 host 为字面量 IP 时生效
-    if let Ok(ip) = host_norm.parse::<IpAddr>() {
-        match ip {
-            IpAddr::V4(v4) => {
-                for m in (0..=32).rev() {
-                    for (n, d) in &ov.cidr4_buckets[m] {
-                        if ip_in_v4net(v4, *n) {
-                            return Some((*d, "override_cidr"));
-                        }
-                    }
-                }
-            }
-            IpAddr::V6(v6) => {
-                for m in (0..=128).rev() {
-                    for (n, d) in &ov.cidr6_buckets[m] {
-                        if ip_in_v6net(v6, *n) {
-                            return Some((*d, "override_cidr"));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if let Some(d) = ov.transport_udp {
-        return Some((d, "override"));
-    }
-    if let Some(d) = ov.default {
-        return Some((d, "override_default"));
-    }
-    None
-}
-
-pub(crate) fn runtime_override_ip(ip: IpAddr) -> Option<&'static str> {
-    let ov = runtime_override()?;
-    match ip {
-        IpAddr::V4(v4) => {
-            for m in (0..=32).rev() {
-                for (n, d) in &ov.cidr4_buckets[m] {
-                    if ip_in_v4net(v4, *n) {
-                        return Some(*d);
-                    }
-                }
-            }
-        }
-        IpAddr::V6(v6) => {
-            for m in (0..=128).rev() {
-                for (n, d) in &ov.cidr6_buckets[m] {
-                    if ip_in_v6net(v6, *n) {
-                        return Some(*d);
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 /// —— 快照摘要导出（JSON 字符串；feature=json 才返回 JSON，否则返回人类可读文本）———
@@ -3209,8 +2757,16 @@ mod migration_tests {
         parse_router_rules_include_depth_env, parse_router_rules_jitter_ms_env,
         parse_router_rules_max_depth_env, parse_router_rules_max_env,
         parse_router_rules_require_default_env, parse_router_suffix_strict_env,
-        parse_router_suffix_trie_env,
+        parse_router_suffix_trie_env, shared_index,
     };
+    use std::sync::{Mutex, OnceLock};
+
+    fn serial_env_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn invalid_router_rules_max_env_reports_explicitly() {
@@ -3243,6 +2799,35 @@ mod migration_tests {
         let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "/tmp/router.rules");
         let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "10");
         assert!(super::shared_hot_reload_enabled_from_env());
+    }
+
+    #[test]
+    fn shared_index_refreshes_when_router_rules_env_changes() {
+        let _serial = serial_env_guard();
+        let _rules_file = crate::testutil::EnvVarGuard::remove("SB_ROUTER_RULES_FILE");
+        let _rules = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES", "exact:a.example=proxy");
+
+        let first = shared_index();
+        let first = first.read().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(first.exact.get("a.example").copied(), Some("proxy"));
+
+        let _rules = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES", "exact:b.example=reject");
+        let second = shared_index();
+        let second = second.read().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(second.exact.get("a.example"), None);
+        assert_eq!(second.exact.get("b.example").copied(), Some("reject"));
+    }
+
+    #[test]
+    fn router_shared_state_owner_lives_in_dedicated_modules() {
+        let shared_source = include_str!("shared_index.rs");
+        let override_source = include_str!("runtime_override.rs");
+        let mod_source = include_str!("mod.rs");
+
+        assert!(shared_source.contains("static SHARED_INDEX"));
+        assert!(override_source.contains("static RUNTIME_OVERRIDE_CACHE"));
+        assert!(mod_source.contains("mod shared_index;"));
+        assert!(mod_source.contains("mod runtime_override;"));
     }
 
     #[test]
