@@ -160,7 +160,7 @@ pub async fn handle(
             let report = sb_core::router::analyze::analyze(&text);
 
             match build_single_patch_json_async(
-                &state.analyze_registry,
+                state.analyze_registry(),
                 &kind,
                 &report,
                 &text,
@@ -180,7 +180,7 @@ pub async fn handle(
                     respond(sock, 200, "application/json", &body).await
                 }
                 Err(e) => {
-                    let supported_list = state.analyze_registry.supported_kinds().join(", ");
+                    let supported_list = state.analyze_registry().supported_kinds().join(", ");
                     let hint = format!("supported kinds: [{supported_list}]");
                     respond_json_error(sock, 400, &format!("patch build failed: {e}"), Some(&hint))
                         .await

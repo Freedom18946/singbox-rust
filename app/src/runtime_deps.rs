@@ -31,6 +31,8 @@ pub struct AppRuntimeDeps {
     pub reloadable: Arc<crate::admin_debug::reloadable::ReloadableConfigStore>,
     #[cfg(feature = "admin_debug")]
     pub security_metrics: Arc<crate::admin_debug::security_metrics::SecurityMetricsState>,
+    #[cfg(feature = "admin_debug")]
+    admin_state: Arc<crate::admin_debug::AdminDebugState>,
     pub started_at: Instant,
 }
 
@@ -66,6 +68,16 @@ impl AppRuntimeDeps {
         let security_metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
+        #[cfg(feature = "admin_debug")]
+        let admin_state = Arc::new(crate::admin_debug::AdminDebugState::new(
+            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+            Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),
+            Arc::clone(&breaker),
+            Arc::clone(&cache),
+            Arc::clone(&reloadable),
+            Arc::clone(&security_metrics),
+            started_at,
+        ));
         #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
         let prefetcher = crate::admin_debug::prefetch::install_default_prefetcher(Arc::new(
             crate::admin_debug::prefetch::Prefetcher::from_env(),
@@ -89,6 +101,8 @@ impl AppRuntimeDeps {
             reloadable,
             #[cfg(feature = "admin_debug")]
             security_metrics,
+            #[cfg(feature = "admin_debug")]
+            admin_state,
             started_at,
         })
     }
@@ -102,15 +116,7 @@ impl AppRuntimeDeps {
     #[cfg(feature = "admin_debug")]
     #[must_use]
     pub fn admin_state(&self) -> Arc<crate::admin_debug::AdminDebugState> {
-        Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::clone(&self.analyze_registry),
-            breaker: Arc::clone(&self.breaker),
-            cache: Arc::clone(&self.cache),
-            reloadable: Arc::clone(&self.reloadable),
-            security_metrics: Arc::clone(&self.security_metrics),
-            started_at: self.started_at,
-        })
+        Arc::clone(&self.admin_state)
     }
 }
 
@@ -118,6 +124,7 @@ impl AppRuntimeDeps {
 mod tests {
     use super::build_redactor;
     use serial_test::serial;
+    use std::sync::Arc;
 
     #[tokio::test]
     #[serial]
@@ -164,6 +171,22 @@ mod tests {
         drop(deps);
 
         #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(feature = "admin_debug")]
+    fn app_runtime_deps_reuses_stable_admin_state_handle() {
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
+        let first = deps.admin_state();
+        let second = deps.admin_state();
+
+        assert!(Arc::ptr_eq(&first, &second));
+
+        drop(deps);
         crate::admin_debug::security_metrics::clear_default_for_test();
     }
 }

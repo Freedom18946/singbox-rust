@@ -94,17 +94,17 @@ async fn start_test_server(
     let reloadable = app::admin_debug::reloadable::install_default(Arc::new(
         app::admin_debug::reloadable::ReloadableConfigStore::from_env(),
     ));
-    let state = Arc::new(app::admin_debug::AdminDebugState {
+    let state = Arc::new(app::admin_debug::AdminDebugState::new(
         #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-        analyze_registry: Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
+        Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
         breaker,
         cache,
         reloadable,
-        security_metrics: app::admin_debug::security_metrics::install_default(Arc::new(
+        app::admin_debug::security_metrics::install_default(Arc::new(
             app::admin_debug::security_metrics::SecurityMetricsState::new(),
         )),
-        started_at: std::time::Instant::now(),
-    });
+        std::time::Instant::now(),
+    ));
 
     let handle = app::admin_debug::http_server::serve_plain(&addr_string, state).await?;
 

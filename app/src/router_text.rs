@@ -183,7 +183,8 @@ mod tests {
     fn wp30ak_pin_bootstrap_delegates_router_text_owner() {
         let bootstrap = include_str!("bootstrap.rs");
 
-        assert!(bootstrap.contains("crate::router_text::ir_to_router_rules_text(&cfg_ir)"));
-        assert!(bootstrap.contains("router_build_index_from_str(&text, max_rules)"));
+        assert!(bootstrap
+            .contains("crate::bootstrap_runtime::router_helpers::build_router_index_from_config("));
+        assert!(bootstrap.contains("crate::bootstrap_runtime::router_helpers::parse_env_usize("));
     }
 }

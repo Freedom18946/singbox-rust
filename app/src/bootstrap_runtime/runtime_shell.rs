@@ -15,6 +15,22 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    #[must_use]
+    pub fn new(
+        router: Arc<sb_core::router::engine::RouterHandle>,
+        outbounds: Arc<OutboundRegistryHandle>,
+        inbounds: Vec<app::inbound_starter::InboundHandle>,
+        #[cfg(any(feature = "clash_api", feature = "v2ray_api"))] services: Vec<ServiceHandle>,
+    ) -> Self {
+        Self {
+            router,
+            outbounds,
+            inbounds,
+            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+            services,
+        }
+    }
+
     pub async fn shutdown(self, timeout: Duration) -> Result<()> {
         let Self {
             inbounds,
@@ -55,13 +71,13 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_shutdown_succeeds_with_no_children() -> anyhow::Result<()> {
-        let runtime = Runtime {
-            router: Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
-            outbounds: empty_outbound_handle(),
-            inbounds: Vec::new(),
+        let runtime = Runtime::new(
+            Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
+            empty_outbound_handle(),
+            Vec::new(),
             #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-            services: Vec::new(),
-        };
+            Vec::new(),
+        );
 
         runtime.shutdown(Duration::from_millis(10)).await
     }
@@ -73,16 +89,16 @@ mod tests {
         let join = tokio::spawn(async {
             tokio::time::sleep(Duration::from_millis(100)).await;
         });
-        let runtime = Runtime {
-            router: Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
-            outbounds: empty_outbound_handle(),
-            inbounds: Vec::new(),
-            services: vec![ServiceHandle {
+        let runtime = Runtime::new(
+            Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
+            empty_outbound_handle(),
+            Vec::new(),
+            vec![ServiceHandle {
                 name: "hung",
                 shutdown: shutdown_tx,
                 join,
             }],
-        };
+        );
 
         let error = runtime
             .shutdown(Duration::from_millis(10))
@@ -98,7 +114,9 @@ mod tests {
         let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub struct Runtime"));
+        assert!(source.contains("pub fn new("));
         assert!(!bootstrap.contains("pub struct Runtime {"));
+        assert!(bootstrap.contains("Runtime::new("));
         assert!(bootstrap.contains("pub use crate::bootstrap_runtime::runtime_shell::Runtime;"));
     }
 }

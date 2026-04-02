@@ -217,16 +217,17 @@ pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminSer
                     } else {
                         None
                     };
+                    let admin_state = ctx.runtime.admin_state();
 
                     let handle = app::admin_debug::http_server::spawn(
                         socket_addr,
                         tls_opt,
                         auth_conf,
-                        ctx.runtime.admin_state(),
+                        Arc::clone(&admin_state),
                     )
                     .await
                     .map_err(|error| anyhow!("Failed to start admin debug server: {error}"))?
-                    .with_reload_signal(app::admin_debug::reloadable::init_signal_handler());
+                    .with_reload_signal(ctx.runtime.admin_reload_signal());
                     info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
                     admin_debug = Some(handle);
                 }
@@ -308,6 +309,7 @@ mod tests {
 
         assert!(source.contains("pub struct AdminStartContext"));
         assert!(source.contains("async fn start_admin_services("));
+        assert!(source.contains("ctx.runtime.admin_reload_signal()"));
         assert!(!run_engine.contains("fn start_clash_api_from_supervisor("));
         assert!(!run_engine.contains("fn build_outbound_registry_handle("));
     }

@@ -259,15 +259,15 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
 
     let watch_handle = if opts.watch && !has_stdin {
         Some(
-            crate::run_engine_runtime::watch::WatchRuntime::new(
-                &entries,
-                opts.config_inputs.clone(),
-                opts.import_path.clone(),
-                opts.reload_output,
-                reload_state.clone(),
-                supervisor.clone(),
-            )
-            .spawn(),
+            runtime_context
+                .watch_runtime(
+                    &entries,
+                    opts.config_inputs.clone(),
+                    opts.import_path.clone(),
+                    opts.reload_output,
+                    supervisor.clone(),
+                )
+                .spawn(),
         )
     } else {
         None

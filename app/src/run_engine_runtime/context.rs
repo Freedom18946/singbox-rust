@@ -56,6 +56,12 @@ impl RuntimeContext {
         self.runtime_deps.admin_state()
     }
 
+    #[cfg(feature = "admin_debug")]
+    #[must_use]
+    pub fn admin_reload_signal(&self) -> crate::admin_debug::reloadable::ReloadSignalHandle {
+        self.admin_state().spawn_reload_signal()
+    }
+
     #[cfg(feature = "observe")]
     #[must_use]
     pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
@@ -89,6 +95,25 @@ impl RuntimeContext {
             );
             None
         }
+    }
+
+    #[must_use]
+    pub fn watch_runtime(
+        &self,
+        entries: &[crate::config_loader::ConfigEntry],
+        config_inputs: crate::run_engine::ConfigInputs,
+        import_path: Option<std::path::PathBuf>,
+        reload_output: crate::run_engine::ReloadOutputMode,
+        supervisor: Arc<sb_core::runtime::supervisor::Supervisor>,
+    ) -> crate::run_engine_runtime::watch::WatchRuntime {
+        crate::run_engine_runtime::watch::WatchRuntime::new(
+            entries,
+            config_inputs,
+            import_path,
+            reload_output,
+            self.reload_state(),
+            supervisor,
+        )
     }
 }
 

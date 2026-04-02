@@ -4,8 +4,6 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 use sb_core::outbound::{health as ob_health, OutboundRegistry, OutboundRegistryHandle};
-#[cfg(feature = "router")]
-use sb_core::router::router_build_index_from_str;
 
 pub use crate::bootstrap_runtime::runtime_shell::Runtime;
 
@@ -68,13 +66,10 @@ fn build_outbound_registry_from_ir_with_runtime_services(
 /// Returns an error if IR conversion or router index building fails.
 #[cfg(feature = "router")]
 pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::router::RouterIndex>> {
-    let cfg_ir = sb_config::present::to_ir(cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
-    let text = crate::router_text::ir_to_router_rules_text(&cfg_ir);
-    let max_rules =
-        crate::bootstrap_runtime::router_helpers::parse_env_usize("SB_ROUTER_RULES_MAX", 100_000);
-    let idx = router_build_index_from_str(&text, max_rules)
-        .map_err(|e| anyhow!("router index build failed: {e}"))?;
-    Ok(idx)
+    crate::bootstrap_runtime::router_helpers::build_router_index_from_config(
+        cfg,
+        crate::bootstrap_runtime::router_helpers::parse_env_usize("SB_ROUTER_RULES_MAX", 100_000),
+    )
 }
 
 /// Start the proxy runtime from configuration.
@@ -194,18 +189,14 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Create router and install index from IR
     #[cfg(feature = "router")]
     let rh = {
-        let handle = crate::bootstrap_runtime::router_helpers::create_router_handle();
-        match build_router_index_from_config(&cfg) {
-            Ok(idx) => {
-                if let Err(e) = handle.replace_index(idx).await {
-                    error!(error=%e, "apply router index failed");
-                }
-            }
+        let router_runtime = crate::bootstrap_runtime::router_helpers::RouterRuntime::from_env();
+        match router_runtime.install_config_index(&cfg).await {
+            Ok(()) => {}
             Err(e) => {
-                error!(error=%e, "build router index failed");
+                error!(error=%e, "router runtime index install failed");
             }
         }
-        handle
+        router_runtime.handle()
     };
 
     let (inbounds, outbounds, rules) = cfg.stats();
@@ -213,14 +204,14 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // 2) 起入站（HTTP / SOCKS / TUN）：每个入站一个 stop 通道；当前不做热更新/回收
     // 2) Start Inbounds (HTTP / SOCKS / TUN): One stop channel per inbound; currently no hot-reload/reclaim
-    let inbound_handles = crate::bootstrap_runtime::inbounds::start_inbounds_from_ir(
-        &cfg_ir.inbounds,
+    let inbound_handles = crate::bootstrap_runtime::inbounds::InboundRuntimeDeps::new(
         #[cfg(feature = "router")]
         &rh,
         &oh,
         #[cfg(feature = "adapters")]
         Arc::new(sb_common::conntrack::ConnTracker::new()),
-    );
+    )
+    .start_from_ir(&cfg_ir.inbounds);
 
     // 3) Start experimental services if configured
     // 3) 如果配置了实验性服务则启动
@@ -258,12 +249,12 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         }
     }
 
-    Ok(Runtime {
+    Ok(Runtime::new(
         #[cfg(feature = "router")]
-        router: rh,
-        outbounds: oh,
-        inbounds: inbound_handles,
+        rh,
+        oh,
+        inbound_handles,
         #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-        services: service_handles,
-    })
+        service_handles,
+    ))
 }

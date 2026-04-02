@@ -72,15 +72,63 @@ use std::time::Instant;
 #[derive(Clone)]
 pub struct AdminDebugState {
     #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-    pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
-    pub breaker: Arc<breaker::BreakerStore>,
-    pub cache: Arc<cache::CacheStore>,
-    pub reloadable: Arc<reloadable::ReloadableConfigStore>,
-    pub security_metrics: Arc<security_metrics::SecurityMetricsState>,
-    pub started_at: Instant,
+    analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
+    breaker: Arc<breaker::BreakerStore>,
+    cache: Arc<cache::CacheStore>,
+    reloadable: Arc<reloadable::ReloadableConfigStore>,
+    security_metrics: Arc<security_metrics::SecurityMetricsState>,
+    started_at: Instant,
 }
 
 impl AdminDebugState {
+    #[must_use]
+    pub const fn new(
+        #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))] analyze_registry: Arc<
+            crate::analyze::registry::AnalyzeRegistry,
+        >,
+        breaker: Arc<breaker::BreakerStore>,
+        cache: Arc<cache::CacheStore>,
+        reloadable: Arc<reloadable::ReloadableConfigStore>,
+        security_metrics: Arc<security_metrics::SecurityMetricsState>,
+        started_at: Instant,
+    ) -> Self {
+        Self {
+            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+            analyze_registry,
+            breaker,
+            cache,
+            reloadable,
+            security_metrics,
+            started_at,
+        }
+    }
+
+    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+    #[must_use]
+    pub fn analyze_registry(&self) -> &crate::analyze::registry::AnalyzeRegistry {
+        &self.analyze_registry
+    }
+
+    #[must_use]
+    pub fn security_metrics_state(&self) -> Arc<security_metrics::SecurityMetricsState> {
+        Arc::clone(&self.security_metrics)
+    }
+
+    #[must_use]
+    pub fn prefetch_queue_high_watermark(&self) -> u64 {
+        self.security_metrics.get_prefetch_queue_high_watermark()
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> Instant {
+        self.started_at
+    }
+
+    #[must_use]
+    pub fn spawn_reload_signal(&self) -> reloadable::ReloadSignalHandle {
+        reloadable::spawn_signal_handler(Arc::clone(&self.reloadable))
+    }
+
     /// # Errors
     /// Returns an error when the control-plane query path cannot gather a
     /// current admin snapshot.
@@ -113,6 +161,6 @@ pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) -> http_server::Adm
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
     };
 
-    let reload_signal = reloadable::init_signal_handler();
+    let reload_signal = state.spawn_reload_signal();
     http_server::spawn_plain_sync(bind_addr, state).with_reload_signal(reload_signal)
 }

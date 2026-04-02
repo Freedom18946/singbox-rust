@@ -5,27 +5,36 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::config_loader::{self, ConfigEntry};
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 pub struct WatchHandle {
-    stop: oneshot::Sender<()>,
-    join: JoinHandle<()>,
+    cancel: CancellationToken,
+    join: Option<JoinHandle<()>>,
 }
 
 impl WatchHandle {
     #[cfg(test)]
-    fn from_parts(stop: oneshot::Sender<()>, join: JoinHandle<()>) -> Self {
-        Self { stop, join }
+    fn from_parts(cancel: CancellationToken, join: JoinHandle<()>) -> Self {
+        Self {
+            cancel,
+            join: Some(join),
+        }
     }
 
-    pub async fn shutdown(self) {
-        if self.stop.send(()).is_err() {
-            tracing::debug!("watch stop signal dropped before shutdown");
+    pub async fn shutdown(mut self) {
+        self.cancel.cancel();
+        if let Some(join) = self.join.take() {
+            if let Err(error) = join.await {
+                tracing::warn!(%error, "watch task join failed during shutdown");
+            }
         }
-        if let Err(error) = self.join.await {
-            tracing::warn!(%error, "watch task join failed during shutdown");
-        }
+    }
+}
+
+impl Drop for WatchHandle {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }
 
@@ -148,13 +157,14 @@ impl WatchRuntime {
             supervisor,
         } = self;
 
-        let (stop_tx, mut stop_rx) = oneshot::channel();
+        let cancel = CancellationToken::new();
+        let cancel_inner = cancel.clone();
         let mut snapshot = snapshot_mtimes(&entries, import_path.as_deref());
 
         let join = tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = &mut stop_rx => break,
+                    () = cancel_inner.cancelled() => break,
                     () = tokio::time::sleep(Duration::from_secs(2)) => {
                         let current_entries = match config_loader::collect_config_entries(
                             &config_inputs.config_paths,
@@ -196,8 +206,8 @@ impl WatchRuntime {
         });
 
         WatchHandle {
-            stop: stop_tx,
-            join,
+            cancel,
+            join: Some(join),
         }
     }
 }
@@ -253,6 +263,7 @@ mod tests {
     use std::time::SystemTime;
     use tempfile::tempdir;
     use tokio::sync::oneshot;
+    use tokio_util::sync::CancellationToken;
 
     fn file_entry(path: &std::path::Path) -> ConfigEntry {
         ConfigEntry {
@@ -303,14 +314,32 @@ mod tests {
 
     #[tokio::test]
     async fn watch_handle_shutdown_waits_for_spawned_task() {
-        let (stop_tx, stop_rx) = oneshot::channel();
+        let cancel = CancellationToken::new();
+        let cancel_inner = cancel.clone();
         let (done_tx, done_rx) = oneshot::channel();
         let join = tokio::spawn(async move {
-            let _ = stop_rx.await;
+            cancel_inner.cancelled().await;
             let _ = done_tx.send(());
         });
 
-        WatchHandle::from_parts(stop_tx, join).shutdown().await;
+        WatchHandle::from_parts(cancel, join).shutdown().await;
+        assert!(done_rx.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn watch_handle_drop_cancels_spawned_task() {
+        let cancel = CancellationToken::new();
+        let cancel_inner = cancel.clone();
+        let (done_tx, done_rx) = oneshot::channel();
+        let handle = WatchHandle::from_parts(
+            cancel,
+            tokio::spawn(async move {
+                cancel_inner.cancelled().await;
+                let _ = done_tx.send(());
+            }),
+        );
+
+        drop(handle);
         assert!(done_rx.await.is_ok());
     }
 

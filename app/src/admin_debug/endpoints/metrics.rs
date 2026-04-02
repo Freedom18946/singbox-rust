@@ -194,7 +194,7 @@ pub async fn handle(
     let _ = writeln!(
         buf,
         "sb_prefetch_queue_high_watermark {}",
-        state.security_metrics.get_prefetch_queue_high_watermark()
+        state.prefetch_queue_high_watermark()
     );
 
     buf.push_str("# HELP sb_prefetch_jobs_total Prefetch job events\n# TYPE sb_prefetch_jobs_total counter\n");

@@ -24,14 +24,17 @@
 
 ### 当前维护线（2026-04-02）
 
-- **MT-RTC-01**: runtime actor/context consolidation — 已完成
-  - `app/src/run_engine_runtime/context.rs` 新增 `RuntimeContext` / `RuntimeLifecycle`；`supervisor.rs` 通过 context/lifecycle 显式持有 runtime deps、reload fingerprint/state、prom exporter、admin services、watch handle
-  - `admin_start.rs` 新增 `AdminStartContext`，`watch.rs` 新增 `WatchRuntime`，`output.rs` startup 输出改走 `RuntimeContext`，runtime startup/shutdown/orchestration 的 owner/deps/context 路径更清楚
-  - `bootstrap_runtime/dns_apply.rs` 新增 `DnsRuntimeEnv::from_config(...).apply()`；`bootstrap_runtime/proxy_registry.rs` 新增 `ProxyRegistryPlan::from_env().install()`；`bootstrap.rs` 继续只是 legacy facade wiring
+- **MT-RTC-02**: runtime actorization follow-up — 已完成
+  - `runtime_deps.rs` 现在预组装并复用稳定的 `AdminDebugState` owner；`admin_debug/mod.rs`、`http_server.rs` 与 admin endpoints 改成走显式 query / reload handle，而不是 direct field + default reload helper
+  - `run_engine_runtime/context.rs` 新增 `admin_reload_signal()` / `watch_runtime(...)`；`supervisor.rs` 与 `admin_start.rs` 都改成从 `RuntimeContext` 派生 runtime seam；`watch.rs` 补上 `CancellationToken` drop-cancel 语义
+  - `bootstrap_runtime/inbounds.rs` 新增 `InboundRuntimeDeps`，`router_helpers.rs` 新增 `RouterRuntime`，`runtime_shell.rs` 新增 `Runtime::new(...)`；`bootstrap.rs` 仍是 facade，只接线到显式 deps/runtime carrier
   - 本卡性质是 maintenance / runtime quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
+  - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
 
 ### 已完成维护归档（2026-04-02）
+
+- **MT-RTC-01**: runtime actor/context consolidation — 已完成
+  - `RuntimeContext` / `RuntimeLifecycle`、`AdminStartContext`、`WatchRuntime`、`DnsRuntimeEnv`、`ProxyRegistryPlan` 作为 `MT-RTC-02` 的首批 runtime seam 基线继续稳定
 
 - **MT-OBS-01**: runtime / control-plane / observability ownership consolidation — 已完成
   - `AdminDebugHandle` / `AdminDebugState` / `AppRuntimeDeps` / metrics registry/query helper 已完成 owner-first 收口
@@ -43,7 +46,7 @@
 
 ### 当前维护重点（高层）
 
-- runtime 继续沿显式 context / lifecycle / handle 化方向治理，但不把 `run_engine.rs` / `bootstrap.rs` 重新做大
+- runtime 继续沿显式 context / lifecycle / handle / query seam 方向治理，但不把 `run_engine.rs` / `bootstrap.rs` 重新做大
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
 - 其他 maintenance 债务继续按主题推进：DNS/router mega-file、TUN 热路径、metrics compat/global 更深层治理
 
@@ -51,8 +54,10 @@
 
 | 构建 | 状态 |
 |------|------|
-| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-RTC-01`) |
-| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-RTC-01`) |
+| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
+| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
+| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-RTC-02`) |
 | `cargo test -p sb-config --lib` | ✅ pass (`WP-30at`) |
 | `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass (`WP-30at`) |
 | `cargo test -p sb-metrics --lib -- --test-threads=1` | ✅ pass (`MT-OBS-01`) |

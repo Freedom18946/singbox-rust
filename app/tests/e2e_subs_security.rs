@@ -66,15 +66,15 @@ fn admin_debug_state() -> Arc<app::admin_debug::AdminDebugState> {
         app::admin_debug::security_metrics::SecurityMetricsState::new(),
     ));
 
-    Arc::new(app::admin_debug::AdminDebugState {
+    Arc::new(app::admin_debug::AdminDebugState::new(
         #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-        analyze_registry: Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
+        Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
         breaker,
         cache,
         reloadable,
         security_metrics,
-        started_at: std::time::Instant::now(),
-    })
+        std::time::Instant::now(),
+    ))
 }
 
 struct EnvGuard {

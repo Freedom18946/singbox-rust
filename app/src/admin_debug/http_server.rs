@@ -794,8 +794,7 @@ async fn route_full_request(
                 feature = "subs_singbox"
             ))]
             {
-                endpoints::handle_subs_with_metrics(p, s, Arc::clone(&state.security_metrics))
-                    .await?;
+                endpoints::handle_subs_with_metrics(p, s, state.security_metrics_state()).await?;
             }
             #[cfg(not(any(
                 feature = "subs_http",
@@ -1192,7 +1191,7 @@ async fn handle_connection(
             endpoints::handle_subs_with_metrics(
                 path_q,
                 &mut stream,
-                Arc::clone(&state.security_metrics),
+                state.security_metrics_state(),
             )
             .await?;
         }
@@ -1294,23 +1293,23 @@ mod tests {
     use super::*;
 
     fn test_state() -> Arc<crate::admin_debug::AdminDebugState> {
-        Arc::new(crate::admin_debug::AdminDebugState {
+        Arc::new(crate::admin_debug::AdminDebugState::new(
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            breaker: crate::admin_debug::breaker::install_default(Arc::new(
+            Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
+            crate::admin_debug::breaker::install_default(Arc::new(
                 crate::admin_debug::breaker::BreakerStore::from_env(),
             )),
-            cache: crate::admin_debug::cache::install_default(Arc::new(
+            crate::admin_debug::cache::install_default(Arc::new(
                 crate::admin_debug::cache::CacheStore::from_env(),
             )),
-            reloadable: crate::admin_debug::reloadable::install_default(Arc::new(
+            crate::admin_debug::reloadable::install_default(Arc::new(
                 crate::admin_debug::reloadable::ReloadableConfigStore::from_env(),
             )),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
+            crate::admin_debug::security_metrics::install_default(Arc::new(
                 crate::admin_debug::security_metrics::SecurityMetricsState::new(),
             )),
-            started_at: std::time::Instant::now(),
-        })
+            std::time::Instant::now(),
+        ))
     }
     use std::collections::HashMap;
 
