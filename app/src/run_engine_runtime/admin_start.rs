@@ -205,7 +205,8 @@ pub async fn start_admin_services(
                         runtime_deps.admin_state(),
                     )
                     .await
-                    .map_err(|error| anyhow!("Failed to start admin debug server: {error}"))?;
+                    .map_err(|error| anyhow!("Failed to start admin debug server: {error}"))?
+                    .with_reload_signal(app::admin_debug::reloadable::init_signal_handler());
                     info!(addr = %socket_addr, r#impl = "debug", "Started admin debug server");
                     admin_debug = Some(handle);
                 }

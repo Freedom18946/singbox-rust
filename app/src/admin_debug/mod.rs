@@ -73,8 +73,30 @@ use std::time::Instant;
 pub struct AdminDebugState {
     #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
+    pub breaker: Arc<breaker::BreakerStore>,
+    pub cache: Arc<cache::CacheStore>,
+    pub reloadable: Arc<reloadable::ReloadableConfigStore>,
     pub security_metrics: Arc<security_metrics::SecurityMetricsState>,
     pub started_at: Instant,
+}
+
+impl AdminDebugState {
+    /// # Errors
+    /// Returns an error when the control-plane query path cannot gather a
+    /// current admin snapshot.
+    pub fn security_snapshot(&self) -> anyhow::Result<security_metrics::SecuritySnapshot> {
+        self.security_metrics
+            .snapshot_with_query(security_metrics::SecuritySnapshotQuery::new(
+                &self.cache,
+                &self.breaker,
+                security_metrics::current_concurrency(),
+            ))
+    }
+
+    #[must_use]
+    pub fn config_version(&self) -> u64 {
+        self.reloadable.version()
+    }
 }
 
 // Note: http_server contains the plain HTTP admin server functionality
@@ -91,8 +113,6 @@ pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) -> http_server::Adm
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
     };
 
-    // Initialize SIGHUP signal handler for configuration reloading
-    reloadable::init_signal_handler();
-
-    http_server::spawn_plain_sync(bind_addr, state)
+    let reload_signal = reloadable::init_signal_handler();
+    http_server::spawn_plain_sync(bind_addr, state).with_reload_signal(reload_signal)
 }

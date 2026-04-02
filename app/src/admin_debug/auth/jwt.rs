@@ -516,6 +516,7 @@ impl JwtProvider {
 
     /// Verify JWT token (fallback when JWT feature is disabled)
     #[cfg(not(feature = "jwt"))]
+    #[allow(clippy::unused_async)]
     async fn verify_token(&self, _token: &str) -> Result<(), AuthError> {
         Err(AuthError::internal(
             "JWT support not compiled (feature 'jwt' required)",

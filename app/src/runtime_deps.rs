@@ -24,6 +24,12 @@ pub struct AppRuntimeDeps {
     #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     pub analyze_registry: Arc<crate::analyze::registry::AnalyzeRegistry>,
     #[cfg(feature = "admin_debug")]
+    pub breaker: Arc<crate::admin_debug::breaker::BreakerStore>,
+    #[cfg(feature = "admin_debug")]
+    pub cache: Arc<crate::admin_debug::cache::CacheStore>,
+    #[cfg(feature = "admin_debug")]
+    pub reloadable: Arc<crate::admin_debug::reloadable::ReloadableConfigStore>,
+    #[cfg(feature = "admin_debug")]
     pub security_metrics: Arc<crate::admin_debug::security_metrics::SecurityMetricsState>,
     pub started_at: Instant,
 }
@@ -45,6 +51,18 @@ impl AppRuntimeDeps {
             crate::reqwest_http::ReqwestHttpClient::new(),
         ));
         #[cfg(feature = "admin_debug")]
+        let breaker = crate::admin_debug::breaker::install_default(Arc::new(
+            crate::admin_debug::breaker::BreakerStore::from_env(),
+        ));
+        #[cfg(feature = "admin_debug")]
+        let cache = crate::admin_debug::cache::install_default(Arc::new(
+            crate::admin_debug::cache::CacheStore::from_env(),
+        ));
+        #[cfg(feature = "admin_debug")]
+        let reloadable = crate::admin_debug::reloadable::install_default(Arc::new(
+            crate::admin_debug::reloadable::ReloadableConfigStore::from_env(),
+        ));
+        #[cfg(feature = "admin_debug")]
         let security_metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
@@ -64,6 +82,12 @@ impl AppRuntimeDeps {
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
             analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),
             #[cfg(feature = "admin_debug")]
+            breaker,
+            #[cfg(feature = "admin_debug")]
+            cache,
+            #[cfg(feature = "admin_debug")]
+            reloadable,
+            #[cfg(feature = "admin_debug")]
             security_metrics,
             started_at,
         })
@@ -81,6 +105,9 @@ impl AppRuntimeDeps {
         Arc::new(crate::admin_debug::AdminDebugState {
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
             analyze_registry: Arc::clone(&self.analyze_registry),
+            breaker: Arc::clone(&self.breaker),
+            cache: Arc::clone(&self.cache),
+            reloadable: Arc::clone(&self.reloadable),
             security_metrics: Arc::clone(&self.security_metrics),
             started_at: self.started_at,
         })

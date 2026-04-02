@@ -57,7 +57,7 @@ pub async fn handle(
         uptime_secs,
         supported_kinds_count: kinds.len(),
         supported_async_kinds_count: async_kinds.len(),
-        security: match state.security_metrics.snapshot() {
+        security: match state.security_snapshot() {
             Ok(snapshot) => snapshot,
             Err(err) => {
                 return crate::admin_debug::http_util::respond_json_error(
@@ -72,7 +72,7 @@ pub async fn handle(
         auth_mode,
         mtls_status,
         audit_latest_ts: crate::admin_debug::audit::latest_ts(),
-        config_version: crate::admin_debug::reloadable::version(),
+        config_version: state.config_version(),
     };
     let body = serde_json::to_string(&h).unwrap_or_else(|_| "{}".into());
     crate::admin_debug::http_util::respond(sock, 200, "application/json", &body).await

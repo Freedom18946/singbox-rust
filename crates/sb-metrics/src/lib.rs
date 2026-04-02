@@ -251,6 +251,14 @@ impl MetricsRegistryOwner {
     pub fn handle(&self) -> MetricsRegistryHandle {
         MetricsRegistryHandle::Owned(Arc::clone(&self.registry))
     }
+
+    /// # Errors
+    ///
+    /// Returns the encoder error if Prometheus text exposition fails for the
+    /// currently-owned registry.
+    pub fn encode_text(&self) -> Result<Vec<u8>, prometheus::Error> {
+        self.handle().encode_text()
+    }
 }
 
 #[must_use]
@@ -279,6 +287,16 @@ fn current_registry() -> Option<Arc<Registry>> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .as_ref()
         .and_then(Weak::upgrade)
+}
+
+/// Return the active registration target.
+///
+/// This is the owner-first registry handle used by new explicit observability
+/// code. The legacy [`shared_registry()`] helper remains as the compat shell
+/// for callers that still want the merged shared/global view.
+#[must_use]
+pub fn active_registry() -> MetricsRegistryHandle {
+    current_registry().map_or(MetricsRegistryHandle::Shared, MetricsRegistryHandle::Owned)
 }
 
 fn current_registry_ref() -> RegistryRef<'static> {
@@ -338,7 +356,7 @@ fn register_collector<C>(metric: &str, collector: &C)
 where
     C: Collector + Clone + 'static,
 {
-    let _ = shared_registry().register_cloned(metric, collector);
+    let _ = active_registry().register_cloned(metric, collector);
 }
 
 fn registered_collector<C>(metric: &str, collector: C) -> C
@@ -361,11 +379,7 @@ fn registered_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounter
     registered_collector(name, guarded_counter_vec(name, help, labels))
 }
 
-fn registered_histogram(
-    name: &str,
-    help: &str,
-    buckets: Vec<f64>,
-) -> prometheus::Histogram {
+fn registered_histogram(name: &str, help: &str, buckets: Vec<f64>) -> prometheus::Histogram {
     registered_collector(name, guarded_histogram(name, help, buckets))
 }
 
@@ -1139,6 +1153,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn derp_metrics_export() {
         // Emit a handful of DERP metrics and ensure they surface in the exporter.
         inc_derp_connection("unit", "ok");
@@ -1192,6 +1207,31 @@ mod tests {
             !text.contains("codex_metrics_owner_lifecycle"),
             "dropping explicit owner should fall back away from the temporary registry"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(clippy::unwrap_used)]
+    fn active_registry_switches_to_owned_handle_when_owner_is_installed() {
+        assert!(matches!(active_registry(), MetricsRegistryHandle::Shared));
+
+        let owner = install_default_registry_owner();
+        assert!(matches!(active_registry(), MetricsRegistryHandle::Owned(_)));
+
+        let gauge = IntGauge::new(
+            "codex_active_registry_owner",
+            "active registry should expose the owner handle",
+        )
+        .unwrap();
+        owner
+            .handle()
+            .register_cloned("codex_active_registry_owner", &gauge)
+            .unwrap();
+        gauge.set(5);
+
+        let text = String::from_utf8(owner.encode_text().unwrap()).unwrap();
+        assert!(text.contains("codex_active_registry_owner"));
+        assert!(text.contains(" 5"));
     }
 
     #[test]

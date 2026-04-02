@@ -366,6 +366,12 @@ impl SecurityMetricsState {
     /// # Errors
     /// Returns an error when dependent admin subsystems cannot be inspected.
     pub fn snapshot(&self) -> Result<SecuritySnapshot> {
+        self.snapshot_with_query(SecuritySnapshotQuery::compat())
+    }
+
+    /// # Errors
+    /// Returns an error when dependent admin subsystems cannot be inspected.
+    pub fn snapshot_with_query(&self, query: SecuritySnapshotQuery<'_>) -> Result<SecuritySnapshot> {
         let last_error = self.last_error.lock().clone();
         let last_error_ts = *self.last_err_ts.lock();
         let last_ok_ts = *self.last_ok_ts.lock();
@@ -377,15 +383,11 @@ impl SecurityMetricsState {
         let prefetch_run_buckets =
             self.histogram_pairs_u32(&PREFETCH_RUN_BUCKETS, &self.prefetch_run_counts.lock());
 
-        let (cache_bytes_mem, cache_bytes_disk) = crate::admin_debug::cache::global()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("admin cache lock poisoned"))?
-            .byte_usage();
+        let (cache_bytes_mem, cache_bytes_disk) = query.cache.byte_usage_snapshot()?;
 
-        let breaker_states = crate::admin_debug::breaker::global()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("admin breaker lock poisoned"))?
-            .state_stats()
+        let breaker_states = query
+            .breaker
+            .state_stats_snapshot()?
             .into_iter()
             .map(|(host, state, reopen_count)| (host_to_hash(&host), state, reopen_count))
             .collect();
@@ -420,7 +422,7 @@ impl SecurityMetricsState {
             cache_bytes_mem,
             cache_bytes_disk,
             breaker_states,
-            limiter_current_concurrency: get_current_concurrency(),
+            limiter_current_concurrency: query.current_concurrency,
             dns_cache_hit: self.dns_cache_hit.load(Ordering::Relaxed),
             dns_cache_miss: self.dns_cache_miss.load(Ordering::Relaxed),
             dns_latency_buckets,
@@ -528,6 +530,39 @@ impl SecurityMetricsState {
     }
 }
 
+pub struct SecuritySnapshotQuery<'a> {
+    cache: &'a crate::admin_debug::cache::CacheStore,
+    breaker: &'a crate::admin_debug::breaker::BreakerStore,
+    current_concurrency: u64,
+}
+
+impl<'a> SecuritySnapshotQuery<'a> {
+    #[must_use]
+    pub const fn new(
+        cache: &'a crate::admin_debug::cache::CacheStore,
+        breaker: &'a crate::admin_debug::breaker::BreakerStore,
+        current_concurrency: u64,
+    ) -> Self {
+        Self {
+            cache,
+            breaker,
+            current_concurrency,
+        }
+    }
+
+}
+
+impl SecuritySnapshotQuery<'static> {
+    #[must_use]
+    fn compat() -> Self {
+        Self {
+            cache: crate::admin_debug::cache::default_owner_ref(),
+            breaker: crate::admin_debug::breaker::default_owner_ref(),
+            current_concurrency: current_concurrency(),
+        }
+    }
+}
+
 #[must_use]
 pub fn install_default(state: Arc<SecurityMetricsState>) -> Arc<SecurityMetricsState> {
     let mut slot = DEFAULT_STATE
@@ -591,6 +626,11 @@ fn get_current_concurrency() -> u64 {
     }
 }
 
+#[must_use]
+pub(crate) fn current_concurrency() -> u64 {
+    get_current_concurrency()
+}
+
 fn with_current(f: impl FnOnce(&SecurityMetricsState)) {
     if let Some(state) = current_owner() {
         f(&state);
@@ -601,48 +641,122 @@ fn map_current<T>(f: impl FnOnce(&SecurityMetricsState) -> T, default: T) -> T {
     current_owner().map_or(default, |state| f(&state))
 }
 
-pub fn inc_block_private_ip() { with_current(SecurityMetricsState::inc_block_private_ip); }
-pub fn inc_exceed_size() { with_current(SecurityMetricsState::inc_exceed_size); }
-pub fn inc_timeout() { with_current(SecurityMetricsState::inc_timeout); }
-pub fn inc_redirects() { with_current(SecurityMetricsState::inc_redirects); }
-pub fn inc_connect_timeout() { with_current(SecurityMetricsState::inc_connect_timeout); }
-pub fn inc_upstream_4xx() { with_current(SecurityMetricsState::inc_upstream_4xx); }
-pub fn inc_upstream_5xx() { with_current(SecurityMetricsState::inc_upstream_5xx); }
-pub fn inc_rate_limited() { with_current(SecurityMetricsState::inc_rate_limited); }
-pub fn inc_cache_hit() { with_current(SecurityMetricsState::inc_cache_hit); }
-pub fn inc_cache_miss() { with_current(SecurityMetricsState::inc_cache_miss); }
-pub fn inc_cache_evict_mem() { with_current(SecurityMetricsState::inc_cache_evict_mem); }
-pub fn inc_cache_evict_disk() { with_current(SecurityMetricsState::inc_cache_evict_disk); }
-pub fn inc_head_total() { with_current(SecurityMetricsState::inc_head_total); }
-pub fn inc_breaker_block() { with_current(SecurityMetricsState::inc_breaker_block); }
-pub fn inc_breaker_reopen() { with_current(SecurityMetricsState::inc_breaker_reopen); }
-pub fn init_prefetch_metrics() { with_current(SecurityMetricsState::init_prefetch_metrics); }
-pub fn prefetch_inc(event: &str) { with_current(|s| s.prefetch_inc(event)); }
-pub fn record_prefetch_run_ms(ms: u64) { with_current(|s| s.record_prefetch_run_ms(ms)); }
-pub fn set_prefetch_queue_depth(depth: u64) { with_current(|s| s.set_prefetch_queue_depth(depth)); }
+pub fn inc_block_private_ip() {
+    with_current(SecurityMetricsState::inc_block_private_ip);
+}
+pub fn inc_exceed_size() {
+    with_current(SecurityMetricsState::inc_exceed_size);
+}
+pub fn inc_timeout() {
+    with_current(SecurityMetricsState::inc_timeout);
+}
+pub fn inc_redirects() {
+    with_current(SecurityMetricsState::inc_redirects);
+}
+pub fn inc_connect_timeout() {
+    with_current(SecurityMetricsState::inc_connect_timeout);
+}
+pub fn inc_upstream_4xx() {
+    with_current(SecurityMetricsState::inc_upstream_4xx);
+}
+pub fn inc_upstream_5xx() {
+    with_current(SecurityMetricsState::inc_upstream_5xx);
+}
+pub fn inc_rate_limited() {
+    with_current(SecurityMetricsState::inc_rate_limited);
+}
+pub fn inc_cache_hit() {
+    with_current(SecurityMetricsState::inc_cache_hit);
+}
+pub fn inc_cache_miss() {
+    with_current(SecurityMetricsState::inc_cache_miss);
+}
+pub fn inc_cache_evict_mem() {
+    with_current(SecurityMetricsState::inc_cache_evict_mem);
+}
+pub fn inc_cache_evict_disk() {
+    with_current(SecurityMetricsState::inc_cache_evict_disk);
+}
+pub fn inc_head_total() {
+    with_current(SecurityMetricsState::inc_head_total);
+}
+pub fn inc_breaker_block() {
+    with_current(SecurityMetricsState::inc_breaker_block);
+}
+pub fn inc_breaker_reopen() {
+    with_current(SecurityMetricsState::inc_breaker_reopen);
+}
+pub fn init_prefetch_metrics() {
+    with_current(SecurityMetricsState::init_prefetch_metrics);
+}
+pub fn prefetch_inc(event: &str) {
+    with_current(|s| s.prefetch_inc(event));
+}
+pub fn record_prefetch_run_ms(ms: u64) {
+    with_current(|s| s.record_prefetch_run_ms(ms));
+}
+pub fn set_prefetch_queue_depth(depth: u64) {
+    with_current(|s| s.set_prefetch_queue_depth(depth));
+}
 #[must_use]
-pub fn get_prefetch_queue_depth() -> u64 { map_current(SecurityMetricsState::get_prefetch_queue_depth, 0) }
-pub fn set_prefetch_queue_high_watermark(watermark: u64) { with_current(|s| s.set_prefetch_queue_high_watermark(watermark)); }
+pub fn get_prefetch_queue_depth() -> u64 {
+    map_current(SecurityMetricsState::get_prefetch_queue_depth, 0)
+}
+pub fn set_prefetch_queue_high_watermark(watermark: u64) {
+    with_current(|s| s.set_prefetch_queue_high_watermark(watermark));
+}
 #[must_use]
-pub fn get_prefetch_queue_high_watermark() -> u64 { map_current(SecurityMetricsState::get_prefetch_queue_high_watermark, 0) }
+pub fn get_prefetch_queue_high_watermark() -> u64 {
+    map_current(SecurityMetricsState::get_prefetch_queue_high_watermark, 0)
+}
 #[must_use]
-pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) { map_current(SecurityMetricsState::get_prefetch_counters, (0, 0, 0, 0, 0)) }
-pub fn add_prefetch_bytes(bytes: u64) { with_current(|s| s.add_prefetch_bytes(bytes)); }
+pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) {
+    map_current(SecurityMetricsState::get_prefetch_counters, (0, 0, 0, 0, 0))
+}
+pub fn add_prefetch_bytes(bytes: u64) {
+    with_current(|s| s.add_prefetch_bytes(bytes));
+}
 #[must_use]
-pub fn get_prefetch_session_duration_ms() -> u64 { map_current(SecurityMetricsState::get_prefetch_session_duration_ms, 0) }
+pub fn get_prefetch_session_duration_ms() -> u64 {
+    map_current(SecurityMetricsState::get_prefetch_session_duration_ms, 0)
+}
 #[must_use]
-pub fn get_prefetch_total_bytes() -> u64 { map_current(SecurityMetricsState::get_prefetch_total_bytes, 0) }
-pub fn start_prefetch_session() { with_current(SecurityMetricsState::start_prefetch_session); }
-pub fn inc_dns_cache_hit() { with_current(SecurityMetricsState::inc_dns_cache_hit); }
-pub fn inc_dns_cache_miss() { with_current(SecurityMetricsState::inc_dns_cache_miss); }
-pub fn record_dns_latency_ms(ms: u64) { with_current(|s| s.record_dns_latency_ms(ms)); }
-pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) { with_current(|s| s.set_last_error(kind, msg)); }
-pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) { with_current(|s| s.set_last_error_with_host(kind, host, msg)); }
-pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) { with_current(|s| s.set_last_error_with_url(kind, url, msg)); }
-pub fn inc_total_requests() { with_current(SecurityMetricsState::inc_total_requests); }
-pub fn record_latency_ms(ms: u64) { with_current(|s| s.record_latency_ms(ms)); }
-pub fn mark_last_ok() { with_current(SecurityMetricsState::mark_last_ok); }
-pub fn snapshot() -> Result<SecuritySnapshot> { current()?.snapshot() }
+pub fn get_prefetch_total_bytes() -> u64 {
+    map_current(SecurityMetricsState::get_prefetch_total_bytes, 0)
+}
+pub fn start_prefetch_session() {
+    with_current(SecurityMetricsState::start_prefetch_session);
+}
+pub fn inc_dns_cache_hit() {
+    with_current(SecurityMetricsState::inc_dns_cache_hit);
+}
+pub fn inc_dns_cache_miss() {
+    with_current(SecurityMetricsState::inc_dns_cache_miss);
+}
+pub fn record_dns_latency_ms(ms: u64) {
+    with_current(|s| s.record_dns_latency_ms(ms));
+}
+pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) {
+    with_current(|s| s.set_last_error(kind, msg));
+}
+pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) {
+    with_current(|s| s.set_last_error_with_host(kind, host, msg));
+}
+pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) {
+    with_current(|s| s.set_last_error_with_url(kind, url, msg));
+}
+pub fn inc_total_requests() {
+    with_current(SecurityMetricsState::inc_total_requests);
+}
+pub fn record_latency_ms(ms: u64) {
+    with_current(|s| s.record_latency_ms(ms));
+}
+pub fn mark_last_ok() {
+    with_current(SecurityMetricsState::mark_last_ok);
+}
+pub fn snapshot() -> Result<SecuritySnapshot> {
+    current()?.snapshot()
+}
 
 #[cfg(test)]
 pub fn reset_metrics() {
@@ -673,6 +787,7 @@ pub(crate) fn clear_default_for_test() {
 #[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     fn install_test_state() -> Arc<SecurityMetricsState> {
         let state = Arc::new(SecurityMetricsState::new());
@@ -715,5 +830,46 @@ mod tests {
         state.record_latency_ms(3000);
         assert!(state.lat_count.load(Ordering::Relaxed) >= 4);
         assert!(state.lat_sum_ms.load(Ordering::Relaxed) >= 75 + 150 + 1500 + 3000);
+    }
+
+    #[test]
+    fn explicit_snapshot_query_uses_supplied_control_plane_state() {
+        let state = SecurityMetricsState::new();
+        state.inc_total_requests();
+        state.record_latency_ms(25);
+
+        let cache = crate::admin_debug::cache::CacheStore::from_env();
+        {
+            let mut cache_guard = cache.lock().expect("cache lock should succeed");
+            cache_guard.put(
+                "query-owner".to_string(),
+                crate::admin_debug::cache::CacheEntry {
+                    etag: None,
+                    content_type: Some("text/plain".to_string()),
+                    body: vec![1, 2, 3, 4],
+                    timestamp: Instant::now(),
+                },
+            );
+        }
+
+        let breaker = crate::admin_debug::breaker::BreakerStore::from_env();
+        {
+            let mut breaker_guard = breaker.lock().expect("breaker lock should succeed");
+            for _ in 0..3 {
+                assert!(breaker_guard.check("query-owner.test"));
+                breaker_guard.mark_failure("query-owner.test");
+            }
+        }
+
+        let snapshot = state
+            .snapshot_with_query(SecuritySnapshotQuery::new(&cache, &breaker, 9))
+            .expect("explicit query snapshot should succeed");
+        assert_eq!(snapshot.total_requests, 1);
+        assert_eq!(snapshot.cache_bytes_mem, 4);
+        assert_eq!(snapshot.limiter_current_concurrency, 9);
+        assert!(
+            !snapshot.breaker_states.is_empty(),
+            "explicit breaker store should contribute breaker state"
+        );
     }
 }

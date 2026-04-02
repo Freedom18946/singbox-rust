@@ -4,6 +4,8 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 fn json_diff_enhanced(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
     use serde_json::{json, Value};
@@ -119,7 +121,9 @@ fn env_cfg_usize(key: &str, default: usize) -> usize {
     match t.parse::<usize>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -133,7 +137,9 @@ fn env_cfg_u64(key: &str, default: u64) -> u64 {
     match t.parse::<u64>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -147,7 +153,9 @@ fn env_cfg_u32(key: &str, default: u32) -> u32 {
     match t.parse::<u32>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -161,31 +169,86 @@ fn env_cfg_f32(key: &str, default: f32) -> f32 {
     match t.parse::<f32>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid f32; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid f32; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
 }
 
-static CONFIG: OnceCell<ArcSwap<EnvConfig>> = OnceCell::new();
-static VERSION: OnceCell<AtomicU64> = OnceCell::new();
+pub struct ReloadableConfigStore {
+    config: ArcSwap<EnvConfig>,
+    version: AtomicU64,
+}
+
+impl ReloadableConfigStore {
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            config: ArcSwap::from_pointee(EnvConfig::from_env()),
+            version: AtomicU64::new(0),
+        }
+    }
+
+    #[must_use]
+    pub fn get(&self) -> EnvConfig {
+        let cfg = self.config.load();
+        (**cfg).clone()
+    }
+
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn get_arc(&self) -> Arc<EnvConfig> {
+        (*self.config.load()).clone()
+    }
+
+    #[must_use]
+    pub fn version(&self) -> u64 {
+        self.version.load(Ordering::Relaxed)
+    }
+
+    pub fn reload(&self) {
+        let cfg = EnvConfig::from_env();
+        self.config.store(Arc::new(cfg.clone()));
+        tracing::info!("Configuration reloaded from environment variables");
+        #[cfg(any(
+            feature = "subs_http",
+            feature = "subs_clash",
+            feature = "subs_singbox"
+        ))]
+        crate::admin_debug::endpoints::subs::resize_limiters(cfg.max_concurrency, cfg.rps);
+    }
+}
+
+static DEFAULT_STORE: OnceCell<Arc<ReloadableConfigStore>> = OnceCell::new();
+
+#[must_use]
+pub fn install_default(store: Arc<ReloadableConfigStore>) -> Arc<ReloadableConfigStore> {
+    Arc::clone(DEFAULT_STORE.get_or_init(|| store))
+}
+
+#[must_use]
+pub fn current_owner() -> Arc<ReloadableConfigStore> {
+    Arc::clone(DEFAULT_STORE.get_or_init(|| Arc::new(ReloadableConfigStore::from_env())))
+}
+
+fn default_store() -> &'static Arc<ReloadableConfigStore> {
+    DEFAULT_STORE.get_or_init(|| Arc::new(ReloadableConfigStore::from_env()))
+}
 
 pub fn get() -> EnvConfig {
-    let cfg = CONFIG
-        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
-        .load();
-    (**cfg).clone()
+    default_store().get()
 }
+
 #[allow(dead_code)]
 pub fn get_arc() -> Arc<EnvConfig> {
-    (*CONFIG
-        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
-        .load())
-    .clone()
+    default_store().get_arc()
 }
 
 pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<String, String> {
-    let arc = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
+    let store = default_store();
+    let arc = &store.config;
     let mut config = (**arc.load()).clone();
     let mut changes = Vec::new();
 
@@ -294,17 +357,13 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
 
     // commit atomically
     arc.store(Arc::new(config));
-    VERSION
-        .get_or_init(|| AtomicU64::new(0))
-        .fetch_add(1, Ordering::Relaxed);
+    store.version.fetch_add(1, Ordering::Relaxed);
 
     Ok(format!("Applied changes: {}", changes.join(", ")))
 }
 
 pub fn version() -> u64 {
-    VERSION
-        .get_or_init(|| AtomicU64::new(0))
-        .load(Ordering::Relaxed)
+    default_store().version()
 }
 
 #[derive(serde::Serialize)]
@@ -417,8 +476,9 @@ pub fn apply_with_dryrun(
     delta: &crate::admin_debug::endpoints::config::ConfigDelta,
     dry_run: bool,
 ) -> Result<ApplyResult, String> {
-    let arc = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
-    let ctr = VERSION.get_or_init(|| AtomicU64::new(0));
+    let store = default_store();
+    let arc = &store.config;
+    let ctr = &store.version;
 
     let before_cfg = arc.load();
     let before = serde_json::to_value(&**before_cfg).unwrap_or_else(|_| serde_json::json!({}));
@@ -471,46 +531,88 @@ pub fn apply_with_dryrun(
 }
 
 pub fn reload() {
-    let cfg = EnvConfig::from_env();
-    if let Some(arc) = CONFIG.get() {
-        arc.store(Arc::new(cfg.clone()));
-        tracing::info!("Configuration reloaded from environment variables");
-        #[cfg(any(
-            feature = "subs_http",
-            feature = "subs_clash",
-            feature = "subs_singbox"
-        ))]
-        crate::admin_debug::endpoints::subs::resize_limiters(cfg.max_concurrency, cfg.rps);
-    } else {
-        CONFIG.get_or_init(|| ArcSwap::from_pointee(cfg));
+    default_store().reload();
+}
+
+pub struct ReloadSignalHandle {
+    cancel: CancellationToken,
+    join: Option<JoinHandle<()>>,
+}
+
+impl ReloadSignalHandle {
+    #[must_use]
+    pub const fn new(cancel: CancellationToken, join: JoinHandle<()>) -> Self {
+        Self {
+            cancel,
+            join: Some(join),
+        }
+    }
+
+    pub async fn shutdown(mut self) {
+        self.cancel.cancel();
+        if let Some(join) = self.join.take() {
+            if let Err(error) = join.await {
+                tracing::warn!(%error, "reload signal task join failed during shutdown");
+            }
+        }
     }
 }
 
-pub fn init_signal_handler() {
-    tokio::spawn(async {
+impl Drop for ReloadSignalHandle {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
+#[must_use]
+pub fn init_signal_handler() -> ReloadSignalHandle {
+    spawn_signal_handler(current_owner())
+}
+
+#[must_use]
+pub fn spawn_signal_handler(store: Arc<ReloadableConfigStore>) -> ReloadSignalHandle {
+    let cancel = CancellationToken::new();
+    let cancel_inner = cancel.clone();
+    let join = tokio::spawn(async move {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
-            if let Ok(mut stream) = signal(SignalKind::hangup()) {
-                while stream.recv().await.is_some() {
-                    tracing::info!("Received SIGHUP, reloading configuration");
-                    reload();
+
+            match signal(SignalKind::hangup()) {
+                Ok(mut stream) => loop {
+                    tokio::select! {
+                        () = cancel_inner.cancelled() => break,
+                        recv = stream.recv() => {
+                            match recv {
+                                Some(()) => {
+                                    tracing::info!("Received SIGHUP, reloading configuration");
+                                    store.reload();
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(%error, "failed to install SIGHUP reload signal handler");
                 }
             }
         }
 
         #[cfg(not(unix))]
         {
-            // On non-Unix systems, we can't handle SIGHUP, but we can still support manual reloading
             tracing::warn!("SIGHUP signal handling not supported on this platform");
+            cancel_inner.cancelled().await;
         }
     });
+    ReloadSignalHandle::new(cancel, join)
 }
 
 #[cfg(test)]
 #[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     #[serial_test::serial]
@@ -565,6 +667,14 @@ mod tests {
 
         // Cleanup
         std::env::remove_var("SB_SUBS_MAX_REDIRECTS");
+    }
+
+    #[tokio::test]
+    async fn signal_handle_shutdown_completes() {
+        let handle = spawn_signal_handler(Arc::new(ReloadableConfigStore::from_env()));
+        tokio::time::timeout(Duration::from_secs(2), handle.shutdown())
+            .await
+            .expect("reload signal handle should shut down promptly");
     }
 }
 

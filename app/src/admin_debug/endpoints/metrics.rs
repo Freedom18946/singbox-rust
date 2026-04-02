@@ -11,7 +11,7 @@ pub async fn handle(
     sock: &mut (impl AsyncWriteExt + Unpin),
     state: &crate::admin_debug::AdminDebugState,
 ) -> std::io::Result<()> {
-    let h = match state.security_metrics.snapshot() {
+    let h = match state.security_snapshot() {
         Ok(snapshot) => snapshot,
         Err(err) => {
             return crate::admin_debug::http_util::respond_json_error(

@@ -3,7 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -338,18 +338,57 @@ impl Lru {
     }
 }
 
-static LRU: OnceCell<Mutex<Lru>> = OnceCell::new();
+pub struct CacheStore {
+    cache: Mutex<Lru>,
+}
 
-pub fn global() -> &'static Mutex<Lru> {
-    LRU.get_or_init(|| {
+impl CacheStore {
+    #[must_use]
+    pub fn from_env() -> Self {
         let cap_items = parse_cache_env_usize("SB_SUBS_CACHE_CAP", 64);
-
         let ttl_ms = parse_cache_env_u64("SB_SUBS_CACHE_TTL_MS", 30_000);
-
         let cap_bytes = parse_cache_env_usize("SB_SUBS_CACHE_BYTES", 10 * 1024 * 1024);
 
-        Mutex::new(Lru::with_byte_limit(cap_items, ttl_ms, cap_bytes))
-    })
+        Self {
+            cache: Mutex::new(Lru::with_byte_limit(cap_items, ttl_ms, cap_bytes)),
+        }
+    }
+
+    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Lru>> {
+        self.cache.lock()
+    }
+
+    /// # Errors
+    /// Returns an error when the cache mutex is poisoned.
+    pub fn byte_usage_snapshot(&self) -> anyhow::Result<(usize, usize)> {
+        self.lock()
+            .map_err(|_| anyhow::anyhow!("admin cache lock poisoned"))
+            .map(|cache| cache.byte_usage())
+    }
+}
+
+static DEFAULT_CACHE: OnceCell<Arc<CacheStore>> = OnceCell::new();
+
+#[must_use]
+pub fn install_default(store: Arc<CacheStore>) -> Arc<CacheStore> {
+    Arc::clone(DEFAULT_CACHE.get_or_init(|| store))
+}
+
+#[must_use]
+pub fn current_owner() -> Arc<CacheStore> {
+    Arc::clone(DEFAULT_CACHE.get_or_init(|| Arc::new(CacheStore::from_env())))
+}
+
+fn default_store() -> &'static Arc<CacheStore> {
+    DEFAULT_CACHE.get_or_init(|| Arc::new(CacheStore::from_env()))
+}
+
+pub(crate) fn default_owner_ref() -> &'static CacheStore {
+    default_store().as_ref()
+}
+
+pub fn global() -> &'static Mutex<Lru> {
+    &default_store().cache
 }
 
 fn parse_cache_env_usize(key: &str, default: usize) -> usize {
@@ -361,7 +400,9 @@ fn parse_cache_env_usize(key: &str, default: usize) -> usize {
     match trimmed.parse::<usize>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -376,7 +417,9 @@ fn parse_cache_env_u64(key: &str, default: u64) -> u64 {
     match trimmed.parse::<u64>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }

@@ -39,13 +39,26 @@ type HmacSha256 = Hmac<Sha256>;
 pub struct AdminDebugHandle {
     cancel: CancellationToken,
     join: Option<JoinHandle<()>>,
+    reload_signal: Option<crate::admin_debug::reloadable::ReloadSignalHandle>,
 }
 
 impl AdminDebugHandle {
+    #[must_use]
+    pub fn with_reload_signal(
+        mut self,
+        reload_signal: crate::admin_debug::reloadable::ReloadSignalHandle,
+    ) -> Self {
+        self.reload_signal = Some(reload_signal);
+        self
+    }
+
     /// Trigger graceful shutdown: cancel the accept loop, then **await** the
     /// server task (which drains in-flight connections) before returning.
     pub async fn shutdown(mut self) {
         self.cancel.cancel();
+        if let Some(reload_signal) = self.reload_signal.take() {
+            reload_signal.shutdown().await;
+        }
         if let Some(join) = self.join.take() {
             if let Err(e) = join.await {
                 tracing::warn!(%e, "admin debug server join failed during shutdown");
@@ -880,10 +893,22 @@ pub async fn spawn(
     let cancel = CancellationToken::new();
     let cancel_inner = cancel.clone();
     let join = tokio::spawn(async move {
-        run_configured_accept_loop(listener, cancel_inner, tls_acceptor, auth, middleware_chain, state).await;
+        run_configured_accept_loop(
+            listener,
+            cancel_inner,
+            tls_acceptor,
+            auth,
+            middleware_chain,
+            state,
+        )
+        .await;
     });
 
-    Ok(AdminDebugHandle { cancel, join: Some(join) })
+    Ok(AdminDebugHandle {
+        cancel,
+        join: Some(join),
+        reload_signal: None,
+    })
 }
 
 /// Accept loop for the middleware-based configured path (TLS + auth).
@@ -999,7 +1024,11 @@ pub async fn serve_plain(
         run_plain_accept_loop(listener, cancel_inner, middleware_chain, state).await;
     });
 
-    Ok(AdminDebugHandle { cancel, join: Some(join) })
+    Ok(AdminDebugHandle {
+        cancel,
+        join: Some(join),
+        reload_signal: None,
+    })
 }
 
 /// Sync entry point: spawns a plain admin server in background.
@@ -1016,7 +1045,11 @@ pub fn spawn_plain_sync(
             tracing::error!(error = %e, "admin debug server failed");
         }
     });
-    AdminDebugHandle { cancel, join: Some(join) }
+    AdminDebugHandle {
+        cancel,
+        join: Some(join),
+        reload_signal: None,
+    }
 }
 
 /// Internal: bind + setup + run accept loop for plain mode (used by `spawn_plain_sync`).
@@ -1231,7 +1264,9 @@ fn admin_env_usize(key: &str, default: usize) -> usize {
     match t.parse::<usize>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -1245,7 +1280,9 @@ fn admin_env_u64(key: &str, default: u64) -> u64 {
     match t.parse::<u64>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -1255,6 +1292,26 @@ fn admin_env_u64(key: &str, default: u64) -> u64 {
 #[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
+
+    fn test_state() -> Arc<crate::admin_debug::AdminDebugState> {
+        Arc::new(crate::admin_debug::AdminDebugState {
+            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
+            breaker: crate::admin_debug::breaker::install_default(Arc::new(
+                crate::admin_debug::breaker::BreakerStore::from_env(),
+            )),
+            cache: crate::admin_debug::cache::install_default(Arc::new(
+                crate::admin_debug::cache::CacheStore::from_env(),
+            )),
+            reloadable: crate::admin_debug::reloadable::install_default(Arc::new(
+                crate::admin_debug::reloadable::ReloadableConfigStore::from_env(),
+            )),
+            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
+                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+            )),
+            started_at: std::time::Instant::now(),
+        })
+    }
     use std::collections::HashMap;
 
     #[test]
@@ -1493,14 +1550,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_serve_plain_returns_handle_and_shuts_down() {
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
-        let state = Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
-                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
-            )),
-            started_at: std::time::Instant::now(),
-        });
+        let state = test_state();
 
         let handle = serve_plain("127.0.0.1:0", state)
             .await
@@ -1508,9 +1558,7 @@ mod tests {
 
         // Shutdown should complete without hanging
         let shutdown = tokio::time::timeout(std::time::Duration::from_secs(2), handle.shutdown());
-        shutdown
-            .await
-            .expect("shutdown should complete within 2s");
+        shutdown.await.expect("shutdown should complete within 2s");
 
         std::env::remove_var("SB_ADMIN_NO_AUTH");
     }
@@ -1519,14 +1567,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_shutdown_releases_listener() {
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
-        let state = Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
-                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
-            )),
-            started_at: std::time::Instant::now(),
-        });
+        let state = test_state();
 
         // Start first server, get its port
         let handle1 = serve_plain("127.0.0.1:0", Arc::clone(&state))
@@ -1550,14 +1591,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_spawn_plain_sync_returns_handle() {
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
-        let state = Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
-                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
-            )),
-            started_at: std::time::Instant::now(),
-        });
+        let state = test_state();
 
         let handle = spawn_plain_sync("127.0.0.1:0".to_string(), state);
 
@@ -1577,14 +1611,7 @@ mod tests {
     async fn test_connections_tracked_during_shutdown() {
         use tokio::io::AsyncWriteExt;
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
-        let state = Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
-                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
-            )),
-            started_at: std::time::Instant::now(),
-        });
+        let state = test_state();
 
         let handle = serve_plain("127.0.0.1:0", Arc::clone(&state))
             .await
@@ -1605,14 +1632,7 @@ mod tests {
     #[serial_test::serial]
     async fn test_drop_triggers_cancel_signal() {
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
-        let state = Arc::new(crate::admin_debug::AdminDebugState {
-            #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::default()),
-            security_metrics: crate::admin_debug::security_metrics::install_default(Arc::new(
-                crate::admin_debug::security_metrics::SecurityMetricsState::new(),
-            )),
-            started_at: std::time::Instant::now(),
-        });
+        let state = test_state();
 
         let handle = serve_plain("127.0.0.1:0", state)
             .await

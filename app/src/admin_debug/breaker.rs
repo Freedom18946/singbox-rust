@@ -2,7 +2,7 @@ use once_cell::sync::OnceCell;
 use rand::Rng;
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -372,20 +372,58 @@ fn record_breaker_reopen(metrics: Option<&SecurityMetricsState>) {
     }
 }
 
-static BREAKER: OnceCell<Mutex<HostBreaker>> = OnceCell::new();
+pub struct BreakerStore {
+    breaker: Mutex<HostBreaker>,
+}
 
-pub fn global() -> &'static Mutex<HostBreaker> {
-    BREAKER.get_or_init(|| {
+impl BreakerStore {
+    #[must_use]
+    pub fn from_env() -> Self {
         let window_ms = parse_breaker_env_u64("SB_SUBS_BR_WIN_MS", 30_000);
-
         let open_ms = parse_breaker_env_u64("SB_SUBS_BR_OPEN_MS", 15_000);
-
         let threshold = parse_breaker_env_usize("SB_SUBS_BR_FAILS", 5) as u32;
-
         let ratio = parse_breaker_env_f64("SB_SUBS_BR_RATIO", 0.5) as f32;
 
-        Mutex::new(HostBreaker::new(window_ms, open_ms, threshold, ratio))
-    })
+        Self {
+            breaker: Mutex::new(HostBreaker::new(window_ms, open_ms, threshold, ratio)),
+        }
+    }
+
+    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, HostBreaker>> {
+        self.breaker.lock()
+    }
+
+    /// # Errors
+    /// Returns an error when the breaker mutex is poisoned.
+    pub fn state_stats_snapshot(&self) -> anyhow::Result<Vec<(String, String, u32)>> {
+        self.lock()
+            .map_err(|_| anyhow::anyhow!("admin breaker lock poisoned"))
+            .map(|breaker| breaker.state_stats())
+    }
+}
+
+static DEFAULT_BREAKER: OnceCell<Arc<BreakerStore>> = OnceCell::new();
+
+#[must_use]
+pub fn install_default(store: Arc<BreakerStore>) -> Arc<BreakerStore> {
+    Arc::clone(DEFAULT_BREAKER.get_or_init(|| store))
+}
+
+#[must_use]
+pub fn current_owner() -> Arc<BreakerStore> {
+    Arc::clone(DEFAULT_BREAKER.get_or_init(|| Arc::new(BreakerStore::from_env())))
+}
+
+fn default_store() -> &'static Arc<BreakerStore> {
+    DEFAULT_BREAKER.get_or_init(|| Arc::new(BreakerStore::from_env()))
+}
+
+pub(crate) fn default_owner_ref() -> &'static BreakerStore {
+    default_store().as_ref()
+}
+
+pub fn global() -> &'static Mutex<HostBreaker> {
+    &default_store().breaker
 }
 
 fn parse_breaker_env_u64(key: &str, default: u64) -> u64 {
@@ -397,7 +435,9 @@ fn parse_breaker_env_u64(key: &str, default: u64) -> u64 {
     match trimmed.parse::<u64>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -412,7 +452,9 @@ fn parse_breaker_env_usize(key: &str, default: usize) -> usize {
     match trimmed.parse::<usize>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -427,7 +469,9 @@ fn parse_breaker_env_f64(key: &str, default: f64) -> f64 {
     match trimmed.parse::<f64>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid f64; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid f64; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -913,12 +957,14 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn default_metrics_owner_records_breaker_reopen_via_legacy_mark_failure() {
         crate::admin_debug::security_metrics::clear_default_for_test();
 
         let metrics = crate::admin_debug::security_metrics::install_default(std::sync::Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
+        metrics.reset_metrics();
         let mut br = HostBreaker::new(30_000, 15_000, 2, 0.5);
 
         br.mark_failure("legacy-host");
