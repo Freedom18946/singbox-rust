@@ -1014,6 +1014,8 @@ impl ShadowTlsConnector {
 
     #[cfg(feature = "adapter-shadowtls")]
     pub async fn connect_detour_stream(&self, host: &str, port: u16) -> Result<BoxedStream> {
+        self.validate_detour_endpoint(host, port)?;
+
         tracing::debug!(
             requested_host = host,
             requested_port = port,
@@ -1070,6 +1072,18 @@ impl ShadowTlsConnector {
                 ))
             }
             _ => unreachable!("shadowtls detour wrapper version is prevalidated"),
+        }
+    }
+
+    #[cfg(feature = "adapter-shadowtls")]
+    fn validate_detour_endpoint(&self, host: &str, port: u16) -> Result<()> {
+        if host == self.cfg.server && port == self.cfg.port {
+            Ok(())
+        } else {
+            Err(AdapterError::Protocol(format!(
+                "shadowtls detour bridge only supports the configured server {}:{}; requested {host}:{port}",
+                self.cfg.server, self.cfg.port
+            )))
         }
     }
 }

@@ -4,6 +4,10 @@
 
 #[cfg(feature = "socks")]
 use anyhow::Result;
+#[cfg(feature = "router")]
+use sb_core::outbound::{OutboundImpl, OutboundKind, OutboundRegistry, OutboundRegistryHandle};
+#[cfg(feature = "router")]
+use sb_core::router::{Router, RouterHandle};
 #[cfg(feature = "socks")]
 use std::net::SocketAddr;
 #[cfg(feature = "socks")]
@@ -48,4 +52,13 @@ pub async fn spawn_socks_udp_inbound() -> Result<SocketAddr> {
         });
     }
     Ok(addr)
+}
+
+/// Build a deterministic direct-routing fixture for adapter tests.
+#[cfg(feature = "router")]
+pub fn direct_route_fixture() -> (RouterHandle, OutboundRegistryHandle) {
+    let router = RouterHandle::new(Router::with_default(OutboundKind::Direct));
+    let mut registry = OutboundRegistry::default();
+    registry.insert("direct".to_string(), OutboundImpl::Direct);
+    (router, OutboundRegistryHandle::new(registry))
 }

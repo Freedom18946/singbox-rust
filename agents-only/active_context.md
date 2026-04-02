@@ -6,59 +6,56 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-PERF-01` tun / outbound hotspot stabilization — 已完成；`MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01`、`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01`、`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
+**当前维护线**: `MT-ADP-01` sb-adapters test baseline stabilization — 已完成；`MT-PERF-01`、`MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01`、`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01`、`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
 
 ## 最近完成（2026-04-03）
 
-### MT-PERF-01：tun / outbound hotspot stabilization — 已完成
-- 本卡按当前源码事实推进，性质明确为 maintenance / hotspot quality work，不是 dual-kernel parity completion，也没有恢复 `.github/workflows/*`
-- 当前最值得优先收口的真实热点，是 `tun / outbound` 链路里仍然存在的 lock-heavy / owner 不清 / lifecycle 隐式路径：
-  - `crates/sb-core/src/inbound/tun.rs` 的 session table 仍有表锁外再套 per-session `RwLock`
-  - `crates/sb-adapters/src/inbound/tun_session.rs` 与 `crates/sb-adapters/src/inbound/tun/udp.rs` 仍有 relay task owner 不显式、cleanup 靠旁路状态兜底的风险
-  - `crates/sb-core/src/outbound/mod.rs` 与 `crates/sb-core/src/outbound/optimizations.rs` 仍有 registry lookup seam 分散、panic / stale-entry 面
+### MT-ADP-01：sb-adapters test baseline stabilization — 已完成
+- 本卡按当前源码与工作区事实推进，性质明确为 maintenance / adapter-baseline quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+- 开工前复核到的真实基线失败固定为 5 个：
+  - `inbound::hysteria2::tests::connect_via_router_reaches_upstream`
+  - `inbound::tuic::tests::connect_via_router_reaches_upstream`
+  - `inbound::tun_enhanced::tests::bootstrap_tcp_session_fin_with_payload_forwards_then_closes`
+  - `inbound::tun_enhanced::tests::packet_loop_forwards_fin_payload_and_cleans_up`
+  - `register::tests::test_shadowtls_outbound_registration_connect_io_only_for_configured_server`
+- 真实根因按源码收口为 3 组：
+  - `hysteria2 / tuic` 测试夹具错误依赖 `RouterHandle::from_env()`；当前仓库默认 router baseline 是 `unresolved`，不是测试想要的显式 direct route
+  - `tun_enhanced` 的 FIN+payload 路径在上一轮 owner 收口后变成“发 shutdown 后立刻 abort tracked tasks”，导致 queued payload 还没 drain 到 outbound 就被截断
+  - `shadowtls` register 测试夹具把 detour wrapper 当成普通 TLS stream 使用；同时 wrapper 本身缺少“requested endpoint 必须等于 configured server”的显式 guard
 - 本轮收口：
-  - `crates/sb-core/src/inbound/tun.rs` 把 session table 收成 `RwLock<HashMap<FlowKey, Arc<TunSession>>>`，去掉 hotpath 的 `Arc<RwLock<TunSession>>` 嵌套；session 的 outbound / SNI / activity tick 改为单 owner 内部字段 helper
-  - `TunSession` 新增 `mark_active()`、`touch(...)`、`set_outbound(...)`、`set_sni_if_absent(...)` query/helper seam，bridge task 不再为了更新热字段拿整 session 写锁
-  - `crates/sb-adapters/src/inbound/tun_session.rs` 改为由 `TcpSession` 显式拥有 relay `JoinHandle`；`remove()` / `initiate_close()` 会发送 shutdown 并 abort owned tasks
-  - `crates/sb-adapters/src/inbound/tun/udp.rs` 改为由 NAT entry 持有 reverse relay task，eviction 与 maintenance owner 会显式 abort 背景任务
-  - `crates/sb-core/src/outbound/mod.rs` 把 registry 读路径统一到 `resolve(...)` query seam；`chain.rs` 复用该 seam
-  - `crates/sb-core/src/outbound/optimizations.rs` 去掉 `current_time_ms()` 的 panic 面，并让 TTL cache 在过期读取时同步移除 stale entry
-- 本轮新增 / 迁移的关键 pin：
-  - `inbound::tun::tests::test_session_mutation_helpers_keep_hot_fields_off_nested_lock`
-  - `inbound::tun::tests::test_session_table_owner_stays_in_single_session_arc`
-  - `tun_session::tests::test_initiate_close_aborts_tracked_tasks`
-  - `inbound::tun::udp::tests::test_evict_expired_aborts_owned_reverse_relay`
-  - `outbound::tests::registry_handle_resolve_uses_dedicated_query_seam`
-  - `outbound::tests::registry_handle_source_pin_uses_owner_first_lookup_helper`
-  - `outbound::optimizations::tests::source_pin_current_time_ms_avoids_unwrap_panic_path`
-- 本轮没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API，也没有把维护工作误写成 parity completion
+  - `crates/sb-adapters/src/testsupport/mod.rs` 新增 `direct_route_fixture()`，把 direct router + direct outbound registry 收成显式共享 fixture
+  - `crates/sb-adapters/src/inbound/hysteria2.rs` 与 `crates/sb-adapters/src/inbound/tuic.rs` 的 router baseline tests 改吃显式 direct fixture，不再受 ENV / shared router state 影响
+  - `crates/sb-adapters/src/inbound/tun_session.rs` 新增 `request_shutdown()` 与 `TcpSessionManager::detach()`，把“graceful drain”与“hard abort”语义分开
+  - `crates/sb-adapters/src/inbound/tun_enhanced.rs` 的 existing-session FIN path 改为 `request_shutdown + detach`，先 drain payload，再让 relay 自行 shutdown/cleanup
+  - `crates/sb-adapters/src/outbound/shadowtls.rs` 在 `connect_detour_stream(...)` 入口显式校验 requested endpoint 必须匹配 configured wrapper server
+  - `crates/sb-adapters/src/register.rs` 的 ShadowTLS 测试 server 改成“先完成 TLS handshake，再回到底层 raw stream 收发”，并显式安装 rustls CryptoProvider
+- 本轮新增 / 强化的关键 pin：
+  - `inbound::tun_session::tests::test_request_shutdown_drains_pending_payload_before_detach`
+  - 既有 `hysteria2` / `tuic` route tests、`tun_enhanced` FIN payload tests、`register` shadowtls bridge test 现已恢复并共同 pin 住本轮修复语义
 
 ## 当前稳定事实
+- `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` 当前通过（199 passed, 1 ignored）
+- `hysteria2 / tuic / tun_enhanced / register` 这条 adapter baseline failure map 已按当前阶段收口，不再是 `sb-adapters --lib` blocker
 - `planned.rs` 仍是 staged crate-private seam；当前仓库仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- runtime actor/context、router/dns、DERP/services 主线当前仍保持 close-out；`MT-PERF-01` 只触达 `tun / outbound` 直接相关 owner seam，没有把已稳定主题重新打开
-- 当前 workspace 仍存在大量无关在制改动；本卡只顺着 `tun / outbound` 目标切口推进，没有回滚或覆盖 unrelated workspace changes
-- `ssh.rs`、`anytls.rs`、`outbound/manager.rs`、`context/` 经复核后本轮没有值得为凑卡硬改的真实热点；当前更高收益的是 TUN session owner、TCP/UDP cleanup owner、registry lookup seam 与 optimization stale-entry 面
+- 当前 workspace 仍存在大量无关在制改动；本卡只触达 `sb-adapters` 失败链路与 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
 
 ## 当前验证事实
 - 已通过：
-  - `cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1`
-  - `cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1`
-  - `cargo test -p sb-core --all-features outbound::tests -- --test-threads=1`
-  - `cargo test -p sb-core --all-features --lib -- --test-threads=1`
-  - `cargo test -p sb-core --all-features --tests -- --test-threads=1`
+  - `cargo test -p sb-adapters --all-features hysteria2 -- --test-threads=1`
+  - `cargo test -p sb-adapters --all-features tuic -- --test-threads=1`
+  - `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1`
+  - `cargo test -p sb-adapters --all-features register -- --test-threads=1`
   - `cargo test -p sb-adapters --all-features --lib tun_session::tests -- --test-threads=1`
-  - `cargo test -p sb-adapters --all-features --lib inbound::tun::udp::tests -- --test-threads=1`
-  - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+  - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1`
   - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
-- 额外观察到的当前仓库事实：
-  - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` 仍有既有失败，集中在 `inbound::hysteria2`、`inbound::tuic`、`inbound::tun_enhanced`、`register::tests::test_shadowtls_outbound_registration_connect_io_only_for_configured_server`
-  - 这些失败与本卡实际触达的 `tun_session` / `tun udp nat` / registry lookup / optimizations seam 不直接重合，本轮不借题扩散到其他维护主题
 
 ## Future Work（高层方向）
-- `tun / outbound` 后续若再推进，应只围绕少数高层 boundary：queue/backpressure 证据、session-table eviction policy、protocol-specific connection reuse，而不是回到这轮已经收掉的 session owner / task owner / registry query seam
-- `sb-adapters` 当前 broader `--lib` 失败若要处理，应单独按 hysteria2 / tuic / tun_enhanced / register baseline 分线复核，不应混入本卡
-- 维护主题后续仍应按少数高层 boundary 排序，不再展开成大量细碎 perf/lock 小尾巴
+- `sb-adapters` 后续若再推进，应只围绕少数高层 boundary：
+  - transport-wrapper / detour 模型的更完整 ShadowTLS consumer owner，而不是继续放大 register bridge
+  - TUN TCP lifecycle 的更完整半关闭 / FIN-first corner cases，但仅在出现真实新基线失败时再处理
+  - protocol-specific integration / e2e baseline 若再出现真实失败，再单独按高层链路分线
+- 当前阶段不再把 `sb-adapters` debt 继续拆成很多细碎小卡；`--lib` 基线已恢复，剩余债务应保持高层边界表达
 
 ## 归档判断
 - `WP-30` 继续视为 archive baseline，`ef333bb7` 仍是归档基线
-- `MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01` 与 `MT-PERF-01` 当前都已完成；`tun / outbound` 热路径剩余债务已压缩成少数 future boundary，不值得继续为凑卡细拆
+- `MT-ADP-01` 已完成；当前没有证据表明应把这条 adapter baseline 线继续细拆

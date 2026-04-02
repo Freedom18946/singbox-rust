@@ -134,10 +134,14 @@ impl TcpSession {
         }
     }
 
-    pub fn initiate_close(&self) {
+    pub fn request_shutdown(&self) {
         if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
+    }
+
+    pub fn initiate_close(&self) {
+        self.request_shutdown();
         self.abort_tracked_tasks();
     }
 
@@ -259,6 +263,15 @@ impl TcpSessionManager {
             session.initiate_close();
             debug!(
                 "TCP session removed: {}:{} -> {}:{}",
+                tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
+            );
+        }
+    }
+
+    pub fn detach(&self, tuple: &FourTuple) {
+        if self.sessions.remove(tuple).is_some() {
+            debug!(
+                "TCP session detached: {}:{} -> {}:{}",
                 tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
             );
         }
@@ -614,5 +627,58 @@ mod tests {
             .expect("tracked task should be aborted quickly")
             .expect("abort drop signal should arrive");
         assert!(session.tasks.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_request_shutdown_drains_pending_payload_before_detach() {
+        struct NoopTunWriter;
+
+        #[async_trait::async_trait]
+        impl TunWriter for NoopTunWriter {
+            async fn write_packet(&self, _packet: &[u8]) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let (payload_tx, payload_rx) = oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut buf = [0u8; 8];
+            let n = stream.read(&mut buf).await.expect("read payload");
+            let _ = payload_tx.send(buf[..n].to_vec());
+        });
+
+        let manager = TcpSessionManager::new();
+        let outbound = tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("connect outbound");
+        let tuple = FourTuple::new("10.0.0.2".parse().unwrap(), 34567, addr.ip(), addr.port());
+        let session = manager.create_session_with_state(
+            tuple,
+            outbound,
+            Arc::new(NoopTunWriter),
+            None,
+            100,
+            1000,
+        );
+
+        session
+            .send_to_outbound(Bytes::from_static(b"bye"))
+            .await
+            .expect("queue payload");
+        session.request_shutdown();
+        manager.detach(&tuple);
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), payload_rx)
+            .await
+            .expect("receive within timeout")
+            .expect("payload sent");
+        assert_eq!(received, b"bye");
+        server_task.await.expect("server task should finish");
+        assert_eq!(manager.count(), 0);
     }
 }

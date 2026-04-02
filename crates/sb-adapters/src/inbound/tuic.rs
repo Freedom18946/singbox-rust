@@ -833,7 +833,6 @@ mod tests {
     #[cfg(feature = "router")]
     #[tokio::test]
     async fn connect_via_router_reaches_upstream() {
-        use sb_core::outbound::{OutboundImpl, OutboundRegistry};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         // Start a simple upstream echo server.
@@ -859,11 +858,7 @@ mod tests {
             echo_tx.send(buf).ok();
         });
 
-        // Router defaults to "direct"; provide a matching outbound entry.
-        let router = router::RouterHandle::from_env();
-        let mut reg = OutboundRegistry::default();
-        reg.insert("direct".to_string(), OutboundImpl::Direct);
-        let outbounds = OutboundRegistryHandle::new(reg);
+        let (router, outbounds) = crate::testsupport::direct_route_fixture();
 
         let cfg = TuicInboundConfig {
             listen: upstream_addr, // unused by helper

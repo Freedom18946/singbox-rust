@@ -3341,6 +3341,8 @@ mod tests {
         use tokio::net::TcpListener;
         use tokio_rustls::TlsAcceptor;
 
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         fn generate_cert() -> (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>) {
             let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
             let key = cert.key_pair.serialize_der();
@@ -3362,10 +3364,11 @@ mod tests {
 
         let server_task = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
-            let mut tls_stream = acceptor.accept(stream).await.unwrap();
+            let tls_stream = acceptor.accept(stream).await.unwrap();
+            let (mut raw_stream, _) = tls_stream.into_inner();
             let mut buf = [0u8; 4];
-            tls_stream.read_exact(&mut buf).await.unwrap();
-            tls_stream.write_all(&buf).await.unwrap();
+            raw_stream.read_exact(&mut buf).await.unwrap();
+            raw_stream.write_all(&buf).await.unwrap();
         });
 
         let ir = OutboundIR {

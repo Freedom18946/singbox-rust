@@ -496,8 +496,8 @@ impl EnhancedTunInbound {
             if packet.is_fin() {
                 self.send_tcp_control_packet(&session, Arc::clone(&writer), 0x11, 1)
                     .await?;
-                session.initiate_close();
-                self.session_manager.remove(&packet.tuple);
+                session.request_shutdown();
+                self.session_manager.detach(&packet.tuple);
                 return Ok(());
             }
             if packet.has_payload() {
