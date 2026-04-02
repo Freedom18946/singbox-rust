@@ -110,7 +110,12 @@ pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::route
 #[allow(clippy::cognitive_complexity)]
 pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Install proxy health registry (from default proxy env + proxy pools)
-    crate::bootstrap_runtime::proxy_registry::init_proxy_registry_from_env();
+    match crate::bootstrap_runtime::proxy_registry::ProxyRegistryPlan::from_env() {
+        Ok(plan) => plan.install(),
+        Err(error) => {
+            error!(error = %error, "failed to load proxy registry env plan");
+        }
+    }
 
     // Start health checking (behind env)
     ob_health::spawn_if_enabled().await;
@@ -150,7 +155,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     ctx = ctx.with_urltest_history(urltest_history.clone());
 
     // Optionally configure DNS via config (env bridge for sb-core)
-    crate::bootstrap_runtime::dns_apply::apply_dns_from_config(&cfg);
+    crate::bootstrap_runtime::dns_apply::DnsRuntimeEnv::from_config(&cfg).apply();
 
     // Build outbounds registry from IR (minimal phase 1 set)
     let reg = build_outbound_registry_from_ir_with_runtime_services(

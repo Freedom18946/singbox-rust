@@ -6,42 +6,38 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-OBS-01` runtime / control-plane / observability ownership consolidation — 已完成一批次收口；`WP-30` 继续保持 archive baseline
+**当前维护线**: `MT-RTC-01` runtime actor/context consolidation — 已完成首批 runtime startup/shutdown/orchestration 收口；`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
 
 ## 最近完成（2026-04-02）
 
+### MT-RTC-01：runtime actor/context consolidation — 已完成
+- 已先按仓库当前事实复核 `run_engine_runtime/*`、`bootstrap_runtime/*`、`runtime_deps.rs`、`bootstrap.rs`、`run_engine.rs`，确认本卡定位是 runtime maintenance / quality work，不是 dual-kernel parity completion，也没有恢复 `WP-30k` ~ `WP-30as` 编号体系
+- `app/src/run_engine_runtime/context.rs` 新增当前阶段可接受的 `RuntimeContext` / `RuntimeLifecycle` owner seam：`AppRuntimeDeps`、reload fingerprint/state、prom exporter handle、admin services、watch handle 都改由显式 context / lifecycle carrier 接线
+- `app/src/run_engine_runtime/supervisor.rs` 不再自己散着 build deps / 丢 prom exporter handle / 直接拼 admin+watch 参数串；startup/shutdown 现在围绕 `RuntimeContext::from_raw(...)`、`AdminStartContext`、`WatchRuntime`、`RuntimeLifecycle` 收口
+- `app/src/run_engine_runtime/admin_start.rs` 新增 `AdminStartContext`；`watch.rs` 新增 `WatchRuntime`；`output.rs` 的 startup 输出改成吃 `RuntimeContext`；依赖注入边界比之前清楚，`run_engine.rs` 继续保持 thin facade
+- `app/src/bootstrap_runtime/dns_apply.rs` 新增 `DnsRuntimeEnv::from_config(...).apply()`；`proxy_registry.rs` 新增 `ProxyRegistryPlan::from_env().install()`；legacy `bootstrap.rs` 继续只是调用 plan/apply 的 compat shell，没有重新长回 owner 巨石
+- 本轮顺手修正了当前仓库事实下会阻塞验证的配套点：`admin_debug/reloadable.rs` 的 `loom` smoke test 重新对齐到 `DEFAULT_STORE` owner；`app/tests/admin_auth_contract.rs` 对齐当前 `AdminDebugState` 字段
+- 新增 / 补强回归：`runtime_context_tracks_reload_fingerprint`、`runtime_lifecycle_shutdown_aborts_owned_prom_exporter_task`、`watch_handle_shutdown_waits_for_spawned_task`、`watch_runtime_carries_explicit_reload_wiring`、`dns_runtime_env_collects_vars_before_side_effects`、`proxy_registry_plan_collects_registry_before_install`
+- 本卡验收命令已按当前仓库事实通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
+
 ### MT-OBS-01：runtime / control-plane / observability ownership consolidation — 已完成
-- 已先按仓库当前事实复核 `logging.rs`、`tracing_init.rs`、`telemetry.rs`、`admin_debug/*`、`sb-metrics`、`sb-core::metrics::registry_ext`，确认本卡定位是 maintenance / quality work，不是 dual-kernel parity completion，也没有继续推进 `planned.rs` / public `RuntimePlan`
-- `app/src/admin_debug/reloadable.rs` 已收成 `ReloadableConfigStore` owner + `ReloadSignalHandle`；SIGHUP reload 监听不再是裸后台任务，而是由 `AdminDebugHandle` / `admin_debug::init()` / `run_engine_runtime::admin_start` 显式持有并在 shutdown/drop 时取消
-- `app/src/admin_debug/cache.rs` / `breaker.rs` 已新增 owner-first store（`CacheStore` / `BreakerStore`），旧 `global()` 只保留 compat 壳；`security_metrics.rs` 新增 `snapshot_with_query(SecuritySnapshotQuery)`，快照 query path 不再只能隐式偷读全局 cache/breaker
-- `app/src/admin_debug/mod.rs` 与 `app/src/runtime_deps.rs` 现在显式持有 breaker/cache/reloadable/security_metrics owner；`endpoints/health.rs` / `endpoints/metrics.rs` 走 `AdminDebugState::security_snapshot()` 与 `config_version()`，control-plane query seam 更清楚
-- `crates/sb-metrics/src/lib.rs` 新增 `active_registry()` 与 `MetricsRegistryOwner::encode_text()`，shared/global compat 与 owner-first registration path 分开；`crates/sb-core/src/metrics/registry_ext.rs` 已收口 repeated fallback / registration helper，移除散落 `eprintln!` / 复杂 emergency fallback 树，保留现有 `'static` compat 语义
-- 复用并补强回归：logging 现有 owner/compat pin 保留；新增 `reloadable::signal_handle_shutdown_completes`、`security_metrics::explicit_snapshot_query_uses_supplied_control_plane_state`、`sb-metrics::active_registry_switches_to_owned_handle_when_owner_is_installed`，并同步修正 `app/tests/e2e_subs_security.rs` 的 admin state wiring
-- 本卡验收命令已按当前仓库事实通过：`cargo test -p app --features admin_debug,admin_tests,dev-cli --lib -- --test-threads=1`、`cargo test -p sb-metrics --lib -- --test-threads=1`、`cargo test -p sb-core --features metrics --lib registry_ext::tests -- --test-threads=1`、`cargo clippy -p app --features admin_debug,admin_tests,dev-cli --lib -- -D warnings`、`cargo clippy -p sb-metrics --all-targets -- -D warnings`、`cargo clippy -p sb-core --features metrics --lib --tests -- -D warnings`
+- `AdminDebugHandle` / `AdminDebugState` / `AppRuntimeDeps` / metrics registry query helper 已在上一卡完成 owner-first 收口；reload signal lifecycle、security snapshot query、metrics registry owner path 已稳定
 
 ### WP-30at：`WP-30k` ~ `WP-30as` maintenance line 总体验收 / 归档收口 — 已完成
-- 已先按仓库当前事实重建上下文，再复核 `WP-30k` ~ `WP-30as` 的 owner/facade 收口，确认主要成果都已落在当前代码，而不是只停在文档
-- `crates/sb-config/src/ir/mod.rs` 当前为 135 行 compat facade；`crates/sb-config/src/validator/v2/mod.rs` 当前为 49 行 thin facade；shared owner 已分别稳定留在 `ir/*` 与 `validator/v2/*`
-- `crates/sb-config/src/ir/planned.rs` 当前稳定停在 crate-private staged seam：`collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts`；`Config::validate()` 继续只是 thin entry；当前仍无 public `RuntimePlan` / `PlannedConfigIR` / builder API / generic query API
-- `crates/sb-config/src/ir/dns_raw.rs` 与 `crates/sb-config/src/ir/dns.rs` 的 DNS Raw / Validated boundary 已稳定成立；`planned.rs` 继续只做 namespace/reference facts，不接手 DNS runtime semantics
-- `app/src/run_engine.rs` 当前为 public facade，active runtime owner 位于 `app/src/run_engine_runtime/*`；`app/src/bootstrap.rs` 当前为 legacy high-level facade，helper/starter owner 位于 `app/src/bootstrap_runtime/*`，first/second pass 与 router text 分别留在 `outbound_builder/*` / `outbound_groups.rs` / `router_text.rs`
-- 强制基线已复核并通过：`cargo test -p sb-config --lib`、`cargo clippy -p sb-config --all-features --all-targets -- -D warnings`、`cargo test -p app --lib`、`cargo test -p app`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
-- 文档已压缩为 archive 口径：旧的“`cargo test -p app` 失败 / 下一卡继续拆 facade”表述已下线，`WP-30` 不再保留细碎 maintenance 排程
-- 新增最小 source pin：`app/tests/wp30ap_baseline_gates.rs` 继续 pin 住 active `run_engine` facade 与 legacy/test-only bootstrap seams 的当前 wiring
+- `crates/sb-config/src/ir/mod.rs` / `validator/v2/mod.rs` 稳定为 thin facade；`planned.rs` 稳定停在 crate-private staged seam；`app/src/run_engine.rs` / `app/src/bootstrap.rs` 稳定为 facade / legacy shell
 
 ## 当前稳定事实
-- `WP-30` 这条线是 maintenance archive / stabilization 收口，不是 dual-kernel parity completion
-- `MT-OBS-01` 已把 observability / control-plane 路径里最明显的 implicit shared/global query 依赖再收一轮：reload signal lifecycle、security snapshot query、metrics registry owner path 都已有显式 owner-first seam；旧 `global()` / shared registry 继续只作为 compat 壳
-- `WP-30k` ~ `WP-30as` 的主要 owner 已进入代码：planned/staged seam、validator-v2 facade/helpers、ir compat seam、app runtime seams、DNS phase boundary 都有对应 source pins 或回归测试
-- 当前仓库没有 public `RuntimePlan` / public `PlannedConfigIR` / generic query API；这不是缺漏回归，而是刻意保留的 future boundary
-- `bootstrap.rs` / `run_engine.rs` / `ir/mod.rs` / `validator/v2/mod.rs` 当前都应视为稳定 facade / compat shell，而不是下一轮大拆入口
+- `MT-RTC-01` 是新的 runtime/context maintenance 线，不是 parity completion，也不是 `RuntimePlan` 或 `PlannedConfigIR` 推进卡
+- 当前仓库仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API；`crates/sb-config/src/ir/planned.rs` 仍应视为 staged crate-private seam
+- `app/src/run_engine.rs`、`app/src/bootstrap.rs`、`crates/sb-config/src/ir/mod.rs`、`crates/sb-config/src/validator/v2/mod.rs` 继续视为稳定 facade / compat shell，不应重新回灌 owner 巨石
+- runtime startup/shutdown/orchestration 现已具备一层显式 `RuntimeContext` / `RuntimeLifecycle` 承载点；prom exporter、watch、admin startup 不再由 `supervisor.rs` 临时散接
+- bootstrap runtime helper 当前接受的边界是“显式 plan/context -> apply/install”；`DnsRuntimeEnv` / `ProxyRegistryPlan` 已是这一轮的 owner-first 形态，`bootstrap.rs` 仍只保留 legacy wiring
 
 ## Future Work（高层方向）
-- 仅在出现真实稳定消费者时，再评估 `PlannedFacts` exact accessor、private query seam、public `RuntimePlan`
-- 更大的 runtime seam 仍可继续向 RuntimeContext / actor / manager lifecycle 方向治理；本卡没有推进更大的 runtime actor/context 化
-- `logging.rs` / `tracing_init.rs` / `telemetry.rs` 当前继续保持 thin observability facade；`planned.rs` / public `RuntimePlan` / public `PlannedConfigIR` / generic query API 仍是 future boundary，本卡未公共化
-- `sb-core` 的 DNS / router mega-file、TUN 热路径、metrics compat/global 更深层治理等仍是 maintenance 债务，但不再挂成 `WP-30` 细粒度排程
+- 更大的 runtime actor/context 化仍是明确保留的 future boundary：例如更统一的 signal/reload/shutdown manager、router/dns/inbound manager handle 化
+- `logging.rs` / `telemetry.rs` / `tracing_init.rs` 继续保持 thin observability facade；本卡没有把更大的 observability 主链重新展开
+- DNS/router mega-file、TUN 热路径、metrics compat/global 更深层治理仍属于 maintenance 债务，但不挂回 `WP-30` 细碎排程
 
 ## 归档判断
-- 建议将 `WP-30` 视为“已归档维护线”
-- 后续如再开启新卡，应以高层 maintenance 主题立项，而不是恢复 `WP-30k` ~ `WP-30as` 式连续拆卡
+- `WP-30` 继续视为 archive baseline
+- 后续如再开 runtime maintenance 卡，继续按高层主题命名；不要恢复 `WP-30k` ~ `WP-30as` 式连续拆卡

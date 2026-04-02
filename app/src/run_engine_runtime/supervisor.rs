@@ -40,35 +40,6 @@ impl CloseMonitor {
     }
 }
 
-fn maybe_start_prom_exporter(
-    prom_listen: Option<&str>,
-    runtime_deps: &crate::runtime_deps::AppRuntimeDeps,
-) {
-    let Some(addr) = prom_listen else {
-        return;
-    };
-
-    #[cfg(feature = "sb-metrics")]
-    match addr.parse() {
-        Ok(socket_addr) => {
-            let _join_handle =
-                sb_metrics::spawn_http_exporter(runtime_deps.metrics_registry(), socket_addr);
-        }
-        Err(error) => {
-            tracing::warn!(addr = %addr, error = %error, "invalid prom exporter listen addr");
-        }
-    }
-
-    #[cfg(not(feature = "sb-metrics"))]
-    {
-        let addr = addr.to_string();
-        std::thread::spawn(move || {
-            #[allow(deprecated)]
-            let _ = sb_core::metrics::http_exporter::run_exporter(&addr);
-        });
-    }
-}
-
 fn maybe_init_dns_stub(dns_applied: bool, opts: &crate::run_engine::RunOptions) {
     if dns_applied || !(opts.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
     {
@@ -240,11 +211,6 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
         std::env::set_var("SB_HEALTH_ENABLE", "1");
     }
 
-    let runtime_deps =
-        crate::runtime_deps::AppRuntimeDeps::new().context("failed to build runtime deps")?;
-
-    maybe_start_prom_exporter(opts.prom_listen.as_deref(), &runtime_deps);
-
     let entries = config_loader::collect_config_entries(
         &opts.config_inputs.config_paths,
         &opts.config_inputs.config_dirs,
@@ -265,13 +231,9 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
         return Ok(());
     }
 
-    let reload_state = Arc::new(crate::run_engine_runtime::config_load::TokioMutex::new(
-        crate::run_engine_runtime::config_load::ReloadState::from_raw(&raw),
-    ));
-    let startup_config_fingerprint = {
-        let guard = reload_state.lock().await;
-        guard.fingerprint_hex.clone()
-    };
+    let runtime_context = crate::run_engine_runtime::context::RuntimeContext::from_raw(&raw)?;
+    let reload_state = runtime_context.reload_state();
+    let prom_exporter = runtime_context.maybe_start_prom_exporter(opts.prom_listen.as_deref());
 
     let dns_applied = if opts.dns_env_bridge {
         crate::dns_env::apply_dns_env_from_config(&raw)
@@ -285,26 +247,36 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
 
     let supervisor = start_supervisor(ir).await?;
     let admin_services = crate::run_engine_runtime::admin_start::start_admin_services(
-        &opts,
-        &supervisor,
-        &runtime_deps,
+        crate::run_engine_runtime::admin_start::AdminStartContext::new(
+            &opts,
+            &supervisor,
+            &runtime_context,
+        ),
     )
     .await?;
 
-    crate::run_engine_runtime::output::emit_startup_output(&opts, &startup_config_fingerprint);
+    crate::run_engine_runtime::output::emit_startup_output(&opts, &runtime_context);
 
     let watch_handle = if opts.watch && !has_stdin {
-        Some(crate::run_engine_runtime::watch::spawn_watch_task(
-            &entries,
-            opts.config_inputs.clone(),
-            opts.import_path.clone(),
-            opts.reload_output,
-            reload_state.clone(),
-            supervisor.clone(),
-        ))
+        Some(
+            crate::run_engine_runtime::watch::WatchRuntime::new(
+                &entries,
+                opts.config_inputs.clone(),
+                opts.import_path.clone(),
+                opts.reload_output,
+                reload_state.clone(),
+                supervisor.clone(),
+            )
+            .spawn(),
+        )
     } else {
         None
     };
+    let runtime_lifecycle = crate::run_engine_runtime::context::RuntimeLifecycle::new(
+        prom_exporter,
+        admin_services,
+        watch_handle,
+    );
 
     loop {
         match crate::run_engine_runtime::watch::wait_for_signal().await {
@@ -353,10 +325,7 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
     }
 
     let close_monitor = CloseMonitor::start();
-    if let Some(watch) = watch_handle {
-        watch.shutdown().await;
-    }
-    admin_services.shutdown().await;
+    runtime_lifecycle.shutdown().await;
 
     let grace_duration = Duration::from_millis(opts.grace_ms);
     let shutdown_result = supervisor.handle().shutdown_graceful(grace_duration).await;
@@ -378,6 +347,8 @@ mod tests {
         let run_engine = include_str!("../run_engine.rs");
 
         assert!(source.contains("async fn run_supervisor("));
+        assert!(source.contains("RuntimeContext::from_raw(&raw)?"));
+        assert!(source.contains("RuntimeLifecycle::new("));
         assert!(run_engine.contains("run_engine_runtime::supervisor::run_supervisor(opts).await"));
         assert!(!run_engine.contains("struct CloseMonitor"));
         assert!(!run_engine.contains("Supervisor startup returned"));

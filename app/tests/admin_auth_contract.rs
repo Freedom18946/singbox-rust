@@ -85,9 +85,21 @@ async fn start_test_server(
 
     config.port = addr.port();
     let addr_string = addr.to_string();
+    let breaker = app::admin_debug::breaker::install_default(Arc::new(
+        app::admin_debug::breaker::BreakerStore::from_env(),
+    ));
+    let cache = app::admin_debug::cache::install_default(Arc::new(
+        app::admin_debug::cache::CacheStore::from_env(),
+    ));
+    let reloadable = app::admin_debug::reloadable::install_default(Arc::new(
+        app::admin_debug::reloadable::ReloadableConfigStore::from_env(),
+    ));
     let state = Arc::new(app::admin_debug::AdminDebugState {
         #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
         analyze_registry: Arc::new(app::analyze::registry::AnalyzeRegistry::default()),
+        breaker,
+        cache,
+        reloadable,
         security_metrics: app::admin_debug::security_metrics::install_default(Arc::new(
             app::admin_debug::security_metrics::SecurityMetricsState::new(),
         )),

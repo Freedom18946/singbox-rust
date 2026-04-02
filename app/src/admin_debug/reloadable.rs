@@ -932,7 +932,7 @@ mod loom_smoke {
     fn loom_apply_and_get_do_not_panic() {
         loom::model(|| {
             // initialize
-            let _ = CONFIG.get_or_init(|| arc_swap::ArcSwap::from_pointee(EnvConfig::from_env()));
+            let _ = DEFAULT_STORE.get_or_init(|| Arc::new(ReloadableConfigStore::from_env()));
             let mut hs = Vec::new();
             for i in 0..2 {
                 hs.push(thread::spawn(move || {

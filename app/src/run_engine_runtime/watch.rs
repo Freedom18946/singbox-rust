@@ -14,6 +14,11 @@ pub struct WatchHandle {
 }
 
 impl WatchHandle {
+    #[cfg(test)]
+    fn from_parts(stop: oneshot::Sender<()>, join: JoinHandle<()>) -> Self {
+        Self { stop, join }
+    }
+
     pub async fn shutdown(self) {
         if self.stop.send(()).is_err() {
             tracing::debug!("watch stop signal dropped before shutdown");
@@ -95,8 +100,8 @@ pub fn snapshot_changed(
     (changed, current)
 }
 
-pub fn spawn_watch_task(
-    entries: &[ConfigEntry],
+pub struct WatchRuntime {
+    entries: Vec<ConfigEntry>,
     config_inputs: crate::run_engine::ConfigInputs,
     import_path: Option<PathBuf>,
     reload_output: crate::run_engine::ReloadOutputMode,
@@ -106,57 +111,94 @@ pub fn spawn_watch_task(
         >,
     >,
     supervisor: Arc<sb_core::runtime::supervisor::Supervisor>,
-) -> WatchHandle {
-    let (stop_tx, mut stop_rx) = oneshot::channel();
-    let mut snapshot = snapshot_mtimes(entries, import_path.as_deref());
+}
 
-    let join = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = &mut stop_rx => break,
-                () = tokio::time::sleep(Duration::from_secs(2)) => {
-                    let current_entries = match config_loader::collect_config_entries(
-                        &config_inputs.config_paths,
-                        &config_inputs.config_dirs,
-                    ) {
-                        Ok(entries) => entries,
-                        Err(error) => {
-                            tracing::warn!(error=%error, "failed to collect config entries");
+impl WatchRuntime {
+    #[must_use]
+    pub fn new(
+        entries: &[ConfigEntry],
+        config_inputs: crate::run_engine::ConfigInputs,
+        import_path: Option<PathBuf>,
+        reload_output: crate::run_engine::ReloadOutputMode,
+        state: Arc<
+            crate::run_engine_runtime::config_load::TokioMutex<
+                crate::run_engine_runtime::config_load::ReloadState,
+            >,
+        >,
+        supervisor: Arc<sb_core::runtime::supervisor::Supervisor>,
+    ) -> Self {
+        Self {
+            entries: entries.to_vec(),
+            config_inputs,
+            import_path,
+            reload_output,
+            state,
+            supervisor,
+        }
+    }
+
+    #[must_use]
+    pub fn spawn(self) -> WatchHandle {
+        let Self {
+            entries,
+            config_inputs,
+            import_path,
+            reload_output,
+            state,
+            supervisor,
+        } = self;
+
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        let mut snapshot = snapshot_mtimes(&entries, import_path.as_deref());
+
+        let join = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    () = tokio::time::sleep(Duration::from_secs(2)) => {
+                        let current_entries = match config_loader::collect_config_entries(
+                            &config_inputs.config_paths,
+                            &config_inputs.config_dirs,
+                        ) {
+                            Ok(entries) => entries,
+                            Err(error) => {
+                                tracing::warn!(error=%error, "failed to collect config entries");
+                                continue;
+                            }
+                        };
+
+                        let (changed, next_snapshot) = snapshot_changed(
+                            &snapshot,
+                            &current_entries,
+                            import_path.as_deref(),
+                        );
+                        snapshot = next_snapshot;
+                        if !changed {
                             continue;
                         }
-                    };
 
-                    let (changed, next_snapshot) = snapshot_changed(
-                        &snapshot,
-                        &current_entries,
-                        import_path.as_deref(),
-                    );
-                    snapshot = next_snapshot;
-                    if !changed {
-                        continue;
+                        tracing::info!("config change detected; checking for reload…");
+                        let outcome = crate::run_engine_runtime::config_load::reload_with_state(
+                            state.clone(),
+                            &current_entries,
+                            import_path.as_deref(),
+                            &supervisor,
+                        )
+                        .await;
+                        crate::run_engine_runtime::output::report_reload_result(
+                            &outcome,
+                            crate::run_engine::ReloadSource::Watch,
+                            reload_output,
+                        );
                     }
-
-                    tracing::info!("config change detected; checking for reload…");
-                    let outcome = crate::run_engine_runtime::config_load::reload_with_state(
-                        state.clone(),
-                        &current_entries,
-                        import_path.as_deref(),
-                        &supervisor,
-                    )
-                    .await;
-                    crate::run_engine_runtime::output::report_reload_result(
-                        &outcome,
-                        crate::run_engine::ReloadSource::Watch,
-                        reload_output,
-                    );
                 }
             }
-        }
-    });
+        });
 
-    WatchHandle {
-        stop: stop_tx,
-        join,
+        WatchHandle {
+            stop: stop_tx,
+            join,
+        }
     }
 }
 
@@ -204,12 +246,13 @@ async fn hup_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::{snapshot_changed, snapshot_mtimes};
+    use super::{snapshot_changed, snapshot_mtimes, WatchHandle, WatchRuntime};
     use crate::config_loader::{ConfigEntry, ConfigSource};
     use std::collections::HashMap;
     use std::fs;
     use std::time::SystemTime;
     use tempfile::tempdir;
+    use tokio::sync::oneshot;
 
     fn file_entry(path: &std::path::Path) -> ConfigEntry {
         ConfigEntry {
@@ -258,14 +301,37 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn watch_handle_shutdown_waits_for_spawned_task() {
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (done_tx, done_rx) = oneshot::channel();
+        let join = tokio::spawn(async move {
+            let _ = stop_rx.await;
+            let _ = done_tx.send(());
+        });
+
+        WatchHandle::from_parts(stop_tx, join).shutdown().await;
+        assert!(done_rx.await.is_ok());
+    }
+
     #[test]
     fn wp30ao_pin_watch_owner_moved_out_of_run_engine_rs() {
         let source = include_str!("watch.rs");
         let run_engine = include_str!("../run_engine.rs");
 
+        assert!(source.contains("pub struct WatchRuntime"));
         assert!(source.contains("fn snapshot_changed("));
         assert!(source.contains("async fn wait_for_signal()"));
         assert!(!run_engine.contains("fn snapshot_changed("));
         assert!(!run_engine.contains("async fn wait_for_signal()"));
+    }
+
+    #[test]
+    fn watch_runtime_carries_explicit_reload_wiring() {
+        let source = include_str!("watch.rs");
+
+        assert!(source.contains("pub struct WatchRuntime"));
+        assert!(source.contains("pub fn new("));
+        assert!(source.contains("pub fn spawn(self) -> WatchHandle"));
     }
 }

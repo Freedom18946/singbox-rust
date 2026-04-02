@@ -1,46 +1,71 @@
 use sb_config::Config;
+use std::collections::BTreeMap;
 
-pub(crate) fn apply_dns_from_config(cfg: &Config) {
-    use serde_json::Value;
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct DnsRuntimeEnv {
+    vars: BTreeMap<String, String>,
+}
 
-    let raw = cfg.raw();
-    let mut pool_tokens: Vec<String> = Vec::new();
+impl DnsRuntimeEnv {
+    #[must_use]
+    pub fn from_config(cfg: &Config) -> Self {
+        use serde_json::Value;
 
-    if let Some(dns) = raw.get("dns").and_then(Value::as_object) {
-        if let Some(servers) = dns.get("servers").and_then(|value| value.as_array()) {
-            for server in servers {
-                if let Some(token) = server_to_token(server) {
-                    push_dedup(&mut pool_tokens, token);
+        let raw = cfg.raw();
+        let mut pool_tokens: Vec<String> = Vec::new();
+        let mut vars = BTreeMap::new();
+
+        if let Some(dns) = raw.get("dns").and_then(Value::as_object) {
+            if let Some(servers) = dns.get("servers").and_then(|value| value.as_array()) {
+                for server in servers {
+                    if let Some(token) = server_to_token(server) {
+                        push_dedup(&mut pool_tokens, token);
+                    }
                 }
             }
-        }
 
-        if let Some(strategy) = dns.get("strategy").and_then(Value::as_str) {
-            std::env::set_var("SB_DNS_POOL_STRATEGY", strategy);
-        }
-        if let Some(window_ms) = dns.get("race_window_ms").and_then(Value::as_u64) {
-            std::env::set_var("SB_DNS_RACE_WINDOW_MS", window_ms.to_string());
-        }
-        if let Some(timeout_ms) = dns.get("timeout_ms").and_then(Value::as_u64) {
-            std::env::set_var("SB_DNS_TIMEOUT_MS", timeout_ms.to_string());
-        }
-        if let Some(ipv6) = dns.get("ipv6").and_then(Value::as_bool) {
-            if ipv6 {
-                std::env::set_var("SB_DNS_IPV6", "1");
+            if let Some(strategy) = dns.get("strategy").and_then(Value::as_str) {
+                vars.insert("SB_DNS_POOL_STRATEGY".to_string(), strategy.to_string());
+            }
+            if let Some(window_ms) = dns.get("race_window_ms").and_then(Value::as_u64) {
+                vars.insert("SB_DNS_RACE_WINDOW_MS".to_string(), window_ms.to_string());
+            }
+            if let Some(timeout_ms) = dns.get("timeout_ms").and_then(Value::as_u64) {
+                vars.insert("SB_DNS_TIMEOUT_MS".to_string(), timeout_ms.to_string());
+            }
+            if dns.get("ipv6").and_then(Value::as_bool).unwrap_or(false) {
+                vars.insert("SB_DNS_IPV6".to_string(), "1".to_string());
+            }
+            if let Some(he_order) = dns.get("he_order").and_then(Value::as_str) {
+                vars.insert("SB_DNS_HE_ORDER".to_string(), he_order.to_string());
             }
         }
-        if let Some(he_order) = dns.get("he_order").and_then(Value::as_str) {
-            std::env::set_var("SB_DNS_HE_ORDER", he_order);
+
+        if pool_tokens.is_empty() {
+            pool_tokens.push("system".to_string());
+        }
+
+        vars.insert("SB_DNS_ENABLE".to_string(), "1".to_string());
+        vars.insert("SB_ROUTER_DNS".to_string(), "1".to_string());
+        vars.insert("SB_DNS_POOL".to_string(), pool_tokens.join(","));
+
+        Self { vars }
+    }
+
+    pub fn apply(&self) {
+        for (key, value) in &self.vars {
+            std::env::set_var(key, value);
         }
     }
 
-    if pool_tokens.is_empty() {
-        pool_tokens.push("system".to_string());
+    #[must_use]
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.vars.get(key).map(String::as_str)
     }
+}
 
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_ROUTER_DNS", "1");
-    std::env::set_var("SB_DNS_POOL", pool_tokens.join(","));
+pub(crate) fn apply_dns_from_config(cfg: &Config) {
+    DnsRuntimeEnv::from_config(cfg).apply();
 }
 
 pub(crate) fn push_dedup(values: &mut Vec<String>, candidate: String) {
@@ -233,6 +258,27 @@ mod tests {
     }
 
     #[test]
+    fn dns_runtime_env_collects_vars_before_side_effects() -> anyhow::Result<()> {
+        let cfg = load_config(json!({
+            "schema_version": 2,
+            "outbounds": [{ "type": "direct", "name": "direct" }],
+            "route": { "rules": [], "default": "direct" },
+            "dns": {
+                "servers": ["1.1.1.1:53"],
+                "strategy": "prefer_ipv4"
+            }
+        }))?;
+
+        let env = DnsRuntimeEnv::from_config(&cfg);
+        assert_eq!(env.get("SB_DNS_ENABLE"), Some("1"));
+        assert_eq!(env.get("SB_ROUTER_DNS"), Some("1"));
+        assert_eq!(env.get("SB_DNS_POOL"), Some("udp:1.1.1.1:53"));
+        assert_eq!(env.get("SB_DNS_POOL_STRATEGY"), Some("prefer_ipv4"));
+
+        Ok(())
+    }
+
+    #[test]
     fn apply_dns_from_config_defaults_to_system_pool_when_servers_are_absent() -> anyhow::Result<()>
     {
         let _guard = env_lock().lock().expect("env lock");
@@ -256,6 +302,7 @@ mod tests {
         let source = include_str!("dns_apply.rs");
         let bootstrap = include_str!("../bootstrap.rs");
 
+        assert!(source.contains("struct DnsRuntimeEnv"));
         assert!(source.contains("pub(crate) fn apply_dns_from_config"));
         assert!(source.contains("pub(crate) fn push_dedup"));
         assert!(source.contains("pub(crate) fn server_to_token"));
@@ -264,8 +311,7 @@ mod tests {
         assert!(!bootstrap.contains("fn push_dedup("));
         assert!(!bootstrap.contains("fn server_to_token("));
         assert!(!bootstrap.contains("fn normalize_addr("));
-        assert!(
-            bootstrap.contains("crate::bootstrap_runtime::dns_apply::apply_dns_from_config(&cfg);")
-        );
+        assert!(bootstrap
+            .contains("crate::bootstrap_runtime::dns_apply::DnsRuntimeEnv::from_config(&cfg)"));
     }
 }

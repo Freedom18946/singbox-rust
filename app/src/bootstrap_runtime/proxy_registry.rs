@@ -2,11 +2,17 @@ use anyhow::Result;
 use sb_core::outbound::{endpoint::ProxyEndpoint, registry as ob_registry};
 use std::collections::HashMap;
 
-pub(crate) fn init_proxy_registry_from_env() {
-    if let Ok(value) = std::env::var("SB_ROUTER_DEFAULT_PROXY") {
-        if let Some(endpoint) = ProxyEndpoint::parse(&value) {
-            let pools = load_pools_from_env().unwrap_or_default();
-            let registry = ob_registry::Registry {
+pub(crate) struct ProxyRegistryPlan {
+    registry: Option<ob_registry::Registry>,
+}
+
+impl ProxyRegistryPlan {
+    pub fn from_env() -> Result<Self> {
+        let pools = load_pools_from_env()?;
+        let registry = std::env::var("SB_ROUTER_DEFAULT_PROXY")
+            .ok()
+            .and_then(|value| ProxyEndpoint::parse(&value))
+            .map(|endpoint| ob_registry::Registry {
                 default: Some(ProxyEndpoint {
                     weight: 1,
                     max_fail: 3,
@@ -14,9 +20,29 @@ pub(crate) fn init_proxy_registry_from_env() {
                     half_open_ms: 1000,
                     ..endpoint
                 }),
-                pools,
-            };
+                pools: pools.clone(),
+            });
+
+        Ok(Self { registry })
+    }
+
+    #[must_use]
+    pub fn is_configured(&self) -> bool {
+        self.registry.is_some()
+    }
+
+    pub fn install(self) {
+        if let Some(registry) = self.registry {
             ob_registry::install_global(registry);
+        }
+    }
+}
+
+pub(crate) fn init_proxy_registry_from_env() {
+    match ProxyRegistryPlan::from_env() {
+        Ok(plan) => plan.install(),
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to load proxy registry from env; skipping install");
         }
     }
 }
@@ -217,17 +243,33 @@ mod tests {
     }
 
     #[test]
+    fn proxy_registry_plan_collects_registry_before_install() -> anyhow::Result<()> {
+        let _guard = env_lock().lock().expect("env lock");
+        let _restore = EnvGuard::new(&["SB_ROUTER_DEFAULT_PROXY", "SB_PROXY_POOL_JSON"]);
+        std::env::set_var("SB_ROUTER_DEFAULT_PROXY", "http://127.0.0.1:8080");
+        std::env::set_var(
+            "SB_PROXY_POOL_JSON",
+            r#"[{"name":"inline","endpoints":[{"kind":"http","addr":"127.0.0.1:8080"}]}]"#,
+        );
+
+        let plan = ProxyRegistryPlan::from_env()?;
+        assert!(plan.is_configured());
+
+        Ok(())
+    }
+
+    #[test]
     fn wp30an_pin_proxy_registry_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("proxy_registry.rs");
         let bootstrap = include_str!("../bootstrap.rs");
 
+        assert!(source.contains("struct ProxyRegistryPlan"));
         assert!(source.contains("pub(crate) fn init_proxy_registry_from_env()"));
         assert!(source.contains("pub(crate) fn load_pools_from_env()"));
         assert!(source.contains("pub(crate) fn parse_pool_json("));
         assert!(!bootstrap.contains("fn init_proxy_registry_from_env()"));
         assert!(!bootstrap.contains("fn load_pools_from_env("));
         assert!(!bootstrap.contains("fn parse_pool_json("));
-        assert!(bootstrap
-            .contains("crate::bootstrap_runtime::proxy_registry::init_proxy_registry_from_env();"));
+        assert!(bootstrap.contains("ProxyRegistryPlan::from_env()"));
     }
 }

@@ -92,7 +92,10 @@ pub fn report_reload_result(
     }
 }
 
-pub fn emit_startup_output(opts: &crate::run_engine::RunOptions, startup_config_fingerprint: &str) {
+pub fn emit_startup_output(
+    opts: &crate::run_engine::RunOptions,
+    runtime: &crate::run_engine_runtime::context::RuntimeContext,
+) {
     match opts.startup_output {
         crate::run_engine::StartupOutputMode::LogOnly => {
             if opts.print_startup {
@@ -110,7 +113,7 @@ pub fn emit_startup_output(opts: &crate::run_engine::RunOptions, startup_config_
             let obj = serde_json::json!({
                 "event": "started",
                 "pid": std::process::id(),
-                "config_fingerprint": startup_config_fingerprint,
+                "config_fingerprint": runtime.startup_config_fingerprint(),
                 "fingerprint": env!("CARGO_PKG_VERSION")
             });
             println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
@@ -171,6 +174,7 @@ mod tests {
 
         assert!(source.contains("fn report_reload_result("));
         assert!(source.contains("fn emit_startup_output("));
+        assert!(source.contains("RuntimeContext"));
         assert!(source.contains("fn log_transport_plan("));
         assert!(!run_engine.contains("fn report_reload_result("));
         assert!(!run_engine.contains("transport plan"));

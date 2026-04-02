@@ -26,6 +26,27 @@ impl AdminServices {
     }
 }
 
+pub struct AdminStartContext<'a> {
+    opts: &'a crate::run_engine::RunOptions,
+    supervisor: &'a Arc<sb_core::runtime::supervisor::Supervisor>,
+    runtime: &'a crate::run_engine_runtime::context::RuntimeContext,
+}
+
+impl<'a> AdminStartContext<'a> {
+    #[must_use]
+    pub const fn new(
+        opts: &'a crate::run_engine::RunOptions,
+        supervisor: &'a Arc<sb_core::runtime::supervisor::Supervisor>,
+        runtime: &'a crate::run_engine_runtime::context::RuntimeContext,
+    ) -> Self {
+        Self {
+            opts,
+            supervisor,
+            runtime,
+        }
+    }
+}
+
 #[cfg(all(feature = "router", feature = "clash_api"))]
 struct ClashApiHandle {
     listen_addr: std::net::SocketAddr,
@@ -154,11 +175,10 @@ async fn start_clash_api_from_supervisor(
     })
 }
 
-pub async fn start_admin_services(
-    opts: &crate::run_engine::RunOptions,
-    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
-    runtime_deps: &crate::runtime_deps::AppRuntimeDeps,
-) -> Result<AdminServices> {
+pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminServices> {
+    let opts = ctx.opts;
+    let supervisor = ctx.supervisor;
+
     #[cfg(feature = "clash_api")]
     let clash_api = start_clash_api_from_supervisor(supervisor).await;
 
@@ -202,7 +222,7 @@ pub async fn start_admin_services(
                         socket_addr,
                         tls_opt,
                         auth_conf,
-                        runtime_deps.admin_state(),
+                        ctx.runtime.admin_state(),
                     )
                     .await
                     .map_err(|error| anyhow!("Failed to start admin debug server: {error}"))?
@@ -286,6 +306,7 @@ mod tests {
         let source = include_str!("admin_start.rs");
         let run_engine = include_str!("../run_engine.rs");
 
+        assert!(source.contains("pub struct AdminStartContext"));
         assert!(source.contains("async fn start_admin_services("));
         assert!(!run_engine.contains("fn start_clash_api_from_supervisor("));
         assert!(!run_engine.contains("fn build_outbound_registry_handle("));

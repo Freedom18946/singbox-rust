@@ -1,6 +1,8 @@
 #[cfg(feature = "router")]
 pub mod admin_start;
 pub mod config_load;
+#[cfg(feature = "router")]
+pub mod context;
 pub mod debug_env;
 #[cfg(feature = "router")]
 pub mod output;
