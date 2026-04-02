@@ -24,6 +24,17 @@
 
 ### 当前维护线（2026-04-02）
 
+- **MT-TEST-01**: patch-plan / test baseline stabilization — 已完成
+  - 真实根因已按当前源码事实确认：`crates/sb-core/tests/patch_plan_test.rs::plan_and_apply` 失败不是 tempdir/fixture 生命周期问题，而是 `suffix_shadow_cleanup` 生成 `-exact:...=<TO-BE-REMOVED>` 占位删除
+  - `crates/sb-core/src/router/patch_apply.rs` 原先只按整行精确匹配删除，导致 `apply_plan(...)` 无法删除真实 `exact:...=proxy` 行，输出里残留 stale rule
+  - 本轮收口：
+    - `patch_apply.rs` 新增最小 delete-rule seam，让 `<TO-BE-REMOVED>` 按 `key=` 匹配任意现值，同时保留既有精确删除语义
+    - 新增 `router::patch_apply::tests::placeholder_delete_matches_existing_rule_value`
+    - `router_rules_suffix_shadow_fix.rs` 新增从 patch 生成到应用的链路回归，直接 pin 住 `suffix_shadow_cleanup -> apply_cli_patch`
+  - 本卡明确是 maintenance / test-baseline quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p sb-core --all-features --test patch_plan_test plan_and_apply -- --test-threads=1`、`cargo test -p sb-core --all-features --test patch_plan_test -- --test-threads=1`、`cargo test -p sb-core --all-features --tests -- --test-threads=1`、`cargo test -p sb-core --all-features --lib -- --test-threads=1`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+  - 当前基线备注：`cargo test -p sb-core --all-features --tests -- --test-threads=1` 在本卡验收时整条通过；另外 `cargo test -p sb-core --all-features patch_plan_test::plan_and_apply -- --test-threads=1` 在当前仓库只会过滤到 0 个集成测试，真实定向命令应使用 `--test patch_plan_test plan_and_apply`
+
 - **MT-SVC-01**: DERP / services baseline stabilization — 已完成
   - 真实根因已按当前源码事实确认：`mesh_forwarding` 失败不是“包转发太慢”，而是 test harness 只跑到 `StartStage::Start`；DERP mesh peer 实际在 `PostStart` 才启动
   - 在补齐完整 lifecycle 后，当前源码还要求 mesh peer fixture 显式配置 outbound TLS；旧 `localhost:port` shorthand 会明文连接 TLS DERP 端口并触发 `InvalidContentType`
@@ -60,6 +71,7 @@
 
 - runtime actor/context 主线当前已达到维护期可接受 close-out；后续不再按散乱 seam 继续细拆
 - 后续更合适的维护主题是：
+  - patch/preview 语义里更复杂的 patch kind 应用契约，但只在出现真实 baseline failure 或 consumer 时再继续推进
   - DERP/services 更深层 reconnect/backoff/shutdown 一致性观察
   - `router/dns` 真实热点与 mega-file 风险
   - `tun/outbound` 生命周期与 perf hotspot
@@ -75,12 +87,14 @@
 | `cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features --test patch_plan_test plan_and_apply -- --test-threads=1` | ✅ pass (`MT-TEST-01`) |
+| `cargo test -p sb-core --all-features --test patch_plan_test -- --test-threads=1` | ✅ pass (`MT-TEST-01`) |
 | `cargo test -p sb-core --all-features services::derp::mesh_test::tests::test_mesh_forwarding -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
 | `cargo test -p sb-core --all-features services::derp -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
-| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
-| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ⚠️ DERP 已解除阻塞；当前 workspace 首个失败点为 `crates/sb-core/tests/patch_plan_test.rs::plan_and_apply` |
+| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-TEST-01`) |
+| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ✅ pass (`MT-TEST-01`) |
 | `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
-| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-SVC-01` + `MT-HOT-OBS-01`) |
+| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-TEST-01` + `MT-SVC-01` + `MT-HOT-OBS-01`) |
 | `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |

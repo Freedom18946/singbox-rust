@@ -12,6 +12,14 @@ pub enum ApplyError {
     EmptyPatch,
 }
 
+const VALUE_PLACEHOLDER: &str = "<TO-BE-REMOVED>";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DeleteRule {
+    Exact(String),
+    MatchAnyValue { key_prefix: String },
+}
+
 pub fn apply_cli_patch(original: &str, patch: &str) -> Result<String, ApplyError> {
     if original.is_empty() {
         return Err(ApplyError::EmptySource);
@@ -19,12 +27,12 @@ pub fn apply_cli_patch(original: &str, patch: &str) -> Result<String, ApplyError
     if patch.trim().is_empty() {
         return Err(ApplyError::EmptyPatch);
     }
-    let mut dels: Vec<String> = Vec::new();
+    let mut dels: Vec<DeleteRule> = Vec::new();
     let mut adds: Vec<String> = Vec::new();
     for raw in patch.lines() {
         let line = raw.trim_end();
         if let Some(stripped) = line.strip_prefix('-') {
-            dels.push(stripped.to_string());
+            dels.push(parse_delete_rule(stripped));
         } else if let Some(stripped) = line.strip_prefix('+') {
             adds.push(stripped.to_string());
         }
@@ -34,9 +42,9 @@ pub fn apply_cli_patch(original: &str, patch: &str) -> Result<String, ApplyError
     'outer: for raw in original.lines() {
         let l = raw.trim_end();
         for d in &dels {
-            if l == d {
+            if delete_rule_matches(d, l) {
                 continue 'outer;
-            } // 删除
+            }
         }
         out.push_str(raw);
         out.push('\n');
@@ -48,4 +56,38 @@ pub fn apply_cli_patch(original: &str, patch: &str) -> Result<String, ApplyError
         }
     }
     Ok(out)
+}
+
+fn parse_delete_rule(line: &str) -> DeleteRule {
+    if let Some(key) = line.strip_suffix(&format!("={VALUE_PLACEHOLDER}")) {
+        DeleteRule::MatchAnyValue {
+            key_prefix: format!("{key}="),
+        }
+    } else {
+        DeleteRule::Exact(line.to_string())
+    }
+}
+
+fn delete_rule_matches(rule: &DeleteRule, line: &str) -> bool {
+    match rule {
+        DeleteRule::Exact(expected) => line == expected,
+        DeleteRule::MatchAnyValue { key_prefix } => line.starts_with(key_prefix),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_cli_patch;
+
+    #[test]
+    fn placeholder_delete_matches_existing_rule_value() {
+        let original = "exact:a.example.com=proxy\nsuffix:example.com=direct\ndefault:direct\n";
+        let patch = "*** rules.txt\n@@\n-exact:a.example.com=<TO-BE-REMOVED>\n";
+
+        let out = apply_cli_patch(original, patch).expect("patch should apply");
+
+        assert!(!out.contains("exact:a.example.com=proxy"));
+        assert!(out.contains("suffix:example.com=direct"));
+        assert!(out.contains("default:direct"));
+    }
 }
