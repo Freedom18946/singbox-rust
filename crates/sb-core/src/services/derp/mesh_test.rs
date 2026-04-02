@@ -1,23 +1,22 @@
 #[cfg(test)]
 mod tests {
-    use crate::service::{ServiceContext, StartStage};
-    use crate::services::derp::build_derp_service;
+    use crate::service::{Service, ServiceContext, StartStage};
     use crate::services::derp::protocol::{
         clamp_private_key, derive_public_key, open_from, seal_to, ClientInfoPayload, DerpFrame,
         PrivateKey, PublicKey, PROTOCOL_VERSION,
     };
+    use crate::services::derp::DerpService;
     use sb_config::ir::{
-        DerpMeshPeerIR, DerpStunOptionsIR, InboundTlsOptionsIR, Listable, ServiceIR, ServiceType,
-        StringOrObj,
+        DerpMeshPeerIR, DerpOutboundTlsOptionsIR, DerpStunOptionsIR, InboundTlsOptionsIR, Listable,
+        ServiceIR, ServiceType, StringOrObj,
     };
     use std::io;
     use std::net::SocketAddr;
     use std::sync::Arc;
-
     use std::time::Duration;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpStream;
-    use tokio::time::{sleep, timeout};
+    use tokio::time::{sleep, timeout, Instant};
 
     fn alloc_port() -> io::Result<u16> {
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
@@ -64,6 +63,14 @@ mod tests {
                 enabled: true,
                 certificate_path: Some(self.cert_file.path().to_string_lossy().to_string()),
                 key_path: Some(self.key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }
+        }
+
+        fn mesh_tls_ir(&self) -> DerpOutboundTlsOptionsIR {
+            DerpOutboundTlsOptionsIR {
+                enabled: true,
+                ca_paths: vec![self.cert_file.path().to_string_lossy().to_string()],
                 ..Default::default()
             }
         }
@@ -134,6 +141,28 @@ mod tests {
         (stream, client_public_key)
     }
 
+    fn start_service(service: &Arc<DerpService>) {
+        for stage in [
+            StartStage::Initialize,
+            StartStage::Start,
+            StartStage::PostStart,
+            StartStage::Started,
+        ] {
+            service.start(stage).unwrap();
+        }
+    }
+
+    async fn wait_for_mesh_route(service: &Arc<DerpService>, key: PublicKey, label: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if service.has_remote_client(&key) {
+                return;
+            }
+            assert!(Instant::now() < deadline, "timeout waiting for {label}");
+            sleep(Duration::from_millis(25)).await;
+        }
+    }
+
     #[tokio::test]
     async fn test_mesh_forwarding() {
         let _ = tracing_subscriber::fmt()
@@ -182,9 +211,12 @@ mod tests {
             tls: Some(tls.tls_ir()),
             mesh_psk: Some(psk.clone()),
             mesh_with: Some(Listable {
-                items: vec![StringOrObj(DerpMeshPeerIR::from(format!(
-                    "localhost:{port_b}"
-                )))],
+                items: vec![StringOrObj(DerpMeshPeerIR {
+                    server: "localhost".to_string(),
+                    server_port: Some(port_b),
+                    tls: Some(tls.mesh_tls_ir()),
+                    ..Default::default()
+                })],
             }),
             stun: Some(DerpStunOptionsIR {
                 enabled: false,
@@ -203,9 +235,12 @@ mod tests {
             tls: Some(tls.tls_ir()),
             mesh_psk: Some(psk.clone()),
             mesh_with: Some(Listable {
-                items: vec![StringOrObj(DerpMeshPeerIR::from(format!(
-                    "localhost:{port_a}"
-                )))],
+                items: vec![StringOrObj(DerpMeshPeerIR {
+                    server: "localhost".to_string(),
+                    server_port: Some(port_a),
+                    tls: Some(tls.mesh_tls_ir()),
+                    ..Default::default()
+                })],
             }),
             stun: Some(DerpStunOptionsIR {
                 enabled: false,
@@ -215,17 +250,11 @@ mod tests {
         };
 
         let ctx = ServiceContext::default();
-        let service_a = build_derp_service(&ir_a, &ctx).expect("build a");
-        let service_b = build_derp_service(&ir_b, &ctx).expect("build b");
+        let service_a = DerpService::from_ir(&ir_a, &ctx).expect("build a");
+        let service_b = DerpService::from_ir(&ir_b, &ctx).expect("build b");
 
-        service_a.start(StartStage::Initialize).unwrap();
-        service_a.start(StartStage::Start).unwrap();
-
-        service_b.start(StartStage::Initialize).unwrap();
-        service_b.start(StartStage::Start).unwrap();
-
-        // Wait for servers to start and mesh to connect
-        sleep(Duration::from_secs(3)).await;
+        start_service(&service_a);
+        start_service(&service_b);
 
         // Client 1 connects to A
         let (client1_private_key, client1_key) = test_client_keypair(1);
@@ -247,18 +276,19 @@ mod tests {
         .await;
         assert_eq!(client2_key2, client2_key);
 
-        // Wait for peer presence propagation
-        sleep(Duration::from_secs(2)).await;
+        wait_for_mesh_route(&service_a, client2_key, "service_a remote client route").await;
+        wait_for_mesh_route(&service_b, client1_key, "service_b remote client route").await;
 
         // C1 sends packet to C2
         let packet_content = b"hello mesh".to_vec();
-        let frame = DerpFrame::SendPacket {
+        DerpFrame::SendPacket {
             dst_key: client2_key,
             packet: packet_content.clone(),
-        };
-        c1.write_all(&frame.to_bytes().unwrap())
-            .await
-            .expect("c1 send");
+        }
+        .write_to_async(&mut c1)
+        .await
+        .expect("c1 send");
+        c1.flush().await.expect("flush c1 send");
 
         // C2 should receive RecvPacket from C1
         let recv = timeout(Duration::from_secs(5), DerpFrame::read_from_async(&mut c2))

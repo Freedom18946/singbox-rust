@@ -353,7 +353,7 @@ impl ClientRegistry {
         Err(format!("destination client {:?} not found", dst_key))
     }
 
-    fn is_remote_registered(&self, key: &PublicKey) -> bool {
+    pub(crate) fn is_remote_registered(&self, key: &PublicKey) -> bool {
         self.remote_clients.read().contains_key(key)
     }
 

@@ -2980,6 +2980,11 @@ impl DerpService {
 
         Some(response)
     }
+
+    #[cfg(test)]
+    pub(crate) fn has_remote_client(&self, key: &PublicKey) -> bool {
+        self.client_registry.is_remote_registered(key)
+    }
 }
 
 /// A stream adapter that replays already-read prefix bytes before delegating to the inner stream.
@@ -3245,21 +3250,17 @@ impl Service for DerpService {
         sb_metrics::set_derp_clients(&self.tag, 0);
 
         if let Some(handle) = self.stun_task.lock().take() {
-            // We don't block on join here to avoid deadlocks in shutdown
-            // The notify signal should terminate the loop
-            drop(handle);
+            handle.abort();
         }
 
         if let Some(handle) = self.http_task.lock().take() {
-            // We don't block on join here to avoid deadlocks in shutdown
-            // The notify signal should terminate the loop
-            drop(handle);
+            handle.abort();
         }
 
         {
             let mut tasks = self.mesh_tasks.lock();
             for task in tasks.drain(..) {
-                drop(task);
+                task.abort();
             }
         }
 
@@ -3502,6 +3503,9 @@ mod tests {
         DerpStunOptionsIR, DerpVerifyClientUrlIR, EndpointIR, InboundTlsOptionsIR, Listable,
         ServiceType, StringOrObj,
     };
+    use std::future::pending;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::sleep;
 
@@ -3570,6 +3574,22 @@ mod tests {
                 .await
                 .expect("tls handshake")
         }
+    }
+
+    struct AbortFlag {
+        flag: Arc<AtomicBool>,
+    }
+
+    impl Drop for AbortFlag {
+        fn drop(&mut self) {
+            self.flag.store(true, Ordering::SeqCst);
+        }
+    }
+
+    async fn abort_observable_task(flag: Arc<AtomicBool>, ready: tokio::sync::oneshot::Sender<()>) {
+        let _flag = AbortFlag { flag };
+        let _ = ready.send(());
+        pending::<()>().await;
     }
 
     #[test]
@@ -4292,6 +4312,76 @@ mod tests {
         assert!(matches!(pong, DerpFrame::Pong { data } if data == ping_data));
 
         service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_close_aborts_owned_background_tasks() {
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir
+            .path()
+            .join("derp-close.key")
+            .to_string_lossy()
+            .to_string();
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-close".to_string()),
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(0),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let service = DerpService::from_ir(&ir, &ServiceContext::default()).expect("build service");
+
+        let http_aborted = Arc::new(AtomicBool::new(false));
+        let stun_aborted = Arc::new(AtomicBool::new(false));
+        let mesh_aborted = Arc::new(AtomicBool::new(false));
+        let (http_ready_tx, http_ready_rx) = tokio::sync::oneshot::channel();
+        let (stun_ready_tx, stun_ready_rx) = tokio::sync::oneshot::channel();
+        let (mesh_ready_tx, mesh_ready_rx) = tokio::sync::oneshot::channel();
+
+        *service.http_task.lock() = Some(tokio::spawn(abort_observable_task(
+            http_aborted.clone(),
+            http_ready_tx,
+        )));
+        *service.stun_task.lock() = Some(tokio::spawn(abort_observable_task(
+            stun_aborted.clone(),
+            stun_ready_tx,
+        )));
+        service
+            .mesh_tasks
+            .lock()
+            .push(tokio::spawn(abort_observable_task(
+                mesh_aborted.clone(),
+                mesh_ready_tx,
+            )));
+
+        http_ready_rx.await.expect("http task started");
+        stun_ready_rx.await.expect("stun task started");
+        mesh_ready_rx.await.expect("mesh task started");
+
+        service.close().expect("close service");
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if http_aborted.load(Ordering::SeqCst)
+                    && stun_aborted.load(Ordering::SeqCst)
+                    && mesh_aborted.load(Ordering::SeqCst)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("background tasks should be aborted");
     }
 
     #[tokio::test]

@@ -24,13 +24,20 @@
 
 ### 当前维护线（2026-04-02）
 
+- **MT-SVC-01**: DERP / services baseline stabilization — 已完成
+  - 真实根因已按当前源码事实确认：`mesh_forwarding` 失败不是“包转发太慢”，而是 test harness 只跑到 `StartStage::Start`；DERP mesh peer 实际在 `PostStart` 才启动
+  - 在补齐完整 lifecycle 后，当前源码还要求 mesh peer fixture 显式配置 outbound TLS；旧 `localhost:port` shorthand 会明文连接 TLS DERP 端口并触发 `InvalidContentType`
+  - 本轮收口：
+    - `mesh_test.rs` 改成完整 `Initialize -> Start -> PostStart -> Started` 启动 helper，并用 remote-route 就绪等待替代魔法 sleep
+    - `server.rs` 的 `close()` 改为 abort 已拥有的 `stun/http/mesh` background task handle，收掉 detached task seam
+    - `client_registry.rs` 仅新增最小 crate-local remote-client query seam，供 DERP tests pin 当前 owner/read 路径；没有公共化 services query API
+    - 新增 `test_close_aborts_owned_background_tasks` pin 住本卡触达的 lifecycle owner 语义
+  - 本卡明确是 maintenance / services quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p sb-core --all-features services::derp::mesh_test::tests::test_mesh_forwarding -- --test-threads=1`、`cargo test -p sb-core --all-features services::derp -- --test-threads=1`、`cargo test -p sb-core --all-features --lib -- --test-threads=1`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+  - 当前基线备注：`cargo test -p sb-core --all-features --tests -- --test-threads=1` 已不再被 DERP 挡住；在当前 dirty workspace 中，新的首个失败点是与本卡无关的 `crates/sb-core/tests/patch_plan_test.rs::plan_and_apply`
+
 - **MT-HOT-OBS-01**: hotpath stabilization + metrics/logging consolidation — 已完成
-  - Stage A：`tun/dns/router/outbound optimizations` 聚焦热路径锁热点、panic seam、shared-state lifecycle；`TunInboundService` / DHCP upstream / shared router hot reload / protocol optimization pool 均已做一轮 owner-first 收口
-  - Stage B：`logging/sb-metrics` 聚焦 global/compat 收尾；`LoggingOwner` 现已显式拥有 signal task lifecycle，metrics HTTP exporter 现已跟踪 per-connection serve task
-  - 本卡明确是 maintenance / quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 本卡没有把 runtime actor/context close-out 主线重新做大；`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01` 的稳定 owner/query/lifecycle 边界继续保持
-  - 验收通过：`cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::config_builder::tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1`、`cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1`、`cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1`、`cargo test -p sb-metrics --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --lib -- --test-threads=1`、三条 clippy 全通过
-  - 当前基线备注：`cargo test -p sb-core --all-features --tests -- --test-threads=1` 仍被既有 DERP 测试 `services::derp::mesh_test::tests::test_mesh_forwarding` 阻塞，失败点在 `crates/sb-core/src/services/derp/mesh_test.rs:266`
+  - `tun/dns/router/outbound optimizations` 与 `logging/sb-metrics` owner-first 收口继续保持稳定；本卡不再赘述
 
 ### 已完成维护归档（2026-04-02）
 
@@ -53,6 +60,7 @@
 
 - runtime actor/context 主线当前已达到维护期可接受 close-out；后续不再按散乱 seam 继续细拆
 - 后续更合适的维护主题是：
+  - DERP/services 更深层 reconnect/backoff/shutdown 一致性观察
   - `router/dns` 真实热点与 mega-file 风险
   - `tun/outbound` 生命周期与 perf hotspot
   - metrics/logging 剩余 compat/global 壳
@@ -67,9 +75,12 @@
 | `cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
-| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ⚠️ 现有 DERP 基线失败：`services::derp::mesh_test::tests::test_mesh_forwarding` |
+| `cargo test -p sb-core --all-features services::derp::mesh_test::tests::test_mesh_forwarding -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
+| `cargo test -p sb-core --all-features services::derp -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
+| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-SVC-01`) |
+| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ⚠️ DERP 已解除阻塞；当前 workspace 首个失败点为 `crates/sb-core/tests/patch_plan_test.rs::plan_and_apply` |
 | `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
-| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-SVC-01` + `MT-HOT-OBS-01`) |
 | `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
