@@ -818,14 +818,7 @@ impl DhcpUpstream {
         };
 
         if let Some(t) = &transport {
-            // Start the transport immediately
-            // Note: In real lifecycle this should be started by a manager, but Upstream is usually self-contained.
-            let t_clone = t.clone();
-            tokio::spawn(async move {
-                let _ = t_clone
-                    .start(crate::dns::transport::DnsStartStage::Start)
-                    .await;
-            });
+            Self::start_transport_if_runtime_available(&name, t);
         }
 
         Ok(Self {
@@ -838,6 +831,51 @@ impl DhcpUpstream {
             _watcher: watcher,
             transport,
         })
+    }
+
+    fn start_transport_if_runtime_available(
+        name: &str,
+        transport: &Arc<crate::dns::transport::DhcpTransport>,
+    ) {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            let upstream = name.to_string();
+            let transport = Arc::clone(transport);
+            tokio::spawn(async move {
+                if let Err(error) = transport
+                    .start(crate::dns::transport::DnsStartStage::Start)
+                    .await
+                {
+                    tracing::warn!(
+                        target: "sb_core::dns",
+                        upstream = %upstream,
+                        error = %error,
+                        "failed to start DHCP transport background loop"
+                    );
+                }
+            });
+        } else {
+            tracing::debug!(
+                target: "sb_core::dns",
+                upstream = %name,
+                "deferring DHCP transport startup until async query because no Tokio runtime is active"
+            );
+        }
+    }
+
+    async fn ensure_transport_started(&self) {
+        if let Some(transport) = &self.transport {
+            if let Err(error) = transport
+                .start(crate::dns::transport::DnsStartStage::Start)
+                .await
+            {
+                tracing::warn!(
+                    target: "sb_core::dns",
+                    upstream = %self.name,
+                    error = %error,
+                    "failed to start DHCP transport on demand"
+                );
+            }
+        }
     }
 
     fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
@@ -912,6 +950,7 @@ fn reload_dhcp_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<dyn D
 #[async_trait]
 impl DnsUpstream for DhcpUpstream {
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        self.ensure_transport_started().await;
         for attempt in 0..2 {
             let upstreams = self.snapshot();
             if upstreams.is_empty() {
@@ -965,6 +1004,7 @@ impl DnsUpstream for DhcpUpstream {
     }
 
     async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        self.ensure_transport_started().await;
         for attempt in 0..2 {
             let upstreams = self.snapshot();
             if upstreams.is_empty() {
@@ -1036,6 +1076,7 @@ impl DnsUpstream for DhcpUpstream {
     }
 
     async fn health_check(&self) -> bool {
+        self.ensure_transport_started().await;
         let snapshot = self.snapshot();
         if let Some(up) = snapshot.first() {
             up.health_check().await
@@ -2611,7 +2652,9 @@ impl TailscaleLocalUpstream {
 
         if backend_state == "Running" {
             // Tailscale is running. Use 100.100.100.100
-            let addr: SocketAddr = "100.100.100.100:53".parse().unwrap();
+            let addr: SocketAddr = "100.100.100.100:53"
+                .parse()
+                .map_err(|error| anyhow::anyhow!("invalid built-in tailscale DNS addr: {error}"))?;
             let up = Arc::new(UdpUpstream::new(addr));
             *self.upstreams.write() = vec![up];
             tracing::debug!(target: "sb_core::dns", upstream = %self.name, "tailscale is running, using 100.100.100.100");
@@ -3249,6 +3292,20 @@ mod tests {
         let (iface2, path2) = parse_dhcp_spec("dhcp:///custom/resolv.conf");
         assert_eq!(iface2, None);
         assert_eq!(path2.display().to_string(), "/custom/resolv.conf");
+    }
+
+    #[cfg(feature = "dns_dhcp")]
+    #[test]
+    fn dhcp_upstream_with_transport_builds_without_tokio_runtime() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let resolv = dir.path().join("resolv.conf");
+        std::fs::write(&resolv, "nameserver 1.1.1.1\n").expect("write resolv.conf");
+
+        let spec = format!("dhcp://eth0?resolv={}", resolv.display());
+        let upstream =
+            DhcpUpstream::from_spec(&spec, Some("dhcp_transport")).expect("build dhcp upstream");
+
+        assert_eq!(upstream.name(), "dhcp::dhcp_transport");
     }
 
     #[cfg(unix)]

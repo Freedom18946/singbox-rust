@@ -226,7 +226,9 @@ pub fn build_upstream(
         return Ok(Some(Arc::new(crate::dns::upstream::SystemUpstream::new())));
     }
     if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
-        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(None))));
+        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(
+            None,
+        ))));
     }
     if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
         return Ok(Some(build_dhcp_dns_upstream(a, None)?));
@@ -364,9 +366,9 @@ pub fn build_upstream_from_server(
         return Ok(Some(Arc::new(crate::dns::upstream::SystemUpstream::new())));
     }
     if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
-        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(Some(
-            &srv.tag,
-        )))));
+        return Ok(Some(Arc::new(crate::dns::upstream::LocalUpstream::new(
+            Some(&srv.tag),
+        ))));
     }
     if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
         return Ok(Some(build_dhcp_dns_upstream(a, Some(&srv.tag))?));
@@ -382,9 +384,8 @@ pub fn build_upstream_from_server(
     }
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
-        let up =
-            crate::dns::upstream::UdpUpstream::new(sa)
-                .with_client_subnet(srv.client_subnet.clone());
+        let up = crate::dns::upstream::UdpUpstream::new(sa)
+            .with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
     if a.starts_with("https://") || a.starts_with("http://") {
@@ -482,7 +483,9 @@ fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn Dn
 fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
     let (name, addrs) = crate::dns::upstream::parse_tailscale_spec(spec, tag)?;
     if addrs.is_empty() {
-        Ok(Arc::new(crate::dns::upstream::TailscaleLocalUpstream::new(tag)))
+        Ok(Arc::new(crate::dns::upstream::TailscaleLocalUpstream::new(
+            tag,
+        )))
     } else {
         Ok(Arc::new(crate::dns::upstream::StaticMultiUpstream::new(
             name, addrs,
@@ -1072,6 +1075,33 @@ mod tests {
         .unwrap();
 
         assert_eq!(upstream.name(), "local::local_tag");
+    }
+
+    #[cfg(feature = "dns_dhcp")]
+    #[test]
+    fn build_upstream_from_server_supports_dhcp_without_tokio_runtime() {
+        let registry = crate::dns::transport::TransportRegistry::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let resolv = dir.path().join("resolv.conf");
+        std::fs::write(&resolv, "nameserver 1.1.1.1\n").expect("write resolv.conf");
+
+        let upstream = build_upstream_from_server(
+            &sb_config::ir::DnsServerIR {
+                tag: "dhcp_tag".into(),
+                address: format!("dhcp://eth0?resolv={}", resolv.display()),
+                sni: None,
+                ca_paths: vec![],
+                ca_pem: vec![],
+                skip_cert_verify: None,
+                client_subnet: None,
+                ..Default::default()
+            },
+            &registry,
+        )
+        .expect("dhcp upstream builder should not panic outside runtime")
+        .expect("dhcp upstream should be built");
+
+        assert_eq!(upstream.name(), "dhcp::dhcp_tag");
     }
 
     #[test]

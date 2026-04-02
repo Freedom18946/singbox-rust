@@ -2032,6 +2032,11 @@ pub async fn spawn_rules_hot_reload(
     Ok(h)
 }
 
+fn shared_hot_reload_enabled_from_env() -> bool {
+    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
+    !file.is_empty() && router_rules_hot_reload_ms_from_env() > 0
+}
+
 /// 便捷：从 ENV 初始化索引并（可选）热重载
 pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>> {
     let max_rules = router_rules_max_from_env();
@@ -2416,7 +2421,7 @@ fn refresh_shared_index_from_env_if_needed() {
 pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
     refresh_shared_index_from_env_if_needed();
     // 若在 async 上下文，后台拉起热重载（只尝试一次）
-    if tokio::runtime::Handle::try_current().is_ok() {
+    if tokio::runtime::Handle::try_current().is_ok() && shared_hot_reload_enabled_from_env() {
         static STARTED: Lazy<std::sync::Once> = Lazy::new(std::sync::Once::new);
         STARTED.call_once(|| {
             let s = SHARED_INDEX.clone();
@@ -3223,6 +3228,21 @@ mod migration_tests {
         let msg = err.to_string();
         assert!(msg.contains("SB_ROUTER_RULES_HOT_RELOAD_MS"));
         assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn shared_hot_reload_requires_file_and_positive_interval() {
+        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "");
+        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "10");
+        assert!(!super::shared_hot_reload_enabled_from_env());
+
+        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "/tmp/router.rules");
+        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "0");
+        assert!(!super::shared_hot_reload_enabled_from_env());
+
+        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "/tmp/router.rules");
+        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "10");
+        assert!(super::shared_hot_reload_enabled_from_env());
     }
 
     #[test]

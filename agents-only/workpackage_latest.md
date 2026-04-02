@@ -24,48 +24,52 @@
 
 ### 当前维护线（2026-04-02）
 
-- **MT-RTC-03**: runtime actorization close-out — 已完成
-  - `runtime_deps.rs` 现已复用单一 `AnalyzeRegistry` owner 给 `AppRuntimeDeps` 与 `AdminDebugState`，不再重复拼装 control-plane analyze/query owner
-  - `admin_debug/mod.rs` 新增 `AdminDebugState::spawn_http_server(...)` / `spawn_plain_http_server_sync(...)`；`run_engine_runtime/admin_start.rs` 与 `admin_debug::init()` 现在都从 state owner 显式派生 admin HTTP + reload signal wiring
-  - `run_engine_runtime/context.rs` 新增 `start_admin_services(...)` / `spawn_watch(...)`；`supervisor.rs` 改成从 `RuntimeContext` 直接派生 admin/watch owner seam，`RuntimeContext` 更明确成为 active runtime owner carrier
-  - 经源码复核，`watch.rs`、`output.rs`、`admin_debug/http_server.rs`、`bootstrap_runtime/{runtime_shell,inbounds,router_helpers}.rs`、`run_engine.rs`、`bootstrap.rs` 当前已处于维护期可接受边界，因此本卡没有为凑数继续硬做抽象
-  - 本卡性质仍是 maintenance / runtime quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
+- **MT-HOT-OBS-01**: hotpath stabilization + metrics/logging consolidation — 已完成
+  - Stage A：`tun/dns/router/outbound optimizations` 聚焦热路径锁热点、panic seam、shared-state lifecycle；`TunInboundService` / DHCP upstream / shared router hot reload / protocol optimization pool 均已做一轮 owner-first 收口
+  - Stage B：`logging/sb-metrics` 聚焦 global/compat 收尾；`LoggingOwner` 现已显式拥有 signal task lifecycle，metrics HTTP exporter 现已跟踪 per-connection serve task
+  - 本卡明确是 maintenance / quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 本卡没有把 runtime actor/context close-out 主线重新做大；`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01` 的稳定 owner/query/lifecycle 边界继续保持
+  - 验收通过：`cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::config_builder::tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1`、`cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1`、`cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1`、`cargo test -p sb-metrics --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --lib -- --test-threads=1`、三条 clippy 全通过
+  - 当前基线备注：`cargo test -p sb-core --all-features --tests -- --test-threads=1` 仍被既有 DERP 测试 `services::derp::mesh_test::tests::test_mesh_forwarding` 阻塞，失败点在 `crates/sb-core/src/services/derp/mesh_test.rs:266`
 
 ### 已完成维护归档（2026-04-02）
 
+- **MT-RTC-03**: runtime actorization close-out — 已完成
+  - `RuntimeContext` / `AdminDebugState` / runtime deps / admin HTTP wiring 当前为稳定基线
+
 - **MT-RTC-02**: runtime actorization follow-up — 已完成
-  - `RuntimeContext` / `RuntimeLifecycle`、`AdminDebugState` query helper、watch lifecycle、bootstrap runtime carriers 作为 `MT-RTC-03` 的直接基础继续稳定
+  - watch lifecycle、bootstrap runtime carriers、admin state query helper 已稳定
 
 - **MT-RTC-01**: runtime actor/context consolidation — 已完成
-  - `RuntimeContext` / `RuntimeLifecycle`、`AdminStartContext`、`WatchRuntime`、`DnsRuntimeEnv`、`ProxyRegistryPlan` 作为 `MT-RTC-02` 的首批 runtime seam 基线继续稳定
+  - `RuntimeContext` / `RuntimeLifecycle` / bootstrap carriers 继续作为 close-out 基线
 
 - **MT-OBS-01**: runtime / control-plane / observability ownership consolidation — 已完成
-  - `AdminDebugHandle` / `AdminDebugState` / `AppRuntimeDeps` / metrics registry/query helper 已完成 owner-first 收口
-  - reload signal lifecycle、security snapshot query、metrics registry owner path 已稳定
+  - registry owner/query helper、reload signal lifecycle、security snapshot query 已稳定
 
 - **WP-30at**: `WP-30k` ~ `WP-30as` maintenance line 总体验收 / 归档收口 — 已完成
-  - `crates/sb-config/src/ir/mod.rs` / `validator/v2/mod.rs` 为稳定 facade；`planned.rs` 为 staged crate-private seam；`run_engine.rs` / `bootstrap.rs` 为 app facade / legacy shell
-  - `WP-30` 当前定位是 maintenance archive / stabilization baseline，不是 parity completion，也不是新的 `RuntimePlan` 实现线
+  - `WP-30` 当前定位是 maintenance archive / stabilization baseline，不是 parity completion，也不是新的 runtime 主线实现线
 
 ### 当前维护重点（高层）
 
-- runtime actor/context 主线当前已达到维护期可接受 close-out；后续只在出现真实 consumer 时再开高层 maintenance 主题，不继续按散乱 seam 细拆
-- `run_engine.rs` / `bootstrap.rs` 继续保持 facade；`RuntimeContext` / `RuntimeLifecycle` / `AdminDebugState` / bootstrap runtime carriers 现已构成 active runtime 的稳定 owner/query/lifecycle 主干
+- runtime actor/context 主线当前已达到维护期可接受 close-out；后续不再按散乱 seam 继续细拆
+- 后续更合适的维护主题是：
+  - `router/dns` 真实热点与 mega-file 风险
+  - `tun/outbound` 生命周期与 perf hotspot
+  - metrics/logging 剩余 compat/global 壳
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
-- 其他 maintenance 债务继续按主题推进：DNS/router mega-file、TUN 热路径、metrics compat/global 更深层治理
 
 ### 构建基线（2026-04-02）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
-| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
-| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-RTC-02`) |
-| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-RTC-02`) |
-| `cargo test -p sb-config --lib` | ✅ pass (`WP-30at`) |
-| `cargo clippy -p sb-config --all-features --all-targets -- -D warnings` | ✅ pass (`WP-30at`) |
-| `cargo test -p sb-metrics --lib -- --test-threads=1` | ✅ pass (`MT-OBS-01`) |
-| `cargo test -p sb-core --features metrics --lib registry_ext::tests -- --test-threads=1` | ✅ pass (`MT-OBS-01`) |
-| `cargo clippy -p sb-metrics --all-targets -- -D warnings` | ✅ pass (`MT-OBS-01`) |
-| `cargo clippy -p sb-core --features metrics --lib --tests -- -D warnings` | ✅ pass (`MT-OBS-01`) |
+| `cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features dns::config_builder::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ⚠️ 现有 DERP 基线失败：`services::derp::mesh_test::tests::test_mesh_forwarding` |
+| `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |

@@ -4,8 +4,9 @@
 //! Hysteria, SSH, and TUIC protocols.
 
 use bytes::BytesMut;
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Buffer pool for zero-copy operations
@@ -29,7 +30,7 @@ impl BufferPool {
 
     /// Get a buffer from the pool or allocate a new one
     pub fn get(&self, capacity: usize) -> BytesMut {
-        let mut buffers = self.buffers.lock().unwrap();
+        let mut buffers = self.buffers.lock();
 
         // Try to find a buffer with sufficient capacity
         if let Some(pos) = buffers.iter().position(|b| b.capacity() >= capacity) {
@@ -51,7 +52,7 @@ impl BufferPool {
 
         buf.clear();
 
-        let mut buffers = self.buffers.lock().unwrap();
+        let mut buffers = self.buffers.lock();
         if buffers.len() < self.max_size {
             buffers.push(buf);
         }
@@ -59,18 +60,19 @@ impl BufferPool {
 
     /// Get current pool size
     pub fn size(&self) -> usize {
-        self.buffers.lock().unwrap().len()
+        self.buffers.lock().len()
     }
 }
 
-/// Global buffer pool for protocol operations
-pub static PROTOCOL_BUFFER_POOL: once_cell::sync::Lazy<BufferPool> =
-    once_cell::sync::Lazy::new(|| {
+fn protocol_buffer_pool() -> &'static BufferPool {
+    static POOL: once_cell::sync::Lazy<BufferPool> = once_cell::sync::Lazy::new(|| {
         let max_size = opt_env_usize("SB_BUFFER_POOL_SIZE").unwrap_or(100);
         let max_capacity = opt_env_usize("SB_BUFFER_POOL_MAX_CAPACITY").unwrap_or(1024 * 1024); // 1MB
 
         BufferPool::new(max_size, max_capacity)
     });
+    &POOL
+}
 
 fn opt_env_usize(name: &str) -> Option<usize> {
     let raw = std::env::var(name).ok()?;
@@ -226,7 +228,7 @@ impl<T> ConnectionPool<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let connections = self.connections.lock().unwrap();
+        let connections = self.connections.lock();
 
         if connections.is_empty() {
             return None;
@@ -250,7 +252,7 @@ impl<T> ConnectionPool<T> {
 
     /// Add a connection to the pool
     pub fn put(&self, connection: Arc<T>) {
-        let mut connections = self.connections.lock().unwrap();
+        let mut connections = self.connections.lock();
 
         if connections.len() < self.max_size {
             connections.push(PooledConnection {
@@ -266,18 +268,18 @@ impl<T> ConnectionPool<T> {
     where
         F: Fn(&T) -> bool,
     {
-        let mut connections = self.connections.lock().unwrap();
+        let mut connections = self.connections.lock();
         connections.retain(|conn| is_healthy(&conn.connection));
     }
 
     /// Get pool size
     pub fn size(&self) -> usize {
-        self.connections.lock().unwrap().len()
+        self.connections.lock().len()
     }
 
     /// Clear all connections
     pub fn clear(&self) {
-        self.connections.lock().unwrap().clear();
+        self.connections.lock().clear();
     }
 }
 
@@ -306,7 +308,7 @@ where
 
     /// Get a value from the cache
     pub fn get(&self, key: &K) -> Option<Arc<V>> {
-        let cache = self.cache.lock().unwrap();
+        let cache = self.cache.lock();
 
         if let Some(cached) = cache.get(key) {
             if cached.created_at.elapsed() < self.ttl {
@@ -319,7 +321,7 @@ where
 
     /// Put a value in the cache
     pub fn put(&self, key: K, value: V) {
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock();
 
         cache.insert(
             key,
@@ -342,7 +344,7 @@ where
 
         // Slow path: create and insert
         let value = Arc::new(create());
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock();
 
         cache.insert(
             key,
@@ -357,18 +359,18 @@ where
 
     /// Remove expired entries
     pub fn cleanup(&self) {
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock();
         cache.retain(|_, v| v.created_at.elapsed() < self.ttl);
     }
 
     /// Get cache size
     pub fn size(&self) -> usize {
-        self.cache.lock().unwrap().len()
+        self.cache.lock().len()
     }
 
     /// Clear the cache
     pub fn clear(&self) {
-        self.cache.lock().unwrap().clear();
+        self.cache.lock().clear();
     }
 }
 
@@ -381,7 +383,7 @@ pub mod metrics {
     pub fn record_buffer_pool_metrics() {
         use ::metrics::gauge;
 
-        let size = PROTOCOL_BUFFER_POOL.size();
+        let size = protocol_buffer_pool().size();
         gauge!("buffer_pool_size").set(size as f64);
     }
 

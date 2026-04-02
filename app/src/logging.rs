@@ -18,24 +18,36 @@
 //!    确保即使在崩溃或强制退出期间也能持久化日志。
 
 use anyhow::{self, Result};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::{self, Write};
-use std::sync::Mutex as StdMutex;
-use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-static ACTIVE_RUNTIME: LazyLock<StdMutex<Weak<LoggingRuntime>>> =
-    LazyLock::new(|| StdMutex::new(Weak::new()));
+static ACTIVE_RUNTIME: LazyLock<Mutex<Weak<LoggingRuntime>>> =
+    LazyLock::new(|| Mutex::new(Weak::new()));
 
 pub struct LoggingOwner {
     runtime: Arc<LoggingRuntime>,
+    signal_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl LoggingOwner {
+    #[cfg(test)]
     fn new(runtime: Arc<LoggingRuntime>) -> Self {
-        Self { runtime }
+        Self::with_signal_task(runtime, None)
+    }
+
+    fn with_signal_task(
+        runtime: Arc<LoggingRuntime>,
+        signal_task: Option<tokio::task::JoinHandle<()>>,
+    ) -> Self {
+        Self {
+            runtime,
+            signal_task: Mutex::new(signal_task),
+        }
     }
 
     fn runtime(&self) -> &Arc<LoggingRuntime> {
@@ -43,6 +55,15 @@ impl LoggingOwner {
     }
 
     pub async fn flush(&self) {
+        let task = { self.signal_task.lock().take() };
+        if let Some(task) = task {
+            task.abort();
+            if let Err(error) = task.await {
+                if !error.is_cancelled() {
+                    tracing::warn!(%error, "logging signal task join failed during flush");
+                }
+            }
+        }
         flush_logs_with(Arc::clone(&self.runtime)).await;
     }
 }
@@ -322,7 +343,7 @@ pub fn init_logging_with_owner(redactor: Arc<app::redact::Redactor>) -> Result<L
     }
 
     // Install exit hook for log flushing
-    install_exit_hook(Arc::clone(&runtime));
+    let signal_task = install_exit_hook(Arc::clone(&runtime));
 
     tracing::info!(
         format = ?config.format,
@@ -332,7 +353,7 @@ pub fn init_logging_with_owner(redactor: Arc<app::redact::Redactor>) -> Result<L
         "Logging system initialized"
     );
 
-    Ok(LoggingOwner::new(runtime))
+    Ok(LoggingOwner::with_signal_task(runtime, signal_task))
 }
 
 /// Create a writer (possibly redacting) for tracing-subscriber fmt layer
@@ -423,13 +444,7 @@ where
 
 /// Check if a log event should be sampled based on rate limiting
 fn should_sample(runtime: &LoggingRuntime, target: &str, config: &SamplingConfig) -> bool {
-    let mut sampler = match runtime.sampler.lock() {
-        Ok(g) => g,
-        Err(_poison) => {
-            // On lock poison, allow the event rather than panic.
-            return true;
-        }
-    };
+    let mut sampler = runtime.sampler.lock();
     let now = Instant::now();
 
     // Reset window if expired
@@ -449,10 +464,10 @@ fn should_sample(runtime: &LoggingRuntime, target: &str, config: &SamplingConfig
 }
 
 /// Install exit hook to flush logs before shutdown
-fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
+fn install_exit_hook(runtime: Arc<LoggingRuntime>) -> Option<tokio::task::JoinHandle<()>> {
     // Register signal handlers for graceful shutdown
     let signal_runtime = Arc::clone(&runtime);
-    tokio::spawn(async move {
+    let signal_task = tokio::spawn(async move {
         use tokio::signal::unix::{signal, SignalKind};
 
         let mut sigterm = match signal(SignalKind::terminate()) {
@@ -526,6 +541,8 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) {
 
         original_hook(panic_info);
     }));
+
+    Some(signal_task)
 }
 
 /// Flush all pending logs and wait for completion
@@ -540,16 +557,11 @@ pub async fn flush_logs() {
 }
 
 fn current_compat_runtime() -> Option<Arc<LoggingRuntime>> {
-    ACTIVE_RUNTIME
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .upgrade()
+    ACTIVE_RUNTIME.lock().upgrade()
 }
 
 fn install_active_runtime_compat(runtime: &Arc<LoggingRuntime>) -> Result<()> {
-    let mut runtime_slot = ACTIVE_RUNTIME
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut runtime_slot = ACTIVE_RUNTIME.lock();
     if runtime_slot.upgrade().is_some() {
         return Err(anyhow::anyhow!("logging already initialized"));
     }
@@ -586,9 +598,7 @@ mod tests {
     use serial_test::serial;
 
     fn clear_active_runtime_for_test() {
-        let mut runtime_slot = ACTIVE_RUNTIME
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut runtime_slot = ACTIVE_RUNTIME.lock();
         *runtime_slot = Weak::new();
     }
 
@@ -646,7 +656,7 @@ mod tests {
 
         // Reset sampler state
         {
-            let mut sampler = runtime.sampler.lock().unwrap();
+            let mut sampler = runtime.sampler.lock();
             sampler.samples.clear();
             sampler.window_start = Instant::now();
         }
@@ -704,5 +714,26 @@ mod tests {
         })));
 
         owner.flush().await;
+    }
+
+    #[tokio::test]
+    async fn explicit_owner_flush_cancels_owned_signal_task() {
+        let join = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let owner = LoggingOwner::with_signal_task(
+            Arc::new(LoggingRuntime::new(LoggingConfig {
+                format: LogFormat::Compact,
+                level: "info".to_string(),
+                sampling: None,
+                redact: true,
+                timestamp: true,
+                color: false,
+            })),
+            Some(join),
+        );
+
+        owner.flush().await;
+        assert!(owner.signal_task.lock().is_none());
     }
 }

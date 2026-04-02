@@ -16,6 +16,7 @@ use crate::adapter::InboundService;
 use crate::router::{RouteCtx, RouterHandle, Transport};
 use crate::runtime::switchboard::OutboundSwitchboard;
 use crate::services::v2ray_api::StatsManager;
+use parking_lot::RwLock;
 use sb_platform::tun::{AsyncTunDevice, TunConfig as PlatformTunConfig, TunError};
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
@@ -25,7 +26,7 @@ use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
@@ -184,14 +185,14 @@ impl SessionTable {
     {
         // Try read-only lookup first
         {
-            let sessions = self.sessions.read().unwrap();
+            let sessions = self.sessions.read();
             if let Some(session) = sessions.get(&key) {
                 return Some(session.clone());
             }
         }
 
         // Need to create - acquire write lock
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
 
         // Double-check after acquiring write lock
         if let Some(session) = sessions.get(&key) {
@@ -201,7 +202,7 @@ impl SessionTable {
         // Check capacity
         if sessions.len() >= self.max_sessions {
             // Evict expired sessions
-            sessions.retain(|_, v| !v.read().unwrap().is_expired(self.timeout));
+            sessions.retain(|_, v| !v.read().is_expired(self.timeout));
 
             if sessions.len() >= self.max_sessions {
                 warn!("TUN session table full ({} sessions)", self.max_sessions);
@@ -221,17 +222,17 @@ impl SessionTable {
 
     /// Get existing session
     pub fn get(&self, key: &FlowKey) -> Option<Arc<RwLock<TunSession>>> {
-        self.sessions.read().unwrap().get(key).cloned()
+        self.sessions.read().get(key).cloned()
     }
 
     /// Remove a session
     pub fn remove(&self, key: &FlowKey) -> Option<Arc<RwLock<TunSession>>> {
-        self.sessions.write().unwrap().remove(key)
+        self.sessions.write().remove(key)
     }
 
     /// Get session count
     pub fn len(&self) -> usize {
-        self.sessions.read().unwrap().len()
+        self.sessions.read().len()
     }
 
     /// Check if session table is empty
@@ -241,9 +242,9 @@ impl SessionTable {
 
     /// Clean up expired sessions
     pub fn cleanup_expired(&self) -> usize {
-        let mut sessions = self.sessions.write().unwrap();
+        let mut sessions = self.sessions.write();
         let before = sessions.len();
-        sessions.retain(|_, v| !v.read().unwrap().is_expired(self.timeout));
+        sessions.retain(|_, v| !v.read().is_expired(self.timeout));
         before - sessions.len()
     }
 }
@@ -463,19 +464,19 @@ impl TunInboundService {
 
     /// Set the router instance
     pub fn set_router(&self, router: Arc<RouterHandle>) {
-        let mut r = self.router.write().unwrap();
+        let mut r = self.router.write();
         *r = Some(router);
     }
 
     /// Attach stats manager for V2Ray API traffic accounting.
     pub fn set_stats(&self, stats: Option<Arc<StatsManager>>) {
-        let mut s = self.stats.write().unwrap();
+        let mut s = self.stats.write();
         *s = stats;
     }
 
     /// Set the outbound manager
     pub fn set_outbound_manager(&self, manager: Arc<OutboundSwitchboard>) {
-        let mut m = self.outbound_manager.write().unwrap();
+        let mut m = self.outbound_manager.write();
         *m = Some(manager);
     }
 
@@ -508,8 +509,17 @@ impl TunInboundService {
 
     /// Attach stats manager for V2Ray API traffic accounting.
     pub fn with_stats(mut self, stats: Option<Arc<StatsManager>>) -> Self {
-        let _ = std::mem::replace(&mut self.stats, Arc::new(RwLock::new(stats)));
+        self.stats = Arc::new(RwLock::new(stats));
         self
+    }
+
+    fn bridge_dependencies(&self) -> Option<(Arc<RouterHandle>, Arc<OutboundSwitchboard>)> {
+        let router = self.router.read().clone();
+        let outbound_manager = self.outbound_manager.read().clone();
+        match (router, outbound_manager) {
+            (Some(router), Some(outbound_manager)) => Some((router, outbound_manager)),
+            _ => None,
+        }
     }
 
     /// Check if shutdown has been requested
@@ -527,7 +537,7 @@ impl TunInboundService {
         // use tokio::io::{AsyncReadExt, AsyncWriteExt}; // Unused
 
         let inbound_tag = self.tag.clone();
-        let stats = self.stats.read().unwrap().clone();
+        let stats = self.stats.read().clone();
 
         let platform_config = PlatformTunConfig {
             name: self.config.name.clone(),
@@ -578,6 +588,7 @@ impl TunInboundService {
         struct BridgeChannels {
             tx: mpsc::Sender<Vec<u8>>,   // To Outbound
             rx: mpsc::Receiver<Vec<u8>>, // From Outbound
+            task: tokio::task::JoinHandle<()>,
         }
         let mut bridges: HashMap<FlowKey, BridgeChannels> = HashMap::new();
 
@@ -712,8 +723,10 @@ impl TunInboundService {
                         let (bridge_tx, tun_rx): (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) =
                             mpsc::channel(32);
 
-                        let router = self.router.read().unwrap().clone();
-                        let outbound_manager = self.outbound_manager.read().unwrap().clone();
+                        let Some((router, outbound_manager)) = self.bridge_dependencies() else {
+                            warn!("TUN: router or outbound manager not configured for {}", key);
+                            continue;
+                        };
                         let key_clone = *key;
 
                         let process_matcher = self.process_matcher.clone();
@@ -721,149 +734,144 @@ impl TunInboundService {
                         let stats = stats.clone();
                         let inbound_tag = inbound_tag.clone();
 
-                        tokio::spawn(async move {
-                            if let (Some(r), Some(om)) = (router, outbound_manager) {
-                                let src_ip = key_clone.src.ip();
-                                let dst_ip = key_clone.dst.ip();
+                        let task = tokio::spawn(async move {
+                            let src_ip = key_clone.src.ip();
+                            let dst_ip = key_clone.dst.ip();
 
-                                // Data structures for Context lifetime handling
-                                let mut process_info: Option<sb_platform::process::ProcessInfo> =
-                                    None;
-                                let mut sniffed_domain: Option<String> = None;
-                                let mut buffered_data = Vec::new();
+                            // Data structures for Context lifetime handling
+                            let mut process_info: Option<sb_platform::process::ProcessInfo> = None;
+                            let mut sniffed_domain: Option<String> = None;
+                            let mut buffered_data = Vec::new();
 
-                                // 1. Process Lookup
-                                if let Some(pm) = process_matcher {
-                                    let conn_info = sb_platform::process::ConnectionInfo {
-                                        local_addr: key_clone.src,
-                                        remote_addr: key_clone.dst,
-                                        protocol: sb_platform::process::Protocol::Tcp,
-                                    };
-                                    // Best effort lookup
-                                    if let Ok(info) = pm.match_connection(&conn_info).await {
-                                        process_info = Some(info);
-                                    }
-                                }
-
-                                // 2. Sniffing
-                                if sniff_enabled {
-                                    // Wait up to 300ms for the first packet from client to sniff
-                                    if let Ok(Some(data)) = tokio::time::timeout(
-                                        Duration::from_millis(300),
-                                        bridge_rx.recv(),
-                                    )
-                                    .await
-                                    {
-                                        if !data.is_empty() {
-                                            let outcome = sniff_stream(&data);
-                                            if let Some(h) = outcome.host {
-                                                sniffed_domain = Some(h);
-                                            }
-                                            // We could also use ALPN from outcome for routing if supported
-                                            buffered_data.extend_from_slice(&data);
-                                        }
-                                    }
-                                }
-
-                                // 3. Populate Route Context
-                                let mut ctx = RouteCtx {
-                                    network: "tcp",
-                                    transport: Transport::Tcp,
-                                    source_ip: Some(src_ip),
-                                    source_port: Some(key_clone.src.port()),
-                                    ip: Some(dst_ip),
-                                    port: Some(key_clone.dst.port()),
-                                    ..Default::default()
+                            // 1. Process Lookup
+                            if let Some(pm) = process_matcher {
+                                let conn_info = sb_platform::process::ConnectionInfo {
+                                    local_addr: key_clone.src,
+                                    remote_addr: key_clone.dst,
+                                    protocol: sb_platform::process::Protocol::Tcp,
                                 };
-
-                                if let Some(ref info) = process_info {
-                                    ctx.process_name = Some(&info.name);
-                                    ctx.process_path = Some(&info.path);
+                                // Best effort lookup
+                                if let Ok(info) = pm.match_connection(&conn_info).await {
+                                    process_info = Some(info);
                                 }
-                                if let Some(ref d) = sniffed_domain {
-                                    ctx.host = Some(d);
+                            }
+
+                            // 2. Sniffing
+                            if sniff_enabled {
+                                // Wait up to 300ms for the first packet from client to sniff
+                                if let Ok(Some(data)) = tokio::time::timeout(
+                                    Duration::from_millis(300),
+                                    bridge_rx.recv(),
+                                )
+                                .await
+                                {
+                                    if !data.is_empty() {
+                                        let outcome = sniff_stream(&data);
+                                        if let Some(h) = outcome.host {
+                                            sniffed_domain = Some(h);
+                                        }
+                                        // We could also use ALPN from outcome for routing if supported
+                                        buffered_data.extend_from_slice(&data);
+                                    }
                                 }
+                            }
 
-                                // 4. Routing Decision
-                                let decision = r.decide(&ctx);
-                                let target_tag = decision.as_str().to_string();
-                                let traffic = stats.as_ref().and_then(|stats| {
-                                    stats.traffic_recorder(
-                                        inbound_tag.as_deref(),
-                                        Some(target_tag.as_str()),
-                                        None,
-                                    )
-                                });
-                                let traffic_up = traffic.clone();
-                                let traffic_down = traffic.clone();
+                            // 3. Populate Route Context
+                            let mut ctx = RouteCtx {
+                                network: "tcp",
+                                transport: Transport::Tcp,
+                                source_ip: Some(src_ip),
+                                source_port: Some(key_clone.src.port()),
+                                ip: Some(dst_ip),
+                                port: Some(key_clone.dst.port()),
+                                ..Default::default()
+                            };
 
-                                // 5. Connect and Forward
-                                if let Some(connector) = om.get_connector(&target_tag) {
-                                    let target = crate::runtime::switchboard::Target::tcp(
-                                        dst_ip.to_string(),
-                                        key_clone.dst.port(),
-                                    );
-                                    let opts = crate::runtime::switchboard::DialOpts::default();
-                                    match connector.dial(target, opts).await {
-                                        Ok(mut stream) => {
-                                            use tokio::io::AsyncWriteExt;
+                            if let Some(ref info) = process_info {
+                                ctx.process_name = Some(&info.name);
+                                ctx.process_path = Some(&info.path);
+                            }
+                            if let Some(ref d) = sniffed_domain {
+                                ctx.host = Some(d);
+                            }
 
-                                            // Send buffered data first if any
-                                            if !buffered_data.is_empty() {
-                                                if let Err(e) =
-                                                    stream.write_all(&buffered_data).await
-                                                {
-                                                    warn!(
-                                                        "Failed to write buffered data to {}: {}",
-                                                        target_tag, e
-                                                    );
-                                                    return;
+                            // 4. Routing Decision
+                            let decision = router.decide(&ctx);
+                            let target_tag = decision.as_str().to_string();
+                            let traffic = stats.as_ref().and_then(|stats| {
+                                stats.traffic_recorder(
+                                    inbound_tag.as_deref(),
+                                    Some(target_tag.as_str()),
+                                    None,
+                                )
+                            });
+                            let traffic_up = traffic.clone();
+                            let traffic_down = traffic.clone();
+
+                            // 5. Connect and Forward
+                            if let Some(connector) = outbound_manager.get_connector(&target_tag) {
+                                let target = crate::runtime::switchboard::Target::tcp(
+                                    dst_ip.to_string(),
+                                    key_clone.dst.port(),
+                                );
+                                let opts = crate::runtime::switchboard::DialOpts::default();
+                                match connector.dial(target, opts).await {
+                                    Ok(mut stream) => {
+                                        use tokio::io::AsyncWriteExt;
+
+                                        // Send buffered data first if any
+                                        if !buffered_data.is_empty() {
+                                            if let Err(e) = stream.write_all(&buffered_data).await {
+                                                warn!(
+                                                    "Failed to write buffered data to {}: {}",
+                                                    target_tag, e
+                                                );
+                                                return;
+                                            }
+                                            if let Some(ref recorder) = traffic_up {
+                                                recorder.record_up(buffered_data.len() as u64);
+                                            }
+                                        }
+
+                                        let (mut ro, mut wo) = tokio::io::split(stream);
+                                        tokio::join!(
+                                            async move {
+                                                while let Some(data) = bridge_rx.recv().await {
+                                                    if wo.write_all(&data).await.is_err() {
+                                                        break;
+                                                    }
+                                                    if let Some(ref recorder) = traffic_up {
+                                                        recorder.record_up(data.len() as u64);
+                                                    }
                                                 }
-                                                if let Some(ref recorder) = traffic_up {
-                                                    recorder.record_up(buffered_data.len() as u64);
+                                                let _ = wo.shutdown().await;
+                                            },
+                                            async move {
+                                                let mut buf = vec![0u8; 4096];
+                                                // We need to use AsyncReadExt trait
+                                                use tokio::io::AsyncReadExt;
+                                                while let Ok(n) = ro.read(&mut buf).await {
+                                                    if n == 0 {
+                                                        break;
+                                                    }
+                                                    if bridge_tx
+                                                        .send(buf[..n].to_vec())
+                                                        .await
+                                                        .is_err()
+                                                    {
+                                                        break;
+                                                    }
+                                                    if let Some(ref recorder) = traffic_down {
+                                                        recorder.record_down(n as u64);
+                                                    }
                                                 }
                                             }
-
-                                            let (mut ro, mut wo) = tokio::io::split(stream);
-                                            tokio::join!(
-                                                async move {
-                                                    while let Some(data) = bridge_rx.recv().await {
-                                                        if wo.write_all(&data).await.is_err() {
-                                                            break;
-                                                        }
-                                                        if let Some(ref recorder) = traffic_up {
-                                                            recorder.record_up(data.len() as u64);
-                                                        }
-                                                    }
-                                                    let _ = wo.shutdown().await;
-                                                },
-                                                async move {
-                                                    let mut buf = vec![0u8; 4096];
-                                                    // We need to use AsyncReadExt trait
-                                                    use tokio::io::AsyncReadExt;
-                                                    while let Ok(n) = ro.read(&mut buf).await {
-                                                        if n == 0 {
-                                                            break;
-                                                        }
-                                                        if bridge_tx
-                                                            .send(buf[..n].to_vec())
-                                                            .await
-                                                            .is_err()
-                                                        {
-                                                            break;
-                                                        }
-                                                        if let Some(ref recorder) = traffic_down {
-                                                            recorder.record_down(n as u64);
-                                                        }
-                                                    }
-                                                }
-                                            );
-                                        }
-                                        Err(e) => warn!("Connect failed {}: {}", target_tag, e),
+                                        );
                                     }
-                                } else {
-                                    warn!("Outbound connector {} not found", target_tag);
+                                    Err(e) => warn!("Connect failed {}: {}", target_tag, e),
                                 }
+                            } else {
+                                warn!("Outbound connector {} not found", target_tag);
                             }
                         });
 
@@ -872,6 +880,7 @@ impl TunInboundService {
                             BridgeChannels {
                                 tx: tun_tx,
                                 rx: tun_rx,
+                                task,
                             },
                         );
                         debug!("TUN: bridge established for {}", key);
@@ -928,7 +937,7 @@ impl TunInboundService {
                     }
 
                     if let Some(session) = self.sessions.get(key) {
-                        if let Ok(mut s) = session.write() {
+                        if let Some(mut s) = session.try_write() {
                             s.last_activity = std::time::Instant::now();
                         }
                     }
@@ -945,8 +954,10 @@ impl TunInboundService {
                         mpsc::channel(32);
                     let (bridge_tx, tun_rx): (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) =
                         mpsc::channel(32);
-                    let router = self.router.read().unwrap().clone();
-                    let outbound_manager = self.outbound_manager.read().unwrap().clone();
+                    let Some((router, outbound_manager)) = self.bridge_dependencies() else {
+                        warn!("TUN: router or outbound manager not configured for {}", key);
+                        continue;
+                    };
                     let key_clone = *key;
 
                     let process_matcher = self.process_matcher.clone();
@@ -954,145 +965,136 @@ impl TunInboundService {
                     let stats = stats.clone();
                     let inbound_tag = inbound_tag.clone();
 
-                    tokio::spawn(async move {
-                        if let (Some(r), Some(om)) = (router, outbound_manager) {
-                            let src_ip = key_clone.src.ip();
-                            let dst_ip = key_clone.dst.ip();
+                    let task = tokio::spawn(async move {
+                        let src_ip = key_clone.src.ip();
+                        let dst_ip = key_clone.dst.ip();
 
-                            let mut process_info: Option<sb_platform::process::ProcessInfo> = None;
-                            let mut sniffed_domain: Option<String> = None;
-                            let mut buffered_packets: Vec<Vec<u8>> = Vec::new();
+                        let mut process_info: Option<sb_platform::process::ProcessInfo> = None;
+                        let mut sniffed_domain: Option<String> = None;
+                        let mut buffered_packets: Vec<Vec<u8>> = Vec::new();
 
-                            // 1. Process Lookup
-                            if let Some(pm) = process_matcher {
-                                let conn_info = sb_platform::process::ConnectionInfo {
-                                    local_addr: key_clone.src,
-                                    remote_addr: key_clone.dst,
-                                    protocol: sb_platform::process::Protocol::Udp,
-                                };
-                                if let Ok(info) = pm.match_connection(&conn_info).await {
-                                    process_info = Some(info);
-                                }
-                            }
-
-                            // 2. Sniffing
-                            if sniff_enabled {
-                                if let Ok(Some(data)) = tokio::time::timeout(
-                                    Duration::from_millis(300),
-                                    bridge_rx.recv(),
-                                )
-                                .await
-                                {
-                                    if !data.is_empty() {
-                                        let outcome = sniff_datagram(&data); // Uses datagram sniffer
-                                        if let Some(h) = outcome.host {
-                                            sniffed_domain = Some(h);
-                                        }
-                                        buffered_packets.push(data);
-                                    }
-                                }
-                            }
-
-                            let mut ctx = RouteCtx {
-                                network: "udp",
-                                transport: Transport::Udp,
-                                source_ip: Some(src_ip),
-                                source_port: Some(key_clone.src.port()),
-                                ip: Some(dst_ip),
-                                port: Some(key_clone.dst.port()),
-                                ..Default::default()
+                        // 1. Process Lookup
+                        if let Some(pm) = process_matcher {
+                            let conn_info = sb_platform::process::ConnectionInfo {
+                                local_addr: key_clone.src,
+                                remote_addr: key_clone.dst,
+                                protocol: sb_platform::process::Protocol::Udp,
                             };
-
-                            if let Some(ref info) = process_info {
-                                ctx.process_name = Some(&info.name);
-                                ctx.process_path = Some(&info.path);
+                            if let Ok(info) = pm.match_connection(&conn_info).await {
+                                process_info = Some(info);
                             }
-                            if let Some(ref d) = sniffed_domain {
-                                ctx.host = Some(d);
+                        }
+
+                        // 2. Sniffing
+                        if sniff_enabled {
+                            if let Ok(Some(data)) =
+                                tokio::time::timeout(Duration::from_millis(300), bridge_rx.recv())
+                                    .await
+                            {
+                                if !data.is_empty() {
+                                    let outcome = sniff_datagram(&data); // Uses datagram sniffer
+                                    if let Some(h) = outcome.host {
+                                        sniffed_domain = Some(h);
+                                    }
+                                    buffered_packets.push(data);
+                                }
                             }
+                        }
 
-                            let decision = r.decide(&ctx);
-                            let target_tag = decision.as_str().to_string();
-                            let traffic = stats.as_ref().and_then(|stats| {
-                                stats.traffic_recorder(
-                                    inbound_tag.as_deref(),
-                                    Some(target_tag.as_str()),
-                                    None,
-                                )
-                            });
-                            let traffic_up = traffic.clone();
-                            let traffic_down = traffic.clone();
+                        let mut ctx = RouteCtx {
+                            network: "udp",
+                            transport: Transport::Udp,
+                            source_ip: Some(src_ip),
+                            source_port: Some(key_clone.src.port()),
+                            ip: Some(dst_ip),
+                            port: Some(key_clone.dst.port()),
+                            ..Default::default()
+                        };
 
-                            if let Some(factory) = om.get_udp_factory(&target_tag) {
-                                match factory.open_session().await {
-                                    Ok(session) => {
-                                        let msg_send = session.clone();
-                                        let msg_recv = session.clone();
-                                        let dst_str = dst_ip.to_string();
-                                        let dst_port = key_clone.dst.port();
+                        if let Some(ref info) = process_info {
+                            ctx.process_name = Some(&info.name);
+                            ctx.process_path = Some(&info.path);
+                        }
+                        if let Some(ref d) = sniffed_domain {
+                            ctx.host = Some(d);
+                        }
 
-                                        // Send buffered packets first
-                                        for pkt in buffered_packets {
-                                            if msg_send
-                                                .send_to(&pkt, &dst_str, dst_port)
-                                                .await
-                                                .is_ok()
-                                            {
-                                                if let Some(ref recorder) = traffic_up {
-                                                    recorder.record_up(pkt.len() as u64);
-                                                    recorder.record_up_packet(1);
-                                                }
+                        let decision = router.decide(&ctx);
+                        let target_tag = decision.as_str().to_string();
+                        let traffic = stats.as_ref().and_then(|stats| {
+                            stats.traffic_recorder(
+                                inbound_tag.as_deref(),
+                                Some(target_tag.as_str()),
+                                None,
+                            )
+                        });
+                        let traffic_up = traffic.clone();
+                        let traffic_down = traffic.clone();
+
+                        if let Some(factory) = outbound_manager.get_udp_factory(&target_tag) {
+                            match factory.open_session().await {
+                                Ok(session) => {
+                                    let msg_send = session.clone();
+                                    let msg_recv = session.clone();
+                                    let dst_str = dst_ip.to_string();
+                                    let dst_port = key_clone.dst.port();
+
+                                    // Send buffered packets first
+                                    for pkt in buffered_packets {
+                                        if msg_send.send_to(&pkt, &dst_str, dst_port).await.is_ok()
+                                        {
+                                            if let Some(ref recorder) = traffic_up {
+                                                recorder.record_up(pkt.len() as u64);
+                                                recorder.record_up_packet(1);
                                             }
                                         }
+                                    }
 
-                                        tokio::join!(
-                                            async move {
-                                                // TUN -> Remote
-                                                while let Some(data) = bridge_rx.recv().await {
-                                                    if msg_send
-                                                        .send_to(&data, &dst_str, dst_port)
-                                                        .await
-                                                        .is_ok()
-                                                    {
-                                                        if let Some(ref recorder) = traffic_up {
-                                                            recorder.record_up(data.len() as u64);
-                                                            recorder.record_up_packet(1);
-                                                        }
+                                    tokio::join!(
+                                        async move {
+                                            // TUN -> Remote
+                                            while let Some(data) = bridge_rx.recv().await {
+                                                if msg_send
+                                                    .send_to(&data, &dst_str, dst_port)
+                                                    .await
+                                                    .is_ok()
+                                                {
+                                                    if let Some(ref recorder) = traffic_up {
+                                                        recorder.record_up(data.len() as u64);
+                                                        recorder.record_up_packet(1);
                                                     }
                                                 }
-                                            },
-                                            async move {
-                                                // Remote -> TUN
-                                                loop {
-                                                    match msg_recv.recv_from().await {
-                                                        Ok((data, _addr)) => {
-                                                            let data_len = data.len();
-                                                            if bridge_tx.send(data).await.is_err() {
-                                                                break;
-                                                            }
-                                                            if let Some(ref recorder) = traffic_down
-                                                            {
-                                                                recorder
-                                                                    .record_down(data_len as u64);
-                                                                recorder.record_down_packet(1);
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            warn!("UDP recv error: {}", e);
+                                            }
+                                        },
+                                        async move {
+                                            // Remote -> TUN
+                                            loop {
+                                                match msg_recv.recv_from().await {
+                                                    Ok((data, _addr)) => {
+                                                        let data_len = data.len();
+                                                        if bridge_tx.send(data).await.is_err() {
                                                             break;
                                                         }
+                                                        if let Some(ref recorder) = traffic_down {
+                                                            recorder.record_down(data_len as u64);
+                                                            recorder.record_down_packet(1);
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        warn!("UDP recv error: {}", e);
+                                                        break;
                                                     }
                                                 }
                                             }
-                                        );
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to open UDP session {}: {}", target_tag, e)
-                                    }
+                                        }
+                                    );
                                 }
-                            } else {
-                                warn!("No UDP factory for outbound {}", target_tag);
+                                Err(e) => {
+                                    warn!("Failed to open UDP session {}: {}", target_tag, e)
+                                }
                             }
+                        } else {
+                            warn!("No UDP factory for outbound {}", target_tag);
                         }
                     });
                     bridges.insert(
@@ -1100,6 +1102,7 @@ impl TunInboundService {
                         BridgeChannels {
                             tx: tun_tx,
                             rx: tun_rx,
+                            task,
                         },
                     );
                     self.sessions
@@ -1132,7 +1135,9 @@ impl TunInboundService {
             for key in close_keys {
                 if let Some(handle) = tcp_handles.remove(&key) {
                     sockets.remove(handle);
-                    bridges.remove(&key);
+                    if let Some(bridge) = bridges.remove(&key) {
+                        bridge.task.abort();
+                    }
                     self.sessions.remove(&key);
                     debug!("TUN: removed TCP {}", key);
                 }
@@ -1144,7 +1149,6 @@ impl TunInboundService {
                 let should_remove = if let Some(session) = self.sessions.get(key) {
                     session
                         .read()
-                        .unwrap()
                         .is_expired(Duration::from_secs(self.config.session_timeout))
                 } else {
                     // No session? remove.
@@ -1159,7 +1163,9 @@ impl TunInboundService {
             for key in udp_remove {
                 if let Some(handle) = udp_handles.remove(&key) {
                     sockets.remove(handle);
-                    bridges.remove(&key);
+                    if let Some(bridge) = bridges.remove(&key) {
+                        bridge.task.abort();
+                    }
                     self.sessions.remove(&key);
                     debug!("TUN: removed UDP {}", key);
                 }
@@ -1172,6 +1178,10 @@ impl TunInboundService {
                     debug!("TUN: cleanup {}", evicted);
                 }
             }
+        }
+
+        for bridge in bridges.into_values() {
+            bridge.task.abort();
         }
 
         info!("TUN service stopped");
@@ -1334,6 +1344,29 @@ mod tests {
         // Same key should return existing session
         let session2 = table.get_or_create(key, |_| panic!("should not create"));
         assert!(session2.is_some());
+        assert_eq!(table.len(), 1);
+    }
+
+    #[test]
+    fn test_session_table_capacity_rejects_when_full_without_expired_entries() {
+        let table = SessionTable::new(1, 60);
+        let first = FlowKey {
+            protocol: IPPROTO_TCP,
+            src: "192.168.1.1:1234".parse().unwrap(),
+            dst: "8.8.8.8:443".parse().unwrap(),
+        };
+        let second = FlowKey {
+            protocol: IPPROTO_TCP,
+            src: "192.168.1.2:1234".parse().unwrap(),
+            dst: "1.1.1.1:443".parse().unwrap(),
+        };
+
+        assert!(table
+            .get_or_create(first, |k| Some(TunSession::new(*k, "proxy".to_string())))
+            .is_some());
+        assert!(table
+            .get_or_create(second, |k| Some(TunSession::new(*k, "proxy".to_string())))
+            .is_none());
         assert_eq!(table.len(), 1);
     }
 

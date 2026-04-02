@@ -72,7 +72,7 @@ use prometheus::{
     IntGauge, Opts, Registry, TextEncoder,
 };
 use tokio::net::TcpListener;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::{info, warn};
 
 pub mod labels;
@@ -1042,31 +1042,43 @@ pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) ->
             }
         };
         info!(addr=?listener.local_addr().ok(), "metrics exporter listening");
+        let mut connections = JoinSet::new();
         loop {
-            let (stream, _peer) = match listener.accept().await {
-                Ok(x) => x,
-                Err(e) => {
-                    ERROR_RATE_LIMITER.log_accept_error(&e);
-                    continue;
+            tokio::select! {
+                accept = listener.accept() => {
+                    let (stream, _peer) = match accept {
+                        Ok(x) => x,
+                        Err(e) => {
+                            ERROR_RATE_LIMITER.log_accept_error(&e);
+                            continue;
+                        }
+                    };
+                    let registry = registry.clone();
+                    connections.spawn(async move {
+                        if let Err(e) = Http::new()
+                            .serve_connection(
+                                stream,
+                                service_fn(move |req| {
+                                    let registry = registry.clone();
+                                    async move {
+                                        Ok::<_, Infallible>(metrics_http_with_registry(&registry, &req))
+                                    }
+                                }),
+                            )
+                            .await
+                        {
+                            ERROR_RATE_LIMITER.log_connection_error(&e);
+                        }
+                    });
                 }
-            };
-            let registry = registry.clone();
-            tokio::spawn(async move {
-                if let Err(e) = Http::new()
-                    .serve_connection(
-                        stream,
-                        service_fn(move |req| {
-                            let registry = registry.clone();
-                            async move {
-                                Ok::<_, Infallible>(metrics_http_with_registry(&registry, &req))
-                            }
-                        }),
-                    )
-                    .await
-                {
-                    ERROR_RATE_LIMITER.log_connection_error(&e);
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    if let Some(Err(error)) = joined {
+                        if !error.is_cancelled() {
+                            warn!(%error, "metrics exporter connection task join failed");
+                        }
+                    }
                 }
-            });
+            }
         }
     })
 }
@@ -1127,6 +1139,7 @@ pub fn export_prometheus() -> String {
 mod tests {
     use super::*;
     use prometheus::IntGauge;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     #[allow(clippy::unwrap_used)]
@@ -1150,6 +1163,29 @@ mod tests {
         let registry = shared_registry();
         let resp2 = metrics_http_with_registry(&registry, &req2);
         assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn spawned_exporter_serves_metrics_over_tcp() -> Result<(), Box<dyn std::error::Error>> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let addr = listener.local_addr()?;
+        drop(listener);
+        let handle = spawn_http_exporter(shared_registry(), addr);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await?;
+        stream
+            .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await?;
+        let mut resp = Vec::new();
+        stream.read_to_end(&mut resp).await?;
+
+        let text = String::from_utf8(resp)?;
+        assert!(text.contains("200 OK"));
+
+        handle.abort();
+        let _ = handle.await;
+        Ok(())
     }
 
     #[test]
