@@ -68,10 +68,12 @@ impl AppRuntimeDeps {
         let security_metrics = crate::admin_debug::security_metrics::install_default(Arc::new(
             crate::admin_debug::security_metrics::SecurityMetricsState::new(),
         ));
+        #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+        let analyze_registry = Arc::new(crate::analyze::registry::AnalyzeRegistry::new());
         #[cfg(feature = "admin_debug")]
         let admin_state = Arc::new(crate::admin_debug::AdminDebugState::new(
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),
+            Arc::clone(&analyze_registry),
             Arc::clone(&breaker),
             Arc::clone(&cache),
             Arc::clone(&reloadable),
@@ -92,7 +94,7 @@ impl AppRuntimeDeps {
             _prefetcher: prefetcher,
             redactor,
             #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-            analyze_registry: Arc::new(crate::analyze::registry::AnalyzeRegistry::new()),
+            analyze_registry,
             #[cfg(feature = "admin_debug")]
             breaker,
             #[cfg(feature = "admin_debug")]
@@ -185,6 +187,27 @@ mod tests {
         let second = deps.admin_state();
 
         assert!(Arc::ptr_eq(&first, &second));
+
+        drop(deps);
+        crate::admin_debug::security_metrics::clear_default_for_test();
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(all(
+        feature = "admin_debug",
+        any(feature = "router", feature = "sbcore_rules_tool")
+    ))]
+    fn app_runtime_deps_reuses_analyze_registry_owner_for_admin_state() {
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
+        let admin_state = deps.admin_state();
+
+        assert!(std::ptr::eq(
+            deps.analyze_registry.as_ref(),
+            admin_state.analyze_registry()
+        ));
 
         drop(deps);
         crate::admin_debug::security_metrics::clear_default_for_test();

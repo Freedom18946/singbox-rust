@@ -24,14 +24,18 @@
 
 ### 当前维护线（2026-04-02）
 
-- **MT-RTC-02**: runtime actorization follow-up — 已完成
-  - `runtime_deps.rs` 现在预组装并复用稳定的 `AdminDebugState` owner；`admin_debug/mod.rs`、`http_server.rs` 与 admin endpoints 改成走显式 query / reload handle，而不是 direct field + default reload helper
-  - `run_engine_runtime/context.rs` 新增 `admin_reload_signal()` / `watch_runtime(...)`；`supervisor.rs` 与 `admin_start.rs` 都改成从 `RuntimeContext` 派生 runtime seam；`watch.rs` 补上 `CancellationToken` drop-cancel 语义
-  - `bootstrap_runtime/inbounds.rs` 新增 `InboundRuntimeDeps`，`router_helpers.rs` 新增 `RouterRuntime`，`runtime_shell.rs` 新增 `Runtime::new(...)`；`bootstrap.rs` 仍是 facade，只接线到显式 deps/runtime carrier
-  - 本卡性质是 maintenance / runtime quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+- **MT-RTC-03**: runtime actorization close-out — 已完成
+  - `runtime_deps.rs` 现已复用单一 `AnalyzeRegistry` owner 给 `AppRuntimeDeps` 与 `AdminDebugState`，不再重复拼装 control-plane analyze/query owner
+  - `admin_debug/mod.rs` 新增 `AdminDebugState::spawn_http_server(...)` / `spawn_plain_http_server_sync(...)`；`run_engine_runtime/admin_start.rs` 与 `admin_debug::init()` 现在都从 state owner 显式派生 admin HTTP + reload signal wiring
+  - `run_engine_runtime/context.rs` 新增 `start_admin_services(...)` / `spawn_watch(...)`；`supervisor.rs` 改成从 `RuntimeContext` 直接派生 admin/watch owner seam，`RuntimeContext` 更明确成为 active runtime owner carrier
+  - 经源码复核，`watch.rs`、`output.rs`、`admin_debug/http_server.rs`、`bootstrap_runtime/{runtime_shell,inbounds,router_helpers}.rs`、`run_engine.rs`、`bootstrap.rs` 当前已处于维护期可接受边界，因此本卡没有为凑数继续硬做抽象
+  - 本卡性质仍是 maintenance / runtime quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
   - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
 
 ### 已完成维护归档（2026-04-02）
+
+- **MT-RTC-02**: runtime actorization follow-up — 已完成
+  - `RuntimeContext` / `RuntimeLifecycle`、`AdminDebugState` query helper、watch lifecycle、bootstrap runtime carriers 作为 `MT-RTC-03` 的直接基础继续稳定
 
 - **MT-RTC-01**: runtime actor/context consolidation — 已完成
   - `RuntimeContext` / `RuntimeLifecycle`、`AdminStartContext`、`WatchRuntime`、`DnsRuntimeEnv`、`ProxyRegistryPlan` 作为 `MT-RTC-02` 的首批 runtime seam 基线继续稳定
@@ -46,7 +50,8 @@
 
 ### 当前维护重点（高层）
 
-- runtime 继续沿显式 context / lifecycle / handle / query seam 方向治理，但不把 `run_engine.rs` / `bootstrap.rs` 重新做大
+- runtime actor/context 主线当前已达到维护期可接受 close-out；后续只在出现真实 consumer 时再开高层 maintenance 主题，不继续按散乱 seam 细拆
+- `run_engine.rs` / `bootstrap.rs` 继续保持 facade；`RuntimeContext` / `RuntimeLifecycle` / `AdminDebugState` / bootstrap runtime carriers 现已构成 active runtime 的稳定 owner/query/lifecycle 主干
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
 - 其他 maintenance 债务继续按主题推进：DNS/router mega-file、TUN 热路径、metrics compat/global 更深层治理
 

@@ -56,12 +56,6 @@ impl RuntimeContext {
         self.runtime_deps.admin_state()
     }
 
-    #[cfg(feature = "admin_debug")]
-    #[must_use]
-    pub fn admin_reload_signal(&self) -> crate::admin_debug::reloadable::ReloadSignalHandle {
-        self.admin_state().spawn_reload_signal()
-    }
-
     #[cfg(feature = "observe")]
     #[must_use]
     pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
@@ -114,6 +108,36 @@ impl RuntimeContext {
             self.reload_state(),
             supervisor,
         )
+    }
+
+    #[must_use]
+    pub fn spawn_watch(
+        &self,
+        entries: &[crate::config_loader::ConfigEntry],
+        config_inputs: crate::run_engine::ConfigInputs,
+        import_path: Option<std::path::PathBuf>,
+        reload_output: crate::run_engine::ReloadOutputMode,
+        supervisor: Arc<sb_core::runtime::supervisor::Supervisor>,
+    ) -> crate::run_engine_runtime::watch::WatchHandle {
+        self.watch_runtime(
+            entries,
+            config_inputs,
+            import_path,
+            reload_output,
+            supervisor,
+        )
+        .spawn()
+    }
+
+    pub async fn start_admin_services(
+        &self,
+        opts: &crate::run_engine::RunOptions,
+        supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
+    ) -> Result<crate::run_engine_runtime::admin_start::AdminServices> {
+        crate::run_engine_runtime::admin_start::start_admin_services(
+            crate::run_engine_runtime::admin_start::AdminStartContext::new(opts, supervisor, self),
+        )
+        .await
     }
 }
 
@@ -203,6 +227,10 @@ mod tests {
         let runtime = RuntimeContext::from_raw(&raw)?;
 
         assert_eq!(runtime.startup_config_fingerprint(), expected);
+        let source = include_str!("context.rs");
+
+        assert!(source.contains("fn spawn_watch("));
+        assert!(source.contains("async fn start_admin_services("));
 
         #[cfg(feature = "observe")]
         assert!(matches!(

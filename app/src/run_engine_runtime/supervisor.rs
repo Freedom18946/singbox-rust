@@ -246,29 +246,20 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
     crate::run_engine_runtime::debug_env::apply_debug_options(&ir);
 
     let supervisor = start_supervisor(ir).await?;
-    let admin_services = crate::run_engine_runtime::admin_start::start_admin_services(
-        crate::run_engine_runtime::admin_start::AdminStartContext::new(
-            &opts,
-            &supervisor,
-            &runtime_context,
-        ),
-    )
-    .await?;
+    let admin_services = runtime_context
+        .start_admin_services(&opts, &supervisor)
+        .await?;
 
     crate::run_engine_runtime::output::emit_startup_output(&opts, &runtime_context);
 
     let watch_handle = if opts.watch && !has_stdin {
-        Some(
-            runtime_context
-                .watch_runtime(
-                    &entries,
-                    opts.config_inputs.clone(),
-                    opts.import_path.clone(),
-                    opts.reload_output,
-                    supervisor.clone(),
-                )
-                .spawn(),
-        )
+        Some(runtime_context.spawn_watch(
+            &entries,
+            opts.config_inputs.clone(),
+            opts.import_path.clone(),
+            opts.reload_output,
+            supervisor.clone(),
+        ))
     } else {
         None
     };
@@ -348,6 +339,8 @@ mod tests {
 
         assert!(source.contains("async fn run_supervisor("));
         assert!(source.contains("RuntimeContext::from_raw(&raw)?"));
+        assert!(source.contains(".start_admin_services(&opts, &supervisor)"));
+        assert!(source.contains("runtime_context.spawn_watch("));
         assert!(source.contains("RuntimeLifecycle::new("));
         assert!(run_engine.contains("run_engine_runtime::supervisor::run_supervisor(opts).await"));
         assert!(!run_engine.contains("struct CloseMonitor"));

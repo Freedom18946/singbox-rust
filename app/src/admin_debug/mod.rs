@@ -130,6 +130,28 @@ impl AdminDebugState {
     }
 
     /// # Errors
+    /// Returns any bind or startup error from the admin debug HTTP server.
+    pub async fn spawn_http_server(
+        self: &Arc<Self>,
+        addr: std::net::SocketAddr,
+        tls: Option<http_server::TlsConf>,
+        auth: http_server::AuthConf,
+    ) -> std::io::Result<http_server::AdminDebugHandle> {
+        http_server::spawn(addr, tls, auth, Arc::clone(self))
+            .await
+            .map(|handle| handle.with_reload_signal(self.spawn_reload_signal()))
+    }
+
+    #[must_use]
+    pub fn spawn_plain_http_server_sync(
+        self: &Arc<Self>,
+        addr: String,
+    ) -> http_server::AdminDebugHandle {
+        http_server::spawn_plain_sync(addr, Arc::clone(self))
+            .with_reload_signal(self.spawn_reload_signal())
+    }
+
+    /// # Errors
     /// Returns an error when the control-plane query path cannot gather a
     /// current admin snapshot.
     pub fn security_snapshot(&self) -> anyhow::Result<security_metrics::SecuritySnapshot> {
@@ -161,6 +183,20 @@ pub fn init(addr: Option<&str>, state: Arc<AdminDebugState>) -> http_server::Adm
         None => std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string()),
     };
 
-    let reload_signal = state.spawn_reload_signal();
-    http_server::spawn_plain_sync(bind_addr, state).with_reload_signal(reload_signal)
+    state.spawn_plain_http_server_sync(bind_addr)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn admin_debug_state_keeps_http_server_wiring_owner_local() {
+        let source = include_str!("mod.rs");
+        let admin_start = include_str!("../run_engine_runtime/admin_start.rs");
+
+        assert!(source.contains("async fn spawn_http_server("));
+        assert!(source.contains("fn spawn_plain_http_server_sync("));
+        assert!(source.contains("state.spawn_plain_http_server_sync(bind_addr)"));
+        assert!(admin_start.contains("admin_state.spawn_http_server("));
+        assert!(!admin_start.contains("http_server::spawn("));
+    }
 }
