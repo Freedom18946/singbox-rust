@@ -34,12 +34,9 @@ pub fn compute_chain_leaf_to_matched(
         chain_matched_to_leaf.push(cur.clone());
 
         // Resolve the current outbound and see if it's a group.
-        let next = {
-            let reg = outbounds.read();
-            match reg.get(&cur).cloned() {
-                Some(OutboundImpl::Connector(conn)) => conn.as_group().map(|g| g.now()),
-                _ => None,
-            }
+        let next = match outbounds.resolve(&cur) {
+            Some(OutboundImpl::Connector(conn)) => conn.as_group().map(|g| g.now()),
+            _ => None,
         };
 
         match next {

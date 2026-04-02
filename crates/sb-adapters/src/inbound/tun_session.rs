@@ -12,12 +12,12 @@ use sb_core::net::metered::TrafficRecorder;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tracing::{debug, trace, warn};
 
 /// Four-tuple identifying a unique TCP connection
@@ -68,7 +68,9 @@ pub struct TcpSession {
     /// Highest server-side sequence acknowledged by the TUN-side peer
     server_acked_seq: AtomicU32,
     /// Signal for actively shutting down the outbound relay
-    shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
+    shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
+    /// Owned relay tasks; aborted when the session is explicitly closed.
+    tasks: parking_lot::Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl TcpSession {
@@ -133,8 +135,20 @@ impl TcpSession {
     }
 
     pub fn initiate_close(&self) {
-        if let Some(tx) = self.shutdown_tx.lock().expect("lock shutdown_tx").take() {
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
+        }
+        self.abort_tracked_tasks();
+    }
+
+    fn track_task(&self, task: JoinHandle<()>) {
+        self.tasks.lock().push(task);
+    }
+
+    fn abort_tracked_tasks(&self) {
+        let mut tasks = self.tasks.lock();
+        for task in tasks.drain(..) {
+            task.abort();
         }
     }
 }
@@ -197,25 +211,36 @@ impl TcpSessionManager {
             client_next_seq: AtomicU32::new(client_next_seq),
             server_next_seq: AtomicU32::new(server_next_seq),
             server_acked_seq: AtomicU32::new(server_next_seq),
-            shutdown_tx: Mutex::new(Some(shutdown_tx)),
+            shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
+            tasks: parking_lot::Mutex::new(Vec::with_capacity(2)),
         });
 
-        // Spawn relay tasks
+        let (outbound_read, outbound_write) = outbound.into_split();
+
+        // Spawn relay tasks and keep the handles on the session owner.
         let tuple_copy = tuple;
         let sessions = Arc::clone(&self.sessions);
         let traffic_c = traffic.clone();
-
-        // TUN -> Outbound relay
-        tokio::spawn(relay_tun_to_outbound(
+        let tun_to_outbound = tokio::spawn(relay_tun_to_outbound(
             to_outbound_rx,
             shutdown_rx,
-            outbound,
-            Arc::clone(&session),
+            outbound_write,
             tuple_copy,
-            Arc::clone(&tun_writer),
             Arc::clone(&sessions),
             traffic_c,
         ));
+
+        let outbound_to_tun = tokio::spawn(relay_outbound_to_tun(
+            outbound_read,
+            Arc::clone(&session),
+            tuple,
+            tun_writer,
+            Arc::clone(&self.sessions),
+            traffic,
+        ));
+
+        session.track_task(tun_to_outbound);
+        session.track_task(outbound_to_tun);
 
         // Insert into session map
         self.sessions.insert(tuple, Arc::clone(&session));
@@ -230,7 +255,8 @@ impl TcpSessionManager {
 
     /// Remove a session
     pub fn remove(&self, tuple: &FourTuple) {
-        if self.sessions.remove(tuple).is_some() {
+        if let Some((_, session)) = self.sessions.remove(tuple) {
+            session.initiate_close();
             debug!(
                 "TCP session removed: {}:{} -> {}:{}",
                 tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
@@ -255,35 +281,11 @@ impl Default for TcpSessionManager {
 async fn relay_tun_to_outbound(
     mut to_outbound_rx: mpsc::Receiver<Bytes>,
     mut shutdown_rx: oneshot::Receiver<()>,
-    outbound: TcpStream,
-    session: Arc<TcpSession>,
+    mut outbound_write: tokio::net::tcp::OwnedWriteHalf,
     tuple: FourTuple,
-    tun_writer: Arc<dyn TunWriter + Send + Sync>,
     sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
-    // Split outbound stream for bidirectional relay
-    // Use into_split() to take ownership instead of borrowing
-    let (mut outbound_read, mut outbound_write) = outbound.into_split();
-
-    // Spawn Outbound -> TUN relay
-    let tuple_copy = tuple;
-    let tun_writer_copy = Arc::clone(&tun_writer);
-    let sessions_copy = Arc::clone(&sessions);
-    let traffic_down = traffic.clone();
-
-    tokio::spawn(async move {
-        relay_outbound_to_tun(
-            &mut outbound_read,
-            session,
-            tuple_copy,
-            tun_writer_copy,
-            sessions_copy,
-            traffic_down,
-        )
-        .await;
-    });
-
     // TUN -> Outbound relay (this task)
     let mut closing = false;
     loop {
@@ -353,7 +355,7 @@ async fn relay_tun_to_outbound(
 
 /// Relay data from outbound to TUN
 async fn relay_outbound_to_tun(
-    outbound_read: &mut tokio::net::tcp::OwnedReadHalf,
+    mut outbound_read: tokio::net::tcp::OwnedReadHalf,
     session: Arc<TcpSession>,
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
@@ -516,7 +518,8 @@ mod tests {
             client_next_seq: AtomicU32::new(100),
             server_next_seq: AtomicU32::new(1000),
             server_acked_seq: AtomicU32::new(1000),
-            shutdown_tx: Mutex::new(None),
+            shutdown_tx: parking_lot::Mutex::new(None),
+            tasks: parking_lot::Mutex::new(Vec::new()),
         };
 
         session.observe_client_segment(120);
@@ -540,7 +543,8 @@ mod tests {
             client_next_seq: AtomicU32::new(100),
             server_next_seq: AtomicU32::new(1010),
             server_acked_seq: AtomicU32::new(1000),
-            shutdown_tx: Mutex::new(None),
+            shutdown_tx: parking_lot::Mutex::new(None),
+            tasks: parking_lot::Mutex::new(Vec::new()),
         };
 
         session.observe_server_ack(1005);
@@ -563,5 +567,52 @@ mod tests {
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert!(packet.len() >= 40); // IP + TCP headers minimum
+    }
+
+    #[tokio::test]
+    async fn test_initiate_close_aborts_tracked_tasks() {
+        struct NotifyOnDrop(Option<oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (task_done_tx, task_done_rx) = oneshot::channel();
+        let session = TcpSession {
+            tuple: FourTuple::new(
+                "192.168.1.2".parse().unwrap(),
+                12345,
+                "93.184.216.34".parse().unwrap(),
+                80,
+            ),
+            created_at: Instant::now(),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1000),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
+            tasks: parking_lot::Mutex::new(Vec::new()),
+        };
+
+        session.track_task(tokio::spawn(async move {
+            let _guard = NotifyOnDrop(Some(task_done_tx));
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }));
+        tokio::task::yield_now().await;
+
+        session.initiate_close();
+
+        shutdown_rx.await.expect("shutdown signal should be sent");
+        tokio::time::timeout(std::time::Duration::from_secs(1), task_done_rx)
+            .await
+            .expect("tracked task should be aborted quickly")
+            .expect("abort drop signal should arrive");
+        assert!(session.tasks.lock().is_empty());
     }
 }

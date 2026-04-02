@@ -16,7 +16,7 @@ use crate::adapter::InboundService;
 use crate::router::{RouteCtx, RouterHandle, Transport};
 use crate::runtime::switchboard::OutboundSwitchboard;
 use crate::services::v2ray_api::StatsManager;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use sb_platform::tun::{AsyncTunDevice, TunConfig as PlatformTunConfig, TunError};
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
@@ -118,18 +118,15 @@ impl std::fmt::Display for FlowKey {
 pub struct TunSession {
     /// Flow key
     pub key: FlowKey,
-    /// Selected outbound tag
-    pub outbound: String,
     /// Creation timestamp
     pub created_at: std::time::Instant,
-    /// Last activity timestamp
-    pub last_activity: std::time::Instant,
     /// Bytes sent
     pub bytes_tx: AtomicU64,
     /// Bytes received
     pub bytes_rx: AtomicU64,
-    /// SNI (if detected via sniffing)
-    pub sni: Option<String>,
+    outbound: RwLock<String>,
+    last_activity_tick_ms: AtomicU64,
+    sni: Mutex<Option<String>>,
 }
 
 impl TunSession {
@@ -137,34 +134,63 @@ impl TunSession {
         let now = std::time::Instant::now();
         Self {
             key,
-            outbound,
             created_at: now,
-            last_activity: now,
             bytes_tx: AtomicU64::new(0),
             bytes_rx: AtomicU64::new(0),
-            sni: None,
+            outbound: RwLock::new(outbound),
+            last_activity_tick_ms: AtomicU64::new(monotonic_tick_ms()),
+            sni: Mutex::new(None),
         }
     }
 
     /// Check if session has expired
     pub fn is_expired(&self, timeout: Duration) -> bool {
-        self.last_activity.elapsed() > timeout
+        monotonic_tick_ms().saturating_sub(self.last_activity_tick_ms())
+            > duration_to_tick_ms(timeout)
     }
 
     /// Update last activity and bytes
-    pub fn touch(&mut self, bytes: u64, is_tx: bool) {
-        self.last_activity = std::time::Instant::now();
+    pub fn touch(&self, bytes: u64, is_tx: bool) {
+        self.mark_active();
         if is_tx {
             self.bytes_tx.fetch_add(bytes, Ordering::Relaxed);
         } else {
             self.bytes_rx.fetch_add(bytes, Ordering::Relaxed);
         }
     }
+
+    pub fn mark_active(&self) {
+        self.last_activity_tick_ms
+            .store(monotonic_tick_ms(), Ordering::Relaxed);
+    }
+
+    pub fn last_activity_tick_ms(&self) -> u64 {
+        self.last_activity_tick_ms.load(Ordering::Relaxed)
+    }
+
+    pub fn outbound(&self) -> String {
+        self.outbound.read().clone()
+    }
+
+    pub fn set_outbound(&self, outbound: impl Into<String>) {
+        *self.outbound.write() = outbound.into();
+    }
+
+    pub fn sni(&self) -> Option<String> {
+        self.sni.lock().clone()
+    }
+
+    pub fn set_sni_if_absent(&self, sni: impl Into<String>) {
+        let mut slot = self.sni.lock();
+        if slot.is_none() {
+            *slot = Some(sni.into());
+        }
+    }
 }
 
 /// Session table for tracking active flows
 pub struct SessionTable {
-    sessions: RwLock<HashMap<FlowKey, Arc<RwLock<TunSession>>>>,
+    sessions: RwLock<HashMap<FlowKey, Arc<TunSession>>>,
     max_sessions: usize,
     timeout: Duration,
 }
@@ -179,7 +205,7 @@ impl SessionTable {
     }
 
     /// Get or create a session for the given flow
-    pub fn get_or_create<F>(&self, key: FlowKey, create_fn: F) -> Option<Arc<RwLock<TunSession>>>
+    pub fn get_or_create<F>(&self, key: FlowKey, create_fn: F) -> Option<Arc<TunSession>>
     where
         F: FnOnce(&FlowKey) -> Option<TunSession>,
     {
@@ -202,7 +228,7 @@ impl SessionTable {
         // Check capacity
         if sessions.len() >= self.max_sessions {
             // Evict expired sessions
-            sessions.retain(|_, v| !v.read().is_expired(self.timeout));
+            sessions.retain(|_, v| !v.is_expired(self.timeout));
 
             if sessions.len() >= self.max_sessions {
                 warn!("TUN session table full ({} sessions)", self.max_sessions);
@@ -212,7 +238,7 @@ impl SessionTable {
 
         // Create new session
         if let Some(session) = create_fn(&key) {
-            let arc = Arc::new(RwLock::new(session));
+            let arc = Arc::new(session);
             sessions.insert(key, arc.clone());
             Some(arc)
         } else {
@@ -221,12 +247,12 @@ impl SessionTable {
     }
 
     /// Get existing session
-    pub fn get(&self, key: &FlowKey) -> Option<Arc<RwLock<TunSession>>> {
+    pub fn get(&self, key: &FlowKey) -> Option<Arc<TunSession>> {
         self.sessions.read().get(key).cloned()
     }
 
     /// Remove a session
-    pub fn remove(&self, key: &FlowKey) -> Option<Arc<RwLock<TunSession>>> {
+    pub fn remove(&self, key: &FlowKey) -> Option<Arc<TunSession>> {
         self.sessions.write().remove(key)
     }
 
@@ -244,9 +270,21 @@ impl SessionTable {
     pub fn cleanup_expired(&self) -> usize {
         let mut sessions = self.sessions.write();
         let before = sessions.len();
-        sessions.retain(|_, v| !v.read().is_expired(self.timeout));
+        sessions.retain(|_, v| !v.is_expired(self.timeout));
         before - sessions.len()
     }
+}
+
+fn monotonic_tick_ms() -> u64 {
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+}
+
+fn duration_to_tick_ms(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 /// Parsed IP packet information
@@ -636,7 +674,7 @@ impl TunInboundService {
                                             };
                                             let dst_port = parsed.dst_port.unwrap_or(0);
 
-                                            if parsed.protocol == IPPROTO_TCP && !tcp_handles.contains_key(&key) {
+                    if parsed.protocol == IPPROTO_TCP && !tcp_handles.contains_key(&key) {
                                                 let mut socket = tcp::Socket::new(
                                                     tcp::SocketBuffer::new(vec![0; 65535]),
                                                     tcp::SocketBuffer::new(vec![0; 65535]),
@@ -716,6 +754,9 @@ impl TunInboundService {
 
                 if socket.state() == tcp::State::Established {
                     if !bridges.contains_key(key) {
+                        let session = self.sessions.get_or_create(*key, |k| {
+                            Some(TunSession::new(*k, "pending".to_string()))
+                        });
                         let (tun_tx, mut bridge_rx): (
                             mpsc::Sender<Vec<u8>>,
                             mpsc::Receiver<Vec<u8>>,
@@ -733,6 +774,7 @@ impl TunInboundService {
                         let sniff_enabled = self.sniff_enabled;
                         let stats = stats.clone();
                         let inbound_tag = inbound_tag.clone();
+                        let session_for_task = session.clone();
 
                         let task = tokio::spawn(async move {
                             let src_ip = key_clone.src.ip();
@@ -793,11 +835,17 @@ impl TunInboundService {
                             }
                             if let Some(ref d) = sniffed_domain {
                                 ctx.host = Some(d);
+                                if let Some(session) = session_for_task.as_ref() {
+                                    session.set_sni_if_absent(d.clone());
+                                }
                             }
 
                             // 4. Routing Decision
                             let decision = router.decide(&ctx);
                             let target_tag = decision.as_str().to_string();
+                            if let Some(session) = session_for_task.as_ref() {
+                                session.set_outbound(target_tag.clone());
+                            }
                             let traffic = stats.as_ref().and_then(|stats| {
                                 stats.traffic_recorder(
                                     inbound_tag.as_deref(),
@@ -831,9 +879,14 @@ impl TunInboundService {
                                             if let Some(ref recorder) = traffic_up {
                                                 recorder.record_up(buffered_data.len() as u64);
                                             }
+                                            if let Some(session) = session_for_task.as_ref() {
+                                                session.touch(buffered_data.len() as u64, true);
+                                            }
                                         }
 
                                         let (mut ro, mut wo) = tokio::io::split(stream);
+                                        let session_for_upload = session_for_task.clone();
+                                        let session_for_download = session_for_task.clone();
                                         tokio::join!(
                                             async move {
                                                 while let Some(data) = bridge_rx.recv().await {
@@ -842,6 +895,11 @@ impl TunInboundService {
                                                     }
                                                     if let Some(ref recorder) = traffic_up {
                                                         recorder.record_up(data.len() as u64);
+                                                    }
+                                                    if let Some(session) =
+                                                        session_for_upload.as_ref()
+                                                    {
+                                                        session.touch(data.len() as u64, true);
                                                     }
                                                 }
                                                 let _ = wo.shutdown().await;
@@ -864,6 +922,11 @@ impl TunInboundService {
                                                     if let Some(ref recorder) = traffic_down {
                                                         recorder.record_down(n as u64);
                                                     }
+                                                    if let Some(session) =
+                                                        session_for_download.as_ref()
+                                                    {
+                                                        session.touch(n as u64, false);
+                                                    }
                                                 }
                                             }
                                         );
@@ -884,19 +947,6 @@ impl TunInboundService {
                             },
                         );
                         debug!("TUN: bridge established for {}", key);
-
-                        // Register session for tracking
-                        // Since we don't know the exact outbound tag here (it's inside spawn),
-                        // we might need to communicate it back or just use "mixed" for now.
-                        // Optimization: We could use a channel to send back the decision,
-                        // but for simplicity, we'll optimistically create it or update it later.
-                        // Actually, we can just track it as "active".
-                        // Better: Note that 'target_tag' is determined inside the task.
-                        // Ideally we want to see the real tag in session stats.
-                        // Warning: self.sessions is generic.
-                        self.sessions.get_or_create(*key, |k| {
-                            Some(TunSession::new(*k, "pending".to_string()))
-                        });
                     }
 
                     if let Some(bridge) = bridges.get_mut(key) {
@@ -937,9 +987,7 @@ impl TunInboundService {
                     }
 
                     if let Some(session) = self.sessions.get(key) {
-                        if let Some(mut s) = session.try_write() {
-                            s.last_activity = std::time::Instant::now();
-                        }
+                        session.mark_active();
                     }
                 }
             }
@@ -950,6 +998,9 @@ impl TunInboundService {
                 // UDP is always "open" if bound.
 
                 if !bridges.contains_key(key) {
+                    let session = self
+                        .sessions
+                        .get_or_create(*key, |k| Some(TunSession::new(*k, "pending".to_string())));
                     let (tun_tx, mut bridge_rx): (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) =
                         mpsc::channel(32);
                     let (bridge_tx, tun_rx): (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) =
@@ -964,6 +1015,7 @@ impl TunInboundService {
                     let sniff_enabled = self.sniff_enabled;
                     let stats = stats.clone();
                     let inbound_tag = inbound_tag.clone();
+                    let session_for_task = session.clone();
 
                     let task = tokio::spawn(async move {
                         let src_ip = key_clone.src.ip();
@@ -1017,10 +1069,16 @@ impl TunInboundService {
                         }
                         if let Some(ref d) = sniffed_domain {
                             ctx.host = Some(d);
+                            if let Some(session) = session_for_task.as_ref() {
+                                session.set_sni_if_absent(d.clone());
+                            }
                         }
 
                         let decision = router.decide(&ctx);
                         let target_tag = decision.as_str().to_string();
+                        if let Some(session) = session_for_task.as_ref() {
+                            session.set_outbound(target_tag.clone());
+                        }
                         let traffic = stats.as_ref().and_then(|stats| {
                             stats.traffic_recorder(
                                 inbound_tag.as_deref(),
@@ -1047,9 +1105,14 @@ impl TunInboundService {
                                                 recorder.record_up(pkt.len() as u64);
                                                 recorder.record_up_packet(1);
                                             }
+                                            if let Some(session) = session_for_task.as_ref() {
+                                                session.touch(pkt.len() as u64, true);
+                                            }
                                         }
                                     }
 
+                                    let session_for_upload = session_for_task.clone();
+                                    let session_for_download = session_for_task.clone();
                                     tokio::join!(
                                         async move {
                                             // TUN -> Remote
@@ -1062,6 +1125,11 @@ impl TunInboundService {
                                                     if let Some(ref recorder) = traffic_up {
                                                         recorder.record_up(data.len() as u64);
                                                         recorder.record_up_packet(1);
+                                                    }
+                                                    if let Some(session) =
+                                                        session_for_upload.as_ref()
+                                                    {
+                                                        session.touch(data.len() as u64, true);
                                                     }
                                                 }
                                             }
@@ -1078,6 +1146,11 @@ impl TunInboundService {
                                                         if let Some(ref recorder) = traffic_down {
                                                             recorder.record_down(data_len as u64);
                                                             recorder.record_down_packet(1);
+                                                        }
+                                                        if let Some(session) =
+                                                            session_for_download.as_ref()
+                                                        {
+                                                            session.touch(data_len as u64, false);
                                                         }
                                                     }
                                                     Err(e) => {
@@ -1105,8 +1178,6 @@ impl TunInboundService {
                             task,
                         },
                     );
-                    self.sessions
-                        .get_or_create(*key, |k| Some(TunSession::new(*k, "pending".to_string())));
                 }
 
                 if let Some(bridge) = bridges.get_mut(key) {
@@ -1147,9 +1218,7 @@ impl TunInboundService {
             let mut udp_remove = Vec::new();
             for (key, _handle) in udp_handles.iter() {
                 let should_remove = if let Some(session) = self.sessions.get(key) {
-                    session
-                        .read()
-                        .is_expired(Duration::from_secs(self.config.session_timeout))
+                    session.is_expired(Duration::from_secs(self.config.session_timeout))
                 } else {
                     // No session? remove.
                     true
@@ -1368,6 +1437,36 @@ mod tests {
             .get_or_create(second, |k| Some(TunSession::new(*k, "proxy".to_string())))
             .is_none());
         assert_eq!(table.len(), 1);
+    }
+
+    #[test]
+    fn test_session_mutation_helpers_keep_hot_fields_off_nested_lock() {
+        let key = FlowKey {
+            protocol: IPPROTO_TCP,
+            src: "192.168.1.1:1234".parse().unwrap(),
+            dst: "8.8.8.8:443".parse().unwrap(),
+        };
+        let session = TunSession::new(key, "pending".to_string());
+
+        session.set_outbound("proxy-a");
+        session.set_sni_if_absent("example.com");
+        session.set_sni_if_absent("ignored.example.com");
+        session.touch(128, true);
+        session.touch(256, false);
+
+        assert_eq!(session.outbound(), "proxy-a");
+        assert_eq!(session.sni(), Some("example.com".to_string()));
+        assert_eq!(session.bytes_tx.load(Ordering::Relaxed), 128);
+        assert_eq!(session.bytes_rx.load(Ordering::Relaxed), 256);
+    }
+
+    #[test]
+    fn test_session_table_owner_stays_in_single_session_arc() {
+        let src = include_str!("tun.rs");
+        assert!(src.contains("sessions: RwLock<HashMap<FlowKey, Arc<TunSession>>>"));
+        assert!(src.contains(
+            "pub fn get_or_create<F>(&self, key: FlowKey, create_fn: F) -> Option<Arc<TunSession>>"
+        ));
     }
 
     #[test]

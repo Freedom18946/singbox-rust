@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use tokio::net::UdpSocket;
+use tokio::task::JoinHandle;
 
 use crate::inbound::tun_session::TunWriter;
 
@@ -37,6 +38,8 @@ struct UdpSession {
     socket: Arc<UdpSocket>,
     /// Last activity timestamp (for eviction).
     last_active: Instant,
+    /// Reverse relay task owned by this NAT entry.
+    relay_task: JoinHandle<()>,
 }
 
 /// Lightweight UDP NAT table for TUN.
@@ -101,12 +104,10 @@ impl UdpNatTable {
             UdpSession {
                 socket: socket.clone(),
                 last_active: Instant::now(),
+                relay_task: spawn_reverse_relay(key, socket.clone(), writer),
             },
         );
         self.session_count.fetch_add(1, Ordering::Relaxed);
-
-        // Spawn reverse relay: outbound → TUN
-        spawn_reverse_relay(key, socket.clone(), writer);
 
         // Send the payload
         socket.send(payload).await?;
@@ -119,6 +120,7 @@ impl UdpNatTable {
         let mut evicted = 0u64;
         self.sessions.retain(|_, session| {
             if session.last_active < deadline {
+                session.relay_task.abort();
                 evicted += 1;
                 false
             } else {
@@ -137,7 +139,11 @@ impl UdpNatTable {
 }
 
 /// Spawn a background task that relays inbound UDP responses back through the TUN.
-fn spawn_reverse_relay(key: UdpFourTuple, socket: Arc<UdpSocket>, writer: Arc<dyn TunWriter>) {
+fn spawn_reverse_relay(
+    key: UdpFourTuple,
+    socket: Arc<UdpSocket>,
+    writer: Arc<dyn TunWriter>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut buf = vec![0u8; 65536];
         loop {
@@ -161,18 +167,26 @@ fn spawn_reverse_relay(key: UdpFourTuple, socket: Arc<UdpSocket>, writer: Arc<dy
             }
         }
         // Session ended — counter will be decremented by eviction
-    });
+    })
 }
 
 /// Spawn a periodic eviction task for the NAT table.
-pub(super) fn spawn_eviction_task(nat: Arc<UdpNatTable>) {
-    tokio::spawn(async move {
+pub(super) struct UdpNatMaintenanceTask(JoinHandle<()>);
+
+impl Drop for UdpNatMaintenanceTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+pub(super) fn spawn_eviction_task(nat: Arc<UdpNatTable>) -> UdpNatMaintenanceTask {
+    UdpNatMaintenanceTask(tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
             nat.evict_expired();
         }
-    });
+    }))
 }
 
 // ─── IP/UDP packet construction ───────────────────────────────────────────
@@ -359,6 +373,7 @@ fn ip_checksum(header: &[u8]) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::oneshot;
 
     #[test]
     fn test_ip_checksum() {
@@ -443,5 +458,50 @@ mod tests {
         let src6 = IpAddr::V6("::1".parse().unwrap());
         let pkt_bad = build_udp_ip_packet(src6, 1234, dst4, 53, b"test");
         assert!(pkt_bad.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_evict_expired_aborts_owned_reverse_relay() {
+        struct NotifyOnDrop(Option<oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let nat = UdpNatTable::new(Some(Duration::from_secs(1)));
+        let key = UdpFourTuple {
+            src_ip: "10.0.0.1".parse().unwrap(),
+            src_port: 12345,
+            dst_ip: "1.1.1.1".parse().unwrap(),
+            dst_port: 53,
+        };
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let (done_tx, done_rx) = oneshot::channel();
+        nat.sessions.insert(
+            key,
+            UdpSession {
+                socket,
+                last_active: Instant::now() - Duration::from_secs(5),
+                relay_task: tokio::spawn(async move {
+                    let _guard = NotifyOnDrop(Some(done_tx));
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                }),
+            },
+        );
+        nat.session_count.store(1, Ordering::Relaxed);
+        tokio::task::yield_now().await;
+
+        nat.evict_expired();
+
+        assert_eq!(nat.session_count(), 0);
+        assert!(nat.sessions.is_empty());
+        tokio::time::timeout(Duration::from_secs(1), done_rx)
+            .await
+            .expect("eviction should abort owned relay task")
+            .expect("abort drop signal should arrive");
     }
 }

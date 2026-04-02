@@ -64,6 +64,7 @@ impl BufferPool {
     }
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 fn protocol_buffer_pool() -> &'static BufferPool {
     static POOL: once_cell::sync::Lazy<BufferPool> = once_cell::sync::Lazy::new(|| {
         let max_size = opt_env_usize("SB_BUFFER_POOL_SIZE").unwrap_or(100);
@@ -74,6 +75,7 @@ fn protocol_buffer_pool() -> &'static BufferPool {
     &POOL
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 fn opt_env_usize(name: &str) -> Option<usize> {
     let raw = std::env::var(name).ok()?;
     match raw.trim().parse::<usize>() {
@@ -190,10 +192,13 @@ impl FastBandwidthLimiter {
 
 /// Get current time in milliseconds
 fn current_time_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis().min(u128::from(u64::MAX)) as u64,
+        Err(err) => {
+            tracing::warn!("system clock is before unix epoch; using 0ms fallback: {err}");
+            0
+        }
+    }
 }
 
 /// Connection pool for protocol connections
@@ -308,15 +313,16 @@ where
 
     /// Get a value from the cache
     pub fn get(&self, key: &K) -> Option<Arc<V>> {
-        let cache = self.cache.lock();
+        let mut cache = self.cache.lock();
 
-        if let Some(cached) = cache.get(key) {
-            if cached.created_at.elapsed() < self.ttl {
-                return Some(cached.value.clone());
+        match cache.get(key) {
+            Some(cached) if cached.created_at.elapsed() < self.ttl => Some(cached.value.clone()),
+            Some(_) => {
+                cache.remove(key);
+                None
             }
+            None => None,
         }
-
-        None
     }
 
     /// Put a value in the cache
@@ -571,6 +577,7 @@ mod tests {
 
         // Should be expired
         assert!(cache.get(&"key1").is_none());
+        assert_eq!(cache.size(), 0);
     }
 
     #[test]
@@ -611,5 +618,11 @@ mod tests {
 
         assert!(t2 > t1);
         assert!(t2 - t1 >= 10);
+    }
+
+    #[test]
+    fn source_pin_current_time_ms_avoids_unwrap_panic_path() {
+        let src = include_str!("optimizations.rs");
+        assert!(!src.contains("duration_since(std::time::UNIX_EPOCH)\n        .unwrap()"));
     }
 }

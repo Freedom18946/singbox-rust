@@ -497,7 +497,7 @@ impl TunInbound {
         }
 
         // Spawn UDP NAT eviction task
-        udp::spawn_eviction_task(Arc::clone(&self.udp_nat));
+        let _udp_nat_maintenance = udp::spawn_eviction_task(Arc::clone(&self.udp_nat));
 
         // Spawn test-only memory feeder pump
         // Spawn test-only memory feeder pump
@@ -1679,7 +1679,9 @@ mod sys_linux {
     /// Parse IP packet from TUN device (similar to macOS implementation)
     /// Returns (L4 protocol, destination IP, destination port)
     #[cfg(feature = "tun")]
-    pub fn parse_tun_packet(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
+    pub fn parse_tun_packet(
+        pkt: &[u8],
+    ) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.is_empty() {
             return None;
         }
@@ -1817,7 +1819,9 @@ mod sys_windows {
 
     /// Parse IP packet from wintun (similar to Linux/macOS)
     #[cfg(feature = "tun")]
-    pub fn parse_wintun_packet(pkt: &[u8]) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
+    pub fn parse_wintun_packet(
+        pkt: &[u8],
+    ) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.is_empty() {
             return None;
         }

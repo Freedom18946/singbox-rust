@@ -89,11 +89,12 @@ pub mod hysteria2;
 pub mod optimizations;
 
 use crate::telemetry::{err_kind, outbound_connect, outbound_handshake};
+use parking_lot::RwLock;
 use std::{
     collections::HashMap,
     io,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 // Re-export the standard traits and implementations
@@ -258,48 +259,41 @@ impl OutboundRegistryHandle {
         }
     }
     pub fn replace(&self, reg: OutboundRegistry) {
-        if let Ok(mut w) = self.inner.write() {
-            *w = reg;
-        }
+        *self.inner.write() = reg;
     }
-    pub fn read(&self) -> std::sync::RwLockReadGuard<'_, OutboundRegistry> {
-        self.inner.read().unwrap()
+    pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, OutboundRegistry> {
+        self.inner.read()
+    }
+    pub fn resolve(&self, name: &str) -> Option<OutboundImpl> {
+        self.inner.read().get(name).cloned()
     }
     pub async fn connect_tcp(&self, target: &RouteTarget, ep: Endpoint) -> io::Result<TcpStream> {
         match target {
             RouteTarget::Kind(k) => connect_tcp_builtin(k, ep).await,
-            RouteTarget::Named(name) => {
-                let imp = {
-                    match self.inner.read() {
-                        Ok(r) => r.get(name).cloned(),
-                        Err(_) => None,
-                    }
-                };
-                match imp {
-                    Some(OutboundImpl::Direct) => direct_connect(ep).await,
-                    Some(OutboundImpl::Block) => Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "blocked by rule",
-                    )),
-                    Some(OutboundImpl::Socks5(cfg)) => socks5_connect(&cfg, ep).await,
-                    Some(OutboundImpl::HttpProxy(cfg)) => http_connect(&cfg, ep).await,
-                    Some(OutboundImpl::Connector(conn)) => {
-                        let (host, port) = match ep {
-                            Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(h, p) => (h, p),
-                        };
-                        conn.connect(&host, port).await
-                    }
-                    #[cfg(feature = "out_naive")]
-                    Some(OutboundImpl::Naive(cfg)) => naive_connect(&cfg, ep).await,
-                    #[cfg(feature = "out_hysteria2")]
-                    Some(OutboundImpl::Hysteria2(cfg)) => hysteria2_connect(&cfg, ep).await,
-                    None => Err(io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "outbound not found",
-                    )),
+            RouteTarget::Named(name) => match self.resolve(name) {
+                Some(OutboundImpl::Direct) => direct_connect(ep).await,
+                Some(OutboundImpl::Block) => Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "blocked by rule",
+                )),
+                Some(OutboundImpl::Socks5(cfg)) => socks5_connect(&cfg, ep).await,
+                Some(OutboundImpl::HttpProxy(cfg)) => http_connect(&cfg, ep).await,
+                Some(OutboundImpl::Connector(conn)) => {
+                    let (host, port) = match ep {
+                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                        Endpoint::Domain(h, p) => (h, p),
+                    };
+                    conn.connect(&host, port).await
                 }
-            }
+                #[cfg(feature = "out_naive")]
+                Some(OutboundImpl::Naive(cfg)) => naive_connect(&cfg, ep).await,
+                #[cfg(feature = "out_hysteria2")]
+                Some(OutboundImpl::Hysteria2(cfg)) => hysteria2_connect(&cfg, ep).await,
+                None => Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "outbound not found",
+                )),
+            },
         }
     }
 
@@ -321,77 +315,68 @@ impl OutboundRegistryHandle {
                 let boxed: sb_transport::IoStream = Box::new(s);
                 Ok(boxed)
             }
-            RouteTarget::Named(name) => {
-                let imp = {
-                    match self.inner.read() {
-                        Ok(r) => r.get(name).cloned(),
-                        Err(_) => None,
-                    }
-                };
-                match imp {
-                    Some(OutboundImpl::Direct) => {
-                        let s = direct_connect(ep).await?;
-                        let boxed: sb_transport::IoStream = Box::new(s);
-                        Ok(boxed)
-                    }
-                    Some(OutboundImpl::Block) => Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "blocked by rule",
-                    )),
-                    Some(OutboundImpl::Socks5(cfg)) => {
-                        let s = socks5_connect(&cfg, ep).await?;
-                        let boxed: sb_transport::IoStream = Box::new(s);
-                        Ok(boxed)
-                    }
-                    Some(OutboundImpl::HttpProxy(cfg)) => {
-                        let s = http_connect(&cfg, ep).await?;
-                        let boxed: sb_transport::IoStream = Box::new(s);
-                        Ok(boxed)
-                    }
-                    Some(OutboundImpl::Connector(conn)) => {
-                        let (host, port) = match ep {
-                            Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(h, p) => (h, p),
-                        };
-                        conn.connect_io(&host, port).await
-                    }
-                    #[cfg(feature = "out_naive")]
-                    Some(OutboundImpl::Naive(cfg)) => {
-                        use crate::outbound::naive_h2::NaiveH2Outbound;
-                        use crate::outbound::types::{HostPort, OutboundTcp};
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = NaiveH2Outbound::new(cfg.clone())
-                            .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
-                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                        Ok(Box::new(stream))
-                    }
-                    #[cfg(feature = "out_hysteria2")]
-                    Some(OutboundImpl::Hysteria2(cfg)) => {
-                        use crate::outbound::hysteria2::Hysteria2Outbound;
-                        use crate::outbound::types::{HostPort, OutboundTcp};
-
-                        let hp = match ep {
-                            Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                            Endpoint::Domain(host, port) => HostPort::new(host, port),
-                        };
-
-                        let outbound = Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
-                            io::Error::other(format!("Hysteria2 setup failed: {}", e))
-                        })?;
-                        let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                        Ok(Box::new(stream))
-                    }
-                    None => Err(io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "outbound not found",
-                    )),
+            RouteTarget::Named(name) => match self.resolve(name) {
+                Some(OutboundImpl::Direct) => {
+                    let s = direct_connect(ep).await?;
+                    let boxed: sb_transport::IoStream = Box::new(s);
+                    Ok(boxed)
                 }
-            }
+                Some(OutboundImpl::Block) => Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "blocked by rule",
+                )),
+                Some(OutboundImpl::Socks5(cfg)) => {
+                    let s = socks5_connect(&cfg, ep).await?;
+                    let boxed: sb_transport::IoStream = Box::new(s);
+                    Ok(boxed)
+                }
+                Some(OutboundImpl::HttpProxy(cfg)) => {
+                    let s = http_connect(&cfg, ep).await?;
+                    let boxed: sb_transport::IoStream = Box::new(s);
+                    Ok(boxed)
+                }
+                Some(OutboundImpl::Connector(conn)) => {
+                    let (host, port) = match ep {
+                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                        Endpoint::Domain(h, p) => (h, p),
+                    };
+                    conn.connect_io(&host, port).await
+                }
+                #[cfg(feature = "out_naive")]
+                Some(OutboundImpl::Naive(cfg)) => {
+                    use crate::outbound::naive_h2::NaiveH2Outbound;
+                    use crate::outbound::types::{HostPort, OutboundTcp};
+
+                    let hp = match ep {
+                        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                        Endpoint::Domain(host, port) => HostPort::new(host, port),
+                    };
+
+                    let outbound = NaiveH2Outbound::new(cfg.clone())
+                        .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
+                    let stream = OutboundTcp::connect(&outbound, &hp).await?;
+                    Ok(Box::new(stream))
+                }
+                #[cfg(feature = "out_hysteria2")]
+                Some(OutboundImpl::Hysteria2(cfg)) => {
+                    use crate::outbound::hysteria2::Hysteria2Outbound;
+                    use crate::outbound::types::{HostPort, OutboundTcp};
+
+                    let hp = match ep {
+                        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
+                        Endpoint::Domain(host, port) => HostPort::new(host, port),
+                    };
+
+                    let outbound = Hysteria2Outbound::new(cfg.clone())
+                        .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
+                    let stream = OutboundTcp::connect(&outbound, &hp).await?;
+                    Ok(Box::new(stream))
+                }
+                None => Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "outbound not found",
+                )),
+            },
         }
     }
 
@@ -455,6 +440,34 @@ async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<Tc
             io::ErrorKind::Unsupported,
             "builtin hysteria2 not wired",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_handle_resolve_uses_dedicated_query_seam() {
+        let mut registry = OutboundRegistry::default();
+        registry.insert("direct".to_string(), OutboundImpl::Direct);
+        let handle = OutboundRegistryHandle::new(registry);
+
+        assert!(matches!(
+            handle.resolve("direct"),
+            Some(OutboundImpl::Direct)
+        ));
+        assert!(handle.resolve("missing").is_none());
+    }
+
+    #[test]
+    fn registry_handle_source_pin_uses_owner_first_lookup_helper() {
+        let src = include_str!("mod.rs");
+        assert!(src.contains("pub fn resolve(&self, name: &str) -> Option<OutboundImpl>"));
+        assert!(src.contains("inner: Arc<RwLock<OutboundRegistry>>"));
+        assert!(src
+            .contains("pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, OutboundRegistry>"));
+        assert!(src.contains("RouteTarget::Named(name) => match self.resolve(name)"));
     }
 }
 

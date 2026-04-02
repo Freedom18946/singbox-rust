@@ -22,22 +22,25 @@
 
 **全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。
 
-### 当前维护线（2026-04-02）
+### 当前维护线（2026-04-03）
+
+- **MT-PERF-01**: tun / outbound hotspot stabilization — 已完成
+  - 当前源码事实下，最值得优先治理的热点债是：
+    - `crates/sb-core/src/inbound/tun.rs` 的 session table 仍存在表锁外再套 per-session lock，热路径 mutation / expiry / stats 更新会反复穿透两层 owner
+    - `crates/sb-adapters/src/inbound/tun_session.rs`、`crates/sb-adapters/src/inbound/tun/udp.rs` 的 relay task lifecycle 仍偏隐式，cleanup / eviction 没有稳定的 task owner
+    - `crates/sb-core/src/outbound/mod.rs`、`crates/sb-core/src/outbound/optimizations.rs` 的 registry lookup / TTL cache 仍残留分散 query seam、panic / stale-entry 面
+  - 本轮收口：
+    - `crates/sb-core/src/inbound/tun.rs` 把 session table 收成 `Arc<TunSession>` 单 owner 模式；热字段 mutation 改走 session helper，而不是整 session 再套 `RwLock`
+    - `crates/sb-adapters/src/inbound/tun_session.rs` 让 `TcpSession` 显式拥有 relay task；`remove()` / `initiate_close()` 会 abort owned tasks
+    - `crates/sb-adapters/src/inbound/tun/udp.rs` 让 NAT entry / maintenance owner 显式持有并终止 reverse relay task
+    - `crates/sb-core/src/outbound/mod.rs` 新增 `resolve(...)` query seam；`chain.rs` 改为复用该 seam
+    - `crates/sb-core/src/outbound/optimizations.rs` 去掉 `current_time_ms()` panic 面，并让 TTL cache 在过期读取时即时清掉 stale entry
+  - 本卡明确是 maintenance / hotspot quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1`、`cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1`、`cargo test -p sb-core --all-features outbound::tests -- --test-threads=1`、`cargo test -p sb-core --all-features --lib -- --test-threads=1`、`cargo test -p sb-core --all-features --tests -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib tun_session::tests -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib inbound::tun::udp::tests -- --test-threads=1`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`、`cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+  - 当前基线备注：`cargo test -p sb-adapters --all-features --lib -- --test-threads=1` 仍有既有失败，集中在 hysteria2 / tuic / tun_enhanced / register；这些不属于本卡主轴
 
 - **MT-RD-01**: router / dns structural consolidation — 已完成
-  - 当前源码事实下，最值得优先治理的结构债是：
-    - `crates/sb-core/src/router/mod.rs` 内部 shared index owner / ENV cache / hot reload / runtime override query seam 仍混在一起
-    - `crates/sb-core/src/dns/upstream.rs` 内部 DHCP / resolved 的 file-backed upstream pool、watcher、reload、fallback、metrics helper 重复堆叠
-  - 本轮收口：
-    - 新增 `crates/sb-core/src/router/shared_index.rs`，收走 shared index owner、ENV refresh/cache、reload bootstrap、empty unresolved index helper
-    - 新增 `crates/sb-core/src/router/runtime_override.rs`，收走 runtime override parse/cache/query seam
-    - `crates/sb-core/src/router/explain_util.rs` 改为复用 runtime override query seam；`crates/sb-core/src/router/engine.rs` 改为复用 empty index helper
-    - 新增 `crates/sb-core/src/dns/upstream_pool.rs`，统一 file-backed upstream pool 的 watcher / reload / fallback / round-robin / metrics helper
-    - `crates/sb-core/src/dns/upstream.rs` 的 DHCP / resolved 改为显式持有 pool owner，不再重复维护同类 shared state
-    - `crates/sb-core/src/dns/config_builder.rs` 只补 specialized helper source pin，不把 builder owner 再往 `upstream.rs` 回灌
-  - 本卡明确是 maintenance / structural quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::config_builder::tests -- --test-threads=1`、`cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1`、`cargo test -p sb-core --all-features --lib -- --test-threads=1`、`cargo test -p sb-core --all-features --tests -- --test-threads=1`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
-  - 当前基线备注：本卡结束后，`router/dns` 剩余债务已压缩成少数高层 future boundary，不再是 shared index / file-backed pool 这一层四散 helper 杂糅
+  - shared index owner / runtime override seam / file-backed upstream pool owner 已完成结构收口
 
 - **MT-TEST-01**: patch-plan / test baseline stabilization — 已完成
   - patch 生成与 patch 应用语义不一致的真实根因已修复，当前继续保持稳定
@@ -48,7 +51,7 @@
 - **MT-HOT-OBS-01**: hotpath stabilization + metrics/logging consolidation — 已完成
   - tun/dns/router/outbound optimizations 与 logging/sb-metrics owner-first 收口继续保持稳定
 
-### 已完成维护归档（2026-04-02）
+### 已完成维护归档（2026-04-03）
 
 - **MT-RTC-03**: runtime actorization close-out — 已完成
 - **MT-RTC-02**: runtime actorization follow-up — 已完成
@@ -60,22 +63,28 @@
 
 - runtime actor/context 主线当前已达到维护期可接受 close-out；后续不再按散乱 seam 继续细拆
 - 当前更合适的维护主题排序：
+  - `tun/outbound` 剩余 queue/backpressure / eviction-policy / protocol-reuse 高层 boundary
   - `router/dns` 剩余 mega-file 的高层 boundary
-  - `tun/outbound` 生命周期与 perf hotspot
   - metrics/logging 剩余 compat/global 壳
   - patch/preview 或 DERP/services 若再出现真实 baseline failure，再按事实切回处理
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
 
-### 构建基线（2026-04-02）
+### 构建基线（2026-04-03）
 
 | 构建 | 状态 |
 |------|------|
+| `cargo test -p sb-core --all-features inbound::tun::tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-core --all-features outbound::optimizations::tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-core --all-features outbound::tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-adapters --all-features --lib tun_session::tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-adapters --all-features --lib inbound::tun::udp::tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ✅ pass (`MT-PERF-01`) |
+| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-PERF-01`) |
+| `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` | ✅ pass (`MT-PERF-01`) |
 | `cargo test -p sb-core --all-features router::migration_tests -- --test-threads=1` | ✅ pass (`MT-RD-01`) |
 | `cargo test -p sb-core --all-features dns::config_builder::tests -- --test-threads=1` | ✅ pass (`MT-RD-01`) |
 | `cargo test -p sb-core --all-features dns::upstream::tests -- --test-threads=1` | ✅ pass (`MT-RD-01`) |
-| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-RD-01`) |
-| `cargo test -p sb-core --all-features --tests -- --test-threads=1` | ✅ pass (`MT-RD-01`) |
-| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-RD-01`) |
 | `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-HOT-OBS-01`) |
 | `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-HOT-OBS-01`) |
