@@ -24,66 +24,62 @@
 
 ### 当前维护线（2026-04-03）
 
-- **MT-DEEP-01**: ShadowTLS / TUN TCP corner-case hardening — 已完成
-  - 当前源码事实下，这条线处理的是 `sb-adapters` 中仍真实存在的 ShadowTLS transport-wrapper / detour endpoint semantics 与 TUN TCP FIN-first / half-close / detach / drain lifecycle seam，不是 parity completion
-  - 本轮收口：
-    - `crates/sb-adapters/src/outbound/shadowtls.rs`：去掉把 requested endpoint 硬绑到 wrapper server 的 guard；`connect_detour_stream(...)` 明确是“拨 configured wrapper server，为 requested endpoint 暴露 raw stream”；v2/v3 bridge 改成 `OwnedBridgeStream` 持有 bridge task owner
-    - `crates/sb-adapters/src/register.rs` + `crates/sb-adapters/tests/shadowtls_e2e.rs`：register / e2e / detour-chain 口径统一为 wrapper-endpoint 与 requested-endpoint 双语义，不再一边要求 configured endpoint、一边依赖 wrapper 透传 raw stream
-    - `crates/sb-adapters/src/inbound/tun_session.rs`：`TcpSessionManager` 新增 detached/draining registry；relay 结束时统一清 active/detached state
-    - `crates/sb-adapters/src/inbound/tun_enhanced.rs`：新增 detached-session packet handling；FIN retransmit 继续回 FIN-ACK，payload-after-fin 显式回 RST 并阻止错误重连；RST close 收成单一路径
-  - 本卡明确是 maintenance / protocol-corner quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1`、`cargo test -p sb-adapters --all-features tun_session -- --test-threads=1`、`cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1`、`cargo test -p sb-adapters --all-features register -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib -- --test-threads=1`、`cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+- **MT-RECAP-01**: maintenance recap and next-stage convergence — 已完成
+  - 本卡不是 parity completion；基于当前源码、git 现状与最小充分验证做 maintenance 复盘
+  - 复核确认：
+    - workspace 当前在 `main...origin/main`，但仍有大量无关在制改动；本卡只触达 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
+    - `planned.rs` 仍是 staged crate-private seam；当前仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+    - `RuntimeContext` / `AdminDebugState`、`router/{shared_index,runtime_override}`、`dns/upstream_pool`、ShadowTLS wrapper raw-stream seam、TUN detached/draining session seam 均按现有 maintenance 口径稳定存在
+  - 最小充分验证通过：
+    - `cargo test -p app --all-features --lib -- --test-threads=1`
+    - `cargo test -p sb-core --all-features --lib -- --test-threads=1`
+    - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1`
+    - `cargo clippy -p app --all-features --all-targets -- -D warnings`
+    - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+    - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+  - 当前阶段结论：
+    - 没有新的最前置 blocker
+    - 不建议继续机械拆 maintenance 细卡
+    - 若未来确需继续，只保留少数高层 convergence 主题
 
-- **MT-ADM-01**: admin_debug compat surface close-out — 已完成
-  - 当前源码事实下，这条线处理的是 `admin_debug` control-plane 中仍真实存在的 cache / breaker / reloadable / subs compat/query/read-path seam，不是 parity completion
-  - 本轮收口：
-    - `app/src/admin_debug/cache.rs`：`CacheStore` 新增 owner-first `entry()` / `store()` / `note_head_request()`
-    - `app/src/admin_debug/breaker.rs`：`BreakerStore` 新增 owner-first `allows()` / `record_success()` / `record_failure()`
-    - `app/src/admin_debug/reloadable.rs`：`ReloadableConfigStore` 显式拥有 `apply()` / `apply_with_dryrun()`；legacy free helper 退成 compat shell
-    - `app/src/admin_debug/endpoints/subs.rs`：新增 `SubsControlPlane`，`fetch_with_limits*` / `fetch_with_limits_to_cache*` 的 compat 面集中到 `SubsControlPlane::compat()`
-    - `app/src/admin_debug/mod.rs` / `app/src/admin_debug/endpoints/config.rs` / `app/src/admin_debug/http_server.rs`：`__config` GET/PUT 改走 `AdminDebugState` owner-first reloadable query/apply seam
-    - `app/src/admin_debug/security_metrics.rs`：测试 reset path 改走 cache/breaker owner helper，不再摸 compat/global 锁
-  - 本卡明确是 maintenance / admin-control-plane quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
+### 维护线分类（按当前仓库事实）
 
-- **MT-MLOG-01**: metrics / logging compat-global cleanup — 已完成
-- **MT-ADP-01**: sb-adapters test baseline stabilization — 已完成
-- **MT-PERF-01**: tun / outbound hotspot stabilization — 已完成
-- **MT-RD-01**: router / dns structural consolidation — 已完成
-- **MT-TEST-01**: patch-plan / test baseline stabilization — 已完成
-- **MT-SVC-01**: DERP / services baseline stabilization — 已完成
-- **MT-HOT-OBS-01**: hotpath stabilization + metrics/logging consolidation — 已完成
+- **archive-safe close-out**
+  - `WP-30` archive baseline / planned seam baseline
+  - `MT-SVC-01`
+  - `MT-TEST-01`
+  - `MT-ADP-01`
+- **close-out but future boundary remains**
+  - `MT-OBS-01`
+  - `MT-RTC-01`
+  - `MT-RTC-02`
+  - `MT-RTC-03`
+  - `MT-HOT-OBS-01`
+  - `MT-RD-01`
+  - `MT-PERF-01`
+  - `MT-MLOG-01`
+  - `MT-ADM-01`
+  - `MT-DEEP-01`
+- **still active / needs regrouping**
+  - 无旧 maintenance 线继续维持为单独 active 卡；剩余未来工作只保留跨线 regroup 后的高层 boundary
 
-### 已完成维护归档（2026-04-03）
+### 下一阶段路线收束
 
-- **MT-RTC-03**: runtime actorization close-out — 已完成
-- **MT-RTC-02**: runtime actorization follow-up — 已完成
-- **MT-RTC-01**: runtime actor/context consolidation — 已完成
-- **MT-OBS-01**: runtime / control-plane / observability ownership consolidation — 已完成
-- **WP-30at**: `WP-30k` ~ `WP-30as` maintenance line 总体验收 / 归档收口 — 已完成
+- **默认结论**：当前阶段应暂停继续拆新的细卡；已完成维护线不再恢复为滚动 backlog
+- **若未来继续，只保留 1-3 条高层主题**
+  - runtime / control-plane / observability convergence
+    - 合并 `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-MLOG-01`、`MT-ADM-01` 的剩余边界
+    - 只在需要统一 signal / reload / shutdown manager、exporter lifecycle、admin owner/query surface 时成组推进
+  - router / dns / tun / outbound convergence
+    - 合并 `MT-RD-01`、`MT-PERF-01`、`MT-DEEP-01` 的剩余边界
+    - 只在出现明确结构收益、perf 证据或重复 corner-case 信号时成组推进
+  - planned/private seam 维持暂停
+    - 不默认继续拆 `planned.rs`
+    - 不误推进 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
 
-### 当前维护重点（高层）
+### 明确暂停事项
 
-- ShadowTLS / TUN TCP 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 protocol-corner 尾巴拆成很多小卡：
-  - transport-wrapper contract 下的 wrapper endpoint / requested endpoint / detour consumer metadata 统一建模
-  - detached/draining TCP session 的更高层 grace timeout / simultaneous-close / cleanup policy
-- `admin_debug` 这条线也已经压成少数 future boundary：
-  - `security_metrics` 默认 owner / compat wrapper
-  - `subs` limiter static state (`MAX_CONC` / `RPS_*`)
-  - 更大范围的 admin-control-plane manager/query/lifecycle 统一化
-- 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
-
-### 构建基线（2026-04-03）
-
-| 构建 | 状态 |
-|------|------|
-| `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
-| `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
-| `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
-| `cargo test -p sb-adapters --all-features register -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
-| `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
-| `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` | ✅ pass (`MT-DEEP-01`) |
-| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
-| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
-| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
-| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-ADM-01`) |
+- 不恢复 `.github/workflows/*`
+- 不把 maintenance 工作误写成 dual-kernel parity completion
+- 不再继续 `WP-30k` 风格微卡化排程
+- 不把 `future boundary` 直接写成“下一卡默认继续做”

@@ -6,60 +6,52 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-DEEP-01` ShadowTLS / TUN TCP corner-case hardening — 已完成；`MT-ADM-01`、`MT-MLOG-01`、`MT-ADP-01`、`MT-PERF-01`、`MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01`、`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01`、`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
+**当前维护线**: `MT-RECAP-01` maintenance recap and next-stage convergence — 已完成；`WP-30` 与 `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-SVC-01`、`MT-TEST-01`、`MT-RD-01`、`MT-PERF-01`、`MT-ADP-01`、`MT-MLOG-01`、`MT-ADM-01`、`MT-DEEP-01` 保持已完成 / 已归档状态
 
 ## 最近完成（2026-04-03）
 
-### MT-DEEP-01：ShadowTLS / TUN TCP corner-case hardening — 已完成
-- 本卡按当前源码与工作区事实推进，性质明确为 maintenance / protocol-corner quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- 开工前复核确认：
-  - `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1` 在当前仓库事实下暴露 7 个真实失败，集中在 `tests/shadowtls_e2e.rs` 仍沿用“wrapper 必须等于 configured endpoint / requested target 被忽略”的旧口径，与当前 transport-wrapper / detour 链真实语义冲突
-  - `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1` 与 `tun_enhanced -- --test-threads=1` 基线通过，但当前实现仍缺 detached/draining owner seam：FIN 后 tuple 会立即从 active map 消失，payload-after-fin / retransmitted FIN 仍可能落回“无 session”路径
-- 本轮真实收口：
-  - `crates/sb-adapters/src/outbound/shadowtls.rs`：去掉把 requested endpoint 硬等同于 wrapper server 的 guard；`connect_detour_stream(...)` 现显式表达“拨 configured wrapper server，为 requested endpoint 暴露 raw stream”；v2/v3 bridge 改成 `OwnedBridgeStream` 持有 `JoinHandle`，stream drop 时 abort bridge task，不再是无主后台桥接任务
-  - `crates/sb-adapters/src/register.rs`：ShadowTLS register test 口径改成“`connect_io()` 暴露 wrapped raw stream”而不是“只允许 configured server”；仍保留 `connect()` reject 作为 leaf misuse guardrail
-  - `crates/sb-adapters/tests/shadowtls_e2e.rs`：e2e / detour / shadowsocks-chain pin 统一改成 requested-endpoint-vs-wrapper-endpoint 双语义口径；当前仓库事实下，v1/v2 wrapper 与 register/chain fixture 重新一致
-  - `crates/sb-adapters/src/inbound/tun_session.rs`：`TcpSessionManager` 新增 detached/draining registry；`detach()` 不再简单丢失 owner，而是把 half-close 中的 tuple 移到 detached map，relay 结束时才统一清理 active/detached state
-  - `crates/sb-adapters/src/inbound/tun_enhanced.rs`：`bootstrap_tcp_session(...)` 新增 detached-session 分支；FIN retransmit 继续回 FIN-ACK，payload-after-fin 显式回 RST 并禁止重新拨号；active-session RST 路径也收成单一 `remove()` owner 关闭入口
-- 本轮新增 / 强化的关键 pin：
-  - `outbound::shadowtls::tests::dropping_owned_bridge_stream_aborts_bridge_task`
-  - `register::tests::test_shadowtls_outbound_registration_connect_io_exposes_wrapped_raw_stream`
-  - `tests/shadowtls_e2e.rs`：`shadowtls_detour_wrapper_connects_for_requested_endpoint_via_configured_wrapper`、`shadowtls_detour_wrapper_uses_configured_wrapper_for_arbitrary_requested_target`、`shadowtls_v2_detour_wrapper_connects_for_requested_endpoint_via_configured_wrapper`
-  - `inbound::tun_session::tests::test_detach_moves_session_into_draining_registry`
-  - `inbound::tun_enhanced::tests::bootstrap_tcp_session_fin_retransmit_uses_detached_session_state`
-  - `inbound::tun_enhanced::tests::bootstrap_tcp_session_payload_after_fin_is_rejected_without_reconnect`
-
-## 当前稳定事实
-- ShadowTLS 当前稳定事实已经重新统一为：
-  - configured wrapper endpoint 负责 TCP/TLS camouflage 握手
-  - requested endpoint 是 wrapper 建立后交给上层 protocol/detour consumer 的语义目标，不再被误当成 wrapper server 做拒绝判断
-  - v2/v3 wrapper stream 现在显式拥有 bridge task，drop 后不会继续无主桥接
-- TUN TCP 当前稳定事实已经重新统一为：
-  - active session 与 detached/draining session 分离，FIN-first / half-close 不再把 tuple 直接打回“无 session”
-  - retransmitted FIN 会复用 detached owner state 回 FIN-ACK，不再误回 RST
-  - payload-after-fin 会被拒绝且不会重新拨第二条 outbound TCP 连接
-- `middleware/rate_limit.rs`、`prefetch.rs`、`planned.rs`、public `RuntimePlan` / `PlannedConfigIR` / generic query API 均未被本卡触达
-- `planned.rs` 仍是 staged crate-private seam；当前仓库仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- 当前 workspace 仍存在大量无关在制改动；本卡只触达 `sb-adapters` 的 ShadowTLS / TUN 直接相关文件与 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
+### MT-RECAP-01：maintenance recap and next-stage convergence — 已完成
+- 本卡按当前仓库事实推进，性质明确为 maintenance / planning-quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs` 公共化、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+- 开工前已重建上下文并复核当前仓库事实：
+  - 已重新阅读 `AGENTS.md`、`agents-only/{active_context,workpackage_latest,planned_preflight_inventory}.md`、全部已完成 maintenance inventory、`重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`、`重构package相关/singbox_rust_rebuild_workpackage.md`
+  - `git status --short --branch` 显示当前在 `main...origin/main`，但 workspace 仍有大量无关在制改动；其中包含 `app/src/admin_debug/{middleware/rate_limit,prefetch}.rs`、`crates/sb-config/src/ir/planned.rs` 等，本卡未回滚或覆盖这些改动
+  - `git log --oneline --decorate -n 20` 确认最近主线连续提交已覆盖 `MT-OBS-01` 到 `MT-DEEP-01`，`a7eb1e4e` 为当前 `main`
+- 源码抽样复核确认：
+  - `crates/sb-config/src/ir/planned.rs` 仍是 staged crate-private seam；`collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts` 仍为 `pub(crate)`，`Config::validate()` 继续走 thin entry；当前仍无 public `RuntimePlan`、public `PlannedConfigIR`
+  - `app/src/run_engine_runtime/context.rs` 与 `app/src/admin_debug/mod.rs` 继续围绕 `RuntimeContext` / `AdminDebugState` 提供 owner-first runtime/admin wiring；runtime actor/context 主线已 close-out，不应按旧细卡继续拆
+  - `crates/sb-core/src/router/{shared_index,runtime_override}.rs` 与 `crates/sb-core/src/dns/upstream_pool.rs` 仍是当前 router/dns 结构边界；mega-file 风险还在，但已不是新的最前置 blocker
+  - `crates/sb-adapters/src/outbound/shadowtls.rs`、`crates/sb-adapters/src/inbound/{tun_session,tun_enhanced}.rs` 仍保持 ShadowTLS wrapper raw-stream 语义与 detached/draining TUN TCP lifecycle seam；deep corner-case 线已收成高层 boundary
 
 ## 当前验证事实
-- 已通过：
-  - `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1`
-  - `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1`
-  - `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1`
-  - `cargo test -p sb-adapters --all-features register -- --test-threads=1`
+- 已通过最小充分跨模块验证：
+  - `cargo test -p app --all-features --lib -- --test-threads=1`
+  - `cargo test -p sb-core --all-features --lib -- --test-threads=1`
   - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1`
+  - `cargo clippy -p app --all-features --all-targets -- -D warnings`
+  - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
   - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
 
-## Future Work（高层方向）
-- ShadowTLS 剩余债务现在应压缩成少数高层 boundary：
-  - 若 runtime 未来真的需要 typed transport-wrapper contract，再评估“wrapper endpoint / requested endpoint / detour consumer metadata”统一建模；当前阶段不把它硬扩成新的 public API
-  - v1/v2/v3 wrapper 自身协议实现若再继续推进，应围绕更高层的 wrapper consumer contract 成组处理，不回到“某个 endpoint 判断再加一个 if”
-- TUN TCP 剩余债务现在应压缩成少数高层 boundary：
-  - detached/draining session 的更系统 grace timeout / simultaneous-close policy
-  - 更高层的 TCP lifecycle/cleanup owner（如果未来需要跨 packet loop / session manager 统一治理）
-- 当前阶段不值得继续把 ShadowTLS / TUN TCP 债务拆成很多细碎小尾巴；本卡已经把真实存在的 protocol-corner seam 压成少数 future boundary
+## 当前阶段结论
+- 当前没有新的“最前置基线阻塞”或必须立即开卡的质量问题；仓库事实更支持“收束下一阶段路线”，而不是继续机械拆 maintenance 细卡
+- 可明确视为 archive-safe close-out 的主线：
+  - `WP-30` archive baseline / planned seam baseline
+  - `MT-SVC-01`
+  - `MT-TEST-01`
+  - `MT-ADP-01`
+- 已 close-out 但仍保留高层 future boundary 的主线：
+  - `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-MLOG-01`、`MT-ADM-01`
+  - `MT-RD-01`
+  - `MT-PERF-01`、`MT-DEEP-01`
+- 当前没有需要继续按“单线 still active”维持的旧 maintenance 卡；剩余未来工作只应按跨线高层 boundary regroup
 
-## 归档判断
-- `WP-30` 继续视为 archive baseline，`ef333bb7` 仍是归档基线
-- `MT-DEEP-01` 已完成；ShadowTLS / TUN TCP 深水区质量线剩余债务已压缩成少数高层 future boundary，不值得继续拆很多 protocol-corner 小尾巴
+## Next-Stage Gates（只保留高层主题）
+- 默认结论：**当前阶段不建议继续拆新的细卡**
+- 若未来确需继续推进，只保留 1-3 条高层主题：
+  - runtime / control-plane / observability convergence：signal/reload/shutdown manager、`logging` / `security_metrics` / `subs` limiter 等剩余 compat-owner boundary 必须成组推进
+  - router / dns / tun / outbound convergence：router/dns mega-file shared-state、TUN/outbound lifecycle/perf、ShadowTLS wrapper contract / detached TCP lifecycle 必须按系统主题成组推进
+  - planned/private seam 仅在出现真实稳定 consumer 时再评估；当前明确暂停 public `RuntimePlan` / public `PlannedConfigIR` / generic query API
+
+## 暂停事项
+- 不再恢复 `WP-30k` ~ `WP-30as` 式细碎 maintenance 排程
+- 不把 maintenance work 写成 parity completion
+- 不把 `future boundary` 自动等同于“下一卡默认继续做”
