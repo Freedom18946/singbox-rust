@@ -29,19 +29,12 @@ pub fn init_tracing_once_with_filter(filter: &str) -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
         .with_target(true);
     if fmt_json {
-        builder
-            .json()
-            .try_init()
-            .map_err(|error| {
-                anyhow::anyhow!(
-                    "failed to install JSON tracing subscriber for '{filter}': {error}"
-                )
-            })?;
+        builder.json().try_init().map_err(|error| {
+            anyhow::anyhow!("failed to install JSON tracing subscriber for '{filter}': {error}")
+        })?;
     } else {
         builder.compact().try_init().map_err(|error| {
-            anyhow::anyhow!(
-                "failed to install compact tracing subscriber for '{filter}': {error}"
-            )
+            anyhow::anyhow!("failed to install compact tracing subscriber for '{filter}': {error}")
         })?;
     }
     tracing::debug!("tracing initialized (json={fmt_json})");
@@ -54,15 +47,26 @@ pub fn init_tracing_once_with_filter(filter: &str) -> Result<()> {
 /// # Errors
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
-pub fn init_metrics_exporter_once(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
-    if std::env::var("SB_METRICS_ADDR").is_ok() {
-        if sb_metrics::spawn_http_exporter_from_env(registry).is_some() {
-            tracing::info!("metrics exporter started");
-        } else {
-            anyhow::bail!("SB_METRICS_ADDR is set but metrics exporter could not be spawned");
-        }
-    } else {
+pub fn spawn_metrics_exporter_if_configured(
+    registry: sb_metrics::MetricsRegistryHandle,
+) -> Result<Option<tokio::task::JoinHandle<()>>> {
+    if std::env::var("SB_METRICS_ADDR").is_err() {
         tracing::debug!("metrics exporter not configured (SB_METRICS_ADDR unset)");
+        return Ok(None);
+    }
+
+    sb_metrics::spawn_http_exporter_from_env(registry).map_or_else(
+        || anyhow::bail!("SB_METRICS_ADDR is set but metrics exporter could not be spawned"),
+        |join| Ok(Some(join)),
+    )
+}
+
+/// # Errors
+///
+/// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
+pub fn init_metrics_exporter_once(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
+    if spawn_metrics_exporter_if_configured(registry)?.is_some() {
+        tracing::info!("metrics exporter started");
     }
     Ok(())
 }

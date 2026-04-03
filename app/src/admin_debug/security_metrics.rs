@@ -4,8 +4,8 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -370,8 +370,27 @@ impl SecurityMetricsState {
     }
 
     /// # Errors
+    /// Returns an error when the supplied control-plane owners cannot be
+    /// inspected while building the snapshot.
+    pub fn snapshot_with_control_plane(
+        &self,
+        cache: &crate::admin_debug::cache::CacheStore,
+        breaker: &crate::admin_debug::breaker::BreakerStore,
+        current_concurrency: u64,
+    ) -> Result<SecuritySnapshot> {
+        self.snapshot_with_query(SecuritySnapshotQuery::new(
+            cache,
+            breaker,
+            current_concurrency,
+        ))
+    }
+
+    /// # Errors
     /// Returns an error when dependent admin subsystems cannot be inspected.
-    pub fn snapshot_with_query(&self, query: SecuritySnapshotQuery<'_>) -> Result<SecuritySnapshot> {
+    pub fn snapshot_with_query(
+        &self,
+        query: SecuritySnapshotQuery<'_>,
+    ) -> Result<SecuritySnapshot> {
         let last_error = self.last_error.lock().clone();
         let last_error_ts = *self.last_err_ts.lock();
         let last_ok_ts = *self.last_ok_ts.lock();
@@ -549,7 +568,6 @@ impl<'a> SecuritySnapshotQuery<'a> {
             current_concurrency,
         }
     }
-
 }
 
 impl SecuritySnapshotQuery<'static> {
@@ -755,6 +773,13 @@ pub fn mark_last_ok() {
     with_current(SecurityMetricsState::mark_last_ok);
 }
 pub fn snapshot() -> Result<SecuritySnapshot> {
+    compat_snapshot()
+}
+
+/// # Errors
+/// Returns an error when the current default security metrics owner has not
+/// been installed or its compat control-plane query cannot be built.
+pub fn compat_snapshot() -> Result<SecuritySnapshot> {
     current()?.snapshot()
 }
 
@@ -833,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_snapshot_query_uses_supplied_control_plane_state() {
+    fn explicit_snapshot_with_control_plane_uses_supplied_owner_state() {
         let state = SecurityMetricsState::new();
         state.inc_total_requests();
         state.record_latency_ms(25);
@@ -862,8 +887,8 @@ mod tests {
         }
 
         let snapshot = state
-            .snapshot_with_query(SecuritySnapshotQuery::new(&cache, &breaker, 9))
-            .expect("explicit query snapshot should succeed");
+            .snapshot_with_control_plane(&cache, &breaker, 9)
+            .expect("explicit owner snapshot should succeed");
         assert_eq!(snapshot.total_requests, 1);
         assert_eq!(snapshot.cache_bytes_mem, 4);
         assert_eq!(snapshot.limiter_current_concurrency, 9);

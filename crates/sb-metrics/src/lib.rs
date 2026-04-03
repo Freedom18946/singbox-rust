@@ -60,16 +60,17 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     sync::atomic::{AtomicU64, Ordering},
-    sync::{Arc, LazyLock, Mutex, Weak},
+    sync::{Arc, LazyLock, Weak},
     time::{Duration, Instant},
 };
 
 use hyper::server::conn::Http;
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, StatusCode};
+use parking_lot::Mutex;
 use prometheus::{
-    core::Collector, Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec,
-    IntGauge, Opts, Registry, TextEncoder,
+    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
+    Registry, TextEncoder, core::Collector,
 };
 use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
@@ -263,9 +264,7 @@ impl MetricsRegistryOwner {
 
 #[must_use]
 pub fn install_default_registry(registry: Arc<Registry>) -> MetricsRegistryOwner {
-    let mut slot = DEFAULT_REGISTRY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = DEFAULT_REGISTRY.lock();
     let existing = slot.as_ref().and_then(Weak::upgrade);
     if let Some(existing) = existing {
         drop(slot);
@@ -282,11 +281,16 @@ pub fn install_default_registry_owner() -> MetricsRegistryOwner {
 }
 
 fn current_registry() -> Option<Arc<Registry>> {
-    DEFAULT_REGISTRY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-        .and_then(Weak::upgrade)
+    DEFAULT_REGISTRY.lock().as_ref().and_then(Weak::upgrade)
+}
+
+/// Return the currently-installed explicit registry handle, if one exists.
+///
+/// This is the narrow query seam for owner-installed registries. Callers that
+/// need the compat merged view should continue using [`shared_registry()`].
+#[must_use]
+pub fn current_registry_handle() -> Option<MetricsRegistryHandle> {
+    current_registry().map(MetricsRegistryHandle::Owned)
 }
 
 /// Return the active registration target.
@@ -296,7 +300,7 @@ fn current_registry() -> Option<Arc<Registry>> {
 /// for callers that still want the merged shared/global view.
 #[must_use]
 pub fn active_registry() -> MetricsRegistryHandle {
-    current_registry().map_or(MetricsRegistryHandle::Shared, MetricsRegistryHandle::Owned)
+    current_registry_handle().unwrap_or(MetricsRegistryHandle::Shared)
 }
 
 fn current_registry_ref() -> RegistryRef<'static> {
@@ -399,7 +403,7 @@ const ERROR_CLASS_OTHER: &str = "other";
 // ===================== Router Metrics =====================
 /// Router metrics: track rule matches by category and outbound
 mod router {
-    use super::{register_collector, IntCounterVec, LazyLock};
+    use super::{IntCounterVec, LazyLock, register_collector};
     /// 路由命中计数：按规则类别与出站类型维度统计
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
@@ -424,7 +428,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 // ===================== Outbound Metrics =====================
 /// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
-    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
+    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -521,7 +525,7 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 /// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
-    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
+    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
@@ -567,7 +571,7 @@ mod adapter {
 // ===================== Selector/URLTest Metrics =====================
 /// Selector and `URLTest` metrics
 mod selector {
-    use super::{register_collector, IntCounterVec, LazyLock};
+    use super::{IntCounterVec, LazyLock, register_collector};
     use prometheus::IntGaugeVec;
 
     /// Health check total counter
@@ -688,7 +692,7 @@ pub fn record_adapter_dial(
 // ===================== DERP Service Metrics =====================
 /// DERP service metrics: connections, relays, HTTP/STUN activity.
 mod derp {
-    use super::{guarded_counter_vec, guarded_histogram_vec, register_collector, LazyLock};
+    use super::{LazyLock, guarded_counter_vec, guarded_histogram_vec, register_collector};
     use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec, Opts};
 
     pub static CONNECTION_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -807,8 +811,8 @@ pub fn observe_derp_client_lifetime(tag: &str, seconds: f64) {
 /// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
     use super::{
-        guarded_int_counter, guarded_int_gauge, register_collector, IntCounter, IntCounterVec,
-        IntGauge, LazyLock,
+        IntCounter, IntCounterVec, IntGauge, LazyLock, guarded_int_counter, guarded_int_gauge,
+        register_collector,
     };
 
     /// SOCKS TCP 连接总数（握手成功即计数）
@@ -1083,16 +1087,24 @@ pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) ->
     })
 }
 
-pub fn spawn_http_exporter_from_env(registry: MetricsRegistryHandle) -> Option<JoinHandle<()>> {
-    let addr = std::env::var("SB_METRICS_ADDR").ok()?;
+fn spawn_http_exporter_from_env_addr(
+    registry: MetricsRegistryHandle,
+    addr: &str,
+) -> Option<JoinHandle<()>> {
     let sa: SocketAddr = match addr.parse() {
         Ok(x) => x,
         Err(e) => {
-            warn!(addr=%addr, error=%e, "invalid SB_METRICS_ADDR, metrics disabled");
+            warn!(addr = %addr, error = %e, "invalid SB_METRICS_ADDR, metrics disabled");
             return None;
         }
     };
     Some(spawn_http_exporter(registry, sa))
+}
+
+#[must_use]
+pub fn spawn_http_exporter_from_env(registry: MetricsRegistryHandle) -> Option<JoinHandle<()>> {
+    let addr = std::env::var("SB_METRICS_ADDR").ok()?;
+    spawn_http_exporter_from_env_addr(registry, &addr)
 }
 
 #[must_use]
@@ -1127,6 +1139,12 @@ pub fn export_prometheus_with(registry: &MetricsRegistryHandle) -> String {
         .encode_text()
         .expect("Prometheus encoding should never fail");
     String::from_utf8(buf).expect("Prometheus output should be valid UTF-8")
+}
+
+#[allow(clippy::expect_used)] // Test utility function, panic is acceptable
+#[must_use]
+pub fn export_prometheus_active() -> String {
+    export_prometheus_with(&active_registry())
 }
 
 #[allow(clippy::expect_used)] // Test utility function, panic is acceptable
@@ -1250,8 +1268,13 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn active_registry_switches_to_owned_handle_when_owner_is_installed() {
         assert!(matches!(active_registry(), MetricsRegistryHandle::Shared));
+        assert!(current_registry_handle().is_none());
 
         let owner = install_default_registry_owner();
+        assert!(matches!(
+            current_registry_handle(),
+            Some(MetricsRegistryHandle::Owned(_))
+        ));
         assert!(matches!(active_registry(), MetricsRegistryHandle::Owned(_)));
 
         let gauge = IntGauge::new(
@@ -1268,6 +1291,27 @@ mod tests {
         let text = String::from_utf8(owner.encode_text().unwrap()).unwrap();
         assert!(text.contains("codex_active_registry_owner"));
         assert!(text.contains(" 5"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    #[allow(clippy::unwrap_used)]
+    fn export_prometheus_active_prefers_installed_owner() {
+        let owner = install_default_registry_owner();
+        let gauge = IntGauge::new(
+            "codex_metrics_active_export",
+            "active registry export should prefer the installed owner",
+        )
+        .unwrap();
+        owner
+            .handle()
+            .register_cloned("codex_metrics_active_export", &gauge)
+            .unwrap();
+        gauge.set(31);
+
+        let text = export_prometheus_active();
+        assert!(text.contains("codex_metrics_active_export"));
+        assert!(text.contains(" 31"));
     }
 
     #[test]

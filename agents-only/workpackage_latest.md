@@ -24,25 +24,19 @@
 
 ### 当前维护线（2026-04-03）
 
-- **MT-ADP-01**: sb-adapters test baseline stabilization — 已完成
-  - 当前源码事实下，这条线处理的是 `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` 的既有 baseline failures，不是 parity completion
-  - 开工前复核到的真实失败固定为：
-    - `inbound::hysteria2::tests::connect_via_router_reaches_upstream`
-    - `inbound::tuic::tests::connect_via_router_reaches_upstream`
-    - `inbound::tun_enhanced::tests::bootstrap_tcp_session_fin_with_payload_forwards_then_closes`
-    - `inbound::tun_enhanced::tests::packet_loop_forwards_fin_payload_and_cleans_up`
-    - `register::tests::test_shadowtls_outbound_registration_connect_io_only_for_configured_server`
+- **MT-MLOG-01**: metrics / logging compat-global cleanup — 已完成
+  - 当前源码事实下，这条线处理的是 `logging` / `security_metrics` / `sb-metrics` / `registry_ext` 之间仍真实存在的 compat/current/default/query seams，不是 parity completion
   - 本轮收口：
-    - `crates/sb-adapters/src/testsupport/mod.rs` 新增 deterministic `direct_route_fixture()`
-    - `crates/sb-adapters/src/inbound/{hysteria2,tuic}.rs` 的 route tests 改吃显式 direct fixture，不再依赖 `RouterHandle::from_env()` 的 unresolved baseline
-    - `crates/sb-adapters/src/inbound/tun_session.rs` 新增 `request_shutdown()` 与 `TcpSessionManager::detach()`，`crates/sb-adapters/src/inbound/tun_enhanced.rs` 的 FIN path 改为 graceful drain + detach
-    - `crates/sb-adapters/src/outbound/shadowtls.rs` 为 detour wrapper 增加 requested-endpoint guard；`crates/sb-adapters/src/register.rs` 的测试 fixture 改成 handshake 后回到底层 raw stream
-  - 本卡明确是 maintenance / adapter-baseline quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p sb-adapters --all-features hysteria2 -- --test-threads=1`、`cargo test -p sb-adapters --all-features tuic -- --test-threads=1`、`cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1`、`cargo test -p sb-adapters --all-features register -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib tun_session::tests -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib -- --test-threads=1`、`cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+    - `app/src/logging.rs` 新增 `LoggingOwner::install_compat()`，`init_logging(...)` 退成 thin compat shell
+    - `app/src/admin_debug/security_metrics.rs` 新增 `snapshot_with_control_plane(...)` 与 `compat_snapshot()`，`app/src/admin_debug/mod.rs` 改走显式 owner-first query seam
+    - `app/src/tracing_init.rs` 新增 `spawn_metrics_exporter_if_configured(...)`，把 explicit exporter spawn 与 compat init 壳分开
+    - `crates/sb-metrics/src/lib.rs` 新增 `current_registry_handle()` 与 `export_prometheus_active()`，`DEFAULT_REGISTRY` 当前/默认 registry 路径改用更简单的一层 owner query
+    - `crates/sb-core/src/metrics/registry_ext.rs` 用 `get_or_insert_metric(...)` 统一 register/fallback helper，不再让 fallback tree 重复散落
+  - 本卡明确是 maintenance / observability quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p sb-metrics --all-features --lib -- --test-threads=1`、`cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1`、`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`、`cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
 
+- **MT-ADP-01**: sb-adapters test baseline stabilization — 已完成
 - **MT-PERF-01**: tun / outbound hotspot stabilization — 已完成
-  - TUN session owner、TCP/UDP relay task owner、registry query seam、optimization stale-entry 面已保持稳定
-
 - **MT-RD-01**: router / dns structural consolidation — 已完成
 - **MT-TEST-01**: patch-plan / test baseline stabilization — 已完成
 - **MT-SVC-01**: DERP / services baseline stabilization — 已完成
@@ -58,23 +52,21 @@
 
 ### 当前维护重点（高层）
 
-- `sb-adapters --lib` 当前已恢复到维护期可接受基线；后续若再出现 adapter failures，应按少数高层 boundary 分线，而不是把同一主题继续拆成大量细卡
-- 当前更适合继续观察的高层方向：
-  - ShadowTLS transport-wrapper / detour consumer owner 的更完整模型
-  - TUN TCP lifecycle 的更深层半关闭 corner cases
-  - 若 future baseline 再出现，才切回 protocol-specific integration / e2e 维护线
+- metrics/logging 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 compat/global 尾巴拆成很多小卡：
+  - `sb-metrics` 的 metric-family statics / shared merged view
+  - exporter lifecycle 在 legacy dev-cli / examples 路径上的 detached compat 语义
+  - `admin_debug` 侧 cache / breaker / subs 的更宽 control-plane compat 面
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
 
 ### 构建基线（2026-04-03）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo test -p sb-adapters --all-features hysteria2 -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-adapters --all-features tuic -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-adapters --all-features register -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-adapters --all-features --lib tun_session::tests -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` | ✅ pass (`MT-ADP-01`) |
-| `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` | ✅ pass (`MT-ADP-01`) |
-| `cargo test -p sb-core --all-features --lib -- --test-threads=1` | ✅ pass (`MT-PERF-01` / `MT-SVC-01`) |
-| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-PERF-01` / `MT-SVC-01`) |
+| `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
+| `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
+| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
+| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
+| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |
+| `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |
+| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |

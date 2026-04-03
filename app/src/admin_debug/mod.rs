@@ -155,12 +155,11 @@ impl AdminDebugState {
     /// Returns an error when the control-plane query path cannot gather a
     /// current admin snapshot.
     pub fn security_snapshot(&self) -> anyhow::Result<security_metrics::SecuritySnapshot> {
-        self.security_metrics
-            .snapshot_with_query(security_metrics::SecuritySnapshotQuery::new(
-                &self.cache,
-                &self.breaker,
-                security_metrics::current_concurrency(),
-            ))
+        self.security_metrics.snapshot_with_control_plane(
+            &self.cache,
+            &self.breaker,
+            security_metrics::current_concurrency(),
+        )
     }
 
     #[must_use]

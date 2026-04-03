@@ -8,7 +8,7 @@
 use dashmap::DashMap;
 use once_cell::sync::OnceCell;
 use prometheus::{
-    core::Collector, GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts,
+    GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, core::Collector,
 };
 
 fn reg() -> &'static prometheus::Registry {
@@ -44,6 +44,36 @@ fn finalize_metric_ref<T>(
             metric_ref
         }
     }
+}
+
+fn get_or_insert_metric<T>(
+    map: &DashMap<String, &'static T>,
+    name: &str,
+    metric_kind: &'static str,
+    build: impl FnOnce() -> Result<T, prometheus::Error>,
+    fallback: fn() -> &'static T,
+) -> &'static T
+where
+    T: Collector + Clone + 'static,
+{
+    if let Some(existing) = map.get(name) {
+        return *existing;
+    }
+
+    let metric_ref = match build() {
+        Ok(metric) => leak_and_register_metric(metric),
+        Err(err) => {
+            tracing::warn!(
+                metric = name,
+                kind = metric_kind,
+                error = %err,
+                "failed to construct metrics collector, using fallback"
+            );
+            fallback()
+        }
+    };
+
+    finalize_metric_ref(map, name, metric_ref)
 }
 
 fn counter_fallback() -> &'static IntCounterVec {
@@ -119,20 +149,13 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
     // Enforce label whitelist for CI/consistency
     sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = INT_GAUGE_MAP.get_or_init(DashMap::new);
-
-    if let Some(existing) = map.get(name) {
-        return *existing;
-    }
-
-    let metric_ref: &'static IntGaugeVec = match IntGaugeVec::new(Opts::new(name, help), labels) {
-        Ok(metric) => leak_and_register_metric(metric),
-        Err(err) => {
-            tracing::warn!(metric = name, error = %err, "failed to construct IntGaugeVec, using fallback");
-            gauge_fallback_int()
-        }
-    };
-
-    finalize_metric_ref(map, name, metric_ref)
+    get_or_insert_metric(
+        map,
+        name,
+        "int_gauge_vec",
+        || IntGaugeVec::new(Opts::new(name, help), labels),
+        gauge_fallback_int,
+    )
 }
 
 /// Float GaugeVec accessor to avoid transmute at call sites that need `GaugeVec`.
@@ -140,20 +163,13 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
     // Enforce label whitelist for CI/consistency
     sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = GAUGE_MAP.get_or_init(DashMap::new);
-
-    if let Some(existing) = map.get(name) {
-        return *existing;
-    }
-
-    let metric_ref: &'static GaugeVec = match GaugeVec::new(Opts::new(name, help), labels) {
-        Ok(metric) => leak_and_register_metric(metric),
-        Err(err) => {
-            tracing::warn!(metric = name, error = %err, "failed to construct GaugeVec, using fallback");
-            gauge_fallback_float()
-        }
-    };
-
-    finalize_metric_ref(map, name, metric_ref)
+    get_or_insert_metric(
+        map,
+        name,
+        "gauge_vec",
+        || GaugeVec::new(Opts::new(name, help), labels),
+        gauge_fallback_float,
+    )
 }
 
 pub fn get_or_register_counter_vec(
@@ -164,20 +180,13 @@ pub fn get_or_register_counter_vec(
     // Enforce label whitelist for CI/consistency
     sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = COUNTER_MAP.get_or_init(DashMap::new);
-
-    if let Some(existing) = map.get(name) {
-        return *existing;
-    }
-
-    let metric_ref: &'static IntCounterVec = match IntCounterVec::new(Opts::new(name, help), labels) {
-        Ok(metric) => leak_and_register_metric(metric),
-        Err(err) => {
-            tracing::warn!(metric = name, error = %err, "failed to construct IntCounterVec, using fallback");
-            counter_fallback()
-        }
-    };
-
-    finalize_metric_ref(map, name, metric_ref)
+    get_or_insert_metric(
+        map,
+        name,
+        "int_counter_vec",
+        || IntCounterVec::new(Opts::new(name, help), labels),
+        counter_fallback,
+    )
 }
 
 pub fn get_or_register_histogram_vec(
@@ -190,24 +199,17 @@ pub fn get_or_register_histogram_vec(
     sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = HISTOGRAM_MAP.get_or_init(DashMap::new);
 
-    if let Some(existing) = map.get(name) {
-        return *existing;
-    }
-
     let opts = match buckets {
         Some(b) => HistogramOpts::new(name, help).buckets(b),
         None => HistogramOpts::new(name, help),
     };
-
-    let metric_ref: &'static HistogramVec = match HistogramVec::new(opts, labels) {
-        Ok(metric) => leak_and_register_metric(metric),
-        Err(err) => {
-            tracing::warn!(metric = name, error = %err, "failed to construct HistogramVec, using fallback");
-            histogram_fallback()
-        }
-    };
-
-    finalize_metric_ref(map, name, metric_ref)
+    get_or_insert_metric(
+        map,
+        name,
+        "histogram_vec",
+        || HistogramVec::new(opts, labels),
+        histogram_fallback,
+    )
 }
 
 #[cfg(test)]

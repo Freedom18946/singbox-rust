@@ -24,7 +24,7 @@ use std::io::{self, Write};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 static ACTIVE_RUNTIME: LazyLock<Mutex<Weak<LoggingRuntime>>> =
     LazyLock::new(|| Mutex::new(Weak::new()));
@@ -52,6 +52,19 @@ impl LoggingOwner {
 
     fn runtime(&self) -> &Arc<LoggingRuntime> {
         &self.runtime
+    }
+
+    /// Install this owner into the legacy compat runtime slot.
+    ///
+    /// New runtime paths should keep using the explicit owner directly; this is
+    /// only for callers that still need [`flush_logs()`] and similar compat
+    /// helpers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if another compat runtime has already been installed.
+    pub fn install_compat(&self) -> Result<()> {
+        install_active_runtime_compat(self.runtime())
     }
 
     pub async fn flush(&self) {
@@ -210,7 +223,7 @@ impl LoggingConfig {
 #[allow(dead_code)]
 pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
     let owner = init_logging_with_owner(redactor)?;
-    install_active_runtime_compat(owner.runtime())?;
+    owner.install_compat()?;
     Ok(())
 }
 
@@ -468,7 +481,7 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) -> Option<tokio::task::JoinHa
     // Register signal handlers for graceful shutdown
     let signal_runtime = Arc::clone(&runtime);
     let signal_task = tokio::spawn(async move {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         let mut sigterm = match signal(SignalKind::terminate()) {
             Ok(s) => Some(s),
@@ -688,7 +701,9 @@ mod tests {
             "explicit owner path should not auto-install compat runtime"
         );
 
-        install_active_runtime_compat(owner.runtime()).expect("compat registration should succeed");
+        owner
+            .install_compat()
+            .expect("compat registration should succeed");
         assert!(current_compat_runtime().is_some());
 
         clear_active_runtime_for_test();
