@@ -24,6 +24,16 @@
 
 ### 当前维护线（2026-04-03）
 
+- **MT-DEEP-01**: ShadowTLS / TUN TCP corner-case hardening — 已完成
+  - 当前源码事实下，这条线处理的是 `sb-adapters` 中仍真实存在的 ShadowTLS transport-wrapper / detour endpoint semantics 与 TUN TCP FIN-first / half-close / detach / drain lifecycle seam，不是 parity completion
+  - 本轮收口：
+    - `crates/sb-adapters/src/outbound/shadowtls.rs`：去掉把 requested endpoint 硬绑到 wrapper server 的 guard；`connect_detour_stream(...)` 明确是“拨 configured wrapper server，为 requested endpoint 暴露 raw stream”；v2/v3 bridge 改成 `OwnedBridgeStream` 持有 bridge task owner
+    - `crates/sb-adapters/src/register.rs` + `crates/sb-adapters/tests/shadowtls_e2e.rs`：register / e2e / detour-chain 口径统一为 wrapper-endpoint 与 requested-endpoint 双语义，不再一边要求 configured endpoint、一边依赖 wrapper 透传 raw stream
+    - `crates/sb-adapters/src/inbound/tun_session.rs`：`TcpSessionManager` 新增 detached/draining registry；relay 结束时统一清 active/detached state
+    - `crates/sb-adapters/src/inbound/tun_enhanced.rs`：新增 detached-session packet handling；FIN retransmit 继续回 FIN-ACK，payload-after-fin 显式回 RST 并阻止错误重连；RST close 收成单一路径
+  - 本卡明确是 maintenance / protocol-corner quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1`、`cargo test -p sb-adapters --all-features tun_session -- --test-threads=1`、`cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1`、`cargo test -p sb-adapters --all-features register -- --test-threads=1`、`cargo test -p sb-adapters --all-features --lib -- --test-threads=1`、`cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+
 - **MT-ADM-01**: admin_debug compat surface close-out — 已完成
   - 当前源码事实下，这条线处理的是 `admin_debug` control-plane 中仍真实存在的 cache / breaker / reloadable / subs compat/query/read-path seam，不是 parity completion
   - 本轮收口：
@@ -54,7 +64,10 @@
 
 ### 当前维护重点（高层）
 
-- `admin_debug` 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 compat/read-path 尾巴拆成很多小卡：
+- ShadowTLS / TUN TCP 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 protocol-corner 尾巴拆成很多小卡：
+  - transport-wrapper contract 下的 wrapper endpoint / requested endpoint / detour consumer metadata 统一建模
+  - detached/draining TCP session 的更高层 grace timeout / simultaneous-close / cleanup policy
+- `admin_debug` 这条线也已经压成少数 future boundary：
   - `security_metrics` 默认 owner / compat wrapper
   - `subs` limiter static state (`MAX_CONC` / `RPS_*`)
   - 更大范围的 admin-control-plane manager/query/lifecycle 统一化
@@ -64,6 +77,12 @@
 
 | 构建 | 状态 |
 |------|------|
+| `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
+| `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
+| `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
+| `cargo test -p sb-adapters --all-features register -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
+| `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` | ✅ pass (`MT-DEEP-01`) |
+| `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` | ✅ pass (`MT-DEEP-01`) |
 | `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
 | `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
 | `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |

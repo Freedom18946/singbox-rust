@@ -79,6 +79,7 @@ use {
     std::pin::Pin,
     std::task::{Context, Poll},
     tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
+    tokio::task::JoinHandle,
 };
 
 #[cfg(feature = "adapter-shadowtls")]
@@ -638,12 +639,63 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (user_stream, bridge_stream) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(async move {
+    let bridge_task = tokio::spawn(async move {
         if let Err(err) = run_v2_bridge(io, bridge_stream, first_prefix).await {
             tracing::debug!(error = %err, "shadowtls v2 bridge closed");
         }
     });
-    Box::new(user_stream)
+    boxed_bridge_stream(user_stream, bridge_task)
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+struct OwnedBridgeStream {
+    inner: DuplexStream,
+    bridge_task: JoinHandle<()>,
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl Drop for OwnedBridgeStream {
+    fn drop(&mut self) {
+        self.bridge_task.abort();
+    }
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl AsyncRead for OwnedBridgeStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl AsyncWrite for OwnedBridgeStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+fn boxed_bridge_stream(stream: DuplexStream, bridge_task: JoinHandle<()>) -> BoxedStream {
+    Box::new(OwnedBridgeStream {
+        inner: stream,
+        bridge_task,
+    })
 }
 
 #[cfg(feature = "adapter-shadowtls")]
@@ -805,7 +857,7 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (user_stream, bridge_stream) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(async move {
+    let bridge_task = tokio::spawn(async move {
         let (mut io_read, mut io_write) = tokio::io::split(io);
         let (mut local_read, mut local_write) = tokio::io::split(bridge_stream);
         let mut add_state = new_v3_client_add_state(&password, server_random);
@@ -851,7 +903,7 @@ where
             tracing::debug!(error = %err, "shadowtls v3 bridge closed");
         }
     });
-    Box::new(user_stream)
+    boxed_bridge_stream(user_stream, bridge_task)
 }
 
 /// Configuration for ShadowTLS outbound adapter
@@ -1014,14 +1066,12 @@ impl ShadowTlsConnector {
 
     #[cfg(feature = "adapter-shadowtls")]
     pub async fn connect_detour_stream(&self, host: &str, port: u16) -> Result<BoxedStream> {
-        self.validate_detour_endpoint(host, port)?;
-
         tracing::debug!(
             requested_host = host,
             requested_port = port,
             wrapper_server = %self.cfg.server,
             wrapper_port = self.cfg.port,
-            "shadowtls detour wrapper ignoring requested endpoint and dialing configured wrapper server"
+            "shadowtls detour wrapper dialing configured wrapper server for requested endpoint"
         );
 
         match self.cfg.version {
@@ -1072,18 +1122,6 @@ impl ShadowTlsConnector {
                 ))
             }
             _ => unreachable!("shadowtls detour wrapper version is prevalidated"),
-        }
-    }
-
-    #[cfg(feature = "adapter-shadowtls")]
-    fn validate_detour_endpoint(&self, host: &str, port: u16) -> Result<()> {
-        if host == self.cfg.server && port == self.cfg.port {
-            Ok(())
-        } else {
-            Err(AdapterError::Protocol(format!(
-                "shadowtls detour bridge only supports the configured server {}:{}; requested {host}:{port}",
-                self.cfg.server, self.cfg.port
-            )))
         }
     }
 }
@@ -1138,10 +1176,41 @@ impl OutboundConnector for ShadowTlsConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::oneshot;
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn test_shadowtls_connector_name() {
         let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig::default());
         assert_eq!(c.name(), "shadowtls");
+    }
+
+    #[tokio::test]
+    async fn dropping_owned_bridge_stream_aborts_bridge_task() {
+        struct NotifyOnDrop(Option<oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let (done_tx, done_rx) = oneshot::channel();
+        let (user_stream, _peer_stream) = tokio::io::duplex(1024);
+        let bridge_task = tokio::spawn(async move {
+            let _guard = NotifyOnDrop(Some(done_tx));
+            std::future::pending::<()>().await;
+        });
+        tokio::task::yield_now().await;
+
+        let bridge_stream = boxed_bridge_stream(user_stream, bridge_task);
+        drop(bridge_stream);
+
+        timeout(Duration::from_secs(1), done_rx)
+            .await
+            .expect("bridge task should be aborted when stream drops")
+            .expect("abort drop signal should arrive");
     }
 }

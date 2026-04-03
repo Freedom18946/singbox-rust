@@ -3335,7 +3335,7 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "adapter-shadowtls")]
-    async fn test_shadowtls_outbound_registration_connect_io_only_for_configured_server() {
+    async fn test_shadowtls_outbound_registration_connect_io_exposes_wrapped_raw_stream() {
         use rustls::pki_types::{CertificateDer, PrivateKeyDer};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
@@ -3401,21 +3401,13 @@ mod tests {
             .expect("shadowtls bridge should be constructed");
 
         let mut stream = connector
-            .connect_io("127.0.0.1", server_addr.port())
+            .connect_io("198.51.100.10", 443)
             .await
-            .expect("configured server should be allowed for detour bridge");
+            .expect("detour bridge should expose wrapped raw stream for requested endpoint");
         stream.write_all(b"ping").await.unwrap();
         let mut buf = [0u8; 4];
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"ping");
-
-        let err = match connector.connect_io("198.51.100.10", 443).await {
-            Ok(_) => panic!("non-wrapper target should be rejected"),
-            Err(err) => err,
-        };
-        assert!(err
-            .to_string()
-            .contains("only supports the configured server"));
 
         server_task.await.unwrap();
     }

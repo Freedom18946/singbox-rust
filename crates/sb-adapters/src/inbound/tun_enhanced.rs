@@ -483,7 +483,6 @@ impl EnhancedTunInbound {
                 session.observe_server_ack(packet.acknowledgment_number);
             }
             if packet.is_rst() {
-                session.initiate_close();
                 self.session_manager.remove(&packet.tuple);
                 return Ok(());
             }
@@ -503,6 +502,27 @@ impl EnhancedTunInbound {
             if packet.has_payload() {
                 self.send_tcp_control_packet(&session, writer, 0x10, 0)
                     .await?;
+            }
+            return Ok(());
+        }
+
+        if let Some(session) = self.session_manager.get_detached(&packet.tuple) {
+            if packet.sequence_advance() > 0 {
+                session.observe_client_segment(packet.next_client_seq());
+            }
+            if packet.is_ack() {
+                session.observe_server_ack(packet.acknowledgment_number);
+            }
+            if packet.is_rst() {
+                self.session_manager.remove(&packet.tuple);
+                return Ok(());
+            }
+            if packet.is_fin() {
+                self.send_tcp_control_packet(&session, writer, 0x11, 0).await?;
+                return Ok(());
+            }
+            if packet.has_payload() {
+                self.send_tcp_reset_packet(packet, writer).await?;
             }
             return Ok(());
         }
@@ -1986,6 +2006,154 @@ mod tests {
         let reply = parse_raw_tcp(&packets[1]).expect("parse fin-ack");
         assert_eq!(reply.flags, 0x11);
         assert_eq!(reply.acknowledgment_number, 47);
+        assert_eq!(inbound.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_tcp_session_fin_retransmit_uses_detached_session_state() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+
+        tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept");
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        });
+
+        let mut map = std::collections::HashMap::new();
+        map.insert("direct".to_string(), OutboundImpl::Direct);
+        let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
+        let writer = Arc::new(RecordingTunWriter::default());
+
+        let syn = build_ipv4_tcp_packet_for_test(addr, 0x02, 42, 0, &[]);
+        let syn_packet = parse_raw_tcp(&syn).expect("parse syn");
+        inbound
+            .bootstrap_tcp_session(&syn_packet, writer.clone())
+            .await
+            .expect("bootstrap syn");
+
+        let fin = build_ipv4_tcp_packet_for_test(addr, 0x11, 43, INITIAL_SERVER_SEQ + 1, &[]);
+        let fin_packet = parse_raw_tcp(&fin).expect("parse fin");
+        inbound
+            .bootstrap_tcp_session(&fin_packet, writer.clone())
+            .await
+            .expect("bootstrap fin");
+        inbound
+            .bootstrap_tcp_session(&fin_packet, writer.clone())
+            .await
+            .expect("retransmitted fin");
+
+        let packets = writer.packets.lock().expect("lock packets");
+        let replies: Vec<_> = packets
+            .iter()
+            .map(|packet| parse_raw_tcp(packet).expect("parse reply"))
+            .collect();
+        let fin_acks: Vec<_> = replies.iter().filter(|packet| packet.flags == 0x11).collect();
+        assert!(
+            fin_acks.len() >= 2,
+            "detached session should keep acknowledging retransmitted FINs"
+        );
+        assert_eq!(fin_acks[0].acknowledgment_number, 44);
+        assert_eq!(fin_acks[1].acknowledgment_number, 44);
+        assert!(
+            fin_acks[1].sequence_number >= fin_acks[0].sequence_number,
+            "detached FIN handling must not regress server sequence state"
+        );
+        assert!(
+            replies.iter().all(|packet| packet.flags != 0x14),
+            "retransmitted FIN should not be turned into an RST"
+        );
+        assert_eq!(inbound.session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_tcp_session_payload_after_fin_is_rejected_without_reconnect() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let accept_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let accept_count_server = Arc::clone(&accept_count);
+        let (payload_tx, payload_rx) = oneshot::channel();
+
+        tokio::spawn(async move {
+            let mut payload_tx = Some(payload_tx);
+            loop {
+                let accepted =
+                    tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+                        .await;
+                let Ok(Ok((mut stream, _))) = accepted else {
+                    break;
+                };
+                let seen = accept_count_server.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if seen == 0 {
+                    let mut buf = [0u8; 16];
+                    let n = stream.read(&mut buf).await.expect("read payload");
+                    if let Some(tx) = payload_tx.take() {
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                }
+            }
+        });
+
+        let mut map = std::collections::HashMap::new();
+        map.insert("direct".to_string(), OutboundImpl::Direct);
+        let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
+        let router = Arc::new(RouterHandle::new(Router::with_default(
+            OutboundKind::Direct,
+        )));
+        let inbound =
+            EnhancedTunInbound::with_router(EnhancedTunConfig::default(), outbounds, router);
+        let writer = Arc::new(RecordingTunWriter::default());
+
+        let syn = build_ipv4_tcp_packet_for_test(addr, 0x02, 42, 0, &[]);
+        let syn_packet = parse_raw_tcp(&syn).expect("parse syn");
+        inbound
+            .bootstrap_tcp_session(&syn_packet, writer.clone())
+            .await
+            .expect("bootstrap syn");
+
+        let fin = build_ipv4_tcp_packet_for_test(addr, 0x11, 43, INITIAL_SERVER_SEQ + 1, b"bye");
+        let fin_packet = parse_raw_tcp(&fin).expect("parse fin payload");
+        inbound
+            .bootstrap_tcp_session(&fin_packet, writer.clone())
+            .await
+            .expect("bootstrap fin payload");
+
+        let after_fin = build_ipv4_tcp_packet_for_test(addr, 0x18, 47, INITIAL_SERVER_SEQ + 1, b"late");
+        let after_fin_packet = parse_raw_tcp(&after_fin).expect("parse payload after fin");
+        inbound
+            .bootstrap_tcp_session(&after_fin_packet, writer.clone())
+            .await
+            .expect("payload after fin should be handled");
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), payload_rx)
+            .await
+            .expect("receive within timeout")
+            .expect("payload sent");
+        assert_eq!(received, b"bye");
+
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+
+        let packets = writer.packets.lock().expect("lock packets");
+        let replies: Vec<_> = packets
+            .iter()
+            .map(|packet| parse_raw_tcp(packet).expect("parse reply"))
+            .collect();
+        let rst = replies
+            .iter()
+            .find(|packet| packet.flags == 0x14)
+            .expect("payload after fin should be rejected with rst");
+        assert_eq!(rst.flags, 0x14);
+        assert_eq!(rst.acknowledgment_number, 51);
+        assert_eq!(accept_count.load(std::sync::atomic::Ordering::Relaxed), 1);
         assert_eq!(inbound.session_count(), 0);
     }
 

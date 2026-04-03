@@ -165,19 +165,30 @@ fn tcp_seq_is_newer(candidate: u32, current: u32) -> bool {
 #[derive(Debug)]
 pub struct TcpSessionManager {
     /// Active sessions indexed by four-tuple
-    sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    /// Sessions that already observed a local FIN and are draining/shutting down.
+    detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
 }
 
 impl TcpSessionManager {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(DashMap::new()),
+            active_sessions: Arc::new(DashMap::new()),
+            detached_sessions: Arc::new(DashMap::new()),
         }
     }
 
     /// Get existing session or None
     pub fn get(&self, tuple: &FourTuple) -> Option<Arc<TcpSession>> {
-        self.sessions.get(tuple).map(|entry| Arc::clone(&entry))
+        self.active_sessions
+            .get(tuple)
+            .map(|entry| Arc::clone(&entry))
+    }
+
+    pub fn get_detached(&self, tuple: &FourTuple) -> Option<Arc<TcpSession>> {
+        self.detached_sessions
+            .get(tuple)
+            .map(|entry| Arc::clone(&entry))
     }
 
     /// Create a new session and spawn relay tasks
@@ -223,14 +234,16 @@ impl TcpSessionManager {
 
         // Spawn relay tasks and keep the handles on the session owner.
         let tuple_copy = tuple;
-        let sessions = Arc::clone(&self.sessions);
+        let active_sessions = Arc::clone(&self.active_sessions);
+        let detached_sessions = Arc::clone(&self.detached_sessions);
         let traffic_c = traffic.clone();
         let tun_to_outbound = tokio::spawn(relay_tun_to_outbound(
             to_outbound_rx,
             shutdown_rx,
             outbound_write,
             tuple_copy,
-            Arc::clone(&sessions),
+            Arc::clone(&active_sessions),
+            Arc::clone(&detached_sessions),
             traffic_c,
         ));
 
@@ -239,7 +252,8 @@ impl TcpSessionManager {
             Arc::clone(&session),
             tuple,
             tun_writer,
-            Arc::clone(&self.sessions),
+            Arc::clone(&self.active_sessions),
+            Arc::clone(&self.detached_sessions),
             traffic,
         ));
 
@@ -247,7 +261,7 @@ impl TcpSessionManager {
         session.track_task(outbound_to_tun);
 
         // Insert into session map
-        self.sessions.insert(tuple, Arc::clone(&session));
+        self.active_sessions.insert(tuple, Arc::clone(&session));
 
         debug!(
             "TCP session created: {}:{} -> {}:{}",
@@ -259,7 +273,7 @@ impl TcpSessionManager {
 
     /// Remove a session
     pub fn remove(&self, tuple: &FourTuple) {
-        if let Some((_, session)) = self.sessions.remove(tuple) {
+        if let Some(session) = self.remove_session(tuple) {
             session.initiate_close();
             debug!(
                 "TCP session removed: {}:{} -> {}:{}",
@@ -269,7 +283,8 @@ impl TcpSessionManager {
     }
 
     pub fn detach(&self, tuple: &FourTuple) {
-        if self.sessions.remove(tuple).is_some() {
+        if let Some((_, session)) = self.active_sessions.remove(tuple) {
+            self.detached_sessions.insert(*tuple, session);
             debug!(
                 "TCP session detached: {}:{} -> {}:{}",
                 tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
@@ -279,7 +294,14 @@ impl TcpSessionManager {
 
     /// Get number of active sessions
     pub fn count(&self) -> usize {
-        self.sessions.len()
+        self.active_sessions.len()
+    }
+
+    fn remove_session(&self, tuple: &FourTuple) -> Option<Arc<TcpSession>> {
+        self.active_sessions
+            .remove(tuple)
+            .map(|(_, session)| session)
+            .or_else(|| self.detached_sessions.remove(tuple).map(|(_, session)| session))
     }
 }
 
@@ -296,7 +318,8 @@ async fn relay_tun_to_outbound(
     mut shutdown_rx: oneshot::Receiver<()>,
     mut outbound_write: tokio::net::tcp::OwnedWriteHalf,
     tuple: FourTuple,
-    sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
     // TUN -> Outbound relay (this task)
@@ -359,7 +382,8 @@ async fn relay_tun_to_outbound(
     }
 
     // Cleanup on connection close
-    sessions.remove(&tuple);
+    active_sessions.remove(&tuple);
+    detached_sessions.remove(&tuple);
     debug!(
         "TCP relay TUN->Outbound closed: {}:{} -> {}:{}",
         tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
@@ -372,7 +396,8 @@ async fn relay_outbound_to_tun(
     session: Arc<TcpSession>,
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
-    sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
 ) {
     let mut buf = vec![0u8; 8192];
@@ -439,7 +464,8 @@ async fn relay_outbound_to_tun(
     }
 
     // Cleanup session
-    sessions.remove(&tuple);
+    active_sessions.remove(&tuple);
+    detached_sessions.remove(&tuple);
     debug!(
         "TCP relay Outbound->TUN closed: {}:{} -> {}:{}",
         tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
@@ -680,5 +706,35 @@ mod tests {
         assert_eq!(received, b"bye");
         server_task.await.expect("server task should finish");
         assert_eq!(manager.count(), 0);
+    }
+
+    #[test]
+    fn test_detach_moves_session_into_draining_registry() {
+        let manager = TcpSessionManager::new();
+        let tuple = FourTuple::new(
+            "10.0.0.2".parse().unwrap(),
+            34567,
+            "93.184.216.34".parse().unwrap(),
+            80,
+        );
+        let session = Arc::new(TcpSession {
+            tuple,
+            created_at: Instant::now(),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1000),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: parking_lot::Mutex::new(None),
+            tasks: parking_lot::Mutex::new(Vec::new()),
+        });
+
+        manager.active_sessions.insert(tuple, Arc::clone(&session));
+        manager.detach(&tuple);
+
+        assert!(manager.get(&tuple).is_none());
+        assert!(manager.get_detached(&tuple).is_some());
+        manager.remove(&tuple);
+        assert!(manager.get_detached(&tuple).is_none());
     }
 }

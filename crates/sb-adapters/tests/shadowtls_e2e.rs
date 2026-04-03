@@ -479,7 +479,7 @@ async fn shadowtls_standalone_rejection_happens_before_network_io() {
 }
 
 #[tokio::test]
-async fn shadowtls_detour_wrapper_connects_for_configured_server() {
+async fn shadowtls_detour_wrapper_connects_for_requested_endpoint_via_configured_wrapper() {
     let (echo_addr, echo_task) = start_tcp_echo_server()
         .await
         .expect("failed to bind tcp echo listener");
@@ -501,7 +501,7 @@ async fn shadowtls_detour_wrapper_connects_for_configured_server() {
     let mut stream = connector
         .connect_detour_stream("127.0.0.1", echo_addr.port())
         .await
-        .expect("shadowtls detour wrapper should connect");
+        .expect("shadowtls detour wrapper should preserve requested endpoint semantics");
     stream.write_all(b"ping").await.unwrap();
     let mut buf = [0u8; 4];
     stream.read_exact(&mut buf).await.unwrap();
@@ -513,7 +513,7 @@ async fn shadowtls_detour_wrapper_connects_for_configured_server() {
 }
 
 #[tokio::test]
-async fn shadowtls_detour_wrapper_ignores_requested_target() {
+async fn shadowtls_detour_wrapper_uses_configured_wrapper_for_arbitrary_requested_target() {
     let (echo_addr, echo_task) = start_tcp_echo_server()
         .await
         .expect("failed to bind tcp echo listener");
@@ -535,7 +535,7 @@ async fn shadowtls_detour_wrapper_ignores_requested_target() {
     let mut stream = connector
         .connect_detour_stream("198.51.100.10", 8443)
         .await
-        .expect("wrapper should ignore requested target");
+        .expect("wrapper should dial configured server while exposing requested endpoint semantics");
     stream.write_all(b"ping").await.unwrap();
     let mut buf = [0u8; 4];
     stream.read_exact(&mut buf).await.unwrap();
@@ -547,7 +547,7 @@ async fn shadowtls_detour_wrapper_ignores_requested_target() {
 }
 
 #[tokio::test]
-async fn shadowtls_v2_detour_wrapper_connects_for_configured_server() {
+async fn shadowtls_v2_detour_wrapper_connects_for_requested_endpoint_via_configured_wrapper() {
     let (echo_addr, echo_task) = start_tcp_echo_server()
         .await
         .expect("failed to bind tcp echo listener");
@@ -570,7 +570,7 @@ async fn shadowtls_v2_detour_wrapper_connects_for_configured_server() {
     let mut stream = connector
         .connect_detour_stream("127.0.0.1", echo_addr.port())
         .await
-        .expect("shadowtls v2 detour wrapper should connect");
+        .expect("shadowtls v2 detour wrapper should preserve requested endpoint semantics");
     stream.write_all(b"ping").await.unwrap();
     let mut buf = [0u8; 4];
     stream.read_exact(&mut buf).await.unwrap();
@@ -625,7 +625,7 @@ async fn shadowtls_registry_builder_exposes_detour_only_connect_io() {
     let mut stream = connector
         .connect_io("198.51.100.10", 443)
         .await
-        .expect("wrapper connect_io should ignore requested target");
+        .expect("wrapper connect_io should expose wrapped raw stream for requested endpoint");
     stream.write_all(b"ping").await.unwrap();
     let mut buf = [0u8; 4];
     stream.read_exact(&mut buf).await.unwrap();
