@@ -53,7 +53,19 @@ struct ConfigPutResponse<'a> {
 /// # Errors
 /// Returns an IO error if the response cannot be written to the socket
 pub async fn handle_get(sock: &mut (impl AsyncWrite + Unpin)) -> std::io::Result<()> {
-    let cfg = reloadable::get();
+    handle_get_with_state(sock, None).await
+}
+
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket.
+pub async fn handle_get_with_state(
+    sock: &mut (impl AsyncWrite + Unpin),
+    state: Option<&crate::admin_debug::AdminDebugState>,
+) -> std::io::Result<()> {
+    let cfg = state.map_or_else(
+        reloadable::get,
+        crate::admin_debug::AdminDebugState::reloadable_config,
+    );
     let view = ConfigView { cfg };
     let body = serde_json::to_string(&view).unwrap_or_else(|_| "{}".to_string());
     respond(sock, 200, "application/json", &body).await
@@ -65,6 +77,7 @@ pub async fn handle_put<S>(
     sock: &mut (impl AsyncRead + AsyncWrite + Unpin),
     body: bytes::Bytes,
     headers: &std::collections::HashMap<String, String, S>,
+    state: Option<&crate::admin_debug::AdminDebugState>,
 ) -> std::io::Result<()>
 where
     S: std::hash::BuildHasher,
@@ -115,7 +128,12 @@ where
     };
 
     // Apply (or simulate) the delta
-    match reloadable::apply_with_dryrun(&delta, dry) {
+    let apply_result = state.map_or_else(
+        || reloadable::apply_with_dryrun(&delta, dry),
+        |state| state.apply_config_delta(&delta, dry),
+    );
+
+    match apply_result {
         Ok(app) => {
             // Audit with changed field
             let entry = audit::create_entry(
@@ -187,5 +205,14 @@ mod tests {
         let delta: ConfigDelta = serde_json::from_str(json).unwrap();
         assert_eq!(delta.max_redirects, None);
         assert_eq!(delta.timeout_ms, None);
+    }
+
+    #[test]
+    fn config_endpoint_source_pin_prefers_admin_state_owner() {
+        let source = include_str!("config.rs");
+
+        assert!(source.contains("handle_get_with_state("));
+        assert!(source.contains("state.apply_config_delta(&delta, dry)"));
+        assert!(source.contains("AdminDebugState::reloadable_config"));
     }
 }

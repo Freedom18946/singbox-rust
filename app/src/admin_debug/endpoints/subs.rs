@@ -60,7 +60,9 @@ fn parse_env_usize(key: &str, def: usize) -> usize {
     match trimmed.parse::<usize>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {def}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {def}: {err}"
+            );
             def
         }
     }
@@ -76,7 +78,9 @@ fn parse_env_u64(key: &str, def: u64) -> u64 {
     match trimmed.parse::<u64>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {def}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {def}: {err}"
+            );
             def
         }
     }
@@ -91,7 +95,7 @@ fn parse_env_bool(key: &str, def: bool) -> bool {
 
 #[cfg(feature = "subs_http")]
 fn limiter_init() {
-    let config = reloadable::get();
+    let config = reloadable::default_owner_ref().get();
 
     MAX_CONC.get_or_init(|| {
         DESIRED_CONCURRENCY.store(config.max_concurrency, Ordering::Relaxed);
@@ -420,11 +424,61 @@ fn legacy_metrics_owner() -> Option<Arc<SecurityMetricsState>> {
     crate::admin_debug::security_metrics::current_owner()
 }
 
+#[cfg(feature = "subs_http")]
+pub struct SubsControlPlane<'a> {
+    cache: &'a cache::CacheStore,
+    breaker: &'a breaker::BreakerStore,
+    reloadable: &'a reloadable::ReloadableConfigStore,
+}
+
+#[cfg(feature = "subs_http")]
+impl<'a> SubsControlPlane<'a> {
+    #[must_use]
+    pub const fn new(
+        cache: &'a cache::CacheStore,
+        breaker: &'a breaker::BreakerStore,
+        reloadable: &'a reloadable::ReloadableConfigStore,
+    ) -> Self {
+        Self {
+            cache,
+            breaker,
+            reloadable,
+        }
+    }
+
+    #[must_use]
+    pub const fn cache(&self) -> &'a cache::CacheStore {
+        self.cache
+    }
+
+    #[must_use]
+    pub const fn breaker(&self) -> &'a breaker::BreakerStore {
+        self.breaker
+    }
+
+    #[must_use]
+    pub fn config(&self) -> reloadable::EnvConfig {
+        self.reloadable.get()
+    }
+}
+
+#[cfg(feature = "subs_http")]
+impl SubsControlPlane<'static> {
+    #[must_use]
+    fn compat() -> Self {
+        Self::new(
+            cache::default_owner_ref(),
+            breaker::default_owner_ref(),
+            reloadable::default_owner_ref(),
+        )
+    }
+}
+
 /// # Errors
 /// Returns an error if fetching fails due to rate limiting, circuit breaker, network issues, or response processing errors
 #[cfg(feature = "subs_http")]
 pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
-    fetch_with_limits_inner(url, legacy_metrics_owner()).await
+    fetch_with_limits_inner(url, SubsControlPlane::compat(), legacy_metrics_owner()).await
 }
 
 /// # Errors
@@ -434,12 +488,13 @@ pub async fn fetch_with_limits_with_metrics(
     url: &str,
     metrics: Arc<SecurityMetricsState>,
 ) -> anyhow::Result<String> {
-    fetch_with_limits_inner(url, Some(metrics)).await
+    fetch_with_limits_inner(url, SubsControlPlane::compat(), Some(metrics)).await
 }
 
 #[cfg(feature = "subs_http")]
 async fn fetch_with_limits_inner(
     url: &str,
+    query: SubsControlPlane<'_>,
     metrics: Option<Arc<SecurityMetricsState>>,
 ) -> anyhow::Result<String> {
     metrics_inc_total_requests(metrics.as_deref());
@@ -461,17 +516,15 @@ async fn fetch_with_limits_inner(
         let host = parsed.host_str().unwrap_or("").to_string();
 
         // Circuit breaker check
-        if let Ok(mut br) = breaker::global().lock() {
-            if !br.check(&host) {
-                metrics_inc_breaker_block(metrics.as_deref());
-                metrics_set_last_error_with_host(
-                    SecurityErrorKind::Other,
-                    &host,
-                    "circuit breaker open",
-                    metrics.as_deref(),
-                );
-                anyhow::bail!("circuit breaker open for host: {host}");
-            }
+        if !query.breaker().allows(&host) {
+            metrics_inc_breaker_block(metrics.as_deref());
+            metrics_set_last_error_with_host(
+                SecurityErrorKind::Other,
+                &host,
+                "circuit breaker open",
+                metrics.as_deref(),
+            );
+            anyhow::bail!("circuit breaker open for host: {host}");
         }
         // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
         if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
@@ -498,7 +551,7 @@ async fn fetch_with_limits_inner(
         }
 
         // Get current configuration
-        let config = reloadable::get();
+        let config = query.config();
         let _max_redirects = config.max_redirects;
         let timeout_ms = config.timeout_ms;
         let size_limit = config.max_bytes;
@@ -516,23 +569,19 @@ async fn fetch_with_limits_inner(
         // Try cache first and prepare conditional request
         let mut if_none_match = None;
         let mut has_cached_entry = false;
-        if let Ok(mut lru) = cache::global().lock() {
-            if let Some(cached_tier_entry) = lru.get(url) {
-                metrics_inc_cache_hit(metrics.as_deref());
-                if_none_match = cached_tier_entry.etag().cloned();
-                has_cached_entry = true;
-            } else {
-                metrics_inc_cache_miss(metrics.as_deref());
-            }
+        if let Some(cached_tier_entry) = query.cache().entry(url) {
+            metrics_inc_cache_hit(metrics.as_deref());
+            if_none_match = cached_tier_entry.etag().cloned();
+            has_cached_entry = true;
+        } else {
+            metrics_inc_cache_miss(metrics.as_deref());
         }
 
         // HEAD pre-exploration if no cached ETag available
         let mut head_etag = None;
         if !has_cached_entry && std::env::var("SB_SUBS_HEAD_PRECHECK").ok().as_deref() == Some("1")
         {
-            if let Ok(mut lru) = cache::global().lock() {
-                lru.inc_head_count();
-            }
+            query.cache().note_head_request();
             metrics_inc_head_total(metrics.as_deref());
 
             let _head_resp = match tokio::time::timeout(
@@ -605,13 +654,7 @@ async fn fetch_with_limits_inner(
                     );
                 }
                 // Mark circuit breaker failure
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
                 return Err(e.into());
             }
             Err(_) => {
@@ -623,34 +666,24 @@ async fn fetch_with_limits_inner(
                     metrics.as_deref(),
                 );
                 // Mark circuit breaker failure
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
                 return Err(anyhow::anyhow!("timeout"));
             }
         };
 
         // Handle 304 Not Modified - return cached content
         if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
-            if let Ok(mut lru) = cache::global().lock() {
-                if let Some(cached_tier_entry) = lru.get(resp.url().as_str()) {
-                    // Handle both memory and disk cached entries
-                    let cached_body = cached_tier_entry
-                        .get_body()
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
-                    let cached_string = String::from_utf8_lossy(&cached_body).to_string();
-                    metrics_record_latency_ms(t0.elapsed().as_millis() as u64, metrics.as_deref());
-                    metrics_mark_last_ok(metrics.as_deref());
-                    // Trigger prefetch for successful 304 response
-                    let et_local: Option<String> = cached_tier_entry.etag().cloned();
-                    maybe_enqueue_prefetch(&resp, et_local.as_ref(), metrics.clone());
-                    return Ok(cached_string);
-                }
+            if let Some(cached_tier_entry) = query.cache().entry(resp.url().as_str()) {
+                let cached_body = cached_tier_entry
+                    .get_body()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to read cached body: {e}"))?;
+                let cached_string = String::from_utf8_lossy(&cached_body).to_string();
+                metrics_record_latency_ms(t0.elapsed().as_millis() as u64, metrics.as_deref());
+                metrics_mark_last_ok(metrics.as_deref());
+                let et_local: Option<String> = cached_tier_entry.etag().cloned();
+                maybe_enqueue_prefetch(&resp, et_local.as_ref(), metrics.clone());
+                return Ok(cached_string);
             }
             anyhow::bail!("cache miss on 304 response");
         }
@@ -706,13 +739,7 @@ async fn fetch_with_limits_inner(
             }
             // Mark circuit breaker failure for server errors
             if (500..600).contains(&code) {
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
             }
             anyhow::bail!("upstream status {status}");
         }
@@ -827,21 +854,17 @@ async fn fetch_with_limits_inner(
         let out = String::from_utf8_lossy(&body).to_string();
 
         // Store in cache with ETag and Content-Type if available
-        if let Ok(mut lru) = cache::global().lock() {
-            let cache_entry = cache::CacheEntry {
+        query.cache().store(
+            url.to_string(),
+            cache::CacheEntry {
                 etag: response_etag.clone(),
                 content_type: response_content_type,
                 body: body.to_vec(),
                 timestamp: std::time::Instant::now(),
-            };
+            },
+        );
 
-            lru.put(url.to_string(), cache_entry);
-        }
-
-        // Mark circuit breaker success
-        if let Ok(mut br) = breaker::global().lock() {
-            br.mark_success(&host);
-        }
+        query.breaker().record_success(&host);
 
         metrics_mark_last_ok(metrics.as_deref());
         // Trigger prefetch for successful 200 response
@@ -872,7 +895,14 @@ pub async fn fetch_with_limits_to_cache(
     etag: Option<String>,
     is_prefetch: bool,
 ) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
-    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, legacy_metrics_owner()).await
+    fetch_with_limits_to_cache_inner(
+        url,
+        etag,
+        is_prefetch,
+        SubsControlPlane::compat(),
+        legacy_metrics_owner(),
+    )
+    .await
 }
 
 #[cfg(feature = "subs_http")]
@@ -882,7 +912,14 @@ pub async fn fetch_with_limits_to_cache_with_metrics(
     is_prefetch: bool,
     metrics: Arc<SecurityMetricsState>,
 ) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
-    fetch_with_limits_to_cache_inner(url, etag, is_prefetch, Some(metrics)).await
+    fetch_with_limits_to_cache_inner(
+        url,
+        etag,
+        is_prefetch,
+        SubsControlPlane::compat(),
+        Some(metrics),
+    )
+    .await
 }
 
 #[cfg(feature = "subs_http")]
@@ -890,6 +927,7 @@ async fn fetch_with_limits_to_cache_inner(
     url: &str,
     etag: Option<String>,
     is_prefetch: bool,
+    query: SubsControlPlane<'_>,
     metrics: Option<Arc<SecurityMetricsState>>,
 ) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
     metrics_inc_total_requests(metrics.as_deref());
@@ -910,17 +948,15 @@ async fn fetch_with_limits_to_cache_inner(
     let host = parsed.host_str().unwrap_or("").to_string();
 
     // Circuit breaker check
-    if let Ok(mut br) = breaker::global().lock() {
-        if !br.check(&host) {
-            metrics_inc_breaker_block(metrics.as_deref());
-            metrics_set_last_error_with_host(
-                SecurityErrorKind::Other,
-                &host,
-                "circuit breaker open",
-                metrics.as_deref(),
-            );
-            anyhow::bail!("circuit breaker open for host: {host}");
-        }
+    if !query.breaker().allows(&host) {
+        metrics_inc_breaker_block(metrics.as_deref());
+        metrics_set_last_error_with_host(
+            SecurityErrorKind::Other,
+            &host,
+            "circuit breaker open",
+            metrics.as_deref(),
+        );
+        anyhow::bail!("circuit breaker open for host: {host}");
     }
 
     // Async security checks
@@ -948,7 +984,7 @@ async fn fetch_with_limits_to_cache_inner(
     }
 
     // Get current configuration
-    let config = reloadable::get();
+    let config = query.config();
     let _max_redirects = config.max_redirects;
     let timeout_ms = config.timeout_ms;
     let size_limit = config.max_bytes;
@@ -965,15 +1001,13 @@ async fn fetch_with_limits_to_cache_inner(
 
     // Check cache first
     let mut if_none_match = etag;
-    if let Ok(mut lru) = cache::global().lock() {
-        if let Some(cached_tier_entry) = lru.get(url) {
-            metrics_inc_cache_hit(metrics.as_deref());
-            if if_none_match.is_none() {
-                if_none_match = cached_tier_entry.etag().cloned();
-            }
-        } else {
-            metrics_inc_cache_miss(metrics.as_deref());
+    if let Some(cached_tier_entry) = query.cache().entry(url) {
+        metrics_inc_cache_hit(metrics.as_deref());
+        if if_none_match.is_none() {
+            if_none_match = cached_tier_entry.etag().cloned();
         }
+    } else {
+        metrics_inc_cache_miss(metrics.as_deref());
     }
 
     // Build request with conditional headers if we have an ETag
@@ -1000,13 +1034,7 @@ async fn fetch_with_limits_to_cache_inner(
                     metrics.as_deref(),
                 );
             }
-            if let Ok(mut br) = breaker::global().lock() {
-                if let Some(metrics) = metrics.as_deref() {
-                    br.mark_failure_with_metrics(&host, metrics);
-                } else {
-                    br.mark_failure(&host);
-                }
-            }
+            query.breaker().record_failure(&host, metrics.as_deref());
             return Err(e.into());
         }
         Err(_) => {
@@ -1017,28 +1045,14 @@ async fn fetch_with_limits_to_cache_inner(
                 "overall timeout",
                 metrics.as_deref(),
             );
-            if let Ok(mut br) = breaker::global().lock() {
-                if let Some(metrics) = metrics.as_deref() {
-                    br.mark_failure_with_metrics(&host, metrics);
-                } else {
-                    br.mark_failure(&host);
-                }
-            }
+            query.breaker().record_failure(&host, metrics.as_deref());
             return Err(anyhow::anyhow!("timeout"));
         }
     };
 
     // Handle 304 Not Modified
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
-        let cached_entry = {
-            if let Ok(mut lru) = cache::global().lock() {
-                lru.get(resp.url().as_str())
-            } else {
-                None
-            }
-        };
-
-        if let Some(cached_tier_entry) = cached_entry {
+        if let Some(cached_tier_entry) = query.cache().entry(resp.url().as_str()) {
             let cached_body = cached_tier_entry
                 .get_body()
                 .await
@@ -1077,13 +1091,7 @@ async fn fetch_with_limits_to_cache_inner(
                         metrics.as_deref(),
                     );
                 }
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
                 return Err(e.into());
             }
             Err(_) => {
@@ -1094,13 +1102,7 @@ async fn fetch_with_limits_to_cache_inner(
                     "timeout on fallback",
                     metrics.as_deref(),
                 );
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
                 return Err(anyhow::anyhow!("timeout on fallback"));
             }
         };
@@ -1127,13 +1129,7 @@ async fn fetch_with_limits_to_cache_inner(
                 );
             }
             if (500..600).contains(&code) {
-                if let Ok(mut br) = breaker::global().lock() {
-                    if let Some(metrics) = metrics.as_deref() {
-                        br.mark_failure_with_metrics(&host, metrics);
-                    } else {
-                        br.mark_failure(&host);
-                    }
-                }
+                query.breaker().record_failure(&host, metrics.as_deref());
             }
             anyhow::bail!("upstream status {status} on fallback");
         }
@@ -1199,14 +1195,11 @@ async fn fetch_with_limits_to_cache_inner(
         };
 
         // Store in cache
-        if let Ok(mut lru) = cache::global().lock() {
-            lru.put(url.to_string(), fresh_cache_entry.clone());
-        }
+        query
+            .cache()
+            .store(url.to_string(), fresh_cache_entry.clone());
 
-        // Mark circuit breaker success
-        if let Ok(mut br) = breaker::global().lock() {
-            br.mark_success(&host);
-        }
+        query.breaker().record_success(&host);
 
         metrics_mark_last_ok(metrics.as_deref());
         // Trigger prefetch for successful fallback 200 response
@@ -1252,13 +1245,7 @@ async fn fetch_with_limits_to_cache_inner(
             );
         }
         if (500..600).contains(&code) {
-            if let Ok(mut br) = breaker::global().lock() {
-                if let Some(metrics) = metrics.as_deref() {
-                    br.mark_failure_with_metrics(&host, metrics);
-                } else {
-                    br.mark_failure(&host);
-                }
-            }
+            query.breaker().record_failure(&host, metrics.as_deref());
         }
         anyhow::bail!("upstream status {status}");
     }
@@ -1324,14 +1311,9 @@ async fn fetch_with_limits_to_cache_inner(
     };
 
     // Store in cache
-    if let Ok(mut lru) = cache::global().lock() {
-        lru.put(url.to_string(), cache_entry.clone());
-    }
+    query.cache().store(url.to_string(), cache_entry.clone());
 
-    // Mark circuit breaker success
-    if let Ok(mut br) = breaker::global().lock() {
-        br.mark_success(&host);
-    }
+    query.breaker().record_success(&host);
 
     metrics_mark_last_ok(metrics.as_deref());
     // Trigger prefetch for successful 200 response
@@ -2034,6 +2016,20 @@ mod tests {
     use std::time::{Duration, Instant};
     use tokio::io::{duplex, AsyncReadExt};
     use tokio::time::sleep;
+
+    #[test]
+    fn subs_control_plane_source_pin_keeps_cache_breaker_query_local() {
+        let source = include_str!("subs.rs");
+        let runtime_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+
+        assert!(source.contains("struct SubsControlPlane"));
+        assert!(source.contains("SubsControlPlane::compat()"));
+        assert!(source.contains("query.breaker().record_failure"));
+        assert!(source.contains("query.cache().entry("));
+        assert!(source.contains("query.cache().store("));
+        assert!(!runtime_source.contains("breaker::global().lock()"));
+        assert!(!runtime_source.contains("cache::global().lock()"));
+    }
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]

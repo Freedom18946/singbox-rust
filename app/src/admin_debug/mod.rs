@@ -115,6 +115,11 @@ impl AdminDebugState {
     }
 
     #[must_use]
+    pub fn reloadable_config(&self) -> reloadable::EnvConfig {
+        self.reloadable.get()
+    }
+
+    #[must_use]
     pub fn prefetch_queue_high_watermark(&self) -> u64 {
         self.security_metrics.get_prefetch_queue_high_watermark()
     }
@@ -162,9 +167,31 @@ impl AdminDebugState {
         )
     }
 
+    pub fn apply_config_delta(
+        &self,
+        delta: &endpoints::config::ConfigDelta,
+        dry_run: bool,
+    ) -> Result<reloadable::ApplyResult, String> {
+        self.reloadable.apply_with_dryrun(delta, dry_run)
+    }
+
     #[must_use]
     pub fn config_version(&self) -> u64 {
         self.reloadable.version()
+    }
+
+    #[cfg(any(
+        feature = "subs_http",
+        feature = "subs_clash",
+        feature = "subs_singbox"
+    ))]
+    #[must_use]
+    pub fn subs_control_plane(&self) -> endpoints::subs::SubsControlPlane<'_> {
+        endpoints::subs::SubsControlPlane::new(
+            self.cache.as_ref(),
+            self.breaker.as_ref(),
+            self.reloadable.as_ref(),
+        )
     }
 }
 
@@ -194,6 +221,9 @@ mod tests {
 
         assert!(source.contains("async fn spawn_http_server("));
         assert!(source.contains("fn spawn_plain_http_server_sync("));
+        assert!(source.contains("fn reloadable_config(&self)"));
+        assert!(source.contains("fn apply_config_delta("));
+        assert!(source.contains("fn subs_control_plane(&self)"));
         assert!(source.contains("state.spawn_plain_http_server_sync(bind_addr)"));
         assert!(admin_start.contains("admin_state.spawn_http_server("));
         assert!(!admin_start.contains("http_server::spawn("));

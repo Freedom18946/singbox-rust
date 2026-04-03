@@ -393,12 +393,43 @@ impl BreakerStore {
         self.breaker.lock()
     }
 
+    #[must_use]
+    pub fn allows(&self, host: &str) -> bool {
+        self.breaker
+            .lock()
+            .map(|mut breaker| breaker.check(host))
+            .unwrap_or(true)
+    }
+
+    pub fn record_success(&self, host: &str) {
+        if let Ok(mut breaker) = self.breaker.lock() {
+            breaker.mark_success(host);
+        }
+    }
+
+    pub fn record_failure(&self, host: &str, metrics: Option<&SecurityMetricsState>) {
+        if let Ok(mut breaker) = self.breaker.lock() {
+            if let Some(metrics) = metrics {
+                breaker.mark_failure_with_metrics(host, metrics);
+            } else {
+                breaker.mark_failure(host);
+            }
+        }
+    }
+
     /// # Errors
     /// Returns an error when the breaker mutex is poisoned.
     pub fn state_stats_snapshot(&self) -> anyhow::Result<Vec<(String, String, u32)>> {
         self.lock()
             .map_err(|_| anyhow::anyhow!("admin breaker lock poisoned"))
             .map(|breaker| breaker.state_stats())
+    }
+
+    #[cfg(test)]
+    pub fn reset(&self) {
+        if let Ok(mut breaker) = self.breaker.lock() {
+            breaker.reset();
+        }
     }
 }
 
@@ -556,6 +587,34 @@ mod tests {
             .snapshot()
             .expect("explicit metrics snapshot should succeed");
         assert_eq!(snapshot.subs_breaker_reopen, 1);
+    }
+
+    #[test]
+    fn breaker_store_owner_helpers_roundtrip_state() {
+        let _clock = setup_test_clock();
+        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+        let store = BreakerStore {
+            breaker: Mutex::new(HostBreaker::new(10_000, 1_000, 2, 0.9)),
+        };
+
+        assert!(store.allows("owner-roundtrip.test"));
+        store.record_failure("owner-roundtrip.test", Some(&metrics));
+        assert!(store.allows("owner-roundtrip.test"));
+        store.record_failure("owner-roundtrip.test", Some(&metrics));
+        assert!(
+            !store.allows("owner-roundtrip.test"),
+            "owner helper should surface the open breaker state"
+        );
+        assert!(!store
+            .state_stats_snapshot()
+            .expect("breaker snapshot should succeed")
+            .is_empty());
+
+        store.reset();
+        assert!(store
+            .state_stats_snapshot()
+            .expect("breaker snapshot should succeed")
+            .is_empty());
     }
 
     #[test]

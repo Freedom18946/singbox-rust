@@ -4,8 +4,8 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex as StdMutex;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -792,12 +792,8 @@ pub fn reset_metrics() {
 
 #[cfg(test)]
 pub fn reset_caches() {
-    if let Ok(mut cache) = crate::admin_debug::cache::global().lock() {
-        cache.clear();
-    }
-    if let Ok(mut breaker) = crate::admin_debug::breaker::global().lock() {
-        *breaker = crate::admin_debug::breaker::HostBreaker::new(30_000, 15_000, 5, 0.5);
-    }
+    crate::admin_debug::cache::default_owner_ref().reset();
+    crate::admin_debug::breaker::default_owner_ref().reset();
 }
 
 #[cfg(test)]

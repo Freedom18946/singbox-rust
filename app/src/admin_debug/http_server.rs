@@ -776,10 +776,12 @@ async fn route_full_request(
     match (method, path) {
         ("GET", "/__health") => endpoints::handle_health(s, state).await?,
         ("GET", "/__metrics") => endpoints::metrics::handle(s, state).await?,
-        ("GET", "/__config") => endpoints::handle_config_get(s).await?,
+        ("GET", "/__config") => {
+            endpoints::handle_config_get_with_state(s, Some(state.as_ref())).await?;
+        }
         ("PUT", "/__config") => {
             let body = read_request_body(s, headers).await?;
-            endpoints::handle_config_put(s, body, headers).await?;
+            endpoints::handle_config_put(s, body, headers, Some(state.as_ref())).await?;
         }
         (_, p) if p.starts_with("/router/geoip") => {
             endpoints::handle_geoip(p, s).await?;
@@ -1239,6 +1241,8 @@ async fn handle_connection(
             )
             .await?;
         }
+    } else if path_q == "/__config" {
+        endpoints::handle_config_get_with_state(&mut stream, Some(state.as_ref())).await?;
     } else {
         respond_json_error(&mut stream, 404, "endpoint not found", None).await?;
     }
@@ -1497,6 +1501,14 @@ mod tests {
         // Test no auth mode
         std::env::remove_var("SB_ADMIN_TOKEN");
         assert_eq!(get_auth_mode(), "none");
+    }
+
+    #[test]
+    fn http_server_routes_config_through_admin_state_owner() {
+        let source = include_str!("http_server.rs");
+
+        assert!(source.contains("handle_config_get_with_state(s, Some(state.as_ref()))"));
+        assert!(source.contains("handle_config_put(s, body, headers, Some(state.as_ref()))"));
     }
 
     #[test]

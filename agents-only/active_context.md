@@ -6,49 +6,50 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-MLOG-01` metrics / logging compat-global cleanup — 已完成；`MT-ADP-01`、`MT-PERF-01`、`MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01`、`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01`、`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
+**当前维护线**: `MT-ADM-01` admin_debug compat surface close-out — 已完成；`MT-MLOG-01`、`MT-ADP-01`、`MT-PERF-01`、`MT-RD-01`、`MT-TEST-01`、`MT-SVC-01`、`MT-HOT-OBS-01`、`MT-RTC-03`、`MT-RTC-02`、`MT-RTC-01`、`MT-OBS-01` 与 `WP-30` 继续保持已完成 / 已归档状态
 
 ## 最近完成（2026-04-03）
 
-### MT-MLOG-01：metrics / logging compat-global cleanup — 已完成
-- 本卡按当前源码与工作区事实推进，性质明确为 maintenance / observability quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- 开工前复核确认：`app/src/logging.rs`、`app/src/admin_debug/security_metrics.rs`、`crates/sb-metrics/src/lib.rs`、`crates/sb-core/src/metrics/registry_ext.rs` 仍有值得继续收口的一层 compat/current/default plumbing；`app/src/telemetry.rs`、`app/src/runtime_deps.rs`、`app/src/analyze/registry.rs` 当前邻接 seam 已可接受，不为凑卡硬改
+### MT-ADM-01：admin_debug compat surface close-out — 已完成
+- 本卡按当前源码与工作区事实推进，性质明确为 maintenance / admin-control-plane quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+- 开工前复核确认：`app/src/admin_debug/endpoints/subs.rs` 仍散落 `cache::global()` / `breaker::global()` / `reloadable::get()` 读写壳；`app/src/admin_debug/endpoints/config.rs` 与 `app/src/admin_debug/http_server.rs` 仍走 reloadable compat helper；`middleware/rate_limit.rs`、`security_metrics.rs` 主体 owner/query seam 已基本稳定，不为凑卡硬改
 - 本轮真实收口：
-  - `app/src/logging.rs`：`LoggingOwner::install_compat()` 成为显式 compat 安装入口；`init_logging(...)` 退成 thin compat shell，owner-first 路径不再需要直接摸 `ACTIVE_RUNTIME`
-  - `app/src/admin_debug/security_metrics.rs`：新增 `snapshot_with_control_plane(...)` 与 `compat_snapshot()`，把 owner-first read path 和 legacy default/current snapshot 壳分开；`app/src/admin_debug/mod.rs` 改走显式 control-plane query seam
-  - `app/src/tracing_init.rs`：新增 `spawn_metrics_exporter_if_configured(...)`，把“显式 exporter spawn”与 `init_metrics_exporter_once(...)` 的 compat 壳分开
-  - `crates/sb-metrics/src/lib.rs`：`DEFAULT_REGISTRY` 改用 `parking_lot::Mutex`，新增 `current_registry_handle()` 与 `export_prometheus_active()`；`active/current/shared` 语义更清楚，env exporter parse/spawn helper 不再重复散落
-  - `crates/sb-core/src/metrics/registry_ext.rs`：新增 `get_or_insert_metric(...)`，统一 counter/gauge/histogram 的 construct/register/fallback plumbing，减少重复 compat/fallback 树
+  - `app/src/admin_debug/cache.rs`：`CacheStore` 补 `entry()`、`store()`、`note_head_request()`、`reset()`，把 subs 读缓存 / 写缓存 / HEAD 计数路径收成 owner-first helper
+  - `app/src/admin_debug/breaker.rs`：`BreakerStore` 补 `allows()`、`record_success()`、`record_failure()`、`reset()`，subs 不再直接摸 breaker compat/global 锁
+  - `app/src/admin_debug/reloadable.rs`：`ReloadableConfigStore` 显式拥有 `apply()` / `apply_with_dryrun()`；legacy free functions 退成 compat shell；新增 `default_owner_ref()` 只作为少数 compat builder 入口
+  - `app/src/admin_debug/endpoints/subs.rs`：新增 `SubsControlPlane`；`fetch_with_limits*` / `fetch_with_limits_to_cache*` 统一通过 `SubsControlPlane::compat()` 入场，内部不再散落 `cache::global()` / `breaker::global()` / `reloadable::get()`
+  - `app/src/admin_debug/mod.rs`：`AdminDebugState` 新增 `reloadable_config()`、`apply_config_delta()`、`subs_control_plane()`，把 config / subs 邻接读路径明确挂到 state owner 上
+  - `app/src/admin_debug/endpoints/config.rs` + `app/src/admin_debug/http_server.rs`：`/__config` GET/PUT 改走 `AdminDebugState` owner-first reloadable query/apply seam；旧 endpoint wrapper 继续保留 compat fallback
+  - `app/src/admin_debug/security_metrics.rs`：test reset path 改走 cache/breaker owner helper，不再回到 compat/global 锁
 - 本轮新增 / 强化的关键 pin：
-  - `app/src/admin_debug/security_metrics.rs`：`explicit_snapshot_with_control_plane_uses_supplied_owner_state`
-  - `crates/sb-metrics/src/lib.rs`：`active_registry_switches_to_owned_handle_when_owner_is_installed`、`export_prometheus_active_prefers_installed_owner`
-  - `app/src/logging.rs` 既有 `explicit_owner_does_not_install_compat_registry` 与 `explicit_owner_flush_cancels_owned_signal_task` 继续 pin 住 owner/compat 边界
+  - `app/src/admin_debug/cache.rs`：`cache_store_owner_helpers_roundtrip_entries`
+  - `app/src/admin_debug/breaker.rs`：`breaker_store_owner_helpers_roundtrip_state`
+  - `app/src/admin_debug/endpoints/config.rs`：`config_endpoint_source_pin_prefers_admin_state_owner`
+  - `app/src/admin_debug/endpoints/subs.rs`：`subs_control_plane_source_pin_keeps_cache_breaker_query_local`
+  - `app/src/admin_debug/http_server.rs`：`http_server_routes_config_through_admin_state_owner`
+  - 既有 `handle_with_metrics_records_private_target_block_on_explicit_owner`、`explicit_snapshot_with_control_plane_uses_supplied_owner_state`、`admin_debug_state_keeps_http_server_wiring_owner_local` 继续 pin 住边界
 
 ## 当前稳定事实
-- `logging` 的 compat shell 已压缩到少数明确入口：`init_logging(...)` 与 `flush_logs()`
-- `security_metrics` 的 owner-first读路径已明确收口到 `snapshot_with_control_plane(...)`；legacy `snapshot()` 继续仅作为 compat wrapper
-- `sb-metrics` 的 registry 安装 / 当前 owner 查询 / active export 语义已对齐一轮；shared/global merged view 仍只留在兼容路径
-- `tracing_init.rs` / `telemetry.rs` / `runtime_deps.rs` 当前没有被重新做大；prom exporter owner 主线仍在 `run_engine_runtime/context.rs`
+- `admin_debug` 下 cache / breaker / reloadable 的 compat surface 已压缩到少数明确入口：`SubsControlPlane::compat()`、`reloadable::{get,apply,apply_with_dryrun}` compat wrapper、`security_metrics::compat_snapshot()`
+- `subs.rs` 的主读写链路现在围绕 `SubsControlPlane + CacheStore/BreakerStore` helper 展开，不再在多个分支重复散落 global/default/current 锁访问
+- `__config` 控制面请求已明确经 `AdminDebugState` 读取/应用 reloadable owner，而不是从 `http_server` 直接落回模块级 helper
+- `middleware/rate_limit.rs`、`http_server` accept/join lifecycle、`reload signal` owner、`security_metrics` snapshot seam 当前不值得继续为凑卡硬拆
 - `planned.rs` 仍是 staged crate-private seam；当前仓库仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- 当前 workspace 仍存在大量无关在制改动；本卡只触达 metrics/logging 相关文件与 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
+- 当前 workspace 仍存在大量无关在制改动；本卡只触达 admin_debug 直接相关文件与 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
 
 ## 当前验证事实
 - 已通过：
-  - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1`
-  - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1`
   - `cargo test -p app --all-features --lib -- --test-threads=1`
   - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`
   - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`
   - `cargo clippy -p app --all-features --all-targets -- -D warnings`
-  - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
-  - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
 
 ## Future Work（高层方向）
-- metrics/logging 剩余债务现在应压缩成少数高层 boundary：
-  - `sb-metrics` 里仍然存在大量 `LazyLock` metric family statics；只有在真实 owner/query 收益出现时再继续动
-  - dev-cli / examples / legacy exporter 启动路径仍有 detached compat 语义，但 runtime 主线已经由 `PromExporterHandle` 持有；后续若继续收口，应围绕 exporter lifecycle owner，而不是继续散修 helper
-  - `admin_debug` 里 cache / breaker / subs legacy wrappers 仍有更宽的 compat 面；若再推进，应按 control-plane read/write boundary 成组处理，而不是细碎拆卡
+- `admin_debug` 剩余债务现在应压缩成少数高层 boundary：
+  - `security_metrics` 仍保留 `DEFAULT_STATE` / `with_current` compat wrapper；只有在真实 owner/query consumer 出现时再继续收
+  - `subs` limiter 本体仍有 `MAX_CONC` / `RPS_*` 一层 static state；只有在出现明确 owner-bearing limiter consumer 时再处理
+  - 更深层的 admin-control-plane manager/query 统一化，若再推进，应成组处理 config/subs/prefetch/security 生命周期，不继续散修 helper
 
 ## 归档判断
 - `WP-30` 继续视为 archive baseline，`ef333bb7` 仍是归档基线
-- `MT-MLOG-01` 已完成；当前 metrics/logging 剩余债务已压缩成少数高层 future boundary，不值得继续拆很多小卡
+- `MT-ADM-01` 已完成；`admin_debug` 剩余债务已压缩成少数高层 future boundary，不值得继续拆很多小尾巴

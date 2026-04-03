@@ -24,17 +24,19 @@
 
 ### 当前维护线（2026-04-03）
 
-- **MT-MLOG-01**: metrics / logging compat-global cleanup — 已完成
-  - 当前源码事实下，这条线处理的是 `logging` / `security_metrics` / `sb-metrics` / `registry_ext` 之间仍真实存在的 compat/current/default/query seams，不是 parity completion
+- **MT-ADM-01**: admin_debug compat surface close-out — 已完成
+  - 当前源码事实下，这条线处理的是 `admin_debug` control-plane 中仍真实存在的 cache / breaker / reloadable / subs compat/query/read-path seam，不是 parity completion
   - 本轮收口：
-    - `app/src/logging.rs` 新增 `LoggingOwner::install_compat()`，`init_logging(...)` 退成 thin compat shell
-    - `app/src/admin_debug/security_metrics.rs` 新增 `snapshot_with_control_plane(...)` 与 `compat_snapshot()`，`app/src/admin_debug/mod.rs` 改走显式 owner-first query seam
-    - `app/src/tracing_init.rs` 新增 `spawn_metrics_exporter_if_configured(...)`，把 explicit exporter spawn 与 compat init 壳分开
-    - `crates/sb-metrics/src/lib.rs` 新增 `current_registry_handle()` 与 `export_prometheus_active()`，`DEFAULT_REGISTRY` 当前/默认 registry 路径改用更简单的一层 owner query
-    - `crates/sb-core/src/metrics/registry_ext.rs` 用 `get_or_insert_metric(...)` 统一 register/fallback helper，不再让 fallback tree 重复散落
-  - 本卡明确是 maintenance / observability quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-  - 验收通过：`cargo test -p sb-metrics --all-features --lib -- --test-threads=1`、`cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1`、`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`、`cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`、`cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+    - `app/src/admin_debug/cache.rs`：`CacheStore` 新增 owner-first `entry()` / `store()` / `note_head_request()`
+    - `app/src/admin_debug/breaker.rs`：`BreakerStore` 新增 owner-first `allows()` / `record_success()` / `record_failure()`
+    - `app/src/admin_debug/reloadable.rs`：`ReloadableConfigStore` 显式拥有 `apply()` / `apply_with_dryrun()`；legacy free helper 退成 compat shell
+    - `app/src/admin_debug/endpoints/subs.rs`：新增 `SubsControlPlane`，`fetch_with_limits*` / `fetch_with_limits_to_cache*` 的 compat 面集中到 `SubsControlPlane::compat()`
+    - `app/src/admin_debug/mod.rs` / `app/src/admin_debug/endpoints/config.rs` / `app/src/admin_debug/http_server.rs`：`__config` GET/PUT 改走 `AdminDebugState` owner-first reloadable query/apply seam
+    - `app/src/admin_debug/security_metrics.rs`：测试 reset path 改走 cache/breaker owner helper，不再摸 compat/global 锁
+  - 本卡明确是 maintenance / admin-control-plane quality work，不是 dual-kernel parity completion；也没有推进 `planned.rs`、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
+  - 验收通过：`cargo test -p app --all-features --lib -- --test-threads=1`、`cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`、`cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`、`cargo clippy -p app --all-features --all-targets -- -D warnings`
 
+- **MT-MLOG-01**: metrics / logging compat-global cleanup — 已完成
 - **MT-ADP-01**: sb-adapters test baseline stabilization — 已完成
 - **MT-PERF-01**: tun / outbound hotspot stabilization — 已完成
 - **MT-RD-01**: router / dns structural consolidation — 已完成
@@ -52,21 +54,17 @@
 
 ### 当前维护重点（高层）
 
-- metrics/logging 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 compat/global 尾巴拆成很多小卡：
-  - `sb-metrics` 的 metric-family statics / shared merged view
-  - exporter lifecycle 在 legacy dev-cli / examples 路径上的 detached compat 语义
-  - `admin_debug` 侧 cache / breaker / subs 的更宽 control-plane compat 面
+- `admin_debug` 这条线当前更合适的表达已经是少数高层 future boundary，而不是继续把 compat/read-path 尾巴拆成很多小卡：
+  - `security_metrics` 默认 owner / compat wrapper
+  - `subs` limiter static state (`MAX_CONC` / `RPS_*`)
+  - 更大范围的 admin-control-plane manager/query/lifecycle 统一化
 - 配置高层 future boundary 保持不变：不恢复 `WP-30k` 式拆卡，不误推进 public `RuntimePlan` / `PlannedConfigIR`
 
 ### 构建基线（2026-04-03）
 
 | 构建 | 状态 |
 |------|------|
-| `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
-| `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
-| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
-| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
-| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-MLOG-01`) |
-| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |
-| `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |
-| `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` | ✅ pass (`MT-MLOG-01`) |
+| `cargo test -p app --all-features --lib -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
+| `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
+| `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` | ✅ pass (`MT-ADM-01`) |
+| `cargo clippy -p app --all-features --all-targets -- -D warnings` | ✅ pass (`MT-ADM-01`) |

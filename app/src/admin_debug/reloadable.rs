@@ -219,6 +219,84 @@ impl ReloadableConfigStore {
         ))]
         crate::admin_debug::endpoints::subs::resize_limiters(cfg.max_concurrency, cfg.rps);
     }
+
+    pub fn apply(
+        &self,
+        delta: &crate::admin_debug::endpoints::config::ConfigDelta,
+    ) -> Result<String, String> {
+        let mut config = self.get();
+        let changes = apply_to_config(&mut config, delta)?;
+
+        if changes.is_empty() {
+            return Ok("No changes applied".to_string());
+        }
+
+        #[cfg(any(
+            feature = "subs_http",
+            feature = "subs_clash",
+            feature = "subs_singbox"
+        ))]
+        crate::admin_debug::endpoints::subs::resize_limiters(config.max_concurrency, config.rps);
+
+        tracing::info!(changes = ?changes, "Configuration applied via API");
+
+        self.config.store(Arc::new(config));
+        self.version.fetch_add(1, Ordering::Relaxed);
+
+        Ok(format!("Applied changes: {}", changes.join(", ")))
+    }
+
+    pub fn apply_with_dryrun(
+        &self,
+        delta: &crate::admin_debug::endpoints::config::ConfigDelta,
+        dry_run: bool,
+    ) -> Result<ApplyResult, String> {
+        let before_cfg = self.config.load();
+        let before = serde_json::to_value(&**before_cfg).unwrap_or_else(|_| serde_json::json!({}));
+
+        let mut temp_config = (**before_cfg).clone();
+        let changes = apply_to_config(&mut temp_config, delta)?;
+
+        let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
+        let diff = json_diff_enhanced(&before, &after);
+        let has_changed = !diff_is_empty(&diff);
+
+        let current_version = self.version.load(Ordering::Relaxed);
+
+        if dry_run {
+            Ok(ApplyResult {
+                ok: false,
+                msg: "dryrun".to_string(),
+                version: current_version,
+                changed: has_changed,
+                diff,
+            })
+        } else if has_changed {
+            let mut new_cfg = (**before_cfg).clone();
+            let _ = apply_to_config(&mut new_cfg, delta)?;
+            self.config.store(Arc::new(new_cfg));
+            let new_version = self.version.fetch_add(1, Ordering::Relaxed) + 1;
+            Ok(ApplyResult {
+                ok: true,
+                msg: if changes.is_empty() {
+                    "applied".to_string()
+                } else {
+                    format!("Applied changes: {}", changes.join(", "))
+                },
+                version: new_version,
+                changed: true,
+                diff,
+            })
+        } else {
+            Ok(ApplyResult {
+                ok: true,
+                msg: "no changes".to_string(),
+                version: current_version,
+                changed: false,
+                diff,
+            })
+        }
+    }
 }
 
 static DEFAULT_STORE: OnceCell<Arc<ReloadableConfigStore>> = OnceCell::new();
@@ -237,6 +315,10 @@ fn default_store() -> &'static Arc<ReloadableConfigStore> {
     DEFAULT_STORE.get_or_init(|| Arc::new(ReloadableConfigStore::from_env()))
 }
 
+pub(crate) fn default_owner_ref() -> &'static ReloadableConfigStore {
+    default_store().as_ref()
+}
+
 pub fn get() -> EnvConfig {
     default_store().get()
 }
@@ -247,119 +329,7 @@ pub fn get_arc() -> Arc<EnvConfig> {
 }
 
 pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<String, String> {
-    let store = default_store();
-    let arc = &store.config;
-    let mut config = (**arc.load()).clone();
-    let mut changes = Vec::new();
-
-    // Apply changes from delta
-    if let Some(max_redirects) = delta.max_redirects {
-        if max_redirects > 20 {
-            return Err("max_redirects too large (max: 20)".to_string());
-        }
-        config.max_redirects = max_redirects;
-        changes.push(format!("max_redirects: {max_redirects}"));
-    }
-
-    if let Some(timeout_ms) = delta.timeout_ms {
-        if !(100..=60000).contains(&timeout_ms) {
-            return Err("timeout_ms out of range (100-60000)".to_string());
-        }
-        config.timeout_ms = timeout_ms;
-        changes.push(format!("timeout_ms: {timeout_ms}"));
-    }
-
-    if let Some(max_bytes) = delta.max_bytes {
-        if max_bytes > 10 * 1024 * 1024 {
-            return Err("max_bytes too large (max: 10MB)".to_string());
-        }
-        config.max_bytes = max_bytes;
-        changes.push(format!("max_bytes: {max_bytes}"));
-    }
-
-    if let Some(max_concurrency) = delta.max_concurrency {
-        if max_concurrency == 0 || max_concurrency > 1000 {
-            return Err("max_concurrency out of range (1-1000)".to_string());
-        }
-        config.max_concurrency = max_concurrency;
-        changes.push(format!("max_concurrency: {max_concurrency}"));
-    }
-
-    if let Some(rps) = delta.rps {
-        if rps == 0 || rps > 10000 {
-            return Err("rps out of range (1-10000)".to_string());
-        }
-        config.rps = rps;
-        changes.push(format!("rps: {rps}"));
-    }
-
-    if let Some(cache_capacity) = delta.cache_capacity {
-        if cache_capacity > 10000 {
-            return Err("cache_capacity too large (max: 10000)".to_string());
-        }
-        config.cache_capacity = cache_capacity;
-        changes.push(format!("cache_capacity: {cache_capacity}"));
-    }
-
-    if let Some(cache_ttl_ms) = delta.cache_ttl_ms {
-        if cache_ttl_ms > 24 * 60 * 60 * 1000 {
-            return Err("cache_ttl_ms too large (max: 24h)".to_string());
-        }
-        config.cache_ttl_ms = cache_ttl_ms;
-        changes.push(format!("cache_ttl_ms: {cache_ttl_ms}"));
-    }
-
-    if let Some(breaker_window_ms) = delta.breaker_window_ms {
-        if !(1000..=5 * 60 * 1000).contains(&breaker_window_ms) {
-            return Err("breaker_window_ms out of range (1s-5min)".to_string());
-        }
-        config.breaker_window_ms = breaker_window_ms;
-        changes.push(format!("breaker_window_ms: {breaker_window_ms}"));
-    }
-
-    if let Some(breaker_open_ms) = delta.breaker_open_ms {
-        if !(1000..=10 * 60 * 1000).contains(&breaker_open_ms) {
-            return Err("breaker_open_ms out of range (1s-10min)".to_string());
-        }
-        config.breaker_open_ms = breaker_open_ms;
-        changes.push(format!("breaker_open_ms: {breaker_open_ms}"));
-    }
-
-    if let Some(breaker_failures) = delta.breaker_failures {
-        if breaker_failures == 0 || breaker_failures > 100 {
-            return Err("breaker_failures out of range (1-100)".to_string());
-        }
-        config.breaker_failures = breaker_failures;
-        changes.push(format!("breaker_failures: {breaker_failures}"));
-    }
-
-    if let Some(breaker_ratio) = delta.breaker_ratio {
-        if !(0.1..=1.0).contains(&breaker_ratio) {
-            return Err("breaker_ratio out of range (0.1-1.0)".to_string());
-        }
-        config.breaker_ratio = breaker_ratio;
-        changes.push(format!("breaker_ratio: {breaker_ratio:.2}"));
-    }
-
-    if changes.is_empty() {
-        return Ok("No changes applied".to_string());
-    }
-
-    // Apply hot updates to subsystems
-    #[cfg(any(
-        feature = "subs_http",
-        feature = "subs_clash",
-        feature = "subs_singbox"
-    ))]
-    crate::admin_debug::endpoints::subs::resize_limiters(config.max_concurrency, config.rps);
-
-    tracing::info!(changes = ?changes, "Configuration applied via API");
-
-    // commit atomically
-    arc.store(Arc::new(config));
-    store.version.fetch_add(1, Ordering::Relaxed);
-
-    Ok(format!("Applied changes: {}", changes.join(", ")))
+    default_store().apply(delta)
 }
 
 pub fn version() -> u64 {
@@ -476,58 +446,7 @@ pub fn apply_with_dryrun(
     delta: &crate::admin_debug::endpoints::config::ConfigDelta,
     dry_run: bool,
 ) -> Result<ApplyResult, String> {
-    let store = default_store();
-    let arc = &store.config;
-    let ctr = &store.version;
-
-    let before_cfg = arc.load();
-    let before = serde_json::to_value(&**before_cfg).unwrap_or_else(|_| serde_json::json!({}));
-
-    // Create a temp copy and apply changes to compute diff
-    let mut temp_config = (**before_cfg).clone();
-    let changes = apply_to_config(&mut temp_config, delta)?;
-
-    let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
-    let diff = json_diff_enhanced(&before, &after);
-    let has_changed = !diff_is_empty(&diff);
-
-    let current_version = ctr.load(Ordering::Relaxed);
-
-    if dry_run {
-        Ok(ApplyResult {
-            ok: false,
-            msg: "dryrun".to_string(),
-            version: current_version,
-            changed: has_changed,
-            diff,
-        })
-    } else if has_changed {
-        // Compute new config and commit atomically
-        let mut new_cfg = (**before_cfg).clone();
-        let _ = apply_to_config(&mut new_cfg, delta)?;
-        arc.store(Arc::new(new_cfg));
-        let new_version = ctr.fetch_add(1, Ordering::Relaxed) + 1;
-        Ok(ApplyResult {
-            ok: true,
-            msg: if changes.is_empty() {
-                "applied".to_string()
-            } else {
-                format!("Applied changes: {}", changes.join(", "))
-            },
-            version: new_version,
-            changed: true,
-            diff,
-        })
-    } else {
-        // No changes, don't bump version
-        Ok(ApplyResult {
-            ok: true,
-            msg: "no changes".to_string(),
-            version: current_version,
-            changed: false,
-            diff,
-        })
-    }
+    default_store().apply_with_dryrun(delta, dry_run)
 }
 
 pub fn reload() {

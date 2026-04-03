@@ -358,12 +358,36 @@ impl CacheStore {
         self.cache.lock()
     }
 
+    #[must_use]
+    pub fn entry(&self, key: &str) -> Option<TierEntry> {
+        self.cache.lock().ok().and_then(|mut cache| cache.get(key))
+    }
+
+    pub fn store(&self, key: String, value: CacheEntry) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.put(key, value);
+        }
+    }
+
+    pub fn note_head_request(&self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.inc_head_count();
+        }
+    }
+
     /// # Errors
     /// Returns an error when the cache mutex is poisoned.
     pub fn byte_usage_snapshot(&self) -> anyhow::Result<(usize, usize)> {
         self.lock()
             .map_err(|_| anyhow::anyhow!("admin cache lock poisoned"))
             .map(|cache| cache.byte_usage())
+    }
+
+    #[cfg(test)]
+    pub fn reset(&self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
     }
 }
 
@@ -516,6 +540,31 @@ mod tests {
         assert_eq!(lru.size(), 1);
         assert!(lru.get("big1").is_none()); // Should be evicted
         assert!(lru.get("big2").is_some()); // Should still exist
+    }
+
+    #[test]
+    fn cache_store_owner_helpers_roundtrip_entries() {
+        let store = CacheStore::from_env();
+        store.store(
+            "owner-roundtrip".to_string(),
+            CacheEntry {
+                etag: Some("etag-1".to_string()),
+                content_type: Some("text/plain".to_string()),
+                body: b"body".to_vec(),
+                timestamp: Instant::now(),
+            },
+        );
+        store.note_head_request();
+
+        let entry = store
+            .entry("owner-roundtrip")
+            .expect("owner helper should return stored entry");
+        assert_eq!(entry.body_len(), 4);
+        assert_eq!(entry.etag().map(String::as_str), Some("etag-1"));
+        assert_eq!(store.lock().unwrap().metrics().2, 1);
+
+        store.reset();
+        assert!(store.entry("owner-roundtrip").is_none());
     }
 
     #[test]

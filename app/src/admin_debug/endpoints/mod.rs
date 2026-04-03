@@ -17,7 +17,10 @@ pub mod analyze;
 #[cfg(feature = "route_sandbox")]
 pub mod route_dryrun;
 
-pub use config::{handle_get as handle_config_get, handle_put as handle_config_put};
+pub use config::{
+    handle_get as handle_config_get, handle_get_with_state as handle_config_get_with_state,
+    handle_put as handle_config_put,
+};
 pub use geoip::handle as handle_geoip;
 pub use health::handle as handle_health;
 pub use normalize::handle as handle_normalize;
