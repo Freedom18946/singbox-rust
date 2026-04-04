@@ -124,7 +124,10 @@ fn unknown_field_in_nested_tls_is_rejected() {
         }
     }"#;
     let result = serde_json::from_str::<Outbound>(json);
-    assert!(result.is_err(), "unknown field in nested TLS should be rejected");
+    assert!(
+        result.is_err(),
+        "unknown field in nested TLS should be rejected"
+    );
 }
 
 #[test]
@@ -140,7 +143,10 @@ fn unknown_field_in_nested_transport_ws_is_rejected() {
         }
     }"#;
     let result = serde_json::from_str::<Outbound>(json);
-    assert!(result.is_err(), "unknown field in nested transport should be rejected");
+    assert!(
+        result.is_err(),
+        "unknown field in nested transport should be rejected"
+    );
 }
 
 #[test]
@@ -155,7 +161,10 @@ fn unknown_field_in_nested_multiplex_is_rejected() {
         }
     }"#;
     let result = serde_json::from_str::<Outbound>(json);
-    assert!(result.is_err(), "unknown field in nested multiplex should be rejected");
+    assert!(
+        result.is_err(),
+        "unknown field in nested multiplex should be rejected"
+    );
 }
 
 // ─────────────────── Known configs still parse ─────────────────
@@ -478,7 +487,10 @@ fn validated_outbound_serialize_deserialize_roundtrip() {
             assert_eq!(a.network, b.network);
             assert_eq!(a.packet_encoding, b.packet_encoding);
             assert_eq!(a.connect_timeout_sec, b.connect_timeout_sec);
-            assert_eq!(a.tls.as_ref().unwrap().enabled, b.tls.as_ref().unwrap().enabled);
+            assert_eq!(
+                a.tls.as_ref().unwrap().enabled,
+                b.tls.as_ref().unwrap().enabled
+            );
             assert_eq!(a.tls.as_ref().unwrap().sni, b.tls.as_ref().unwrap().sni);
         }
         _ => panic!("Expected both to be Vless"),

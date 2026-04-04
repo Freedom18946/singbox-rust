@@ -19,9 +19,8 @@ pub fn workspace_bin(name: &str) -> PathBuf {
     }
     let mut path = workspace_root();
     path.push("target");
-    let profile = std::env::var("CARGO_PROFILE").unwrap_or_else(|_| {
-        std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string())
-    });
+    let profile = std::env::var("CARGO_PROFILE")
+        .unwrap_or_else(|_| std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string()));
     path.push(profile);
     path.push(name);
     if cfg!(windows) {

@@ -436,13 +436,16 @@ mod tests {
         );
         assert!(issues
             .iter()
-            .any(|i| i["ptr"].as_str() == Some("/bogus_root") && i["code"].as_str() == Some("UnknownField")));
+            .any(|i| i["ptr"].as_str() == Some("/bogus_root")
+                && i["code"].as_str() == Some("UnknownField")));
         assert!(issues
             .iter()
-            .any(|i| i["ptr"].as_str() == Some("/inbounds/0/bogus_inbound") && i["code"].as_str() == Some("UnknownField")));
+            .any(|i| i["ptr"].as_str() == Some("/inbounds/0/bogus_inbound")
+                && i["code"].as_str() == Some("UnknownField")));
         assert!(issues
             .iter()
-            .any(|i| i["ptr"].as_str() == Some("/outbounds/0/tag") && i["code"].as_str() == Some("Deprecated")));
+            .any(|i| i["ptr"].as_str() == Some("/outbounds/0/tag")
+                && i["code"].as_str() == Some("Deprecated")));
         assert!(issues
             .iter()
             .any(|i| i["code"].as_str() == Some("InsecureBinding")));
@@ -684,11 +687,7 @@ mod tests {
         assert_eq!(ir.route.final_outbound.as_deref(), Some("http-out"));
         assert_eq!(ir.services[0].tag.as_deref(), Some("resolved-svc"));
         assert_eq!(
-            ir.dns
-                .as_ref()
-                .expect("dns should be lowered")
-                .servers[0]
-                .tag,
+            ir.dns.as_ref().expect("dns should be lowered").servers[0].tag,
             "dns-out"
         );
         assert_eq!(ir.endpoints[0].tag.as_deref(), Some("wg-ep"));
@@ -737,7 +736,9 @@ mod tests {
         assert!(
             !mod_source.contains("let mut issues = Vec::<Value>::new();")
                 && !mod_source.contains("let mut ir = crate::ir::ConfigIR::default();")
-                && !mod_source.contains("json!({ \"issues\": issues, \"fingerprint\": env!(\"CARGO_PKG_VERSION\") })"),
+                && !mod_source.contains(
+                    "json!({ \"issues\": issues, \"fingerprint\": env!(\"CARGO_PKG_VERSION\") })"
+                ),
             "mod.rs must no longer own the facade implementation bodies"
         );
     }

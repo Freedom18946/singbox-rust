@@ -64,7 +64,10 @@ mod imp {
         // Metrics exporter integration point - admin_debug provides HTTP metrics endpoint
         #[cfg(feature = "admin_debug")]
         {
-            Some(crate::admin_debug::init(None, Arc::clone(&deps.admin_state())))
+            Some(crate::admin_debug::init(
+                None,
+                Arc::clone(&deps.admin_state()),
+            ))
         }
         #[cfg(not(feature = "admin_debug"))]
         {

@@ -4,8 +4,8 @@
 //! owner. It reads validated IR and emits a legacy JSON-shaped view; it does
 //! not collect or consume `PlannedFacts`, and it does not bind references.
 
-use crate::Config;
 use crate::ir::ConfigIR;
+use crate::Config;
 use anyhow::Result;
 use serde_json::{Map, Value};
 

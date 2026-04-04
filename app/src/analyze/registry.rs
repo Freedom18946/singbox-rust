@@ -100,6 +100,8 @@ mod tests {
             .build_by_kind("echo", &serde_json::json!({"a":1}))
             .expect("registered test builder");
         assert_eq!(got["echo"]["a"], 1);
-        assert!(registry.build_by_kind("nope", &serde_json::json!({})).is_err());
+        assert!(registry
+            .build_by_kind("nope", &serde_json::json!({}))
+            .is_err());
     }
 }

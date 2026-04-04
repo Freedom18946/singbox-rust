@@ -199,9 +199,7 @@ pub(crate) fn lower_endpoints(doc: &Value, ir: &mut ConfigIR) {
                 .get("exit_node_allow_lan_access")
                 .and_then(|v| v.as_bool()),
             tailscale_advertise_routes: extract_string_list(e.get("advertise_routes")),
-            tailscale_advertise_exit_node: e
-                .get("advertise_exit_node")
-                .and_then(|v| v.as_bool()),
+            tailscale_advertise_exit_node: e.get("advertise_exit_node").and_then(|v| v.as_bool()),
             tailscale_udp_timeout: e
                 .get("udp_timeout")
                 .and_then(|v| v.as_str())
@@ -361,11 +359,17 @@ mod tests {
         let ir = run_lower(&doc);
         let ep = &ir.endpoints[0];
         assert_eq!(ep.tag.as_deref(), Some("wg0"));
-        assert_eq!(ep.network.as_ref().unwrap(), &vec!["tcp".to_string(), "udp".to_string()]);
+        assert_eq!(
+            ep.network.as_ref().unwrap(),
+            &vec!["tcp".to_string(), "udp".to_string()]
+        );
         assert_eq!(ep.wireguard_system, Some(true));
         assert_eq!(ep.wireguard_name.as_deref(), Some("wg0"));
         assert_eq!(ep.wireguard_mtu, Some(1420));
-        assert_eq!(ep.wireguard_address.as_ref().unwrap(), &vec!["10.0.0.1/32".to_string()]);
+        assert_eq!(
+            ep.wireguard_address.as_ref().unwrap(),
+            &vec!["10.0.0.1/32".to_string()]
+        );
         assert_eq!(ep.wireguard_private_key.as_deref(), Some("abc123"));
         assert_eq!(ep.wireguard_listen_port, Some(51820));
         assert_eq!(ep.wireguard_udp_timeout.as_deref(), Some("5m"));
@@ -392,9 +396,15 @@ mod tests {
         let ir = run_lower(&doc);
         let ep = &ir.endpoints[0];
         assert!(matches!(ep.ty, EndpointType::Tailscale));
-        assert_eq!(ep.tailscale_state_directory.as_deref(), Some("/var/lib/tailscale"));
+        assert_eq!(
+            ep.tailscale_state_directory.as_deref(),
+            Some("/var/lib/tailscale")
+        );
         assert_eq!(ep.tailscale_auth_key.as_deref(), Some("tskey-xxx"));
-        assert_eq!(ep.tailscale_control_url.as_deref(), Some("https://controlplane.tailscale.com"));
+        assert_eq!(
+            ep.tailscale_control_url.as_deref(),
+            Some("https://controlplane.tailscale.com")
+        );
         assert_eq!(ep.tailscale_ephemeral, Some(true));
         assert_eq!(ep.tailscale_hostname.as_deref(), Some("my-node"));
         assert_eq!(ep.tailscale_accept_routes, Some(true));
@@ -437,7 +447,10 @@ mod tests {
         assert_eq!(p0.port, Some(51820));
         assert_eq!(p0.public_key.as_deref(), Some("pubkey1"));
         assert_eq!(p0.pre_shared_key.as_deref(), Some("psk1"));
-        assert_eq!(p0.allowed_ips.as_ref().unwrap(), &vec!["0.0.0.0/0".to_string()]);
+        assert_eq!(
+            p0.allowed_ips.as_ref().unwrap(),
+            &vec!["0.0.0.0/0".to_string()]
+        );
         assert_eq!(p0.persistent_keepalive_interval, Some(25));
         assert_eq!(p0.reserved.as_ref().unwrap(), &vec![1u8, 2, 3]);
 
@@ -476,7 +489,10 @@ mod tests {
     fn network_listable_string() {
         let doc = json!({"endpoints": [{"network": ["tcp"]}]});
         let ir = run_lower(&doc);
-        assert_eq!(ir.endpoints[0].network.as_ref().unwrap(), &vec!["tcp".to_string()]);
+        assert_eq!(
+            ir.endpoints[0].network.as_ref().unwrap(),
+            &vec!["tcp".to_string()]
+        );
     }
 
     #[test]
@@ -531,6 +547,9 @@ mod tests {
         assert_eq!(ir.endpoints.len(), 1);
         assert!(matches!(ir.endpoints[0].ty, EndpointType::Tailscale));
         assert_eq!(ir.endpoints[0].tag.as_deref(), Some("ts-delegate"));
-        assert_eq!(ir.endpoints[0].tailscale_hostname.as_deref(), Some("test-host"));
+        assert_eq!(
+            ir.endpoints[0].tailscale_hostname.as_deref(),
+            Some("test-host")
+        );
     }
 }

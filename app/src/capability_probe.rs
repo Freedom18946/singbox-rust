@@ -97,13 +97,13 @@ pub fn probe_only_enabled() -> bool {
 #[must_use]
 pub fn probe_output_path_from_env() -> Option<String> {
     std::env::var("SB_CAPABILITY_PROBE_OUT").map_or(None, |value| {
-            let trimmed = value.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        })
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
 }
 
 #[must_use]
@@ -114,9 +114,7 @@ pub const fn default_probe_output_path() -> &'static str {
 fn env_flag(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| {
         let value = value.trim();
-        value == "1"
-            || value.eq_ignore_ascii_case("true")
-            || value.eq_ignore_ascii_case("yes")
+        value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
     })
 }
 

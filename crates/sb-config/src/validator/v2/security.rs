@@ -230,7 +230,9 @@ mod tests {
         });
         let issues = check_non_localhost_binding_warnings(&doc);
         assert!(
-            issues.iter().any(|i| i["code"].as_str() == Some("InsecureBinding")),
+            issues
+                .iter()
+                .any(|i| i["code"].as_str() == Some("InsecureBinding")),
             "check_non_localhost_binding_warnings should produce InsecureBinding issues from security.rs"
         );
     }

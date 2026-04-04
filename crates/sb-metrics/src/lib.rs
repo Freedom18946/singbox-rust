@@ -69,8 +69,8 @@ use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use parking_lot::Mutex;
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
-    Registry, TextEncoder, core::Collector,
+    core::Collector, Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec,
+    IntGauge, Opts, Registry, TextEncoder,
 };
 use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
@@ -403,7 +403,7 @@ const ERROR_CLASS_OTHER: &str = "other";
 // ===================== Router Metrics =====================
 /// Router metrics: track rule matches by category and outbound
 mod router {
-    use super::{IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, IntCounterVec, LazyLock};
     /// 路由命中计数：按规则类别与出站类型维度统计
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
@@ -428,7 +428,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 // ===================== Outbound Metrics =====================
 /// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
-    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -525,7 +525,7 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 /// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
-    use super::{HistogramVec, IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, HistogramVec, IntCounterVec, LazyLock};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
@@ -571,7 +571,7 @@ mod adapter {
 // ===================== Selector/URLTest Metrics =====================
 /// Selector and `URLTest` metrics
 mod selector {
-    use super::{IntCounterVec, LazyLock, register_collector};
+    use super::{register_collector, IntCounterVec, LazyLock};
     use prometheus::IntGaugeVec;
 
     /// Health check total counter
@@ -692,7 +692,7 @@ pub fn record_adapter_dial(
 // ===================== DERP Service Metrics =====================
 /// DERP service metrics: connections, relays, HTTP/STUN activity.
 mod derp {
-    use super::{LazyLock, guarded_counter_vec, guarded_histogram_vec, register_collector};
+    use super::{guarded_counter_vec, guarded_histogram_vec, register_collector, LazyLock};
     use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec, Opts};
 
     pub static CONNECTION_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -811,8 +811,8 @@ pub fn observe_derp_client_lifetime(tag: &str, seconds: f64) {
 /// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
     use super::{
-        IntCounter, IntCounterVec, IntGauge, LazyLock, guarded_int_counter, guarded_int_gauge,
-        register_collector,
+        guarded_int_counter, guarded_int_gauge, register_collector, IntCounter, IntCounterVec,
+        IntGauge, LazyLock,
     };
 
     /// SOCKS TCP 连接总数（握手成功即计数）

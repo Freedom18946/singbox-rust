@@ -24,7 +24,7 @@ use std::io::{self, Write};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 static ACTIVE_RUNTIME: LazyLock<Mutex<Weak<LoggingRuntime>>> =
     LazyLock::new(|| Mutex::new(Weak::new()));
@@ -481,7 +481,7 @@ fn install_exit_hook(runtime: Arc<LoggingRuntime>) -> Option<tokio::task::JoinHa
     // Register signal handlers for graceful shutdown
     let signal_runtime = Arc::clone(&runtime);
     let signal_task = tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
+        use tokio::signal::unix::{signal, SignalKind};
 
         let mut sigterm = match signal(SignalKind::terminate()) {
             Ok(s) => Some(s),

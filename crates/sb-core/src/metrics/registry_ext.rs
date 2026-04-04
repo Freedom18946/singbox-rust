@@ -8,7 +8,7 @@
 use dashmap::DashMap;
 use once_cell::sync::OnceCell;
 use prometheus::{
-    GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, core::Collector,
+    core::Collector, GaugeVec, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts,
 };
 
 fn reg() -> &'static prometheus::Registry {

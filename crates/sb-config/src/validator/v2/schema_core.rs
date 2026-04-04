@@ -115,7 +115,11 @@ mod tests {
                     && i["ptr"].as_str() == Some("/schema_version")
             })
             .collect();
-        assert_eq!(found.len(), 1, "wrong schema_version should emit TypeMismatch");
+        assert_eq!(
+            found.len(),
+            1,
+            "wrong schema_version should emit TypeMismatch"
+        );
     }
 
     #[test]
@@ -183,7 +187,8 @@ mod tests {
 
     #[test]
     fn dollar_schema_always_allowed() {
-        let doc = json!({"schema_version": 2, "$schema": "http://json-schema.org/draft-07/schema#"});
+        let doc =
+            json!({"schema_version": 2, "$schema": "http://json-schema.org/draft-07/schema#"});
         let mut issues = Vec::new();
         let cont = validate_root_schema(&doc, false, &mut issues);
         assert!(cont);

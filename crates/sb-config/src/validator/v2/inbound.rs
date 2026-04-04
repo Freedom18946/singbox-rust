@@ -409,11 +409,9 @@ mod tests {
     fn inbounds_not_array() {
         let doc = json!({"inbounds": "not_array"});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "inbounds must be an array"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "inbounds must be an array"));
     }
 
     // --- item non-object ---
@@ -422,11 +420,9 @@ mod tests {
     fn inbound_item_not_object() {
         let doc = json!({"inbounds": ["string_item"]});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds/0"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "inbound item must be an object"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds/0"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "inbound item must be an object"));
     }
 
     // --- type missing ---
@@ -437,8 +433,7 @@ mod tests {
         let issues = run_validate(&doc, false);
         assert!(issues
             .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/type"
-                && i["code"] == "MissingRequired"));
+            .any(|i| i["ptr"] == "/inbounds/0/type" && i["code"] == "MissingRequired"));
     }
 
     // --- type non-string ---
@@ -447,11 +442,9 @@ mod tests {
     fn type_not_string() {
         let doc = json!({"inbounds": [{"type": 42, "listen": "0.0.0.0"}]});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/type"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "type must be a string"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds/0/type"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "type must be a string"));
     }
 
     // --- non-tun missing listen ---
@@ -462,8 +455,7 @@ mod tests {
         let issues = run_validate(&doc, false);
         assert!(issues
             .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/listen"
-                && i["code"] == "MissingRequired"));
+            .any(|i| i["ptr"] == "/inbounds/0/listen" && i["code"] == "MissingRequired"));
     }
 
     // --- tun does NOT require listen ---
@@ -484,11 +476,9 @@ mod tests {
     fn listen_not_string() {
         let doc = json!({"inbounds": [{"type": "http", "listen": 123}]});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/listen"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "listen must be a string"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds/0/listen"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "listen must be a string"));
     }
 
     // --- port non-number ---
@@ -497,11 +487,9 @@ mod tests {
     fn port_not_number() {
         let doc = json!({"inbounds": [{"type": "http", "listen": "0.0.0.0", "port": "abc"}]});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/port"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "port must be a number"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds/0/port"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "port must be a number"));
     }
 
     // --- listen_port non-number ---
@@ -511,11 +499,9 @@ mod tests {
         let doc =
             json!({"inbounds": [{"type": "http", "listen": "0.0.0.0", "listen_port": "abc"}]});
         let issues = run_validate(&doc, false);
-        assert!(issues
-            .iter()
-            .any(|i| i["ptr"] == "/inbounds/0/listen_port"
-                && i["code"] == "TypeMismatch"
-                && i["msg"] == "listen_port must be a number"));
+        assert!(issues.iter().any(|i| i["ptr"] == "/inbounds/0/listen_port"
+            && i["code"] == "TypeMismatch"
+            && i["msg"] == "listen_port must be a number"));
     }
 
     // --- unknown field strict → error ---
@@ -558,15 +544,11 @@ mod tests {
         });
         let issues = run_validate(&doc, false);
         assert!(
-            issues
-                .iter()
-                .any(|i| i["ptr"] == "/inbounds/0/field_a"),
+            issues.iter().any(|i| i["ptr"] == "/inbounds/0/field_a"),
             "missing ptr for inbounds/0 unknown field"
         );
         assert!(
-            issues
-                .iter()
-                .any(|i| i["ptr"] == "/inbounds/1/field_b"),
+            issues.iter().any(|i| i["ptr"] == "/inbounds/1/field_b"),
             "missing ptr for inbounds/1 unknown field"
         );
     }
@@ -592,7 +574,11 @@ mod tests {
         });
         let issues = run_validate(&doc, false);
         let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
-        assert!(errors.is_empty(), "valid inbound should produce no errors: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "valid inbound should produce no errors: {:?}",
+            errors
+        );
     }
 
     // --- pin: inbound validation owner is in inbound.rs ---
@@ -607,7 +593,10 @@ mod tests {
         validate_inbounds(&doc, false, &mut issues);
         // No errors expected for a valid minimal inbound
         let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
-        assert!(errors.is_empty(), "pin: validate_inbounds owns inbound validation");
+        assert!(
+            errors.is_empty(),
+            "pin: validate_inbounds owns inbound validation"
+        );
     }
 
     // ========================================================================
@@ -808,7 +797,8 @@ mod tests {
 
     #[test]
     fn lowering_set_system_proxy_true() {
-        let doc = json!({"inbounds": [{"type": "http", "listen": "0.0.0.0", "set_system_proxy": true}]});
+        let doc =
+            json!({"inbounds": [{"type": "http", "listen": "0.0.0.0", "set_system_proxy": true}]});
         let ir = lower(&doc);
         assert!(ir.inbounds[0].set_system_proxy);
     }
@@ -836,7 +826,10 @@ mod tests {
             "ssh_host_key_path": "/etc/ssh/host_key"
         }]});
         let ir = lower(&doc);
-        assert_eq!(ir.inbounds[0].ssh_host_key_path.as_deref(), Some("/etc/ssh/host_key"));
+        assert_eq!(
+            ir.inbounds[0].ssh_host_key_path.as_deref(),
+            Some("/etc/ssh/host_key")
+        );
     }
 
     #[test]

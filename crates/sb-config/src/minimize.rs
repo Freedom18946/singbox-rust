@@ -24,9 +24,7 @@ pub enum MinimizeAction {
 /// Delegates to [`crate::ir::minimize::minimize_config`].
 pub fn minimize_config(cfg: &mut ConfigIR) -> MinimizeAction {
     match crate::ir::minimize::minimize_config(cfg) {
-        crate::ir::minimize::MinimizeAction::SkippedByNegation => {
-            MinimizeAction::SkippedByNegation
-        }
+        crate::ir::minimize::MinimizeAction::SkippedByNegation => MinimizeAction::SkippedByNegation,
         crate::ir::minimize::MinimizeAction::Applied => MinimizeAction::Applied,
     }
 }

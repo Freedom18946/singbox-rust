@@ -105,4 +105,3 @@ impl HttpClient for ReqwestHttpClient {
         })
     }
 }
-

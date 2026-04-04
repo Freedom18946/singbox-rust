@@ -91,10 +91,7 @@ pub(crate) fn lower_services(doc: &Value, ir: &mut ConfigIR) {
 
         let mut service_ir = crate::ir::ServiceIR {
             ty,
-            tag: s
-                .get("tag")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+            tag: s.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
             ..Default::default()
         };
 
@@ -147,8 +144,9 @@ pub(crate) fn lower_services(doc: &Value, ir: &mut ConfigIR) {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         service_ir.sniff = s.get("sniff").and_then(|v| v.as_bool());
-        service_ir.sniff_override_destination =
-            s.get("sniff_override_destination").and_then(|v| v.as_bool());
+        service_ir.sniff_override_destination = s
+            .get("sniff_override_destination")
+            .and_then(|v| v.as_bool());
         service_ir.sniff_timeout = s
             .get("sniff_timeout")
             .and_then(|v| v.as_str())
@@ -157,8 +155,9 @@ pub(crate) fn lower_services(doc: &Value, ir: &mut ConfigIR) {
             .get("domain_strategy")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        service_ir.udp_disable_domain_unmapping =
-            s.get("udp_disable_domain_unmapping").and_then(|v| v.as_bool());
+        service_ir.udp_disable_domain_unmapping = s
+            .get("udp_disable_domain_unmapping")
+            .and_then(|v| v.as_bool());
 
         service_ir.tls = parse_inbound_tls_options(s.get("tls"));
 
@@ -504,7 +503,10 @@ mod tests {
     fn wp30w_unknown_type_skipped() {
         let doc = json!({"services": [{"type": "unknown_type", "tag": "u"}]});
         let ir = lower(&doc);
-        assert!(ir.services.is_empty(), "unknown service type should be skipped");
+        assert!(
+            ir.services.is_empty(),
+            "unknown service type should be skipped"
+        );
     }
 
     #[test]
@@ -604,7 +606,10 @@ mod tests {
             "ssmapi_tls_key_path": "/legacy-key.pem"
         }]});
         let ir = lower(&doc);
-        let tls = ir.services[0].tls.as_ref().expect("legacy tls should produce tls");
+        let tls = ir.services[0]
+            .tls
+            .as_ref()
+            .expect("legacy tls should produce tls");
         assert!(tls.enabled);
         assert_eq!(tls.certificate_path.as_deref(), Some("/legacy-cert.pem"));
         assert_eq!(tls.key_path.as_deref(), Some("/legacy-key.pem"));
@@ -619,8 +624,11 @@ mod tests {
         }]});
         let ir = lower(&doc);
         let tls = ir.services[0].tls.as_ref().unwrap();
-        assert_eq!(tls.certificate_path.as_deref(), Some("/explicit.pem"),
-            "explicit tls should override legacy tls paths");
+        assert_eq!(
+            tls.certificate_path.as_deref(),
+            Some("/explicit.pem"),
+            "explicit tls should override legacy tls paths"
+        );
     }
 
     #[test]
@@ -641,7 +649,10 @@ mod tests {
             "servers": {"dns1": "my-dns", "dns2": "my-dns-2"}
         }]});
         let ir = lower(&doc);
-        let servers = ir.services[0].servers.as_ref().expect("servers should be Some");
+        let servers = ir.services[0]
+            .servers
+            .as_ref()
+            .expect("servers should be Some");
         assert_eq!(servers.get("dns1").map(|s| s.as_str()), Some("my-dns"));
         assert_eq!(servers.get("dns2").map(|s| s.as_str()), Some("my-dns-2"));
     }
@@ -654,7 +665,10 @@ mod tests {
             "derp_tls_key_path": "/derp-key.pem"
         }]});
         let ir = lower(&doc);
-        let tls = ir.services[0].tls.as_ref().expect("derp legacy tls should produce tls");
+        let tls = ir.services[0]
+            .tls
+            .as_ref()
+            .expect("derp legacy tls should produce tls");
         assert!(tls.enabled);
         assert_eq!(tls.certificate_path.as_deref(), Some("/derp-cert.pem"));
     }
@@ -707,7 +721,10 @@ mod tests {
             "derp_mesh_with": ["peer1:443", "peer2:8443"]
         }]});
         let ir = lower(&doc);
-        let mw = ir.services[0].mesh_with.as_ref().expect("mesh_with should be Some");
+        let mw = ir.services[0]
+            .mesh_with
+            .as_ref()
+            .expect("mesh_with should be Some");
         assert_eq!(mw.items.len(), 2);
     }
 
@@ -731,7 +748,10 @@ mod tests {
             "derp_stun_listen_port": 3479
         }]});
         let ir = lower(&doc);
-        let stun = ir.services[0].stun.as_ref().expect("legacy stun should produce stun");
+        let stun = ir.services[0]
+            .stun
+            .as_ref()
+            .expect("legacy stun should produce stun");
         assert!(stun.enabled);
         assert_eq!(stun.listen_port, Some(3479));
     }
@@ -768,7 +788,11 @@ mod tests {
         // lower_services is the entry point called by to_ir_v1().
         let doc = json!({"services": [{"type": "resolved", "tag": "pin-test"}]});
         let ir = lower(&doc);
-        assert_eq!(ir.services.len(), 1, "lower_services must be callable from service.rs");
+        assert_eq!(
+            ir.services.len(),
+            1,
+            "lower_services must be callable from service.rs"
+        );
     }
 
     #[test]

@@ -218,10 +218,10 @@ impl OutboundConnector for AnyTlsConnector {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
 
-        let (client_stream, server_stream) = tokio::try_join!(
-            TcpStream::connect(local_addr),
-            async { listener.accept().await.map(|(s, _)| s) }
-        )?;
+        let (client_stream, server_stream) =
+            tokio::try_join!(TcpStream::connect(local_addr), async {
+                listener.accept().await.map(|(s, _)| s)
+            })?;
 
         let stream_reader = stream.reader().clone();
         let stream_writer = stream.clone();

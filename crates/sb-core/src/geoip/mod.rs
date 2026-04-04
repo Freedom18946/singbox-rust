@@ -137,8 +137,8 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     #[cfg(feature = "metrics")]
     {
         let start = std::time::Instant::now();
-        let result = lookup_country_code(ip)
-            .is_some_and(|code| code.eq_ignore_ascii_case(country_code));
+        let result =
+            lookup_country_code(ip).is_some_and(|code| code.eq_ignore_ascii_case(country_code));
         let duration = start.elapsed();
 
         // Record metrics
@@ -149,8 +149,7 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     }
     #[cfg(not(feature = "metrics"))]
     {
-        lookup_country_code(ip)
-            .is_some_and(|code| code.eq_ignore_ascii_case(country_code))
+        lookup_country_code(ip).is_some_and(|code| code.eq_ignore_ascii_case(country_code))
     }
 }
 

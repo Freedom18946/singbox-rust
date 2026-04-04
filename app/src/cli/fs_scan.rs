@@ -306,7 +306,9 @@ fn parse_fs_scan_env_usize(key: &str, default: usize) -> usize {
     match trimmed.parse::<usize>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -321,7 +323,9 @@ fn parse_fs_scan_env_u64(key: &str, default: u64) -> u64 {
     match trimmed.parse::<u64>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid u64; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }

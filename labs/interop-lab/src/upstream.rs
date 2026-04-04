@@ -19,9 +19,9 @@ use sb_adapters::inbound::shadowtls::{serve as serve_shadowtls, ShadowTlsInbound
 use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig};
 use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
 use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
+use sb_common::conntrack::ConnTracker;
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
-use sb_common::conntrack::ConnTracker;
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};

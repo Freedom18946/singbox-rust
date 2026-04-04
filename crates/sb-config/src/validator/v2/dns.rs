@@ -331,9 +331,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                     invert: obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false),
 
                     ip_is_private: obj.get("ip_is_private").and_then(|v| v.as_bool()),
-                    source_ip_is_private: obj
-                        .get("source_ip_is_private")
-                        .and_then(|v| v.as_bool()),
+                    source_ip_is_private: obj.get("source_ip_is_private").and_then(|v| v.as_bool()),
                     ip_accept_any: obj.get("ip_accept_any").and_then(|v| v.as_bool()),
                     rule_set_ip_cidr_match_source: obj
                         .get("rule_set_ip_cidr_match_source")
@@ -345,9 +343,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                         .get("clash_mode")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
-                    network_is_expensive: obj
-                        .get("network_is_expensive")
-                        .and_then(|v| v.as_bool()),
+                    network_is_expensive: obj.get("network_is_expensive").and_then(|v| v.as_bool()),
                     network_is_constrained: obj
                         .get("network_is_constrained")
                         .and_then(|v| v.as_bool()),
@@ -368,26 +364,21 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                 dr.domain_suffix =
                     extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
                 dr.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
-                dr.domain_regex =
-                    extract_string_list(obj.get("domain_regex")).unwrap_or_default();
-                dr.keyword =
-                    extract_string_list(obj.get("domain_keyword").or(obj.get("keyword")))
-                        .unwrap_or_default();
+                dr.domain_regex = extract_string_list(obj.get("domain_regex")).unwrap_or_default();
+                dr.keyword = extract_string_list(obj.get("domain_keyword").or(obj.get("keyword")))
+                    .unwrap_or_default();
                 dr.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
                 dr.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
                 dr.source_ip_cidr =
                     extract_string_list(obj.get("source_ip_cidr")).unwrap_or_default();
                 dr.ip_cidr = extract_string_list(obj.get("ip_cidr")).unwrap_or_default();
                 dr.port = extract_string_list(obj.get("port")).unwrap_or_default();
-                dr.source_port =
-                    extract_string_list(obj.get("source_port")).unwrap_or_default();
+                dr.source_port = extract_string_list(obj.get("source_port")).unwrap_or_default();
                 dr.process_name =
                     extract_string_list(obj.get("process_name").or(obj.get("process")))
                         .unwrap_or_default();
-                dr.process_path =
-                    extract_string_list(obj.get("process_path")).unwrap_or_default();
-                dr.package_name =
-                    extract_string_list(obj.get("package_name")).unwrap_or_default();
+                dr.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
+                dr.package_name = extract_string_list(obj.get("package_name")).unwrap_or_default();
                 dr.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
                 dr.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
                 dr.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
@@ -959,10 +950,17 @@ mod tests {
         let ir = to_ir_v1(&doc);
         let dns = ir.dns.expect("dns");
         assert_eq!(dns.hosts.len(), 2);
-        let ex = dns.hosts.iter().find(|h| h.domain == "example.com").unwrap();
+        let ex = dns
+            .hosts
+            .iter()
+            .find(|h| h.domain == "example.com")
+            .unwrap();
         assert_eq!(ex.ips, vec!["1.2.3.4".to_string()]);
         let multi = dns.hosts.iter().find(|h| h.domain == "multi.com").unwrap();
-        assert_eq!(multi.ips, vec!["10.0.0.1".to_string(), "10.0.0.2".to_string()]);
+        assert_eq!(
+            multi.ips,
+            vec!["10.0.0.1".to_string(), "10.0.0.2".to_string()]
+        );
         assert_eq!(dns.hosts_ttl_s, Some(3600));
     }
 

@@ -257,7 +257,9 @@ fn rl_env_u32(key: &str, default: u32) -> u32 {
     match t.parse::<u32>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -271,7 +273,9 @@ fn rl_env_u64(key: &str, default: u64) -> u64 {
     match t.parse::<u64>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u64; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }
@@ -282,7 +286,9 @@ fn rl_env_opt_u32(key: &str) -> Option<u32> {
     match t.parse::<u32>() {
         Ok(v) => Some(v),
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; ignoring: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid u32; silent parse fallback is disabled; ignoring: {e}"
+            );
             None
         }
     }

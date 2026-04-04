@@ -399,7 +399,9 @@ mod tests {
         });
         let issues = check_deprecations(&doc);
         assert!(
-            issues.iter().any(|i| i["code"].as_str() == Some("Deprecated")),
+            issues
+                .iter()
+                .any(|i| i["code"].as_str() == Some("Deprecated")),
             "check_deprecations should produce Deprecated issues from deprecation.rs"
         );
     }

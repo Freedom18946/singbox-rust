@@ -1,9 +1,9 @@
 #![cfg(feature = "router")]
 use sb_core::router::analyze::analyze;
 #[cfg(feature = "rules_tool")]
-use sb_core::router::patch_apply::apply_cli_patch;
-#[cfg(feature = "rules_tool")]
 use sb_core::router::analyze_fix::build_suffix_shadow_cleanup_patch;
+#[cfg(feature = "rules_tool")]
+use sb_core::router::patch_apply::apply_cli_patch;
 
 #[test]
 fn build_suffix_shadow_cleanup_patch_basic() {

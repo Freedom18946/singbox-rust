@@ -25,7 +25,7 @@
 //! - [`compat`]: **Migration Layer** - Handles the transformation from legacy formats.
 //!   **迁移层** - 处理从旧格式的转换。
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -839,22 +839,16 @@ endpoints:
 
         // The Rule struct's domain_suffix should come from IR's domain_suffix, not domain
         assert_eq!(cfg.rules.len(), 1);
-        assert!(
-            cfg.rules[0]
-                .domain_suffix
-                .contains(&".example.com".to_string())
-        );
-        assert!(
-            cfg.rules[0]
-                .domain_suffix
-                .contains(&".google.com".to_string())
-        );
+        assert!(cfg.rules[0]
+            .domain_suffix
+            .contains(&".example.com".to_string()));
+        assert!(cfg.rules[0]
+            .domain_suffix
+            .contains(&".google.com".to_string()));
         // domain_suffix should NOT contain "exact.com" (that's from domain field)
-        assert!(
-            !cfg.rules[0]
-                .domain_suffix
-                .contains(&"exact.com".to_string())
-        );
+        assert!(!cfg.rules[0]
+            .domain_suffix
+            .contains(&"exact.com".to_string()));
     }
 
     #[test]

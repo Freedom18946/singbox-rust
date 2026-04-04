@@ -608,7 +608,9 @@ fn cli_prefetch_env_usize(key: &str, default: usize) -> usize {
     match t.parse::<usize>() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
+            tracing::warn!(
+                "env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}"
+            );
             default
         }
     }

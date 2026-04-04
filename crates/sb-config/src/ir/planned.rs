@@ -93,7 +93,7 @@
 
 use std::collections::HashSet;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use super::outbound::OutboundType;
 use super::validated::ConfigIR;

@@ -656,7 +656,7 @@ mod tests {
         });
         assert_eq!(js.len(), 1);
         drop(js); // JoinSet::drop aborts all — must not hang
-        // The task was aborted, so tx was dropped without sending
+                  // The task was aborted, so tx was dropped without sending
         assert!(rx.try_recv().is_err());
     }
 

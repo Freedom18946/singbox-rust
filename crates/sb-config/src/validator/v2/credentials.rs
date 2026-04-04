@@ -31,7 +31,7 @@ pub(super) fn normalize_credentials(ir: &mut ConfigIR) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Credentials, OutboundIR, InboundIR, InboundType};
+    use crate::ir::{Credentials, InboundIR, InboundType, OutboundIR};
 
     // ───── outbound username_env / password_env resolve ─────
 
@@ -50,7 +50,15 @@ mod tests {
             ..Default::default()
         });
         normalize_credentials(&mut ir);
-        assert_eq!(ir.outbounds[0].credentials.as_ref().unwrap().username.as_deref(), Some("alice"));
+        assert_eq!(
+            ir.outbounds[0]
+                .credentials
+                .as_ref()
+                .unwrap()
+                .username
+                .as_deref(),
+            Some("alice")
+        );
         std::env::remove_var(key);
     }
 
@@ -69,7 +77,15 @@ mod tests {
             ..Default::default()
         });
         normalize_credentials(&mut ir);
-        assert_eq!(ir.outbounds[0].credentials.as_ref().unwrap().password.as_deref(), Some("secret123"));
+        assert_eq!(
+            ir.outbounds[0]
+                .credentials
+                .as_ref()
+                .unwrap()
+                .password
+                .as_deref(),
+            Some("secret123")
+        );
         std::env::remove_var(key);
     }
 
@@ -91,7 +107,15 @@ mod tests {
             ..Default::default()
         });
         normalize_credentials(&mut ir);
-        assert_eq!(ir.inbounds[0].basic_auth.as_ref().unwrap().username.as_deref(), Some("bob"));
+        assert_eq!(
+            ir.inbounds[0]
+                .basic_auth
+                .as_ref()
+                .unwrap()
+                .username
+                .as_deref(),
+            Some("bob")
+        );
         std::env::remove_var(key);
     }
 
@@ -111,7 +135,15 @@ mod tests {
             ..Default::default()
         });
         normalize_credentials(&mut ir);
-        assert_eq!(ir.inbounds[0].basic_auth.as_ref().unwrap().password.as_deref(), Some("pass456"));
+        assert_eq!(
+            ir.inbounds[0]
+                .basic_auth
+                .as_ref()
+                .unwrap()
+                .password
+                .as_deref(),
+            Some("pass456")
+        );
         std::env::remove_var(key);
     }
 
@@ -133,7 +165,12 @@ mod tests {
         });
         normalize_credentials(&mut ir);
         assert_eq!(
-            ir.outbounds[0].credentials.as_ref().unwrap().username.as_deref(),
+            ir.outbounds[0]
+                .credentials
+                .as_ref()
+                .unwrap()
+                .username
+                .as_deref(),
             Some("original"),
             "missing env should not overwrite existing plaintext username"
         );
@@ -155,7 +192,12 @@ mod tests {
         });
         normalize_credentials(&mut ir);
         assert_eq!(
-            ir.outbounds[0].credentials.as_ref().unwrap().password.as_deref(),
+            ir.outbounds[0]
+                .credentials
+                .as_ref()
+                .unwrap()
+                .password
+                .as_deref(),
             Some("original_pass"),
             "missing env should not overwrite existing plaintext password"
         );
@@ -181,8 +223,16 @@ mod tests {
         });
         normalize_credentials(&mut ir);
         let cred = ir.outbounds[0].credentials.as_ref().unwrap();
-        assert_eq!(cred.username.as_deref(), Some("env_user"), "ENV should override plaintext username");
-        assert_eq!(cred.password.as_deref(), Some("env_pass"), "ENV should override plaintext password");
+        assert_eq!(
+            cred.username.as_deref(),
+            Some("env_user"),
+            "ENV should override plaintext username"
+        );
+        assert_eq!(
+            cred.password.as_deref(),
+            Some("env_pass"),
+            "ENV should override plaintext password"
+        );
         std::env::remove_var(key_u);
         std::env::remove_var(key_p);
     }

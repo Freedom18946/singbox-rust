@@ -394,7 +394,9 @@ fn parse_prefetch_env_usize(key: &str, default: usize) -> usize {
     match trimmed.parse::<usize>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid usize; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
@@ -409,7 +411,9 @@ fn parse_prefetch_env_u8(key: &str, default: u8) -> u8 {
     match trimmed.parse::<u8>() {
         Ok(v) => v,
         Err(err) => {
-            tracing::warn!("env '{key}' value '{trimmed}' is not a valid u8; silent parse fallback is disabled; using default {default}: {err}");
+            tracing::warn!(
+                "env '{key}' value '{trimmed}' is not a valid u8; silent parse fallback is disabled; using default {default}: {err}"
+            );
             default
         }
     }
