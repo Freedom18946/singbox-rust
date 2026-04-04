@@ -50,13 +50,56 @@ impl FourTuple {
     }
 }
 
+impl std::fmt::Display for FourTuple {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{} -> {}:{}",
+            self.src_ip, self.src_port, self.dst_ip, self.dst_port
+        )
+    }
+}
+
+/// Phase of a TCP session's lifecycle.
+///
+/// Transitions: `Active` → `Detached` (via FIN / shutdown).
+/// Once `Detached`, the session drains pending data until relay tasks complete
+/// or the drain timeout expires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionPhase {
+    /// Normal operation — relaying data between TUN and outbound.
+    Active,
+    /// FIN observed; relay tasks draining remaining data.
+    /// The session will be evicted after drain timeout or relay completion.
+    Detached,
+}
+
+/// Policy controlling how long detached sessions may drain before forced eviction.
+#[derive(Debug, Clone)]
+pub struct DrainPolicy {
+    /// Maximum time a detached session is allowed to drain before eviction.
+    pub drain_timeout: std::time::Duration,
+}
+
+impl Default for DrainPolicy {
+    fn default() -> Self {
+        Self {
+            drain_timeout: std::time::Duration::from_secs(30),
+        }
+    }
+}
+
 /// Active TCP session state
 #[derive(Debug)]
 pub struct TcpSession {
     /// Four-tuple identifying this session
     pub tuple: FourTuple,
+    /// Current lifecycle phase
+    pub phase: std::sync::atomic::AtomicU8,
     /// When the session was created
     pub created_at: Instant,
+    /// When the session was detached (set on transition to `Detached`).
+    pub detached_at: parking_lot::Mutex<Option<Instant>>,
     /// Channel to send data from TUN to outbound
     pub to_outbound_tx: mpsc::Sender<Bytes>,
     /// Outbound connection (kept for reference/cleanup)
@@ -168,6 +211,8 @@ pub struct TcpSessionManager {
     active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     /// Sessions that already observed a local FIN and are draining/shutting down.
     detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
+    /// Policy for detached session drain/eviction.
+    drain_policy: DrainPolicy,
 }
 
 impl TcpSessionManager {
@@ -175,6 +220,15 @@ impl TcpSessionManager {
         Self {
             active_sessions: Arc::new(DashMap::new()),
             detached_sessions: Arc::new(DashMap::new()),
+            drain_policy: DrainPolicy::default(),
+        }
+    }
+
+    pub fn with_drain_policy(drain_policy: DrainPolicy) -> Self {
+        Self {
+            active_sessions: Arc::new(DashMap::new()),
+            detached_sessions: Arc::new(DashMap::new()),
+            drain_policy,
         }
     }
 
@@ -220,7 +274,9 @@ impl TcpSessionManager {
 
         let session = Arc::new(TcpSession {
             tuple,
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
             created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
             to_outbound_tx,
             outbound_addr,
             client_next_seq: AtomicU32::new(client_next_seq),
@@ -284,12 +340,48 @@ impl TcpSessionManager {
 
     pub fn detach(&self, tuple: &FourTuple) {
         if let Some((_, session)) = self.active_sessions.remove(tuple) {
+            session.phase.store(SessionPhase::Detached as u8, std::sync::atomic::Ordering::Relaxed);
+            *session.detached_at.lock() = Some(Instant::now());
             self.detached_sessions.insert(*tuple, session);
             debug!(
                 "TCP session detached: {}:{} -> {}:{}",
                 tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
             );
         }
+    }
+
+    /// Number of detached (draining) sessions.
+    pub fn detach_count(&self) -> usize {
+        self.detached_sessions.len()
+    }
+
+    /// Evict detached sessions whose drain timeout has expired.
+    /// Returns the number of evicted sessions.
+    pub fn run_eviction_sweep(&self) -> usize {
+        let now = Instant::now();
+        let timeout = self.drain_policy.drain_timeout;
+        let mut evicted = 0;
+        let keys_to_evict: Vec<FourTuple> = self
+            .detached_sessions
+            .iter()
+            .filter_map(|entry| {
+                let detached_at = entry.value().detached_at.lock();
+                if let Some(at) = *detached_at {
+                    if now.duration_since(at) >= timeout {
+                        return Some(*entry.key());
+                    }
+                }
+                None
+            })
+            .collect();
+        for key in keys_to_evict {
+            if let Some((_, session)) = self.detached_sessions.remove(&key) {
+                session.initiate_close();
+                evicted += 1;
+                debug!("TCP session evicted after drain timeout: {key}");
+            }
+        }
+        evicted
     }
 
     /// Get number of active sessions
@@ -551,7 +643,9 @@ mod tests {
                 "93.184.216.34".parse().unwrap(),
                 80,
             ),
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
             created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
             to_outbound_tx: mpsc::channel(1).0,
             outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
             client_next_seq: AtomicU32::new(100),
@@ -576,7 +670,9 @@ mod tests {
                 "93.184.216.34".parse().unwrap(),
                 80,
             ),
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
             created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
             to_outbound_tx: mpsc::channel(1).0,
             outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
             client_next_seq: AtomicU32::new(100),
@@ -629,7 +725,9 @@ mod tests {
                 "93.184.216.34".parse().unwrap(),
                 80,
             ),
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
             created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
             to_outbound_tx: mpsc::channel(1).0,
             outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
             client_next_seq: AtomicU32::new(100),
@@ -719,7 +817,9 @@ mod tests {
         );
         let session = Arc::new(TcpSession {
             tuple,
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
             created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
             to_outbound_tx: mpsc::channel(1).0,
             outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
             client_next_seq: AtomicU32::new(100),
@@ -734,7 +834,85 @@ mod tests {
 
         assert!(manager.get(&tuple).is_none());
         assert!(manager.get_detached(&tuple).is_some());
+        // Verify phase transition
+        assert_eq!(
+            session.phase.load(std::sync::atomic::Ordering::Relaxed),
+            SessionPhase::Detached as u8
+        );
+        assert!(session.detached_at.lock().is_some());
         manager.remove(&tuple);
         assert!(manager.get_detached(&tuple).is_none());
+    }
+
+    #[test]
+    fn test_drain_policy_eviction_sweep() {
+        let policy = DrainPolicy {
+            drain_timeout: std::time::Duration::from_millis(0),
+        };
+        let manager = TcpSessionManager::with_drain_policy(policy);
+        let tuple = FourTuple::new(
+            "10.0.0.2".parse().unwrap(),
+            34567,
+            "93.184.216.34".parse().unwrap(),
+            80,
+        );
+        let session = Arc::new(TcpSession {
+            tuple,
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
+            created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1000),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: parking_lot::Mutex::new(None),
+            tasks: parking_lot::Mutex::new(Vec::new()),
+        });
+
+        manager.active_sessions.insert(tuple, Arc::clone(&session));
+        manager.detach(&tuple);
+        assert_eq!(manager.detach_count(), 1);
+
+        // With drain_timeout=0, eviction should immediately succeed
+        let evicted = manager.run_eviction_sweep();
+        assert_eq!(evicted, 1);
+        assert_eq!(manager.detach_count(), 0);
+    }
+
+    #[test]
+    fn test_drain_policy_does_not_evict_fresh_detached_sessions() {
+        let policy = DrainPolicy {
+            drain_timeout: std::time::Duration::from_secs(60),
+        };
+        let manager = TcpSessionManager::with_drain_policy(policy);
+        let tuple = FourTuple::new(
+            "10.0.0.2".parse().unwrap(),
+            34567,
+            "93.184.216.34".parse().unwrap(),
+            80,
+        );
+        let session = Arc::new(TcpSession {
+            tuple,
+            phase: std::sync::atomic::AtomicU8::new(SessionPhase::Active as u8),
+            created_at: Instant::now(),
+            detached_at: parking_lot::Mutex::new(None),
+            to_outbound_tx: mpsc::channel(1).0,
+            outbound_addr: SocketAddr::from(([127, 0, 0, 1], 80)),
+            client_next_seq: AtomicU32::new(100),
+            server_next_seq: AtomicU32::new(1000),
+            server_acked_seq: AtomicU32::new(1000),
+            shutdown_tx: parking_lot::Mutex::new(None),
+            tasks: parking_lot::Mutex::new(Vec::new()),
+        });
+
+        manager.active_sessions.insert(tuple, Arc::clone(&session));
+        manager.detach(&tuple);
+        assert_eq!(manager.detach_count(), 1);
+
+        // With drain_timeout=60s, freshly detached session should NOT be evicted
+        let evicted = manager.run_eviction_sweep();
+        assert_eq!(evicted, 0);
+        assert_eq!(manager.detach_count(), 1);
     }
 }

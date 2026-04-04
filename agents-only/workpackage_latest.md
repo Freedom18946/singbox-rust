@@ -42,6 +42,12 @@
     - 不建议继续机械拆 maintenance 细卡
     - 若未来确需继续，只保留少数高层 convergence 主题
 
+- **MT-CONTRACT-01**: transport-wrapper + detached-session contract hardening — 已完成
+  - 性质：maintenance / protocol-quality work，不是 parity completion
+  - ShadowTLS：typed `WrapperEndpoint`、`DetourStreamResult`、wrapper endpoint doc、e2e fixture fix、bridge simultaneous-shutdown test
+  - TUN TCP：`SessionPhase` enum、`DrainPolicy` struct、`run_eviction_sweep()`、`phase`/`detached_at` fields、simultaneous-close test
+  - 验证：clippy 0 warnings；sb-adapters --lib 208/208 pass；shadowtls e2e 9/9 pass (isolation)
+
 ### 维护线分类（按当前仓库事实）
 
 - **archive-safe close-out**

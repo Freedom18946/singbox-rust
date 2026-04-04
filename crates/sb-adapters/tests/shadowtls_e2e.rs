@@ -337,9 +337,10 @@ async fn start_shadowtls_v1_relay(
         drop(handshake);
 
         let mut upstream = TcpStream::connect(target).await.unwrap();
-        tokio::io::copy_bidirectional(&mut client, &mut upstream)
-            .await
-            .unwrap();
+        // BrokenPipe / ConnectionReset is expected when one side disconnects
+        // before the bidirectional copy finishes — this is normal for mock
+        // servers that close after a short exchange.
+        let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
     });
     Ok((relay_addr, relay_task, handshake_task))
 }

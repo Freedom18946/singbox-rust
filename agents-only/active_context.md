@@ -6,21 +6,22 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-RECAP-01` maintenance recap and next-stage convergence — 已完成；`WP-30` 与 `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-SVC-01`、`MT-TEST-01`、`MT-RD-01`、`MT-PERF-01`、`MT-ADP-01`、`MT-MLOG-01`、`MT-ADM-01`、`MT-DEEP-01` 保持已完成 / 已归档状态
+**当前维护线**: `MT-CONTRACT-01` transport-wrapper + detached-session contract hardening — 已完成；`MT-RECAP-01` 已完成；其余旧线保持已完成 / 已归档状态
 
-## 最近完成（2026-04-03）
+## 最近完成（2026-04-04）
 
-### MT-RECAP-01：maintenance recap and next-stage convergence — 已完成
-- 本卡按当前仓库事实推进，性质明确为 maintenance / planning-quality work，不是 dual-kernel parity completion；没有恢复 `.github/workflows/*`，也没有推进 `planned.rs` 公共化、public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-- 开工前已重建上下文并复核当前仓库事实：
-  - 已重新阅读 `AGENTS.md`、`agents-only/{active_context,workpackage_latest,planned_preflight_inventory}.md`、全部已完成 maintenance inventory、`重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`、`重构package相关/singbox_rust_rebuild_workpackage.md`
-  - `git status --short --branch` 显示当前在 `main...origin/main`，但 workspace 仍有大量无关在制改动；其中包含 `app/src/admin_debug/{middleware/rate_limit,prefetch}.rs`、`crates/sb-config/src/ir/planned.rs` 等，本卡未回滚或覆盖这些改动
-  - `git log --oneline --decorate -n 20` 确认最近主线连续提交已覆盖 `MT-OBS-01` 到 `MT-DEEP-01`，`a7eb1e4e` 为当前 `main`
-- 源码抽样复核确认：
-  - `crates/sb-config/src/ir/planned.rs` 仍是 staged crate-private seam；`collect_planned_facts` / `validate_with_planned_facts` / `validate_planned_facts` 仍为 `pub(crate)`，`Config::validate()` 继续走 thin entry；当前仍无 public `RuntimePlan`、public `PlannedConfigIR`
-  - `app/src/run_engine_runtime/context.rs` 与 `app/src/admin_debug/mod.rs` 继续围绕 `RuntimeContext` / `AdminDebugState` 提供 owner-first runtime/admin wiring；runtime actor/context 主线已 close-out，不应按旧细卡继续拆
-  - `crates/sb-core/src/router/{shared_index,runtime_override}.rs` 与 `crates/sb-core/src/dns/upstream_pool.rs` 仍是当前 router/dns 结构边界；mega-file 风险还在，但已不是新的最前置 blocker
-  - `crates/sb-adapters/src/outbound/shadowtls.rs`、`crates/sb-adapters/src/inbound/{tun_session,tun_enhanced}.rs` 仍保持 ShadowTLS wrapper raw-stream 语义与 detached/draining TUN TCP lifecycle seam；deep corner-case 线已收成高层 boundary
+### MT-CONTRACT-01：transport-wrapper + detached-session contract hardening — 已完成
+- 性质：maintenance / protocol-quality work，不是 parity completion
+- ShadowTLS wrapper contract：
+  - 引入 `WrapperEndpoint` typed struct、`DetourStreamResult` type alias、`wrapper_endpoint()` accessor
+  - 重写 module-level 与 `connect_detour_stream` 文档，明确 wrapper-vs-requested endpoint semantics
+  - 修复 `shadowtls_e2e.rs` v1 relay `copy_bidirectional` BrokenPipe fixture race
+  - 新增 `bridge_stream_simultaneous_shutdown_does_not_panic` 与 `wrapper_endpoint_captures_configured_server` 测试
+- TUN TCP detached/draining session policy：
+  - 引入 `SessionPhase` enum (`Active`/`Detached`)、`DrainPolicy` struct、`phase`/`detached_at` fields
+  - 新增 `run_eviction_sweep()`、`detach_count()`、`with_drain_policy()`、`Display` for `FourTuple`
+  - 新增 `packet_loop_simultaneous_close_both_fin_no_rst`、drain eviction 测试
+- 验证：clippy 0 warnings；sb-adapters --lib 208/208 pass
 
 ## 当前验证事实
 - 已通过最小充分跨模块验证：

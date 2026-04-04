@@ -2330,4 +2330,76 @@ mod tests {
         assert_eq!(packets.len(), 1);
         assert_eq!(inbound.session_count(), 0);
     }
+
+    #[tokio::test]
+    async fn packet_loop_simultaneous_close_both_fin_no_rst() {
+        // Simultaneous-close: client sends FIN, server also sends EOF (closes).
+        // Both sides should emit FIN-ACK and session should be fully cleaned up.
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            // Read whatever arrives, then immediately close (EOF)
+            let mut buf = [0u8; 16];
+            let _ = stream.read(&mut buf).await;
+            drop(stream);
+        });
+
+        let inbound = make_direct_inbound();
+        let payload = b"ping";
+        let (tx, mut rx) = mpsc::channel(8);
+        let writer: Arc<dyn TunWriter + Send + Sync> = Arc::new(ChannelTunWriter { tx });
+        let mut io = FakePacketIo {
+            reads: VecDeque::from([
+                // SYN
+                FakeRead::Packet(build_ipv4_tcp_packet_for_test(addr, 0x02, 42, 0, &[])),
+                // PSH+ACK with payload
+                FakeRead::Packet(build_ipv4_tcp_packet_for_test(
+                    addr,
+                    0x18,
+                    43,
+                    INITIAL_SERVER_SEQ + 1,
+                    payload,
+                )),
+                // Client FIN+ACK (simultaneous close from client side)
+                FakeRead::Packet(build_ipv4_tcp_packet_for_test(
+                    addr,
+                    0x11,
+                    47,
+                    INITIAL_SERVER_SEQ + 1,
+                    &[],
+                )),
+                FakeRead::DelayedEof(std::time::Duration::from_millis(80)),
+            ]),
+            writes: Vec::new(),
+        };
+
+        inbound
+            .run_packet_loop(&mut io, &mut rx, writer)
+            .await
+            .expect("packet loop");
+
+        let packets: Vec<_> = io
+            .writes
+            .iter()
+            .map(|packet| parse_raw_tcp(packet).expect("parse reply"))
+            .collect();
+
+        // Should have SYN-ACK, ACK for payload, and at least one FIN-ACK
+        assert!(packets.iter().any(|p| p.flags == 0x12), "missing SYN-ACK");
+        assert!(
+            packets.iter().any(|p| p.flags == 0x11),
+            "missing FIN-ACK (server-side close)"
+        );
+        // No RST should be emitted during simultaneous close
+        assert!(
+            packets.iter().all(|p| p.flags != 0x14),
+            "simultaneous close should not emit RST"
+        );
+        // Session must be fully cleaned up
+        assert_eq!(inbound.session_count(), 0);
+    }
 }

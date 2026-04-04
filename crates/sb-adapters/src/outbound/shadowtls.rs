@@ -1,14 +1,19 @@
 //! ShadowTLS outbound connector adapter.
 //!
-//! IMPORTANT:
-//! The previous implementation modeled ShadowTLS as a standalone "TLS + HTTP
-//! CONNECT tunnel". That does not match sing-box ShadowTLS semantics, where
-//! ShadowTLS acts as a transport wrapper/detour rather than a leaf protocol
-//! that serializes the final destination itself.
+//! # Transport-Wrapper Contract
 //!
-//! Until transport-wrapper chaining is implemented, this adapter remains
-//! registrable but rejects standalone leaf dialing at runtime so parity
-//! evidence is not contaminated by the legacy tunnel model.
+//! ShadowTLS acts as a **transport wrapper/detour**, not a leaf protocol.
+//! The wrapper dials a *configured wrapper server* (the ShadowTLS relay),
+//! performs a TLS camouflage handshake, and exposes the post-handshake raw
+//! stream to the caller.  The *requested endpoint* (the ultimate destination)
+//! is **not** consumed by ShadowTLS itself — it is forwarded by the upper-
+//! layer protocol (e.g. Shadowsocks) over the wrapped stream.
+//!
+//! Key ownership invariants:
+//! - `connect_detour_stream` dials `WrapperEndpoint`, **not** the requested target.
+//! - The returned `BoxedStream` is an `OwnedBridgeStream` whose `Drop` aborts
+//!   the background bridge task — no orphan tasks can leak.
+//! - Standalone leaf `dial()` is permanently rejected.
 //!
 use crate::outbound::prelude::*;
 use std::time::Duration;
@@ -942,6 +947,24 @@ impl Default for ShadowTlsAdapterConfig {
     }
 }
 
+/// The configured wrapper server endpoint that ShadowTLS dials during its
+/// camouflage handshake.  This is distinct from the *requested endpoint*
+/// that the upper-layer protocol (e.g. Shadowsocks) targets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrapperEndpoint {
+    /// Host of the ShadowTLS relay / decoy server.
+    pub host: String,
+    /// Port of the ShadowTLS relay (usually 443).
+    pub port: u16,
+    /// SNI presented during camouflage.
+    pub sni: String,
+    /// Protocol version (1, 2, or 3).
+    pub version: u8,
+}
+
+/// Result of a successful detour wrapper dial.
+pub type DetourStreamResult = Result<BoxedStream>;
+
 /// ShadowTLS outbound adapter connector
 #[derive(Debug, Clone)]
 pub struct ShadowTlsConnector {
@@ -951,6 +974,16 @@ pub struct ShadowTlsConnector {
 impl ShadowTlsConnector {
     pub fn new(cfg: ShadowTlsAdapterConfig) -> Self {
         Self { cfg }
+    }
+
+    /// Returns the configured wrapper endpoint that this connector will dial.
+    pub fn wrapper_endpoint(&self) -> WrapperEndpoint {
+        WrapperEndpoint {
+            host: self.cfg.server.clone(),
+            port: self.cfg.port,
+            sni: self.cfg.sni.clone(),
+            version: self.cfg.version,
+        }
     }
 
     #[cfg(feature = "adapter-shadowtls")]
@@ -1064,8 +1097,21 @@ impl ShadowTlsConnector {
         wrapped_stream.finish()
     }
 
+    /// Dial the **configured wrapper server** and return a post-handshake raw stream.
+    ///
+    /// # Contract
+    ///
+    /// * `host` / `port` are the *requested endpoint* — logged for diagnostics
+    ///   but **not** used to select the dial target.  The connector always dials
+    ///   `self.cfg.server:self.cfg.port` (the `WrapperEndpoint`).
+    /// * The returned `BoxedStream` is an `OwnedBridgeStream` (v2/v3) or a raw
+    ///   `TcpStream` (v1).  On drop the bridge task is aborted automatically.
+    /// * Post-handshake capabilities:
+    ///   - **v1**: bare TCP (TLS is stripped after camouflage).
+    ///   - **v2**: TLS-record-framed duplex via `DuplexStream` bridge.
+    ///   - **v3**: authenticated TLS-record-framed duplex with HMAC tagging.
     #[cfg(feature = "adapter-shadowtls")]
-    pub async fn connect_detour_stream(&self, host: &str, port: u16) -> Result<BoxedStream> {
+    pub async fn connect_detour_stream(&self, host: &str, port: u16) -> DetourStreamResult {
         tracing::debug!(
             requested_host = host,
             requested_port = port,
@@ -1176,6 +1222,7 @@ impl OutboundConnector for ShadowTlsConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
     use tokio::sync::oneshot;
     use tokio::time::{timeout, Duration};
 
@@ -1183,6 +1230,22 @@ mod tests {
     fn test_shadowtls_connector_name() {
         let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig::default());
         assert_eq!(c.name(), "shadowtls");
+    }
+
+    #[test]
+    fn wrapper_endpoint_captures_configured_server() {
+        let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+            server: "relay.example.com".to_string(),
+            port: 8443,
+            sni: "cover.example.com".to_string(),
+            version: 3,
+            ..Default::default()
+        });
+        let ep = c.wrapper_endpoint();
+        assert_eq!(ep.host, "relay.example.com");
+        assert_eq!(ep.port, 8443);
+        assert_eq!(ep.sni, "cover.example.com");
+        assert_eq!(ep.version, 3);
     }
 
     #[tokio::test]
@@ -1212,5 +1275,39 @@ mod tests {
             .await
             .expect("bridge task should be aborted when stream drops")
             .expect("abort drop signal should arrive");
+    }
+
+    #[tokio::test]
+    async fn bridge_stream_simultaneous_shutdown_does_not_panic() {
+        // Pin: dropping an OwnedBridgeStream while the bridge is mid-relay
+        // must not panic or leak the bridge task.
+        let (done_tx, done_rx) = oneshot::channel();
+        let (user_stream, peer_stream) = tokio::io::duplex(1024);
+        let bridge_task = tokio::spawn(async move {
+            let _guard = DropNotify(Some(done_tx));
+            let (mut r, mut w) = tokio::io::split(peer_stream);
+            let _ = tokio::io::copy(&mut r, &mut w).await;
+        });
+        tokio::task::yield_now().await;
+
+        let mut bridge = boxed_bridge_stream(user_stream, bridge_task);
+        // Write something so the bridge task is actively relaying.
+        let _ = bridge.write_all(b"hello").await;
+        // Simultaneous drop while data may still be in flight.
+        drop(bridge);
+
+        timeout(Duration::from_secs(1), done_rx)
+            .await
+            .expect("bridge task should be aborted on simultaneous shutdown")
+            .expect("abort drop signal should arrive");
+    }
+
+    struct DropNotify(Option<oneshot::Sender<()>>);
+    impl Drop for DropNotify {
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
+        }
     }
 }
