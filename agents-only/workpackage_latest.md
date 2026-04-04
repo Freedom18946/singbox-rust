@@ -22,7 +22,7 @@
 
 **全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。
 
-### 当前维护线（2026-04-03）
+### 当前维护线（2026-04-04）
 
 - **MT-RECAP-01**: maintenance recap and next-stage convergence — 已完成
   - 本卡不是 parity completion；基于当前源码、git 现状与最小充分验证做 maintenance 复盘
@@ -47,6 +47,13 @@
   - ShadowTLS：typed `WrapperEndpoint`、`DetourStreamResult`、wrapper endpoint doc、e2e fixture fix、bridge simultaneous-shutdown test
   - TUN TCP：`SessionPhase` enum、`DrainPolicy` struct、`run_eviction_sweep()`、`phase`/`detached_at` fields、simultaneous-close test
   - 验证：clippy 0 warnings；sb-adapters --lib 208/208 pass；shadowtls e2e 9/9 pass (isolation)
+
+- **MT-CONTRACT-02**: transport/session contract convergence — 已完成
+  - 性质：maintenance / protocol-quality work，不是 parity completion
+  - ShadowTLS：`StreamCapability` enum、`WrapperContract` struct、`wrapper_contract()` accessor、4 typed contract tests
+  - TUN TCP：`CleanupMode` enum + Display、`remove_with_reason()`、`simultaneous_close_grace` in DrainPolicy、`drain_policy()` accessor、4 typed policy tests
+  - 集成：`tun_enhanced.rs` RST 分支 → `CleanupMode::ClientRst`；`run_eviction_sweep()` → `CleanupMode::DrainTimeout`
+  - 验证：clippy 0 warnings；sb-adapters --lib 216/216 pass
 
 ### 维护线分类（按当前仓库事实）
 

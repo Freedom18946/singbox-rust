@@ -962,6 +962,50 @@ pub struct WrapperEndpoint {
     pub version: u8,
 }
 
+/// Typed representation of the post-handshake stream capability.
+///
+/// Each ShadowTLS protocol version yields a different kind of raw stream
+/// after the camouflage handshake completes.  This enum makes that
+/// distinction first-class so that upper-layer consumers can reason about
+/// the stream they receive without inspecting the version number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StreamCapability {
+    /// Version 1: TLS is stripped after camouflage; the returned stream is a
+    /// bare TCP stream with no additional framing.
+    BareTcp,
+    /// Version 2: the returned stream is a `DuplexStream` backed by a bridge
+    /// task that TLS-record-frames all traffic.
+    TlsRecordFramed,
+    /// Version 3: like v2 but every application-data frame carries an HMAC
+    /// tag for server-side authentication.
+    AuthenticatedTlsRecordFramed,
+}
+
+impl StreamCapability {
+    /// Derive the capability from the protocol version.
+    pub fn from_version(version: u8) -> Option<Self> {
+        match version {
+            1 => Some(Self::BareTcp),
+            2 => Some(Self::TlsRecordFramed),
+            3 => Some(Self::AuthenticatedTlsRecordFramed),
+            _ => None,
+        }
+    }
+}
+
+/// Compile-time typed contract describing what the ShadowTLS wrapper
+/// provides to its upper-layer consumer.
+///
+/// Combines the dial target ([`WrapperEndpoint`]) with the post-handshake
+/// stream behaviour ([`StreamCapability`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrapperContract {
+    /// The server endpoint this wrapper will dial.
+    pub endpoint: WrapperEndpoint,
+    /// What kind of stream the handshake produces.
+    pub capability: StreamCapability,
+}
+
 /// Result of a successful detour wrapper dial.
 pub type DetourStreamResult = Result<BoxedStream>;
 
@@ -984,6 +1028,17 @@ impl ShadowTlsConnector {
             sni: self.cfg.sni.clone(),
             version: self.cfg.version,
         }
+    }
+
+    /// Returns the full typed wrapper contract (endpoint + stream capability).
+    ///
+    /// Returns `None` only if the configured version is not a supported
+    /// protocol version (1, 2, or 3).
+    pub fn wrapper_contract(&self) -> Option<WrapperContract> {
+        StreamCapability::from_version(self.cfg.version).map(|capability| WrapperContract {
+            endpoint: self.wrapper_endpoint(),
+            capability,
+        })
     }
 
     #[cfg(feature = "adapter-shadowtls")]
@@ -1106,10 +1161,9 @@ impl ShadowTlsConnector {
     ///   `self.cfg.server:self.cfg.port` (the `WrapperEndpoint`).
     /// * The returned `BoxedStream` is an `OwnedBridgeStream` (v2/v3) or a raw
     ///   `TcpStream` (v1).  On drop the bridge task is aborted automatically.
-    /// * Post-handshake capabilities:
-    ///   - **v1**: bare TCP (TLS is stripped after camouflage).
-    ///   - **v2**: TLS-record-framed duplex via `DuplexStream` bridge.
-    ///   - **v3**: authenticated TLS-record-framed duplex with HMAC tagging.
+    /// * Post-handshake stream type is described by [`StreamCapability`]; use
+    ///   [`wrapper_contract()`](Self::wrapper_contract) to query it at
+    ///   construction time.
     #[cfg(feature = "adapter-shadowtls")]
     pub async fn connect_detour_stream(&self, host: &str, port: u16) -> DetourStreamResult {
         tracing::debug!(
@@ -1246,6 +1300,46 @@ mod tests {
         assert_eq!(ep.port, 8443);
         assert_eq!(ep.sni, "cover.example.com");
         assert_eq!(ep.version, 3);
+    }
+
+    #[test]
+    fn wrapper_contract_v1_returns_bare_tcp_capability() {
+        let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+            version: 1,
+            ..Default::default()
+        });
+        let contract = c.wrapper_contract().expect("v1 should produce a contract");
+        assert_eq!(contract.capability, StreamCapability::BareTcp);
+        assert_eq!(contract.endpoint.version, 1);
+    }
+
+    #[test]
+    fn wrapper_contract_v2_returns_tls_record_framed() {
+        let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+            version: 2,
+            ..Default::default()
+        });
+        let contract = c.wrapper_contract().expect("v2 should produce a contract");
+        assert_eq!(contract.capability, StreamCapability::TlsRecordFramed);
+    }
+
+    #[test]
+    fn wrapper_contract_v3_returns_authenticated_framed() {
+        let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+            version: 3,
+            ..Default::default()
+        });
+        let contract = c.wrapper_contract().expect("v3 should produce a contract");
+        assert_eq!(contract.capability, StreamCapability::AuthenticatedTlsRecordFramed);
+    }
+
+    #[test]
+    fn wrapper_contract_unsupported_version_returns_none() {
+        let c = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+            version: 9,
+            ..Default::default()
+        });
+        assert!(c.wrapper_contract().is_none());
     }
 
     #[tokio::test]

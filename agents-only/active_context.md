@@ -6,53 +6,48 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-CONTRACT-01` transport-wrapper + detached-session contract hardening — 已完成；`MT-RECAP-01` 已完成；其余旧线保持已完成 / 已归档状态
+**当前维护线**: `MT-CONTRACT-02` transport/session contract convergence — 已完成
 
 ## 最近完成（2026-04-04）
 
-### MT-CONTRACT-01：transport-wrapper + detached-session contract hardening — 已完成
+### MT-CONTRACT-02：transport/session contract convergence — 已完成
 - 性质：maintenance / protocol-quality work，不是 parity completion
-- ShadowTLS wrapper contract：
-  - 引入 `WrapperEndpoint` typed struct、`DetourStreamResult` type alias、`wrapper_endpoint()` accessor
-  - 重写 module-level 与 `connect_detour_stream` 文档，明确 wrapper-vs-requested endpoint semantics
-  - 修复 `shadowtls_e2e.rs` v1 relay `copy_bidirectional` BrokenPipe fixture race
-  - 新增 `bridge_stream_simultaneous_shutdown_does_not_panic` 与 `wrapper_endpoint_captures_configured_server` 测试
+- ShadowTLS typed wrapper contract：
+  - 引入 `StreamCapability` enum (BareTcp/TlsRecordFramed/AuthenticatedTlsRecordFramed)
+  - 引入 `WrapperContract` struct 组合 endpoint + capability
+  - 新增 `wrapper_contract()` accessor
+  - 更新 `connect_detour_stream` doc 引用 `StreamCapability`
+  - 更新 `ShadowTlsDetourBridge` doc 明确契约代理语义
+  - 新增 4 个 typed contract 测试 (v1/v2/v3/unsupported)
 - TUN TCP detached/draining session policy：
-  - 引入 `SessionPhase` enum (`Active`/`Detached`)、`DrainPolicy` struct、`phase`/`detached_at` fields
-  - 新增 `run_eviction_sweep()`、`detach_count()`、`with_drain_policy()`、`Display` for `FourTuple`
-  - 新增 `packet_loop_simultaneous_close_both_fin_no_rst`、drain eviction 测试
-- 验证：clippy 0 warnings；sb-adapters --lib 208/208 pass
+  - 引入 `CleanupMode` enum (ClientRst/ClientFin/ServerEof/DrainTimeout/OwnerDrop) + Display
+  - 新增 `remove_with_reason()` 方法
+  - `DrainPolicy` 新增 `simultaneous_close_grace` 字段
+  - 新增 `drain_policy()` accessor
+  - `tun_enhanced.rs` RST 分支集成 `CleanupMode::ClientRst`
+  - 新增 4 个 typed policy 测试
+- 验证：clippy 0 warnings；sb-adapters --lib 216/216 pass
+
+### MT-CONTRACT-01：transport-wrapper + detached-session contract hardening — 已完成
+- ShadowTLS：`WrapperEndpoint`、`DetourStreamResult`、`wrapper_endpoint()`
+- TUN TCP：`SessionPhase`、`DrainPolicy`、`run_eviction_sweep()`
 
 ## 当前验证事实
-- 已通过最小充分跨模块验证：
-  - `cargo test -p app --all-features --lib -- --test-threads=1`
-  - `cargo test -p sb-core --all-features --lib -- --test-threads=1`
-  - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1`
-  - `cargo clippy -p app --all-features --all-targets -- -D warnings`
-  - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
-  - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
+- 已通过最小充分验证：
+  - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` ✅
+  - `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1` ✅
+  - `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1` ✅
+  - `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1` ✅
+  - `cargo test -p sb-adapters --all-features register -- --test-threads=1` ✅
+  - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` ✅ (216 pass)
 
 ## 当前阶段结论
-- 当前没有新的“最前置基线阻塞”或必须立即开卡的质量问题；仓库事实更支持“收束下一阶段路线”，而不是继续机械拆 maintenance 细卡
-- 可明确视为 archive-safe close-out 的主线：
-  - `WP-30` archive baseline / planned seam baseline
-  - `MT-SVC-01`
-  - `MT-TEST-01`
-  - `MT-ADP-01`
-- 已 close-out 但仍保留高层 future boundary 的主线：
-  - `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-MLOG-01`、`MT-ADM-01`
-  - `MT-RD-01`
-  - `MT-PERF-01`、`MT-DEEP-01`
-- 当前没有需要继续按“单线 still active”维持的旧 maintenance 卡；剩余未来工作只应按跨线高层 boundary regroup
-
-## Next-Stage Gates（只保留高层主题）
-- 默认结论：**当前阶段不建议继续拆新的细卡**
-- 若未来确需继续推进，只保留 1-3 条高层主题：
-  - runtime / control-plane / observability convergence：signal/reload/shutdown manager、`logging` / `security_metrics` / `subs` limiter 等剩余 compat-owner boundary 必须成组推进
-  - router / dns / tun / outbound convergence：router/dns mega-file shared-state、TUN/outbound lifecycle/perf、ShadowTLS wrapper contract / detached TCP lifecycle 必须按系统主题成组推进
-  - planned/private seam 仅在出现真实稳定 consumer 时再评估；当前明确暂停 public `RuntimePlan` / public `PlannedConfigIR` / generic query API
+- 当前没有新的基线阻塞或必须立即开卡的质量问题
+- ShadowTLS wrapper contract 已从雏形推进到 typed contract (endpoint + capability + accessor)
+- TUN TCP session policy 已从雏形推进到 typed cleanup mode (reason + grace period + accessor)
+- 剩余未来工作只应按跨线高层 boundary regroup
 
 ## 暂停事项
-- 不再恢复 `WP-30k` ~ `WP-30as` 式细碎 maintenance 排程
+- 不再恢复细碎 maintenance 排程
 - 不把 maintenance work 写成 parity completion
-- 不把 `future boundary` 自动等同于“下一卡默认继续做”
+- 不把 `future boundary` 自动等同于"下一卡默认继续做"

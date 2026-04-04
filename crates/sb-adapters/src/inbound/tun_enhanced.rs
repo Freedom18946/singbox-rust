@@ -21,7 +21,7 @@ use tokio::io::Interest;
 
 use crate::inbound::tun::TunInboundConfig;
 use crate::inbound::tun_session::{
-    build_tcp_response_packet, FourTuple, TcpSession, TcpSessionManager, TunWriter,
+    build_tcp_response_packet, CleanupMode, FourTuple, TcpSession, TcpSessionManager, TunWriter,
 };
 
 const INITIAL_SERVER_SEQ: u32 = 1000;
@@ -483,7 +483,7 @@ impl EnhancedTunInbound {
                 session.observe_server_ack(packet.acknowledgment_number);
             }
             if packet.is_rst() {
-                self.session_manager.remove(&packet.tuple);
+                self.session_manager.remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
                 return Ok(());
             }
             if packet.has_payload() {
@@ -514,7 +514,7 @@ impl EnhancedTunInbound {
                 session.observe_server_ack(packet.acknowledgment_number);
             }
             if packet.is_rst() {
-                self.session_manager.remove(&packet.tuple);
+                self.session_manager.remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
                 return Ok(());
             }
             if packet.is_fin() {

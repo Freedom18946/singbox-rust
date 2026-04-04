@@ -101,6 +101,15 @@ impl<A: crate::traits::OutboundConnector + 'static> OutboundConnector for Adapte
 
 #[cfg(feature = "adapter-shadowtls")]
 #[derive(Debug)]
+/// Bridges `sb_core::adapter::OutboundConnector` to the ShadowTLS
+/// transport-wrapper contract.
+///
+/// `connect_io(host, port)` delegates to
+/// [`ShadowTlsConnector::connect_detour_stream`], which always dials the
+/// **configured `WrapperEndpoint`** — not `(host, port)`.  The requested
+/// endpoint is only used for diagnostics / logging.  See
+/// [`WrapperContract`](crate::outbound::shadowtls::WrapperContract) for
+/// the full typed contract.
 struct ShadowTlsDetourBridge {
     inner: Arc<crate::outbound::shadowtls::ShadowTlsConnector>,
 }
