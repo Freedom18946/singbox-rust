@@ -252,6 +252,11 @@ credentials/
 # Docker build cache
 .docker-cache/
 
+# Local audit / restructuring working notes (not for VCS)
+5.4pro第三次审计/
+重构package相关/
+scripts/.e2e/
+
 # ------------------------------------------------------------------------------
 # Miscellaneous
 # ------------------------------------------------------------------------------
