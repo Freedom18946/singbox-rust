@@ -193,4 +193,13 @@
 
 ---
 
-*最后更新：2026-02-12（L14 Capstone 完成，新增 L5-L14 踩坑记录）*
+### 测试 Flaky / 全局静态污染
+
+| # | 问题 | 原因 | 解决方案 |
+|---|------|------|---------|
+| 69 | `test_explicit_metrics_owner_tracks_prefetch_depth` 断言 `high_watermark == 3` 但得到 5 | `HIGH_WATERMARK` 是模块级 `AtomicU64`，CAS 只增不减；非 serial 测试 `test_enqueue_when_enabled` 通过 `enqueue()` → `observe_depth()` 累加 | 测试前 `HIGH_WATERMARK.store(0, Relaxed)` 重置 |
+| 70 | `build_redactor_avoids_runtime_dependency_side_effects` 断言 security metrics 未安装但已安装 | `app_runtime_deps_exposes_owned_metrics_handle` 调用 `AppRuntimeDeps::new()` 安装全局 `DEFAULT_STATE` 后未清理；且缺 `#[serial]` | 添加 `#[serial]` + 前后 `clear_default_for_test()` |
+
+---
+
+*最后更新：2026-03-24（新增 #69-#70 测试 flaky 全局静态污染）*

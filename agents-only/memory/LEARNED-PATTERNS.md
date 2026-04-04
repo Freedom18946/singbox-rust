@@ -219,4 +219,17 @@
 
 ---
 
-*最后更新：2026-03-04（新增 L19 能力口径与宣称门禁模式）*
+### Compat Shell 收口评估模式（维护期）
+
+| 模式 | 说明 |
+|------|------|
+| 模块级静态 ROI 评估 | 消除全局静态前，先统计 `LazyLock` 数量 + `register_*()` 调用 + 外部调用点；跨 crate API 变更 >20 调用点时 ROI 通常很低 |
+| prometheus LazyLock 不碰 | `prometheus` crate 本身围绕全局 `Registry` 设计；56 个 `LazyLock` 指标静态是惯用范式，消除等于换 crate |
+| Weak 注册表清理优先级 | 当主链已切到显式 owner 时，剩余 `Weak` compat wrapper 是无害壳；优先清理零调用方的死代码（如 logging），延后仍有 16+ 调用方的（如 security_metrics） |
+| 测试全局静态隔离 | 模块级 `AtomicU64` / `Weak<T>` 在并行测试间泄漏；修复模式：`#[serial]` + 测试前 `store(0)` / `clear_default_for_test()` |
+| with_current 统一薄壳 | 40 个 `if let Ok(state) = current() { state.method() }` 收成 `with_current(SecurityMetricsState::method)` 单行委托；`map_current(f, default)` 处理有返回值的 getter |
+| inner 函数去重 | `resolve_checked` + `resolve_checked_with_metrics` 两套重复实现 → 提取 `resolve_checked_inner(host, metrics: Option<&T>)` 共用 inner + 2 个薄公共入口 |
+
+---
+
+*最后更新：2026-03-24（新增 Compat Shell 收口评估模式）*
