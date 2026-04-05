@@ -6,9 +6,34 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-CONTRACT-02` transport/session contract convergence — 已完成
+**当前维护线**: `MT-CONV-01` runtime / control-plane / observability convergence — 已完成
 
-## 最近完成（2026-04-04）
+## 最近完成（2026-04-05）
+
+### MT-CONV-01：runtime / control-plane / observability convergence — 已完成
+- 性质：maintenance / convergence quality work，不是 parity completion
+- runtime / observability lifecycle 收敛：
+  - `tracing_init.rs` 新增共享 `MetricsExporterHandle`
+  - `runtime_deps.rs` 新增 `AppObservability`
+  - `RuntimeContext` 改用 `start_metrics_exporter(...)`，删除本地 exporter handle 分叉
+- admin control-plane query 收敛：
+  - `AdminDebugState` 新增 `AdminDebugQuery`
+  - `health` / `metrics` / `analyze` 改走 `state.query()`
+  - `SecuritySnapshot` 补 `prefetch_queue_high_watermark`，减少 endpoint 额外 query glue
+- 复核后刻意不硬改：
+  - `app/src/logging.rs`
+  - `app/src/run_engine_runtime/admin_start.rs`
+  - `app/src/admin_debug/http_server.rs`
+  - 这些切口当前 owner/lifecycle 语义已稳定，继续 churn 只会放大噪音
+- 验证：
+  - `cargo test -p app --all-features --lib -- --test-threads=1` ✅
+  - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` ✅
+  - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` ✅
+  - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` ✅
+  - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1` ✅
+  - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
+  - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
+  - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` ✅
 
 ### MT-CONTRACT-02：transport/session contract convergence — 已完成
 - 性质：maintenance / protocol-quality work，不是 parity completion
@@ -34,18 +59,16 @@
 
 ## 当前验证事实
 - 已通过最小充分验证：
-  - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings` ✅
-  - `cargo test -p sb-adapters --all-features shadowtls -- --test-threads=1` ✅
-  - `cargo test -p sb-adapters --all-features tun_session -- --test-threads=1` ✅
-  - `cargo test -p sb-adapters --all-features tun_enhanced -- --test-threads=1` ✅
-  - `cargo test -p sb-adapters --all-features register -- --test-threads=1` ✅
-  - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1` ✅ (216 pass)
+  - `app --all-features --lib`、`admin_auth_contract`、`e2e_subs_security` 全部通过
+  - `sb-metrics --all-features --lib` 通过
+  - `sb-core --all-features --lib registry_ext::tests` 通过
+  - `app` / `sb-metrics` / `sb-core` 对应 clippy 全部 0 warnings
 
 ## 当前阶段结论
 - 当前没有新的基线阻塞或必须立即开卡的质量问题
-- ShadowTLS wrapper contract 已从雏形推进到 typed contract (endpoint + capability + accessor)
-- TUN TCP session policy 已从雏形推进到 typed cleanup mode (reason + grace period + accessor)
-- 剩余未来工作只应按跨线高层 boundary regroup
+- runtime / control-plane / observability 当前已收成更清晰的 owner/query/lifecycle seam
+- 本轮没有误推进 `RuntimePlan` / `PlannedConfigIR` / generic query API
+- 剩余未来工作只保留少数高层 boundary，不恢复细碎 maintenance 卡
 
 ## 暂停事项
 - 不再恢复细碎 maintenance 排程

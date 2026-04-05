@@ -8,6 +8,49 @@ fn tracing_format_is_json() -> bool {
     std::env::var("SB_TRACING_FORMAT").is_ok_and(|value| value == "json")
 }
 
+#[cfg(feature = "sb-metrics")]
+pub struct MetricsExporterHandle {
+    join: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(feature = "sb-metrics")]
+impl MetricsExporterHandle {
+    #[must_use]
+    pub fn new(registry: sb_metrics::MetricsRegistryHandle, addr: std::net::SocketAddr) -> Self {
+        Self {
+            join: sb_metrics::spawn_http_exporter(registry, addr),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_join_for_test(join: tokio::task::JoinHandle<()>) -> Self {
+        Self { join }
+    }
+
+    pub fn detach(self) {
+        drop(self.join);
+    }
+
+    pub async fn shutdown(self) {
+        self.join.abort();
+        if let Err(error) = self.join.await {
+            if !error.is_cancelled() {
+                tracing::warn!(%error, "metrics exporter join failed during shutdown");
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "sb-metrics"))]
+pub struct MetricsExporterHandle;
+
+#[cfg(not(feature = "sb-metrics"))]
+impl MetricsExporterHandle {
+    pub const fn detach(self) {}
+
+    pub async fn shutdown(self) {}
+}
+
 /// Initialize tracing using `RUST_LOG` or a default `info` filter.
 ///
 /// # Errors
@@ -47,9 +90,20 @@ pub fn init_tracing_once_with_filter(filter: &str) -> Result<()> {
 /// # Errors
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
-pub fn spawn_metrics_exporter_if_configured(
+#[must_use]
+pub fn start_metrics_exporter(
     registry: sb_metrics::MetricsRegistryHandle,
-) -> Result<Option<tokio::task::JoinHandle<()>>> {
+    addr: std::net::SocketAddr,
+) -> MetricsExporterHandle {
+    MetricsExporterHandle::new(registry, addr)
+}
+
+/// # Errors
+///
+/// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
+pub fn start_metrics_exporter_if_configured(
+    registry: sb_metrics::MetricsRegistryHandle,
+) -> Result<Option<MetricsExporterHandle>> {
     if std::env::var("SB_METRICS_ADDR").is_err() {
         tracing::debug!("metrics exporter not configured (SB_METRICS_ADDR unset)");
         return Ok(None);
@@ -57,7 +111,7 @@ pub fn spawn_metrics_exporter_if_configured(
 
     sb_metrics::spawn_http_exporter_from_env(registry).map_or_else(
         || anyhow::bail!("SB_METRICS_ADDR is set but metrics exporter could not be spawned"),
-        |join| Ok(Some(join)),
+        |join| Ok(Some(MetricsExporterHandle { join })),
     )
 }
 
@@ -65,8 +119,9 @@ pub fn spawn_metrics_exporter_if_configured(
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
 pub fn init_metrics_exporter_once(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
-    if spawn_metrics_exporter_if_configured(registry)?.is_some() {
+    if let Some(handle) = start_metrics_exporter_if_configured(registry)? {
         tracing::info!("metrics exporter started");
+        handle.detach();
     }
     Ok(())
 }
@@ -97,4 +152,20 @@ pub fn init_observability_once(deps: &app::runtime_deps::AppRuntimeDeps) -> Resu
 #[cfg(not(feature = "observe"))]
 pub fn init_observability_once(_deps: &app::runtime_deps::AppRuntimeDeps) -> Result<()> {
     init_tracing_once()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tracing_init_keeps_metrics_exporter_lifecycle_owner_explicit() {
+        let source = include_str!("tracing_init.rs");
+        let context = include_str!("run_engine_runtime/context.rs");
+
+        assert!(source.contains("pub struct MetricsExporterHandle"));
+        assert!(source.contains("pub fn start_metrics_exporter("));
+        assert!(source.contains("pub fn start_metrics_exporter_if_configured("));
+        assert!(source.contains("handle.detach();"));
+        assert!(context.contains("fn start_metrics_exporter("));
+        assert!(!context.contains("struct PromExporterHandle"));
+    }
 }

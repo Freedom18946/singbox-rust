@@ -12,6 +12,32 @@ pub fn build_redactor() -> Result<Arc<crate::redact::Redactor>> {
     Ok(Arc::new(crate::redact::Redactor::new()?))
 }
 
+#[cfg(feature = "observe")]
+#[derive(Clone)]
+pub struct AppObservability {
+    metrics_registry: sb_metrics::MetricsRegistryHandle,
+}
+
+#[cfg(feature = "observe")]
+impl AppObservability {
+    const fn new(metrics_registry: sb_metrics::MetricsRegistryHandle) -> Self {
+        Self { metrics_registry }
+    }
+
+    #[must_use]
+    pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
+        self.metrics_registry.clone()
+    }
+
+    #[must_use]
+    pub fn start_metrics_exporter(
+        &self,
+        addr: std::net::SocketAddr,
+    ) -> crate::tracing_init::MetricsExporterHandle {
+        crate::tracing_init::start_metrics_exporter(self.metrics_registry(), addr)
+    }
+}
+
 #[derive(Clone)]
 pub struct AppRuntimeDeps {
     #[cfg(feature = "observe")]
@@ -111,8 +137,14 @@ impl AppRuntimeDeps {
 
     #[cfg(feature = "observe")]
     #[must_use]
+    pub fn observability(&self) -> AppObservability {
+        AppObservability::new(self.metrics_registry_owner.handle())
+    }
+
+    #[cfg(feature = "observe")]
+    #[must_use]
     pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        self.metrics_registry_owner.handle()
+        self.observability().metrics_registry()
     }
 
     #[cfg(feature = "admin_debug")]
@@ -169,6 +201,31 @@ mod tests {
             deps.metrics_registry(),
             sb_metrics::MetricsRegistryHandle::Owned(_)
         ));
+
+        drop(deps);
+
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(feature = "observe")]
+    fn app_runtime_deps_observability_reuses_owned_registry_handle() {
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
+        let first = deps.observability().metrics_registry();
+        let second = deps.observability().metrics_registry();
+
+        match (first, second) {
+            (
+                sb_metrics::MetricsRegistryHandle::Owned(first),
+                sb_metrics::MetricsRegistryHandle::Owned(second),
+            ) => assert!(Arc::ptr_eq(&first, &second)),
+            other => panic!("expected owned metrics registries, got {other:?}"),
+        }
 
         drop(deps);
 

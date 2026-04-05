@@ -48,6 +48,9 @@ pub async fn handle(
     sock: &mut (impl AsyncWriteExt + Unpin),
     state: &crate::admin_debug::AdminDebugState,
 ) -> std::io::Result<()> {
+    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
+    let query = state.query();
+
     if !path_q.starts_with("/router/analyze") {
         return Ok(());
     }
@@ -160,7 +163,7 @@ pub async fn handle(
             let report = sb_core::router::analyze::analyze(&text);
 
             match build_single_patch_json_async(
-                state.analyze_registry(),
+                query.analyze_registry(),
                 &kind,
                 &report,
                 &text,
@@ -180,7 +183,7 @@ pub async fn handle(
                     respond(sock, 200, "application/json", &body).await
                 }
                 Err(e) => {
-                    let supported_list = state.analyze_registry().supported_kinds().join(", ");
+                    let supported_list = query.analyze_registry().supported_kinds().join(", ");
                     let hint = format!("supported kinds: [{supported_list}]");
                     respond_json_error(sock, 400, &format!("patch build failed: {e}"), Some(&hint))
                         .await

@@ -233,7 +233,7 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
 
     let runtime_context = crate::run_engine_runtime::context::RuntimeContext::from_raw(&raw)?;
     let reload_state = runtime_context.reload_state();
-    let prom_exporter = runtime_context.maybe_start_prom_exporter(opts.prom_listen.as_deref());
+    let metrics_exporter = runtime_context.start_metrics_exporter(opts.prom_listen.as_deref());
 
     let dns_applied = if opts.dns_env_bridge {
         crate::dns_env::apply_dns_env_from_config(&raw)
@@ -264,7 +264,7 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
         None
     };
     let runtime_lifecycle = crate::run_engine_runtime::context::RuntimeLifecycle::new(
-        prom_exporter,
+        metrics_exporter,
         admin_services,
         watch_handle,
     );
@@ -339,6 +339,7 @@ mod tests {
 
         assert!(source.contains("async fn run_supervisor("));
         assert!(source.contains("RuntimeContext::from_raw(&raw)?"));
+        assert!(source.contains("runtime_context.start_metrics_exporter("));
         assert!(source.contains(".start_admin_services(&opts, &supervisor)"));
         assert!(source.contains("runtime_context.spawn_watch("));
         assert!(source.contains("RuntimeLifecycle::new("));

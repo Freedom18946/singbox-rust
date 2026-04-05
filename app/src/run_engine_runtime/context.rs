@@ -56,25 +56,20 @@ impl RuntimeContext {
         self.runtime_deps.admin_state()
     }
 
-    #[cfg(feature = "observe")]
     #[must_use]
-    pub fn metrics_registry(&self) -> sb_metrics::MetricsRegistryHandle {
-        self.runtime_deps.metrics_registry()
-    }
-
-    #[must_use]
-    pub fn maybe_start_prom_exporter(
+    pub fn start_metrics_exporter(
         &self,
         prom_listen: Option<&str>,
-    ) -> Option<PromExporterHandle> {
+    ) -> Option<crate::tracing_init::MetricsExporterHandle> {
         let addr = prom_listen?;
 
         #[cfg(feature = "observe")]
         match addr.parse() {
-            Ok(socket_addr) => Some(PromExporterHandle::spawn(
-                self.metrics_registry(),
-                socket_addr,
-            )),
+            Ok(socket_addr) => Some(
+                self.runtime_deps
+                    .observability()
+                    .start_metrics_exporter(socket_addr),
+            ),
             Err(error) => {
                 tracing::warn!(addr = %addr, error = %error, "invalid prom exporter listen addr");
                 None
@@ -141,44 +136,8 @@ impl RuntimeContext {
     }
 }
 
-#[cfg(feature = "observe")]
-pub struct PromExporterHandle {
-    join: tokio::task::JoinHandle<()>,
-}
-
-#[cfg(feature = "observe")]
-impl PromExporterHandle {
-    fn spawn(registry: sb_metrics::MetricsRegistryHandle, addr: std::net::SocketAddr) -> Self {
-        Self {
-            join: sb_metrics::spawn_http_exporter(registry, addr),
-        }
-    }
-
-    #[cfg(test)]
-    fn from_join_for_test(join: tokio::task::JoinHandle<()>) -> Self {
-        Self { join }
-    }
-
-    pub async fn shutdown(self) {
-        self.join.abort();
-        if let Err(error) = self.join.await {
-            if !error.is_cancelled() {
-                tracing::warn!(%error, "prom exporter join failed during shutdown");
-            }
-        }
-    }
-}
-
-#[cfg(not(feature = "observe"))]
-pub struct PromExporterHandle;
-
-#[cfg(not(feature = "observe"))]
-impl PromExporterHandle {
-    pub async fn shutdown(self) {}
-}
-
 pub struct RuntimeLifecycle {
-    prom_exporter: Option<PromExporterHandle>,
+    metrics_exporter: Option<crate::tracing_init::MetricsExporterHandle>,
     admin_services: crate::run_engine_runtime::admin_start::AdminServices,
     watch: Option<crate::run_engine_runtime::watch::WatchHandle>,
 }
@@ -186,12 +145,12 @@ pub struct RuntimeLifecycle {
 impl RuntimeLifecycle {
     #[must_use]
     pub const fn new(
-        prom_exporter: Option<PromExporterHandle>,
+        metrics_exporter: Option<crate::tracing_init::MetricsExporterHandle>,
         admin_services: crate::run_engine_runtime::admin_start::AdminServices,
         watch: Option<crate::run_engine_runtime::watch::WatchHandle>,
     ) -> Self {
         Self {
-            prom_exporter,
+            metrics_exporter,
             admin_services,
             watch,
         }
@@ -202,8 +161,8 @@ impl RuntimeLifecycle {
             watch.shutdown().await;
         }
         self.admin_services.shutdown().await;
-        if let Some(prom_exporter) = self.prom_exporter {
-            prom_exporter.shutdown().await;
+        if let Some(metrics_exporter) = self.metrics_exporter {
+            metrics_exporter.shutdown().await;
         }
     }
 }
@@ -228,15 +187,12 @@ mod tests {
 
         assert_eq!(runtime.startup_config_fingerprint(), expected);
         let source = include_str!("context.rs");
+        let tracing_init = include_str!("../tracing_init.rs");
 
+        assert!(source.contains("fn start_metrics_exporter("));
         assert!(source.contains("fn spawn_watch("));
         assert!(source.contains("async fn start_admin_services("));
-
-        #[cfg(feature = "observe")]
-        assert!(matches!(
-            runtime.metrics_registry(),
-            sb_metrics::MetricsRegistryHandle::Owned(_)
-        ));
+        assert!(tracing_init.contains("pub struct MetricsExporterHandle"));
 
         drop(runtime);
 
@@ -247,12 +203,12 @@ mod tests {
 
     #[cfg(feature = "observe")]
     #[tokio::test]
-    async fn runtime_lifecycle_shutdown_aborts_owned_prom_exporter_task() {
+    async fn runtime_lifecycle_shutdown_aborts_owned_metrics_exporter_task() {
         let join = tokio::spawn(async {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         });
         let lifecycle = RuntimeLifecycle::new(
-            Some(super::PromExporterHandle::from_join_for_test(join)),
+            Some(crate::tracing_init::MetricsExporterHandle::from_join_for_test(join)),
             crate::run_engine_runtime::admin_start::AdminServices::default(),
             None,
         );

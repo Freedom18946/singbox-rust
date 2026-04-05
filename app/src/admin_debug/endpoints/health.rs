@@ -28,18 +28,8 @@ pub async fn handle(
     sock: &mut (impl AsyncWriteExt + Unpin),
     state: &crate::admin_debug::AdminDebugState,
 ) -> std::io::Result<()> {
+    let query = state.query();
     let pid = std::process::id();
-    let uptime_secs = state.started_at().elapsed().as_secs();
-    // 在未启用 router/sbcore_rules_tool 时提供空集，避免特性未开启导致的编译错误
-    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-    let kinds = state.analyze_registry().supported_kinds();
-    #[cfg(not(any(feature = "router", feature = "sbcore_rules_tool")))]
-    let kinds: Vec<&'static str> = vec![];
-
-    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
-    let async_kinds = state.analyze_registry().supported_async_kinds();
-    #[cfg(not(any(feature = "router", feature = "sbcore_rules_tool")))]
-    let async_kinds: Vec<&'static str> = vec![];
     let auth_mode = crate::admin_debug::http_server::get_auth_mode();
 
     // Add mTLS status if enabled
@@ -54,10 +44,10 @@ pub async fn handle(
 
     let h = Health {
         pid,
-        uptime_secs,
-        supported_kinds_count: kinds.len(),
-        supported_async_kinds_count: async_kinds.len(),
-        security: match state.security_snapshot() {
+        uptime_secs: query.uptime_secs(),
+        supported_kinds_count: query.supported_kinds_count(),
+        supported_async_kinds_count: query.supported_async_kinds_count(),
+        security: match query.security_snapshot() {
             Ok(snapshot) => snapshot,
             Err(err) => {
                 return crate::admin_debug::http_util::respond_json_error(
@@ -72,7 +62,7 @@ pub async fn handle(
         auth_mode,
         mtls_status,
         audit_latest_ts: crate::admin_debug::audit::latest_ts(),
-        config_version: state.config_version(),
+        config_version: query.config_version(),
     };
     let body = serde_json::to_string(&h).unwrap_or_else(|_| "{}".into());
     crate::admin_debug::http_util::respond(sock, 200, "application/json", &body).await

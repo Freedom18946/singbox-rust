@@ -22,7 +22,34 @@
 
 **全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。
 
-### 当前维护线（2026-04-04）
+### 当前维护线（2026-04-05）
+
+- **MT-CONV-01**: runtime / control-plane / observability convergence — 已完成
+  - 性质：maintenance / convergence quality work，不是 parity completion
+  - 按当前源码事实确认真正值得收敛的是：
+    - exporter lifecycle 在 `RuntimeContext` 与 `tracing_init` 间的平行 owner/install 路径
+    - admin read/query path 在 `AdminDebugState`、endpoint glue、`SecuritySnapshot` 间的重复 query 语义
+  - 已落地：
+    - `tracing_init.rs` 新增共享 `MetricsExporterHandle`
+    - `runtime_deps.rs` 新增 `AppObservability`
+    - `run_engine_runtime/context.rs` 删除本地 prom exporter handle，改走 `start_metrics_exporter(...)`
+    - `admin_debug/mod.rs` 新增 `AdminDebugQuery`
+    - `health` / `metrics` / `analyze` 改走 `state.query()`
+    - `SecuritySnapshot` 补 `prefetch_queue_high_watermark`
+  - 复核后没有硬改：
+    - `app/src/logging.rs`
+    - `app/src/run_engine_runtime/admin_start.rs`
+    - `app/src/admin_debug/http_server.rs`
+    - 这些边界当前已稳定，强行动只会增加 churn
+  - 最小充分验证通过：
+    - `cargo test -p app --all-features --lib -- --test-threads=1`
+    - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`
+    - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`
+    - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1`
+    - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1`
+    - `cargo clippy -p app --all-features --all-targets -- -D warnings`
+    - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
+    - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
 
 - **MT-RECAP-01**: maintenance recap and next-stage convergence — 已完成
   - 本卡不是 parity completion；基于当前源码、git 现状与最小充分验证做 maintenance 复盘
@@ -63,6 +90,7 @@
   - `MT-TEST-01`
   - `MT-ADP-01`
 - **close-out but future boundary remains**
+  - `MT-CONV-01`
   - `MT-OBS-01`
   - `MT-RTC-01`
   - `MT-RTC-02`
@@ -81,8 +109,8 @@
 - **默认结论**：当前阶段应暂停继续拆新的细卡；已完成维护线不再恢复为滚动 backlog
 - **若未来继续，只保留 1-3 条高层主题**
   - runtime / control-plane / observability convergence
-    - 合并 `MT-OBS-01`、`MT-RTC-01/02/03`、`MT-HOT-OBS-01`、`MT-MLOG-01`、`MT-ADM-01` 的剩余边界
-    - 只在需要统一 signal / reload / shutdown manager、exporter lifecycle、admin owner/query surface 时成组推进
+    - `MT-CONV-01` 已把 exporter lifecycle + admin read/query seam 再收一轮
+    - 剩余只保留更高层的 logging/tracing compat install 统一、以及更宽 control-plane read model
   - router / dns / tun / outbound convergence
     - 合并 `MT-RD-01`、`MT-PERF-01`、`MT-DEEP-01` 的剩余边界
     - 只在出现明确结构收益、perf 证据或重复 corner-case 信号时成组推进

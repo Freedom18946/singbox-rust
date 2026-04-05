@@ -11,7 +11,8 @@ pub async fn handle(
     sock: &mut (impl AsyncWriteExt + Unpin),
     state: &crate::admin_debug::AdminDebugState,
 ) -> std::io::Result<()> {
-    let h = match state.security_snapshot() {
+    let query = state.query();
+    let h = match query.security_snapshot() {
         Ok(snapshot) => snapshot,
         Err(err) => {
             return crate::admin_debug::http_util::respond_json_error(
@@ -194,7 +195,7 @@ pub async fn handle(
     let _ = writeln!(
         buf,
         "sb_prefetch_queue_high_watermark {}",
-        state.prefetch_queue_high_watermark()
+        h.prefetch_queue_high_watermark
     );
 
     buf.push_str("# HELP sb_prefetch_jobs_total Prefetch job events\n# TYPE sb_prefetch_jobs_total counter\n");

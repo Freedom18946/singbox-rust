@@ -4,8 +4,8 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -92,6 +92,7 @@ pub struct SecuritySnapshot {
     pub prefetch_fail: u64,
     pub prefetch_retry: u64,
     pub prefetch_queue_depth: u64,
+    pub prefetch_queue_high_watermark: u64,
     pub prefetch_run_buckets: Vec<(f64, u64)>,
     pub prefetch_total_bytes: u64,
     pub prefetch_session_duration_ms: u64,
@@ -453,6 +454,9 @@ impl SecurityMetricsState {
             prefetch_fail: self.prefetch_fail.load(Ordering::Relaxed),
             prefetch_retry: self.prefetch_retry.load(Ordering::Relaxed),
             prefetch_queue_depth: self.prefetch_queue_depth.load(Ordering::Relaxed),
+            prefetch_queue_high_watermark: self
+                .prefetch_queue_high_watermark
+                .load(Ordering::Relaxed),
             prefetch_run_buckets,
             prefetch_total_bytes: self.prefetch_total_bytes.load(Ordering::Relaxed),
             prefetch_session_duration_ms: self.get_prefetch_session_duration_ms(),
@@ -858,6 +862,7 @@ mod tests {
         let state = SecurityMetricsState::new();
         state.inc_total_requests();
         state.record_latency_ms(25);
+        state.set_prefetch_queue_high_watermark(11);
 
         let cache = crate::admin_debug::cache::CacheStore::from_env();
         {
@@ -888,6 +893,7 @@ mod tests {
         assert_eq!(snapshot.total_requests, 1);
         assert_eq!(snapshot.cache_bytes_mem, 4);
         assert_eq!(snapshot.limiter_current_concurrency, 9);
+        assert_eq!(snapshot.prefetch_queue_high_watermark, 11);
         assert!(
             !snapshot.breaker_states.is_empty(),
             "explicit breaker store should contribute breaker state"
