@@ -30,11 +30,42 @@ impl AppObservability {
     }
 
     #[must_use]
-    pub fn start_metrics_exporter(
+    pub fn install_metrics_exporter(
         &self,
         addr: std::net::SocketAddr,
     ) -> crate::tracing_init::MetricsExporterHandle {
-        crate::tracing_init::start_metrics_exporter(self.metrics_registry(), addr)
+        crate::tracing_init::install_metrics_exporter(self.metrics_registry(), addr)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the provided listen address is invalid.
+    pub fn install_metrics_exporter_from_listen(
+        &self,
+        listen: Option<&str>,
+        source: &'static str,
+    ) -> Result<Option<crate::tracing_init::MetricsExporterHandle>> {
+        crate::tracing_init::install_metrics_exporter_from_listen(
+            self.metrics_registry(),
+            listen,
+            source,
+        )
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when `SB_METRICS_ADDR` is set but invalid.
+    pub fn install_configured_metrics_exporter(
+        &self,
+    ) -> Result<Option<crate::tracing_init::MetricsExporterHandle>> {
+        crate::tracing_init::install_configured_metrics_exporter(self.metrics_registry())
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when `SB_METRICS_ADDR` is set but invalid.
+    pub fn install_compat_metrics_exporter(&self) -> Result<()> {
+        crate::tracing_init::install_compat_metrics_exporter(self.metrics_registry())
     }
 }
 
@@ -218,6 +249,32 @@ mod tests {
         let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
         let first = deps.observability().metrics_registry();
         let second = deps.observability().metrics_registry();
+
+        match (first, second) {
+            (
+                sb_metrics::MetricsRegistryHandle::Owned(first),
+                sb_metrics::MetricsRegistryHandle::Owned(second),
+            ) => assert!(Arc::ptr_eq(&first, &second)),
+            other => panic!("expected owned metrics registries, got {other:?}"),
+        }
+
+        drop(deps);
+
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(feature = "observe")]
+    fn app_runtime_deps_observability_install_contract_uses_owned_registry_handle() {
+        #[cfg(feature = "admin_debug")]
+        crate::admin_debug::security_metrics::clear_default_for_test();
+
+        let deps = super::AppRuntimeDeps::new().expect("runtime deps should build");
+        let observability = deps.observability();
+        let first = observability.metrics_registry();
+        let second = observability.metrics_registry();
 
         match (first, second) {
             (

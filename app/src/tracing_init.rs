@@ -9,6 +9,52 @@ fn tracing_format_is_json() -> bool {
 }
 
 #[cfg(feature = "sb-metrics")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MetricsExporterPlan {
+    addr: std::net::SocketAddr,
+}
+
+#[cfg(feature = "sb-metrics")]
+impl MetricsExporterPlan {
+    #[must_use]
+    pub const fn explicit(addr: std::net::SocketAddr) -> Self {
+        Self { addr }
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the supplied listen address is not a valid
+    /// `SocketAddr`.
+    pub fn parse(addr: &str, source: &'static str) -> Result<Self> {
+        addr.parse().map(Self::explicit).map_err(|error| {
+            anyhow::anyhow!("{source} value '{addr}' is not a valid SocketAddr: {error}")
+        })
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the configured listen address is invalid.
+    pub fn from_optional(addr: Option<&str>, source: &'static str) -> Result<Option<Self>> {
+        addr.map(|value| Self::parse(value, source)).transpose()
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when `SB_METRICS_ADDR` is set but invalid.
+    pub fn from_env() -> Result<Option<Self>> {
+        Self::from_optional(
+            std::env::var("SB_METRICS_ADDR").ok().as_deref(),
+            "SB_METRICS_ADDR",
+        )
+    }
+
+    #[must_use]
+    pub fn install(self, registry: sb_metrics::MetricsRegistryHandle) -> MetricsExporterHandle {
+        MetricsExporterHandle::new(registry, self.addr)
+    }
+}
+
+#[cfg(feature = "sb-metrics")]
 pub struct MetricsExporterHandle {
     join: tokio::task::JoinHandle<()>,
 }
@@ -91,39 +137,82 @@ pub fn init_tracing_once_with_filter(filter: &str) -> Result<()> {
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
 #[must_use]
+pub fn install_metrics_exporter(
+    registry: sb_metrics::MetricsRegistryHandle,
+    addr: std::net::SocketAddr,
+) -> MetricsExporterHandle {
+    MetricsExporterPlan::explicit(addr).install(registry)
+}
+
+/// Install metrics exporter from an optional listen address.
+///
+/// # Errors
+///
+/// Returns an error when the configured listen address is invalid.
+#[cfg(feature = "sb-metrics")]
+pub fn install_metrics_exporter_from_listen(
+    registry: sb_metrics::MetricsRegistryHandle,
+    listen: Option<&str>,
+    source: &'static str,
+) -> Result<Option<MetricsExporterHandle>> {
+    Ok(MetricsExporterPlan::from_optional(listen, source)?.map(|plan| plan.install(registry)))
+}
+
+/// Install metrics exporter from `SB_METRICS_ADDR` if configured.
+///
+/// # Errors
+///
+/// Returns an error when `SB_METRICS_ADDR` is set but invalid.
+#[cfg(feature = "sb-metrics")]
+pub fn install_configured_metrics_exporter(
+    registry: sb_metrics::MetricsRegistryHandle,
+) -> Result<Option<MetricsExporterHandle>> {
+    Ok(MetricsExporterPlan::from_env()?.map(|plan| plan.install(registry)))
+}
+
+/// Install metrics exporter for legacy compat callers and detach its task.
+///
+/// # Errors
+///
+/// Returns an error when `SB_METRICS_ADDR` is set but invalid.
+#[cfg(feature = "sb-metrics")]
+pub fn install_compat_metrics_exporter(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
+    if let Some(handle) = install_configured_metrics_exporter(registry)? {
+        tracing::info!("metrics exporter started");
+        handle.detach();
+    }
+    Ok(())
+}
+
+/// Initialize metrics exporter using the caller-provided registry handle.
+#[cfg(feature = "sb-metrics")]
+///
+/// # Errors
+///
+/// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
+#[must_use]
 pub fn start_metrics_exporter(
     registry: sb_metrics::MetricsRegistryHandle,
     addr: std::net::SocketAddr,
 ) -> MetricsExporterHandle {
-    MetricsExporterHandle::new(registry, addr)
+    install_metrics_exporter(registry, addr)
 }
 
 /// # Errors
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
+#[cfg(feature = "sb-metrics")]
 pub fn start_metrics_exporter_if_configured(
     registry: sb_metrics::MetricsRegistryHandle,
 ) -> Result<Option<MetricsExporterHandle>> {
-    if std::env::var("SB_METRICS_ADDR").is_err() {
-        tracing::debug!("metrics exporter not configured (SB_METRICS_ADDR unset)");
-        return Ok(None);
-    }
-
-    sb_metrics::spawn_http_exporter_from_env(registry).map_or_else(
-        || anyhow::bail!("SB_METRICS_ADDR is set but metrics exporter could not be spawned"),
-        |join| Ok(Some(MetricsExporterHandle { join })),
-    )
+    install_configured_metrics_exporter(registry)
 }
 
 /// # Errors
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
 pub fn init_metrics_exporter_once(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
-    if let Some(handle) = start_metrics_exporter_if_configured(registry)? {
-        tracing::info!("metrics exporter started");
-        handle.detach();
-    }
-    Ok(())
+    install_compat_metrics_exporter(registry)
 }
 
 /// Initialize metrics exporter when metrics support is not compiled in.
@@ -144,7 +233,7 @@ pub fn init_metrics_exporter_once(_registry: ()) -> Result<()> {
 /// observability startup chain.
 pub fn init_observability_once(deps: &app::runtime_deps::AppRuntimeDeps) -> Result<()> {
     init_tracing_once()?;
-    init_metrics_exporter_once(deps.metrics_registry())?;
+    deps.observability().install_compat_metrics_exporter()?;
     Ok(())
 }
 
@@ -161,11 +250,15 @@ mod tests {
         let source = include_str!("tracing_init.rs");
         let context = include_str!("run_engine_runtime/context.rs");
 
+        assert!(source.contains("pub struct MetricsExporterPlan"));
+        assert!(source.contains("pub fn install_metrics_exporter("));
+        assert!(source.contains("pub fn install_configured_metrics_exporter("));
+        assert!(source.contains("pub fn install_compat_metrics_exporter("));
         assert!(source.contains("pub struct MetricsExporterHandle"));
         assert!(source.contains("pub fn start_metrics_exporter("));
         assert!(source.contains("pub fn start_metrics_exporter_if_configured("));
         assert!(source.contains("handle.detach();"));
-        assert!(context.contains("fn start_metrics_exporter("));
+        assert!(context.contains("fn install_metrics_exporter("));
         assert!(!context.contains("struct PromExporterHandle"));
     }
 }

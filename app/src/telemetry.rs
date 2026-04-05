@@ -48,7 +48,7 @@ mod imp {
     pub fn init_metrics_exporter(deps: &crate::runtime_deps::AppRuntimeDeps) -> Result<()> {
         #[cfg(feature = "dev-cli")]
         {
-            crate::tracing_init::init_metrics_exporter_once(deps.metrics_registry())
+            deps.observability().install_compat_metrics_exporter()
         }
         #[cfg(not(feature = "dev-cli"))]
         {

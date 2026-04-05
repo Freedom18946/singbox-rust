@@ -78,7 +78,9 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
     #[cfg(all(feature = "dev-cli", feature = "observe"))]
     {
         let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
-        crate::tracing_init::init_metrics_exporter_once(runtime_deps.metrics_registry())?;
+        runtime_deps
+            .observability()
+            .install_compat_metrics_exporter()?;
     }
 
     // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)

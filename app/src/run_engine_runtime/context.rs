@@ -57,31 +57,37 @@ impl RuntimeContext {
     }
 
     #[must_use]
-    pub fn start_metrics_exporter(
+    pub fn install_metrics_exporter(
         &self,
         prom_listen: Option<&str>,
     ) -> Option<crate::tracing_init::MetricsExporterHandle> {
-        let addr = prom_listen?;
-
         #[cfg(feature = "observe")]
-        match addr.parse() {
-            Ok(socket_addr) => Some(
-                self.runtime_deps
-                    .observability()
-                    .start_metrics_exporter(socket_addr),
-            ),
+        match self
+            .runtime_deps
+            .observability()
+            .install_metrics_exporter_from_listen(prom_listen, "prom_listen")
+        {
+            Ok(handle) => handle,
             Err(error) => {
-                tracing::warn!(addr = %addr, error = %error, "invalid prom exporter listen addr");
+                if let Some(addr) = prom_listen {
+                    tracing::warn!(
+                        addr = %addr,
+                        error = %error,
+                        "failed to install runtime metrics exporter"
+                    );
+                }
                 None
             }
         }
 
         #[cfg(not(feature = "observe"))]
         {
-            tracing::warn!(
-                addr = %addr,
-                "prom exporter requested but observe feature is disabled; skipping exporter startup"
-            );
+            if let Some(addr) = prom_listen {
+                tracing::warn!(
+                    addr = %addr,
+                    "prom exporter requested but observe feature is disabled; skipping exporter startup"
+                );
+            }
             None
         }
     }
@@ -189,7 +195,7 @@ mod tests {
         let source = include_str!("context.rs");
         let tracing_init = include_str!("../tracing_init.rs");
 
-        assert!(source.contains("fn start_metrics_exporter("));
+        assert!(source.contains("fn install_metrics_exporter("));
         assert!(source.contains("fn spawn_watch("));
         assert!(source.contains("async fn start_admin_services("));
         assert!(tracing_init.contains("pub struct MetricsExporterHandle"));

@@ -222,14 +222,11 @@ impl LoggingConfig {
 /// that still use the legacy public API.
 #[allow(dead_code)]
 pub fn init_logging(redactor: Arc<app::redact::Redactor>) -> Result<()> {
-    let owner = init_logging_with_owner(redactor)?;
-    owner.install_compat()?;
-    Ok(())
+    install_logging_compat(redactor).map(|_| ())
 }
 
-/// Initialize logging and return the explicit runtime owner for production
-/// paths that do not need the global compat registry.
-pub fn init_logging_with_owner(redactor: Arc<app::redact::Redactor>) -> Result<LoggingOwner> {
+/// Install logging for explicit owner-first runtime paths.
+pub fn install_logging_owner(redactor: Arc<app::redact::Redactor>) -> Result<LoggingOwner> {
     let config = LoggingConfig::from_env();
     let runtime = Arc::new(LoggingRuntime::new(config.clone()));
 
@@ -367,6 +364,20 @@ pub fn init_logging_with_owner(redactor: Arc<app::redact::Redactor>) -> Result<L
     );
 
     Ok(LoggingOwner::with_signal_task(runtime, signal_task))
+}
+
+/// Install logging and register the owner into the legacy compat runtime slot.
+pub fn install_logging_compat(redactor: Arc<app::redact::Redactor>) -> Result<LoggingOwner> {
+    let owner = install_logging_owner(redactor)?;
+    owner.install_compat()?;
+    Ok(owner)
+}
+
+/// Initialize logging and return the explicit runtime owner for production
+/// paths that do not need the global compat registry.
+#[allow(dead_code)]
+pub fn init_logging_with_owner(redactor: Arc<app::redact::Redactor>) -> Result<LoggingOwner> {
+    install_logging_owner(redactor)
 }
 
 /// Create a writer (possibly redacting) for tracing-subscriber fmt layer
@@ -750,5 +761,15 @@ mod tests {
 
         owner.flush().await;
         assert!(owner.signal_task.lock().is_none());
+    }
+
+    #[test]
+    fn logging_install_contract_keeps_owner_and_compat_paths_distinct() {
+        let source = include_str!("logging.rs");
+
+        assert!(source.contains("pub fn install_logging_owner("));
+        assert!(source.contains("pub fn install_logging_compat("));
+        assert!(source.contains("pub fn init_logging_with_owner("));
+        assert!(source.contains("owner.install_compat()?;"));
     }
 }

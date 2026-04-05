@@ -24,25 +24,26 @@
 
 ### 当前维护线（2026-04-05）
 
-- **MT-CONV-01**: runtime / control-plane / observability convergence — 已完成
-  - 性质：maintenance / convergence quality work，不是 parity completion
-  - 按当前源码事实确认真正值得收敛的是：
-    - exporter lifecycle 在 `RuntimeContext` 与 `tracing_init` 间的平行 owner/install 路径
-    - admin read/query path 在 `AdminDebugState`、endpoint glue、`SecuritySnapshot` 间的重复 query 语义
+- **MT-CONV-02**: logging / tracing install convergence — 已完成
+  - 性质：maintenance / structural-quality work，不是 parity completion
+  - 按当前源码事实确认真正值得收敛的是 install contract：
+    - `logging.rs` 的 owner install 与 compat install 仍由 `init_*` 壳名义承载
+    - `tracing_init.rs` / `runtime_deps.rs` / `RuntimeContext` / `telemetry.rs` / `cli/run.rs` 之间仍混用 `start` / `init` / configured exporter glue
   - 已落地：
-    - `tracing_init.rs` 新增共享 `MetricsExporterHandle`
-    - `runtime_deps.rs` 新增 `AppObservability`
-    - `run_engine_runtime/context.rs` 删除本地 prom exporter handle，改走 `start_metrics_exporter(...)`
-    - `admin_debug/mod.rs` 新增 `AdminDebugQuery`
-    - `health` / `metrics` / `analyze` 改走 `state.query()`
-    - `SecuritySnapshot` 补 `prefetch_queue_high_watermark`
-  - 复核后没有硬改：
-    - `app/src/logging.rs`
-    - `app/src/run_engine_runtime/admin_start.rs`
-    - `app/src/admin_debug/http_server.rs`
-    - 这些边界当前已稳定，强行动只会增加 churn
+    - `logging.rs` 新增 `install_logging_owner(...)` / `install_logging_compat(...)`
+    - `tracing_init.rs` 新增 `MetricsExporterPlan` 与 `install_metrics_exporter*` canonical install 入口
+    - `runtime_deps.rs` 的 `AppObservability` 统一提供 explicit / from-listen / configured / compat exporter install
+    - `run_engine_runtime/context.rs` 改走 `install_metrics_exporter(...)`
+    - `telemetry.rs` / `cli/run.rs` 改走 `deps.observability().install_compat_metrics_exporter()`
+    - `lib.rs` 将 `tracing_init` 暴露范围收成 `observe || dev-cli`，与实际 runtime wiring 对齐
+  - 复核后刻意不动：
+    - `app/src/analyze/registry.rs`
+    - `crates/sb-metrics/src/lib.rs`
+    - `crates/sb-core/src/metrics/registry_ext.rs`
+    - 原因：当前 registry/query seam 已稳定，继续改不会提高 install convergence 质量
   - 最小充分验证通过：
     - `cargo test -p app --all-features --lib -- --test-threads=1`
+    - `cargo test -p app --all-features --bin app -- --test-threads=1`
     - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`
     - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`
     - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1`
@@ -51,36 +52,18 @@
     - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
     - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
 
+- **MT-CONV-01**: runtime / control-plane / observability convergence — 已完成
+  - exporter lifecycle owner 统一到 `MetricsExporterHandle` + `AppObservability`
+  - admin read/query 收成 `AdminDebugQuery`
+  - 这是 `MT-CONV-02` 的直接前置，不再恢复为独立 active 卡
+
 - **MT-RECAP-01**: maintenance recap and next-stage convergence — 已完成
-  - 本卡不是 parity completion；基于当前源码、git 现状与最小充分验证做 maintenance 复盘
-  - 复核确认：
-    - workspace 当前在 `main...origin/main`，但仍有大量无关在制改动；本卡只触达 `agents-only` 文档，没有回滚或覆盖 unrelated workspace changes
-    - `planned.rs` 仍是 staged crate-private seam；当前仍无 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
-    - `RuntimeContext` / `AdminDebugState`、`router/{shared_index,runtime_override}`、`dns/upstream_pool`、ShadowTLS wrapper raw-stream seam、TUN detached/draining session seam 均按现有 maintenance 口径稳定存在
-  - 最小充分验证通过：
-    - `cargo test -p app --all-features --lib -- --test-threads=1`
-    - `cargo test -p sb-core --all-features --lib -- --test-threads=1`
-    - `cargo test -p sb-adapters --all-features --lib -- --test-threads=1`
-    - `cargo clippy -p app --all-features --all-targets -- -D warnings`
-    - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
-    - `cargo clippy -p sb-adapters --all-features --all-targets -- -D warnings`
-  - 当前阶段结论：
-    - 没有新的最前置 blocker
-    - 不建议继续机械拆 maintenance 细卡
-    - 若未来确需继续，只保留少数高层 convergence 主题
+  - 当前没有新的最前置 blocker
+  - 不建议恢复 `WP-30k` 风格细卡
+  - 若未来继续，只保留少数高层 convergence 主题
 
-- **MT-CONTRACT-01**: transport-wrapper + detached-session contract hardening — 已完成
-  - 性质：maintenance / protocol-quality work，不是 parity completion
-  - ShadowTLS：typed `WrapperEndpoint`、`DetourStreamResult`、wrapper endpoint doc、e2e fixture fix、bridge simultaneous-shutdown test
-  - TUN TCP：`SessionPhase` enum、`DrainPolicy` struct、`run_eviction_sweep()`、`phase`/`detached_at` fields、simultaneous-close test
-  - 验证：clippy 0 warnings；sb-adapters --lib 208/208 pass；shadowtls e2e 9/9 pass (isolation)
-
-- **MT-CONTRACT-02**: transport/session contract convergence — 已完成
-  - 性质：maintenance / protocol-quality work，不是 parity completion
-  - ShadowTLS：`StreamCapability` enum、`WrapperContract` struct、`wrapper_contract()` accessor、4 typed contract tests
-  - TUN TCP：`CleanupMode` enum + Display、`remove_with_reason()`、`simultaneous_close_grace` in DrainPolicy、`drain_policy()` accessor、4 typed policy tests
-  - 集成：`tun_enhanced.rs` RST 分支 → `CleanupMode::ClientRst`；`run_eviction_sweep()` → `CleanupMode::DrainTimeout`
-  - 验证：clippy 0 warnings；sb-adapters --lib 216/216 pass
+- **MT-CONTRACT-01 / 02**: transport/session contract hardening + convergence — 已完成
+  - ShadowTLS typed contract、TUN detached/draining policy 已稳定
 
 ### 维护线分类（按当前仓库事实）
 
@@ -91,6 +74,7 @@
   - `MT-ADP-01`
 - **close-out but future boundary remains**
   - `MT-CONV-01`
+  - `MT-CONV-02`
   - `MT-OBS-01`
   - `MT-RTC-01`
   - `MT-RTC-02`
@@ -102,15 +86,16 @@
   - `MT-ADM-01`
   - `MT-DEEP-01`
 - **still active / needs regrouping**
-  - 无旧 maintenance 线继续维持为单独 active 卡；剩余未来工作只保留跨线 regroup 后的高层 boundary
+  - 无旧 maintenance 线继续维持为单独 active 卡；剩余未来工作只保留 regroup 后的高层 boundary
 
 ### 下一阶段路线收束
 
 - **默认结论**：当前阶段应暂停继续拆新的细卡；已完成维护线不再恢复为滚动 backlog
 - **若未来继续，只保留 1-3 条高层主题**
   - runtime / control-plane / observability convergence
-    - `MT-CONV-01` 已把 exporter lifecycle + admin read/query seam 再收一轮
-    - 剩余只保留更高层的 logging/tracing compat install 统一、以及更宽 control-plane read model
+    - `MT-CONV-01` 已收 owner/query/lifecycle
+    - `MT-CONV-02` 已收 install contract
+    - 剩余只保留更高层的 tracing subscriber / logging bootstrap 统一，以及更宽 control-plane read model
   - router / dns / tun / outbound convergence
     - 合并 `MT-RD-01`、`MT-PERF-01`、`MT-DEEP-01` 的剩余边界
     - 只在出现明确结构收益、perf 证据或重复 corner-case 信号时成组推进
