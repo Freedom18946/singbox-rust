@@ -261,4 +261,61 @@ mod tests {
         assert!(context.contains("fn install_metrics_exporter("));
         assert!(!context.contains("struct PromExporterHandle"));
     }
+
+    #[test]
+    fn standalone_bins_use_canonical_tracing_init() {
+        let bin_run = include_str!("bin/run.rs");
+        let bin_tools = include_str!("bin/tools.rs");
+        let bin_metrics = include_str!("bin/metrics-serve.rs");
+
+        // All standalone bins should use canonical init_tracing_once
+        assert!(
+            bin_run.contains("app::tracing_init::init_tracing_once()"),
+            "bin/run.rs should use canonical tracing init"
+        );
+        assert!(
+            bin_tools.contains("app::tracing_init::init_tracing_once()"),
+            "bin/tools.rs should use canonical tracing init"
+        );
+        assert!(
+            bin_metrics.contains("app::tracing_init::init_tracing_once()"),
+            "bin/metrics-serve.rs should use canonical tracing init"
+        );
+
+        // None of them should have hand-rolled tracing_subscriber::fmt()...init()
+        assert!(
+            !bin_run.contains("tracing_subscriber::fmt()"),
+            "bin/run.rs should not hand-roll tracing subscriber"
+        );
+        assert!(
+            !bin_tools.contains("tracing_subscriber::fmt()"),
+            "bin/tools.rs should not hand-roll tracing subscriber"
+        );
+        assert!(
+            !bin_metrics.contains("tracing_subscriber::fmt()"),
+            "bin/metrics-serve.rs should not hand-roll tracing subscriber"
+        );
+
+        // metrics-serve should use canonical exporter contract
+        assert!(
+            bin_metrics.contains("install_configured_metrics_exporter"),
+            "bin/metrics-serve.rs should use canonical exporter install"
+        );
+    }
+
+    #[test]
+    fn tracing_init_module_always_exposed_in_lib() {
+        let lib = include_str!("lib.rs");
+
+        // tracing_init should be publicly exposed without feature gates
+        assert!(
+            lib.contains("pub mod tracing_init;"),
+            "tracing_init should be unconditionally pub in lib.rs"
+        );
+        // It should NOT be gated behind observe or dev-cli
+        assert!(
+            !lib.contains("cfg(any(feature = \"dev-cli\", feature = \"observe\"))\npub mod tracing_init"),
+            "tracing_init should not be feature-gated in lib.rs"
+        );
+    }
 }

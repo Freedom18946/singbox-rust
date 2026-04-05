@@ -772,4 +772,17 @@ mod tests {
         assert!(source.contains("pub fn init_logging_with_owner("));
         assert!(source.contains("owner.install_compat()?;"));
     }
+
+    #[test]
+    fn cli_run_does_not_duplicate_runtime_deps() {
+        let cli_run = include_str!("cli/run.rs");
+
+        // cli/run.rs should not contain two separate AppRuntimeDeps::new() calls
+        let count = cli_run.matches("AppRuntimeDeps::new()").count();
+        assert!(
+            count <= 2,
+            "cli/run.rs should consolidate AppRuntimeDeps creation (found {count} calls, \
+             expected at most 2 — one primary and one conditional fallback)"
+        );
+    }
 }

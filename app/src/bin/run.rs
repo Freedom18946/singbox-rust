@@ -50,11 +50,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_writer(std::io::stderr)
-        .init();
+    // Initialize logging via canonical tracing init contract
+    let _ = app::tracing_init::init_tracing_once();
 
     // Handle --help-json
     if std::env::args().skip(1).any(|arg| arg == "--help-json") {

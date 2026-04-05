@@ -6,64 +6,53 @@
 ## 战略状态
 **当前阶段**: 维护模式，L1-L25 全部 Closed
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前维护线**: `MT-CONV-02` logging / tracing install convergence — 已完成
+**当前维护线**: `MT-CONV-03` standalone entrypoint logging/tracing convergence — 已完成
 
 ## 最近完成（2026-04-05）
 
-### MT-CONV-02：logging / tracing install convergence — 已完成
+### MT-CONV-03：standalone entrypoint logging/tracing convergence — 已完成
 - 性质：maintenance / structural-quality work，不是 parity completion
-- 本轮真正收敛的是 install contract，而不是重写日志系统：
-  - `app/src/logging.rs` 引入 `install_logging_owner(...)` / `install_logging_compat(...)`
-  - `init_logging(...)` / `init_logging_with_owner(...)` 明确退为 compat shell
-  - `app/src/tracing_init.rs` 引入 `MetricsExporterPlan` 与 `install_metrics_exporter*` canonical 入口
-  - `start_metrics_exporter*` / `init_metrics_exporter_once(...)` 保留为 compat shell
-  - `app/src/runtime_deps.rs` 的 `AppObservability` 现在同时承担 owner-first / configured / compat exporter install
-  - `RuntimeContext`、`telemetry.rs`、`cli/run.rs` 不再各自保留平行 exporter install glue
-- 复核后刻意不硬改：
-  - `app/src/analyze/registry.rs`
-  - `crates/sb-metrics/src/lib.rs`
-  - `crates/sb-core/src/metrics/registry_ext.rs`
-  - 当前这层 registry/query seam 已稳定；继续 churn 不会提高 install convergence 质量
+- 本轮收敛的是 standalone bins 与 cli/run.rs 的 entrypoint install contract：
+  - `lib.rs` 的 `tracing_init` 模块从 `observe || dev-cli` feature gate 改为始终 pub 暴露
+  - `bin/run.rs`、`bin/tools.rs` 手搓 `tracing_subscriber::fmt()...init()` → `app::tracing_init::init_tracing_once()`
+  - `bin/metrics-serve.rs` 手搓 tracing init + 手动 exporter → canonical `init_tracing_once()` + `install_configured_metrics_exporter()`
+  - `cli/run.rs` 两次独立 `AppRuntimeDeps::new()` → 合并为单次构建 + 条件 fallback
+- 复核后刻意不动：`sb-explaind`、`diag`、`sb-bench`、`probe-outbound`（功能特化 dev 工具，强行统一收益不大）
 - 验证：
-  - `cargo test -p app --all-features --lib -- --test-threads=1` ✅
-  - `cargo test -p app --all-features --bin app -- --test-threads=1` ✅
-  - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` ✅
-  - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` ✅
-  - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` ✅
-  - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1` ✅
+  - `cargo test -p app --all-features --lib -- --test-threads=1` ✅ 286 passed
+  - `cargo test -p app --all-features --bin app -- --test-threads=1` ✅ 186 passed
+  - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1` ✅ 7 passed
+  - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1` ✅ 23 passed
+  - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1` ✅ 19 passed
+  - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1` ✅ 4 passed
   - `cargo clippy -p app --all-features --all-targets -- -D warnings` ✅
   - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings` ✅
   - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings` ✅
 
+### MT-CONV-02：logging / tracing install convergence — 已完成
+- app 主路径上的 logging/tracing/exporter install contract 收成 owner-first / compat shell / metrics exporter plan
+
 ### MT-CONV-01：runtime / control-plane / observability convergence — 已完成
 - exporter lifecycle owner 统一到 `MetricsExporterHandle` + `AppObservability`
 - admin read/query 收成 `AdminDebugQuery`
-- 这些 seam 现在是 `MT-CONV-02` 的稳定前置，不再回退成分散 helper
-
-### MT-CONTRACT-02：transport/session contract convergence — 已完成
-- ShadowTLS typed wrapper contract、TUN detached/draining cleanup policy 已完成并稳定
 
 ## 当前验证事实
-- `app --all-features --lib`、`app --all-features --bin app`、`admin_auth_contract`、`e2e_subs_security` 全部通过
-- `sb-metrics --all-features --lib` 通过
-- `sb-core --all-features --lib registry_ext::tests` 通过
-- `app` / `sb-metrics` / `sb-core` 对应 clippy 全部 0 warnings
+- 全部测试与 clippy 通过（见上方验证详情）
 
 ## 当前阶段结论
-- 当前没有新的基线阻塞或必须立即开卡的问题
-- install 语义现在清楚分成：
-  - logging owner install
-  - logging compat install
-  - metrics exporter explicit install
-  - metrics exporter configured/compat install
+- install 语义现在在三个层面明确：
+  - main.rs: `install_logging_owner` — 完整 owner（flush/signal/redaction）
+  - standalone bins: `init_tracing_once` — 轻量 canonical subscriber init
+  - compat paths: `install_logging_compat` / `install_compat_metrics_exporter` — legacy shell
 - 本轮没有误推进 `RuntimePlan` / `PlannedConfigIR` / generic query API
-- 本轮没有把 logging / tracing 以外主题卷回主线
+- 本轮没有把 logging/tracing entrypoint 以外的主题卷进来
 
 ## 剩余 future boundary（压缩后）
-- 若未来继续，只保留更高层的 tracing subscriber / logging bootstrap 统一，而不是继续拆 install 小尾巴
-- standalone bins / legacy exporter entrypoints 若再统一，应成组处理，不单点扩散到 read-model 或 registry internals
+- 部分 dev/debug 专属 bins 仍无 tracing init 或用独立路径；强行统一收益不大
+- `logging owner` vs `tracing init` 分层是有意义的，不需要进一步合并
+- standalone bins / legacy exporter entrypoints 的 convergence 至此已基本完成
 
 ## 暂停事项
 - 不恢复细碎 maintenance 排程
 - 不把 maintenance work 写成 parity completion
-- 不把 `future boundary` 自动等同于“下一卡默认继续做”
+- 不把 `future boundary` 自动等同于"下一卡默认继续做"

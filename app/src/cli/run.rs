@@ -74,14 +74,15 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
         info!("singbox-rust booting…");
     }
 
+    // Build shared runtime deps once for metrics exporter and admin debug.
+    #[cfg(all(feature = "dev-cli", feature = "observe"))]
+    let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
+
     // Initialize optional metrics exporter explicitly from the runtime deps.
     #[cfg(all(feature = "dev-cli", feature = "observe"))]
-    {
-        let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
-        runtime_deps
-            .observability()
-            .install_compat_metrics_exporter()?;
-    }
+    runtime_deps
+        .observability()
+        .install_compat_metrics_exporter()?;
 
     // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
     #[cfg(feature = "dev-cli")]
@@ -90,6 +91,7 @@ pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
     // Initialize admin debug server if enabled (separate from core admin)
     #[cfg(all(feature = "observe", feature = "admin_debug"))]
     let _admin_debug_handle = {
+        #[cfg(not(feature = "dev-cli"))]
         let runtime_deps = app::runtime_deps::AppRuntimeDeps::new()?;
         app::admin_debug::init(None, runtime_deps.admin_state())
     };

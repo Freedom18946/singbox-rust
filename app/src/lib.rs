@@ -81,7 +81,6 @@ pub(crate) mod run_engine_runtime;
 pub mod runtime_deps;
 pub mod telemetry;
 pub mod tls_provider;
-#[cfg(any(feature = "dev-cli", feature = "observe"))]
 pub mod tracing_init;
 pub mod util;
 

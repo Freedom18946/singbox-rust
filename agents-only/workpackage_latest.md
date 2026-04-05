@@ -24,33 +24,21 @@
 
 ### 当前维护线（2026-04-05）
 
-- **MT-CONV-02**: logging / tracing install convergence — 已完成
+- **MT-CONV-03**: standalone entrypoint logging/tracing convergence — 已完成
   - 性质：maintenance / structural-quality work，不是 parity completion
-  - 按当前源码事实确认真正值得收敛的是 install contract：
-    - `logging.rs` 的 owner install 与 compat install 仍由 `init_*` 壳名义承载
-    - `tracing_init.rs` / `runtime_deps.rs` / `RuntimeContext` / `telemetry.rs` / `cli/run.rs` 之间仍混用 `start` / `init` / configured exporter glue
-  - 已落地：
-    - `logging.rs` 新增 `install_logging_owner(...)` / `install_logging_compat(...)`
-    - `tracing_init.rs` 新增 `MetricsExporterPlan` 与 `install_metrics_exporter*` canonical install 入口
-    - `runtime_deps.rs` 的 `AppObservability` 统一提供 explicit / from-listen / configured / compat exporter install
-    - `run_engine_runtime/context.rs` 改走 `install_metrics_exporter(...)`
-    - `telemetry.rs` / `cli/run.rs` 改走 `deps.observability().install_compat_metrics_exporter()`
-    - `lib.rs` 将 `tracing_init` 暴露范围收成 `observe || dev-cli`，与实际 runtime wiring 对齐
-  - 复核后刻意不动：
-    - `app/src/analyze/registry.rs`
-    - `crates/sb-metrics/src/lib.rs`
-    - `crates/sb-core/src/metrics/registry_ext.rs`
-    - 原因：当前 registry/query seam 已稳定，继续改不会提高 install convergence 质量
-  - 最小充分验证通过：
-    - `cargo test -p app --all-features --lib -- --test-threads=1`
-    - `cargo test -p app --all-features --bin app -- --test-threads=1`
-    - `cargo test -p app --all-features --test admin_auth_contract -- --test-threads=1`
-    - `cargo test -p app --all-features --test e2e_subs_security -- --test-threads=1`
-    - `cargo test -p sb-metrics --all-features --lib -- --test-threads=1`
-    - `cargo test -p sb-core --all-features --lib registry_ext::tests -- --test-threads=1`
-    - `cargo clippy -p app --all-features --all-targets -- -D warnings`
-    - `cargo clippy -p sb-metrics --all-features --all-targets -- -D warnings`
-    - `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`
+  - 收敛 standalone bins 的 tracing subscriber / metrics exporter install：
+    - `lib.rs` 的 `tracing_init` 从 feature-gated 改为始终 pub 暴露
+    - `bin/run.rs`、`bin/tools.rs` 手搓 subscriber → canonical `init_tracing_once()`
+    - `bin/metrics-serve.rs` 手搓 subscriber + exporter → canonical `init_tracing_once()` + `install_configured_metrics_exporter()`
+    - `cli/run.rs` 两次 `AppRuntimeDeps::new()` → 合并为单次构建
+  - 新增 source pin：
+    - `standalone_bins_use_canonical_tracing_init`
+    - `tracing_init_module_always_exposed_in_lib`
+    - `cli_run_does_not_duplicate_runtime_deps`
+  - 最小充分验证通过（全部 9 条命令）
+
+- **MT-CONV-02**: logging / tracing install convergence — 已完成
+  - app 主路径上的 logging/tracing/exporter install contract 收成 owner-first / compat shell / exporter plan
 
 - **MT-CONV-01**: runtime / control-plane / observability convergence — 已完成
   - exporter lifecycle owner 统一到 `MetricsExporterHandle` + `AppObservability`

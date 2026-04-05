@@ -7,20 +7,21 @@ async fn main() -> anyhow::Result<()> {
         std::env::set_var("SB_METRICS_ADDR", "127.0.0.1:9090");
     }
 
-    // Initialize a minimal tracing subscriber for visibility
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(true)
-        .compact()
-        .try_init();
+    // Initialize logging via canonical tracing init contract
+    let _ = app::tracing_init::init_tracing_once();
 
     let registry_owner = sb_metrics::install_default_registry_owner();
 
-    // Start exporter
-    if let Some(_jh) = sb_metrics::spawn_http_exporter_from_env(registry_owner.handle()) {
-        tracing::info!(addr = %std::env::var("SB_METRICS_ADDR").unwrap(), "metrics exporter up");
-    } else {
-        tracing::warn!("metrics exporter failed to start (check SB_METRICS_ADDR)");
+    // Start exporter via canonical MetricsExporterPlan contract
+    match app::tracing_init::install_configured_metrics_exporter(registry_owner.handle())? {
+        Some(handle) => {
+            tracing::info!(addr = %std::env::var("SB_METRICS_ADDR").unwrap(), "metrics exporter up");
+            // Detach the exporter task — it runs independently while main loops
+            handle.detach();
+        }
+        None => {
+            tracing::warn!("metrics exporter failed to start (check SB_METRICS_ADDR)");
+        }
     }
 
     // Sleep briefly to allow bind; then print READY for CI step sync

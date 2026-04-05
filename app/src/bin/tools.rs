@@ -3,7 +3,6 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     use clap::Parser;
-    use tracing_subscriber::EnvFilter;
 
     #[derive(Parser, Debug)]
     #[command(name = "tools", version, about = "Utility tools")]
@@ -17,9 +16,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = ToolsCli::parse();
     app::cli::apply_global_options(&cli.global)?;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .with_writer(std::io::stderr)
-        .init();
+    // Initialize logging via canonical tracing init contract
+    let _ = app::tracing_init::init_tracing_once();
     app::cli::tools::run(&cli.global, cli.args).await
 }
