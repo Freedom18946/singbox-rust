@@ -18,11 +18,11 @@
 
 ---
 
-## 当前状态：维护模式（L1-L25 全部 Closed）
+## 当前状态：维护模式收束完成，进入部署收尾验收准备
 
-**全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。
+**全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。当前默认目标已从“继续拆 maintenance 线”切换为“部署收尾验收准备”。
 
-### 维护线 close-out 清单（2026-04-06）
+### 维护线 close-out 清单（2026-04-09）
 
 | 维护线 | 状态 | 日期 |
 |--------|------|------|
@@ -32,13 +32,19 @@
 | MT-CONV-02 | 已完成 | 2026-04 |
 | MT-CONV-03 | 已完成 | 2026-04-05 |
 | **MT-AUDIT-01** | **已完成** | **2026-04-06** |
+| **文档闭环 / 准则固化** | **已完成** | **2026-04-09** |
 
-### MT-AUDIT-01 结论摘要
+### 当前阶段结论
 
-- 重新执行 5.4pro second-audit 同口径扫描，6 大风险类全部覆盖
-- **Partial clearance**: P1 resolved/future-boundary; P2/P3 structural debt still-active but non-blocking
-- 详见 `agents-only/mt_audit_01_reconciliation.md`
-- 验证：1205 tests passed, clippy clean, no-unwrap-core PASS, boundaries 520/541
+- `MT-AUDIT-01` 已确认：**Partial clearance, no current blocker**
+- 5.4pro second-audit 的 P1 命中项已 resolved 或降级为 future boundary
+- 旧 maintenance 线均已 close-out，不再维持为 active 卡
+- 后续 agents 的长期开发准则已固化到：
+  - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
+  - `agents-only/deployment_acceptance_next_stage.md`
+  - `agents-only/Rust_spec_v2.md`
+  - `agents-only/mt_audit_01_reconciliation.md`
+  - `agents-only/mt_audit_01_full_report.md`
 
 ### 维护线分类（按当前仓库事实）
 
@@ -54,13 +60,17 @@
 - **still active / needs regrouping**
   - 无旧 maintenance 线继续维持为单独 active 卡
 
-### 下一阶段路线收束
+### 下一阶段默认路线
 
-- **默认结论**：当前阶段应暂停继续拆新的细卡；已完成维护线不再恢复为滚动 backlog
-- **若未来继续，只保留 1-3 条高层主题**
+- **默认结论**：当前阶段不再继续拆新的 maintenance 细卡；默认转入“实际部署收尾验收准备”
+- **后续 agents 先看**
+  - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
+  - `agents-only/deployment_acceptance_next_stage.md`
+  - `agents-only/reference/ACCEPTANCE-CRITERIA.md`
+- **若未来必须继续开卡，只保留少数高层 regroup 主题**
   - boundary assertion script 更新（21 stale targets）
-  - tun_enhanced.rs expect() cleanup（112 production expect）
-  - mega-file splits 仅在功能变更时附带推进
+  - `tun_enhanced.rs` residual panic density 收缩（仅在出现真实信号时）
+  - mega-file 治理（仅在功能需求或部署验收收益明确时附带推进）
 
 ### 明确暂停事项
 

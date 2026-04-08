@@ -9,6 +9,9 @@
 ### Step 1: 读取当前上下文（优先）
 ```
 查阅 agents-only/active_context.md
+查阅 agents-only/workpackage_latest.md
+查阅 agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md
+查阅 agents-only/deployment_acceptance_next_stage.md
 ```
 **目的**：瞬间抓住当前聚焦模块、活跃阻碍项、最近构建状态
 
@@ -83,10 +86,12 @@ cargo check -p app 2>&1 | tail -5
 | 优先级 | 文件 | 用途 |
 |--------|------|------|
 | 1️⃣ | `active_context.md` | 当前状态快照 |
-| 2️⃣ | `workpackage_latest.md` | 战略验证 |
-| 3️⃣ | `memory/*.md` | 经验积累 |
-| 4️⃣ | `reference/GLOSSARY.md` | 术语确认 |
-| 5️⃣ | `log.md` | 历史记录（按需） |
+| 2️⃣ | `workpackage_latest.md` | 当前阶段与线路收束 |
+| 3️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
+| 4️⃣ | `deployment_acceptance_next_stage.md` | 下一阶段默认目标 |
+| 5️⃣ | `memory/*.md` | 经验积累 |
+| 6️⃣ | `reference/GLOSSARY.md` | 术语确认 |
+| 7️⃣ | `log.md` | 历史记录（按需） |
 
 ---
 

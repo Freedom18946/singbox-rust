@@ -1,5 +1,16 @@
 # Rust Agent Ruleset (3-Tier Architecture)
 
+> **说明**：本文档是 Rust 规则原文。  
+> 对当前仓库的项目化落地，请同时阅读：
+> - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
+> - `agents-only/mt_audit_01_reconciliation.md`
+> - `agents-only/mt_audit_01_full_report.md`
+>
+> 解释原则：
+> - 规则原文长期有效
+> - 但“当前仓库哪些项已修、哪些已降级为 future boundary、哪些仍是 non-blocking structural debt”，以复扫结论和当前源码事实为准
+> - 不得把规则原文直接翻译成“当前所有命中都必须继续拆卡”
+
 ---
 
 ## Layer 1: Baseline Strict Constraints (Non-Negotiable)
