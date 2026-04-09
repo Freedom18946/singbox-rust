@@ -18,33 +18,27 @@
 
 ---
 
-## 当前状态：维护模式收束完成，进入部署收尾验收准备
+## 当前状态：部署验收基线已建立
 
-**全部阶段关闭**。项目处于稳定维护；dual-kernel parity 状态以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。当前默认目标已从“继续拆 maintenance 线”切换为“部署收尾验收准备”。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 已完成部署验收基线建立**。
 
-### 维护线 close-out 清单（2026-04-09）
+### 维护线 + 部署验收 close-out 清单
 
-| 维护线 | 状态 | 日期 |
+| 线 | 状态 | 日期 |
 |--------|------|------|
 | MT-CONTRACT-01/02 | 已完成 | 2026-04 |
 | MT-RECAP-01 | 已完成 | 2026-04 |
-| MT-CONV-01 | 已完成 | 2026-04 |
-| MT-CONV-02 | 已完成 | 2026-04 |
-| MT-CONV-03 | 已完成 | 2026-04-05 |
-| **MT-AUDIT-01** | **已完成** | **2026-04-06** |
-| **文档闭环 / 准则固化** | **已完成** | **2026-04-09** |
+| MT-CONV-01/02/03 | 已完成 | 2026-04-05 |
+| MT-AUDIT-01 | 已完成 | 2026-04-06 |
+| 文档闭环 / 准则固化 | 已完成 | 2026-04-09 |
+| **MT-DEPLOY-01** | **已完成** | **2026-04-10** |
 
-### 当前阶段结论
+### MT-DEPLOY-01 结论
 
-- `MT-AUDIT-01` 已确认：**Partial clearance, no current blocker**
-- 5.4pro second-audit 的 P1 命中项已 resolved 或降级为 future boundary
-- 旧 maintenance 线均已 close-out，不再维持为 active 卡
-- 后续 agents 的长期开发准则已固化到：
-  - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
-  - `agents-only/deployment_acceptance_next_stage.md`
-  - `agents-only/Rust_spec_v2.md`
-  - `agents-only/mt_audit_01_reconciliation.md`
-  - `agents-only/mt_audit_01_full_report.md`
+- 修复 2 个阻塞 `parity` feature 构建的真实 blocker（tracing_init.rs cfg gate + tokio-util dep）
+- 验收链 9 项全部 PASS-STRICT：构建、版本、配置检查、近启动、打包、清单一致性
+- 环境限制：E2E proxy / Docker 镜像 / k8s 部署为 PASS-ENV-LIMITED
+- 详细报告：`agents-only/mt_deploy_01_acceptance.md`
 
 ### 维护线分类（按当前仓库事实）
 
@@ -62,11 +56,11 @@
 
 ### 下一阶段默认路线
 
-- **默认结论**：当前阶段不再继续拆新的 maintenance 细卡；默认转入“实际部署收尾验收准备”
+- **默认结论**：部署验收基线已建立；后续可进入实际部署或环境集成
 - **后续 agents 先看**
+  - `agents-only/active_context.md`
+  - `agents-only/mt_deploy_01_acceptance.md`
   - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
-  - `agents-only/deployment_acceptance_next_stage.md`
-  - `agents-only/reference/ACCEPTANCE-CRITERIA.md`
 - **若未来必须继续开卡，只保留少数高层 regroup 主题**
   - boundary assertion script 更新（21 stale targets）
   - `tun_enhanced.rs` residual panic density 收缩（仅在出现真实信号时）

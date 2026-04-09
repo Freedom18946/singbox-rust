@@ -211,6 +211,7 @@ pub fn start_metrics_exporter_if_configured(
 /// # Errors
 ///
 /// Returns any exporter startup error when `SB_METRICS_ADDR` is configured.
+#[cfg(feature = "sb-metrics")]
 pub fn init_metrics_exporter_once(registry: sb_metrics::MetricsRegistryHandle) -> Result<()> {
     install_compat_metrics_exporter(registry)
 }
