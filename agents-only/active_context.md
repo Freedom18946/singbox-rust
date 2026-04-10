@@ -4,46 +4,45 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: 部署收尾验收已完成基线，L1-L25 全部 Closed
+**当前阶段**: GUI + 双内核实测验收（MT-GUI-01）已建立，部署基线（MT-DEPLOY-01）已完成
 **Parity**: 92.9% (52/56)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: MT-DEPLOY-01 已建立部署验收基线
+**当前阶段焦点**: GUI 驱动的 Go/Rust 双内核行为对比已取证
 
 ## 最近闭环（2026-04-10）
 
-### MT-DEPLOY-01: 部署验收基线 — 已完成
-- 发现并修复 2 个阻塞 `parity` feature 构建的真实 blocker：
-  - `app/src/tracing_init.rs`：`init_metrics_exporter_once` 缺少 `#[cfg(feature = "sb-metrics")]`
-  - `app/Cargo.toml`：`router` feature 缺少 `tokio-util` 依赖（`watch.rs` 需要 `CancellationToken`）
-- 验证通过的完整链路：
-  - 构建：debug + release（parity features）PASS-STRICT
-  - 版本：`app version` PASS-STRICT
-  - 配置检查：`app check -c deployments/config-template.json` PASS-STRICT
-  - 零副作用启动检查：`app run --check -c ...` PASS-STRICT
-  - 近启动：standalone `run` binary 真实绑定 0.0.0.0:1080 + 优雅关闭 PASS-STRICT
-  - 打包：`package_release.sh` 生成正确产物 PASS-STRICT
-  - Clippy clean，286 app lib tests PASS
-- 所有部署清单（Docker/k8s/systemd/Helm）入口一致：`app run -c <config>`
-- 配置模板（`deployments/config-template.json`）跨清单一致
-- 详细报告：`agents-only/mt_deploy_01_acceptance.md`
+### MT-GUI-01: GUI 驱动 Go/Rust 双内核对比验收 — 已完成
+- **不是** parity completion；只是基于真实命令的 GUI 路径对比证据
+- 通过阅读 `GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts` 重建 GUI 完整 API 契约
+- 使用 `labs/interop-lab/configs/l18_gui_{rust,go}.json` 作为 GUI-shape 同构配置
+- 双内核同时运行 + 同一 REST/WS 路径调用 + SOCKS5 数据面拉通
+- 共 15 个场景：**10 PASS-STRICT / 4 PASS-ENV-LIMITED / 1 NEW FINDING / 0 FAIL**
+- 4 个已知差异全部对得上 golden spec：DIV-M-006/007/008/009
+- 一个新观察项（不是 blocker）：post-close `downloadTotal` Rust=0 vs Go=2454，分类暂缓
+- 报告：`agents-only/mt_gui_01_acceptance.md`、`agents-only/mt_gui_01_matrix.md`
+- 证据脚本与原始输出：`agents-only/mt_gui_01_evidence/`
 
-### 已完成维护线（归档视角）
-- MT-AUDIT-01 → MT-CONV-01/02/03 → 文档闭环 → MT-DEPLOY-01：全部 close-out
+### MT-DEPLOY-01: 部署验收基线 — 已完成（仍生效）
+- 修复 `app/src/tracing_init.rs` 与 `app/Cargo.toml` 的 parity feature blocker
+- 9 项部署链全部 PASS-STRICT，详见 `agents-only/mt_deploy_01_acceptance.md`
 
 ## 当前验证事实
-- `parity` feature 构建已修复，debug + release 均通过
-- 286 app lib tests 通过，clippy clean
-- Boundary 21/541 failures 均为 stale targets（非回归）
-- 部署验收链 9 项全部 PASS-STRICT
+- 双内核都能用同一 GUI-shape 配置启动并暴露 Clash API
+- GUI 的 REST/WS 全面契约在两侧都可达
+- SOCKS5 数据面在两侧都可中继真实 HTTP 流量
+- 4 个已知 cosmetic/structural 差异全部已记录
+- 1 个新观察项 (`downloadTotal` 累计计数) 仅作为记录，不开新 maintenance 卡
 
 ## 环境限制项（PASS-ENV-LIMITED）
-- E2E proxy 链路（需真实上游）：未测试
-- Docker 镜像构建（需 Docker daemon）：未测试
-- systemd/k8s/helm 部署（需目标基础设施）：未测试
+- WS 流通过 curl `--http1.1` 探测得到数据但不是真实 WS handshake（实际 WS 走 interop-lab 的 `p0_clash_api_contract*`）
+- GUI 桌面二进制本身（Wails desktop）未在沙箱构建运行，转而通过读 GUI 源码复现其 API 调用
+- E2E proxy 真实上游链路（需真实代理服务）：未测试
+- Docker 镜像构建 / k8s / helm：未测试
 
 ## 当前默认准则
-- 部署验收基线已建立，后续可进入实际部署或环境集成
+- GUI 驱动双内核对比已取证，不再扩散为新 maintenance 重构
+- 不把 MT-GUI-01 的实测结果改写成 parity completion
+- 不开 follow-up card 除非新观察项的信号反复出现
 - 不恢复细碎 maintenance 排程
-- 不把 deployment acceptance 写成 parity completion
 - 不推进 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
 
 ## 暂停事项

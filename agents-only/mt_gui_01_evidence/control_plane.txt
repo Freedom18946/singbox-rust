@@ -1,0 +1,59 @@
+=== MT-GUI-01 Dual-Kernel Comparative Test ===
+Date: 2026-04-10T04:09:02Z
+Rust binary: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/app
+Go binary: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box
+
+--- SCENARIO 1: Startup + GET /version ---
+Rust: {"meta":true,"premium":true,"version":"sing-box 0.1.0"}
+Go:   {"meta":true,"premium":true,"version":"sing-box unknown"}
+RESULT: PASS-STRICT (both return valid version JSON)
+
+--- SCENARIO 2: GET /configs ---
+Rust: {"port":0,"socks-port":11810,"redir-port":0,"tproxy-port":0,"mixed-port":0,"allow-lan":false,"bind-address":"*","mode":"rule","mode-list":["rule","global","direct"],"log-level":"info","ipv6":false,"tun":{}}
+Go:   {"port":0,"socks-port":0,"redir-port":0,"tproxy-port":0,"mixed-port":0,"allow-lan":false,"bind-address":"*","mode":"Rule","mode-list":["Rule"],"log-level":"warn","ipv6":false,"tun":null}
+RESULT: PASS-STRICT (both return 200, body shape differs per DIV-M-006)
+
+--- SCENARIO 3: GET /proxies ---
+Rust proxies keys: ['DIRECT', 'GLOBAL', 'REJECT', 'alt-direct', 'direct', 'my-group']
+Go proxies keys:   ['GLOBAL', 'alt-direct', 'direct', 'my-group']
+RESULT: PASS-STRICT (both return 200, inventory differs per DIV-M-007)
+
+--- SCENARIO 4: PUT /proxies/my-group (switch to alt-direct) ---
+Rust PUT status: 204
+Go   PUT status: 204
+Rust now: alt-direct
+Go   now: alt-direct
+RESULT: PASS-STRICT
+
+--- SCENARIO 5: GET /connections ---
+Rust: {"connections":[],"downloadTotal":0,"memory":17809408,"uploadTotal":0}
+Go:   {"connections":[],"downloadTotal":0,"memory":4530176,"uploadTotal":0}
+RESULT: PASS-STRICT (both 200, body shape differs per DIV-M-008)
+
+--- SCENARIO 6: PATCH /configs mode switch ---
+Rust PATCH status: 204
+Go   PATCH status: 204
+RESULT: PASS-STRICT
+
+--- SCENARIO 7: Auth enforcement (no token) ---
+Rust no-auth GET /configs: 401
+Go   no-auth GET /configs: 401
+RESULT: PASS-STRICT
+
+--- SCENARIO 8: WebSocket streams probe ---
+  /traffic — Rust: GOT_DATA, Go: GOT_DATA
+  /memory — Rust: GOT_DATA, Go: GOT_DATA
+  /connections — Rust: GOT_DATA, Go: GOT_DATA
+  /logs — Rust: GOT_DATA, Go: GOT_DATA
+RESULT: PASS-ENV-LIMITED (curl WS upgrade is best-effort; real WS needs wscat)
+
+--- SCENARIO 9: Proxy delay test ---
+Rust delay: {"delay":4}
+Go   delay: {"delay":602}
+RESULT: PASS-STRICT (both return delay, exact ms differs per DIV-M-009)
+
+--- SCENARIO 10: Graceful Shutdown ---
+Rust: exited cleanly after SIGTERM
+Go: exited cleanly after SIGTERM
+RESULT: PASS-STRICT (both exit cleanly on SIGTERM)
+

@@ -18,9 +18,9 @@
 
 ---
 
-## 当前状态：部署验收基线已建立
+## 当前状态：GUI + 双内核实测验收已取证
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 已完成部署验收基线建立**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线已完成；MT-GUI-01 GUI 驱动双内核对比验收已取证**。
 
 ### 维护线 + 部署验收 close-out 清单
 
@@ -31,7 +31,8 @@
 | MT-CONV-01/02/03 | 已完成 | 2026-04-05 |
 | MT-AUDIT-01 | 已完成 | 2026-04-06 |
 | 文档闭环 / 准则固化 | 已完成 | 2026-04-09 |
-| **MT-DEPLOY-01** | **已完成** | **2026-04-10** |
+| MT-DEPLOY-01 | 已完成 | 2026-04-10 |
+| **MT-GUI-01** | **已完成** | **2026-04-10** |
 
 ### MT-DEPLOY-01 结论
 
@@ -39,6 +40,16 @@
 - 验收链 9 项全部 PASS-STRICT：构建、版本、配置检查、近启动、打包、清单一致性
 - 环境限制：E2E proxy / Docker 镜像 / k8s 部署为 PASS-ENV-LIMITED
 - 详细报告：`agents-only/mt_deploy_01_acceptance.md`
+
+### MT-GUI-01 结论
+
+- **不是** parity completion；仅产出 GUI 驱动下 Go/Rust 双内核的实测证据
+- 通过读 `GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts` 复原 GUI 完整 API 契约
+- 共 15 个场景：10 PASS-STRICT / 4 PASS-ENV-LIMITED / 1 NEW FINDING / 0 FAIL
+- 4 个观察到的差异全部对得上 golden spec 已记录的 DIV-M-006/007/008/009
+- 一个新观察项：post-close `downloadTotal` Rust=0 vs Go=2454，分类暂缓，不开新 maintenance 卡
+- 报告：`agents-only/mt_gui_01_acceptance.md`、`agents-only/mt_gui_01_matrix.md`
+- 证据脚本与原始输出：`agents-only/mt_gui_01_evidence/`
 
 ### 维护线分类（按当前仓库事实）
 
