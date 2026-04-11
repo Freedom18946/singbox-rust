@@ -1,0 +1,34 @@
+=== MT-GUI-02 subscription refresh simulation ===
+Date: 2026-04-11T21:30:55Z
+Mock: http://127.0.0.1:18080
+
+--- S1: GET /sub/clash.json (no auth) ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Sat, 11 Apr 2026 21:30:55 GMT
+Content-Type: application/json
+Content-Length: 311
+ETag: "34f2f416ae8fc084"
+Cache-Control: max-age=60, public
+
+status=200 bytes=311
+
+--- S2: GET /sub/clash.json (wrong Bearer) ---
+status=401
+
+--- S3: GET /sub/clash.json (correct Bearer) ---
+status=200
+etag="34f2f416ae8fc084" cache-control=max-age=60, public bytes=311
+
+--- S4: GET /sub/clash.json (correct auth + If-None-Match) ---
+status=304
+
+--- S5: feed returned sub body into both kernels via 'check' ---
+--- Rust check ---
+[2m2026-04-11T21:30:55.497774Z[0m [33m WARN[0m [2msb_core::runtime::switchboard[0m[2m:[0m Failed to register outbound 'remote': Unsupported protocol: Selector/urltest outbounds are handled via bridge/registry. Using 501 degraded mode.
+rust exit=0
+
+--- Go check ---
+go exit=0
+
+=== subscription refresh done ===

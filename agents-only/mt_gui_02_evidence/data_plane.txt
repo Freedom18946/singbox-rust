@@ -1,0 +1,94 @@
+=== MT-GUI-02 data-plane acceptance ===
+Date: 2026-04-11T21:30:49Z
+Rust SOCKS: 127.0.0.1:11810
+Go   SOCKS: 127.0.0.1:11811
+Mock HTTP:  http://127.0.0.1:18080
+Mock HTTPS: https://127.0.0.1:18443
+Mock WS:    127.0.0.1:18081
+Mock TCP:   127.0.0.1:18083
+
+Baseline downloadTotal: Rust=0 Go=0
+
+--- D1: HTTP GET / through SOCKS5 ---
+Rust: exit=0 body=MT-GUI-02 mock public OK
+Go:   exit=0 body=MT-GUI-02 mock public OK
+RESULT: PASS-STRICT (banner GET)
+
+--- D2: HTTP GET /get (json echo) through SOCKS5 ---
+Rust: path=/get
+Go:   path=/get
+RESULT: PASS-STRICT (json echo)
+
+--- D3: HTTP status 404 / 500 through SOCKS5 ---
+Rust /status/404=404 /status/500=500
+Go   /status/404=404 /status/500=500
+RESULT: PASS-STRICT
+
+--- D4: redirect chain (/redirect/3 -> /get, -L follow) ---
+Rust: status=200 redirects=3 final=http://127.0.0.1:18080/get
+Go:   status=200 redirects=3 final=http://127.0.0.1:18080/get
+RESULT: PASS-STRICT (redirect chain)
+
+--- D5: chunked transfer-encoding ---
+Rust: exit=0 chunks=5
+Go:   exit=0 chunks=5
+RESULT: PASS-STRICT (both relay 5 chunks)
+
+--- D6: 1 MiB payload ---
+Rust: exit=0 bytes=1048576
+Go:   exit=0 bytes=1048576
+RESULT: PASS-STRICT (both relay exactly 1 MiB)
+
+--- D7: slow upstream 2000ms ---
+Rust: total=2.006841 status=200 exit=0
+Go:   total=2.007214 status=200 exit=0
+RESULT: PASS-STRICT (slow upstream)
+
+--- D8: SSE stream (/sse) — expect 5 events ---
+Rust: exit=0 events=5
+Go:   exit=0 events=5
+RESULT: PASS-STRICT (both stream 5 SSE events)
+
+--- D9: HTTPS through SOCKS5 (self-signed, -k) ---
+Rust: exit=0 path=/get
+Go:   exit=0 path=/get
+RESULT: PASS-STRICT (HTTPS -k)
+
+--- D10: HTTPS strict (no -k, self-signed) — expected TLS failure at client ---
+Rust: exit=60 ()
+Go:   exit=60 ()
+RESULT: PASS-STRICT (both reject self-signed at client; kernels relay the TCP stream regardless)
+
+--- D11: TCP echo through SOCKS5 (python client) ---
+Rust: exit=0 body= hello-rust-echo
+Go:   exit=0 body= hello-go-echo
+RESULT: PASS-STRICT (echoes returned through both kernels via python socks5 client)
+
+--- D12: WebSocket echo through SOCKS5 (python client, RFC 6455) ---
+Rust: status="HTTP/1.1 101 Switching Protocols" first=b'hello-ws' echo=b'mt-gui-02-ws'
+Go  : status="HTTP/1.1 101 Switching Protocols" first=b'hello-ws' echo=b'mt-gui-02-ws'
+RESULT: PASS-STRICT (real RFC 6455 handshake + echo through both SOCKS5 inbounds)
+
+--- D13: /early-close (server closes before body) ---
+Rust: exit=18 status=200 dl=0
+Go:   exit=18 status=200 dl=0
+RESULT: PASS-STRICT (both kernels surface early-close identically; exit=18)
+
+--- D14: /reset (server closes without any reply) ---
+Rust: exit=52 status=000
+Go:   exit=52 status=000
+RESULT: PASS-STRICT (curl exit 52 'empty reply' on both)
+
+--- D15: TCP to dead port 18499 (connection refused) ---
+Rust: exit=97
+Go:   exit=97
+RESULT: PASS-STRICT (both reject connection to dead port; exit codes may differ Rust=97 Go=97)
+
+--- D16: cumulative /connections.downloadTotal after traffic (MT-GUI-01 §5 replay) ---
+Rust post: downloadTotal=0 (baseline=0) uploadTotal=0 active=0
+Go   post: downloadTotal=1055032 (baseline=0) uploadTotal=2186 active=0
+Rust delta downloadTotal=0
+Go   delta downloadTotal=1055032
+RESULT: CONFIRMED FINDING (MT-GUI-01 §5 reproduces: Rust downloadTotal does not increment after close; Go does)
+
+=== data-plane acceptance done ===

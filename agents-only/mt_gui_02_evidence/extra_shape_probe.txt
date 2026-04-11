@@ -1,0 +1,176 @@
+=== MT-GUI-02 supplementary body-shape probe ===
+Date: 2026-04-11T21:30:55Z
+
+--- /rules raw body ---
+Rust:
+{
+    "rules": [
+        {
+            "order": 9999,
+            "payload": "",
+            "proxy": "my-group",
+            "type": "MATCH"
+        }
+    ]
+}
+
+Go:
+{
+    "rules": null
+}
+
+
+--- /providers/proxies raw body ---
+Rust:
+{
+    "providers": {}
+}
+
+Go:
+{
+    "providers": {}
+}
+
+
+--- /providers/rules raw body ---
+Rust:
+{
+    "providers": {}
+}
+
+Go:
+{
+    "providers": []
+}
+
+
+--- /dns/query?name=mock-public.local&type=A raw body ---
+Rust:
+{
+    "message": "Failed to resolve mock-public.local: Internal error: failed to lookup address information: nodename nor servname provided, or not known"
+}
+
+Go:
+{
+    "AD": false,
+    "Answer": [
+        {
+            "TTL": 6,
+            "data": "198.18.1.29",
+            "name": "mock-public.local.",
+            "type": 1
+        }
+    ],
+    "CD": false,
+    "Question": [
+        {
+            "Name": "mock-public.local.",
+            "Qtype": 1,
+            "Qclass": 1
+        }
+    ],
+    "RA": false,
+    "RD": false,
+    "Server": "internal",
+    "Status": 0,
+    "TC": false
+}
+
+
+--- /dns/query?name=example.com&type=A raw body ---
+Rust:
+{
+    "addresses": [
+        "198.18.1.30"
+    ],
+    "name": "example.com",
+    "ttl": 300,
+    "type": "A"
+}
+
+Go:
+{
+    "AD": false,
+    "Answer": [
+        {
+            "TTL": 1,
+            "data": "198.18.1.30",
+            "name": "example.com.",
+            "type": 1
+        }
+    ],
+    "CD": false,
+    "Question": [
+        {
+            "Name": "example.com.",
+            "Qtype": 1,
+            "Qclass": 1
+        }
+    ],
+    "RA": false,
+    "RD": false,
+    "Server": "internal",
+    "Status": 0,
+    "TC": false
+}
+
+
+--- /configs raw body ---
+Rust:
+{
+    "port": 0,
+    "socks-port": 11810,
+    "redir-port": 0,
+    "tproxy-port": 0,
+    "mixed-port": 0,
+    "allow-lan": false,
+    "bind-address": "*",
+    "mode": "rule",
+    "mode-list": [
+        "rule",
+        "global",
+        "direct"
+    ],
+    "log-level": "info",
+    "ipv6": false,
+    "tun": {}
+}
+
+Go:
+{
+    "port": 0,
+    "socks-port": 0,
+    "redir-port": 0,
+    "tproxy-port": 0,
+    "mixed-port": 0,
+    "allow-lan": false,
+    "bind-address": "*",
+    "mode": "Rule",
+    "mode-list": [
+        "Rule"
+    ],
+    "log-level": "warn",
+    "ipv6": false,
+    "tun": null
+}
+
+
+--- /connections raw body ---
+Rust:
+{
+    "connections": [],
+    "downloadTotal": 0,
+    "memory": 20873216,
+    "uploadTotal": 0
+}
+
+Go:
+{
+    "connections": [],
+    "downloadTotal": 1055032,
+    "memory": 5242880,
+    "uploadTotal": 2186
+}
+
+
+=== probe done ===

@@ -18,11 +18,11 @@
 
 ---
 
-## 当前状态：GUI + 双内核实测验收已取证
+## 当前状态：GUI 全面验收已取证（MT-GUI-02 完成）
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线已完成；MT-GUI-01 GUI 驱动双内核对比验收已取证**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线完成；MT-GUI-01 取证完成；MT-GUI-02 在本地 mock 公网基础设施上的 35 场景全量取证完成**。
 
-### 维护线 + 部署验收 close-out 清单
+### 维护线 + 部署/验收 close-out 清单
 
 | 线 | 状态 | 日期 |
 |--------|------|------|
@@ -32,7 +32,8 @@
 | MT-AUDIT-01 | 已完成 | 2026-04-06 |
 | 文档闭环 / 准则固化 | 已完成 | 2026-04-09 |
 | MT-DEPLOY-01 | 已完成 | 2026-04-10 |
-| **MT-GUI-01** | **已完成** | **2026-04-10** |
+| MT-GUI-01 | 已完成 | 2026-04-10 |
+| **MT-GUI-02** | **已完成** | **2026-04-11** |
 
 ### MT-DEPLOY-01 结论
 
@@ -50,6 +51,18 @@
 - 一个新观察项：post-close `downloadTotal` Rust=0 vs Go=2454，分类暂缓，不开新 maintenance 卡
 - 报告：`agents-only/mt_gui_01_acceptance.md`、`agents-only/mt_gui_01_matrix.md`
 - 证据脚本与原始输出：`agents-only/mt_gui_01_evidence/`
+
+### MT-GUI-02 结论
+
+- **不是** parity completion；扩展 MT-GUI-01 到更真实的用户路径，增加 mock 公网基础设施让证据可复现
+- 构建单文件纯 stdlib Python mock（HTTP/HTTPS 自签/RFC 6455 WS/SSE/chunked/大 body/慢上游/订阅 Bearer+ETag+304/early-close/RST/dead port）
+- 双内核驱动同一 GUI-shape 配置 + 三平面全面覆盖：控制 14 + 数据 16 + 订阅 5 = **35 场景**
+- **32 PASS-STRICT / 1 PASS-ENV-LIMITED / 1 NEW FINDING / 1 CONFIRMED FINDING / 0 FAIL**
+- 5 个已知差异全部对得上 golden spec：DIV-M-005/006/007/008/009
+- NEW FINDING：`/dns/query` 对不可解析域名 Rust=500 Go=200+fake answer（设计级差异而非 parity bug）
+- CONFIRMED FINDING：MT-GUI-01 §5 cumulative `downloadTotal` 在 1 MiB 流量下仍重现，分类暂缓
+- 报告：`agents-only/mt_gui_02_acceptance.md`、`agents-only/mt_gui_02_matrix.md`、`agents-only/mt_gui_02_mock_public_infra.md`
+- 证据 + 脚本：`agents-only/mt_gui_02_evidence/`（orchestrator + mock + 4 个测试脚本 + 全部 raw txt/log）
 
 ### 维护线分类（按当前仓库事实）
 

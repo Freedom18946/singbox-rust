@@ -1,0 +1,143 @@
+=== MT-GUI-02 mock_public_infra smoke test ===
+Date: 2026-04-10T11:27:11Z
+
+--- HTTP / banner ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:11 GMT
+Content-Type: text/plain
+Content-Length: 25
+
+--- HTTP /get ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:11 GMT
+Content-Type: application/json
+Content-Length: 118
+
+{"headers": {"Accept": "*/*", "Host": "127.0.0.1:18080", "User-Agent": "curl/8.7.1"}, "method": "GET", "path": "/get"}
+--- HTTP /headers ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:11 GMT
+Content-Type: application/json
+Content-Length: 85
+
+{"headers": {"Accept": "*/*", "Host": "127.0.0.1:18080", "User-Agent": "curl/8.7.1"}}
+--- HTTP /status/404 ---
+status=404
+--- HTTP /status/500 ---
+status=500
+
+--- HTTP /redirect (no follow) ---
+HTTP/1.0 302 Found
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:11 GMT
+Location: /get
+Content-Length: 0
+
+--- HTTP /redirect/3 (follow) ---
+status=200 redirects=3 final=http://127.0.0.1:18080/get
+
+--- HTTP /chunked ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:11 GMT
+Content-Type: text/plain
+Transfer-Encoding: chunked
+
+chunk-0
+chunk-1
+chunk-2
+chunk-3
+chunk-4
+
+--- HTTP /large (1MiB) ---
+status=200 bytes=1048576
+
+--- HTTP /slow?ms=500 ---
+status=200
+real 0.51
+user 0.00
+sys 0.00
+
+--- HTTP /sse ---
+id: 0
+event: tick
+data: {"i": 0, "ts": 1775820431.631}
+
+id: 1
+event: tick
+data: {"i": 1, "ts": 1775820431.737}
+
+id: 2
+event: tick
+data: {"i": 2, "ts": 1775820431.842}
+
+id: 3
+event: tick
+data: {"i": 3, "ts": 1775820431.947}
+
+--- HTTP /sub/version ---
+{"etag": "\"a93bb94f803f9a0b\"", "version": "1.0"}
+--- HTTP /sub/clash.json (no auth) ---
+status=200 etag="a93bb94f803f9a0b"
+--- HTTP /sub/clash.json (wrong auth) ---
+status=401
+--- HTTP /sub/clash.json (correct auth) ---
+status=200 etag="a93bb94f803f9a0b" cc=max-age=60, public bytes=310
+--- HTTP /sub/clash.json (correct auth + etag) ---
+status=304
+
+--- HTTP /early-close ---
+curl: (18) transfer closed with 1024 bytes remaining to read
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:12 GMT
+Content-Type: text/plain
+Content-Length: 1024
+
+
+--- HTTP /reset ---
+curl: (52) Empty reply from server
+
+--- HTTPS / banner (insecure) ---
+HTTP/1.0 200 OK
+Server: MockPublic/1.0 Python/3.12.11
+Date: Fri, 10 Apr 2026 11:27:12 GMT
+Content-Type: text/plain
+Content-Length: 25
+
+--- TCP echo (nc) ---
+hello-tcp-echo
+
+--- done ---
+ERROR:root:code for hash blake2b was not found.
+Traceback (most recent call last):
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 245, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2b
+ERROR:root:code for hash blake2s was not found.
+Traceback (most recent call last):
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 245, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/bob/.pyenv/versions/3.12.11/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2s
+--- WS handshake response ---
+HTTP/1.1 101 Switching Protocols
+expected Sec-WebSocket-Accept: en5EY9fYIrPHGucGLD6Dk/EXON4=
+--- WS server frame bytes ---
+b'\x81\x08hello-ws'
+decoded text: hello-ws
+--- WS done ---
