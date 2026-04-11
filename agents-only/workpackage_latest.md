@@ -18,9 +18,9 @@
 
 ---
 
-## 当前状态：GUI 全面验收已取证（MT-GUI-02 完成）
+## 当前状态：GUI 双内核差异归类完成（MT-GUI-03 完成）
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线完成；MT-GUI-01 取证完成；MT-GUI-02 在本地 mock 公网基础设施上的 35 场景全量取证完成**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线完成；MT-GUI-01 取证完成；MT-GUI-02 35 场景全量取证完成；MT-GUI-03 在其基础上做了一轮差异归类 + oracle 对账 + golden spec 增补（DIV-M-010 / DIV-M-011）**。
 
 ### 维护线 + 部署/验收 close-out 清单
 
@@ -33,7 +33,8 @@
 | 文档闭环 / 准则固化 | 已完成 | 2026-04-09 |
 | MT-DEPLOY-01 | 已完成 | 2026-04-10 |
 | MT-GUI-01 | 已完成 | 2026-04-10 |
-| **MT-GUI-02** | **已完成** | **2026-04-11** |
+| MT-GUI-02 | 已完成 | 2026-04-11 |
+| **MT-GUI-03** | **已完成** | **2026-04-12** |
 
 ### MT-DEPLOY-01 结论
 
@@ -63,6 +64,19 @@
 - CONFIRMED FINDING：MT-GUI-01 §5 cumulative `downloadTotal` 在 1 MiB 流量下仍重现，分类暂缓
 - 报告：`agents-only/mt_gui_02_acceptance.md`、`agents-only/mt_gui_02_matrix.md`、`agents-only/mt_gui_02_mock_public_infra.md`
 - 证据 + 脚本：`agents-only/mt_gui_02_evidence/`（orchestrator + mock + 4 个测试脚本 + 全部 raw txt/log）
+
+### MT-GUI-03 结论
+
+- **不是** parity completion，**不是** 代码改动；只做差异归类 / oracle 对账 / 证据收口
+- 基于 MT-GUI-01 + MT-GUI-02 的既有证据（本日 05:30 新鲜 re-run），无需新复跑
+- 10 项 GUI 差异全部归类：5 Covered / 2 New-Finding-Non-Blocking / 1 Env-Limited / 2 Extension-of-Existing
+- 两条 deferred finding 登记为 COSMETIC DIV：
+  - `DIV-M-010`：`/dns/query` 非可解析域名 Rust=500 Go=200 + 合成答案（设计级差异，oracle 已通过 `ignore_http_paths: ["/dns/query*"]` 覆盖）
+  - `DIV-M-011`：`/connections` 顶层 `downloadTotal`/`uploadTotal` 不跨关闭累计（per-connection 计数两侧一致；oracle 已通过 `ignore_http_paths: ["/connections"]` 覆盖）
+- Golden spec 仅新增两行 `§S4` COSMETIC DIV，不改 oracle、不改 case、不改代码
+- 不更新 `GO_PARITY_MATRIX.md`（代码级 closure 口径无变化）、不更新 `ACCEPTANCE-CRITERIA.md`（tri-state 已覆盖）
+- 无 blocker，无新卡
+- 报告：`agents-only/mt_gui_03_divergence_review.md`
 
 ### 维护线分类（按当前仓库事实）
 

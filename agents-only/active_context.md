@@ -4,13 +4,28 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: GUI 全面验收（MT-GUI-02）已建立 — 基于项目内 mock 公网服务器的 Go/Rust 双内核真实用户路径取证
-**Parity**: 52/60 (86.7%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: GUI 驱动的 Go/Rust 双内核行为对比在更真实的用户路径下再次取证 — 无 blocker，仅记录发现
+**当前阶段**: GUI 双内核差异归类收口（MT-GUI-03）完成 — 把 MT-GUI-01/02 所有差异落入 5 类分类体系，并把两条 deferred finding 以 `DIV-M-010`/`DIV-M-011` 登记进 golden spec
+**Parity**: 52/60 (86.7%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准（新增 2 条 COSMETIC DIV，不变更 oracle 行为）
+**当前阶段焦点**: GUI 语境下的双内核差异已全部归类完毕 — 无 blocker，无新卡，无代码改动
 
-## 最近闭环（2026-04-11）
+## 最近闭环（2026-04-12）
 
-### MT-GUI-02: GUI 驱动 + 本地公网模拟 全面验收 — 已完成
+### MT-GUI-03: GUI 双内核差异归类 + oracle 对账 — 已完成
+
+- **不是** parity completion，**不是** 代码整改；只做差异归类、oracle 对账、证据收口
+- 基于 MT-GUI-01 (15 scenarios) + MT-GUI-02 (35 scenarios) 的既有原始证据（本日 05:30 新鲜 re-run），无需新复跑
+- 10 项 GUI 双内核差异全部归类：
+  - **5 Covered by Existing Divergence**：`/configs`, `/proxies`, `/proxies/{name}/delay`, `/connections.memory`, `/dns/query` 成功应答 shape — 全部对应 DIV-M-005..009
+  - **2 New Finding, Non-Blocking**：`/rules` list vs null、`/providers/rules` `{}` vs `[]` — 均 200 + 语义等价，不升级 DIV，不开卡
+  - **1 Environment-Limited**：curl WS handshake — 已被 `p0_clash_api_contract*` + MT-GUI-02 DP-12 真 RFC 6455 覆盖
+  - **2 Extension of Existing Accepted Limitation**：
+    - CP-13 `/dns/query` 非可解析域名 Rust=500 Go=200 → 新增 `DIV-M-010`（设计级差异：Rust 诚实报错 / Go fake-IP 合成，不改 Rust）
+    - DP-16 累计 `downloadTotal` Rust=0 Go=1055032 → 新增 `DIV-M-011`（Rust 仅 per-connection 计数，不跨关闭累计；GUI 带宽图用 WS `/traffic`，不受影响）
+- Golden spec `§S4` 增补两行（纯文档，不改 oracle、不改 case、不改代码）
+- 不更新 `GO_PARITY_MATRIX.md`（代码级 closure 口径无变化）、不更新 `ACCEPTANCE-CRITERIA.md`（tri-state 已覆盖）
+- 报告：`agents-only/mt_gui_03_divergence_review.md`
+
+### MT-GUI-02: GUI 驱动 + 本地公网模拟 全面验收 — 已完成（仍生效）
 
 - **不是** parity completion；扩展 MT-GUI-01 的 surface，加 mock 公网基础设施让证据可复现
 - 构建单文件纯 stdlib Python mock：HTTP/HTTPS(自签)/RFC 6455 WS/SSE/chunked/大 body/慢上游/订阅(Bearer+ETag+304)/early-close/RST/dead port
@@ -42,7 +57,7 @@
 - 完整 SOCKS5 数据面覆盖：HTTP/HTTPS(self-signed)/SSE/chunked/1 MiB/slow/early-close/RST/dead port/TCP echo 全部在两侧一致
 - 订阅拉取（Bearer + ETag + 304）+ 两侧 `check` 验证配置解析均通过
 - 5 个已知 DIV-M-005..009 差异全部已记录；两个新的 cosmetic 差异（`/rules` list vs null、`/providers/rules` object vs array）仅记录不升级
-- 两个待分类观察项（CP-13 DNS 非可解析、DP-16 cumulative downloadTotal），不开新 maintenance 卡
+- 两个 deferred finding 已在 MT-GUI-03 归类并登记为 `DIV-M-010` / `DIV-M-011`（纯 COSMETIC 文档补丁，无 oracle 变更、无代码改动、无新卡）
 
 ## 环境限制项（PASS-ENV-LIMITED）
 
