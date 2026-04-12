@@ -18,9 +18,9 @@
 
 ---
 
-## 当前状态：GUI 双内核差异归类完成（MT-GUI-03 完成）
+## 当前状态：声明完成能力全量逐项验收完成（MT-GUI-04 完成）
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-DEPLOY-01 部署基线完成；MT-GUI-01 取证完成；MT-GUI-02 35 场景全量取证完成；MT-GUI-03 在其基础上做了一轮差异归类 + oracle 对账 + golden spec 增补（DIV-M-010 / DIV-M-011）**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-GUI-04 在 MT-GUI-01/02/03 基础上完成了 55 项声明完成能力的 exhaustive per-capability acceptance sweep — 0 FAIL / 0 NEW FINDING / 所有差异均挂到 DIV-M-005..011**。
 
 ### 维护线 + 部署/验收 close-out 清单
 
@@ -34,49 +34,19 @@
 | MT-DEPLOY-01 | 已完成 | 2026-04-10 |
 | MT-GUI-01 | 已完成 | 2026-04-10 |
 | MT-GUI-02 | 已完成 | 2026-04-11 |
-| **MT-GUI-03** | **已完成** | **2026-04-12** |
+| MT-GUI-03 | 已完成 | 2026-04-12 |
+| **MT-GUI-04** | **已完成** | **2026-04-12** |
 
-### MT-DEPLOY-01 结论
+### MT-GUI-04 结论
 
-- 修复 2 个阻塞 `parity` feature 构建的真实 blocker（tracing_init.rs cfg gate + tokio-util dep）
-- 验收链 9 项全部 PASS-STRICT：构建、版本、配置检查、近启动、打包、清单一致性
-- 环境限制：E2E proxy / Docker 镜像 / k8s 部署为 PASS-ENV-LIMITED
-- 详细报告：`agents-only/mt_deploy_01_acceptance.md`
-
-### MT-GUI-01 结论
-
-- **不是** parity completion；仅产出 GUI 驱动下 Go/Rust 双内核的实测证据
-- 通过读 `GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts` 复原 GUI 完整 API 契约
-- 共 15 个场景：10 PASS-STRICT / 4 PASS-ENV-LIMITED / 1 NEW FINDING / 0 FAIL
-- 4 个观察到的差异全部对得上 golden spec 已记录的 DIV-M-006/007/008/009
-- 一个新观察项：post-close `downloadTotal` Rust=0 vs Go=2454，分类暂缓，不开新 maintenance 卡
-- 报告：`agents-only/mt_gui_01_acceptance.md`、`agents-only/mt_gui_01_matrix.md`
-- 证据脚本与原始输出：`agents-only/mt_gui_01_evidence/`
-
-### MT-GUI-02 结论
-
-- **不是** parity completion；扩展 MT-GUI-01 到更真实的用户路径，增加 mock 公网基础设施让证据可复现
-- 构建单文件纯 stdlib Python mock（HTTP/HTTPS 自签/RFC 6455 WS/SSE/chunked/大 body/慢上游/订阅 Bearer+ETag+304/early-close/RST/dead port）
-- 双内核驱动同一 GUI-shape 配置 + 三平面全面覆盖：控制 14 + 数据 16 + 订阅 5 = **35 场景**
-- **32 PASS-STRICT / 1 PASS-ENV-LIMITED / 1 NEW FINDING / 1 CONFIRMED FINDING / 0 FAIL**
-- 5 个已知差异全部对得上 golden spec：DIV-M-005/006/007/008/009
-- NEW FINDING：`/dns/query` 对不可解析域名 Rust=500 Go=200+fake answer（设计级差异而非 parity bug）
-- CONFIRMED FINDING：MT-GUI-01 §5 cumulative `downloadTotal` 在 1 MiB 流量下仍重现，分类暂缓
-- 报告：`agents-only/mt_gui_02_acceptance.md`、`agents-only/mt_gui_02_matrix.md`、`agents-only/mt_gui_02_mock_public_infra.md`
-- 证据 + 脚本：`agents-only/mt_gui_02_evidence/`（orchestrator + mock + 4 个测试脚本 + 全部 raw txt/log）
-
-### MT-GUI-03 结论
-
-- **不是** parity completion，**不是** 代码改动；只做差异归类 / oracle 对账 / 证据收口
-- 基于 MT-GUI-01 + MT-GUI-02 的既有证据（本日 05:30 新鲜 re-run），无需新复跑
-- 10 项 GUI 差异全部归类：5 Covered / 2 New-Finding-Non-Blocking / 1 Env-Limited / 2 Extension-of-Existing
-- 两条 deferred finding 登记为 COSMETIC DIV：
-  - `DIV-M-010`：`/dns/query` 非可解析域名 Rust=500 Go=200 + 合成答案（设计级差异，oracle 已通过 `ignore_http_paths: ["/dns/query*"]` 覆盖）
-  - `DIV-M-011`：`/connections` 顶层 `downloadTotal`/`uploadTotal` 不跨关闭累计（per-connection 计数两侧一致；oracle 已通过 `ignore_http_paths: ["/connections"]` 覆盖）
-- Golden spec 仅新增两行 `§S4` COSMETIC DIV，不改 oracle、不改 case、不改代码
-- 不更新 `GO_PARITY_MATRIX.md`（代码级 closure 口径无变化）、不更新 `ACCEPTANCE-CRITERIA.md`（tri-state 已覆盖）
-- 无 blocker，无新卡
-- 报告：`agents-only/mt_gui_03_divergence_review.md`
+- **不是** parity completion；是对所有声明完成项的 exhaustive per-capability acceptance
+- 从 golden spec + GUI kernel.ts + MT-DEPLOY-01 枚举 55 项能力，6 个类别
+- 双内核同时运行 + mock 公网 → 逐项测试
+- **55/55 通过：35 PASS-STRICT + 7 PASS-DIV-COVERED + 13 PASS-ENV-LIMITED + 0 FAIL**
+- 7 个 DIV-COVERED 全部挂到 DIV-M-005..011；13 个 ENV-LIMITED 全部有 interop-lab 真实覆盖
+- 无"粗颗粒已过、细项未清"空白；无新发现；无新 blocker
+- 报告：`mt_gui_04_acceptance.md`、`mt_gui_04_matrix.md`、`mt_gui_04_capability_inventory.md`、`mt_gui_04_gap_list.md`
+- 证据：`mt_gui_04_evidence/`
 
 ### 维护线分类（按当前仓库事实）
 
@@ -85,29 +55,21 @@
   - `MT-SVC-01`, `MT-TEST-01`, `MT-ADP-01`
   - `MT-AUDIT-01` (reconciliation archived)
 - **close-out but future boundary remains**
-  - `MT-CONV-01`, `MT-CONV-02`, `MT-CONV-03`
-  - `MT-OBS-01`, `MT-RTC-01/02/03`
+  - `MT-CONV-01/02/03`, `MT-OBS-01`, `MT-RTC-01/02/03`
   - `MT-HOT-OBS-01`, `MT-RD-01`, `MT-PERF-01`
   - `MT-MLOG-01`, `MT-ADM-01`, `MT-DEEP-01`
-- **still active / needs regrouping**
-  - 无旧 maintenance 线继续维持为单独 active 卡
 
 ### 下一阶段默认路线
 
-- **默认结论**：部署验收基线已建立；后续可进入实际部署或环境集成
+- **默认结论**：声明完成能力逐项验收已闭环；后续可进入实际部署或环境集成
 - **后续 agents 先看**
   - `agents-only/active_context.md`
-  - `agents-only/mt_deploy_01_acceptance.md`
+  - `agents-only/mt_gui_04_acceptance.md`
   - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
-- **若未来必须继续开卡，只保留少数高层 regroup 主题**
-  - boundary assertion script 更新（21 stale targets）
-  - `tun_enhanced.rs` residual panic density 收缩（仅在出现真实信号时）
-  - mega-file 治理（仅在功能需求或部署验收收益明确时附带推进）
 
 ### 明确暂停事项
 
 - 不恢复 `.github/workflows/*`
 - 不把 maintenance 工作误写成 dual-kernel parity completion
 - 不再继续 `WP-30k` 风格微卡化排程
-- 不把 `future boundary` 直接写成"下一卡默认继续做"
 - 不推进 public `RuntimePlan`、public `PlannedConfigIR`、generic query API
