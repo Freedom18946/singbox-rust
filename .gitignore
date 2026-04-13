@@ -218,6 +218,10 @@ labs/interop-lab/artifacts/*/
 !labs/interop-lab/artifacts/trend_summary.json
 
 # Temporary routing tables or rule files
+
+# MT-REAL-01 Phase 3 real-upstream artifacts (contain live subscription secrets)
+agents-only/mt_real_01_evidence/phase3_real_upstream.json
+agents-only/mt_real_01_evidence/phase3_runtime/
 routes.tmp
 rules.tmp
 

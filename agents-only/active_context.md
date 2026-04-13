@@ -4,11 +4,28 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: MT-REAL-01 Phase 1-2 完成 — 真实双内核控制面/interop-lab strict 双核子集已跑通，等待 Phase 3 真实节点
+**当前阶段**: MT-REAL-01 Phase 3 订阅实探已启动 — GUI 订阅拉取已确认，Rust 真实 VLESS 数据面被新阻断卡住
 **Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 在补全 parity 构建后得到 37 个 strict+both case 的有效矩阵：30 PASS / 7 FAIL；Phase 3 等待真实代理节点信息
+**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，但当前 Rust `vless` 域名型出站注册 + 现网 fake-IP DNS 环境共同阻断真实出站验证
 
 ## 最近闭环（2026-04-14）
+
+### MT-REAL-01 Phase 3: 真实订阅 + GUI 拉取能力探测 — 部分完成 / 当前阻断已定位
+
+- 用户提供 1 条真实订阅；原始内容为 **22** 条链接：`21 x vless` + `1 x anytls`
+- 本机 `GUI.for.SingBox` 已存在同一订阅的本地落盘：
+  - `subscribes.yaml` 中可见该 URL 对应订阅项（名称 `CTC2`）
+  - GUI 缓存文件 `~/Library/Application Support/GUI.for.SingBox/subscribes/ID_ekfvjidr.json`
+  - 最近 `updateTime` 为 **2026-04-13 15:29:02 +08:00**
+  - GUI 成功导入 **21 个 VLESS** 节点；`anytls` 未进入该缓存文件
+- Rust Phase 3 本地测试配置已生成到 git-ignore 路径 `agents-only/mt_real_01_evidence/phase3_real_upstream.json`
+  - 控制面 PASS：`/version`、`/configs`、`/proxies` 可达；`mixed-port=11080`；`selector` / `auto` 组可见
+  - 数据面 BLOCKED：经 `socks5h://127.0.0.1:11080` 访问 `https://httpbin.org/ip` 直接失败
+- 新阻断定位：
+  - Rust bug：`crates/sb-adapters/src/register.rs` 中 `parse_required_outbound_socket_addr()` 强行把 `server:port` 解析为 `SocketAddr`，导致**域名型 VLESS 出站全部在注册期失效**
+  - 环境因素：当前网络环境下，订阅域名解析结果落到 `198.18.1.x` fake-IP 段，说明现网 DNS 受基线 TUN/代理影响；简单本地域名转 IP workaround 不可靠
+- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”尚未通过，需额外真实 SS/Trojan/VMess 节点或先修复域名型 VLESS 出站注册
+- 报告：`agents-only/mt_real_01_phase3_subscription_probe.md`
 
 ### MT-REAL-01 Phase 1-2: 真实双内核联测首轮 — 已完成（Phase 3 待环境）
 
