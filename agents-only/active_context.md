@@ -4,11 +4,32 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: MT-REAL-01 Phase 3 订阅实探已启动 — GUI 订阅拉取已确认，Rust 真实 VLESS 数据面被新阻断卡住
+**当前阶段**: MT-REAL-01-FIX-01 已完成 — 域名型 VMess/VLESS 出站注册阻断已修；Phase 3 继续推进时暴露 REALITY 公钥格式兼容阻断
 **Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，但当前 Rust `vless` 域名型出站注册 + 现网 fake-IP DNS 环境共同阻断真实出站验证
+**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断已修复，当前新的真实出站阻断是 REALITY `public_key` 仅接受 64 hex 而现网订阅为 43-char base64url
 
 ## 最近闭环（2026-04-14）
+
+### MT-REAL-01-FIX-01: 域名型 VMess/VLESS 出站注册阻断修复 — 已完成
+
+- 修复 `crates/sb-adapters/src/register.rs` 的 VMess/VLESS 注册路径：
+  - 不再把 `server:port` 强制解析为 `SocketAddr`
+  - 改为保留 `server: String` + `port: u16`，把 DNS 解析推迟到真实连接阶段
+- `crates/sb-adapters/src/outbound/vmess.rs` / `outbound/vless.rs` 已同步改成 host+port 模型
+- 新增/更新测试：
+  - 域名型 `example.com:443` 现在对 VMess/VLESS 注册应成功
+  - 空 server / 零端口继续拒绝
+  - app 侧相关集成测试已切到 `server` + `port`
+- 验证状态：
+  - `cargo test -p sb-adapters` PASS
+  - `cargo clippy --workspace --all-features --all-targets -- -D warnings` PASS
+  - `cargo test -p interop-lab` PASS（29/29）
+  - `cargo test -p sb-core` ENV-LIMITED：`dns_steady::bad_domain_returns_err` 在当前机器被 DNS 劫持解析到 `198.18.1.100`，不是本次改动回归
+- 回到 Phase 3 复测后确认：
+  - Rust 现在可以加载真实订阅配置并正常启动 `19090/11080`
+  - 之前的“域名型 VLESS 启动即 invalid config”阻断已消失
+  - 新阻断前移到 REALITY 拨号期：`public_key must be 64 hex characters`
+- 报告：`agents-only/mt_real_01_fix_01.md`
 
 ### MT-REAL-01 Phase 3: 真实订阅 + GUI 拉取能力探测 — 部分完成 / 当前阻断已定位
 
@@ -20,11 +41,12 @@
   - GUI 成功导入 **21 个 VLESS** 节点；`anytls` 未进入该缓存文件
 - Rust Phase 3 本地测试配置已生成到 git-ignore 路径 `agents-only/mt_real_01_evidence/phase3_real_upstream.json`
   - 控制面 PASS：`/version`、`/configs`、`/proxies` 可达；`mixed-port=11080`；`selector` / `auto` 组可见
-  - 数据面 BLOCKED：经 `socks5h://127.0.0.1:11080` 访问 `https://httpbin.org/ip` 直接失败
-- 新阻断定位：
-  - Rust bug：`crates/sb-adapters/src/register.rs` 中 `parse_required_outbound_socket_addr()` 强行把 `server:port` 解析为 `SocketAddr`，导致**域名型 VLESS 出站全部在注册期失效**
-  - 环境因素：当前网络环境下，订阅域名解析结果落到 `198.18.1.x` fake-IP 段，说明现网 DNS 受基线 TUN/代理影响；简单本地域名转 IP workaround 不可靠
-- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”尚未通过，需额外真实 SS/Trojan/VMess 节点或先修复域名型 VLESS 出站注册
+  - 数据面当前仍 BLOCKED：经 `socks5h://127.0.0.1:11080` 访问 `https://httpbin.org/ip` 失败
+- 阻断演进：
+  - 已修复：域名型 VLESS/VMess 出站注册期 `invalid config`
+  - 当前新阻断：REALITY `public_key` 兼容性，现网订阅使用 43-char base64url，Rust 仍要求 64 hex
+  - 环境因素仍在：当前网络环境下，订阅域名解析结果落到 `198.18.1.x` fake-IP 段，说明现网 DNS 受基线 TUN/代理影响
+- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”下一步需要修复 REALITY 公钥格式兼容，或换用不触发该路径的真实 SS/Trojan/VMess 节点
 - 报告：`agents-only/mt_real_01_phase3_subscription_probe.md`
 
 ### MT-REAL-01 Phase 1-2: 真实双内核联测首轮 — 已完成（Phase 3 待环境）

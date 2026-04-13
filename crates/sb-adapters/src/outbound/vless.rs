@@ -12,7 +12,6 @@ use crate::outbound::prelude::*;
 use crate::traits::OutboundDatagram;
 use crate::transport_config::TransportConfig;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
@@ -77,9 +76,12 @@ impl Encryption {
 /// VLESS 配置
 #[derive(Debug, Clone)]
 pub struct VlessConfig {
-    /// Server address and port
-    /// 服务端地址和端口
-    pub server_addr: SocketAddr,
+    /// Server host
+    /// 服务端主机
+    pub server: String,
+    /// Server port
+    /// 服务端端口
+    pub port: u16,
     /// User UUID
     /// 用户 UUID
     pub uuid: Uuid,
@@ -118,7 +120,8 @@ pub struct VlessConfig {
 impl Default for VlessConfig {
     fn default() -> Self {
         Self {
-            server_addr: SocketAddr::from(([127, 0, 0, 1], 443)),
+            server: "127.0.0.1".to_string(),
+            port: 443,
             uuid: Uuid::new_v4(),
             flow: FlowControl::None,
             encryption: Encryption::None,
@@ -157,6 +160,10 @@ impl std::fmt::Debug for VlessConnector {
 }
 
 impl VlessConnector {
+    fn server_endpoint(&self) -> String {
+        format!("{}:{}", self.config.server, self.config.port)
+    }
+
     /// Create a new VLESS connector with the given configuration
     /// 使用给定的配置创建一个新的 VLESS 连接器
     pub fn new(config: VlessConfig) -> Self {
@@ -232,7 +239,7 @@ impl VlessConnector {
     /// 创建 UDP 中继连接 (返回 OutboundDatagram)
     pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
         tracing::debug!(
-            server = %self.config.server_addr,
+            server = %self.server_endpoint(),
             target = %format!("{}:{}", target.host, target.port),
             "Creating VLESS UDP relay"
         );
@@ -244,7 +251,7 @@ impl VlessConnector {
 
         // Connect to VLESS server for easier packet routing
         local_socket
-            .connect(self.config.server_addr)
+            .connect((self.config.server.as_str(), self.config.port))
             .await
             .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
@@ -299,10 +306,7 @@ impl VlessConnector {
 
                 let stream = tokio::time::timeout(
                     timeout,
-                    dialer.connect(
-                        &self.config.server_addr.ip().to_string(),
-                        self.config.server_addr.port(),
-                    ),
+                    dialer.connect(&self.config.server, self.config.port),
                 )
                 .await
                 .map_err(|_| AdapterError::Timeout(timeout))?
@@ -317,7 +321,7 @@ impl VlessConnector {
         tracing::debug!("Using direct TCP connection for VLESS");
         let tcp_stream = tokio::time::timeout(
             timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr),
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)),
         )
         .await
         .map_err(|_| AdapterError::Timeout(timeout))?
@@ -352,14 +356,16 @@ impl OutboundConnector for VlessConnector {
         }
 
         // Test connectivity to server (optional)
-        if let Err(e) = tokio::net::TcpStream::connect(self.config.server_addr).await {
+        if let Err(e) =
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)).await
+        {
             tracing::warn!("VLESS server connectivity test failed: {}", e);
             // Don't fail startup for connectivity issues - they might be temporary
         }
 
         tracing::info!(
             "VLESS connector started - server: {}, flow: {:?}, encryption: {:?}",
-            self.config.server_addr,
+            self.server_endpoint(),
             self.config.flow,
             self.config.encryption
         );

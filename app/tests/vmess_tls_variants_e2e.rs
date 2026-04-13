@@ -137,7 +137,8 @@ async fn test_vmess_standard_tls() {
 
     // Create VMess client with TLS
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -207,7 +208,8 @@ async fn test_vmess_tls_with_alpn() {
         };
 
         let client_config = VmessConfig {
-            server_addr: vmess_addr,
+            server: vmess_addr.ip().to_string(),
+            port: vmess_addr.port(),
             auth: VmessAuth {
                 uuid: test_uuid,
                 alter_id: 0,
@@ -275,7 +277,8 @@ async fn test_vmess_tls_versions() {
         };
 
         let client_config = VmessConfig {
-            server_addr: vmess_addr,
+            server: vmess_addr.ip().to_string(),
+            port: vmess_addr.port(),
             auth: VmessAuth {
                 uuid: test_uuid,
                 alter_id: 0,
@@ -338,7 +341,8 @@ async fn test_vmess_tls_with_multiplex() {
     };
 
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -419,7 +423,8 @@ async fn test_vmess_reality_tls() {
     };
 
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -488,7 +493,8 @@ async fn test_vmess_ech_tls() {
     };
 
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -554,7 +560,8 @@ async fn test_vmess_tls_data_integrity() {
     };
 
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,

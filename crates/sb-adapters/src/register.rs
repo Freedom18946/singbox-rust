@@ -224,14 +224,21 @@ fn parse_required_outbound_socket_addr(
     outbound: &str,
     server: &str,
     port: u16,
-) -> Result<SocketAddr, Arc<str>> {
-    let raw = format!("{server}:{port}");
-    raw.parse::<SocketAddr>().map_err(|err| {
-        format!(
-            "{protocol} outbound server '{raw}' is invalid for outbound '{outbound}'; silent socket address parse fallback is disabled; fix the config explicitly: {err}"
+) -> Result<(String, u16), Arc<str>> {
+    let server = server.trim();
+    if server.is_empty() {
+        return Err(format!(
+            "{protocol} outbound server is empty for outbound '{outbound}'; silent endpoint fallback is disabled; fix the config explicitly"
         )
-        .into()
-    })
+        .into());
+    }
+    if port == 0 {
+        return Err(format!(
+            "{protocol} outbound port '0' is invalid for outbound '{outbound}'; silent endpoint fallback is disabled; fix the config explicitly"
+        )
+        .into());
+    }
+    Ok((server.to_string(), port))
 }
 
 /// Adapter that converts `BoxedStream` (sb-adapters) to `AsyncReadWrite` (sb-transport).
@@ -1072,9 +1079,9 @@ fn build_vmess_outbound(
         }
     };
 
-    let server_addr =
+    let (server, port) =
         match parse_required_outbound_socket_addr("vmess", outbound_name, server, port) {
-            Ok(server_addr) => server_addr,
+            Ok(endpoint) => endpoint,
             Err(reason) => {
                 warn!("{reason}");
                 return invalid_config_outbound("vmess", reason);
@@ -1099,7 +1106,8 @@ fn build_vmess_outbound(
     let transport_layer = build_transport_config(ir);
 
     let cfg = VmessConfig {
-        server_addr,
+        server,
+        port,
         auth,
         transport: VmessTransport::default(),
         transport_layer,
@@ -1155,9 +1163,9 @@ fn build_vless_outbound(
         }
     };
 
-    let server_addr =
+    let (server, port) =
         match parse_required_outbound_socket_addr("vless", outbound_name, server, port) {
-            Ok(server_addr) => server_addr,
+            Ok(endpoint) => endpoint,
             Err(reason) => {
                 warn!("{reason}");
                 return invalid_config_outbound("vless", reason);
@@ -1181,7 +1189,8 @@ fn build_vless_outbound(
     let transport_layer = build_transport_config(ir);
 
     let cfg = VlessConfig {
-        server_addr,
+        server: server.clone(),
+        port,
         uuid,
         flow,
         encryption,
@@ -1192,7 +1201,7 @@ fn build_vless_outbound(
         #[cfg(feature = "transport_mux")]
         multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
         #[cfg(feature = "tls_reality")]
-        reality: build_reality_client_config(ir, server),
+        reality: build_reality_client_config(ir, &server),
         #[cfg(feature = "transport_ech")]
         ech: None,
     };
@@ -3507,20 +3516,36 @@ mod migration_tests {
 
     #[test]
     fn invalid_vmess_outbound_server_reports_protocol() {
-        let err = parse_required_outbound_socket_addr("vmess", "edge-vmess", "example.com", 443)
-            .expect_err("invalid socket addr should be rejected");
-        let msg = err.to_string();
-        assert!(msg.contains("vmess outbound server 'example.com:443' is invalid"));
-        assert!(msg.contains("silent socket address parse fallback is disabled"));
+        let endpoint =
+            parse_required_outbound_socket_addr("vmess", "edge-vmess", "example.com", 443)
+                .expect("domain-form endpoint should be accepted");
+        assert_eq!(endpoint, ("example.com".to_string(), 443));
     }
 
     #[test]
     fn invalid_vless_outbound_server_reports_protocol() {
-        let err = parse_required_outbound_socket_addr("vless", "edge-vless", "example.com", 443)
-            .expect_err("invalid socket addr should be rejected");
+        let endpoint =
+            parse_required_outbound_socket_addr("vless", "edge-vless", "example.com", 443)
+                .expect("domain-form endpoint should be accepted");
+        assert_eq!(endpoint, ("example.com".to_string(), 443));
+    }
+
+    #[test]
+    fn invalid_vless_outbound_empty_server_is_rejected() {
+        let err = parse_required_outbound_socket_addr("vless", "edge-vless", "   ", 443)
+            .expect_err("empty server should be rejected");
         let msg = err.to_string();
-        assert!(msg.contains("vless outbound server 'example.com:443' is invalid"));
-        assert!(msg.contains("silent socket address parse fallback is disabled"));
+        assert!(msg.contains("vless outbound server is empty"));
+        assert!(msg.contains("silent endpoint fallback is disabled"));
+    }
+
+    #[test]
+    fn invalid_vmess_outbound_zero_port_is_rejected() {
+        let err = parse_required_outbound_socket_addr("vmess", "edge-vmess", "example.com", 0)
+            .expect_err("zero port should be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("vmess outbound port '0' is invalid"));
+        assert!(msg.contains("silent endpoint fallback is disabled"));
     }
 
     #[test]

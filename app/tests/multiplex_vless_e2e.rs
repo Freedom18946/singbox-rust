@@ -145,7 +145,8 @@ async fn test_vless_multiplex_single_stream() {
 
     // Create VLESS client with Multiplex enabled
     let client_config = VlessConfig {
-        server_addr: vless_addr,
+        server: vless_addr.ip().to_string(),
+        port: vless_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,
@@ -201,7 +202,8 @@ async fn test_vless_multiplex_concurrent_streams() {
 
     // Create VLESS client with Multiplex
     let client_config = VlessConfig {
-        server_addr: vless_addr,
+        server: vless_addr.ip().to_string(),
+        port: vless_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,
@@ -294,7 +296,8 @@ async fn test_vless_multiplex_data_integrity() {
 
     // Create VLESS client with Multiplex
     let client_config = VlessConfig {
-        server_addr: vless_addr,
+        server: vless_addr.ip().to_string(),
+        port: vless_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,
@@ -390,7 +393,8 @@ async fn test_vless_multiplex_vs_non_multiplex() {
     // Test non-multiplex client
     {
         let client_config = VlessConfig {
-            server_addr: vless_addr_no_mux,
+            server: vless_addr_no_mux.ip().to_string(),
+            port: vless_addr_no_mux.port(),
             uuid: test_uuid1,
             flow: FlowControl::None,
             encryption: Encryption::None,
@@ -432,7 +436,8 @@ async fn test_vless_multiplex_vs_non_multiplex() {
     // Test multiplex client
     {
         let client_config = VlessConfig {
-            server_addr: vless_addr_mux,
+            server: vless_addr_mux.ip().to_string(),
+            port: vless_addr_mux.port(),
             uuid: test_uuid2,
             flow: FlowControl::None,
             encryption: Encryption::None,
@@ -487,7 +492,8 @@ async fn test_vless_multiplex_flow_control_modes() {
     // Test with FlowControl::None
     {
         let client_config = VlessConfig {
-            server_addr: vless_addr,
+            server: vless_addr.ip().to_string(),
+            port: vless_addr.port(),
             uuid: test_uuid,
             flow: FlowControl::None,
             encryption: Encryption::None,

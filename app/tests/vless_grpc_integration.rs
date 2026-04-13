@@ -22,7 +22,8 @@ async fn test_vless_grpc_config_creation() {
     };
 
     let config = VlessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,
@@ -33,7 +34,8 @@ async fn test_vless_grpc_config_creation() {
         ..Default::default()
     };
 
-    assert_eq!(config.server_addr, server_addr);
+    assert_eq!(config.server, server_addr.ip().to_string());
+    assert_eq!(config.port, server_addr.port());
     assert_eq!(config.uuid, test_uuid);
 
     let connector = VlessConnector::new(config);
@@ -46,7 +48,8 @@ async fn test_vless_grpc_with_multiplex() {
     let server_addr = SocketAddr::from(([127, 0, 0, 1], 8443));
 
     let config = VlessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::XtlsRprxDirect,
         encryption: Encryption::ChaCha20Poly1305,
@@ -78,7 +81,8 @@ async fn test_vless_grpc_flow_control_modes() {
 
     for flow in flow_modes {
         let config = VlessConfig {
-            server_addr,
+            server: server_addr.ip().to_string(),
+            port: server_addr.port(),
             uuid: test_uuid,
             flow,
             encryption: Encryption::None,
@@ -105,7 +109,8 @@ async fn test_vless_tcp_vs_grpc() {
 
     // TCP configuration
     let tcp_config = VlessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,
@@ -118,7 +123,8 @@ async fn test_vless_tcp_vs_grpc() {
 
     // gRPC configuration
     let grpc_config = VlessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,

@@ -12,7 +12,6 @@ use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
 use sb_adapters::transport_config::TransportConfig;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use uuid::Uuid;
 
 // ============================================================================
@@ -66,7 +65,8 @@ fn test_vless_config_default() {
     let config = VlessConfig::default();
 
     // Verify default values
-    assert_eq!(config.server_addr, SocketAddr::from(([127, 0, 0, 1], 443)));
+    assert_eq!(config.server, "127.0.0.1");
+    assert_eq!(config.port, 443);
     assert_eq!(config.flow, FlowControl::None);
     assert_eq!(config.encryption, Encryption::None);
     assert!(config.headers.is_empty());
@@ -78,7 +78,8 @@ fn test_vless_config_default() {
 fn test_vless_config_custom() {
     let uuid = Uuid::new_v4();
     let config = VlessConfig {
-        server_addr: SocketAddr::from(([10, 0, 0, 1], 8443)),
+        server: "edge.example.com".to_string(),
+        port: 8443,
         uuid,
         flow: FlowControl::XtlsRprxVision,
         encryption: Encryption::Aes128Gcm,
@@ -94,7 +95,8 @@ fn test_vless_config_custom() {
         ech: None,
     };
 
-    assert_eq!(config.server_addr.port(), 8443);
+    assert_eq!(config.server, "edge.example.com");
+    assert_eq!(config.port, 8443);
     assert_eq!(config.uuid, uuid);
     assert_eq!(config.flow, FlowControl::XtlsRprxVision);
     assert_eq!(config.timeout, Some(60));
@@ -178,7 +180,8 @@ async fn test_vless_connector_start_valid() {
 async fn test_vless_dial_unreachable() {
     // Configure with non-routable IP
     let config = VlessConfig {
-        server_addr: SocketAddr::from(([10, 255, 255, 1], 443)),
+        server: "10.255.255.1".to_string(),
+        port: 443,
         timeout: Some(1), // Short timeout
         ..VlessConfig::default()
     };

@@ -10,7 +10,6 @@ use crate::outbound::prelude::*;
 use crate::transport_config::TransportConfig;
 use rand::Rng;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
@@ -107,9 +106,12 @@ impl Default for VmessTransport {
 /// VMess 配置
 #[derive(Debug, Clone)]
 pub struct VmessConfig {
-    /// Server address and port
-    /// 服务端地址和端口
-    pub server_addr: SocketAddr,
+    /// Server host
+    /// 服务端主机
+    pub server: String,
+    /// Server port
+    /// 服务端端口
+    pub port: u16,
     /// Authentication settings
     /// 认证设置
     pub auth: VmessAuth,
@@ -141,7 +143,8 @@ pub struct VmessConfig {
 impl Default for VmessConfig {
     fn default() -> Self {
         Self {
-            server_addr: SocketAddr::from(([127, 0, 0, 1], 443)),
+            server: "127.0.0.1".to_string(),
+            port: 443,
             auth: VmessAuth {
                 uuid: Uuid::new_v4(),
                 alter_id: 0,
@@ -202,6 +205,10 @@ impl std::fmt::Debug for VmessConnector {
 }
 
 impl VmessConnector {
+    fn server_endpoint(&self) -> String {
+        format!("{}:{}", self.config.server, self.config.port)
+    }
+
     /// Create a new VMess connector with the given configuration
     /// 使用给定的配置创建一个新的 VMess 连接器
     pub fn new(config: VmessConfig) -> Self {
@@ -398,10 +405,7 @@ impl VmessConnector {
 
                 let stream = tokio::time::timeout(
                     timeout,
-                    dialer.connect(
-                        &self.config.server_addr.ip().to_string(),
-                        self.config.server_addr.port(),
-                    ),
+                    dialer.connect(&self.config.server, self.config.port),
                 )
                 .await
                 .map_err(|_| AdapterError::Timeout(timeout))?
@@ -416,7 +420,7 @@ impl VmessConnector {
         tracing::debug!("Using direct TCP connection for VMess");
         let tcp_stream = tokio::time::timeout(
             timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr),
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)),
         )
         .await
         .map_err(|_| AdapterError::Timeout(timeout))?
@@ -463,13 +467,15 @@ impl OutboundConnector for VmessConnector {
         self.validate_config()?;
 
         // Test connectivity (optional)
-        if let Err(e) = tokio::net::TcpStream::connect(self.config.server_addr).await {
+        if let Err(e) =
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)).await
+        {
             tracing::warn!("VMess server connectivity test failed: {}", e);
         }
 
         tracing::info!(
             "VMess connector started - server: {}, security: {:?}, alter_id: {}",
-            self.config.server_addr,
+            self.server_endpoint(),
             self.config.auth.security,
             self.config.auth.alter_id
         );

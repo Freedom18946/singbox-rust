@@ -653,7 +653,8 @@ async fn test_vmess_chain() {
     };
 
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,

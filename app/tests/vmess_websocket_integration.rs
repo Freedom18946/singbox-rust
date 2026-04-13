@@ -29,7 +29,8 @@ async fn test_vmess_websocket_config_creation() {
     };
 
     let config = VmessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -44,7 +45,8 @@ async fn test_vmess_websocket_config_creation() {
         ..Default::default()
     };
 
-    assert_eq!(config.server_addr, server_addr);
+    assert_eq!(config.server, server_addr.ip().to_string());
+    assert_eq!(config.port, server_addr.port());
     assert_eq!(config.auth.uuid, test_uuid);
 
     let connector = VmessConnector::new(config);
@@ -57,7 +59,8 @@ async fn test_vmess_websocket_with_multiplex() {
     let server_addr = SocketAddr::from(([127, 0, 0, 1], 8443));
 
     let config = VmessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -90,7 +93,8 @@ async fn test_vmess_websocket_path_variants() {
 
     for path in paths {
         let config = VmessConfig {
-            server_addr,
+            server: server_addr.ip().to_string(),
+            port: server_addr.port(),
             auth: VmessAuth {
                 uuid: test_uuid,
                 alter_id: 0,
@@ -122,7 +126,8 @@ async fn test_vmess_tcp_vs_websocket() {
 
     // TCP configuration
     let tcp_config = VmessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -139,7 +144,8 @@ async fn test_vmess_tcp_vs_websocket() {
 
     // WebSocket configuration
     let ws_config = VmessConfig {
-        server_addr,
+        server: server_addr.ip().to_string(),
+        port: server_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,

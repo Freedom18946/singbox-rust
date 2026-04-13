@@ -229,7 +229,8 @@ async fn test_vless_udp_relay() {
 
     // Create VLESS connector
     let config = VlessConfig {
-        server_addr: vless_addr,
+        server: vless_addr.ip().to_string(),
+        port: vless_addr.port(),
         uuid: test_uuid,
         flow: FlowControl::None,
         encryption: Encryption::None,

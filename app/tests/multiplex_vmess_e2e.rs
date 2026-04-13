@@ -144,7 +144,8 @@ async fn test_vmess_multiplex_single_stream() {
 
     // Create VMess client with Multiplex enabled
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -203,7 +204,8 @@ async fn test_vmess_multiplex_concurrent_streams() {
 
     // Create VMess client with Multiplex
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -299,7 +301,8 @@ async fn test_vmess_multiplex_data_integrity() {
 
     // Create VMess client with Multiplex
     let client_config = VmessConfig {
-        server_addr: vmess_addr,
+        server: vmess_addr.ip().to_string(),
+        port: vmess_addr.port(),
         auth: VmessAuth {
             uuid: test_uuid,
             alter_id: 0,
@@ -398,7 +401,8 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
     // Test non-multiplex client
     {
         let client_config = VmessConfig {
-            server_addr: vmess_addr_no_mux,
+            server: vmess_addr_no_mux.ip().to_string(),
+            port: vmess_addr_no_mux.port(),
             auth: VmessAuth {
                 uuid: test_uuid1,
                 alter_id: 0,
@@ -443,7 +447,8 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
     // Test multiplex client
     {
         let client_config = VmessConfig {
-            server_addr: vmess_addr_mux,
+            server: vmess_addr_mux.ip().to_string(),
+            port: vmess_addr_mux.port(),
             auth: VmessAuth {
                 uuid: test_uuid2,
                 alter_id: 0,
@@ -505,7 +510,8 @@ async fn test_vmess_multiplex_security_levels() {
         Security::ChaCha20Poly1305,
     ] {
         let client_config = VmessConfig {
-            server_addr: vmess_addr,
+            server: vmess_addr.ip().to_string(),
+            port: vmess_addr.port(),
             auth: VmessAuth {
                 uuid: test_uuid,
                 alter_id: 0,
@@ -563,7 +569,8 @@ async fn test_vmess_multiplex_alter_id_variations() {
     // Test with different alter_id values
     for alter_id in &[0, 4, 16, 64] {
         let client_config = VmessConfig {
-            server_addr: vmess_addr,
+            server: vmess_addr.ip().to_string(),
+            port: vmess_addr.port(),
             auth: VmessAuth {
                 uuid: test_uuid,
                 alter_id: *alter_id,
