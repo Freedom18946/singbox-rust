@@ -227,6 +227,7 @@ pub enum TrafficAction {
     TcpRoundTrip {
         name: String,
         addr: String,
+        #[serde(default)]
         payload: String,
         #[serde(default)]
         proxy: Option<String>,
@@ -234,6 +235,10 @@ pub enum TrafficAction {
         /// instead of using the `payload` string.
         #[serde(default)]
         payload_size: Option<usize>,
+        /// When set, generates a minimal TLS ClientHello payload and ignores
+        /// the literal `payload` string.
+        #[serde(default)]
+        payload_tls_client_hello: bool,
     },
     UdpRoundTrip {
         name: String,

@@ -17,7 +17,7 @@ bootstrap:
       - --admin-listen
       - 127.0.0.1:19190
     startup_timeout_ms: 15000
-    ready_path: /healthz
+    ready_path: /version
     api:
       base_url: http://127.0.0.1:19290
       secret: test-secret

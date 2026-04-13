@@ -4,9 +4,33 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: 声明完成能力全量逐项验收（MT-GUI-04）完成 — 55 项能力逐条清账，0 FAIL，0 NEW FINDING
+**当前阶段**: MT-REAL-01 Phase 1-2 完成 — 真实双内核控制面/interop-lab strict 双核子集已跑通，等待 Phase 3 真实节点
 **Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 所有声明完成项已逐项验收闭环 — 无 blocker，无新发现，无代码改动
+**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 在补全 parity 构建后得到 37 个 strict+both case 的有效矩阵：30 PASS / 7 FAIL；Phase 3 等待真实代理节点信息
+
+## 最近闭环（2026-04-14）
+
+### MT-REAL-01 Phase 1-2: 真实双内核联测首轮 — 已完成（Phase 3 待环境）
+
+- **不是** parity completion；是 maintenance 线下的真实双内核验证
+- Phase 1：`cargo build -p app --features acceptance,clash_api --bin app` + Rust Clash API `127.0.0.1:19090` 冒烟
+  - `/version` `/configs` `/proxies` 全 200
+  - `/traffic` `/connections` `/logs` `/memory` WS Upgrade 全 101
+  - 端口按要求回收确认
+- Phase 2：`interop-lab` strict+both 首轮先暴露两个 harness/blocker
+  - `p1_sniff_rule_action_tls` 缺失 `payload_tls_client_hello` 执行支持
+  - 同 case 的 Rust `ready_path` 误写成 `/healthz`（应探 `/version`）
+- 进一步发现：`acceptance,clash_api` 构建只够控制面冒烟，不含 strict 双核数据面所需 adapter/protocol builder
+  - 补 `cargo build -p app --features acceptance,parity --bin app` 后，strict+both 37 case 有效矩阵为 **30 PASS / 7 FAIL**
+- 当前 7 个 FAIL 归因：
+  - Go/环境侧：`p1_fakeip_cache_flush_contract`、`p1_gui_group_delay_replay`
+  - 已知 Rust GUI-cosmetic 侧：`p1_gui_connections_tracking`、`p1_gui_full_session_replay`
+  - 双侧/环境或 soak 门限：`p2_connections_ws_soak_dual_core`
+  - 协议本地联通双侧共同失败：`p2_vless_dual_dataplane_local`、`p2_vmess_dual_dataplane_local`
+- 证据：
+  - `agents-only/mt_real_01_evidence/phase2_both_matrix_effective.tsv`
+  - `agents-only/mt_real_01_evidence/phase2_both_cases_after_parity.log`
+  - `agents-only/mt_real_01_phase1_phase2.md`
 
 ## 最近闭环（2026-04-12）
 

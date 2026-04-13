@@ -1,0 +1,20 @@
+2026-04-13T22:20:27.133475Z  INFO sb_core::outbound: default outbound resolved default=direct source="config"
+2026-04-13T22:20:27.133501Z  INFO sb_core::runtime: ===== OUTBOUND READY CHECKPOINT =====
+2026-04-13T22:20:27.133507Z  INFO sb_core::runtime: Bridge components registered with context managers inbounds=1 outbounds=1 endpoints=0 services=0
+2026-04-13T22:20:27.133654Z  INFO app::run_engine_runtime::supervisor: Supervisor startup returned
+2026-04-13T22:20:27.133850Z  INFO app::run_engine_runtime::admin_start: started clash api server from run_engine listen=127.0.0.1:19090
+2026-04-13T22:20:27.133913Z  INFO sb_api::clash::server: Starting Clash API server on 127.0.0.1:19090
+ts=1776118827133 level=info target=app msg=admin http listening addr=127.0.0.1:19190
+2026-04-13T22:20:27.134000Z  INFO app::util: Started core admin server addr=127.0.0.1:19190
+2026-04-13T22:20:27.134010Z  INFO app::run_engine_runtime::output: singbox-rust booted; press Ctrl+C to quit
+2026-04-13T22:20:27.134157Z  INFO sb_adapters::inbound::socks: SOCKS5 UDP Associate enabled addr=0.0.0.0:59962
+2026-04-13T22:20:27.134330Z  INFO sb_adapters::inbound::socks: SOCKS5 bound addr=127.0.0.1:11801 actual=127.0.0.1:11801
+2026-04-13T22:21:01.666996Z  INFO sb_api::clash::websocket: Logs WebSocket client a6285939-4cc5-4f84-8992-e8c1e2a1f934 connected
+2026-04-13T22:21:03.676115Z  WARN sb_api::clash::websocket: Logs WebSocket client a6285939-4cc5-4f84-8992-e8c1e2a1f934 error: WebSocket protocol error: Connection reset without closing handshake
+2026-04-13T22:21:23.443281Z  INFO app::logging: Received SIGTERM, flushing logs...
+2026-04-13T22:21:23.443573Z  INFO app::logging: Flushing logs before shutdown...
+2026-04-13T22:21:23.444055Z  WARN sb_core::runtime: beginning graceful shutdown deadline_ms=9999
+2026-04-13T22:21:23.444218Z  INFO sb_core::runtime: all inbound connections drained
+2026-04-13T22:21:23.444252Z  INFO sb_core::context: OutboundManager closing
+2026-04-13T22:21:23.444270Z  INFO app::logging: Flushing logs before shutdown...
+2026-04-13T22:21:23.444298Z  INFO sb_core::runtime: shutdown summary event={"event":"shutdown","fingerprint":"0.1.0","ok":true,"wait_ms":0}

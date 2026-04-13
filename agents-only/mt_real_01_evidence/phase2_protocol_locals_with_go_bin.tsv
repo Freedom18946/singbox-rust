@@ -1,0 +1,5 @@
+p2_shadowsocks_dual_dataplane_local	0
+p2_shadowtls_dual_dataplane_local	0
+p2_trojan_dual_dataplane_local	0
+p2_vless_dual_dataplane_local	1
+p2_vmess_dual_dataplane_local	1

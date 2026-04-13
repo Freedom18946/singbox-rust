@@ -1,0 +1,8 @@
+HTTP/1.1 101 Switching Protocols
+connection: upgrade
+upgrade: websocket
+sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+vary: origin, access-control-request-method, access-control-request-headers
+access-control-allow-origin: *
+date: Mon, 13 Apr 2026 22:21:01 GMT
+

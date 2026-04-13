@@ -1,0 +1,1 @@
+{"proxies":{"DIRECT":{"alive":true,"delay":0,"history":[],"name":"DIRECT","type":"Direct","udp":true},"GLOBAL":{"all":["direct"],"history":[],"name":"GLOBAL","now":"direct","type":"Fallback","udp":true},"REJECT":{"alive":true,"history":[],"name":"REJECT","type":"Reject","udp":false},"direct":{"alive":true,"history":[],"name":"direct","type":"Unknown","udp":true}}}

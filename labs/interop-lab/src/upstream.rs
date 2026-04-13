@@ -1,10 +1,10 @@
 use crate::case_spec::{FaultSpec, TrafficAction, UpstreamKind, UpstreamServiceSpec};
 use crate::snapshot::TrafficResult;
 use crate::util::{percentile_us, resolve_command_with_fallback, resolve_with_env, sha256_hex};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use axum::body::Bytes;
-use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{any, get};
@@ -14,14 +14,14 @@ use hickory_proto::op::{Message, MessageType, OpCode, Query, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use sb_adapters::inbound::shadowsocks::{serve as serve_shadowsocks, ShadowsocksInboundConfig};
-use sb_adapters::inbound::shadowtls::{serve as serve_shadowtls, ShadowTlsInboundConfig};
-use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig};
-use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
-use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, serve as serve_shadowsocks};
+use sb_adapters::inbound::shadowtls::{ShadowTlsInboundConfig, serve as serve_shadowtls};
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, serve as serve_trojan};
+use sb_adapters::inbound::vless::{VlessInboundConfig, serve as serve_vless};
+use sb_adapters::inbound::vmess::{VmessInboundConfig, serve as serve_vmess};
 use sb_common::conntrack::ConnTracker;
 use sb_core::router::engine::RouterHandle;
-use sb_core::router::rules::{install_global as install_global_rules, parse_rules, Engine};
+use sb_core::router::rules::{Engine, install_global as install_global_rules, parse_rules};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
@@ -32,7 +32,7 @@ use std::sync::Once;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::process::Command;
-use tokio::sync::{oneshot, RwLock, Semaphore};
+use tokio::sync::{RwLock, Semaphore, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
@@ -1130,10 +1130,12 @@ pub async fn run_traffic_plan(
                 payload,
                 proxy,
                 payload_size,
+                payload_tls_client_hello,
             } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
-                let actual_payload = resolve_payload(payload, *payload_size);
+                let actual_payload =
+                    resolve_payload(payload, *payload_size, *payload_tls_client_hello);
                 let result = match tokio::time::timeout(
                     Duration::from_millis(TCP_ROUNDTRIP_TIMEOUT_MS),
                     async {
@@ -1188,7 +1190,7 @@ pub async fn run_traffic_plan(
             } => {
                 let addr = normalize_addr(&harness.resolve_templates(addr));
                 let resolved_proxy = proxy.as_ref().map(|p| harness.resolve_templates(p));
-                let actual_payload = resolve_payload(payload, *payload_size);
+                let actual_payload = resolve_payload(payload, *payload_size, false);
                 let result = if let Some(proxy) = resolved_proxy.as_deref() {
                     udp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
                 } else {
@@ -1618,9 +1620,18 @@ fn compute_jitter_delay(target: &str, base_ms: u64, jitter_ms: u64, ratio: f64) 
     base_ms.saturating_add(scaled_jitter)
 }
 
-/// Resolve the effective payload bytes: if `payload_size` is set, generate
-/// a deterministic pattern of that size; otherwise use the literal `payload` string.
-fn resolve_payload(payload: &str, payload_size: Option<usize>) -> Vec<u8> {
+/// Resolve the effective payload bytes:
+/// 1. when `payload_tls_client_hello` is set, synthesize a minimal TLS ClientHello,
+/// 2. else when `payload_size` is set, generate a deterministic pattern,
+/// 3. otherwise use the literal `payload` string.
+fn resolve_payload(
+    payload: &str,
+    payload_size: Option<usize>,
+    payload_tls_client_hello: bool,
+) -> Vec<u8> {
+    if payload_tls_client_hello {
+        return build_tls_client_hello("api.example.com", "h2");
+    }
     match payload_size {
         Some(size) if size > 0 => {
             // Deterministic fill: repeating ASCII bytes 0x41..0x5A ('A'..'Z')
@@ -1632,6 +1643,72 @@ fn resolve_payload(payload: &str, payload_size: Option<usize>) -> Vec<u8> {
         }
         _ => payload.as_bytes().to_vec(),
     }
+}
+
+fn build_tls_client_hello(sni: &str, alpn: &str) -> Vec<u8> {
+    let mut hs = Vec::new();
+    hs.push(0x01);
+    hs.extend_from_slice(&[0, 0, 0]);
+    hs.extend_from_slice(&[0x03, 0x03]);
+    hs.extend_from_slice(&[0u8; 32]);
+    hs.push(0);
+    hs.extend_from_slice(&[0x00, 0x02, 0x00, 0x2f]);
+    hs.push(1);
+    hs.push(0);
+
+    let ext_len_pos = hs.len();
+    hs.extend_from_slice(&[0x00, 0x00]);
+
+    let mut sni_ext = Vec::new();
+    sni_ext.extend_from_slice(&[0x00, 0x00]);
+    let sni_ext_data_len_pos = sni_ext.len();
+    sni_ext.extend_from_slice(&[0x00, 0x00]);
+    let sni_list_len_pos = sni_ext.len();
+    sni_ext.extend_from_slice(&[0x00, 0x00]);
+    sni_ext.push(0);
+    let sni_bytes = sni.as_bytes();
+    sni_ext.extend_from_slice(&(sni_bytes.len() as u16).to_be_bytes());
+    sni_ext.extend_from_slice(sni_bytes);
+    let sni_list_len = (1 + 2 + sni_bytes.len()) as u16;
+    sni_ext[sni_list_len_pos..sni_list_len_pos + 2].copy_from_slice(&sni_list_len.to_be_bytes());
+    let sni_ext_data_len = (2 + sni_list_len as usize) as u16;
+    sni_ext[sni_ext_data_len_pos..sni_ext_data_len_pos + 2]
+        .copy_from_slice(&sni_ext_data_len.to_be_bytes());
+    hs.extend_from_slice(&sni_ext);
+
+    let mut alpn_ext = Vec::new();
+    alpn_ext.extend_from_slice(&[0x00, 0x10]);
+    let alpn_ext_data_len_pos = alpn_ext.len();
+    alpn_ext.extend_from_slice(&[0x00, 0x00]);
+    let alpn_list_len_pos = alpn_ext.len();
+    alpn_ext.extend_from_slice(&[0x00, 0x00]);
+    let alpn_bytes = alpn.as_bytes();
+    alpn_ext.push(alpn_bytes.len() as u8);
+    alpn_ext.extend_from_slice(alpn_bytes);
+    let alpn_list_len = (1 + alpn_bytes.len()) as u16;
+    alpn_ext[alpn_list_len_pos..alpn_list_len_pos + 2]
+        .copy_from_slice(&alpn_list_len.to_be_bytes());
+    let alpn_ext_data_len = (2 + alpn_list_len as usize) as u16;
+    alpn_ext[alpn_ext_data_len_pos..alpn_ext_data_len_pos + 2]
+        .copy_from_slice(&alpn_ext_data_len.to_be_bytes());
+    hs.extend_from_slice(&alpn_ext);
+
+    let final_ext_len = (sni_ext.len() + alpn_ext.len()) as u16;
+    hs[ext_len_pos..ext_len_pos + 2].copy_from_slice(&final_ext_len.to_be_bytes());
+
+    let hs_body_len = (hs.len() - 4) as u32;
+    hs[1..4].copy_from_slice(&[
+        (hs_body_len >> 16) as u8,
+        (hs_body_len >> 8) as u8,
+        hs_body_len as u8,
+    ]);
+
+    let mut record = Vec::new();
+    record.push(0x16);
+    record.extend_from_slice(&[0x03, 0x03]);
+    record.extend_from_slice(&(hs.len() as u16).to_be_bytes());
+    record.extend_from_slice(&hs);
+    record
 }
 
 async fn http_get_via_reqwest(url: &str) -> Result<(u16, String)> {
