@@ -315,7 +315,9 @@ mod tests {
         );
         // It should NOT be gated behind observe or dev-cli
         assert!(
-            !lib.contains("cfg(any(feature = \"dev-cli\", feature = \"observe\"))\npub mod tracing_init"),
+            !lib.contains(
+                "cfg(any(feature = \"dev-cli\", feature = \"observe\"))\npub mod tracing_init"
+            ),
             "tracing_init should not be feature-gated in lib.rs"
         );
     }

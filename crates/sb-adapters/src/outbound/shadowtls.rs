@@ -1330,7 +1330,10 @@ mod tests {
             ..Default::default()
         });
         let contract = c.wrapper_contract().expect("v3 should produce a contract");
-        assert_eq!(contract.capability, StreamCapability::AuthenticatedTlsRecordFramed);
+        assert_eq!(
+            contract.capability,
+            StreamCapability::AuthenticatedTlsRecordFramed
+        );
     }
 
     #[test]

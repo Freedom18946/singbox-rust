@@ -4,11 +4,33 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: MT-REAL-01-FIX-02 已完成 — REALITY `public_key` base64url 兼容已修；Phase 3 当前前移到真实握手期阻断
+**当前阶段**: MT-REAL-01-FIX-03 代码实现已完成 — REALITY client 已从错误的 stream-wrapper 改写切到 rustls `SessionIdGenerator` + 自定义 X25519 key-share 路径；Phase 3 live 验证仍受 fake-IP 环境限制
 **Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断与 REALITY `public_key` base64url 兼容阻断都已修复，当前新的真实出站阻断是 REALITY 握手期 `tls handshake eof`
+**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断、REALITY `public_key` base64url 兼容阻断、以及 REALITY client 的错误握手注入路径都已修复；当前 live dataplane 仍被 fake-IP 环境污染，现网日志表面症状仍是 `REALITY handshake failed ... tls handshake eof`
 
 ## 最近闭环（2026-04-14）
+
+### MT-REAL-01-FIX-03: REALITY 客户端握手协议重写（Go 对齐）— 代码完成，live 验证 ENV-LIMITED
+
+- 修复 `crates/sb-tls/src/reality/client.rs` / 新增 `reality/handshake.rs`：
+  - 删除首次写入时篡改 `ClientHello` 的 `RealityClientStream` wrapper 路径
+  - 改为使用 vendored `rustls` 0.23.35 的 `SessionIdGenerator`
+  - 新增自定义 `SupportedKxGroup`，让 REALITY `auth_key` 直接来源于 TLS 同一把 X25519 ECDHE key share
+  - `SessionID` 改为 Go REALITY 格式：明文 16-byte metadata + AES-256-GCM tag，共 32 bytes
+  - REALITY verifier 改为读取共享握手状态里的 `auth_key`，并要求临时证书校验命中
+- 验证状态：
+  - `cargo test -p sb-tls` PASS（99/99）
+  - `cargo clippy -p sb-tls --all-features --all-targets -- -D warnings` PASS
+  - `cargo build -p app --features acceptance,parity --bin app` PASS
+- Phase 3 复测：
+  - Rust 仍可正常启动 `19090/11080`
+  - `/version`、`/proxies` 继续 PASS
+  - `curl -x socks5h://127.0.0.1:11080 https://httpbin.org/ip` 仍 FAIL；日志仍表现为 `REALITY handshake failed ... tls handshake eof`
+- 关键环境事实：
+  - 当前机器把 `hk08.ctcxianyu.com` 解析到 `198.18.1.79`
+  - 即便显式指定公共 DNS `@1.1.1.1` / `@8.8.8.8`，结果仍然是同一个 fake-IP
+  - 所以本轮 live 失败不能直接判定为协议实现仍错，更可能仍混有基线 DNS 污染
+- 报告：`agents-only/mt_real_01_fix_03.md`
 
 ### MT-REAL-01-FIX-02: REALITY `public_key` base64url 兼容 — 已完成
 

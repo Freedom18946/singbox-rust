@@ -536,7 +536,9 @@ async fn shadowtls_detour_wrapper_uses_configured_wrapper_for_arbitrary_requeste
     let mut stream = connector
         .connect_detour_stream("198.51.100.10", 8443)
         .await
-        .expect("wrapper should dial configured server while exposing requested endpoint semantics");
+        .expect(
+            "wrapper should dial configured server while exposing requested endpoint semantics",
+        );
     stream.write_all(b"ping").await.unwrap();
     let mut buf = [0u8; 4];
     stream.read_exact(&mut buf).await.unwrap();

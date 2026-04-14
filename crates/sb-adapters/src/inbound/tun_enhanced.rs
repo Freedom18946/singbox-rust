@@ -483,7 +483,8 @@ impl EnhancedTunInbound {
                 session.observe_server_ack(packet.acknowledgment_number);
             }
             if packet.is_rst() {
-                self.session_manager.remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
+                self.session_manager
+                    .remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
                 return Ok(());
             }
             if packet.has_payload() {
@@ -514,11 +515,13 @@ impl EnhancedTunInbound {
                 session.observe_server_ack(packet.acknowledgment_number);
             }
             if packet.is_rst() {
-                self.session_manager.remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
+                self.session_manager
+                    .remove_with_reason(&packet.tuple, CleanupMode::ClientRst);
                 return Ok(());
             }
             if packet.is_fin() {
-                self.send_tcp_control_packet(&session, writer, 0x11, 0).await?;
+                self.send_tcp_control_packet(&session, writer, 0x11, 0)
+                    .await?;
                 return Ok(());
             }
             if packet.has_payload() {
@@ -2054,7 +2057,10 @@ mod tests {
             .iter()
             .map(|packet| parse_raw_tcp(packet).expect("parse reply"))
             .collect();
-        let fin_acks: Vec<_> = replies.iter().filter(|packet| packet.flags == 0x11).collect();
+        let fin_acks: Vec<_> = replies
+            .iter()
+            .filter(|packet| packet.flags == 0x11)
+            .collect();
         assert!(
             fin_acks.len() >= 2,
             "detached session should keep acknowledging retransmitted FINs"
@@ -2127,7 +2133,8 @@ mod tests {
             .await
             .expect("bootstrap fin payload");
 
-        let after_fin = build_ipv4_tcp_packet_for_test(addr, 0x18, 47, INITIAL_SERVER_SEQ + 1, b"late");
+        let after_fin =
+            build_ipv4_tcp_packet_for_test(addr, 0x18, 47, INITIAL_SERVER_SEQ + 1, b"late");
         let after_fin_packet = parse_raw_tcp(&after_fin).expect("parse payload after fin");
         inbound
             .bootstrap_tcp_session(&after_fin_packet, writer.clone())

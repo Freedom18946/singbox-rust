@@ -384,7 +384,10 @@ impl TcpSessionManager {
 
     pub fn detach(&self, tuple: &FourTuple) {
         if let Some((_, session)) = self.active_sessions.remove(tuple) {
-            session.phase.store(SessionPhase::Detached as u8, std::sync::atomic::Ordering::Relaxed);
+            session.phase.store(
+                SessionPhase::Detached as u8,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             *session.detached_at.lock() = Some(Instant::now());
             self.detached_sessions.insert(*tuple, session);
             debug!(
@@ -442,7 +445,11 @@ impl TcpSessionManager {
         self.active_sessions
             .remove(tuple)
             .map(|(_, session)| session)
-            .or_else(|| self.detached_sessions.remove(tuple).map(|(_, session)| session))
+            .or_else(|| {
+                self.detached_sessions
+                    .remove(tuple)
+                    .map(|(_, session)| session)
+            })
     }
 }
 
