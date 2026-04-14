@@ -4,11 +4,32 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: MT-REAL-01-FIX-01 已完成 — 域名型 VMess/VLESS 出站注册阻断已修；Phase 3 继续推进时暴露 REALITY 公钥格式兼容阻断
+**当前阶段**: MT-REAL-01-FIX-02 已完成 — REALITY `public_key` base64url 兼容已修；Phase 3 当前前移到真实握手期阻断
 **Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断已修复，当前新的真实出站阻断是 REALITY `public_key` 仅接受 64 hex 而现网订阅为 43-char base64url
+**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断与 REALITY `public_key` base64url 兼容阻断都已修复，当前新的真实出站阻断是 REALITY 握手期 `tls handshake eof`
 
 ## 最近闭环（2026-04-14）
+
+### MT-REAL-01-FIX-02: REALITY `public_key` base64url 兼容 — 已完成
+
+- 修复 `crates/sb-tls/src/reality/config.rs` 的 REALITY client public key 解析：
+  - 保留原有 64-char hex 支持
+  - 新增 43-char base64url raw（no padding）支持
+  - 新增 44-char base64url padded 支持
+  - decode 后强制必须是 32-byte X25519 public key
+- `RealityClientConfig::validate()` 与 `public_key_bytes()` 已统一走同一条 decode helper
+- `short_id` / server-side private key 格式未改
+- 验证状态：
+  - `cargo test -p sb-tls` PASS（96/96）
+  - `cargo clippy --workspace --all-features --all-targets -- -D warnings` PASS
+  - `cargo test -p sb-adapters` PASS
+  - `cargo test -p interop-lab` PASS（29/29）
+  - `cargo test -p sb-core` ENV-LIMITED：仍是 `dns_steady` 在当前机器的 DNS 环境问题，不是本次改动回归
+- 回到 Phase 3 复测后确认：
+  - Rust 可正常加载真实订阅配置并启动 `19090/11080`
+  - 旧阻断 `public_key must be 64 hex characters` 已彻底消失
+  - 新阻断前移到真实握手阶段：`REALITY handshake failed ... tls handshake eof`
+- 报告：`agents-only/mt_real_01_fix_02.md`
 
 ### MT-REAL-01-FIX-01: 域名型 VMess/VLESS 出站注册阻断修复 — 已完成
 
@@ -44,9 +65,10 @@
   - 数据面当前仍 BLOCKED：经 `socks5h://127.0.0.1:11080` 访问 `https://httpbin.org/ip` 失败
 - 阻断演进：
   - 已修复：域名型 VLESS/VMess 出站注册期 `invalid config`
-  - 当前新阻断：REALITY `public_key` 兼容性，现网订阅使用 43-char base64url，Rust 仍要求 64 hex
+  - 已修复：REALITY `public_key` 兼容性，现网订阅使用的 43-char base64url 已可通过 validate
+  - 当前新阻断：REALITY 握手期 `tls handshake eof`
   - 环境因素仍在：当前网络环境下，订阅域名解析结果落到 `198.18.1.x` fake-IP 段，说明现网 DNS 受基线 TUN/代理影响
-- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”下一步需要修复 REALITY 公钥格式兼容，或换用不触发该路径的真实 SS/Trojan/VMess 节点
+- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”下一步需要继续排 REALITY 握手期差异，或换用不触发该路径的真实 SS/Trojan/VMess 节点
 - 报告：`agents-only/mt_real_01_phase3_subscription_probe.md`
 
 ### MT-REAL-01 Phase 1-2: 真实双内核联测首轮 — 已完成（Phase 3 待环境）

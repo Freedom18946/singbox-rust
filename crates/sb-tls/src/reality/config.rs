@@ -2,6 +2,7 @@
 
 #[cfg(feature = "utls")]
 use crate::UtlsFingerprint;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 /// REALITY client configuration
@@ -53,10 +54,7 @@ impl RealityClientConfig {
             return Err("target domain cannot be empty".to_string());
         }
 
-        // Validate public key (should be 64 hex chars for X25519)
-        if !is_valid_hex(&self.public_key) || self.public_key.len() != 64 {
-            return Err("public_key must be 64 hex characters (X25519 public key)".to_string());
-        }
+        decode_public_key(&self.public_key)?;
 
         // Validate short_id if present
         if let Some(ref short_id) = self.short_id
@@ -92,15 +90,10 @@ impl RealityClientConfig {
     /// 获取公钥的字节表示
     /// # Errors
     /// # 错误
-    /// Returns an error when the public key is not valid hex or wrong length.
-    /// 当公钥不是有效的十六进制或长度错误时返回错误。
+    /// Returns an error when the public key is not valid hex/base64url or wrong length.
+    /// 当公钥不是有效的十六进制/base64url 或长度错误时返回错误。
     pub fn public_key_bytes(&self) -> Result<[u8; 32], String> {
-        let bytes =
-            hex::decode(&self.public_key).map_err(|e| format!("invalid public key hex: {e}"))?;
-
-        bytes
-            .try_into()
-            .map_err(|_| "public key must be 32 bytes".to_string())
+        decode_public_key(&self.public_key)
     }
 }
 
@@ -224,6 +217,27 @@ fn is_valid_hex(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+fn decode_public_key(key: &str) -> Result<[u8; 32], String> {
+    if key.len() == 64 && is_valid_hex(key) {
+        let bytes = hex::decode(key).map_err(|e| format!("invalid public key hex: {e}"))?;
+        return bytes
+            .try_into()
+            .map_err(|_| "public key must be 32 bytes".to_string());
+    }
+
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(key)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(key))
+        .map_err(|_| {
+            "public_key must be 64 hex chars or base64url-encoded 32-byte X25519 public key"
+                .to_string()
+        })?;
+
+    bytes
+        .try_into()
+        .map_err(|_| "public_key must decode to exactly 32 bytes (X25519 public key)".to_string())
+}
+
 fn default_fingerprint() -> String {
     "chrome".to_string()
 }
@@ -308,7 +322,7 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("64 hex characters"));
+        assert!(result.unwrap_err().contains("public_key must"));
     }
 
     #[test]
@@ -423,6 +437,56 @@ mod tests {
         assert_eq!(bytes.len(), 32);
         assert_eq!(bytes[0], 0x01);
         assert_eq!(bytes[1], 0x23);
+    }
+
+    #[test]
+    fn test_client_config_base64url_public_key_validation() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        assert!(config.validate().is_ok());
+
+        let bytes = config.public_key_bytes().unwrap();
+        assert_eq!(bytes, core::array::from_fn(|i| i as u8));
+    }
+
+    #[test]
+    fn test_client_config_base64url_public_key_with_padding_validation() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        assert!(config.validate().is_ok());
+
+        let bytes = config.public_key_bytes().unwrap();
+        assert_eq!(bytes, core::array::from_fn(|i| i as u8));
+    }
+
+    #[test]
+    fn test_client_config_invalid_base64url_public_key() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("base64url"));
     }
 
     #[test]
