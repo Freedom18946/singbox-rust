@@ -4,161 +4,77 @@
 > **纪律**：仅保留当前阶段最关键事实。本文件严格 ≤100 行。
 ---
 ## 战略状态
-**当前阶段**: MT-REAL-01-FIX-03 代码实现已完成 — REALITY client 已从错误的 stream-wrapper 改写切到 rustls `SessionIdGenerator` + 自定义 X25519 key-share 路径；Phase 3 live 验证仍受 fake-IP 环境限制
-**Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准
-**当前阶段焦点**: 真实双内核联测收口。Phase 1 PASS；Phase 2 有效矩阵 30 PASS / 7 FAIL；Phase 3 已拿到真实订阅，域名型 VMess/VLESS 注册阻断、REALITY `public_key` base64url 兼容阻断、以及 REALITY client 的错误握手注入路径都已修复；当前 live dataplane 仍被 fake-IP 环境污染，现网日志表面症状仍是 `REALITY handshake failed ... tls handshake eof`
+**当前阶段**: MT-REAL-01-ENV-01 已完成 — fake-IP DNS 污染已隔离，REALITY live dataplane 失败已确认不是“连到 198.18.x.x 假 IP”，而是剩余协议层阻断  
+**Parity**: 52/56 BHV (92.9%)，以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准  
+**当前焦点**: 基于真实公网 IP 的 Phase 3 结果推进下一卡 FIX-04；不要再把 `tls handshake eof` 归因到 DNS fake-IP
 
 ## 最近闭环（2026-04-14）
 
-### MT-REAL-01-FIX-03: REALITY 客户端握手协议重写（Go 对齐）— 代码完成，live 验证 ENV-LIMITED
+### MT-REAL-01-ENV-01: DNS 隔离 + REALITY 握手验证 — 已完成，结论指向协议残差
 
-- 修复 `crates/sb-tls/src/reality/client.rs` / 新增 `reality/handshake.rs`：
-  - 删除首次写入时篡改 `ClientHello` 的 `RealityClientStream` wrapper 路径
-  - 改为使用 vendored `rustls` 0.23.35 的 `SessionIdGenerator`
-  - 新增自定义 `SupportedKxGroup`，让 REALITY `auth_key` 直接来源于 TLS 同一把 X25519 ECDHE key share
-  - `SessionID` 改为 Go REALITY 格式：明文 16-byte metadata + AES-256-GCM tag，共 32 bytes
-  - REALITY verifier 改为读取共享握手状态里的 `auth_key`，并要求临时证书校验命中
-- 验证状态：
-  - `cargo test -p sb-tls` PASS（99/99）
-  - `cargo clippy -p sb-tls --all-features --all-targets -- -D warnings` PASS
+- 基于 `agents-only/mt_real_01_evidence/phase3_real_upstream.json` 抽取 **19** 个订阅域名，使用固定 DoH IP 旁路系统 DNS 解析，生成：
+  - `agents-only/mt_real_01_evidence/phase3_domain_ip_map.md`
+  - `agents-only/mt_real_01_evidence/phase3_domain_ip_map.json`
+  - `agents-only/mt_real_01_evidence/phase3_ip_direct.json`
+- Rust 内核用 `phase3_ip_direct.json` 启动后继续控制面 PASS：
+  - Clash API `127.0.0.1:19090` → `/version` 200
+  - `/proxies` 可见全部 `21` 个真实 `vless+reality` 节点 + `1` 个无效控制节点
+  - 启动日志未再出现 DNS 解析失败 / `198.18.x.x` fake-IP 相关报错
+- 逐节点 selector + SOCKS 冒烟结果：
+  - **0/21** 真实 REALITY 节点成功拿到 `https://httpbin.org/ip` 出口 IP
+  - **19/21** 为 `tls handshake eof`
+  - **1/21** 为 `timeout`（`HK-A-BGP-2.5倍率`）
+  - **1/21** 为 `REALITY requires DNS server name`（`UK-A-BGP-0.5倍率`）
+  - 控制节点 `__phase3_invalid_vless` 为 `connection refused`
+- 关键证据：
+  - `agents-only/mt_real_01_evidence/phase3_reality_matrix.md`
+  - `agents-only/mt_real_01_evidence/phase3_reality_matrix.json`
+  - `agents-only/mt_real_01_evidence/phase3_runtime/phase3_ip_direct_rust.log`
+- 关键判定：
+  - 对 **19** 个 `tls handshake eof` 节点，进程级连接观测都命中了对应真实公网 `server_ip:server_port`
+  - 所以当前 REALITY 失败已从“可能仍连到 fake-IP”收敛为“确实连到真实节点后仍握手失败”
+  - **FIX-03 未取得 live 成功验收**；下一步应进入 **FIX-04**，继续对齐 REALITY 握手细节
+- 报告：`agents-only/mt_real_01_env_01.md`
+
+### MT-REAL-01-FIX-03: REALITY 客户端握手协议重写（Go 对齐）— 已提交，live 仍未打通
+
+- 已提交：`f58916e8 fix(reality): align client handshake with rustls session ids`
+- 代码侧完成内容：
+  - REALITY client 从旧的 `ClientHello` stream-wrapper 路径切到 rustls `SessionIdGenerator`
+  - 自定义 X25519 key-share，让 REALITY `auth_key` 直接来自 TLS 同一把 ECDHE
+  - `SessionID` 改为 Go REALITY 使用的 32-byte 密文格式
+  - verifier 改为读取共享握手态并要求临时证书校验命中
+- 本机补验：
   - `cargo build -p app --features acceptance,parity --bin app` PASS
-- Phase 3 复测：
-  - Rust 仍可正常启动 `19090/11080`
-  - `/version`、`/proxies` 继续 PASS
-  - `curl -x socks5h://127.0.0.1:11080 https://httpbin.org/ip` 仍 FAIL；日志仍表现为 `REALITY handshake failed ... tls handshake eof`
-- 关键环境事实：
-  - 当前机器把 `hk08.ctcxianyu.com` 解析到 `198.18.1.79`
-  - 即便显式指定公共 DNS `@1.1.1.1` / `@8.8.8.8`，结果仍然是同一个 fake-IP
-  - 所以本轮 live 失败不能直接判定为协议实现仍错，更可能仍混有基线 DNS 污染
+  - `cargo test -p sb-tls` 在本机仍有 1 个现存环境项 `global::tests::test_chrome_mode_non_empty`，与本卡 REALITY live 结论无关
 - 报告：`agents-only/mt_real_01_fix_03.md`
 
-### MT-REAL-01-FIX-02: REALITY `public_key` base64url 兼容 — 已完成
+### MT-REAL-01-FIX-02 / FIX-01 / Phase 3 Probe — 已完成，前置阻断已清
 
-- 修复 `crates/sb-tls/src/reality/config.rs` 的 REALITY client public key 解析：
-  - 保留原有 64-char hex 支持
-  - 新增 43-char base64url raw（no padding）支持
-  - 新增 44-char base64url padded 支持
-  - decode 后强制必须是 32-byte X25519 public key
-- `RealityClientConfig::validate()` 与 `public_key_bytes()` 已统一走同一条 decode helper
-- `short_id` / server-side private key 格式未改
-- 验证状态：
-  - `cargo test -p sb-tls` PASS（96/96）
-  - `cargo clippy --workspace --all-features --all-targets -- -D warnings` PASS
-  - `cargo test -p sb-adapters` PASS
-  - `cargo test -p interop-lab` PASS（29/29）
-  - `cargo test -p sb-core` ENV-LIMITED：仍是 `dns_steady` 在当前机器的 DNS 环境问题，不是本次改动回归
-- 回到 Phase 3 复测后确认：
-  - Rust 可正常加载真实订阅配置并启动 `19090/11080`
-  - 旧阻断 `public_key must be 64 hex characters` 已彻底消失
-  - 新阻断前移到真实握手阶段：`REALITY handshake failed ... tls handshake eof`
-- 报告：`agents-only/mt_real_01_fix_02.md`
+- FIX-02：REALITY `public_key` 支持 base64url；旧错误 `public_key must be 64 hex characters` 已消失
+- FIX-01：域名型 VMess/VLESS 出站注册改为 host+port 延迟解析；旧错误 `invalid config` 已消失
+- Phase 3 probe：GUI 订阅缓存已确认含 `21` 个 VLESS 节点；Rust 可加载真实订阅并稳定启动 `19090/11080`
+- 当前剩余 live dataplane 阻断只剩 REALITY 握手层
 
-### MT-REAL-01-FIX-01: 域名型 VMess/VLESS 出站注册阻断修复 — 已完成
+### MT-REAL-01 Phase 1-2 — 已完成（维持原结论）
 
-- 修复 `crates/sb-adapters/src/register.rs` 的 VMess/VLESS 注册路径：
-  - 不再把 `server:port` 强制解析为 `SocketAddr`
-  - 改为保留 `server: String` + `port: u16`，把 DNS 解析推迟到真实连接阶段
-- `crates/sb-adapters/src/outbound/vmess.rs` / `outbound/vless.rs` 已同步改成 host+port 模型
-- 新增/更新测试：
-  - 域名型 `example.com:443` 现在对 VMess/VLESS 注册应成功
-  - 空 server / 零端口继续拒绝
-  - app 侧相关集成测试已切到 `server` + `port`
-- 验证状态：
-  - `cargo test -p sb-adapters` PASS
-  - `cargo clippy --workspace --all-features --all-targets -- -D warnings` PASS
-  - `cargo test -p interop-lab` PASS（29/29）
-  - `cargo test -p sb-core` ENV-LIMITED：`dns_steady::bad_domain_returns_err` 在当前机器被 DNS 劫持解析到 `198.18.1.100`，不是本次改动回归
-- 回到 Phase 3 复测后确认：
-  - Rust 现在可以加载真实订阅配置并正常启动 `19090/11080`
-  - 之前的“域名型 VLESS 启动即 invalid config”阻断已消失
-  - 新阻断前移到 REALITY 拨号期：`public_key must be 64 hex characters`
-- 报告：`agents-only/mt_real_01_fix_01.md`
-
-### MT-REAL-01 Phase 3: 真实订阅 + GUI 拉取能力探测 — 部分完成 / 当前阻断已定位
-
-- 用户提供 1 条真实订阅；原始内容为 **22** 条链接：`21 x vless` + `1 x anytls`
-- 本机 `GUI.for.SingBox` 已存在同一订阅的本地落盘：
-  - `subscribes.yaml` 中可见该 URL 对应订阅项（名称 `CTC2`）
-  - GUI 缓存文件 `~/Library/Application Support/GUI.for.SingBox/subscribes/ID_ekfvjidr.json`
-  - 最近 `updateTime` 为 **2026-04-13 15:29:02 +08:00**
-  - GUI 成功导入 **21 个 VLESS** 节点；`anytls` 未进入该缓存文件
-- Rust Phase 3 本地测试配置已生成到 git-ignore 路径 `agents-only/mt_real_01_evidence/phase3_real_upstream.json`
-  - 控制面 PASS：`/version`、`/configs`、`/proxies` 可达；`mixed-port=11080`；`selector` / `auto` 组可见
-  - 数据面当前仍 BLOCKED：经 `socks5h://127.0.0.1:11080` 访问 `https://httpbin.org/ip` 失败
-- 阻断演进：
-  - 已修复：域名型 VLESS/VMess 出站注册期 `invalid config`
-  - 已修复：REALITY `public_key` 兼容性，现网订阅使用的 43-char base64url 已可通过 validate
-  - 当前新阻断：REALITY 握手期 `tls handshake eof`
-  - 环境因素仍在：当前网络环境下，订阅域名解析结果落到 `198.18.1.x` fake-IP 段，说明现网 DNS 受基线 TUN/代理影响
-- 当前结论：GUI 的“拉取订阅并解析 VLESS 节点”能力已确认；Rust “真实 VLESS 上游连通”下一步需要继续排 REALITY 握手期差异，或换用不触发该路径的真实 SS/Trojan/VMess 节点
-- 报告：`agents-only/mt_real_01_phase3_subscription_probe.md`
-
-### MT-REAL-01 Phase 1-2: 真实双内核联测首轮 — 已完成（Phase 3 待环境）
-
-- **不是** parity completion；是 maintenance 线下的真实双内核验证
-- Phase 1：`cargo build -p app --features acceptance,clash_api --bin app` + Rust Clash API `127.0.0.1:19090` 冒烟
-  - `/version` `/configs` `/proxies` 全 200
-  - `/traffic` `/connections` `/logs` `/memory` WS Upgrade 全 101
-  - 端口按要求回收确认
-- Phase 2：`interop-lab` strict+both 首轮先暴露两个 harness/blocker
-  - `p1_sniff_rule_action_tls` 缺失 `payload_tls_client_hello` 执行支持
-  - 同 case 的 Rust `ready_path` 误写成 `/healthz`（应探 `/version`）
-- 进一步发现：`acceptance,clash_api` 构建只够控制面冒烟，不含 strict 双核数据面所需 adapter/protocol builder
-  - 补 `cargo build -p app --features acceptance,parity --bin app` 后，strict+both 37 case 有效矩阵为 **30 PASS / 7 FAIL**
-- 当前 7 个 FAIL 归因：
-  - Go/环境侧：`p1_fakeip_cache_flush_contract`、`p1_gui_group_delay_replay`
-  - 已知 Rust GUI-cosmetic 侧：`p1_gui_connections_tracking`、`p1_gui_full_session_replay`
-  - 双侧/环境或 soak 门限：`p2_connections_ws_soak_dual_core`
-  - 协议本地联通双侧共同失败：`p2_vless_dual_dataplane_local`、`p2_vmess_dual_dataplane_local`
-- 证据：
-  - `agents-only/mt_real_01_evidence/phase2_both_matrix_effective.tsv`
-  - `agents-only/mt_real_01_evidence/phase2_both_cases_after_parity.log`
-  - `agents-only/mt_real_01_phase1_phase2.md`
-
-## 最近闭环（2026-04-12）
-
-### MT-GUI-04: 声明完成能力全量逐项验收 — 已完成
-
-- **不是** parity completion；是对所有声明完成项的 exhaustive per-capability acceptance sweep
-- 从 golden spec §S3 + GUI kernel.ts + MT-DEPLOY-01 + MT-GUI-01/02 枚举出 55 项能力
-- 6 个类别：启动/生命周期(5) + 控制平面API(21) + 流量面(17) + 订阅(5) + 可观察性(5) + 关闭(2)
-- 双内核同时运行 + mock 公网 → 逐项测试每一项能力
-- **结果：55/55 通过，0 FAIL，0 NEW FINDING**
-  - 35 PASS-STRICT (63.6%)
-  - 7 PASS-DIV-COVERED (12.7%) — 全部挂到 DIV-M-005..011
-  - 13 PASS-ENV-LIMITED (23.6%) — 全部有 interop-lab 真实 WS 覆盖
-- 报告：`mt_gui_04_acceptance.md`、`mt_gui_04_matrix.md`、`mt_gui_04_capability_inventory.md`、`mt_gui_04_gap_list.md`
-- 证据：`mt_gui_04_evidence/raw_sweep.txt` + `exhaustive_sweep.sh`
-
-### MT-GUI-03: GUI 双内核差异归类 — 已完成（仍生效）
-
-- 10 项差异全部归类：5 Covered + 2 Non-Blocking + 1 Env-Limited + 2 Extension
-- 新增 DIV-M-010 / DIV-M-011（COSMETIC，无 oracle 变更）
-
-### MT-GUI-02/01/DEPLOY-01 — 已完成（仍生效）
-
-- MT-GUI-02: 35 场景，32 PASS-STRICT / 1 ENV-LIMITED / 1 NEW / 1 CONFIRMED / 0 FAIL
-- MT-GUI-01: 15 场景，10 PASS-STRICT / 4 ENV-LIMITED / 1 NEW
-- MT-DEPLOY-01: 9 项部署链全 PASS-STRICT
+- Phase 1：Rust Clash API 冒烟 PASS；端口回收 PASS
+- Phase 2：strict+both 有效矩阵 **30 PASS / 7 FAIL**
+- 当前 7 个 FAIL 仍归因于 Go/环境、GUI cosmetic、soak 门限、以及本地协议联通双侧共同失败；本卡未改变该结论
 
 ## 当前验证事实
 
-- 55 项声明完成能力全部逐条清账，无"粗颗粒已过、细项未清"空白
-- 7 个 COSMETIC DIV (M-005..011) 覆盖所有已知差异
-- 4 个 BHV (SV.2 provider + LC.3 service isolation) 因 Go 侧结构限制无法双核测试（不变）
-- 双内核 GUI-shape 配置启动 + Clash API REST/WS 全面可达
-- SOCKS5 数据面：HTTP/HTTPS/SSE/chunked/1MiB/slow/早关/RST/dead-port 全部双侧一致
-- 订阅拉取（Bearer + ETag + 304）+ 配置解析双侧通过
-
-## 环境限制项
-
-- WS 探测用 curl probe（真实 WS 由 interop-lab p0/p1/p2 案例覆盖）
-- GUI 桌面二进制未构建（通过读 GUI 源码复现 API 调用）
-- 真实上游代理链路 / Docker / k8s：未测试
+- fake-IP DNS 仍存在于基线环境，但已不再是 Phase 3 REALITY 失败的主要解释
+- `phase3_ip_direct.json` 证明 Rust 可直接拨到真实公网节点 IP
+- 真实节点矩阵中没有任何成功样本，因此 **FIX-03 不能宣告完成 live 握手验收**
+- 下一卡应优先分析：
+  - `19` 个 `tls handshake eof`
+  - `1` 个 `REALITY requires DNS server name`
+  - `1` 个真实节点 timeout
 
 ## 当前默认准则
 
-- 全量逐项验收已完成，维护状态继续
-- 不把验收结果改写成 parity completion
-- 不推进 public RuntimePlan / PlannedConfigIR / generic query API
-- 不恢复 .github/workflows/*
+- maintenance 线继续；不要把本卡写成 parity completion
+- 不改 Go 基线配置，不恢复 `.github/workflows/*`
+- Phase 3 敏感配置继续只放 git-ignore 证据目录
+- 后续若继续 live 联测，默认复用 `phase3_ip_direct.json` 与 `phase3_reality_matrix.*`

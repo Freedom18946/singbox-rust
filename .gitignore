@@ -221,6 +221,11 @@ labs/interop-lab/artifacts/*/
 
 # MT-REAL-01 Phase 3 real-upstream artifacts (contain live subscription secrets)
 agents-only/mt_real_01_evidence/phase3_real_upstream.json
+agents-only/mt_real_01_evidence/phase3_ip_direct.json
+agents-only/mt_real_01_evidence/phase3_domain_ip_map.json
+agents-only/mt_real_01_evidence/phase3_domain_ip_map.md
+agents-only/mt_real_01_evidence/phase3_reality_matrix.json
+agents-only/mt_real_01_evidence/phase3_reality_matrix.md
 agents-only/mt_real_01_evidence/phase3_runtime/
 routes.tmp
 rules.tmp
