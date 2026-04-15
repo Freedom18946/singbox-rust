@@ -947,6 +947,12 @@ extension_struct! {
 
         /// Extensions that must appear contiguously.
         pub(crate) contiguous_extensions: Vec<ExtensionType>,
+
+        /// Opaque extensions injected by higher-level fingerprinting logic.
+        pub(crate) opaque_extensions: Vec<(ExtensionType, Vec<u8>)>,
+
+        /// Explicit extension ordering override.
+        pub(crate) forced_extension_order: Option<Vec<ExtensionType>>,
     }
 }
 
@@ -978,6 +984,8 @@ impl ClientExtensions<'_> {
             encrypted_client_hello_outer,
             order_seed,
             contiguous_extensions,
+            opaque_extensions,
+            forced_extension_order,
         } = self;
         ClientExtensions {
             server_name: server_name.map(|x| x.into_owned()),
@@ -1005,23 +1013,30 @@ impl ClientExtensions<'_> {
             encrypted_client_hello_outer,
             order_seed,
             contiguous_extensions,
+            opaque_extensions,
+            forced_extension_order,
         }
     }
 
     pub(crate) fn used_extensions_in_encoding_order(&self) -> Vec<ExtensionType> {
-        let mut exts = self.order_insensitive_extensions_in_random_order();
-        exts.extend(&self.contiguous_extensions);
+        let default = self.default_extension_order();
 
-        if self.encrypted_client_hello_outer.is_some() {
-            exts.push(ExtensionType::EncryptedClientHelloOuterExtensions);
+        let Some(forced) = &self.forced_extension_order else {
+            return default;
+        };
+
+        let mut ordered = Vec::with_capacity(default.len());
+        for ext in forced {
+            if self.has_extension_type(*ext) && !ordered.contains(ext) {
+                ordered.push(*ext);
+            }
         }
-        if self.encrypted_client_hello.is_some() {
-            exts.push(ExtensionType::EncryptedClientHello);
+        for ext in default {
+            if !ordered.contains(&ext) {
+                ordered.push(ext);
+            }
         }
-        if self.preshared_key_offer.is_some() {
-            exts.push(ExtensionType::PreSharedKey);
-        }
-        exts
+        ordered
     }
 
     /// Returns extensions which don't need a specific order, in randomized order.
@@ -1057,6 +1072,54 @@ impl ClientExtensions<'_> {
 
         order
     }
+
+    fn default_extension_order(&self) -> Vec<ExtensionType> {
+        let mut exts = self.order_insensitive_extensions_in_random_order();
+        exts.extend(&self.contiguous_extensions);
+
+        if self.encrypted_client_hello_outer.is_some() {
+            exts.push(ExtensionType::EncryptedClientHelloOuterExtensions);
+        }
+        if self.encrypted_client_hello.is_some() {
+            exts.push(ExtensionType::EncryptedClientHello);
+        }
+        if self.preshared_key_offer.is_some() {
+            exts.push(ExtensionType::PreSharedKey);
+        }
+        for (ext_type, _) in &self.opaque_extensions {
+            if !exts.contains(ext_type) {
+                exts.push(*ext_type);
+            }
+        }
+        exts
+    }
+
+    fn has_extension_type(&self, ext: ExtensionType) -> bool {
+        self.collect_used().contains(&ext)
+            || self.encrypted_client_hello_outer.is_some()
+                && ext == ExtensionType::EncryptedClientHelloOuterExtensions
+            || self.encrypted_client_hello.is_some() && ext == ExtensionType::EncryptedClientHello
+            || self.preshared_key_offer.is_some() && ext == ExtensionType::PreSharedKey
+            || self
+                .opaque_extensions
+                .iter()
+                .any(|(opaque_ext, _)| *opaque_ext == ext)
+    }
+
+    fn encode_extension(&self, ext: ExtensionType, bytes: &mut Vec<u8>) {
+        if let Some((_, payload)) = self
+            .opaque_extensions
+            .iter()
+            .find(|(opaque_ext, _)| *opaque_ext == ext)
+        {
+            u16::from(ext).encode(bytes);
+            (payload.len() as u16).encode(bytes);
+            bytes.extend_from_slice(payload);
+            return;
+        }
+
+        self.encode_one(ext, bytes);
+    }
 }
 
 impl<'a> Codec<'a> for ClientExtensions<'a> {
@@ -1069,7 +1132,7 @@ impl<'a> Codec<'a> for ClientExtensions<'a> {
 
         let body = LengthPrefixedBuffer::new(ListLength::U16, bytes);
         for item in order {
-            self.encode_one(item, body.buf);
+            self.encode_extension(item, body.buf);
         }
     }
 

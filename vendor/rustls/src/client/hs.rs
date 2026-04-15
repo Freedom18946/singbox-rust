@@ -16,7 +16,7 @@ use crate::check::inappropriate_handshake_message;
 use crate::client::client_conn::ClientConnectionData;
 use crate::client::common::ClientHelloDetails;
 use crate::client::ech::EchState;
-use crate::client::{tls13, ClientConfig, EchMode, EchStatus};
+use crate::client::{tls13, ClientConfig, ClientHelloFingerprint, EchMode, EchStatus};
 use crate::common_state::{CommonState, HandshakeKind, KxState, State};
 use crate::conn::ConnectionRandoms;
 use crate::crypto::{ActiveKeyExchange, KeyExchangeAlgorithm};
@@ -26,7 +26,7 @@ use crate::enums::{
 use crate::error::{Error, PeerIncompatible, PeerMisbehaved};
 use crate::hash_hs::HandshakeHashBuffer;
 use crate::log::{debug, trace};
-use crate::msgs::base::Payload;
+use crate::msgs::base::{Payload, PayloadU8};
 use crate::msgs::codec::Codec;
 use crate::msgs::enums::{Compression, ExtensionType};
 use crate::msgs::handshake::{
@@ -384,6 +384,10 @@ fn emit_client_hello_for_retry(
     // Do we have a SessionID or ticket cached for this host?
     let tls13_session = prepare_resumption(&input.resuming, &mut exts, suite, cx, config);
 
+    if let Some(fingerprint) = config.fingerprint.as_ref() {
+        apply_client_hello_fingerprint(fingerprint, &mut exts);
+    }
+
     // Extensions MAY be randomized
     // but they also need to keep the same order as the previous ClientHello
     exts.order_seed = input.hello.extension_order_seed;
@@ -401,6 +405,19 @@ fn emit_client_hello_for_retry(
     if supported_versions.tls12 {
         // We don't do renegotiation at all, in fact.
         cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+    }
+
+    if let Some(fingerprint) = config.fingerprint.as_ref() {
+        if let Some(grease_suite) = fingerprint.grease_ciphersuite {
+            cipher_suites.insert(0, grease_suite.into());
+        }
+
+        for suite in &fingerprint.extra_cipher_suites {
+            let suite = (*suite).into();
+            if !cipher_suites.contains(&suite) {
+                cipher_suites.push(suite);
+            }
+        }
     }
 
     let mut chp_payload = ClientHelloPayload {
@@ -546,6 +563,128 @@ fn emit_client_hello_for_retry(
     } else {
         Box::new(next)
     })
+}
+
+fn apply_client_hello_fingerprint(
+    fingerprint: &ClientHelloFingerprint,
+    exts: &mut ClientExtensions<'static>,
+) {
+    if fingerprint.include_empty_session_ticket {
+        exts.session_ticket = Some(ClientSessionTicket::Request);
+    }
+
+    if fingerprint.include_renegotiation_info {
+        exts.renegotiation_info = Some(PayloadU8::empty());
+    }
+
+    if !fingerprint.opaque_extensions.is_empty() {
+        exts.opaque_extensions = fingerprint
+            .opaque_extensions
+            .iter()
+            .map(|(ext_type, data)| ((*ext_type).into(), data.clone()))
+            .collect();
+    }
+
+    if let Some(versions) = &fingerprint.supported_versions_override {
+        upsert_opaque_extension(
+            exts,
+            ExtensionType::SupportedVersions,
+            encode_u16_list_u8_len(versions),
+        );
+    }
+
+    if let Some(groups) = &fingerprint.supported_groups_override {
+        upsert_opaque_extension(
+            exts,
+            ExtensionType::EllipticCurves,
+            encode_u16_list_u16_len(groups),
+        );
+    }
+
+    if fingerprint.key_share_grease.is_some() || fingerprint.signature_algorithms_override.is_some()
+    {
+        if let Some(key_shares) = exts.key_shares.as_ref() {
+            if let Some((group, payload)) = &fingerprint.key_share_grease {
+                let mut entries = Vec::with_capacity(key_shares.len() + 1);
+                entries.push((*group, payload.clone()));
+                entries.extend(
+                    key_shares
+                        .iter()
+                        .map(|share| (u16::from(share.group), share.payload.0.clone())),
+                );
+                upsert_opaque_extension(
+                    exts,
+                    ExtensionType::KeyShare,
+                    encode_key_share_list(&entries),
+                );
+            }
+        }
+
+        if let Some(sig_algs) = &fingerprint.signature_algorithms_override {
+            upsert_opaque_extension(
+                exts,
+                ExtensionType::SignatureAlgorithms,
+                encode_u16_list_u16_len(sig_algs),
+            );
+        }
+    }
+
+    if !fingerprint.extension_order.is_empty() {
+        exts.forced_extension_order = Some(
+            fingerprint
+                .extension_order
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect(),
+        );
+    }
+}
+
+fn upsert_opaque_extension(
+    exts: &mut ClientExtensions<'static>,
+    ext_type: ExtensionType,
+    payload: Vec<u8>,
+) {
+    if let Some((_, existing)) = exts
+        .opaque_extensions
+        .iter_mut()
+        .find(|(opaque_ext, _)| *opaque_ext == ext_type)
+    {
+        *existing = payload;
+    } else {
+        exts.opaque_extensions.push((ext_type, payload));
+    }
+}
+
+fn encode_u16_list_u8_len(values: &[u16]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + values.len() * 2);
+    out.push((values.len() * 2) as u8);
+    for value in values {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+    out
+}
+
+fn encode_u16_list_u16_len(values: &[u16]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(2 + values.len() * 2);
+    out.extend_from_slice(&((values.len() * 2) as u16).to_be_bytes());
+    for value in values {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+    out
+}
+
+fn encode_key_share_list(entries: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    let inner_len: usize = entries.iter().map(|(_, payload)| 4 + payload.len()).sum();
+    let mut out = Vec::with_capacity(2 + inner_len);
+    out.extend_from_slice(&(inner_len as u16).to_be_bytes());
+    for (group, payload) in entries {
+        out.extend_from_slice(&group.to_be_bytes());
+        out.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+        out.extend_from_slice(payload);
+    }
+    out
 }
 
 /// Prepares `exts` and `cx` with TLS 1.2 or TLS 1.3 session

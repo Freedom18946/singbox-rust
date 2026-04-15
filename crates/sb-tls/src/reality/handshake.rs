@@ -6,10 +6,11 @@ use super::tls_record::{ClientHello, ExtensionType};
 use super::{RealityError, RealityResult};
 #[cfg(feature = "utls")]
 use crate::{UtlsConfig, UtlsFingerprint};
+use hex::FromHex;
 use parking_lot::Mutex;
 use rand::rngs::OsRng;
 use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
-use rustls::client::{SessionIdGenerator, WebPkiServerVerifier};
+use rustls::client::{ClientHelloFingerprint, SessionIdGenerator, WebPkiServerVerifier};
 use rustls::crypto::{ActiveKeyExchange, SharedSecret, SupportedKxGroup};
 use rustls::{ClientConfig, NamedGroup, SupportedCipherSuite};
 use rustls_pki_types::ServerName;
@@ -27,6 +28,39 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_SESSION_PLAINTEXT_LEN: usize = 16;
+const EXT_SERVER_NAME: u16 = 0x0000;
+const EXT_STATUS_REQUEST: u16 = 0x0005;
+const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
+const EXT_EC_POINT_FORMATS: u16 = 0x000b;
+const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
+const EXT_ALPN: u16 = 0x0010;
+const EXT_SCT: u16 = 0x0012;
+const EXT_COMPRESS_CERTIFICATE: u16 = 0x001b;
+const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
+const EXT_SESSION_TICKET: u16 = 0x0023;
+const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
+const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
+const EXT_KEY_SHARE: u16 = 0x0033;
+const EXT_APPLICATION_SETTINGS: u16 = 0x44cd;
+const EXT_ECH_OUTER: u16 = 0xfe0d;
+const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
+const GREASE_EXT_HEAD: u16 = 0xcaca;
+const GREASE_CIPHER_SUITE: u16 = 0xfafa;
+const GREASE_EXT_TAIL: u16 = 0xaaaa;
+const GREASE_SUPPORTED_VERSIONS: u16 = 0x6a6a;
+const GREASE_NAMED_GROUP: u16 = 0x4a4a;
+const BASELINE_ECH_OUTER_HEX: &str = concat!(
+    "00000100013f0020ad0f49e7c98a6fa26a5021572c1d5801",
+    "c719fa85f531441a5982dac5f4bd9d0200b0bb61bf92446e",
+    "ce2c53ed2dfd5a53bfe5e8968e2326cba800299db03ac28d",
+    "fa78aed56b8996433964ce5f10fac716ed453020890e8b09",
+    "2223e38684d6c0b038a000cc1687e57585ca9b2424b6391b",
+    "0505ac2e38467f09bd2805cc6e07e4966c1836e819773ed6",
+    "9ae004b9ed8bcaf5019cad236db11e35952a7239a0558409",
+    "f94a0a6c9ae932033d49483d7da125aa2020464a58efc087",
+    "a11b1a710b99d9d5afe6649960f3ba63d54996fa55a35243",
+    "853a"
+);
 
 static EPHEMERAL_X25519_SECRETS: LazyLock<Mutex<HashMap<[u8; 32], [u8; 32]>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -125,10 +159,89 @@ impl RealityHandshake {
             short_id: self.short_id,
             state,
         }));
+        config.fingerprint = build_chrome_client_hello_fingerprint(&self.config);
         config.alpn_protocols = build_alpn_protocols(&self.config);
 
         Ok(config)
     }
+}
+
+fn build_chrome_client_hello_fingerprint(
+    config: &RealityClientConfig,
+) -> Option<ClientHelloFingerprint> {
+    if !uses_chrome_like_fingerprint(config.fingerprint.as_str()) {
+        return None;
+    }
+
+    Some(ClientHelloFingerprint {
+        opaque_extensions: vec![
+            (GREASE_EXT_HEAD, Vec::new()),
+            (EXT_SCT, Vec::new()),
+            (EXT_COMPRESS_CERTIFICATE, vec![0x02, 0x00, 0x02]),
+            (EXT_APPLICATION_SETTINGS, vec![0x00, 0x03, 0x02, b'h', b'2']),
+            (
+                EXT_ECH_OUTER,
+                Vec::from_hex(BASELINE_ECH_OUTER_HEX).expect("valid baseline ECH hex"),
+            ),
+            (GREASE_EXT_TAIL, vec![0x00]),
+        ],
+        extension_order: vec![
+            GREASE_EXT_HEAD,
+            EXT_RENEGOTIATION_INFO,
+            EXT_ALPN,
+            EXT_SCT,
+            EXT_SUPPORTED_VERSIONS,
+            EXT_COMPRESS_CERTIFICATE,
+            EXT_EC_POINT_FORMATS,
+            EXT_SIGNATURE_ALGORITHMS,
+            EXT_APPLICATION_SETTINGS,
+            EXT_SUPPORTED_GROUPS,
+            EXT_KEY_SHARE,
+            EXT_EXTENDED_MASTER_SECRET,
+            EXT_ECH_OUTER,
+            EXT_SERVER_NAME,
+            EXT_PSK_KEY_EXCHANGE_MODES,
+            EXT_SESSION_TICKET,
+            EXT_STATUS_REQUEST,
+            GREASE_EXT_TAIL,
+        ],
+        grease_ciphersuite: Some(GREASE_CIPHER_SUITE),
+        extra_cipher_suites: vec![
+            0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
+        ],
+        include_empty_session_ticket: true,
+        include_renegotiation_info: true,
+        supported_versions_override: Some(vec![GREASE_SUPPORTED_VERSIONS, 0x0304, 0x0303]),
+        supported_groups_override: Some(vec![GREASE_NAMED_GROUP, 0x001d, 0x0017, 0x0018]),
+        key_share_grease: Some((GREASE_NAMED_GROUP, vec![0x00])),
+        signature_algorithms_override: Some(vec![
+            0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
+        ]),
+    })
+}
+
+fn uses_chrome_like_fingerprint(fingerprint: &str) -> bool {
+    matches!(
+        fingerprint.to_ascii_lowercase().as_str(),
+        "" | "chrome"
+            | "chrome110"
+            | "chrome_psk"
+            | "chrome_psk_shuffle"
+            | "chrome_padding_psk_shuffle"
+            | "chrome_pq"
+            | "chrome_pq_psk"
+            | "android"
+            | "android11"
+            | "android_11"
+            | "random"
+            | "randomized"
+            | "randomchrome"
+            | "random_chrome"
+            | "360"
+            | "360browser"
+            | "qq"
+            | "qqbrowser"
+    )
 }
 
 fn build_crypto_provider(config: &RealityClientConfig) -> rustls::crypto::CryptoProvider {
@@ -502,23 +615,38 @@ fn parse_client_key_share(client_hello: &ClientHello) -> Result<[u8; 32], rustls
         ));
     }
 
-    let group = u16::from_be_bytes([data[2], data[3]]);
-    if group != u16::from(NamedGroup::X25519) {
-        return Err(rustls::Error::General(format!(
-            "REALITY unsupported key_share group: 0x{group:04x}"
-        )));
+    let mut cursor = 2usize;
+    let end = list_len + 2;
+
+    while cursor + 4 <= end {
+        let group = u16::from_be_bytes([data[cursor], data[cursor + 1]]);
+        let key_len = usize::from(u16::from_be_bytes([data[cursor + 2], data[cursor + 3]]));
+        let key_start = cursor + 4;
+        let key_end = key_start + key_len;
+        if key_end > end {
+            return Err(rustls::Error::General(
+                "REALITY key_share extension malformed".to_string(),
+            ));
+        }
+
+        if group == u16::from(NamedGroup::X25519) {
+            if key_len != 32 {
+                return Err(rustls::Error::General(
+                    "REALITY X25519 key share must be 32 bytes".to_string(),
+                ));
+            }
+
+            return data[key_start..key_end].try_into().map_err(|_| {
+                rustls::Error::General("REALITY invalid X25519 key share".to_string())
+            });
+        }
+
+        cursor = key_end;
     }
 
-    let key_len = usize::from(u16::from_be_bytes([data[4], data[5]]));
-    if key_len != 32 || data.len() < 6 + key_len {
-        return Err(rustls::Error::General(
-            "REALITY X25519 key share must be 32 bytes".to_string(),
-        ));
-    }
-
-    data[6..38]
-        .try_into()
-        .map_err(|_| rustls::Error::General("REALITY invalid X25519 key share".to_string()))
+    Err(rustls::Error::General(
+        "REALITY missing X25519 key share".to_string(),
+    ))
 }
 
 fn build_reality_plaintext_session_id(unix_seconds: u64, short_id: [u8; 8]) -> [u8; 16] {
@@ -667,5 +795,100 @@ mod tests {
         let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
         assert_eq!(parsed.session_id.len(), REALITY_SESSION_ID_LEN);
         assert!(parsed.session_id.iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
+    fn test_chrome_baseline_extensions_are_injected() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let wire = handshake.emit_client_hello_record().unwrap();
+
+        let record_len = usize::from(u16::from_be_bytes([wire[3], wire[4]]));
+        let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
+        let extension_types = parsed
+            .extensions
+            .iter()
+            .map(|ext| ext.extension_type)
+            .collect::<Vec<_>>();
+
+        assert_eq!(parsed.cipher_suites[0], GREASE_CIPHER_SUITE);
+        assert!(parsed.cipher_suites.ends_with(&[
+            0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
+        ]));
+        assert_eq!(
+            extension_types,
+            vec![
+                GREASE_EXT_HEAD,
+                EXT_RENEGOTIATION_INFO,
+                EXT_ALPN,
+                EXT_SCT,
+                EXT_SUPPORTED_VERSIONS,
+                EXT_COMPRESS_CERTIFICATE,
+                EXT_EC_POINT_FORMATS,
+                EXT_SIGNATURE_ALGORITHMS,
+                EXT_APPLICATION_SETTINGS,
+                EXT_SUPPORTED_GROUPS,
+                EXT_KEY_SHARE,
+                EXT_EXTENDED_MASTER_SECRET,
+                EXT_ECH_OUTER,
+                EXT_SERVER_NAME,
+                EXT_PSK_KEY_EXCHANGE_MODES,
+                EXT_SESSION_TICKET,
+                EXT_STATUS_REQUEST,
+                GREASE_EXT_TAIL,
+            ]
+        );
+        assert_eq!(
+            parsed
+                .find_extension(EXT_COMPRESS_CERTIFICATE)
+                .unwrap()
+                .data,
+            vec![0x02, 0x00, 0x02]
+        );
+        assert_eq!(
+            parsed
+                .find_extension(EXT_APPLICATION_SETTINGS)
+                .unwrap()
+                .data,
+            vec![0x00, 0x03, 0x02, b'h', b'2']
+        );
+        assert_eq!(
+            parsed.find_extension(EXT_ECH_OUTER).unwrap().data.len(),
+            218
+        );
+        assert_eq!(
+            parsed.find_extension(EXT_RENEGOTIATION_INFO).unwrap().data,
+            vec![0x00]
+        );
+        assert_eq!(
+            parsed
+                .find_extension(EXT_SESSION_TICKET)
+                .unwrap()
+                .data
+                .len(),
+            0
+        );
+        assert_eq!(
+            parsed.find_extension(EXT_SUPPORTED_VERSIONS).unwrap().data,
+            vec![0x06, 0x6a, 0x6a, 0x03, 0x04, 0x03, 0x03]
+        );
+        assert_eq!(
+            parsed.find_extension(EXT_SUPPORTED_GROUPS).unwrap().data,
+            vec![0x00, 0x08, 0x4a, 0x4a, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18]
+        );
+        assert_eq!(
+            parsed
+                .find_extension(EXT_SIGNATURE_ALGORITHMS)
+                .unwrap()
+                .data,
+            vec![
+                0x00, 0x10, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05, 0x05, 0x01,
+                0x08, 0x06, 0x06, 0x01,
+            ]
+        );
+        assert_eq!(
+            &parsed.find_extension(EXT_KEY_SHARE).unwrap().data[..7],
+            &[0x00, 0x29, 0x4a, 0x4a, 0x00, 0x01, 0x00]
+        );
     }
 }

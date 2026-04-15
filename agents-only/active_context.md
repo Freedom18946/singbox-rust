@@ -10,28 +10,32 @@
 
 ## 最新闭环（2026-04-16）
 
-### MT-REAL-02: Go uTLS vs Rust REALITY ClientHello 基线 harness
+### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1/2
 
-- 已新增：
+- 新增的 baseline harness 仍有效：
   - `scripts/tools/reality_go_utls_dump.sh`
   - `crates/sb-tls/examples/reality_clienthello_dump.rs`
   - `scripts/tools/reality_clienthello_diff.py`
   - `scripts/tools/reality_clienthello_diff.sh`
-- 已生成证据：
-  - `agents-only/mt_real_01_evidence/clienthello_baseline/go_reality_utls_clienthello.hex`
-  - `agents-only/mt_real_01_evidence/clienthello_baseline/rust_reality_clienthello.hex`
-  - `agents-only/mt_real_01_evidence/clienthello_baseline/go_vs_rust_clienthello_diff.json`
-  - `agents-only/mt_real_01_evidence/clienthello_baseline/go_utls_run1_vs_run2.json`
-- 首次基线结论：
-  - Go ↔ Rust 基线有稳定大差距
-  - Rust record length: `241`
-  - Go 明显多出：
+- Round 1（缺失扩展族 + 额外 cipher suites）：
+  - Rust 已补入：
     - `GREASE` cipher suite
     - 额外 TLS 1.2 cipher suites
     - `0x0012` / `0x001b` / `0x44cd` / `0xfe0d` / `0x0023` / `0xff01` / 尾部 GREASE
-  - Go/Rust 的扩展顺序、`supported_versions`、`supported_groups`、`key_share`、`signature_algorithms` 仍显著不同
-  - 新发现：Go `uTLS` 自身也不是单一静态模板，两次 dump 的 record length 与 extension order 都会变化
-- 报告：
+  - baseline diff：Rust record length `241 -> 519`
+  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
+- Round 2（typed 子结构）：
+  - Rust 已补齐：
+    - `supported_versions = [GREASE, TLS1.3, TLS1.2]`
+    - `supported_groups = [GREASE, x25519, secp256r1, secp384r1]`
+    - `key_share = [GREASE(1B), x25519(32B)]`
+    - `signature_algorithms = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601]`
+  - baseline diff：Go / Rust `record_len` 现均为 `528`
+  - 剩余显著差异已主要收敛到：
+    - Go `uTLS` 动态 extension order / 模板族波动
+    - 更深层的 `HelloChrome_Auto` 运行时行为
+  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
+- 当前报告：
   - `agents-only/mt_real_02_baseline.md`
 
 ## 仍然有效的历史结论
@@ -60,4 +64,6 @@
 - 每轮只消减一组真实差异，然后立刻做：
   - baseline diff 复跑
   - live chrome 样本复测
-- 暂不跳到 FFI/BoringSSL/自建 TLS 栈；除非基线收敛后 live 仍无成功样本
+- 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
+  - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
+  - 暂不回到盲补单个固定报文

@@ -169,6 +169,7 @@ impl ConfigBuilder<ClientConfig, WantsClientCert> {
             versions: self.state.versions,
             enable_sni: true,
             session_id_generator: None,
+            fingerprint: None,
             verifier: self.state.verifier,
             key_log: Arc::new(NoKeyLog {}),
             enable_secret_extraction: false,

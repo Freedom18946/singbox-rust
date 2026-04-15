@@ -144,6 +144,43 @@ pub trait SessionIdGenerator: fmt::Debug + Send + Sync {
     fn generate(&self, client_hello: &[u8], session_id: &mut [u8]) -> Result<(), Error>;
 }
 
+/// Optional byte-level `ClientHello` fingerprint controls.
+///
+/// This stays opt-in so normal rustls callers continue to use the stock
+/// handshake construction path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientHelloFingerprint {
+    /// Raw extensions to inject into the encoded client hello.
+    pub opaque_extensions: Vec<(u16, Vec<u8>)>,
+
+    /// Extension ordering to prefer when encoding the client hello.
+    pub extension_order: Vec<u16>,
+
+    /// Optional cipher suite to prepend, typically a GREASE value.
+    pub grease_ciphersuite: Option<u16>,
+
+    /// Extra raw cipher suites to append after rustls-supported suites.
+    pub extra_cipher_suites: Vec<u16>,
+
+    /// Whether to include an empty `session_ticket` extension.
+    pub include_empty_session_ticket: bool,
+
+    /// Whether to include the renegotiation_info extension.
+    pub include_renegotiation_info: bool,
+
+    /// Replace the `supported_versions` extension payload when set.
+    pub supported_versions_override: Option<Vec<u16>>,
+
+    /// Replace the `supported_groups` extension payload when set.
+    pub supported_groups_override: Option<Vec<u16>>,
+
+    /// Prepend an extra key_share entry when set, typically a GREASE share.
+    pub key_share_grease: Option<(u16, Vec<u8>)>,
+
+    /// Replace the `signature_algorithms` extension payload when set.
+    pub signature_algorithms_override: Option<Vec<u16>>,
+}
+
 /// Common configuration for (typically) all connections made by a program.
 ///
 /// Making one of these is cheap, though one of the inputs may be expensive: gathering trust roots
@@ -226,6 +263,9 @@ pub struct ClientConfig {
     /// client hello with the returned `session_id` bytes for both transcript
     /// hashing and network I/O.
     pub session_id_generator: Option<Arc<dyn SessionIdGenerator>>,
+
+    /// Optional byte-level client hello fingerprint overrides.
+    pub fingerprint: Option<ClientHelloFingerprint>,
 
     /// How to output key material for debugging.  The default
     /// does nothing.

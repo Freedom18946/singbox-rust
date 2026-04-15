@@ -120,3 +120,83 @@
 - 结构 diff 显著收敛
 - live 仍然 `0/x`
   时，才考虑重新评估更重的技术路线
+
+## 2026-04-16 进展更新：baseline rounds 1/2
+
+### Round 1: 缺失扩展族 + 额外 cipher suites
+
+- 实现：
+  - 在 vendored `rustls` 中新增 opt-in `ClientHelloFingerprint`
+  - 支持：
+    - prepend GREASE cipher suite
+    - append raw extra cipher suites
+    - 注入 opaque extensions
+    - empty `session_ticket`
+    - `renegotiation_info`
+    - explicit extension ordering
+  - REALITY chrome-like 路径先补入：
+    - `0x0012`
+    - `0x001b`
+    - `0x44cd`
+    - `0xfe0d`（当前先使用 baseline sample payload）
+    - `0x0023`
+    - `0xff01`
+    - 尾部 GREASE
+    - 额外 TLS 1.2 cipher suites
+- 验证：
+  - `cargo test -p sb-tls` → PASS
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh`
+    - Rust record length: `241 -> 519`
+    - 缺失扩展族与额外 cipher suites 已进入 Rust ClientHello
+- live 复测：
+  - 临时配置：`/tmp/phase3_ip_direct_mt_real02_round1_chrome.json`
+  - 样本：
+    - `HK-A-BGP-0.3倍率`
+    - `HK-A-BGP-1.0倍率`
+    - `HK-A-BGP-2.0倍率`
+  - 结果：`0/3`
+    - 三个样本均为 `curl: (97) Can't complete SOCKS5 connection`
+    - app 日志仍统一为 `REALITY handshake failed ... tls handshake eof`
+
+### Round 2: typed 子结构
+
+- 实现：
+  - `supported_versions = [GREASE, 0x0304, 0x0303]`
+  - `supported_groups = [GREASE, 0x001d, 0x0017, 0x0018]`
+  - `key_share = [GREASE(1B), x25519(32B)]`
+  - `signature_algorithms = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601]`
+  - `parse_client_key_share()` 改为扫描列表提取 `x25519`，不再假设第一个 share 就是目标
+- 验证：
+  - `cargo test -p sb-tls` → PASS
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh`
+    - Go / Rust `record_len` 现均为 `528`
+    - cipher suites、缺失扩展族、typed payload 已对齐
+    - 剩余差异已主要收敛到 Go `uTLS` 自身的动态 extension order / 模板族
+- live 复测：
+  - 继续复用 `/tmp/phase3_ip_direct_mt_real02_round1_chrome.json`
+  - 同样 3 个 HK 样本结果仍为 `0/3`
+  - 日志再次统一为 `REALITY handshake failed ... tls handshake eof`
+
+## 更新后的工程结论
+
+- 这轮结果比 `FIX-04/05` 更强，因为它不是“靠肉眼猜一组 Chrome 参数”，而是：
+  - 先用 baseline harness 锁定真实字节差异
+  - 再逐轮消减
+  - 每轮都同步做 live 复测
+- 当前已能确认：
+  - Rust REALITY `ClientHello` 的静态结构差异已大幅收敛
+  - 但 live failure **没有**随之反转
+- 因而当前 blocker 已进一步收敛为：
+  - 并非单纯缺某几个静态扩展 / cipher / typed payload
+  - 更可能是 `HelloChrome_Auto` 的动态模板族、extension order 运行时变化、或更深层 I/O shaping 行为
+
+## 下一步建议（更新）
+
+1. 不要回退到再补单个固定 Chrome 报文
+2. 下一轮应把 baseline harness 扩展到“多次 Go dump vs 多次 Rust dump”的模板族比较
+3. 如果动态模板族也被逼近后 live 仍然 `0/x`，再正式评估更重路线：
+   - `uTLS` 等价层
+   - FFI / BoringSSL
+   - 更激进的 TLS 发包控制
