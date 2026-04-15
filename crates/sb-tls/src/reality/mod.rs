@@ -62,6 +62,7 @@ pub use auth::{RealityAuth, generate_keypair};
 pub use client::RealityConnector;
 pub use config::{RealityClientConfig, RealityServerConfig};
 pub use server::RealityAcceptor;
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -85,3 +86,11 @@ pub enum RealityError {
 
 pub type RealityResult<T> = Result<T, RealityError>;
 pub mod cloning;
+
+/// Emit the initial REALITY TLS record containing the client hello.
+///
+/// This is a tooling/debug helper for byte-level comparison against other
+/// implementations such as Go sing-box + uTLS.
+pub fn debug_emit_client_hello_record(config: RealityClientConfig) -> RealityResult<Vec<u8>> {
+    handshake::RealityHandshake::new(Arc::new(config))?.emit_client_hello_record()
+}

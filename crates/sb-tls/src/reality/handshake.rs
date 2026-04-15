@@ -85,6 +85,26 @@ impl RealityHandshake {
         Ok(Box::new(tls_stream))
     }
 
+    pub(super) fn emit_client_hello_record(&self) -> RealityResult<Vec<u8>> {
+        let state = Arc::new(RealityHandshakeState::default());
+        let verifier = Arc::new(RealityVerifier::new(
+            self.config.server_name.clone(),
+            state,
+        )?);
+        let tls_config = Arc::new(
+            self.build_client_config(verifier, Arc::new(RealityHandshakeState::default()))?,
+        );
+        let server_name = ServerName::try_from(self.config.server_name.clone())
+            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid server name: {e:?}")))?;
+
+        let mut conn = rustls::client::ClientConnection::new(tls_config, server_name)
+            .map_err(|e| RealityError::HandshakeFailed(format!("build client hello: {e}")))?;
+        let mut wire = Vec::new();
+        conn.write_tls(&mut wire)
+            .map_err(|e| RealityError::HandshakeFailed(format!("encode client hello: {e}")))?;
+        Ok(wire)
+    }
+
     fn build_client_config(
         &self,
         verifier: Arc<RealityVerifier>,
@@ -566,7 +586,6 @@ fn take_ephemeral_secret(public_key: &[u8; 32]) -> Option<[u8; 32]> {
 mod tests {
     use super::*;
     use base64::Engine as _;
-    use rustls::client::ClientConnection;
 
     fn test_config() -> RealityClientConfig {
         RealityClientConfig {
@@ -641,18 +660,7 @@ mod tests {
     fn test_rustls_emits_encrypted_reality_session_id() {
         let config = Arc::new(test_config());
         let handshake = RealityHandshake::new(config.clone()).unwrap();
-        let state = Arc::new(RealityHandshakeState::default());
-        let verifier = Arc::new(RealityVerifier::new(config.server_name.clone(), state).unwrap());
-        let tls_config = Arc::new(
-            handshake
-                .build_client_config(verifier, Arc::new(RealityHandshakeState::default()))
-                .unwrap(),
-        );
-
-        let server_name = ServerName::try_from(config.server_name.clone()).unwrap();
-        let mut conn = ClientConnection::new(tls_config, server_name).unwrap();
-        let mut wire = Vec::new();
-        conn.write_tls(&mut wire).unwrap();
+        let wire = handshake.emit_client_hello_record().unwrap();
 
         assert_eq!(wire[0], 22);
         let record_len = usize::from(u16::from_be_bytes([wire[3], wire[4]]));

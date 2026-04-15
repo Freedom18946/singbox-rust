@@ -18,9 +18,9 @@
 
 ---
 
-## 当前状态：维护态（MT-GUI-04 + MT-REAL-01 均已收口）
+## 当前状态：维护态默认口径 + 最高目标实验重开
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-GUI-04 在 MT-GUI-01/02/03 基础上完成了 55 项声明完成能力的 exhaustive per-capability acceptance sweep — 0 FAIL / 0 NEW FINDING / 所有差异均挂到 DIV-M-005..011；MT-REAL-01 已于 2026-04-15 正式收口为 `ARCH-LIMIT-REALITY`，不再作为活跃开发卡继续推进**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**默认仍是 maintenance / deployment-acceptance 口径；但在用户显式要求继续追求“可直接替换 Go sing-box 的 Rust 二进制”后，`MT-REAL-02` 已于 2026-04-16 作为实验线重开。当前实验目标不是改写 parity 账面，而是建立 Go `uTLS` ↔ Rust REALITY `ClientHello` 基线并据此继续突破 REALITY live dataplane**。
 
 ### 维护线 + 部署/验收 close-out 清单
 
@@ -37,6 +37,24 @@
 | MT-GUI-03 | 已完成 | 2026-04-12 |
 | **MT-GUI-04** | **已完成** | **2026-04-12** |
 | **MT-REAL-01** | **已收口（ARCH-LIMIT-REALITY）** | **2026-04-15** |
+| **MT-REAL-02** | **实验重开（ClientHello baseline harness）** | **2026-04-16** |
+
+### MT-REAL-02 当前结论
+
+- 已建立 Go `uTLS` ↔ Rust REALITY `ClientHello` 基线工具链
+- 首次结果：
+  - Go record length `528`
+  - Rust record length `241`
+  - 差异不仅在顶层 GREASE/顺序，也包括：
+    - 额外 cipher suites
+    - `0x0012` / `0x001b` / `0x44cd` / `0xfe0d` / `0x0023` / `0xff01`
+    - `supported_versions` / `supported_groups` / `key_share` / `signature_algorithms`
+  - 额外发现：
+    - Go `uTLS` 两次独立 dump 的 record length 与 extension order 也会变化，说明目标是动态模板族而不是单一固定报文
+- 当前报告：
+  - `agents-only/mt_real_02_baseline.md`
+- 当前证据：
+  - `agents-only/mt_real_01_evidence/clienthello_baseline/`
 
 ### MT-GUI-04 结论
 
@@ -62,10 +80,12 @@
 
 ### 下一阶段默认路线
 
-- **默认结论**：声明完成能力逐项验收已闭环；REALITY live dataplane 已登记为架构限制；后续仅进入实际部署、环境集成或维护性响应
+- **默认结论**：声明完成能力逐项验收已闭环；maintenance 线不再拆细卡
+- **例外**：REALITY 在“最高目标”口径下已重开实验线，后续按 baseline-driven 方式推进
 - **后续 agents 先看**
   - `agents-only/active_context.md`
   - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
+  - `agents-only/mt_real_02_baseline.md`
   - `agents-only/mt_gui_04_acceptance.md`
   - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
 
