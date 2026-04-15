@@ -18,9 +18,9 @@
 
 ---
 
-## 当前状态：声明完成能力全量逐项验收完成（MT-GUI-04 完成）
+## 当前状态：维护态（MT-GUI-04 + MT-REAL-01 均已收口）
 
-**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-GUI-04 在 MT-GUI-01/02/03 基础上完成了 55 项声明完成能力的 exhaustive per-capability acceptance sweep — 0 FAIL / 0 NEW FINDING / 所有差异均挂到 DIV-M-005..011**。
+**全部阶段关闭**。dual-kernel parity 以 `labs/interop-lab/docs/dual_kernel_golden_spec.md` 为准。**MT-GUI-04 在 MT-GUI-01/02/03 基础上完成了 55 项声明完成能力的 exhaustive per-capability acceptance sweep — 0 FAIL / 0 NEW FINDING / 所有差异均挂到 DIV-M-005..011；MT-REAL-01 已于 2026-04-15 正式收口为 `ARCH-LIMIT-REALITY`，不再作为活跃开发卡继续推进**。
 
 ### 维护线 + 部署/验收 close-out 清单
 
@@ -36,6 +36,7 @@
 | MT-GUI-02 | 已完成 | 2026-04-11 |
 | MT-GUI-03 | 已完成 | 2026-04-12 |
 | **MT-GUI-04** | **已完成** | **2026-04-12** |
+| **MT-REAL-01** | **已收口（ARCH-LIMIT-REALITY）** | **2026-04-15** |
 
 ### MT-GUI-04 结论
 
@@ -61,9 +62,10 @@
 
 ### 下一阶段默认路线
 
-- **默认结论**：声明完成能力逐项验收已闭环；后续可进入实际部署或环境集成
+- **默认结论**：声明完成能力逐项验收已闭环；REALITY live dataplane 已登记为架构限制；后续仅进入实际部署、环境集成或维护性响应
 - **后续 agents 先看**
   - `agents-only/active_context.md`
+  - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
   - `agents-only/mt_gui_04_acceptance.md`
   - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
 

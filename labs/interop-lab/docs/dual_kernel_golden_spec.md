@@ -214,6 +214,13 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | INTENTIONAL | MIG-02 design decision | Oracle ignore; not a failure |
 | KNOWN-GAP | Rust feature not yet implemented | Track; promote when implemented |
 | COSMETIC | Format difference, semantically equivalent | Oracle tolerance |
+| ARCH-LIMIT | Structurally unreachable because the Rust runtime lacks an upstream-equivalent capability | Accept as known deviation; exclude from active parity debt |
+
+### Architecture Limits
+
+| Decision ID | Tag | Scope | Disposition | Evidence |
+|-------------|-----|-------|-------------|----------|
+| DEV-REALITY-01 | ARCH-LIMIT | REALITY (`vless+reality`) live dataplane | Rust `rustls` lacks a `uTLS`-equivalent browser TLS mimic layer. REALITY's server-side classifier rejects the Rust ClientHello before session auth can proceed, so control-plane wiring is healthy but live handshakes still fail. FIX-03 aligned cryptography/session_id, FIX-04 aligned top-level ClientHello fingerprinting, FIX-05 aligned typed substructure GREASE/versions/groups/key_share/sigalgs; live result remained `0/21` success. Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This divergence remains accepted until Rust gains a `uTLS`-equivalent library or REALITY stops requiring browser-grade ClientHello fingerprinting. | `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `agents-only/archive/MT-REAL-01/mt_real_01_fix_04.md`, `agents-only/archive/MT-REAL-01/mt_real_01_fix_05.md`, `agents-only/archive/MT-REAL-01/mt_real_01_env_01.md` |
 
 ### Critical (User-Visible)
 

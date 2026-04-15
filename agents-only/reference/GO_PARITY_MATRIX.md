@@ -8,6 +8,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - ✅ **Aligned**: behavior/types/API/config match Go reference.
 - ◐ **Partial**: implemented but missing/diverging details; not yet interchangeable.
 - ❌ **Not aligned**: stubbed, materially divergent, or Go feature is absent/disabled but Rust exposes it.
+- ⚠️ **Known deviation**: architecture-limited and accepted; excluded from active parity debt.
 - ⊘ **De-scoped**: intentionally excluded; will not be ported.
 - ➕ **Rust-only**: exists in Rust but not in Go reference (extension).
 
@@ -28,6 +29,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 - 本口径用于 L2 验收闭环，覆盖 `L2.2~L2.10` + `M2.4(SSMAPI/DERP/Resolved/CacheFile)` 的已实现与已验证项。
 - `PX-007`（IR-based 架构差异）与 TLS/WireGuard 平台限制按项目既定决策记为 **Accepted**，不计入开放缺陷。
+- `ARCH-LIMIT-REALITY` 作为维护态已知偏差登记：REALITY live dataplane 的 4 个行为槽位不再计入活动 parity debt，保留历史证据但不继续按实现遗漏追踪。
 - 下方 `2026-01-31` 摘要保留为历史基线，不再作为当前验收口径。
 
 ### Remaining 0（开放阻塞项已清零）
@@ -73,7 +75,7 @@ Note: Several aligned areas are feature-gated; default builds register stubs unl
 |-----|----------|-------------|--------|
 | Parity feature gates | 🔴 High | Default build registers stub inbounds/outbounds/services unless `app` features like `adapters`, `service_*`, `dns_*` are enabled | Define a single "parity" feature set or enable by default for parity builds |
 | TLS fragmentation | 🟡 Medium | Implemented in `crates/sb-core/src/router/conn.rs`; ACK-wait parity on unix; Windows uses TCP_INFO best-effort + fallback delay | Documented limitation; winiphlpapi/EStats required for full parity |
-| REALITY auth/cert verification | 🟡 Medium | Server-side auth derives session data from ClientHello random; temp cert HMAC verification + WebPKI fallback implemented; target chain capture/replay (intermediates) + leaf template in place | Implement full leaf cloning (byte-for-byte parity) or document limitation |
+| REALITY auth/cert verification | ⚠️ Known deviation | Go REALITY hard-depends on `uTLS`; Rust `rustls` lacks an equivalent browser ClientHello mimic layer. FIX-03/04/05 proved cryptography, top-level fingerprinting, and typed GREASE alignment were still insufficient for live handshake success | Track as `known_deviation(ARCH-LIMIT-REALITY)`; do not continue incremental fingerprint patching |
 | Tailscale endpoint | 🔴 High (de-scoped) | Go: tsnet + gVisor + DNS hook + protect_*; Rust: daemon-only (`docs/TAILSCALE_LIMITATIONS.md`) | De-scope accepted; revisit if parity required |
 | WireGuard endpoint | 🟡 Medium | Core endpoint now handles StartStage + peer DNS resolution; UDP listen/reserved unsupported in userspace (boringtun) | Documented limitation; TUN/wireguard-go required for parity |
 | TLS uTLS/ECH | 🟡 Medium | rustls cannot fully replicate ClientHello ordering; ECH client handshake integrated (TLS 1.3) but QUIC/server-side pending | Accept limitation; documented in `docs/TLS_DECISION.md` |
@@ -276,8 +278,8 @@ Note: DHCP/resolved/tailscale upstreams are feature-gated; default builds error 
 | 1 | std_client | `common/tls/std_client.go` | `sb-transport/tls.rs` | ✅ | — |
 | 2 | std_server | `common/tls/std_server.go` | `sb-transport/tls.rs` | ✅ | — |
 | 3 | utls_client | `common/tls/utls_client.go` (8KB) | `sb-tls/utls.rs` (28KB) | ◐ | rustls cannot match ClientHello; fallbacks documented |
-| 4 | reality_client | `common/tls/reality_client.go` | `sb-tls/reality/` | ◐ | Cert verification is permissive (proxy vs fallback not distinguished) |
-| 5 | reality_server | `common/tls/reality_server.go` | `sb-tls/reality/` | ◐ | Session data derived from ClientHello random; temp cert HMAC verification + WebPKI fallback; target chain replay (intermediates) + leaf template |
+| 4 | reality_client | `common/tls/reality_client.go` | `sb-tls/reality/` | ⚠️ | `known_deviation(ARCH-LIMIT-REALITY)`: Go requires `uTLS`; Rust can align crypto but not full browser-grade ClientHello mimic for live REALITY acceptance |
+| 5 | reality_server | `common/tls/reality_server.go` | `sb-tls/reality/` | ⚠️ | `known_deviation(ARCH-LIMIT-REALITY)`: server-side auth/cert path implemented, but client-side live dataplane remains structurally blocked by missing `uTLS`-equivalent fingerprinting |
 | 6 | ech | `common/tls/ech*.go` (4 files) | `sb-tls/ech/` (5 files) | ◐ | rustls ECH client handshake integrated (TLS 1.3); QUIC/server-side pending |
 | 7 | acme | `common/tls/acme*.go` (3 files) | `sb-tls/acme.rs` (28KB) | ✅ | — |
 
@@ -411,7 +413,7 @@ Note: `tls-fragment` / `tls-record-fragment` actions are applied in `crates/sb-c
 | 18 | sniff | `sb-core/router/sniff.rs` | ✅ | — |
 | 19 | srs | `sb-core/router/ruleset/` | ✅ | — |
 | 20 | taskmonitor | `sb-runtime/` | ✅ | — |
-| 21 | tls | `sb-tls/` + `sb-transport/tls.rs` | ◐ | uTLS/ECH partial; REALITY leaf cloning incomplete |
+| 21 | tls | `sb-tls/` + `sb-transport/tls.rs` | ◐ | uTLS/ECH partial; REALITY tracked as `known_deviation(ARCH-LIMIT-REALITY)` rather than an active implementation gap |
 | 22 | tlsfragment | `sb-core/router/conn.rs` | ◐ | Applied; Windows ACK best-effort only |
 | 23 | uot | `sb-transport/uot.rs` | ✅ | — |
 | 24 | urltest | `sb-core/outbound/` | ✅ | — |
