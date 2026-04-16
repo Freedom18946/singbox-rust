@@ -1094,15 +1094,20 @@ impl ClientExtensions<'_> {
     ///   are required to be last by the standard.
     fn order_insensitive_extensions_in_random_order(&self) -> Vec<ExtensionType> {
         let mut order = self.collect_used();
+        for (ext_type, _) in &self.opaque_extensions {
+            if !order.contains(ext_type) {
+                order.push(*ext_type);
+            }
+        }
 
         // Remove extensions which have specific order requirements.
         order.retain(|ext| {
-            !(matches!(
-                ext,
-                ExtensionType::PreSharedKey
-                    | ExtensionType::EncryptedClientHello
-                    | ExtensionType::EncryptedClientHelloOuterExtensions
-            ) || self.contiguous_extensions.contains(ext))
+            !((self.preshared_key_offer.is_some() && *ext == ExtensionType::PreSharedKey)
+                || (self.encrypted_client_hello.is_some()
+                    && *ext == ExtensionType::EncryptedClientHello)
+                || (self.encrypted_client_hello_outer.is_some()
+                    && *ext == ExtensionType::EncryptedClientHelloOuterExtensions)
+                || self.contiguous_extensions.contains(ext))
         });
 
         order.sort_by_cached_key(|new_ext| {
@@ -1125,11 +1130,6 @@ impl ClientExtensions<'_> {
         }
         if self.preshared_key_offer.is_some() {
             exts.push(ExtensionType::PreSharedKey);
-        }
-        for (ext_type, _) in &self.opaque_extensions {
-            if !exts.contains(ext_type) {
-                exts.push(*ext_type);
-            }
         }
         exts
     }

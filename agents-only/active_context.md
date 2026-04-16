@@ -10,7 +10,7 @@
 
 ## 最新闭环（2026-04-16）
 
-### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-4
+### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-5
 
 - baseline / family harness 仍有效：
   - `reality_go_utls_dump.sh` / `reality_clienthello_dump.rs` / `reality_clienthello_diff.{py,sh}` / `reality_clienthello_family.{py,sh}`
@@ -53,6 +53,15 @@
     - Go / Rust extension presence 均一致，头尾 extension 均固定为 GREASE
   - 单次 diff 现在主要表现为“同族不同抽样”，不再是静态缺口
   - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
+- Round 5（opaque middle-order family）：
+  - vendored `rustls` 已改为让 `opaque_extensions` 参与中段随机排序，不再总被追加到尾部
+  - 新测试：
+    - `test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block`
+  - family 证据（`40 runs`）显示：
+    - Rust 的 `0x0012/0x001b/0x44cd/0xfe0d` 已进入中段随机族，不再形成固定尾部块
+    - Go / Rust `order_family_count` 仍均为 `40`
+    - `record_len` / `fe0d` family 仍保持覆盖
+  - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
 - 当前报告：`agents-only/mt_real_02_baseline.md`
 
 ## 仍然有效的历史结论
@@ -83,7 +92,7 @@
   - live chrome 样本复测
 - 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
   - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
-  - `fe0d` / record-length 动态族已被覆盖，下一焦点转向更深层运行时行为：
-    - extension order 与 `fe0d` 档位的相关性
-    - `HelloChrome_Auto` 其余动态语义 / 发包 shaping
+  - `fe0d` / record-length 动态族与 opaque middle-order 族都已被覆盖，下一焦点转向更深层运行时行为：
+    - Go `HelloChrome_Auto` 的 joint-distribution / 相关性
+    - 更深层的 TLS / socket 发包 shaping
   - 暂不回到盲补单个固定报文

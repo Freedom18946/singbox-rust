@@ -340,3 +340,82 @@
    - `uTLS` 等价层
    - FFI / BoringSSL
    - 更激进的 TLS 发包控制
+
+## 2026-04-16 进展更新：opaque middle-order family
+
+### 实现
+
+- vendored `rustls` 的 extension ordering 逻辑已调整：
+  - `opaque_extensions` 不再被默认追加到尾部
+  - 现在会参与中段随机排序
+  - 但真正的结构化 `ECH` / `ECH outer extensions` / `PSK` 仍保留原本的尾部约束
+- 这使得 REALITY chrome-like 路径里的：
+  - `0x0012`
+  - `0x001b`
+  - `0x44cd`
+  - `0xfe0d`
+  不再构成固定尾部块，而是会像 Go `HelloChrome_Auto` 一样进入中段 joint-order family
+- 新增测试：
+  - `test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block`
+
+### 验证
+
+- `cargo test -p sb-tls` → PASS
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh`
+  - 当前单次样本里，Rust 的 `0xfe0d` 已可出现在中段，而不再固定为倒数第二个扩展
+  - 本轮固化样本中：
+    - Go order：
+      - `GREASE, 0x0012, 0x0017, 0x000d, 0x0000, 0x001b, 0x0023, 0x002d, 0x0010, 0x0033, 0x44cd, 0xff01, 0x0005, 0xfe0d, 0x002b, 0x000a, 0x000b, GREASE`
+    - Rust order：
+      - `GREASE, 0x0000, 0x0023, 0x0017, 0x0005, 0x002d, 0xff01, 0x0012, 0x001b, 0x000b, 0x44cd, 0x0010, 0x002b, 0x0033, 0xfe0d, 0x000a, 0x000d, GREASE`
+  - 这轮的差异已更接近“joint family 内不同样本”，而不是“Rust 把 opaque 扩展固定钉在尾部”
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh`
+  - Go（40 runs）：
+    - `record_len` 分布：`496 x7`, `528 x8`, `560 x13`, `592 x12`
+    - `fe0d` len 分布：`186 x7`, `218 x8`, `250 x13`, `282 x12`
+    - `order_family_count = 40`
+  - Rust（40 runs）：
+    - `record_len` 分布：`496 x13`, `528 x13`, `560 x8`, `592 x6`
+    - `fe0d` len 分布：`186 x13`, `218 x13`, `250 x8`, `282 x6`
+    - `order_family_count = 40`
+  - 能确认：
+    - Rust 仍覆盖完整 `record_len` / `fe0d` family
+    - Rust 的 opaque 扩展已进入中段随机族，而不是固定尾部块
+
+### live 复测
+
+- 临时配置：
+  - `/tmp/phase3_ip_direct_mt_real02_round3_chrome.json`
+- 样本：
+  - `HK-A-BGP-0.3倍率`
+  - `HK-A-BGP-1.0倍率`
+  - `HK-A-BGP-2.0倍率`
+- 结果仍为 `0/3`
+  - 三个样本均 `curl: (97) Can't complete SOCKS5 connection`
+  - app 日志仍统一落在：
+    - `REALITY handshake failed ... tls handshake eof`
+
+## 更新后的结论（再次收敛）
+
+- `opaque tail block` 也已不再是主 blocker
+- 到这一轮为止，可以明确排除的层级已经包括：
+  - 缺失扩展族
+  - 额外 TLS 1.2 cipher suites
+  - typed payload 差异
+  - `fe0d` / `record_len` family 缺失
+  - `opaque_extensions` 固定尾部排序
+- 因而下一焦点进一步收敛为：
+  - Go `HelloChrome_Auto` 的更细粒度 joint-distribution / 相关性，而不只是“会不会随机”
+  - 更深层的 TLS / socket 发包 shaping
+
+## 下一步建议（再次更新）
+
+1. 保持 baseline harness 驱动，不回到盲补固定报文
+2. 下一轮优先研究：
+   - Go `HelloChrome_Auto` joint-distribution，而不是只看单维分布
+   - 是否存在 `fe0d` 档位、extension order、首尾之外位置的联合约束
+3. 如果 joint-distribution 也被覆盖后 live 仍然 `0/x`，再正式进入更重路线评估：
+   - `uTLS` 等价层
+   - FFI / BoringSSL
+   - 更激进的 TLS 发包控制

@@ -974,6 +974,59 @@ mod tests {
     }
 
     #[test]
+    fn test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let mut fe0d_positions = std::collections::BTreeSet::new();
+        let mut opaque_position_tuples = std::collections::BTreeSet::new();
+
+        for _ in 0..24 {
+            let wire = handshake.emit_client_hello_record().unwrap();
+            let record_len = usize::from(u16::from_be_bytes([wire[3], wire[4]]));
+            let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
+            let extension_types = parsed
+                .extensions
+                .iter()
+                .map(|ext| ext.extension_type)
+                .collect::<Vec<_>>();
+            let positions = [
+                extension_types
+                    .iter()
+                    .position(|ext| *ext == EXT_SCT)
+                    .expect("sct extension present"),
+                extension_types
+                    .iter()
+                    .position(|ext| *ext == EXT_COMPRESS_CERTIFICATE)
+                    .expect("compress_certificate extension present"),
+                extension_types
+                    .iter()
+                    .position(|ext| *ext == EXT_APPLICATION_SETTINGS)
+                    .expect("application_settings extension present"),
+                extension_types
+                    .iter()
+                    .position(|ext| *ext == EXT_ECH_OUTER)
+                    .expect("ech outer extension present"),
+            ];
+
+            fe0d_positions.insert(positions[3]);
+            opaque_position_tuples.insert(positions);
+        }
+
+        assert!(
+            fe0d_positions.len() > 1,
+            "expected 0xfe0d to move within the middle extension family"
+        );
+        assert!(
+            opaque_position_tuples.len() > 1,
+            "expected opaque extension positions to vary across runs"
+        );
+        assert!(
+            fe0d_positions.iter().any(|pos| *pos < 16),
+            "expected 0xfe0d to appear before the tail slot in some runs"
+        );
+    }
+
+    #[test]
     fn test_chrome_baseline_ech_outer_matches_utls_boring_grease_family() {
         let config = Arc::new(test_config());
         let handshake = RealityHandshake::new(config).unwrap();
