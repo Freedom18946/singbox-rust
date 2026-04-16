@@ -638,6 +638,19 @@ fn apply_client_hello_fingerprint(
                 .map(Into::into)
                 .collect(),
         );
+    } else {
+        exts.prefix_extension_order = fingerprint
+            .prefix_extension_order
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect();
+        exts.suffix_extension_order = fingerprint
+            .suffix_extension_order
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect();
     }
 }
 

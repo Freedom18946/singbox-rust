@@ -953,6 +953,12 @@ extension_struct! {
 
         /// Explicit extension ordering override.
         pub(crate) forced_extension_order: Option<Vec<ExtensionType>>,
+
+        /// Extensions pinned at the start of encoding order.
+        pub(crate) prefix_extension_order: Vec<ExtensionType>,
+
+        /// Extensions pinned at the end of encoding order.
+        pub(crate) suffix_extension_order: Vec<ExtensionType>,
     }
 }
 
@@ -986,6 +992,8 @@ impl ClientExtensions<'_> {
             contiguous_extensions,
             opaque_extensions,
             forced_extension_order,
+            prefix_extension_order,
+            suffix_extension_order,
         } = self;
         ClientExtensions {
             server_name: server_name.map(|x| x.into_owned()),
@@ -1015,6 +1023,8 @@ impl ClientExtensions<'_> {
             contiguous_extensions,
             opaque_extensions,
             forced_extension_order,
+            prefix_extension_order,
+            suffix_extension_order,
         }
     }
 
@@ -1022,7 +1032,7 @@ impl ClientExtensions<'_> {
         let default = self.default_extension_order();
 
         let Some(forced) = &self.forced_extension_order else {
-            return default;
+            return self.apply_prefix_suffix_order(default);
         };
 
         let mut ordered = Vec::with_capacity(default.len());
@@ -1036,6 +1046,36 @@ impl ClientExtensions<'_> {
                 ordered.push(ext);
             }
         }
+        ordered
+    }
+
+    fn apply_prefix_suffix_order(&self, default: Vec<ExtensionType>) -> Vec<ExtensionType> {
+        if self.prefix_extension_order.is_empty() && self.suffix_extension_order.is_empty() {
+            return default;
+        }
+
+        let mut ordered = Vec::with_capacity(default.len());
+        for ext in &self.prefix_extension_order {
+            if self.has_extension_type(*ext) && !ordered.contains(ext) {
+                ordered.push(*ext);
+            }
+        }
+
+        for ext in default {
+            if !self.prefix_extension_order.contains(&ext)
+                && !self.suffix_extension_order.contains(&ext)
+                && !ordered.contains(&ext)
+            {
+                ordered.push(ext);
+            }
+        }
+
+        for ext in &self.suffix_extension_order {
+            if self.has_extension_type(*ext) && !ordered.contains(ext) {
+                ordered.push(*ext);
+            }
+        }
+
         ordered
     }
 

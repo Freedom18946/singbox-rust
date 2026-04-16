@@ -17,6 +17,11 @@
   - `crates/sb-tls/examples/reality_clienthello_dump.rs`
   - `scripts/tools/reality_clienthello_diff.py`
   - `scripts/tools/reality_clienthello_diff.sh`
+- 新增 family 级工具：
+  - `scripts/tools/reality_clienthello_family.py`
+  - `scripts/tools/reality_clienthello_family.sh`
+- 新增证据：
+  - `agents-only/mt_real_01_evidence/clienthello_baseline/go_vs_rust_clienthello_family.json`
 - Round 1（缺失扩展族 + 额外 cipher suites）：
   - Rust 已补入：
     - `GREASE` cipher suite
@@ -34,6 +39,19 @@
   - 剩余显著差异已主要收敛到：
     - Go `uTLS` 动态 extension order / 模板族波动
     - 更深层的 `HelloChrome_Auto` 运行时行为
+  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
+- Round 3（dynamic order family）：
+  - Rust 不再固定中段 extension order；改为：
+    - 头部 GREASE 固定
+    - 尾部 GREASE 固定
+    - 中段扩展随机化
+  - family 证据显示：
+    - Go: `12 runs -> 12` 个不同 order families
+    - Rust: `12 runs -> 12` 个不同 order families
+    - Go `record_len`: `{496, 528, 560, 592}`
+    - Rust `record_len`: 目前固定 `528`
+    - Go `fe0d` len: `{186, 218, 250, 282}`
+    - Rust `fe0d` len: 目前固定 `218`
   - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
 - 当前报告：
   - `agents-only/mt_real_02_baseline.md`
@@ -66,4 +84,5 @@
   - live chrome 样本复测
 - 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
   - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
+  - 当前更具体的下一焦点是 `fe0d` / record-length 动态族
   - 暂不回到盲补单个固定报文

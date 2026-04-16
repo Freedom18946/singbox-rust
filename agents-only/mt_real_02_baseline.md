@@ -192,11 +192,76 @@
   - 并非单纯缺某几个静态扩展 / cipher / typed payload
   - 更可能是 `HelloChrome_Auto` 的动态模板族、extension order 运行时变化、或更深层 I/O shaping 行为
 
+## 2026-04-16 进展更新：dynamic order family
+
+### 新增工具
+
+- `scripts/tools/reality_clienthello_family.py`
+  - 读取一批 Go / Rust `*.hex`
+  - 汇总：
+    - `record_len` 分布
+    - `fe0d` 长度分布
+    - extension presence
+    - order family 数量与样本
+- `scripts/tools/reality_clienthello_family.sh`
+  - 自动各跑多次 Go / Rust dump
+  - 直接输出 family 级比较 JSON
+
+### 新增证据
+
+- `agents-only/mt_real_01_evidence/clienthello_baseline/go_vs_rust_clienthello_family.json`
+
+### 实现
+
+- Rust REALITY chrome-like 指纹不再强制固定完整 extension order
+- 改为：
+  - 头部 GREASE 固定
+  - 尾部 GREASE 固定
+  - 中段扩展保留随机化
+- 目的：
+  - 不再只逼近 Go 的某一个单次样本
+  - 转而覆盖 `HelloChrome_Auto` 的动态顺序族
+
+### family 结果
+
+- Go（12 runs）：
+  - `record_len` 分布：`496 x2`, `528 x3`, `560 x4`, `592 x3`
+  - `fe0d` len 分布：`186 x2`, `218 x3`, `250 x4`, `282 x3`
+  - `order_family_count = 12`
+  - 头部 extension 始终是 GREASE，尾部 extension 始终是 GREASE
+- Rust（12 runs）：
+  - `record_len` 分布：`528 x12`
+  - `fe0d` len 分布：`218 x12`
+  - `order_family_count = 12`
+  - 头部 extension 始终是 GREASE，尾部 extension 始终是 GREASE
+
+### 这轮能确认什么
+
+- Rust 现在已经在 **顺序族层面** 逼近 Go：
+  - 不再是固定顺序
+  - 头尾 GREASE 的整体骨架也一致
+- 但 Rust 仍未覆盖 Go 的：
+  - `record_len` 动态族
+  - `fe0d` payload 长度动态族
+
+### live 复测
+
+- 继续使用：
+  - `/tmp/phase3_ip_direct_mt_real02_round1_chrome.json`
+- 样本：
+  - `HK-A-BGP-0.3倍率`
+  - `HK-A-BGP-1.0倍率`
+  - `HK-A-BGP-2.0倍率`
+- 结果仍为 `0/3`
+  - 三个样本均 `curl: (97) Can't complete SOCKS5 connection`
+  - app 日志仍统一落在：
+    - `REALITY handshake failed ... tls handshake eof`
+
 ## 下一步建议（更新）
 
 1. 不要回退到再补单个固定 Chrome 报文
-2. 下一轮应把 baseline harness 扩展到“多次 Go dump vs 多次 Rust dump”的模板族比较
-3. 如果动态模板族也被逼近后 live 仍然 `0/x`，再正式评估更重路线：
+2. 下一轮优先研究 `fe0d` / `record_len` 的动态 family，而不是再只盯 extension order
+3. 如果 `fe0d` family 也被逼近后 live 仍然 `0/x`，再正式评估更重路线：
    - `uTLS` 等价层
    - FFI / BoringSSL
    - 更激进的 TLS 发包控制

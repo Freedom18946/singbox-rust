@@ -156,6 +156,14 @@ pub struct ClientHelloFingerprint {
     /// Extension ordering to prefer when encoding the client hello.
     pub extension_order: Vec<u16>,
 
+    /// Extensions pinned at the start of encoding order when `extension_order`
+    /// is not explicitly forced.
+    pub prefix_extension_order: Vec<u16>,
+
+    /// Extensions pinned at the end of encoding order when `extension_order`
+    /// is not explicitly forced.
+    pub suffix_extension_order: Vec<u16>,
+
     /// Optional cipher suite to prepend, typically a GREASE value.
     pub grease_ciphersuite: Option<u16>,
 

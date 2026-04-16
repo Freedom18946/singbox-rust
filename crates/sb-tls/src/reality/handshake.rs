@@ -28,21 +28,33 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_SESSION_PLAINTEXT_LEN: usize = 16;
+#[cfg(test)]
 const EXT_SERVER_NAME: u16 = 0x0000;
+#[cfg(test)]
 const EXT_STATUS_REQUEST: u16 = 0x0005;
+#[cfg(test)]
 const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
+#[cfg(test)]
 const EXT_EC_POINT_FORMATS: u16 = 0x000b;
+#[cfg(test)]
 const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
+#[cfg(test)]
 const EXT_ALPN: u16 = 0x0010;
 const EXT_SCT: u16 = 0x0012;
 const EXT_COMPRESS_CERTIFICATE: u16 = 0x001b;
+#[cfg(test)]
 const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
+#[cfg(test)]
 const EXT_SESSION_TICKET: u16 = 0x0023;
+#[cfg(test)]
 const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
+#[cfg(test)]
 const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
+#[cfg(test)]
 const EXT_KEY_SHARE: u16 = 0x0033;
 const EXT_APPLICATION_SETTINGS: u16 = 0x44cd;
 const EXT_ECH_OUTER: u16 = 0xfe0d;
+#[cfg(test)]
 const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
 const GREASE_EXT_HEAD: u16 = 0xcaca;
 const GREASE_CIPHER_SUITE: u16 = 0xfafa;
@@ -185,26 +197,9 @@ fn build_chrome_client_hello_fingerprint(
             ),
             (GREASE_EXT_TAIL, vec![0x00]),
         ],
-        extension_order: vec![
-            GREASE_EXT_HEAD,
-            EXT_RENEGOTIATION_INFO,
-            EXT_ALPN,
-            EXT_SCT,
-            EXT_SUPPORTED_VERSIONS,
-            EXT_COMPRESS_CERTIFICATE,
-            EXT_EC_POINT_FORMATS,
-            EXT_SIGNATURE_ALGORITHMS,
-            EXT_APPLICATION_SETTINGS,
-            EXT_SUPPORTED_GROUPS,
-            EXT_KEY_SHARE,
-            EXT_EXTENDED_MASTER_SECRET,
-            EXT_ECH_OUTER,
-            EXT_SERVER_NAME,
-            EXT_PSK_KEY_EXCHANGE_MODES,
-            EXT_SESSION_TICKET,
-            EXT_STATUS_REQUEST,
-            GREASE_EXT_TAIL,
-        ],
+        extension_order: vec![],
+        prefix_extension_order: vec![GREASE_EXT_HEAD],
+        suffix_extension_order: vec![GREASE_EXT_TAIL],
         grease_ciphersuite: Some(GREASE_CIPHER_SUITE),
         extra_cipher_suites: vec![
             0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
@@ -815,29 +810,32 @@ mod tests {
         assert!(parsed.cipher_suites.ends_with(&[
             0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
         ]));
-        assert_eq!(
-            extension_types,
-            vec![
-                GREASE_EXT_HEAD,
-                EXT_RENEGOTIATION_INFO,
-                EXT_ALPN,
-                EXT_SCT,
-                EXT_SUPPORTED_VERSIONS,
-                EXT_COMPRESS_CERTIFICATE,
-                EXT_EC_POINT_FORMATS,
-                EXT_SIGNATURE_ALGORITHMS,
-                EXT_APPLICATION_SETTINGS,
-                EXT_SUPPORTED_GROUPS,
-                EXT_KEY_SHARE,
-                EXT_EXTENDED_MASTER_SECRET,
-                EXT_ECH_OUTER,
-                EXT_SERVER_NAME,
-                EXT_PSK_KEY_EXCHANGE_MODES,
-                EXT_SESSION_TICKET,
-                EXT_STATUS_REQUEST,
-                GREASE_EXT_TAIL,
-            ]
-        );
+        assert_eq!(extension_types.first().copied(), Some(GREASE_EXT_HEAD));
+        assert_eq!(extension_types.last().copied(), Some(GREASE_EXT_TAIL));
+        let mut sorted_extension_types = extension_types.clone();
+        sorted_extension_types.sort_unstable();
+        let mut expected_extension_types = vec![
+            EXT_SERVER_NAME,
+            EXT_STATUS_REQUEST,
+            EXT_SUPPORTED_GROUPS,
+            EXT_EC_POINT_FORMATS,
+            EXT_SIGNATURE_ALGORITHMS,
+            EXT_ALPN,
+            EXT_SCT,
+            EXT_COMPRESS_CERTIFICATE,
+            EXT_EXTENDED_MASTER_SECRET,
+            EXT_SESSION_TICKET,
+            EXT_SUPPORTED_VERSIONS,
+            EXT_PSK_KEY_EXCHANGE_MODES,
+            EXT_KEY_SHARE,
+            EXT_APPLICATION_SETTINGS,
+            GREASE_EXT_HEAD,
+            EXT_ECH_OUTER,
+            EXT_RENEGOTIATION_INFO,
+            GREASE_EXT_TAIL,
+        ];
+        expected_extension_types.sort_unstable();
+        assert_eq!(sorted_extension_types, expected_extension_types);
         assert_eq!(
             parsed
                 .find_extension(EXT_COMPRESS_CERTIFICATE)
@@ -889,6 +887,33 @@ mod tests {
         assert_eq!(
             &parsed.find_extension(EXT_KEY_SHARE).unwrap().data[..7],
             &[0x00, 0x29, 0x4a, 0x4a, 0x00, 0x01, 0x00]
+        );
+    }
+
+    #[test]
+    fn test_chrome_baseline_extension_order_varies_across_runs() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let mut orders = std::collections::BTreeSet::new();
+
+        for _ in 0..8 {
+            let wire = handshake.emit_client_hello_record().unwrap();
+            let record_len = usize::from(u16::from_be_bytes([wire[3], wire[4]]));
+            let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
+            let extension_types = parsed
+                .extensions
+                .iter()
+                .map(|ext| ext.extension_type)
+                .collect::<Vec<_>>();
+
+            assert_eq!(extension_types.first().copied(), Some(GREASE_EXT_HEAD));
+            assert_eq!(extension_types.last().copied(), Some(GREASE_EXT_TAIL));
+            orders.insert(extension_types);
+        }
+
+        assert!(
+            orders.len() > 1,
+            "expected randomized extension order family"
         );
     }
 }
