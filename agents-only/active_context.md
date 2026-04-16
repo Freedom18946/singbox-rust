@@ -10,7 +10,7 @@
 
 ## 最新闭环（2026-04-16）
 
-### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-5
+### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-6
 
 - baseline / family harness 仍有效：
   - `reality_go_utls_dump.sh` / `reality_clienthello_dump.rs` / `reality_clienthello_diff.{py,sh}` / `reality_clienthello_family.{py,sh}`
@@ -37,12 +37,7 @@
   - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
 - Round 4（dynamic `BoringGREASEECH` family）：
   - Rust 已移除静态 `0xfe0d` baseline blob，改为按 Go `uTLS` `BoringGREASEECH` 模板动态生成：
-    - `outer_type=0x00`
-    - `kdf=0x0001`
-    - `aead=0x0001`
-    - `config_id=random`
-    - `encapsulated_key_len=32`
-    - `payload_len ∈ {144, 176, 208, 240}`
+    - `outer_type=0x00` / `kdf=0x0001` / `aead=0x0001` / `config_id=random` / `encapsulated_key_len=32` / `payload_len ∈ {144, 176, 208, 240}`
   - 新测试：
     - `test_chrome_baseline_ech_outer_matches_utls_boring_grease_family`
   - family 证据（`40 runs`）显示：
@@ -55,12 +50,16 @@
   - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
 - Round 5（opaque middle-order family）：
   - vendored `rustls` 已改为让 `opaque_extensions` 参与中段随机排序，不再总被追加到尾部
-  - 新测试：
-    - `test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block`
+  - 新测试：`test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block`
   - family 证据（`40 runs`）显示：
     - Rust 的 `0x0012/0x001b/0x44cd/0xfe0d` 已进入中段随机族，不再形成固定尾部块
     - Go / Rust `order_family_count` 仍均为 `40`
     - `record_len` / `fe0d` family 仍保持覆盖
+  - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
+- Round 6（seeded shuffle semantics）：
+  - vendored `rustls` 中段顺序已从“基于扩展号哈希排序”改为真正的 seeded Fisher-Yates shuffle
+  - 语义上已更接近 Go `ShuffleChromeTLSExtensions(...)`
+  - `record_len` / `fe0d` family 仍保持完整覆盖，opaque extensions 仍在中段随机族
   - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
 - 当前报告：`agents-only/mt_real_02_baseline.md`
 
@@ -92,7 +91,7 @@
   - live chrome 样本复测
 - 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
   - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
-  - `fe0d` / record-length 动态族与 opaque middle-order 族都已被覆盖，下一焦点转向更深层运行时行为：
+  - `fe0d` / record-length 动态族、opaque middle-order 族、seeded shuffle 语义都已被覆盖，下一焦点转向更深层运行时行为：
     - Go `HelloChrome_Auto` 的 joint-distribution / 相关性
     - 更深层的 TLS / socket 发包 shaping
   - 暂不回到盲补单个固定报文

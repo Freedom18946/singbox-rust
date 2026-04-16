@@ -419,3 +419,78 @@
    - `uTLS` 等价层
    - FFI / BoringSSL
    - 更激进的 TLS 发包控制
+
+## 2026-04-16 进展更新：seeded shuffle semantics
+
+### 实现
+
+- vendored `rustls` 的中段 extension 排序逻辑已进一步从：
+  - “按 `order_seed + ext_type` 做哈希后排序”
+  变为：
+  - “按 `order_seed` 驱动的 seeded Fisher-Yates shuffle”
+- 这使得 Rust 侧顺序机制在语义上更接近 Go `uTLS` 的：
+  - `ShuffleChromeTLSExtensions(...)`
+  - 即真正的 shuffle，而不只是一个 deterministic hash-based permutation
+- 仍保留的约束：
+  - 头部 GREASE 固定
+  - 尾部 GREASE 固定
+  - 结构化 `ECH` / `PSK` 的尾部约束不被打破
+
+### 验证
+
+- `cargo test -p sb-tls` → PASS
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh`
+  - 本轮固化样本中：
+    - Go `record_len = 592`
+    - Rust `record_len = 560`
+  - 单次 order 继续表现为“同一动态族内不同抽样”，而不是明显的固定机制差异
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh`
+  - Go（40 runs）：
+    - `record_len` 分布：`496 x12`, `528 x8`, `560 x12`, `592 x8`
+    - `fe0d` len 分布：`186 x12`, `218 x8`, `250 x12`, `282 x8`
+    - `order_family_count = 40`
+  - Rust（40 runs）：
+    - `record_len` 分布：`496 x4`, `528 x7`, `560 x15`, `592 x14`
+    - `fe0d` len 分布：`186 x4`, `218 x7`, `250 x15`, `282 x14`
+    - `order_family_count = 40`
+  - 可确认：
+    - Rust 仍覆盖完整 `record_len` / `fe0d` family
+    - Rust 仍保有中段 shuffle 行为
+    - 但 Go / Rust 的联合分布并未自然收敛成“同一个抽样器”
+
+### live 复测
+
+- 临时配置：
+  - `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+- 样本：
+  - `HK-A-BGP-0.3倍率`
+  - `HK-A-BGP-1.0倍率`
+  - `HK-A-BGP-2.0倍率`
+- 结果仍为 `0/3`
+  - 三个样本均 `curl: (97) Can't complete SOCKS5 connection`
+  - app 日志仍统一落在：
+    - `REALITY handshake failed ... tls handshake eof`
+
+## 更新后的结论（再次收敛）
+
+- 到这一轮为止，已经可以明确排除的层级进一步扩大到：
+  - 缺失扩展族
+  - typed payload 差异
+  - `fe0d` / `record_len` family 缺失
+  - `opaque tail block`
+  - “Rust 只是 hash 排序，不是真 shuffle”
+- 当前更可能的 blocker 已进一步收敛为：
+  - Go `HelloChrome_Auto` 的更细粒度 joint-distribution / 条件分布
+  - 或更深层的 TLS / socket 发包 shaping
+
+## 下一步建议（再次更新）
+
+1. 保持 baseline harness 驱动，不回到盲补固定报文
+2. 下一轮优先研究：
+   - joint-distribution，而不是只看单维 family
+   - 具体看 `fe0d` 档位与 extension order 是否有条件耦合
+3. 如果 joint-distribution 也被逼近后 live 仍然 `0/x`，再正式进入更重路线评估：
+   - `uTLS` 等价层
+   - FFI / BoringSSL
+   - 更激进的 TLS 发包控制

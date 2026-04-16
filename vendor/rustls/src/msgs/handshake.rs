@@ -1110,10 +1110,7 @@ impl ClientExtensions<'_> {
                 || self.contiguous_extensions.contains(ext))
         });
 
-        order.sort_by_cached_key(|new_ext| {
-            let seed = ((self.order_seed as u32) << 16) | (u16::from(*new_ext) as u32);
-            low_quality_integer_hash(seed)
-        });
+        shuffle_by_seed(&mut order, self.order_seed);
 
         order
     }
@@ -3208,14 +3205,34 @@ impl DuplicateExtensionChecker {
     }
 }
 
-fn low_quality_integer_hash(mut x: u32) -> u32 {
-    x = x.wrapping_add(0x7ed55d16).wrapping_add(x << 12);
-    x = (x ^ 0xc761c23c) ^ (x >> 19);
-    x = x.wrapping_add(0x165667b1).wrapping_add(x << 5);
-    x = x.wrapping_add(0xd3a2646c) ^ (x << 9);
-    x = x.wrapping_add(0xfd7046c5).wrapping_add(x << 3);
-    x = (x ^ 0xb55a4f09) ^ (x >> 16);
-    x
+fn shuffle_by_seed<T>(values: &mut [T], order_seed: u16) {
+    if values.len() < 2 {
+        return;
+    }
+
+    let mut state = seed_to_u64(order_seed);
+    for i in (1..values.len()).rev() {
+        let j = next_shuffle_index(&mut state, i + 1);
+        values.swap(i, j);
+    }
+}
+
+fn seed_to_u64(order_seed: u16) -> u64 {
+    let mut x = ((order_seed as u64) << 32) | ((order_seed as u64) << 16) | order_seed as u64;
+    x ^= 0x9e37_79b9_7f4a_7c15;
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+fn next_shuffle_index(state: &mut u64, upper_bound: usize) -> usize {
+    debug_assert!(upper_bound > 0);
+    *state = state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    ((*state >> 32) as usize) % upper_bound
 }
 
 #[cfg(test)]
