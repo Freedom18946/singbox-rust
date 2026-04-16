@@ -6,8 +6,8 @@ use super::tls_record::{ClientHello, ExtensionType};
 use super::{RealityError, RealityResult};
 #[cfg(feature = "utls")]
 use crate::{UtlsConfig, UtlsFingerprint};
-use hex::FromHex;
 use parking_lot::Mutex;
+use rand::RngCore;
 use rand::rngs::OsRng;
 use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 use rustls::client::{ClientHelloFingerprint, SessionIdGenerator, WebPkiServerVerifier};
@@ -61,18 +61,11 @@ const GREASE_CIPHER_SUITE: u16 = 0xfafa;
 const GREASE_EXT_TAIL: u16 = 0xaaaa;
 const GREASE_SUPPORTED_VERSIONS: u16 = 0x6a6a;
 const GREASE_NAMED_GROUP: u16 = 0x4a4a;
-const BASELINE_ECH_OUTER_HEX: &str = concat!(
-    "00000100013f0020ad0f49e7c98a6fa26a5021572c1d5801",
-    "c719fa85f531441a5982dac5f4bd9d0200b0bb61bf92446e",
-    "ce2c53ed2dfd5a53bfe5e8968e2326cba800299db03ac28d",
-    "fa78aed56b8996433964ce5f10fac716ed453020890e8b09",
-    "2223e38684d6c0b038a000cc1687e57585ca9b2424b6391b",
-    "0505ac2e38467f09bd2805cc6e07e4966c1836e819773ed6",
-    "9ae004b9ed8bcaf5019cad236db11e35952a7239a0558409",
-    "f94a0a6c9ae932033d49483d7da125aa2020464a58efc087",
-    "a11b1a710b99d9d5afe6649960f3ba63d54996fa55a35243",
-    "853a"
-);
+const UTLS_GREASE_ECH_OUTER_CLIENT_HELLO: u8 = 0x00;
+const UTLS_GREASE_ECH_KDF_ID: u16 = 0x0001;
+const UTLS_GREASE_ECH_AEAD_ID: u16 = 0x0001;
+const UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN: usize = 32;
+const UTLS_GREASE_ECH_PAYLOAD_LENS: [usize; 4] = [144, 176, 208, 240];
 
 static EPHEMERAL_X25519_SECRETS: LazyLock<Mutex<HashMap<[u8; 32], [u8; 32]>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -191,10 +184,7 @@ fn build_chrome_client_hello_fingerprint(
             (EXT_SCT, Vec::new()),
             (EXT_COMPRESS_CERTIFICATE, vec![0x02, 0x00, 0x02]),
             (EXT_APPLICATION_SETTINGS, vec![0x00, 0x03, 0x02, b'h', b'2']),
-            (
-                EXT_ECH_OUTER,
-                Vec::from_hex(BASELINE_ECH_OUTER_HEX).expect("valid baseline ECH hex"),
-            ),
+            (EXT_ECH_OUTER, build_utls_boring_grease_ech_extension()),
             (GREASE_EXT_TAIL, vec![0x00]),
         ],
         extension_order: vec![],
@@ -213,6 +203,66 @@ fn build_chrome_client_hello_fingerprint(
             0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
         ]),
     })
+}
+
+fn build_utls_boring_grease_ech_extension() -> Vec<u8> {
+    let mut rng = OsRng;
+    let mut config_id = [0u8; 1];
+    rng.fill_bytes(&mut config_id);
+
+    let payload_len = UTLS_GREASE_ECH_PAYLOAD_LENS
+        [(rng.next_u32() as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()];
+    let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(&mut rng)).to_bytes();
+    let mut payload = vec![0u8; payload_len];
+    rng.fill_bytes(&mut payload);
+
+    let mut extension = Vec::with_capacity(
+        1 + 2 + 2 + 1 + 2 + UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN + 2 + payload_len,
+    );
+    extension.push(UTLS_GREASE_ECH_OUTER_CLIENT_HELLO);
+    extension.extend_from_slice(&UTLS_GREASE_ECH_KDF_ID.to_be_bytes());
+    extension.extend_from_slice(&UTLS_GREASE_ECH_AEAD_ID.to_be_bytes());
+    extension.push(config_id[0]);
+    extension.extend_from_slice(&(encapsulated_key.len() as u16).to_be_bytes());
+    extension.extend_from_slice(&encapsulated_key);
+    extension.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+    extension.extend_from_slice(&payload);
+    extension
+}
+
+#[cfg(test)]
+fn parse_utls_boring_grease_ech_extension(data: &[u8]) -> Option<(u8, u16, u16, u8, usize, usize)> {
+    if data.len() < 1 + 2 + 2 + 1 + 2 + 2 {
+        return None;
+    }
+
+    let client_hello_type = data[0];
+    let kdf_id = u16::from_be_bytes([data[1], data[2]]);
+    let aead_id = u16::from_be_bytes([data[3], data[4]]);
+    let config_id = data[5];
+    let encapsulated_key_len = usize::from(u16::from_be_bytes([data[6], data[7]]));
+    let payload_len_offset = 8 + encapsulated_key_len;
+    if data.len() < payload_len_offset + 2 {
+        return None;
+    }
+
+    let payload_len = usize::from(u16::from_be_bytes([
+        data[payload_len_offset],
+        data[payload_len_offset + 1],
+    ]));
+    let total_len = payload_len_offset + 2 + payload_len;
+    if data.len() != total_len {
+        return None;
+    }
+
+    Some((
+        client_hello_type,
+        kdf_id,
+        aead_id,
+        config_id,
+        encapsulated_key_len,
+        payload_len,
+    ))
 }
 
 fn uses_chrome_like_fingerprint(fingerprint: &str) -> bool {
@@ -850,10 +900,16 @@ mod tests {
                 .data,
             vec![0x00, 0x03, 0x02, b'h', b'2']
         );
-        assert_eq!(
-            parsed.find_extension(EXT_ECH_OUTER).unwrap().data.len(),
-            218
-        );
+        let (client_hello_type, kdf_id, aead_id, _config_id, encapsulated_key_len, payload_len) =
+            parse_utls_boring_grease_ech_extension(
+                &parsed.find_extension(EXT_ECH_OUTER).unwrap().data,
+            )
+            .expect("uTLS BoringGREASEECH-like extension");
+        assert_eq!(client_hello_type, UTLS_GREASE_ECH_OUTER_CLIENT_HELLO);
+        assert_eq!(kdf_id, UTLS_GREASE_ECH_KDF_ID);
+        assert_eq!(aead_id, UTLS_GREASE_ECH_AEAD_ID);
+        assert_eq!(encapsulated_key_len, UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN);
+        assert!(UTLS_GREASE_ECH_PAYLOAD_LENS.contains(&payload_len));
         assert_eq!(
             parsed.find_extension(EXT_RENEGOTIATION_INFO).unwrap().data,
             vec![0x00]
@@ -914,6 +970,67 @@ mod tests {
         assert!(
             orders.len() > 1,
             "expected randomized extension order family"
+        );
+    }
+
+    #[test]
+    fn test_chrome_baseline_ech_outer_matches_utls_boring_grease_family() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let mut record_lens = std::collections::BTreeSet::new();
+        let mut ech_outer_lens = std::collections::BTreeSet::new();
+        let mut ech_payload_lens = std::collections::BTreeSet::new();
+
+        for _ in 0..16 {
+            let wire = handshake.emit_client_hello_record().unwrap();
+            let record_len = usize::from(u16::from_be_bytes([wire[3], wire[4]]));
+            let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
+            let ech_outer = parsed.find_extension(EXT_ECH_OUTER).unwrap();
+            let (client_hello_type, kdf_id, aead_id, config_id, encapsulated_key_len, payload_len) =
+                parse_utls_boring_grease_ech_extension(&ech_outer.data)
+                    .expect("uTLS BoringGREASEECH-like extension");
+
+            assert_eq!(client_hello_type, UTLS_GREASE_ECH_OUTER_CLIENT_HELLO);
+            assert_eq!(kdf_id, UTLS_GREASE_ECH_KDF_ID);
+            assert_eq!(aead_id, UTLS_GREASE_ECH_AEAD_ID);
+            assert_eq!(encapsulated_key_len, UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN);
+            assert!(UTLS_GREASE_ECH_PAYLOAD_LENS.contains(&payload_len));
+            let _ = config_id;
+
+            record_lens.insert(record_len);
+            ech_outer_lens.insert(ech_outer.data.len());
+            ech_payload_lens.insert(payload_len);
+        }
+
+        assert!(
+            record_lens
+                .iter()
+                .all(|len| [496, 528, 560, 592].contains(len)),
+            "unexpected record length family: {record_lens:?}"
+        );
+        assert!(
+            ech_outer_lens
+                .iter()
+                .all(|len| [186, 218, 250, 282].contains(len)),
+            "unexpected 0xfe0d length family: {ech_outer_lens:?}"
+        );
+        assert!(
+            ech_payload_lens
+                .iter()
+                .all(|len| UTLS_GREASE_ECH_PAYLOAD_LENS.contains(len)),
+            "unexpected GREASE ECH payload family: {ech_payload_lens:?}"
+        );
+        assert!(
+            record_lens.len() > 1,
+            "expected dynamic record length family"
+        );
+        assert!(
+            ech_outer_lens.len() > 1,
+            "expected dynamic 0xfe0d length family"
+        );
+        assert!(
+            ech_payload_lens.len() > 1,
+            "expected dynamic GREASE ECH payload family"
         );
     }
 }

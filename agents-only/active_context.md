@@ -10,41 +10,23 @@
 
 ## 最新闭环（2026-04-16）
 
-### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1/2
+### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-4
 
-- 新增的 baseline harness 仍有效：
-  - `scripts/tools/reality_go_utls_dump.sh`
-  - `crates/sb-tls/examples/reality_clienthello_dump.rs`
-  - `scripts/tools/reality_clienthello_diff.py`
-  - `scripts/tools/reality_clienthello_diff.sh`
-- 新增 family 级工具：
-  - `scripts/tools/reality_clienthello_family.py`
-  - `scripts/tools/reality_clienthello_family.sh`
-- 新增证据：
+- baseline / family harness 仍有效：
+  - `reality_go_utls_dump.sh` / `reality_clienthello_dump.rs` / `reality_clienthello_diff.{py,sh}` / `reality_clienthello_family.{py,sh}`
+- 当前证据：
   - `agents-only/mt_real_01_evidence/clienthello_baseline/go_vs_rust_clienthello_family.json`
 - Round 1（缺失扩展族 + 额外 cipher suites）：
-  - Rust 已补入：
-    - `GREASE` cipher suite
-    - 额外 TLS 1.2 cipher suites
-    - `0x0012` / `0x001b` / `0x44cd` / `0xfe0d` / `0x0023` / `0xff01` / 尾部 GREASE
+  - Rust 已补入：`GREASE` cipher suite、额外 TLS 1.2 cipher suites、`0x0012/0x001b/0x44cd/0xfe0d/0x0023/0xff01`、尾部 GREASE
   - baseline diff：Rust record length `241 -> 519`
   - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
 - Round 2（typed 子结构）：
-  - Rust 已补齐：
-    - `supported_versions = [GREASE, TLS1.3, TLS1.2]`
-    - `supported_groups = [GREASE, x25519, secp256r1, secp384r1]`
-    - `key_share = [GREASE(1B), x25519(32B)]`
-    - `signature_algorithms = [0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601]`
+  - Rust 已补齐：`supported_versions` / `supported_groups` / `key_share` / `signature_algorithms` typed payload
   - baseline diff：Go / Rust `record_len` 现均为 `528`
-  - 剩余显著差异已主要收敛到：
-    - Go `uTLS` 动态 extension order / 模板族波动
-    - 更深层的 `HelloChrome_Auto` 运行时行为
+  - 剩余显著差异已主要收敛到 Go `uTLS` 动态 extension order / 模板族波动
   - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
 - Round 3（dynamic order family）：
-  - Rust 不再固定中段 extension order；改为：
-    - 头部 GREASE 固定
-    - 尾部 GREASE 固定
-    - 中段扩展随机化
+  - Rust 不再固定中段 extension order；改为头部 GREASE 固定、尾部 GREASE 固定、中段扩展随机化
   - family 证据显示：
     - Go: `12 runs -> 12` 个不同 order families
     - Rust: `12 runs -> 12` 个不同 order families
@@ -53,8 +35,25 @@
     - Go `fe0d` len: `{186, 218, 250, 282}`
     - Rust `fe0d` len: 目前固定 `218`
   - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
-- 当前报告：
-  - `agents-only/mt_real_02_baseline.md`
+- Round 4（dynamic `BoringGREASEECH` family）：
+  - Rust 已移除静态 `0xfe0d` baseline blob，改为按 Go `uTLS` `BoringGREASEECH` 模板动态生成：
+    - `outer_type=0x00`
+    - `kdf=0x0001`
+    - `aead=0x0001`
+    - `config_id=random`
+    - `encapsulated_key_len=32`
+    - `payload_len ∈ {144, 176, 208, 240}`
+  - 新测试：
+    - `test_chrome_baseline_ech_outer_matches_utls_boring_grease_family`
+  - family 证据（`40 runs`）显示：
+    - Go `record_len`: `{496, 528, 560, 592}`
+    - Rust `record_len`: `{496, 528, 560, 592}`
+    - Go `fe0d` len: `{186, 218, 250, 282}`
+    - Rust `fe0d` len: `{186, 218, 250, 282}`
+    - Go / Rust extension presence 均一致，头尾 extension 均固定为 GREASE
+  - 单次 diff 现在主要表现为“同族不同抽样”，不再是静态缺口
+  - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
+- 当前报告：`agents-only/mt_real_02_baseline.md`
 
 ## 仍然有效的历史结论
 
@@ -84,5 +83,7 @@
   - live chrome 样本复测
 - 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
   - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
-  - 当前更具体的下一焦点是 `fe0d` / record-length 动态族
+  - `fe0d` / record-length 动态族已被覆盖，下一焦点转向更深层运行时行为：
+    - extension order 与 `fe0d` 档位的相关性
+    - `HelloChrome_Auto` 其余动态语义 / 发包 shaping
   - 暂不回到盲补单个固定报文

@@ -138,7 +138,7 @@
     - `0x0012`
     - `0x001b`
     - `0x44cd`
-    - `0xfe0d`（当前先使用 baseline sample payload）
+    - `0xfe0d`（当时先使用 baseline sample payload；后续已在 Round 4 替换为动态 `BoringGREASEECH` family）
     - `0x0023`
     - `0xff01`
     - 尾部 GREASE
@@ -262,6 +262,81 @@
 1. 不要回退到再补单个固定 Chrome 报文
 2. 下一轮优先研究 `fe0d` / `record_len` 的动态 family，而不是再只盯 extension order
 3. 如果 `fe0d` family 也被逼近后 live 仍然 `0/x`，再正式评估更重路线：
+   - `uTLS` 等价层
+   - FFI / BoringSSL
+   - 更激进的 TLS 发包控制
+
+## 2026-04-16 进展更新：dynamic `BoringGREASEECH` family
+
+### 实现
+
+- Rust REALITY chrome-like 路径已移除静态 `0xfe0d` baseline blob
+- 改为直接复刻 Go `uTLS` `BoringGREASEECH` family：
+  - `outer_type = 0x00`
+  - `kdf_id = 0x0001`
+  - `aead_id = 0x0001`
+  - `config_id = random u8`
+  - `encapsulated_key_len = 32`
+  - `payload_len ∈ {144, 176, 208, 240}`
+  - 因而：
+    - `0xfe0d` len family = `{186, 218, 250, 282}`
+    - `record_len` family = `{496, 528, 560, 592}`
+- 新增测试：
+  - `test_chrome_baseline_ech_outer_matches_utls_boring_grease_family`
+  - 原 `test_chrome_baseline_extensions_are_injected` 也已改为验证 family 结构，而不是固定 `218`
+
+### 验证
+
+- `cargo test -p sb-tls` → PASS
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh`
+  - 当前单次 diff 主要表现为“同一动态 family 内的不同抽样”
+  - 本轮固化证据样本中：
+    - Go `record_len = 592`, `fe0d len = 282`
+    - Rust `record_len = 528`, `fe0d len = 218`
+  - 这已不再表示 Rust 缺结构，而是两侧各自抽到了 family 的不同 member
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh`
+  - Go（40 runs）：
+    - `record_len` 分布：`496 x8`, `528 x12`, `560 x11`, `592 x9`
+    - `fe0d` len 分布：`186 x8`, `218 x12`, `250 x11`, `282 x9`
+    - `order_family_count = 40`
+  - Rust（40 runs）：
+    - `record_len` 分布：`496 x9`, `528 x13`, `560 x11`, `592 x7`
+    - `fe0d` len 分布：`186 x9`, `218 x13`, `250 x11`, `282 x7`
+    - `order_family_count = 40`
+  - 额外可确认：
+    - Go / Rust extension presence 全量一致
+    - 头部 extension 始终是 GREASE
+    - 尾部 extension 始终是 GREASE
+
+### live 复测
+
+- 临时配置：
+  - `/tmp/phase3_ip_direct_mt_real02_round2_chrome.json`
+- 样本：
+  - `HK-A-BGP-0.3倍率`
+  - `HK-A-BGP-1.0倍率`
+  - `HK-A-BGP-2.0倍率`
+- 结果仍为 `0/3`
+  - 三个样本均 `curl: (97) Can't complete SOCKS5 connection`
+  - app 日志仍统一落在：
+    - `REALITY handshake failed ... tls handshake eof`
+
+## 更新后的结论（再次收敛）
+
+- `fe0d` / `record_len` 动态 family 本身已不再是主 blocker
+- 这意味着当前更深一层的未知数已经收敛到：
+  - `HelloChrome_Auto` 运行时更细的相关性，而不只是“是否出现某个 family member”
+  - extension order 与 `fe0d` 档位是否存在 Go 特有耦合
+  - 更深层的 TLS / socket 发包 shaping
+
+## 下一步建议（再次更新）
+
+1. 保持 baseline harness 驱动，不回到盲补固定报文
+2. 下一轮优先研究：
+   - extension order 与 `fe0d` 档位的联动
+   - Go `HelloChrome_Auto` family 的更细粒度相关性，而不只看边际分布
+3. 如果相关性也被覆盖后 live 仍然 `0/x`，再正式进入更重路线评估：
    - `uTLS` 等价层
    - FFI / BoringSSL
    - 更激进的 TLS 发包控制

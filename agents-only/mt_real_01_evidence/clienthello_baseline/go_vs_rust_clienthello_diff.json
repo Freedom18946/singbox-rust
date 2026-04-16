@@ -2,6 +2,175 @@
   "go": {
     "record_type": "0x16",
     "record_version": "0x0301",
+    "record_len": 592,
+    "handshake_type": "0x01",
+    "handshake_len": 588,
+    "client_version": "0x0303",
+    "random_len": 32,
+    "session_id_len": 32,
+    "cipher_suites": [
+      "GREASE",
+      "0x1301",
+      "0x1302",
+      "0x1303",
+      "0xc02b",
+      "0xc02f",
+      "0xc02c",
+      "0xc030",
+      "0xcca9",
+      "0xcca8",
+      "0xc013",
+      "0xc014",
+      "0x009c",
+      "0x009d",
+      "0x002f",
+      "0x0035"
+    ],
+    "compression_methods": [
+      "0x00"
+    ],
+    "extensions_order": [
+      "GREASE",
+      "0x0033",
+      "0xff01",
+      "0x0010",
+      "0x000a",
+      "0x0017",
+      "0x001b",
+      "0x44cd",
+      "0xfe0d",
+      "0x002b",
+      "0x0023",
+      "0x0000",
+      "0x000b",
+      "0x000d",
+      "0x0012",
+      "0x0005",
+      "0x002d",
+      "GREASE"
+    ],
+    "extensions": [
+      {
+        "type": "GREASE",
+        "len": 0
+      },
+      {
+        "type": "0x0033",
+        "len": 43,
+        "key_share": [
+          {
+            "group": "GREASE",
+            "len": 1
+          },
+          {
+            "group": "0x001d",
+            "len": 32
+          }
+        ]
+      },
+      {
+        "type": "0xff01",
+        "len": 1
+      },
+      {
+        "type": "0x0010",
+        "len": 14,
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ]
+      },
+      {
+        "type": "0x000a",
+        "len": 10,
+        "supported_groups": [
+          "GREASE",
+          "0x001d",
+          "0x0017",
+          "0x0018"
+        ]
+      },
+      {
+        "type": "0x0017",
+        "len": 0
+      },
+      {
+        "type": "0x001b",
+        "len": 3
+      },
+      {
+        "type": "0x44cd",
+        "len": 5
+      },
+      {
+        "type": "0xfe0d",
+        "len": 282
+      },
+      {
+        "type": "0x002b",
+        "len": 7,
+        "supported_versions": [
+          "GREASE",
+          "0x0304",
+          "0x0303"
+        ]
+      },
+      {
+        "type": "0x0023",
+        "len": 0
+      },
+      {
+        "type": "0x0000",
+        "len": 18,
+        "server_names": [
+          {
+            "type": 0,
+            "name": "www.apple.com"
+          }
+        ]
+      },
+      {
+        "type": "0x000b",
+        "len": 2,
+        "ec_point_formats": [
+          "0x00"
+        ]
+      },
+      {
+        "type": "0x000d",
+        "len": 18,
+        "signature_algorithms": [
+          "0x0403",
+          "0x0804",
+          "0x0401",
+          "0x0503",
+          "0x0805",
+          "0x0501",
+          "0x0806",
+          "0x0601"
+        ]
+      },
+      {
+        "type": "0x0012",
+        "len": 0
+      },
+      {
+        "type": "0x0005",
+        "len": 5
+      },
+      {
+        "type": "0x002d",
+        "len": 2
+      },
+      {
+        "type": "GREASE",
+        "len": 1
+      }
+    ]
+  },
+  "rust": {
+    "record_type": "0x16",
+    "record_version": "0x0301",
     "record_len": 528,
     "handshake_type": "0x01",
     "handshake_len": 524,
@@ -31,22 +200,22 @@
     ],
     "extensions_order": [
       "GREASE",
-      "0xff01",
-      "0x0010",
-      "0x0012",
-      "0x002b",
-      "0x001b",
-      "0x000b",
-      "0x000d",
-      "0x44cd",
-      "0x000a",
-      "0x0033",
       "0x0017",
-      "0xfe0d",
-      "0x0000",
+      "0x000b",
+      "0xff01",
       "0x002d",
-      "0x0023",
+      "0x0033",
+      "0x0010",
+      "0x002b",
       "0x0005",
+      "0x000a",
+      "0x0023",
+      "0x0000",
+      "0x000d",
+      "0x0012",
+      "0x001b",
+      "0x44cd",
+      "0xfe0d",
       "GREASE"
     ],
     "extensions": [
@@ -55,8 +224,37 @@
         "len": 0
       },
       {
+        "type": "0x0017",
+        "len": 0
+      },
+      {
+        "type": "0x000b",
+        "len": 2,
+        "ec_point_formats": [
+          "0x00"
+        ]
+      },
+      {
         "type": "0xff01",
         "len": 1
+      },
+      {
+        "type": "0x002d",
+        "len": 2
+      },
+      {
+        "type": "0x0033",
+        "len": 43,
+        "key_share": [
+          {
+            "group": "GREASE",
+            "len": 1
+          },
+          {
+            "group": "0x001d",
+            "len": 32
+          }
+        ]
       },
       {
         "type": "0x0010",
@@ -65,10 +263,6 @@
           "h2",
           "http/1.1"
         ]
-      },
-      {
-        "type": "0x0012",
-        "len": 0
       },
       {
         "type": "0x002b",
@@ -80,14 +274,31 @@
         ]
       },
       {
-        "type": "0x001b",
-        "len": 3
+        "type": "0x0005",
+        "len": 5
       },
       {
-        "type": "0x000b",
-        "len": 2,
-        "ec_point_formats": [
-          "0x00"
+        "type": "0x000a",
+        "len": 10,
+        "supported_groups": [
+          "GREASE",
+          "0x001d",
+          "0x0017",
+          "0x0018"
+        ]
+      },
+      {
+        "type": "0x0023",
+        "len": 0
+      },
+      {
+        "type": "0x0000",
+        "len": 18,
+        "server_names": [
+          {
+            "type": 0,
+            "name": "www.apple.com"
+          }
         ]
       },
       {
@@ -105,180 +316,24 @@
         ]
       },
       {
+        "type": "0x0012",
+        "len": 0
+      },
+      {
+        "type": "0x001b",
+        "len": 3
+      },
+      {
         "type": "0x44cd",
         "len": 5
-      },
-      {
-        "type": "0x000a",
-        "len": 10,
-        "supported_groups": [
-          "GREASE",
-          "0x001d",
-          "0x0017",
-          "0x0018"
-        ]
-      },
-      {
-        "type": "0x0033",
-        "len": 43,
-        "key_share": [
-          {
-            "group": "GREASE",
-            "len": 1
-          },
-          {
-            "group": "0x001d",
-            "len": 32
-          }
-        ]
-      },
-      {
-        "type": "0x0017",
-        "len": 0
       },
       {
         "type": "0xfe0d",
         "len": 218
       },
       {
-        "type": "0x0000",
-        "len": 18,
-        "server_names": [
-          {
-            "type": 0,
-            "name": "www.apple.com"
-          }
-        ]
-      },
-      {
-        "type": "0x002d",
-        "len": 2
-      },
-      {
-        "type": "0x0023",
-        "len": 0
-      },
-      {
-        "type": "0x0005",
-        "len": 5
-      },
-      {
         "type": "GREASE",
         "len": 1
-      }
-    ]
-  },
-  "rust": {
-    "record_type": "0x16",
-    "record_version": "0x0301",
-    "record_len": 241,
-    "handshake_type": "0x01",
-    "handshake_len": 237,
-    "client_version": "0x0303",
-    "random_len": 32,
-    "session_id_len": 32,
-    "cipher_suites": [
-      "0x1301",
-      "0x1302",
-      "0x1303",
-      "0xc02b",
-      "0xc02f",
-      "0xc02c",
-      "0xc030"
-    ],
-    "compression_methods": [
-      "0x00"
-    ],
-    "extensions_order": [
-      "0x0005",
-      "0x002b",
-      "0x000a",
-      "0x0010",
-      "0x0017",
-      "0x0000",
-      "0x000d",
-      "0x000b",
-      "0x002d",
-      "0x0033"
-    ],
-    "extensions": [
-      {
-        "type": "0x0005",
-        "len": 5
-      },
-      {
-        "type": "0x002b",
-        "len": 3,
-        "supported_versions": [
-          "0x0304"
-        ]
-      },
-      {
-        "type": "0x000a",
-        "len": 8,
-        "supported_groups": [
-          "0x001d",
-          "0x0017",
-          "0x0018"
-        ]
-      },
-      {
-        "type": "0x0010",
-        "len": 14,
-        "alpn": [
-          "h2",
-          "http/1.1"
-        ]
-      },
-      {
-        "type": "0x0017",
-        "len": 0
-      },
-      {
-        "type": "0x0000",
-        "len": 18,
-        "server_names": [
-          {
-            "type": 0,
-            "name": "www.apple.com"
-          }
-        ]
-      },
-      {
-        "type": "0x000d",
-        "len": 20,
-        "signature_algorithms": [
-          "0x0503",
-          "0x0403",
-          "0x0807",
-          "0x0806",
-          "0x0805",
-          "0x0804",
-          "0x0601",
-          "0x0501",
-          "0x0401"
-        ]
-      },
-      {
-        "type": "0x000b",
-        "len": 2,
-        "ec_point_formats": [
-          "0x00"
-        ]
-      },
-      {
-        "type": "0x002d",
-        "len": 2
-      },
-      {
-        "type": "0x0033",
-        "len": 38,
-        "key_share": [
-          {
-            "group": "0x001d",
-            "len": 32
-          }
-        ]
       }
     ]
   },
