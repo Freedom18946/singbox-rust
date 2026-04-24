@@ -3450,3 +3450,78 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
   - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## 2026-04-24 进展更新：Round 32 Vision DIRECT record-boundary parity
+
+### 目标
+
+- 延续 Round 31 的 live dataplane 方向，但重新校准“首 DIRECT content_len=145”是否真是 Go parity。
+- 不回到静态 ClientHello 模板、固定 bucket、固定 position、或 position->mode 规则。
+
+### Go trace 发现
+
+- 使用 `/tmp/sing-box-with-utls-clash` 与 trace log 跑真实 `HK-A-BGP-1.0倍率` default HTTPS：
+  - `4/4` HTTP `200`
+- Go `VisionConn` 在 curl 默认 HTTP/2 下的真实写侧形态：
+  - `XtlsPadding 321 ... 0`：inner TLS ClientHello CONTINUE
+  - `XtlsPadding 64 ... 0`：server hello 后一个 CONTINUE
+  - `XtlsPadding 86 ... 2`：first DIRECT
+- 结论：
+  - Round 31 的 `direct_content_len=145` 是 Rust 侧局部改善形态，不是 Go parity 目标。
+  - 正确下一步应把 Rust first DIRECT 重新约束到当前 TLS record 边界，再解释为什么同形态下仍有 no-raw-read 残差。
+
+### 实现
+
+- 文件：
+  - `crates/sb-adapters/src/outbound/vless.rs`
+- XTLS direct gate 修正：
+  - Rust 之前在 TLS1.3 supported_versions 出现但 cipher 未解析时也启用 XTLS。
+  - 现在要求 `cipher.is_some_and(|cipher| cipher != TLS13_AES_128_CCM_8_SHA256)`，对齐 Go `tls13CipherSuiteDic` lookup 成功后才启用 direct 的行为。
+- first-DIRECT coalesce 改为 TLS record-boundary aware：
+  - 新增 `tls_record_len(...)` 与 `split_direct_tls_record(...)`。
+  - coalesce 只补齐当前 TLS application-data record。
+  - 如果一次 downstream read 已经越过当前 TLS record，超出的 bytes 不再进入 DIRECT frame，而是作为 delayed raw chunk 排队。
+  - 保留 Round 31 的 deferred raw write machinery 与 DIRECT 后 guard。
+
+### 新增/增强测试
+
+- `test_vision_encoder_does_not_direct_without_known_tls13_cipher`
+- `test_vision_encoder_does_not_direct_for_tls13_ccm8_cipher`
+- `test_split_direct_tls_record_keeps_overflow_for_raw_write`
+
+### live 复测
+
+#### Rust full app
+
+- 构建：
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+- 配置：
+  - `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+- info run:
+  - `HK-A-BGP-0.3倍率` default HTTPS：`6/12` HTTP `200`
+  - `HK-A-BGP-1.0倍率` default HTTPS：`5/12` HTTP `200`
+- debug run:
+  - `HK-A-BGP-1.0倍率` default HTTPS：`4/6` HTTP `200`
+  - debug log 已显示 Rust 回到 Go-like `direct_content_len=86`，并可见 DIRECT 后 `raw_write_len=59`。
+
+### 当前判定
+
+- Round 32 是 parity/diagnostic 纠偏，不是最终 live 完成。
+- HTTP2 residual 仍存在，失败仍主要是 `curl (16) Error in the HTTP2 framing layer`。
+- 当前更精确的问题变成：
+  - Go 的 `86 DIRECT + raw remainder` 稳定；
+  - Rust 现在也能复现该 DIRECT 边界，但仍随机出现 client DIRECT 已发、server DIRECT raw-read 未进入。
+- 下一轮应继续聚焦 raw/direct timing 与 remote server rawInput drain 的差异；不应基于本轮样本改 REALITY sampler。
+
+### 验证
+
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS
+  - `13 passed`
+- `cargo test -p sb-tls` → PASS
+  - `117 passed`
+  - doctest `1 passed`
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS

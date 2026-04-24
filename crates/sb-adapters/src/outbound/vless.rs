@@ -924,7 +924,10 @@ impl VisionTlsState {
                 .windows(TLS13_SUPPORTED_VERSIONS.len())
                 .any(|window| window == TLS13_SUPPORTED_VERSIONS)
             {
-                if self.cipher != Some(TLS13_AES_128_CCM_8_SHA256) {
+                if self
+                    .cipher
+                    .is_some_and(|cipher| cipher != TLS13_AES_128_CCM_8_SHA256)
+                {
                     self.enable_xtls = true;
                 }
                 self.packets_to_filter = 0;
@@ -1046,17 +1049,21 @@ impl VisionEncoder {
         }
     }
 
-    fn should_coalesce_direct_input(&self, input: &[u8]) -> bool {
+    fn direct_input_tls_record_len(&self, input: &[u8]) -> Option<usize> {
         if !self.is_padding
             || !self.allow_direct
             || input.len() <= 6
             || !input.starts_with(&TLS_APPLICATION_DATA_START)
         {
-            return false;
+            return None;
         }
 
         let tls_state = self.tls_state.lock();
-        tls_state.is_tls && tls_state.enable_xtls
+        if tls_state.is_tls && tls_state.enable_xtls {
+            tls_record_len(input)
+        } else {
+            None
+        }
     }
 
     fn padding(&mut self, content: &[u8], command: u8, is_tls: bool) -> Vec<u8> {
@@ -1085,6 +1092,22 @@ impl VisionEncoder {
         rand::thread_rng().fill_bytes(&mut frame[padding_start..]);
         frame
     }
+}
+
+fn tls_record_len(input: &[u8]) -> Option<usize> {
+    if input.len() < 5 || !input.starts_with(&TLS_APPLICATION_DATA_START) {
+        return None;
+    }
+
+    Some(5 + u16::from_be_bytes([input[3], input[4]]) as usize)
+}
+
+fn split_direct_tls_record(input: &mut Vec<u8>, record_len: usize) -> Vec<u8> {
+    if input.len() <= record_len {
+        return Vec::new();
+    }
+
+    input.split_off(record_len)
 }
 
 struct VisionDecoder {
@@ -1523,23 +1546,36 @@ impl VisionRealityClientStream {
                         };
 
                         let mut input = write_buffer[..read].to_vec();
-                        if encoder.should_coalesce_direct_input(&input) {
-                            let mut extra = vec![0u8; VISION_CHUNK_SIZE];
-                            match tokio::time::timeout(
-                                VISION_DIRECT_COALESCE_DELAY,
-                                writer_bridge.read(&mut extra),
-                            )
-                            .await
-                            {
-                                Ok(Ok(0)) => {
-                                    writer_closed = true;
+                        let mut direct_raw_remainder = Vec::new();
+                        if let Some(record_len) = encoder.direct_input_tls_record_len(&input) {
+                            while input.len() < record_len {
+                                let mut extra = vec![0u8; VISION_CHUNK_SIZE];
+                                match tokio::time::timeout(
+                                    VISION_DIRECT_COALESCE_DELAY,
+                                    writer_bridge.read(&mut extra),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(0)) => {
+                                        writer_closed = true;
+                                        break;
+                                    }
+                                    Ok(Ok(extra_read)) => {
+                                        let needed = record_len.saturating_sub(input.len());
+                                        let take = needed.min(extra_read);
+                                        input.extend_from_slice(&extra[..take]);
+                                        if take < extra_read {
+                                            direct_raw_remainder
+                                                .extend_from_slice(&extra[take..extra_read]);
+                                            break;
+                                        }
+                                    }
+                                    Ok(Err(_)) => break,
+                                    Err(_) => break,
                                 }
-                                Ok(Ok(extra_read)) => {
-                                    input.extend_from_slice(&extra[..extra_read]);
-                                }
-                                Ok(Err(_)) => break,
-                                Err(_) => {}
                             }
+                            direct_raw_remainder
+                                .extend(split_direct_tls_record(&mut input, record_len));
                         }
 
                         let plan = encoder.encode(&input);
@@ -1550,8 +1586,14 @@ impl VisionRealityClientStream {
                         let mut flush_after_plan = true;
                         for (index, chunk) in plan.chunks.iter().enumerate() {
                             if plan.enter_direct_after_first_chunk && index > 0 {
+                                let mut deferred_chunks: Vec<Vec<u8>> =
+                                    plan.chunks.iter().skip(index).cloned().collect();
+                                let raw_remainder = std::mem::take(&mut direct_raw_remainder);
+                                if !raw_remainder.is_empty() {
+                                    deferred_chunks.push(raw_remainder);
+                                }
                                 deferred_raw_writes.schedule_after_direct(
-                                    plan.chunks.iter().skip(index).cloned(),
+                                    deferred_chunks,
                                     tokio::time::Instant::now(),
                                 );
                                 flush_after_plan = false;
@@ -1601,8 +1643,14 @@ impl VisionRealityClientStream {
                                 if stream.flush_tls().await.is_err() {
                                     return;
                                 }
+                                let raw_remainder = std::mem::take(&mut direct_raw_remainder);
+                                let deferred_chunks = if raw_remainder.is_empty() {
+                                    Vec::new()
+                                } else {
+                                    vec![raw_remainder]
+                                };
                                 deferred_raw_writes.schedule_after_direct(
-                                    std::iter::empty::<Vec<u8>>(),
+                                    deferred_chunks,
                                     tokio::time::Instant::now(),
                                 );
                                 use_raw_writes = true;
@@ -1954,10 +2002,25 @@ mod tests {
         let mut appdata = TLS_APPLICATION_DATA_START.to_vec();
         appdata.extend_from_slice(b"\x00\x02xy");
 
-        assert!(encoder.should_coalesce_direct_input(&appdata));
-        assert!(!encoder.should_coalesce_direct_input(b"\x16\x03\x03\x00\x01x"));
+        assert_eq!(encoder.direct_input_tls_record_len(&appdata), Some(7));
+        assert_eq!(
+            encoder.direct_input_tls_record_len(b"\x16\x03\x03\x00\x01x"),
+            None
+        );
         let _ = encoder.encode(&appdata);
-        assert!(!encoder.should_coalesce_direct_input(&appdata));
+        assert_eq!(encoder.direct_input_tls_record_len(&appdata), None);
+    }
+
+    #[test]
+    fn test_split_direct_tls_record_keeps_overflow_for_raw_write() {
+        let mut appdata = TLS_APPLICATION_DATA_START.to_vec();
+        appdata.extend_from_slice(b"\x00\x02xy");
+        appdata.extend_from_slice(b"next-record");
+
+        let overflow = split_direct_tls_record(&mut appdata, 7);
+
+        assert_eq!(appdata, b"\x17\x03\x03\x00\x02xy");
+        assert_eq!(overflow, b"next-record");
     }
 
     #[test]
@@ -1990,6 +2053,44 @@ mod tests {
         let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x01, 0x02]);
         assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_DIRECT);
         assert!(plan.enter_direct_after_first_chunk);
+    }
+
+    #[test]
+    fn test_vision_encoder_does_not_direct_without_known_tls13_cipher() {
+        let uuid = [12u8; VISION_UUID_LEN];
+        let tls_state = vision_tls_state();
+        let mut encoder = VisionEncoder::new(uuid, tls_state.clone());
+        let mut decoder = VisionDecoder::new(uuid, tls_state);
+
+        let mut server_hello = tls13_server_hello(0x1301);
+        server_hello.truncate(76);
+        decoder
+            .decode(&vision_frame(uuid, COMMAND_PADDING_CONTINUE, &server_hello))
+            .unwrap();
+
+        let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x01, 0x02]);
+        assert!(!plan.enter_direct_after_first_chunk);
+        assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_END);
+    }
+
+    #[test]
+    fn test_vision_encoder_does_not_direct_for_tls13_ccm8_cipher() {
+        let uuid = [13u8; VISION_UUID_LEN];
+        let tls_state = vision_tls_state();
+        let mut encoder = VisionEncoder::new(uuid, tls_state.clone());
+        let mut decoder = VisionDecoder::new(uuid, tls_state);
+
+        decoder
+            .decode(&vision_frame(
+                uuid,
+                COMMAND_PADDING_CONTINUE,
+                &tls13_server_hello(TLS13_AES_128_CCM_8_SHA256),
+            ))
+            .unwrap();
+
+        let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x01, 0x02]);
+        assert!(!plan.enter_direct_after_first_chunk);
+        assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_END);
     }
 
     #[test]

@@ -943,3 +943,44 @@
   - `cargo check --workspace` → PASS
   - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected single-sample dynamic-family diff)
   - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 32（Vision DIRECT record-boundary parity）
+
+- 本轮继续 live dataplane，不回到 ClientHello 静态模板、固定 bucket、固定 position、或 position->mode 硬耦合。
+- 先修正一个 Go parity gate：
+  - Go `VisionConn` 只有在 TLS1.3 cipher suite 已成功解析且不是 `TLS_AES_128_CCM_8_SHA256` 时启用 XTLS direct。
+  - Rust 之前在 cipher 未解析出来时也会启用 direct；这会让短/分片 ServerHello 错误进入 raw-bypass。
+  - 已改成 `cipher.is_some_and(|cipher| cipher != TLS13_AES_128_CCM_8_SHA256)`。
+- Go trace 重新校准 Round 31 的假设：
+  - 用 `/tmp/sing-box-with-utls-clash` + trace log 对 `HK-A-BGP-1.0倍率` default HTTPS 跑 4 样本，Go `4/4` HTTP `200`。
+  - Go `XtlsPadding` 真实形态是：
+    - client hello `321 CONTINUE`
+    - server hello 后 `64 CONTINUE`
+    - first DIRECT `86 DIRECT`
+  - 这说明 Round 31 把 `86 + 59` 合并成 `direct_content_len=145` 是局部改善形态，不是 Go parity 目标。
+- Rust 侧把 first-DIRECT coalesce 改为 TLS record-boundary aware：
+  - 只补齐当前 TLS application-data record。
+  - 如果一次 downstream read 已经越过当前 TLS record，超出的 bytes 不再塞进 DIRECT frame，而是作为延迟 raw chunk 排队。
+  - 当前 debug run 已回到 Go-like `direct_content_len=86`，并能看到 `raw_write_len=59` 在 DIRECT 后排出。
+- 新增/增强测试：
+  - `test_vision_encoder_does_not_direct_without_known_tls13_cipher`
+  - `test_vision_encoder_does_not_direct_for_tls13_ccm8_cipher`
+  - `test_split_direct_tls_record_keeps_overflow_for_raw_write`
+- live 复测：
+  - Rust full app info run：
+    - `HK-A-BGP-0.3倍率` default HTTPS：`6/12` HTTP `200`
+    - `HK-A-BGP-1.0倍率` default HTTPS：`5/12` HTTP `200`
+  - Rust debug run on `HK-A-BGP-1.0倍率`：`4/6` HTTP `200`
+  - 失败仍主要是 `curl (16) Error in the HTTP2 framing layer`。
+  - 失败样本常见“client DIRECT 已发，但没有进入 server DIRECT raw reads”；成功样本会继续出现 `Vision REALITY enabling raw reads` 与后续 raw writes。
+- 结构结论：
+  - Round 32 提升的是 Go parity 和诊断可信度，不是最终 live 收口。
+  - 目前不能把 Round 31 的 `direct_content_len=145` 继续当目标；下一轮应聚焦为什么 Go 的 `86 DIRECT + raw remainder` 稳，而 Rust 同形态仍随机没有 server raw-read。
+  - 继续不改 REALITY sampler，除非后续 family × no-raw-read 样本收敛出比本轮更强的证据。
+- 本轮 gate：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS (`13 passed`)
+  - `cargo test -p sb-tls` → PASS (`117 passed`, doctest `1 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
