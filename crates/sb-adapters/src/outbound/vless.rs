@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
 #[cfg(feature = "tls_reality")]
@@ -476,12 +475,10 @@ impl OutboundConnector for VlessConnector {
 
                 self.write_request(&mut tls_stream, &target).await?;
 
-                let tls_stream: BoxedStream = Box::new(tls_stream);
-                let stream: BoxedStream = Box::new(VisionClientStream::new_with_direct(
+                let stream: BoxedStream = Box::new(VisionRealityClientStream::new(
                     tls_stream,
                     *self.config.uuid.as_bytes(),
                     true,
-                    false,
                 ));
                 tracing::debug!("VLESS connection established to: {:?}", target);
                 return Ok(stream);
@@ -504,12 +501,10 @@ impl OutboundConnector for VlessConnector {
 
                 self.write_request(&mut tls_stream, &target).await?;
 
-                let tls_stream: BoxedStream = Box::new(tls_stream);
-                let stream: BoxedStream = Box::new(VisionClientStream::new_with_direct(
+                let stream: BoxedStream = Box::new(VisionRealityClientStream::new(
                     tls_stream,
                     *self.config.uuid.as_bytes(),
                     true,
-                    false,
                 ));
                 tracing::debug!("VLESS connection established to: {:?}", target);
                 return Ok(stream);
@@ -906,6 +901,7 @@ struct VisionEncoder {
 struct VisionWritePlan {
     chunks: Vec<Vec<u8>>,
     pause_after_first_chunk: bool,
+    enter_direct_after_first_chunk: bool,
 }
 
 impl VisionEncoder {
@@ -933,6 +929,7 @@ impl VisionEncoder {
             return VisionWritePlan {
                 chunks: Vec::new(),
                 pause_after_first_chunk: false,
+                enter_direct_after_first_chunk: false,
             };
         }
 
@@ -941,6 +938,7 @@ impl VisionEncoder {
             return VisionWritePlan {
                 chunks: vec![input.to_vec()],
                 pause_after_first_chunk: false,
+                enter_direct_after_first_chunk: false,
             };
         }
 
@@ -964,6 +962,7 @@ impl VisionEncoder {
                     chunks.extend(buffers.iter().skip(index + 1).cloned());
                     return VisionWritePlan {
                         pause_after_first_chunk: chunks.len() > 1,
+                        enter_direct_after_first_chunk: true,
                         chunks,
                     };
                 }
@@ -975,6 +974,7 @@ impl VisionEncoder {
                 return VisionWritePlan {
                     chunks: vec![output],
                     pause_after_first_chunk: false,
+                    enter_direct_after_first_chunk: false,
                 };
             }
 
@@ -987,6 +987,7 @@ impl VisionEncoder {
                 return VisionWritePlan {
                     chunks: vec![output],
                     pause_after_first_chunk: false,
+                    enter_direct_after_first_chunk: false,
                 };
             }
 
@@ -996,6 +997,7 @@ impl VisionEncoder {
         VisionWritePlan {
             chunks: vec![output],
             pause_after_first_chunk: false,
+            enter_direct_after_first_chunk: false,
         }
     }
 
@@ -1168,6 +1170,62 @@ where
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct VlessResponsePeeler {
+    header: Vec<u8>,
+    additional: Vec<u8>,
+    additional_len: Option<usize>,
+    complete: bool,
+}
+
+impl VlessResponsePeeler {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn consume<'a>(&mut self, chunk: &'a [u8]) -> std::io::Result<Option<&'a [u8]>> {
+        if self.complete {
+            return Ok(Some(chunk));
+        }
+
+        let mut offset = 0;
+        if self.additional_len.is_none() {
+            let needed = 2usize.saturating_sub(self.header.len());
+            let take = needed.min(chunk.len());
+            self.header.extend_from_slice(&chunk[..take]);
+            offset += take;
+
+            if self.header.len() < 2 {
+                return Ok(None);
+            }
+
+            if self.header[0] != 0x00 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("VLESS handshake failed with version: {}", self.header[0]),
+                ));
+            }
+            self.additional_len = Some(self.header[1] as usize);
+            self.header.clear();
+        }
+
+        let additional_len = self.additional_len.expect("set above");
+        let needed = additional_len.saturating_sub(self.additional.len());
+        let take = needed.min(chunk.len().saturating_sub(offset));
+        self.additional
+            .extend_from_slice(&chunk[offset..offset + take]);
+        offset += take;
+
+        if self.additional.len() < additional_len {
+            return Ok(None);
+        }
+
+        self.complete = true;
+        self.additional.clear();
+        Ok(Some(&chunk[offset..]))
+    }
+}
+
 #[cfg(feature = "tls_reality")]
 #[allow(dead_code)]
 async fn consume_vless_response_tls(
@@ -1290,16 +1348,13 @@ impl VisionClientStream {
 }
 
 #[cfg(feature = "tls_reality")]
-#[allow(dead_code)]
 struct VisionRealityClientStream {
     reader: DuplexStream,
     writer: DuplexStream,
-    read_task: tokio::task::JoinHandle<()>,
-    write_task: tokio::task::JoinHandle<()>,
+    io_task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "tls_reality")]
-#[allow(dead_code)]
 impl VisionRealityClientStream {
     fn new(
         stream: RealityClientTlsStream<BoxedStream>,
@@ -1309,144 +1364,129 @@ impl VisionRealityClientStream {
         let (reader, mut reader_bridge) = tokio::io::duplex(64 * 1024);
         let (mut writer_bridge, writer) = tokio::io::duplex(64 * 1024);
         let tls_state = Arc::new(Mutex::new(VisionTlsState::new()));
-        let shared_stream: Arc<AsyncMutex<RealityClientTlsStream<BoxedStream>>> =
-            Arc::new(AsyncMutex::new(stream));
-
-        let read_tls_state = tls_state.clone();
-        let read_stream = shared_stream.clone();
-        let read_task = tokio::spawn(async move {
-            let mut decoder = VisionDecoder::new(user_uuid, read_tls_state);
-            let mut buffer = vec![0u8; VISION_CHUNK_SIZE];
+        let io_task = tokio::spawn(async move {
+            let mut stream = stream;
+            let mut decoder = VisionDecoder::new(user_uuid, tls_state.clone());
+            let mut encoder = VisionEncoder::new(user_uuid, tls_state);
+            let mut read_buffer = vec![0u8; VISION_CHUNK_SIZE];
+            let mut write_buffer = vec![0u8; VISION_CHUNK_SIZE];
+            let mut response_peeler = response_pending.then(VlessResponsePeeler::new);
             let mut use_raw_reads = false;
-
-            if response_pending {
-                let response_result = {
-                    let mut stream = read_stream.lock().await;
-                    consume_vless_response_tls(&mut stream).await
-                };
-                if response_result.is_err() {
-                    let _ = reader_bridge.shutdown().await;
-                    return;
-                }
-            }
-
-            loop {
-                let read = {
-                    let mut stream = read_stream.lock().await;
-                    if use_raw_reads {
-                        stream.read_raw(&mut buffer).await
-                    } else {
-                        stream.read_tls(&mut buffer).await
-                    }
-                };
-
-                let read = match read {
-                    Ok(0) => break,
-                    Ok(read) => read,
-                    Err(_) => break,
-                };
-
-                let decoded = match decoder.decode(&buffer[..read]) {
-                    Ok(decoded) => decoded,
-                    Err(_) => break,
-                };
-                if !decoded.is_empty() && reader_bridge.write_all(&decoded).await.is_err() {
-                    break;
-                }
-                if !use_raw_reads && decoder.raw_reads_enabled() {
-                    let (pending_plaintext, buffered_raw_tls) = {
-                        let mut stream = read_stream.lock().await;
-                        (
-                            stream.take_pending_tls_plaintext(),
-                            stream.take_buffered_raw_tls(),
-                        )
-                    };
-                    let drained = match drain_vision_direct_read_buffers(
-                        &mut decoder,
-                        &pending_plaintext,
-                        &buffered_raw_tls,
-                    ) {
-                        Ok(drained) => drained,
-                        Err(_) => break,
-                    };
-                    if !drained.is_empty() && reader_bridge.write_all(&drained).await.is_err() {
-                        break;
-                    }
-                    use_raw_reads = true;
-                }
-            }
-            let _ = reader_bridge.shutdown().await;
-        });
-
-        let write_tls_state = tls_state;
-        let write_task = tokio::spawn(async move {
-            let mut encoder = VisionEncoder::new(user_uuid, write_tls_state);
-            let mut buffer = vec![0u8; VISION_CHUNK_SIZE];
             let mut use_raw_writes = false;
+            let mut writer_closed = false;
 
             loop {
-                let read = match writer_bridge.read(&mut buffer).await {
-                    Ok(0) => break,
-                    Ok(read) => read,
-                    Err(_) => break,
-                };
-
-                let plan = encoder.encode(&buffer[..read]);
-                if plan.chunks.is_empty() {
-                    continue;
-                }
-
-                for (index, chunk) in plan.chunks.iter().enumerate() {
-                    let write_raw = use_raw_writes || (plan.pause_after_first_chunk && index > 0);
-                    let result = {
-                        let mut stream = shared_stream.lock().await;
-                        if write_raw {
-                            stream.write_raw_all(chunk).await
+                tokio::select! {
+                    read = async {
+                        if use_raw_reads {
+                            stream.read_raw(&mut read_buffer).await
                         } else {
-                            stream.write_tls_all(chunk).await
+                            stream.read_tls(&mut read_buffer).await
                         }
-                    };
-                    if result.is_err() {
-                        return;
-                    }
-                    if index == 0 && plan.pause_after_first_chunk {
-                        {
-                            let mut stream = shared_stream.lock().await;
-                            let _ = stream.flush_tls().await;
-                        }
-                        tokio::time::sleep(VISION_DIRECT_SPLIT_DELAY).await;
-                        use_raw_writes = true;
-                    }
-                }
+                    } => {
+                        let read = match read {
+                            Ok(0) => break,
+                            Ok(read) => read,
+                            Err(_) => break,
+                        };
 
-                let flush_result = {
-                    let mut stream = shared_stream.lock().await;
-                    if use_raw_writes {
-                        stream.flush_raw().await
-                    } else {
-                        stream.flush_tls().await
+                        let payload = if let Some(peeler) = response_peeler.as_mut() {
+                            match peeler.consume(&read_buffer[..read]) {
+                                Ok(Some(payload)) => payload,
+                                Ok(None) => continue,
+                                Err(_) => break,
+                            }
+                        } else {
+                            &read_buffer[..read]
+                        };
+
+                        if payload.is_empty() {
+                            continue;
+                        }
+
+                        let decoded = match decoder.decode(payload) {
+                            Ok(decoded) => decoded,
+                            Err(_) => break,
+                        };
+                        if !decoded.is_empty() && reader_bridge.write_all(&decoded).await.is_err() {
+                            break;
+                        }
+                        if !use_raw_reads && decoder.raw_reads_enabled() {
+                            let pending_plaintext = stream.take_pending_tls_plaintext();
+                            let buffered_raw_tls = stream.take_buffered_raw_tls();
+                            let drained = match drain_vision_direct_read_buffers(
+                                &mut decoder,
+                                &pending_plaintext,
+                                &buffered_raw_tls,
+                            ) {
+                                Ok(drained) => drained,
+                                Err(_) => break,
+                            };
+                            if !drained.is_empty() && reader_bridge.write_all(&drained).await.is_err() {
+                                break;
+                            }
+                            use_raw_reads = true;
+                        }
                     }
-                };
-                if flush_result.is_err() {
-                    return;
+                    write = writer_bridge.read(&mut write_buffer), if !writer_closed => {
+                        let read = match write {
+                            Ok(0) => {
+                                writer_closed = true;
+                                let _ = if use_raw_writes {
+                                    stream.shutdown_raw().await
+                                } else {
+                                    stream.shutdown_tls().await
+                                };
+                                continue;
+                            }
+                            Ok(read) => read,
+                            Err(_) => break,
+                        };
+
+                        let plan = encoder.encode(&write_buffer[..read]);
+                        if plan.chunks.is_empty() {
+                            continue;
+                        }
+
+                        for (index, chunk) in plan.chunks.iter().enumerate() {
+                            let write_raw = use_raw_writes
+                                || (plan.enter_direct_after_first_chunk && index > 0);
+                            let result = if write_raw {
+                                stream.write_raw_all(chunk).await
+                            } else {
+                                stream.write_tls_all(chunk).await
+                            };
+                            if result.is_err() {
+                                return;
+                            }
+                            if index == 0 && plan.enter_direct_after_first_chunk {
+                                if stream.flush_tls().await.is_err() {
+                                    return;
+                                }
+                                tokio::time::sleep(VISION_DIRECT_SPLIT_DELAY).await;
+                                use_raw_writes = true;
+                            }
+                        }
+
+                        let flush_result = if use_raw_writes {
+                            stream.flush_raw().await
+                        } else {
+                            stream.flush_tls().await
+                        };
+                        if flush_result.is_err() {
+                            return;
+                        }
+                    }
                 }
             }
 
-            let _ = {
-                let mut stream = shared_stream.lock().await;
-                if use_raw_writes {
-                    stream.shutdown_raw().await
-                } else {
-                    stream.shutdown_tls().await
-                }
-            };
+            let _ = reader_bridge.shutdown().await;
         });
 
         Self {
             reader,
             writer,
-            read_task,
-            write_task,
+            io_task,
         }
     }
 }
@@ -1454,8 +1494,7 @@ impl VisionRealityClientStream {
 #[cfg(feature = "tls_reality")]
 impl Drop for VisionRealityClientStream {
     fn drop(&mut self) {
-        self.read_task.abort();
-        self.write_task.abort();
+        self.io_task.abort();
     }
 }
 
@@ -1774,6 +1813,7 @@ mod tests {
 
         let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x01, 0x02]);
         assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_DIRECT);
+        assert!(plan.enter_direct_after_first_chunk);
     }
 
     #[test]
@@ -1790,6 +1830,7 @@ mod tests {
 
         let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x01, 0x02]);
         assert!(!plan.pause_after_first_chunk);
+        assert!(!plan.enter_direct_after_first_chunk);
         assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_END);
         assert!(!encoder.is_padding);
     }
@@ -1811,9 +1852,32 @@ mod tests {
         let plan = encoder.encode(&payload);
 
         assert!(plan.pause_after_first_chunk);
+        assert!(plan.enter_direct_after_first_chunk);
         assert_eq!(plan.chunks.len(), 2);
         assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_DIRECT);
         assert_eq!(plan.chunks[1], payload[VISION_CHUNK_SIZE / 2..].to_vec());
+    }
+
+    #[test]
+    fn test_vision_encoder_marks_single_chunk_direct_for_later_raw_writes() {
+        let uuid = [11u8; VISION_UUID_LEN];
+        let tls_state = vision_tls_state();
+        let mut encoder = VisionEncoder::new(uuid, tls_state.clone());
+        let mut decoder = VisionDecoder::new(uuid, tls_state);
+
+        decoder
+            .decode(&vision_frame(
+                uuid,
+                COMMAND_PADDING_CONTINUE,
+                &tls13_server_hello(0x1301),
+            ))
+            .unwrap();
+
+        let plan = encoder.encode(&[0x17, 0x03, 0x03, 0x00, 0x02, 0x2a, 0x2b]);
+        assert_eq!(plan.chunks.len(), 1);
+        assert!(!plan.pause_after_first_chunk);
+        assert!(plan.enter_direct_after_first_chunk);
+        assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_DIRECT);
     }
 
     #[test]
@@ -1847,6 +1911,21 @@ mod tests {
             drain_vision_direct_read_buffers(&mut decoder, b"tls-plaintext", b"raw-tls-bytes")
                 .unwrap();
         assert_eq!(drained, b"tls-plaintextraw-tls-bytes");
+    }
+
+    #[test]
+    fn test_vless_response_peeler_allows_coalesced_vision_payload() {
+        let mut peeler = VlessResponsePeeler::new();
+        assert_eq!(peeler.consume(&[0x00]).unwrap(), None);
+
+        let payload = peeler
+            .consume(&[0x02, 0xaa, 0xbb, 0xcc, 0xdd])
+            .unwrap()
+            .unwrap();
+        assert_eq!(payload, b"\xcc\xdd");
+
+        let next = peeler.consume(b"vision").unwrap().unwrap();
+        assert_eq!(next, b"vision");
     }
 
     #[tokio::test]

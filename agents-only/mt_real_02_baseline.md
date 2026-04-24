@@ -3226,3 +3226,125 @@
     - `528/218=14`
     - `560/250=9`
     - `592/282=12`
+
+## 2026-04-24 进展更新：Round 30 concrete Vision raw/direct pump
+
+### Go VisionConn 对照
+
+- 本轮对照 upstream `sing-vmess/vless/vision.go` 的真实语义：
+  - `Write` 在 `enableXTLS` 后发 `commandPaddingDirect`
+  - first DIRECT frame 仍写到 TLS conn
+  - 随后切 `writer = netConn` 并 sleep `5ms`
+  - `Read` 收到 `commandPaddingDirect` 后 drain TLS `input` 与 `rawInput`，然后切 `netConn.Read`
+- 这确认 Round 29 的 TLS-only Vision path 只是保守 live workaround，不是最终 Go parity 结构。
+
+### 实现
+
+- 文件：
+  - `crates/sb-adapters/src/outbound/vless.rs`
+- 主要改动：
+  - REALITY+Vision path 重新接入 `VisionRealityClientStream::new(...)`
+  - `VisionRealityClientStream` 改为单 I/O pump，直接拥有 `RealityClientTlsStream<BoxedStream>`
+  - 去掉旧的 `Arc<AsyncMutex<RealityClientTlsStream<_>>>` 双任务结构，避免读侧 await 时持锁阻塞写侧
+  - pump 内用 `tokio::select!` 同时处理：
+    - downstream client writes
+    - upstream REALITY TLS/raw reads
+  - 新增 `VlessResponsePeeler`：
+    - VLESS response 可分片增量消费
+    - response 与首个 Vision payload coalesced 时不会吞掉后续 payload
+  - `VisionWritePlan` 新增 `enter_direct_after_first_chunk`：
+    - 修复单个 DIRECT frame 没有 split remainder 时，后续写仍不切 raw 的问题
+    - DIRECT frame 后固定 sleep `5ms`，与 Go `VisionConn` 语义一致
+  - read side DIRECT 后继续使用 Round 27 的 rustls drain：
+    - `take_pending_tls_plaintext()`
+    - `take_buffered_raw_tls()`
+
+### 新增/增强测试
+
+- `test_vision_encoder_marks_single_chunk_direct_for_later_raw_writes`
+- `test_vless_response_peeler_allows_coalesced_vision_payload`
+- 既有 tests 增强：
+  - `test_vision_encoder_emits_direct_after_tls13_server_hello`
+  - `test_vision_encoder_can_disable_direct_after_tls13_server_hello`
+  - `test_vision_encoder_splits_direct_write_plan`
+
+### live 复测
+
+#### app `probe-outbound` HTTP80
+
+- 构建：
+  - `cargo build -p app --bin probe-outbound --features 'router,adapter-vless,tls_reality'`
+- 结果：
+  - `HK-A-BGP-0.3倍率`
+    - `direct_reality = ok`
+    - `direct_vless_dial = ok`
+    - `OK stream_mode=connect_io`
+    - HTTP first line: `HTTP/1.1 200 OK`
+  - `HK-A-BGP-1.0倍率`
+    - `direct_reality = ok`
+    - `direct_vless_dial = ok`
+    - `OK stream_mode=connect_io`
+    - HTTP first line: `HTTP/1.1 200 OK`
+
+#### full app + SOCKS default HTTPS
+
+- 构建：
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+- 启动：
+  - `./target/debug/run -c /tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+- preflight：
+  - `GET /version`（Bearer `test123`）→ `200`
+  - SOCKS5 greeting `127.0.0.1:11080` → `[5, 0]`
+- 首轮：
+  - `HK-A-BGP-0.3倍率`
+    - default HTTPS: `curl (16) Error in the HTTP2 framing layer`
+    - forced `--http1.1`: HTTP `200`
+  - `HK-A-BGP-1.0倍率`
+    - default HTTPS: HTTP `200`
+    - forced `--http1.1`: HTTP `200`
+  - `HK-A-BGP-2.0倍率`
+    - default HTTPS: `30s timeout`
+    - forced `--http1.1`: `30s timeout`
+- repeat default HTTPS after DIRECT sleep fix:
+  - `HK-A-BGP-0.3倍率`: `2/5` success, remaining samples `curl (16)` HTTP2 framing
+  - `HK-A-BGP-1.0倍率`: `2/5` success, remaining samples `curl (16)` HTTP2 framing
+- diagnostic:
+  - raising DIRECT delay to `20ms` did not improve stability
+  - default remains Go-like `5ms`
+
+### 当前判定
+
+- Round 30 恢复了 Go-like REALITY concrete raw/direct dataplane：
+  - 读写 ownership 不再通过整条 stream mutex 阻塞
+  - VLESS response pending 不再阻塞客户端首包
+  - DIRECT 后单 chunk raw-entry bug 已修复
+- 但不能宣称 MT-REAL-02 完成：
+  - default HTTPS/HTTP2 仍有 stochastic framing residual
+  - `HK-A-BGP-2.0倍率` 仍是慢 timeout
+- 下一轮优先级：
+  - 继续做 HTTP2/raw-bypass 边界诊断
+  - 重点观察 DIRECT 后首批 HTTP2 request bytes 是否与 Go 的 vectorised writer / rawInput drain 顺序仍有差异
+
+### 验证
+
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS (`9 passed`)
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vless_response_peeler` → PASS
+- `cargo test -p sb-tls` → PASS
+  - `117 passed`
+  - `global::tests::test_none_mode_empty` fluctuation did not reproduce
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample: Go and Rust both `record_len=496` / `fe0d=186`; `match=false` remains expected order-family diff
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - concise snapshot saved to `/tmp/mt_real02_family_round30.json`
+  - Go record/fe0d counts:
+    - `496/186=8`
+    - `528/218=8`
+    - `560/250=12`
+    - `592/282=12`
+  - Rust record/fe0d counts:
+    - `496/186=6`
+    - `528/218=11`
+    - `560/250=12`
+    - `592/282=11`

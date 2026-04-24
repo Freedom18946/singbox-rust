@@ -858,3 +858,44 @@
   - family summary snapshot saved to `/tmp/mt_real02_family_round29.json`:
     - Go record/fe0d counts: `496/186=5`, `528/218=11`, `560/250=15`, `592/282=9`
     - Rust record/fe0d counts: `496/186=5`, `528/218=14`, `560/250=9`, `592/282=12`
+
+## Round 30（Vision REALITY raw/direct 单 pump 接线）
+
+- 本轮没有回到 ClientHello sampler；继续沿 Round 29 的 live dataplane 方向处理 Go `VisionConn` raw/direct ownership。
+- upstream Go `sing-vmess/vless/vision.go` 核对结论：
+  - DIRECT 后写侧把 first DIRECT frame 先写到 TLS conn，再 sleep `5ms`，随后切到底层 `netConn`
+  - 读侧收到 DIRECT 后 drain TLS `input` 与 `rawInput`，再切底层 `netConn`
+- Rust 侧修复：
+  - REALITY+Vision 路径重新使用 concrete `RealityClientTlsStream`，不再退化成 TLS-only `VisionClientStream(... allow_direct=false)`
+  - `VisionRealityClientStream` 从“双任务 + AsyncMutex 包整条 stream”改为单 I/O pump：
+    - 同一个 task 拥有 concrete REALITY stream
+    - `tokio::select!` 同时服务用户写入与服务端读取
+    - VLESS response 用 `VlessResponsePeeler` 增量剥离，避免 response pending 时阻塞客户端首包
+    - DIRECT 后写侧切 raw，读侧 drain `pending_plaintext` / `buffered_raw_tls` 后切 raw
+  - `VisionWritePlan` 新增 `enter_direct_after_first_chunk`，修复“单 chunk DIRECT 后后续写仍未切 raw”的隐性 bug
+  - DIRECT frame 后无论本批次是否 split remainder，都按 Go 语义 sleep `5ms`
+- 新增/增强测试：
+  - `test_vision_encoder_marks_single_chunk_direct_for_later_raw_writes`
+  - `test_vless_response_peeler_allows_coalesced_vision_payload`
+  - 既有 DIRECT/disable DIRECT/split tests 现在显式断言 raw-entry plan
+- live 结果：
+  - app `probe-outbound` HTTP80：
+    - `HK-A-BGP-0.3倍率` → `direct_reality ok` / `direct_vless_dial ok` / HTTP `200`
+    - `HK-A-BGP-1.0倍率` → `direct_reality ok` / `direct_vless_dial ok` / HTTP `200`
+  - full app + SOCKS default HTTPS：
+    - raw/direct 开启后，`HK-A-BGP-0.3倍率` 与 `HK-A-BGP-1.0倍率` 都出现默认 HTTPS `200` 成功样本
+    - 重复样本仍随机出现 `curl (16) Error in the HTTP2 framing layer`
+    - `--http1.1` 仍稳定成功；`HK-A-BGP-2.0倍率` 仍保持 `30s timeout`
+  - 诊断把 DIRECT delay 临时放大到 `20ms` 没改善，已回到 Go 语义 `5ms`
+- 结构结论：
+  - Round 29 的 TLS-only 临时 live path 已被替换为 Go-like concrete raw/direct pump
+  - 这推进了默认 HTTPS 成功样本，但 HTTP2 framing 残差仍未完成
+  - 下一跳继续聚焦 HTTP2/raw-bypass 边界，尤其是 DIRECT 后首批 HTTP2 request bytes 的写侧/读侧时序与 raw buffer 归属
+- 本轮 gate：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS (`9 passed`)
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vless_response_peeler` → PASS
+  - `cargo test -p sb-tls` → PASS (`117 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS，snapshot `/tmp/mt_real02_family_round30.json`
