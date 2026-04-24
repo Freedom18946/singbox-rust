@@ -1,6 +1,7 @@
 //! REALITY client handshake built on rustls hooks.
 
 use super::auth::{compute_temp_cert_signature, derive_auth_key};
+use super::client::RealityClientTlsStream;
 use super::config::RealityClientConfig;
 use super::tls_record::{ClientHello, ExtensionType};
 use super::{RealityError, RealityResult};
@@ -15,11 +16,19 @@ use rustls::crypto::{ActiveKeyExchange, SharedSecret, SupportedKxGroup};
 use rustls::{ClientConfig, NamedGroup, SupportedCipherSuite};
 use rustls_pki_types::ServerName;
 use std::collections::HashMap;
+use std::io::Read as _;
+use std::net::{SocketAddr, TcpListener as StdTcpListener};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::sync::mpsc;
+use std::task::{Context, Poll};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_rustls::TlsConnector as RustlsConnector;
 use tracing::debug;
 use x509_parser::oid_registry::OID_SIG_ED25519;
@@ -28,33 +37,21 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 const REALITY_SESSION_ID_LEN: usize = 32;
 const REALITY_SESSION_PLAINTEXT_LEN: usize = 16;
-#[cfg(test)]
 const EXT_SERVER_NAME: u16 = 0x0000;
-#[cfg(test)]
 const EXT_STATUS_REQUEST: u16 = 0x0005;
-#[cfg(test)]
 const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
-#[cfg(test)]
 const EXT_EC_POINT_FORMATS: u16 = 0x000b;
-#[cfg(test)]
 const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
-#[cfg(test)]
 const EXT_ALPN: u16 = 0x0010;
 const EXT_SCT: u16 = 0x0012;
 const EXT_COMPRESS_CERTIFICATE: u16 = 0x001b;
-#[cfg(test)]
 const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
-#[cfg(test)]
 const EXT_SESSION_TICKET: u16 = 0x0023;
-#[cfg(test)]
 const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
-#[cfg(test)]
 const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
-#[cfg(test)]
 const EXT_KEY_SHARE: u16 = 0x0033;
 const EXT_APPLICATION_SETTINGS: u16 = 0x44cd;
 const EXT_ECH_OUTER: u16 = 0xfe0d;
-#[cfg(test)]
 const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
 const GREASE_EXT_HEAD: u16 = 0xcaca;
 const GREASE_CIPHER_SUITE: u16 = 0xfafa;
@@ -66,6 +63,186 @@ const UTLS_GREASE_ECH_KDF_ID: u16 = 0x0001;
 const UTLS_GREASE_ECH_AEAD_ID: u16 = 0x0001;
 const UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN: usize = 32;
 const UTLS_GREASE_ECH_PAYLOAD_LENS: [usize; 4] = [144, 176, 208, 240];
+const CHROME_BASELINE_MIDDLE_EXTENSIONS: [u16; 16] = [
+    EXT_SERVER_NAME,
+    EXT_STATUS_REQUEST,
+    EXT_SUPPORTED_GROUPS,
+    EXT_EC_POINT_FORMATS,
+    EXT_SIGNATURE_ALGORITHMS,
+    EXT_ALPN,
+    EXT_SCT,
+    EXT_EXTENDED_MASTER_SECRET,
+    EXT_COMPRESS_CERTIFICATE,
+    EXT_SESSION_TICKET,
+    EXT_SUPPORTED_VERSIONS,
+    EXT_PSK_KEY_EXCHANGE_MODES,
+    EXT_KEY_SHARE,
+    EXT_APPLICATION_SETTINGS,
+    EXT_ECH_OUTER,
+    EXT_RENEGOTIATION_INFO,
+];
+const CHROME_FE0D_POSITIONS_186: [usize; 12] = [2, 3, 4, 4, 6, 6, 8, 9, 10, 12, 15, 15];
+const CHROME_FE0D_POSITIONS_218: [usize; 14] = [2, 2, 3, 3, 5, 6, 6, 6, 9, 12, 12, 13, 16, 16];
+const CHROME_FE0D_POSITIONS_250: [usize; 20] = [
+    2, 3, 4, 6, 6, 9, 9, 11, 11, 12, 12, 14, 15, 15, 16, 16, 16, 16, 16, 16,
+];
+const CHROME_FE0D_POSITIONS_282: [usize; 14] = [2, 2, 3, 5, 5, 5, 6, 8, 10, 11, 13, 13, 15, 16];
+const CHROME_BUCKET_TARGETS_186: [(u16, u8); 15] = [
+    (EXT_SERVER_NAME, 6),
+    (EXT_SESSION_TICKET, 7),
+    (EXT_SUPPORTED_GROUPS, 8),
+    (EXT_SCT, 8),
+    (EXT_EC_POINT_FORMATS, 9),
+    (EXT_COMPRESS_CERTIFICATE, 9),
+    (EXT_STATUS_REQUEST, 9),
+    (EXT_SIGNATURE_ALGORITHMS, 9),
+    (EXT_RENEGOTIATION_INFO, 10),
+    (EXT_PSK_KEY_EXCHANGE_MODES, 10),
+    (EXT_KEY_SHARE, 10),
+    (EXT_ALPN, 10),
+    (EXT_EXTENDED_MASTER_SECRET, 11),
+    (EXT_APPLICATION_SETTINGS, 12),
+    (EXT_SUPPORTED_VERSIONS, 12),
+];
+const CHROME_BUCKET_TARGETS_218: [(u16, u8); 15] = [
+    (EXT_SERVER_NAME, 7),
+    (EXT_COMPRESS_CERTIFICATE, 7),
+    (EXT_SESSION_TICKET, 7),
+    (EXT_PSK_KEY_EXCHANGE_MODES, 8),
+    (EXT_SCT, 8),
+    (EXT_EXTENDED_MASTER_SECRET, 8),
+    (EXT_EC_POINT_FORMATS, 8),
+    (EXT_SUPPORTED_VERSIONS, 9),
+    (EXT_KEY_SHARE, 9),
+    (EXT_APPLICATION_SETTINGS, 10),
+    (EXT_SUPPORTED_GROUPS, 11),
+    (EXT_STATUS_REQUEST, 11),
+    (EXT_SIGNATURE_ALGORITHMS, 12),
+    (EXT_RENEGOTIATION_INFO, 12),
+    (EXT_ALPN, 13),
+];
+const CHROME_BUCKET_TARGETS_250: [(u16, u8); 15] = [
+    (EXT_ALPN, 7),
+    (EXT_APPLICATION_SETTINGS, 8),
+    (EXT_SIGNATURE_ALGORITHMS, 8),
+    (EXT_RENEGOTIATION_INFO, 8),
+    (EXT_SCT, 9),
+    (EXT_EXTENDED_MASTER_SECRET, 9),
+    (EXT_SUPPORTED_GROUPS, 9),
+    (EXT_EC_POINT_FORMATS, 9),
+    (EXT_SUPPORTED_VERSIONS, 10),
+    (EXT_COMPRESS_CERTIFICATE, 10),
+    (EXT_SESSION_TICKET, 10),
+    (EXT_KEY_SHARE, 10),
+    (EXT_SERVER_NAME, 11),
+    (EXT_STATUS_REQUEST, 11),
+    (EXT_PSK_KEY_EXCHANGE_MODES, 11),
+];
+const CHROME_BUCKET_TARGETS_282: [(u16, u8); 15] = [
+    (EXT_RENEGOTIATION_INFO, 6),
+    (EXT_APPLICATION_SETTINGS, 7),
+    (EXT_SUPPORTED_GROUPS, 7),
+    (EXT_PSK_KEY_EXCHANGE_MODES, 8),
+    (EXT_SERVER_NAME, 9),
+    (EXT_KEY_SHARE, 9),
+    (EXT_SCT, 10),
+    (EXT_SESSION_TICKET, 10),
+    (EXT_ALPN, 10),
+    (EXT_STATUS_REQUEST, 10),
+    (EXT_COMPRESS_CERTIFICATE, 10),
+    (EXT_SUPPORTED_VERSIONS, 11),
+    (EXT_EXTENDED_MASTER_SECRET, 12),
+    (EXT_EC_POINT_FORMATS, 12),
+    (EXT_SIGNATURE_ALGORITHMS, 12),
+];
+const CHROME_SIGNATURE_MODE_WEIGHT: i16 = 18;
+const CHROME_SIGNATURE_PERTURB_WEIGHT: i16 = 8;
+const CHROME_SIGNATURE_PAIRS: [(u16, u16); 5] = [
+    (EXT_SERVER_NAME, EXT_SUPPORTED_VERSIONS),
+    (EXT_SCT, EXT_ECH_OUTER),
+    (EXT_EXTENDED_MASTER_SECRET, EXT_ECH_OUTER),
+    (EXT_SUPPORTED_VERSIONS, EXT_ECH_OUTER),
+    (EXT_ECH_OUTER, EXT_RENEGOTIATION_INFO),
+];
+const CHROME_BUCKET_SIGNATURE_MODES_186: [[i8; 5]; 4] = [
+    [1, -1, -1, -1, 1],
+    [1, -1, -1, -1, -1],
+    [1, -1, 1, -1, -1],
+    [-1, -1, -1, -1, 1],
+];
+const CHROME_BUCKET_SIGNATURE_MODES_218: [[i8; 5]; 4] = [
+    [1, 1, 1, -1, -1],
+    [-1, 1, 1, 1, -1],
+    [-1, -1, -1, -1, -1],
+    [1, -1, -1, -1, 1],
+];
+const CHROME_BUCKET_SIGNATURE_MODES_250: [[i8; 5]; 4] = [
+    [-1, -1, -1, -1, 1],
+    [1, -1, -1, 1, -1],
+    [1, 1, 1, 1, -1],
+    [-1, -1, -1, 1, -1],
+];
+const CHROME_BUCKET_SIGNATURE_MODES_282: [[i8; 5]; 4] = [
+    [-1, 1, 1, 1, -1],
+    [-1, 1, -1, 1, -1],
+    [1, -1, -1, -1, 1],
+    [1, 1, 1, 1, -1],
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChromeFe0dPositionBand {
+    Early,
+    Mid,
+    Late,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SocketTraceChunk {
+    pub index: usize,
+    pub len: usize,
+    pub offset_micros: u64,
+    pub record_type: Option<String>,
+    pub record_version: Option<String>,
+    pub hex: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SocketTraceEvent {
+    pub offset_micros: u64,
+    pub kind: String,
+    pub len: Option<usize>,
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalSocketTrace {
+    pub listener_addr: String,
+    pub client_error: Option<String>,
+    pub client_connect_elapsed_micros: Option<u64>,
+    pub client_handshake_elapsed_micros: Option<u64>,
+    pub client_first_write_after_connect_micros: Option<u64>,
+    pub client_first_read_after_connect_micros: Option<u64>,
+    pub client_event_trace: Vec<SocketTraceEvent>,
+    pub server_read_count: usize,
+    pub server_total_len: usize,
+    pub server_first_read_delay_micros: Option<u64>,
+    pub server_trace_elapsed_micros: u64,
+    pub server_first_read_to_end_micros: Option<u64>,
+    pub server_end_reason: String,
+    pub server_timed_out_waiting_for_more: bool,
+    pub server_chunks: Vec<SocketTraceChunk>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientSocketTrace {
+    pub remote_addr: String,
+    pub client_error: Option<String>,
+    pub client_connect_elapsed_micros: Option<u64>,
+    pub client_handshake_elapsed_micros: Option<u64>,
+    pub client_first_write_after_connect_micros: Option<u64>,
+    pub client_first_read_after_connect_micros: Option<u64>,
+    pub client_event_trace: Vec<SocketTraceEvent>,
+}
 
 static EPHEMERAL_X25519_SECRETS: LazyLock<Mutex<HashMap<[u8; 32], [u8; 32]>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -96,6 +273,16 @@ impl RealityHandshake {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        Ok(Box::new(self.perform_stream(stream).await?))
+    }
+
+    pub(super) async fn perform_stream<S>(
+        &self,
+        stream: S,
+    ) -> RealityResult<RealityClientTlsStream<S>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         debug!("Starting REALITY handshake via rustls session-id hooks");
 
         let state = Arc::new(RealityHandshakeState::default());
@@ -121,7 +308,7 @@ impl RealityHandshake {
         }
 
         debug!("REALITY handshake completed successfully");
-        Ok(Box::new(tls_stream))
+        Ok(RealityClientTlsStream::new(tls_stream))
     }
 
     pub(super) fn emit_client_hello_record(&self) -> RealityResult<Vec<u8>> {
@@ -142,6 +329,200 @@ impl RealityHandshake {
         conn.write_tls(&mut wire)
             .map_err(|e| RealityError::HandshakeFailed(format!("encode client hello: {e}")))?;
         Ok(wire)
+    }
+
+    pub(super) fn trace_client_hello_writes(&self) -> RealityResult<Vec<Vec<u8>>> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| RealityError::HandshakeFailed(format!("build trace runtime: {e}")))?;
+        runtime.block_on(self.trace_client_hello_writes_async())
+    }
+
+    pub(super) fn trace_local_socket_handshake(&self) -> RealityResult<LocalSocketTrace> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                RealityError::HandshakeFailed(format!("build socket trace runtime: {e}"))
+            })?;
+        runtime.block_on(self.trace_local_socket_handshake_async())
+    }
+
+    pub(super) fn trace_remote_socket_handshake(
+        &self,
+        remote_addr: SocketAddr,
+    ) -> RealityResult<ClientSocketTrace> {
+        self.trace_remote_socket_handshake_with_timeout(remote_addr, Duration::from_secs(2))
+    }
+
+    pub(super) fn trace_remote_socket_handshake_with_timeout(
+        &self,
+        remote_addr: SocketAddr,
+        handshake_timeout: Duration,
+    ) -> RealityResult<ClientSocketTrace> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                RealityError::HandshakeFailed(format!("build remote socket trace runtime: {e}"))
+            })?;
+        runtime.block_on(self.trace_remote_socket_handshake_async(remote_addr, handshake_timeout))
+    }
+
+    async fn trace_client_hello_writes_async(&self) -> RealityResult<Vec<Vec<u8>>> {
+        let recorder = RecordingAsyncIo::default();
+        let _ = self.perform(recorder.clone()).await;
+        let writes = recorder.take_writes();
+        if writes.is_empty() {
+            return Err(RealityError::HandshakeFailed(
+                "trace captured no client writes".to_string(),
+            ));
+        }
+        Ok(writes)
+    }
+
+    async fn trace_remote_socket_handshake_async(
+        &self,
+        remote_addr: SocketAddr,
+        handshake_timeout: Duration,
+    ) -> RealityResult<ClientSocketTrace> {
+        let client_connect_started_at = Instant::now();
+        let client_stream = TcpStream::connect(remote_addr)
+            .await
+            .map_err(RealityError::Io)?;
+        let client_connect_elapsed_micros =
+            Some(client_connect_started_at.elapsed().as_micros() as u64);
+        let (client_stream, client_trace_recorder) = TracingAsyncIo::new(client_stream);
+
+        let client_handshake_started_at = Instant::now();
+        let client_error = timeout(handshake_timeout, self.perform(client_stream))
+            .await
+            .map_err(|_| {
+                RealityError::HandshakeFailed(
+                    "remote socket trace client handshake timed out".to_string(),
+                )
+            })?
+            .err()
+            .map(|error| error.to_string());
+        let client_handshake_elapsed_micros =
+            Some(client_handshake_started_at.elapsed().as_micros() as u64);
+        let client_trace_snapshot = client_trace_recorder.snapshot();
+
+        Ok(ClientSocketTrace {
+            remote_addr: remote_addr.to_string(),
+            client_error,
+            client_connect_elapsed_micros,
+            client_handshake_elapsed_micros,
+            client_first_write_after_connect_micros: client_trace_snapshot
+                .first_write_after_connect_micros,
+            client_first_read_after_connect_micros: client_trace_snapshot
+                .first_read_after_connect_micros,
+            client_event_trace: client_trace_snapshot.events,
+        })
+    }
+
+    async fn trace_local_socket_handshake_async(&self) -> RealityResult<LocalSocketTrace> {
+        let listener = StdTcpListener::bind(("127.0.0.1", 0)).map_err(RealityError::Io)?;
+        let listener_addr = listener.local_addr().map_err(RealityError::Io)?;
+        let listener_addr_text = listener_addr.to_string();
+        let server_listener_addr_text = listener_addr_text.clone();
+        let (server_ready_tx, server_ready_rx) = mpsc::channel();
+
+        let server = thread::spawn(move || {
+            let _ = server_ready_tx.send(());
+            let (mut socket, _) = listener.accept().map_err(RealityError::Io)?;
+            let accept_at = Instant::now();
+            let mut buffer = [0u8; 4096];
+            let mut total = Vec::new();
+            let mut chunks = Vec::new();
+            let mut first_read_delay_micros = None;
+            let mut timed_out_waiting_for_more = false;
+            let mut end_reason = "eof".to_string();
+
+            loop {
+                let wait = if chunks.is_empty() {
+                    Duration::from_millis(500)
+                } else {
+                    Duration::from_millis(25)
+                };
+                socket
+                    .set_read_timeout(Some(wait))
+                    .map_err(RealityError::Io)?;
+                match socket.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(read_len) => {
+                        if first_read_delay_micros.is_none() {
+                            first_read_delay_micros = Some(accept_at.elapsed().as_micros() as u64);
+                        }
+                        let offset_micros = accept_at.elapsed().as_micros() as u64;
+                        let payload = &buffer[..read_len];
+                        chunks.push(SocketTraceChunk {
+                            index: chunks.len(),
+                            len: read_len,
+                            offset_micros,
+                            record_type: payload.first().map(|value| format!("0x{value:02x}")),
+                            record_version: (payload.len() >= 3)
+                                .then(|| format!("0x{:02x}{:02x}", payload[1], payload[2])),
+                            hex: hex::encode(payload),
+                        });
+                        total.extend_from_slice(payload);
+                    }
+                    Err(error) => {
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            || error.kind() == std::io::ErrorKind::TimedOut
+                        {
+                            timed_out_waiting_for_more = !chunks.is_empty();
+                            end_reason = "timeout".to_string();
+                            break;
+                        }
+                        return Err(RealityError::HandshakeFailed(format!(
+                            "socket trace server read failed: {error}"
+                        )));
+                    }
+                }
+            }
+
+            let server_trace_elapsed_micros = accept_at.elapsed().as_micros() as u64;
+            Ok::<LocalSocketTrace, RealityError>(LocalSocketTrace {
+                listener_addr: server_listener_addr_text,
+                client_error: None,
+                client_connect_elapsed_micros: None,
+                client_handshake_elapsed_micros: None,
+                client_first_write_after_connect_micros: None,
+                client_first_read_after_connect_micros: None,
+                client_event_trace: Vec::new(),
+                server_read_count: chunks.len(),
+                server_total_len: total.len(),
+                server_first_read_delay_micros: first_read_delay_micros,
+                server_trace_elapsed_micros,
+                server_first_read_to_end_micros: first_read_delay_micros
+                    .map(|first| server_trace_elapsed_micros.saturating_sub(first)),
+                server_end_reason: end_reason,
+                server_timed_out_waiting_for_more: timed_out_waiting_for_more,
+                server_chunks: chunks,
+            })
+        });
+        server_ready_rx.recv().map_err(|_| {
+            RealityError::HandshakeFailed("socket trace server ready signal failed".to_string())
+        })?;
+
+        let client_trace = self
+            .trace_remote_socket_handshake_async(listener_addr, Duration::from_secs(2))
+            .await?;
+
+        let mut server_trace = server.join().map_err(|_| {
+            RealityError::HandshakeFailed("socket trace server thread panicked".to_string())
+        })??;
+        server_trace.client_error = client_trace.client_error;
+        server_trace.client_connect_elapsed_micros = client_trace.client_connect_elapsed_micros;
+        server_trace.client_handshake_elapsed_micros = client_trace.client_handshake_elapsed_micros;
+        server_trace.client_first_write_after_connect_micros =
+            client_trace.client_first_write_after_connect_micros;
+        server_trace.client_first_read_after_connect_micros =
+            client_trace.client_first_read_after_connect_micros;
+        server_trace.client_event_trace = client_trace.client_event_trace;
+        Ok(server_trace)
     }
 
     fn build_client_config(
@@ -178,18 +559,31 @@ fn build_chrome_client_hello_fingerprint(
         return None;
     }
 
-    Some(ClientHelloFingerprint {
+    let randomization_seed = generate_chrome_randomization_seed();
+    Some(build_chrome_client_hello_fingerprint_with_seed(
+        randomization_seed,
+    ))
+}
+
+fn build_chrome_client_hello_fingerprint_with_seed(
+    randomization_seed: u16,
+) -> ClientHelloFingerprint {
+    ClientHelloFingerprint {
         opaque_extensions: vec![
             (GREASE_EXT_HEAD, Vec::new()),
             (EXT_SCT, Vec::new()),
             (EXT_COMPRESS_CERTIFICATE, vec![0x02, 0x00, 0x02]),
             (EXT_APPLICATION_SETTINGS, vec![0x00, 0x03, 0x02, b'h', b'2']),
-            (EXT_ECH_OUTER, build_utls_boring_grease_ech_extension()),
+            (
+                EXT_ECH_OUTER,
+                build_utls_boring_grease_ech_extension(randomization_seed),
+            ),
             (GREASE_EXT_TAIL, vec![0x00]),
         ],
-        extension_order: vec![],
-        prefix_extension_order: vec![GREASE_EXT_HEAD],
-        suffix_extension_order: vec![GREASE_EXT_TAIL],
+        randomization_seed: Some(randomization_seed),
+        extension_order: build_chrome_extension_order(randomization_seed),
+        prefix_extension_order: vec![],
+        suffix_extension_order: vec![],
         grease_ciphersuite: Some(GREASE_CIPHER_SUITE),
         extra_cipher_suites: vec![
             0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
@@ -202,16 +596,204 @@ fn build_chrome_client_hello_fingerprint(
         signature_algorithms_override: Some(vec![
             0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
         ]),
-    })
+    }
 }
 
-fn build_utls_boring_grease_ech_extension() -> Vec<u8> {
+fn generate_chrome_randomization_seed() -> u16 {
+    let mut rng = OsRng;
+    rng.next_u32() as u16
+}
+
+fn chrome_ech_payload_len_from_seed(randomization_seed: u16) -> usize {
+    UTLS_GREASE_ECH_PAYLOAD_LENS[(randomization_seed as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()]
+}
+
+fn chrome_fe0d_position_profile(payload_len: usize) -> &'static [usize] {
+    match payload_len {
+        144 => &CHROME_FE0D_POSITIONS_186,
+        176 => &CHROME_FE0D_POSITIONS_218,
+        208 => &CHROME_FE0D_POSITIONS_250,
+        240 => &CHROME_FE0D_POSITIONS_282,
+        _ => &CHROME_FE0D_POSITIONS_250,
+    }
+}
+
+fn chrome_bucket_targets(payload_len: usize) -> &'static [(u16, u8)] {
+    match payload_len {
+        144 => &CHROME_BUCKET_TARGETS_186,
+        176 => &CHROME_BUCKET_TARGETS_218,
+        208 => &CHROME_BUCKET_TARGETS_250,
+        240 => &CHROME_BUCKET_TARGETS_282,
+        _ => &CHROME_BUCKET_TARGETS_250,
+    }
+}
+
+fn chrome_bucket_target_position(payload_len: usize, ext_type: u16) -> u8 {
+    chrome_bucket_targets(payload_len)
+        .iter()
+        .find(|(candidate, _)| *candidate == ext_type)
+        .map(|(_, position)| *position)
+        .unwrap_or(9)
+}
+
+fn chrome_bucket_signature_modes(payload_len: usize) -> &'static [[i8; 5]] {
+    match payload_len {
+        144 => &CHROME_BUCKET_SIGNATURE_MODES_186,
+        176 => &CHROME_BUCKET_SIGNATURE_MODES_218,
+        208 => &CHROME_BUCKET_SIGNATURE_MODES_250,
+        240 => &CHROME_BUCKET_SIGNATURE_MODES_282,
+        _ => &CHROME_BUCKET_SIGNATURE_MODES_250,
+    }
+}
+
+fn chrome_apply_signature_mode_bias(mode: &[i8; 5], ext_type: u16, weight: i16) -> i16 {
+    CHROME_SIGNATURE_PAIRS
+        .iter()
+        .zip(mode.iter())
+        .fold(0, |bias, ((left, right), direction)| match *direction {
+            1 if ext_type == *left => bias - weight,
+            1 if ext_type == *right => bias + weight,
+            -1 if ext_type == *left => bias + weight,
+            -1 if ext_type == *right => bias - weight,
+            _ => bias,
+        })
+}
+
+fn chrome_signature_mode_index(randomization_seed: u16, payload_len: usize, salt: u16) -> usize {
+    let modes = chrome_bucket_signature_modes(payload_len);
+    mix_randomization_seed(randomization_seed ^ salt, payload_len as u16 ^ 0x53c1) as usize
+        % modes.len()
+}
+
+fn chrome_bucket_pairwise_bias(randomization_seed: u16, payload_len: usize, ext_type: u16) -> i16 {
+    let modes = chrome_bucket_signature_modes(payload_len);
+    let primary_mode = &modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x2f91)];
+    let secondary_mode =
+        &modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x7b4d)];
+
+    chrome_apply_signature_mode_bias(primary_mode, ext_type, CHROME_SIGNATURE_MODE_WEIGHT)
+        + chrome_apply_signature_mode_bias(
+            secondary_mode,
+            ext_type,
+            CHROME_SIGNATURE_PERTURB_WEIGHT,
+        )
+}
+
+fn build_chrome_extension_order(randomization_seed: u16) -> Vec<u16> {
+    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
+    let fe0d_full_position = select_fe0d_full_position(randomization_seed, payload_len);
+    let fe0d_band = chrome_classify_fe0d_position_band(payload_len, fe0d_full_position);
+    let fe0d_target_position = chrome_adjust_fe0d_target_position(
+        blend_fe0d_target_position(fe0d_full_position as u8, payload_len) as u8,
+        payload_len,
+        fe0d_band,
+    );
+    let mut ranked_extensions = CHROME_BASELINE_MIDDLE_EXTENSIONS
+        .iter()
+        .copied()
+        .map(|ext_type| {
+            let target_position = if ext_type == EXT_ECH_OUTER {
+                fe0d_target_position
+            } else {
+                chrome_bucket_target_position(payload_len, ext_type)
+            };
+            let jitter = i32::from(
+                mix_randomization_seed(randomization_seed, ext_type ^ payload_len as u16) & 0x1f,
+            );
+            let pairwise_bias = i32::from(chrome_bucket_pairwise_bias(
+                randomization_seed,
+                payload_len,
+                ext_type,
+            ));
+            (
+                i32::from(target_position) * 32 + pairwise_bias + jitter,
+                ext_type,
+            )
+        })
+        .collect::<Vec<_>>();
+    ranked_extensions.sort_by_key(|(score, ext_type)| (*score, *ext_type));
+
+    let mut extension_order = Vec::with_capacity(ranked_extensions.len() + 2);
+    extension_order.push(GREASE_EXT_HEAD);
+    extension_order.extend(ranked_extensions.into_iter().map(|(_, ext_type)| ext_type));
+    extension_order.push(GREASE_EXT_TAIL);
+    extension_order
+}
+
+fn select_fe0d_full_position(randomization_seed: u16, payload_len: usize) -> usize {
+    let fe0d_positions = chrome_fe0d_position_profile(payload_len);
+    fe0d_positions[mix_randomization_seed(randomization_seed ^ 0x9e37, 0x7f4a) as usize
+        % fe0d_positions.len()]
+}
+
+fn chrome_classify_fe0d_position_band(
+    payload_len: usize,
+    fe0d_full_position: usize,
+) -> ChromeFe0dPositionBand {
+    let mut sorted_profile = chrome_fe0d_position_profile(payload_len).to_vec();
+    sorted_profile.sort_unstable();
+    let count = sorted_profile.len();
+    let early_cut = sorted_profile[(count - 1) / 3];
+    let late_cut = sorted_profile[((count - 1) * 2) / 3];
+
+    if fe0d_full_position <= early_cut {
+        ChromeFe0dPositionBand::Early
+    } else if fe0d_full_position >= late_cut {
+        ChromeFe0dPositionBand::Late
+    } else {
+        ChromeFe0dPositionBand::Mid
+    }
+}
+
+fn chrome_fe0d_band_target_bias(payload_len: usize, band: ChromeFe0dPositionBand) -> i8 {
+    match (payload_len, band) {
+        // Bucket 186 still lands too early. Nudge late-ish seeds a touch further back
+        // without letting band directly choose the precedence mode.
+        (144, ChromeFe0dPositionBand::Early | ChromeFe0dPositionBand::Mid) => 1,
+        (144, ChromeFe0dPositionBand::Late) => 2,
+        // Bucket 250 still over-samples mid/late clouds. Only early/mid raw bands get
+        // a slight push forward so late-band seeds keep some spread.
+        (208, ChromeFe0dPositionBand::Early | ChromeFe0dPositionBand::Mid) => -1,
+        (208, ChromeFe0dPositionBand::Late) => 0,
+        _ => 0,
+    }
+}
+
+fn chrome_adjust_fe0d_target_position(
+    base_target_position: u8,
+    payload_len: usize,
+    band: ChromeFe0dPositionBand,
+) -> u8 {
+    let adjusted = i16::from(base_target_position)
+        + i16::from(chrome_fe0d_band_target_bias(payload_len, band));
+    adjusted.clamp(1, CHROME_BASELINE_MIDDLE_EXTENSIONS.len() as i16) as u8
+}
+
+fn blend_fe0d_target_position(raw_position: u8, payload_len: usize) -> u8 {
+    let anchor: u8 = match payload_len {
+        144 => 11,
+        176 => 12,
+        208 => 10,
+        240 => 10,
+        _ => 10,
+    };
+    ((u16::from(raw_position) + u16::from(anchor) * 2) / 3) as u8
+}
+
+fn mix_randomization_seed(seed: u16, salt: u16) -> u16 {
+    let mut state = u32::from(seed) << 16 | u32::from(salt);
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    (state as u16) ^ ((state >> 16) as u16)
+}
+
+fn build_utls_boring_grease_ech_extension(randomization_seed: u16) -> Vec<u8> {
     let mut rng = OsRng;
     let mut config_id = [0u8; 1];
     rng.fill_bytes(&mut config_id);
 
-    let payload_len = UTLS_GREASE_ECH_PAYLOAD_LENS
-        [(rng.next_u32() as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()];
+    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
     let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(&mut rng)).to_bytes();
     let mut payload = vec![0u8; payload_len];
     rng.fill_bytes(&mut payload);
@@ -754,6 +1336,197 @@ fn take_ephemeral_secret(public_key: &[u8; 32]) -> Option<[u8; 32]> {
     EPHEMERAL_X25519_SECRETS.lock().remove(public_key)
 }
 
+#[derive(Clone, Default)]
+struct RecordingAsyncIo {
+    writes: Arc<Mutex<Vec<Vec<u8>>>>,
+}
+
+impl RecordingAsyncIo {
+    fn take_writes(&self) -> Vec<Vec<u8>> {
+        self.writes.lock().clone()
+    }
+}
+
+impl AsyncRead for RecordingAsyncIo {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for RecordingAsyncIo {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        self.writes.lock().push(buf.to_vec());
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[derive(Clone, Default)]
+struct ClientIoTraceSnapshot {
+    events: Vec<SocketTraceEvent>,
+    first_write_after_connect_micros: Option<u64>,
+    first_read_after_connect_micros: Option<u64>,
+}
+
+#[derive(Clone)]
+struct ClientIoTraceRecorder {
+    started_at: Instant,
+    snapshot: Arc<Mutex<ClientIoTraceSnapshot>>,
+}
+
+impl ClientIoTraceRecorder {
+    fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+            snapshot: Arc::new(Mutex::new(ClientIoTraceSnapshot::default())),
+        }
+    }
+
+    fn record_event(&self, kind: &str, len: Option<usize>, detail: Option<String>) {
+        let offset_micros = self.started_at.elapsed().as_micros() as u64;
+        let mut snapshot = self.snapshot.lock();
+        if kind == "write" && snapshot.first_write_after_connect_micros.is_none() {
+            snapshot.first_write_after_connect_micros = Some(offset_micros);
+        }
+        if (kind == "read" || kind == "read_eof")
+            && snapshot.first_read_after_connect_micros.is_none()
+        {
+            snapshot.first_read_after_connect_micros = Some(offset_micros);
+        }
+        snapshot.events.push(SocketTraceEvent {
+            offset_micros,
+            kind: kind.to_string(),
+            len,
+            detail,
+        });
+    }
+
+    fn snapshot(&self) -> ClientIoTraceSnapshot {
+        self.snapshot.lock().clone()
+    }
+}
+
+struct TracingAsyncIo<S> {
+    inner: S,
+    recorder: ClientIoTraceRecorder,
+}
+
+impl<S> TracingAsyncIo<S> {
+    fn new(inner: S) -> (Self, ClientIoTraceRecorder) {
+        let recorder = ClientIoTraceRecorder::new();
+        (
+            Self {
+                inner,
+                recorder: recorder.clone(),
+            },
+            recorder,
+        )
+    }
+}
+
+impl<S> AsyncRead for TracingAsyncIo<S>
+where
+    S: AsyncRead + Unpin,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        let filled_before = buf.filled().len();
+        match Pin::new(&mut this.inner).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                let read_len = buf.filled().len().saturating_sub(filled_before);
+                if read_len == 0 {
+                    this.recorder.record_event("read_eof", Some(0), None);
+                } else {
+                    this.recorder.record_event("read", Some(read_len), None);
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => {
+                this.recorder
+                    .record_event("read_error", None, Some(error.to_string()));
+                Poll::Ready(Err(error))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<S> AsyncWrite for TracingAsyncIo<S>
+where
+    S: AsyncWrite + Unpin,
+{
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_write(cx, buf) {
+            Poll::Ready(Ok(written)) => {
+                this.recorder.record_event("write", Some(written), None);
+                Poll::Ready(Ok(written))
+            }
+            Poll::Ready(Err(error)) => {
+                this.recorder
+                    .record_event("write_error", None, Some(error.to_string()));
+                Poll::Ready(Err(error))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_flush(cx) {
+            Poll::Ready(Ok(())) => {
+                this.recorder.record_event("flush", None, None);
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => {
+                this.recorder
+                    .record_event("flush_error", None, Some(error.to_string()));
+                Poll::Ready(Err(error))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_shutdown(cx) {
+            Poll::Ready(Ok(())) => {
+                this.recorder.record_event("shutdown", None, None);
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => {
+                this.recorder
+                    .record_event("shutdown_error", None, Some(error.to_string()));
+                Poll::Ready(Err(error))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -840,6 +1613,151 @@ mod tests {
         let parsed = ClientHello::parse(&wire[5..5 + record_len]).unwrap();
         assert_eq!(parsed.session_id.len(), REALITY_SESSION_ID_LEN);
         assert!(parsed.session_id.iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
+    fn test_trace_client_hello_writes_form_single_tls_record() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let writes = handshake.trace_client_hello_writes().unwrap();
+
+        assert_eq!(writes.len(), 1, "expected a single first-flight write");
+        let flattened = writes.concat();
+        assert_eq!(writes[0][0], 22);
+        let record_len = usize::from(u16::from_be_bytes([flattened[3], flattened[4]]));
+        assert_eq!(flattened.len(), 5 + record_len);
+        let parsed = ClientHello::parse(&flattened[5..]).expect("parse client hello");
+        assert_eq!(parsed.session_id.len(), REALITY_SESSION_ID_LEN);
+        assert_eq!(parsed.cipher_suites[0], GREASE_CIPHER_SUITE);
+    }
+
+    #[test]
+    fn test_trace_local_socket_handshake_observes_first_flight_bytes() {
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let trace = handshake.trace_local_socket_handshake().unwrap();
+
+        assert!(!trace.listener_addr.is_empty());
+        assert!(trace.server_read_count >= 1);
+        assert!(trace.server_total_len > 0);
+        assert!(trace.client_connect_elapsed_micros.is_some());
+        assert!(trace.client_handshake_elapsed_micros.is_some());
+        assert!(trace.client_first_write_after_connect_micros.is_some());
+        assert!(trace.client_first_read_after_connect_micros.is_some());
+        assert!(trace.server_first_read_delay_micros.is_some());
+        assert!(trace.server_trace_elapsed_micros > 0);
+        assert!(trace.server_first_read_to_end_micros.is_some());
+        assert!(
+            matches!(trace.server_end_reason.as_str(), "eof" | "timeout"),
+            "unexpected end reason: {}",
+            trace.server_end_reason
+        );
+        assert!(
+            trace
+                .server_chunks
+                .iter()
+                .all(|chunk| !chunk.hex.is_empty())
+        );
+        assert!(
+            trace
+                .client_event_trace
+                .iter()
+                .any(|event| event.kind == "write")
+        );
+        assert!(
+            trace
+                .client_event_trace
+                .iter()
+                .any(|event| event.kind == "read" || event.kind == "read_eof")
+        );
+        assert!(
+            trace
+                .server_chunks
+                .iter()
+                .all(|chunk| chunk.offset_micros <= trace.server_trace_elapsed_micros)
+        );
+        assert_eq!(
+            trace
+                .server_chunks
+                .first()
+                .and_then(|chunk| chunk.record_type.as_deref()),
+            Some("0x16")
+        );
+        assert!(
+            trace
+                .client_error
+                .as_deref()
+                .is_some_and(|error| error.contains("TLS handshake failed"))
+        );
+    }
+
+    #[test]
+    fn test_trace_remote_socket_handshake_records_client_events() {
+        let listener = StdTcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let listener_addr = listener.local_addr().expect("listener addr");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept test client");
+            socket
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .expect("set read timeout");
+            let mut buffer = [0u8; 4096];
+            let _ = socket.read(&mut buffer);
+        });
+
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let trace = handshake
+            .trace_remote_socket_handshake(listener_addr)
+            .unwrap();
+
+        server.join().expect("join test server");
+
+        assert_eq!(trace.remote_addr, listener_addr.to_string());
+        assert!(trace.client_connect_elapsed_micros.is_some());
+        assert!(trace.client_handshake_elapsed_micros.is_some());
+        assert!(trace.client_first_write_after_connect_micros.is_some());
+        assert!(
+            trace
+                .client_event_trace
+                .iter()
+                .any(|event| event.kind == "write")
+        );
+        assert!(
+            trace
+                .client_event_trace
+                .iter()
+                .any(|event| event.kind == "read" || event.kind == "read_eof")
+        );
+        assert!(
+            trace
+                .client_error
+                .as_deref()
+                .is_some_and(|error| error.contains("TLS handshake failed"))
+        );
+    }
+
+    #[test]
+    fn test_trace_remote_socket_handshake_respects_timeout_override() {
+        let listener = StdTcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let listener_addr = listener.local_addr().expect("listener addr");
+        let server = thread::spawn(move || {
+            let (_socket, _) = listener.accept().expect("accept test client");
+            thread::sleep(Duration::from_millis(200));
+        });
+
+        let config = Arc::new(test_config());
+        let handshake = RealityHandshake::new(config).unwrap();
+        let error = handshake
+            .trace_remote_socket_handshake_with_timeout(listener_addr, Duration::from_millis(50))
+            .unwrap_err();
+
+        server.join().expect("join test server");
+
+        assert!(
+            error
+                .to_string()
+                .contains("remote socket trace client handshake timed out")
+        );
     }
 
     #[test]
@@ -943,6 +1861,256 @@ mod tests {
         assert_eq!(
             &parsed.find_extension(EXT_KEY_SHARE).unwrap().data[..7],
             &[0x00, 0x29, 0x4a, 0x4a, 0x00, 0x01, 0x00]
+        );
+    }
+
+    #[test]
+    fn test_chrome_baseline_randomization_seed_selects_ech_family_bucket() {
+        let expected = [
+            (0u16, 144usize),
+            (1u16, 176usize),
+            (2u16, 208usize),
+            (3u16, 240usize),
+            (4u16, 144usize),
+        ];
+
+        for (seed, expected_payload_len) in expected {
+            let fingerprint = build_chrome_client_hello_fingerprint_with_seed(seed);
+            assert_eq!(fingerprint.randomization_seed, Some(seed));
+            let ech_outer = fingerprint
+                .opaque_extensions
+                .iter()
+                .find(|(ext_type, _)| *ext_type == EXT_ECH_OUTER)
+                .map(|(_, payload)| payload)
+                .expect("ech outer extension");
+            let (
+                _client_hello_type,
+                _kdf_id,
+                _aead_id,
+                _config_id,
+                _encapsulated_key_len,
+                payload_len,
+            ) = parse_utls_boring_grease_ech_extension(ech_outer)
+                .expect("uTLS BoringGREASEECH-like extension");
+            assert_eq!(payload_len, expected_payload_len);
+        }
+    }
+
+    #[test]
+    fn test_chrome_baseline_randomization_seed_preserves_family_constraints() {
+        let fingerprint = build_chrome_client_hello_fingerprint_with_seed(0x1234);
+
+        assert_eq!(fingerprint.randomization_seed, Some(0x1234));
+        assert!(fingerprint.prefix_extension_order.is_empty());
+        assert!(fingerprint.suffix_extension_order.is_empty());
+        assert_eq!(
+            fingerprint.extension_order.first().copied(),
+            Some(GREASE_EXT_HEAD)
+        );
+        assert_eq!(
+            fingerprint.extension_order.last().copied(),
+            Some(GREASE_EXT_TAIL)
+        );
+        assert_eq!(
+            fingerprint.extension_order.len(),
+            CHROME_BASELINE_MIDDLE_EXTENSIONS.len() + 2
+        );
+
+        let ech_outer = fingerprint
+            .opaque_extensions
+            .iter()
+            .find(|(ext_type, _)| *ext_type == EXT_ECH_OUTER)
+            .map(|(_, payload)| payload)
+            .expect("ech outer extension");
+        let (_client_hello_type, _kdf_id, _aead_id, _config_id, encapsulated_key_len, payload_len) =
+            parse_utls_boring_grease_ech_extension(ech_outer)
+                .expect("uTLS BoringGREASEECH-like extension");
+        assert_eq!(encapsulated_key_len, UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN);
+        assert_eq!(payload_len, chrome_ech_payload_len_from_seed(0x1234));
+    }
+
+    #[test]
+    fn test_chrome_baseline_randomization_seed_conditions_fe0d_position_family() {
+        let cases = [
+            (0u16, 144usize, &CHROME_FE0D_POSITIONS_186[..]),
+            (1u16, 176usize, &CHROME_FE0D_POSITIONS_218[..]),
+            (2u16, 208usize, &CHROME_FE0D_POSITIONS_250[..]),
+            (3u16, 240usize, &CHROME_FE0D_POSITIONS_282[..]),
+        ];
+
+        for (seed, payload_len, expected_positions) in cases {
+            assert_eq!(chrome_ech_payload_len_from_seed(seed), payload_len);
+            let fe0d_position = select_fe0d_full_position(seed, payload_len);
+            assert!(
+                expected_positions.contains(&fe0d_position),
+                "seed {seed:#06x} produced fe0d position {fe0d_position}, expected one of {expected_positions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_chrome_bucket_targets_bias_key_extensions_by_payload_family() {
+        assert!(
+            chrome_bucket_target_position(144, EXT_SERVER_NAME)
+                < chrome_bucket_target_position(144, EXT_SUPPORTED_VERSIONS)
+        );
+        assert!(
+            chrome_bucket_target_position(176, EXT_COMPRESS_CERTIFICATE)
+                < chrome_bucket_target_position(176, EXT_ALPN)
+        );
+        assert!(
+            chrome_bucket_target_position(208, EXT_ALPN)
+                < chrome_bucket_target_position(208, EXT_SERVER_NAME)
+        );
+        assert!(
+            chrome_bucket_target_position(240, EXT_RENEGOTIATION_INFO)
+                < chrome_bucket_target_position(240, EXT_SIGNATURE_ALGORITHMS)
+        );
+    }
+
+    #[test]
+    fn test_chrome_bucket_signature_modes_capture_go_top_signatures() {
+        assert!(
+            chrome_bucket_signature_modes(144)
+                .iter()
+                .any(|mode| *mode == [1, -1, -1, -1, 1])
+        );
+        assert!(
+            chrome_bucket_signature_modes(176)
+                .iter()
+                .any(|mode| *mode == [1, 1, 1, -1, -1])
+        );
+        assert!(
+            chrome_bucket_signature_modes(176)
+                .iter()
+                .any(|mode| *mode == [-1, -1, -1, -1, -1])
+        );
+        assert!(
+            chrome_bucket_signature_modes(208)
+                .iter()
+                .any(|mode| *mode == [-1, -1, -1, -1, 1])
+        );
+        assert!(
+            chrome_bucket_signature_modes(208)
+                .iter()
+                .any(|mode| *mode == [1, 1, 1, 1, -1])
+        );
+        assert!(
+            chrome_bucket_signature_modes(240)
+                .iter()
+                .any(|mode| *mode == [-1, 1, 1, 1, -1])
+        );
+    }
+
+    #[test]
+    fn test_chrome_bucket_pairwise_bias_keeps_seed_variability() {
+        let bucket_208_values = (0u16..16)
+            .map(|seed| {
+                (
+                    chrome_bucket_pairwise_bias(seed, 208, EXT_SERVER_NAME),
+                    chrome_bucket_pairwise_bias(seed, 208, EXT_SUPPORTED_VERSIONS),
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let bucket_186_values = (0u16..16)
+            .map(|seed| {
+                (
+                    chrome_bucket_pairwise_bias(seed, 144, EXT_SUPPORTED_VERSIONS),
+                    chrome_bucket_pairwise_bias(seed, 144, EXT_ECH_OUTER),
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert!(bucket_208_values.len() > 1);
+        assert!(bucket_186_values.len() > 1);
+    }
+
+    #[test]
+    fn test_chrome_bucket_signature_mode_selection_varies_by_seed() {
+        let bucket_186_modes = (0u16..16)
+            .map(|seed| chrome_signature_mode_index(seed, 144, 0x2f91))
+            .collect::<std::collections::BTreeSet<_>>();
+        let bucket_282_modes = (0u16..16)
+            .map(|seed| chrome_signature_mode_index(seed, 240, 0x2f91))
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert!(bucket_186_modes.len() > 1);
+        assert!(bucket_282_modes.len() > 1);
+    }
+
+    #[test]
+    fn test_chrome_fe0d_position_band_classification_matches_profiles() {
+        assert_eq!(
+            chrome_classify_fe0d_position_band(144, 2),
+            ChromeFe0dPositionBand::Early
+        );
+        assert_eq!(
+            chrome_classify_fe0d_position_band(144, 8),
+            ChromeFe0dPositionBand::Mid
+        );
+        assert_eq!(
+            chrome_classify_fe0d_position_band(144, 15),
+            ChromeFe0dPositionBand::Late
+        );
+
+        assert_eq!(
+            chrome_classify_fe0d_position_band(208, 3),
+            ChromeFe0dPositionBand::Early
+        );
+        assert_eq!(
+            chrome_classify_fe0d_position_band(208, 11),
+            ChromeFe0dPositionBand::Mid
+        );
+        assert_eq!(
+            chrome_classify_fe0d_position_band(208, 16),
+            ChromeFe0dPositionBand::Late
+        );
+    }
+
+    #[test]
+    fn test_chrome_fe0d_band_target_bias_only_adjusts_186_and_250_buckets() {
+        assert_eq!(
+            chrome_fe0d_band_target_bias(144, ChromeFe0dPositionBand::Early),
+            1
+        );
+        assert_eq!(
+            chrome_fe0d_band_target_bias(144, ChromeFe0dPositionBand::Late),
+            2
+        );
+        assert_eq!(
+            chrome_fe0d_band_target_bias(208, ChromeFe0dPositionBand::Early),
+            -1
+        );
+        assert_eq!(
+            chrome_fe0d_band_target_bias(208, ChromeFe0dPositionBand::Late),
+            0
+        );
+        assert_eq!(
+            chrome_fe0d_band_target_bias(176, ChromeFe0dPositionBand::Late),
+            0
+        );
+        assert_eq!(
+            chrome_fe0d_band_target_bias(240, ChromeFe0dPositionBand::Early),
+            0
+        );
+    }
+
+    #[test]
+    fn test_chrome_fe0d_band_bias_nudges_target_in_expected_direction() {
+        let bucket_186_base = blend_fe0d_target_position(15, 144);
+        let bucket_250_base = blend_fe0d_target_position(3, 208);
+
+        assert!(
+            chrome_adjust_fe0d_target_position(bucket_186_base, 144, ChromeFe0dPositionBand::Late)
+                > bucket_186_base
+        );
+        assert!(
+            chrome_adjust_fe0d_target_position(bucket_250_base, 208, ChromeFe0dPositionBand::Early,)
+                < bucket_250_base
+        );
+        assert_eq!(
+            chrome_adjust_fe0d_target_position(bucket_186_base, 176, ChromeFe0dPositionBand::Late),
+            bucket_186_base
         );
     }
 

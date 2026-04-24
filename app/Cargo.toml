@@ -293,7 +293,7 @@ required-features = ["dev-cli"]
 [[bin]]
 name = "probe-outbound"
 path = "src/bin/probe-outbound.rs"
-required-features = ["router"]
+required-features = ["sb-core", "sb-adapters", "sb-transport"]
 
 [[bin]]
 name = "ruleset"

@@ -8,60 +8,701 @@
 **Parity**: 52/56 BHV (92.9%)；`ARCH-LIMIT-REALITY` 仍保留为当前 parity 账面口径，直到出现 live 成功样本
 **当前焦点**: 用 Go `uTLS` ↔ Rust REALITY `ClientHello` 基线 harness 驱动后续突破，不再盲补指纹
 
-## 最新闭环（2026-04-16）
+## 最新闭环（2026-04-17）
 
-### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-6
+### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-10
 
 - baseline / family harness 仍有效：
   - `reality_go_utls_dump.sh` / `reality_clienthello_dump.rs` / `reality_clienthello_diff.{py,sh}` / `reality_clienthello_family.{py,sh}`
 - 当前证据：
   - `agents-only/mt_real_01_evidence/clienthello_baseline/go_vs_rust_clienthello_family.json`
-- Round 1（缺失扩展族 + 额外 cipher suites）：
-  - Rust 已补入：`GREASE` cipher suite、额外 TLS 1.2 cipher suites、`0x0012/0x001b/0x44cd/0xfe0d/0x0023/0xff01`、尾部 GREASE
-  - baseline diff：Rust record length `241 -> 519`
-  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
-- Round 2（typed 子结构）：
-  - Rust 已补齐：`supported_versions` / `supported_groups` / `key_share` / `signature_algorithms` typed payload
-  - baseline diff：Go / Rust `record_len` 现均为 `528`
-  - 剩余显著差异已主要收敛到 Go `uTLS` 动态 extension order / 模板族波动
-  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
-- Round 3（dynamic order family）：
-  - Rust 不再固定中段 extension order；改为头部 GREASE 固定、尾部 GREASE 固定、中段扩展随机化
-  - family 证据显示：
-    - Go: `12 runs -> 12` 个不同 order families
-    - Rust: `12 runs -> 12` 个不同 order families
-    - Go `record_len`: `{496, 528, 560, 592}`
-    - Rust `record_len`: 目前固定 `528`
-    - Go `fe0d` len: `{186, 218, 250, 282}`
-    - Rust `fe0d` len: 目前固定 `218`
-  - live chrome 3 样本复测：`0/3`，仍统一 `tls handshake eof`
-- Round 4（dynamic `BoringGREASEECH` family）：
-  - Rust 已移除静态 `0xfe0d` baseline blob，改为按 Go `uTLS` `BoringGREASEECH` 模板动态生成：
-    - `outer_type=0x00` / `kdf=0x0001` / `aead=0x0001` / `config_id=random` / `encapsulated_key_len=32` / `payload_len ∈ {144, 176, 208, 240}`
-  - 新测试：
-    - `test_chrome_baseline_ech_outer_matches_utls_boring_grease_family`
-  - family 证据（`40 runs`）显示：
-    - Go `record_len`: `{496, 528, 560, 592}`
-    - Rust `record_len`: `{496, 528, 560, 592}`
-    - Go `fe0d` len: `{186, 218, 250, 282}`
-    - Rust `fe0d` len: `{186, 218, 250, 282}`
-    - Go / Rust extension presence 均一致，头尾 extension 均固定为 GREASE
-  - 单次 diff 现在主要表现为“同族不同抽样”，不再是静态缺口
+- Rounds 1-6（缺失扩展族 / typed payload / dynamic `fe0d` family / opaque middle-order / seeded Fisher-Yates）：
+  - Rust 已补齐缺失扩展族、额外 TLS 1.2 cipher suites、typed payload、`BoringGREASEECH` 动态 family、opaque middle-order、真正 seeded shuffle
+  - baseline/family 现已稳定覆盖：
+    - `record_len ∈ {496, 528, 560, 592}`
+    - `fe0d len ∈ {186, 218, 250, 282}`
+  - 这些 rounds 的 live chrome 3 样本复测均仍为 `0/3`，统一 `tls handshake eof`
+- Round 7（joint harness + shared randomization seed entrypoint）：
+  - `reality_clienthello_family.py` 已新增 joint 统计：`record_len_to_fe0d_len` / `fe0d_position_counts` / `fe0d_len_to_position` / `extension_position_counts`
+  - Rust REALITY chrome-like 指纹新增握手级 `randomization_seed`；`extension_order_seed` 与 `0xfe0d` family member 现可共用同一入口，不再是完全独立 RNG 岛
+  - Go 源码核对：`metacubex/utls` 的 `ShuffleChromeTLSExtensions(...)` 与 `BoringGREASEECH()` 均走每次握手的 `crypto/rand`；当前尚未证实存在简单固定的 `fe0d 档位 -> order` 条件律
+  - `40 runs` family 仍显示 Go / Rust 都保持完整 `record_len` / `fe0d` family，且 `record_len <-> fe0d_len` 在两侧继续一一锁定
   - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
-- Round 5（opaque middle-order family）：
-  - vendored `rustls` 已改为让 `opaque_extensions` 参与中段随机排序，不再总被追加到尾部
-  - 新测试：`test_chrome_baseline_opaque_extensions_are_not_pinned_to_tail_block`
-  - family 证据（`40 runs`）显示：
-    - Rust 的 `0x0012/0x001b/0x44cd/0xfe0d` 已进入中段随机族，不再形成固定尾部块
-    - Go / Rust `order_family_count` 仍均为 `40`
-    - `record_len` / `fe0d` family 仍保持覆盖
-  - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
-- Round 6（seeded shuffle semantics）：
-  - vendored `rustls` 中段顺序已从“基于扩展号哈希排序”改为真正的 seeded Fisher-Yates shuffle
-  - 语义上已更接近 Go `ShuffleChromeTLSExtensions(...)`
-  - `record_len` / `fe0d` family 仍保持完整覆盖，opaque extensions 仍在中段随机族
-  - live chrome 3 样本复测仍为 `0/3`，仍统一 `tls handshake eof`
+- Round 8（first-flight trace harness）：
+  - 已新增 `reality_clienthello_trace`（Rust example）与 `reality_go_utls_trace.sh` / `reality_clienthello_trace.sh`
+  - 当前 probe 结果：Go / Rust 都是“单次 write、单个 `0x16` TLS record、record version `0x0301`”
+  - 结论：最外层 write chunk / 首 record version 不像当前主 blocker
+- Round 9（`fe0d` 条件落点建模）：
+  - Rust chrome-like 指纹现在显式生成 full `extension_order`：先按 `fe0d payload bucket` 选位置族，再对其余中段扩展做 seeded shuffle
+  - 新测试：`test_chrome_baseline_randomization_seed_conditions_fe0d_position_family`
+  - 单次 diff 已可直接命中与 Go 同档的 `record_len=592` / `fe0d len=282`；但 extension order 仍非同一抽样器
+  - `40 runs` family 仍显示 Rust 的 `fe0d` 位置云团与 Go 不同；live chrome 3 样本复测继续 `0/3`，仍统一 `tls handshake eof`
+- Round 10（bucket-conditioned extension bias + TFO/socket reality check）：
+  - `reality_clienthello_family.py` 已新增：
+    - `fe0d_len_to_extension_position_counts`
+    - `fe0d_len_to_extension_mean_positions`
+  - Rust chrome-like 指纹进一步尝试把 `0x002b/0xff01/0x0017/0x0000` 等关键扩展纳入 bucket-conditioned biased ordering
+  - Go 侧源码确认：
+    - `common/dialer/tfo.go` 的 `slowOpenConn` 的确允许首次 `Write` 直接走 `tfo.Dialer.DialContext(..., b)`
+    - 但当前 live 配置 `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json` 未显式开启 `tcp_fast_open`
+  - 本轮 `40 runs` family 显示 bucket bias 仍未稳定收敛到 Go 云团，因此本轮未继续做 live 复测
+- Round 11（pairwise precedence harness + seed-gated pairwise bias）：
+  - `reality_clienthello_family.py` 已继续新增：
+    - `fe0d_len_to_pairwise_precedence_counts`
+    - `fe0d_len_to_pairwise_majority`
+    - `fe0d_len_to_key_order_families`
+  - Rust chrome-like 指纹开始显式吸收 bucket 内 key-extension 的 pairwise precedence 信号
+  - 中途验证确认：
+    - “固定强度 pairwise bias”会把 Rust bucket 内 key-order cloud 压塌成过刚的 2-3 条子序列
+    - 因此改成了 `randomization_seed` 驱动的 seed-gated pairwise bias，而不是每条规则恒定生效
+  - 本轮最终 `40 runs` family 显示：
+    - Rust `fe0d_len_to_key_order_families` 已恢复到和 Go 同量级的 family 多样性（两侧 top families 都重新变散）
+    - 但选定 key pairs 的 majority 仍未明显收敛到 Go，single diff 也仍常落在 `Go 496/186` vs `Rust 592/282`
+  - 因此本轮仍未继续做 live 复测
+- Round 12（key-signature family + seed-selected signature modes）：
+  - `reality_clienthello_family.py` 已继续新增：
+    - `fe0d_len_to_key_signature_families`
+  - baseline harness 现在可直接观测每个 `fe0d` bucket 下 5 组核心 key-pair 的 precedence signature family
+  - Rust chrome-like 指纹不再只做“单条 pair 独立开关”，而是改成：
+    - `randomization_seed` 先选 bucket 内 signature mode
+    - 再叠一层较轻的 secondary perturbation
+    - 更接近 Go 那种“同一组 precedence 一起翻转”的 mixture sampler
+  - 本轮最终 `40 runs` family 显示：
+    - pairwise mismatch count 继续收敛到：
+      - bucket `186` → `4`
+      - bucket `218` → `5`
+      - bucket `250` → `5`
+      - bucket `282` → `1`
+    - `282` bucket 已接近 Go key-signature family
+    - 但 single diff 仍常见 `Go 560/250` vs `Rust 592/282` 一类跨档样本
+  - 因结构继续收敛，本轮已恢复 live 3 样本复测：
+    - 入口仍为 `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+    - `HK-A-BGP-0.3倍率` / `HK-A-BGP-1.0倍率` / `HK-A-BGP-2.0倍率` 结果仍为 `0/3`
+    - 三个样本仍统一 `curl: (97) Can't complete SOCKS5 connection`
+    - app 日志仍统一为 `REALITY handshake failed ... tls handshake eof`
+- Round 13（三元 joint harness + fe0d-position coupling falsification）：
+  - `reality_clienthello_family.py` 已继续新增：
+    - `record_len_to_key_signature_families`
+    - `fe0d_len_pos_to_key_signature_families`
+  - baseline harness 现在可直接观测：
+    - `record_len / fe0d bucket / key-signature family`
+    - `fe0d bucket / fe0d position / key-signature family`
+  - 本轮先尝试了一条更强的 joint 实现：
+    - 让 Rust signature mode selection 显式吃进 `fe0d_full_position`
+    - 目标是把高位 `fe0d` 和“更晚的 signature”直接耦合
+  - 但 family 结果明确显示这条实现路径会把结构拉坏：
+    - bucket `186` mismatch count 恶化到 `7`
+    - bucket `282` mismatch count 恶化到 `8`
+    - Rust 的 `fe0d position -> key-signature` 云团被重新拉偏
+  - 因此本轮已撤回这条 sampler 变更，只保留新的 joint harness 输出
+  - 撤回后当前稳定状态再次验证：
+    - `cargo test -p sb-tls` / `cargo check --workspace` / `reality_clienthello_diff.sh` / `40 runs family` 全部通过
+    - 当前 reverted family mismatch count 回到：
+      - bucket `186` → `5`
+      - bucket `218` → `4`
+      - bucket `250` → `4`
+      - bucket `282` → `4`
+  - 由于这轮实质上属于“证伪一条实现路径并回退到上一稳定结构”，本轮未再做 live 复测
+- Round 14（position-band tri-joint readout）：
+  - `reality_clienthello_family.py` 已继续新增：
+    - `fe0d_len_to_position_band_counts`
+    - `fe0d_len_band_to_key_signature_families`
+  - 新增 Python 单测：
+    - `scripts/tools/test_reality_clienthello_family.py`
+  - 当前 band 级 joint 结果把 Go / Rust 的主偏差进一步收紧为：
+    - bucket `186`：
+      - Go 明显偏 `late`
+      - Rust 仍明显偏 `early`
+    - bucket `250`：
+      - Go 明显偏 `early`
+      - Rust 仍明显偏 `mid`
+    - bucket `218` / `282`：
+      - band 分布已经相对接近 Go
+  - 说明当前主 blocker 已进一步收缩到：
+    - Rust 还没有复现 Go 在部分 bucket 下的 “position band -> key-signature family” 条件分布
+  - 因本轮只增强观测、未形成新的结构收敛，本轮未继续做 live 复测
+- Round 15（`186/250` weak band-level bias）：
+  - `crates/sb-tls/src/reality/handshake.rs`
+    - 新增 `ChromeFe0dPositionBand`
+    - 新增更弱的 `raw band -> fe0d target bias`
+    - 只对 bucket `186/250` 生效：
+      - `186` 轻推 `fe0d` 更晚
+      - `250` 轻推 `fe0d` 更早
+    - `218/282` 保持不动；未重新引入 `position -> mode` 硬耦合
+  - 新增 Rust 单测：
+    - `test_chrome_fe0d_position_band_classification_matches_profiles`
+    - `test_chrome_fe0d_band_target_bias_only_adjusts_186_and_250_buckets`
+    - `test_chrome_fe0d_band_bias_nudges_target_in_expected_direction`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` → PASS (`114 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - 额外诊断：`SB_REALITY_FAMILY_RUNS=80 ...` → PASS
+  - 结构结果：
+    - `40 runs` 对 `250` 仍有明显采样噪声，因此未只凭这一轮直接判定成功
+    - 但 `80 runs` 已出现更清楚的定向收敛：
+      - bucket `186`
+        - Go：`early=4, mid=4, late=12`
+        - Rust：`early=8, mid=0, late=12`
+      - bucket `250`
+        - Go：`early=12, mid=1, late=2`
+        - Rust：`early=14, mid=2, late=5`
+    - 说明这条“更弱 band bias”没有把 family 云团拉坏，且确实把 `186/250` 往目标方向推近
+    - `218/282` 未见新的明显塌陷，因此本轮保留为当前稳定结构
+  - 因结构已再次出现明确收敛，本轮恢复 live 3 样本复测：
+    - 入口仍为 `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+    - `HK-A-BGP-0.3倍率` / `HK-A-BGP-1.0倍率` / `HK-A-BGP-2.0倍率` 结果仍为 `0/3`
+    - 三个样本均 `curl: (97) Can't complete SOCKS5 connection to example.com. (1)`
+    - app 日志仍统一为 `REALITY handshake failed ... tls handshake eof`
+- Round 16（band-scoped key-extension score bias）：
+  - 本轮尝试在 Round 15 的弱 band target bias 之上，再叠一层：
+    - `bucket + raw band + key extension` score bias
+    - 目标是：
+      - `186 late` 让 `fe0d` 更稳定落到 `0x0017/0x002b/0xff01` 之后
+      - `250 early/mid` 让 `fe0d` 更稳定领先这些 key extensions
+  - 验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` / `cargo check --workspace` / `reality_clienthello_diff.sh` / `40 runs family` → PASS
+    - 额外做了 `80 runs` 诊断
+  - 结果判定为**证伪并回退**：
+    - `250` 在 `80 runs` 上确实明显变近
+    - 但 `186` 与 `282` 被一起拉坏
+    - 特别是 bucket `186` 的 band L1 从上一稳定结构的 `0.400` 回升到 `0.533`
+    - 说明这条“band -> key-extension score bias”会把局部收益换成跨 bucket 结构损伤，不符合当前稳定线要求
+  - 因此本轮已回退到 Round 15 的稳定 sampler
+  - 回退后再次验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` → PASS (`114 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 本轮没有继续做 live 复测；当前稳定 live 结论仍沿用 Round 15 的 `0/3`
+- Round 17（四元 joint harness：`record_len + bucket + band + key-signature family`）：
+  - `scripts/tools/reality_clienthello_family.py`
+    - 新增：
+      - `build_key_signature(...)`
+      - `record_len_fe0d_len_band_counts`
+      - `record_len_fe0d_len_band_to_key_signature_families`
+  - 新增 Python 单测：
+    - `test_build_key_signature_tracks_precedence_pairs`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`114 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 关键结构结论：
+    - `record_len <-> fe0d bucket` 的一一锁定仍然存在，没有出现新的独立条件轴
+    - 也就是说，四元 joint 没有把问题改写成新的“record_len hidden mode”
+    - 它只是把当前 extension-order 层的残差钉得更具体：
+      - Go 主组合仍是：
+        - `496 / 186 / late`
+        - `560 / 250 / early`
+    - Rust 当前主组合仍是：
+      - `496 / 186 / early`
+      - `560 / 250 / mid`
+    - 这说明当前 extension-order 层的可观测主偏差并没有再冒出新的隐藏维度
+  - 因本轮属于观测增强，没有新的稳定 sampler 改动，也没有恢复 live 复测
+- Round 18（local TCP socket trace harness）：
+  - 新增 Rust debug helper / example / shell tooling：
+    - `reality::debug_trace_local_socket_handshake(...)`
+    - `crates/sb-tls/examples/reality_clienthello_socket_trace.rs`
+    - `scripts/tools/reality_go_utls_socket_trace.sh`
+    - `scripts/tools/reality_clienthello_socket_trace.sh`
+  - 新增 Rust 单测：
+    - `test_trace_local_socket_handshake_observes_first_flight_bytes`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`115 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - 新 trace：
+      - `bash scripts/tools/reality_clienthello_socket_trace.sh` → PASS
+      - 额外 `5 runs` local socket trace → PASS
+  - 关键结构结论：
+    - 在“真实本地 TCP listener + 空服务端”这个 probe 粒度上：
+      - Go / Rust 都稳定是：
+        - 连接后单次首读
+        - 单个 `0x16` TLS record
+        - 后续没有第二段数据，直到服务端读超时并关闭
+    - `5 runs` 里两侧都持续是：
+      - `server_read_count = 1`
+      - `chunk_lens = [record_len + 5]`
+      - `server_timed_out_waiting_for_more = true`
+    - 因而当前没有观察到新的：
+      - 首 flight 多段分片
+      - 多次 write / 多次 read
+      - 额外本地 socket 级 payload shaping
+      差异
+    - 当前 local socket trace 看到的长度差异仍只是各自 ClientHello family 本身的长度族差异，不是新的 socket 行为轴
+  - 因本轮仍属观测增强，没有继续做新的 live 复测
+- Round 19（socket trace timing probe）：
+  - 在 Round 18 的 local socket trace 基础上继续细化事件时序：
+    - `SocketTraceChunk` 新增 `offset_micros`
+    - `LocalSocketTrace` 新增：
+      - `client_handshake_elapsed_micros`
+      - `server_trace_elapsed_micros`
+      - `server_first_read_to_end_micros`
+      - `server_end_reason`
+    - Go / Rust socket trace 输出同步扩展
+  - 新增 / 扩展 Rust 单测：
+    - `test_trace_local_socket_handshake_observes_first_flight_bytes`
+      - 继续校验单 record 首 flight
+      - 同时校验时序字段存在且自洽
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`115 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - `bash scripts/tools/reality_clienthello_socket_trace.sh` → PASS
+    - 额外 `5 runs` socket timing trace → PASS
+  - 关键结构结论：
+    - extension-order / family 侧没有新的退化：
+      - 40 runs 仍保持：
+        - Go `186` 以 `late` 为主、`250` 以 `early` 为主
+        - Rust `186` 仍是 `early/late` 混合、`250` 仍是 `early/mid` 混合
+    - 但 timing probe 首次稳定暴露出新的 runtime 轴：
+      - 即使两侧拿到相同的单 record 观测形态，Go 的 `server_first_read_delay_micros` 仍常见在约 `1.0ms+`
+      - Rust 的 `server_first_read_delay_micros` 则通常只有几十微秒以内
+      - 额外 `5 runs` 平均值约为：
+        - Go `1070us`
+        - Rust `19us`
+      - 而两侧：
+        - `client_handshake_elapsed_micros` 仍都在约 `27-29ms`
+        - `server_end_reason` 仍一致是 `timeout`
+        - `server_first_read_to_end_micros` 仍都约 `26-27ms`
+    - 因而当前更像是：
+      - Go / Rust 在“connect 完成到首个 TLS record 真正进入 socket”之间存在稳定时序差异
+      - 而不是 extension-order / payload-family 又出现新的结构问题
+  - 当前判断：
+    - 这还不是可以恢复 live 复测的收敛点
+    - 但它把下一跳明显收敛到了：
+      - connect 后首 write / flush 的时序
+      - handshake 驱动路径里的调度 / runtime / socket 行为
+- Round 20（client-side socket event trace）：
+  - 在 Round 19 的基础上，把 client 侧真实 `write/read/flush` 事件也纳入同一条 trace：
+    - Rust：
+      - 新增 `SocketTraceEvent`
+      - `LocalSocketTrace` 新增：
+        - `client_connect_elapsed_micros`
+        - `client_first_write_after_connect_micros`
+        - `client_first_read_after_connect_micros`
+        - `client_event_trace`
+      - 用 `TracingAsyncIo<TcpStream>` 包住真实 socket，记录 client 侧 ready 事件
+    - Go：
+      - `reality_go_utls_socket_trace.sh` 改为用 `tracedConn` 包住真实 `net.Conn`
+      - 记录：
+        - `Write`
+        - `Read`
+        - `Close`
+        - `SetDeadline/SetReadDeadline/SetWriteDeadline`
+    - `reality_clienthello_socket_trace.sh` 的 `summary` 同步增加 client 侧事件摘要
+  - 新增 / 扩展 Rust 单测：
+    - `test_trace_local_socket_handshake_observes_first_flight_bytes`
+      - 继续校验单 record
+      - 同时校验 client event trace 至少包含 `write` 与 `read/read_eof`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`115 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - `bash scripts/tools/reality_clienthello_socket_trace.sh` → PASS
+    - 额外 `5 runs` client+server timing trace → PASS
+  - 关键结构结论：
+    - family gate 没有退化：
+      - Go `250` 仍以 `early` 为主
+      - Rust `186` 仍是 `early/late` 混合，`250` 仍是 `early/mid/late` 云团而非固定塌缩
+    - Round 19 的“Go 首读更晚”解释被这轮证伪：
+      - client 首 write 并没有出现 Go 显著晚于 Rust
+      - 额外 `5 runs` 均值约为：
+        - Go `client_first_write_after_connect_micros ≈ 840us`
+        - Rust `client_first_write_after_connect_micros ≈ 794us`
+      - 也就是说，两侧真正把首个 TLS record 交给 socket 的时刻，其实已经很接近
+    - 当前更像是 local harness 的 accept/read 调度差异，而不是 client 首 write 差异：
+      - Go `server_first_read_delay_micros` 仍明显波动：`18/709/608/9/891`
+      - Rust `server_first_read_delay_micros` 则稳定接近即时：`7/7/9/6/5`
+      - 结合 client 侧首 write 已接近，可以把 Round 19 的“首 write 时序差异”判断回退为：
+        - 本地同进程 probe 的 server-side 首读延迟本身不是可靠 oracle
+    - 新 trace 还暴露出一个更稳的行为差异：
+      - Go client 事件基本是 `write -> read_eof`
+      - Rust client 事件稳定是 `write -> flush -> read_eof`
+  - 当前判断：
+    - 下一跳更值得做的不是继续解读本地 listener 的 `server_first_read_delay`
+    - 而是：
+      - 继续盯 client-side `write/flush/read_eof` 调用链
+      - 或把 server 侧 probe 从同 runtime / 同进程耦合里隔离出去
+- Round 21（armed server barrier / blocking-thread listener probe）：
+  - 为了进一步压缩 Round 20 里 server-side 读时延的调度噪声：
+    - Rust：
+      - `trace_local_socket_handshake()` 的 server 侧从 `tokio::spawn + tokio::TcpListener` 改成：
+        - `std::net::TcpListener`
+        - 独立阻塞线程
+        - `mpsc` ready barrier，确保 server thread 先 armed 再允许 client `connect`
+    - Go：
+      - `reality_go_utls_socket_trace.sh` 增加 `readyCh`
+      - 先确认 goroutine 已进入 accept 路径，再允许 dial
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`115 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - `bash scripts/tools/reality_clienthello_socket_trace.sh` → PASS
+    - 额外 `5 runs` armed socket trace → PASS
+    - 额外 `80 runs` family 诊断 → PASS
+  - 关键结构结论：
+    - 这轮没有碰 sampler；`80 runs` 诊断也支持 family 没被 probe 拉坏：
+      - Go `250` 仍以 `early` 为主（`13/5/3`）
+      - Rust `250` 也仍以 `early` 为主（`12/3/6`）
+    - barrier 之后：
+      - Rust `server_first_read_delay_micros` 通常开始贴近 `client_first_write_after_connect_micros`
+      - 但仍会偶发明显滞后（例如单个样本 `8736us`）
+      - Go 则经常出现：
+        - `client_first_write_after_connect_micros` 在几百微秒
+        - `server_first_read_delay_micros` 接近 `0-10us`
+      - 这说明 Go goroutine 常常已经在 `Read` 上阻塞等待，首包一到就立即返回
+    - 因而本轮进一步确认：
+      - `server_first_read_delay_micros` 不是跨实现稳定可比的 oracle
+      - 即使加了 ready barrier，它仍会混入：
+        - server 线程 / goroutine 被调度到 `accept/read` 的时机
+        - 本地单机 probe 的运行时差异
+    - 当前更稳定的 runtime 观测仍然是 client-side 事件链：
+      - Go：`write -> read_eof`
+      - Rust：`write -> flush -> read_eof`
+  - 当前判断：
+    - 如果还要继续看 server-side 首读，下一步必须上：
+      - 独立进程
+      - 或更外部的 packet/syscall 级 probe
+    - 在当前本地 harness 粒度上，client-side event trace 仍然是更可信的轨道
+- Round 22（external-process server probe）：
+  - 在 Round 21 基础上，进一步把 server 侧完全移出同进程 / 同 runtime：
+    - Rust 新增：
+      - `ClientSocketTrace`
+      - `debug_trace_remote_socket_handshake(...)`
+      - `crates/sb-tls/examples/reality_clienthello_remote_socket_trace.rs`
+      - Rust 单测：
+        - `test_trace_remote_socket_handshake_records_client_events`
+    - Go 新增：
+      - `scripts/tools/reality_go_utls_remote_socket_trace.sh`
+    - 外部 server 新增：
+      - `scripts/tools/reality_socket_server_probe.py`
+    - 统一入口新增：
+      - `scripts/tools/reality_clienthello_external_socket_trace.sh`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`116 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+    - 新 probe：
+      - `bash scripts/tools/reality_clienthello_external_socket_trace.sh` → PASS
+      - 额外 `5 runs` external-process probe → PASS
+  - 关键结构结论：
+    - `40 runs` family gate 仍保持稳定：
+      - Go `250`：`early 7 / mid 3`
+      - Rust `250`：`early 9 / mid 2`
+    - 一旦 server probe 升级为独立进程，Round 21 里那种 server-side 首读乱跳明显消失：
+      - 单次样本：
+        - Go：`first_write 760us` vs `server_first_read 652us`
+        - Rust：`first_write 811us` vs `server_first_read 736us`
+      - 额外 `5 runs` 均值：
+        - Go：`first_write 742us` vs `server_first_read 706us`
+        - Rust：`first_write 971us` vs `server_first_read 908us`
+    - 这说明：
+      - Round 21 已经接近正确方向
+      - 但真正把 server 侧移出同机同进程调度之后，`server_first_read_delay` 才开始重新变成可用观测
+    - 当前最稳的 runtime 画像已收敛为：
+      - Go：
+        - `write -> read_eof`
+      - Rust：
+        - `write -> flush -> read_eof`
+      - 且外部 server 看到的首读时序，已经基本贴着各自 client 首 write
+  - 当前判断：
+    - “本地 listener 首读延迟不可用”这一点已经基本收敛
+    - 下一跳可以把主要注意力从 server-side 调度噪声转回：
+      - Rust 特有 `flush`
+      - 或更外层真实 live dataplane 差异
+- Round 23（live gate restore + real-node remote trace split）：
+  - 在 Round 22 外部进程 probe 收敛后，恢复 live 3 样本复测：
+    - 运行入口仍是：
+      - `./target/debug/run -c /tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+    - 控制面 preflight：
+      - `GET /version`（Bearer `test123`）→ `200`
+      - `GET /proxies`（Bearer `test123`）→ `200`
+      - `probe-socks.py 127.0.0.1:11080` → `SOCKS5 NO_AUTH accepted`
+    - live 结果仍未翻转：
+      - `HK-A-BGP-0.3倍率` → `PUT /proxies/selector = 204`，`curl (97)`
+      - `HK-A-BGP-1.0倍率` → `PUT /proxies/selector = 204`，`curl (97)`
+      - `HK-A-BGP-2.0倍率` → `PUT /proxies/selector = 204`，首轮 `curl (28)`，放宽到 `20s` 后出现一次 `curl (28)`、一次 `curl (97)`
+    - app 日志最终仍统一落在：
+      - `REALITY handshake failed ... tls handshake eof`
+      - 但 `HK-A-BGP-2.0倍率` 的失败时延明显更长，属于“慢速 EOF”，不是新成功分支
+  - 这轮新增的稳定诊断能力：
+    - `crates/sb-tls/src/reality/handshake.rs`
+      - 新增 `trace_remote_socket_handshake_with_timeout(...)`
+    - `crates/sb-tls/src/reality/mod.rs`
+      - 新增 `debug_trace_remote_socket_handshake_with_timeout(...)`
+    - `crates/sb-tls/examples/reality_clienthello_remote_socket_trace.rs`
+      - 新增 `SB_REALITY_TRACE_TIMEOUT_MS`
+    - 新增 Rust 单测：
+      - `test_trace_remote_socket_handshake_respects_timeout_override`
+  - 本轮验证：
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS (`3 tests`)
+    - `cargo test -p sb-tls` → PASS (`117 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 这轮最关键的新证据不在 local harness，而在真实节点 remote trace：
+    - `HK-A-BGP-0.3倍率`
+      - Rust：`client_error = null`，`client_handshake_elapsed_micros ≈ 966ms`
+      - Go：`client_error = null`，`client_handshake_elapsed_micros ≈ 900ms`
+    - `HK-A-BGP-1.0倍率`
+      - Rust：`client_error = null`，`client_handshake_elapsed_micros ≈ 187ms`
+      - Go：`client_error = null`，`client_handshake_elapsed_micros ≈ 136ms`
+    - `HK-A-BGP-2.0倍率`
+      - Rust（放宽 timeout 后）：`tls handshake eof`，`client_handshake_elapsed_micros ≈ 31.2s`
+      - Go：`EOF`，`client_handshake_elapsed_micros ≈ 49.4s`
+  - 这把问题边界明显上移了：
+    - 对 `HK-A-BGP-0.3倍率 / 1.0倍率` 而言：
+      - 裸 `sb-tls` REALITY 握手在 Go / Rust 两边都能通
+      - 因而 live dataplane 的主 blocker 已不再像前面那样收敛在“ClientHello / REALITY 首次 TLS 握手本身”
+      - 下一跳应转向：
+        - VLESS outbound 路径
+        - `xtls-rprx-vision`
+        - app / selector / adapter 真实拨号链
+    - 对 `HK-A-BGP-2.0倍率` 而言：
+      - 它在低层 REALITY 上就会慢速 `EOF`
+      - 当前更适合作为“慢失败样本”而不是主校准锚点
+- Round 24（VLESS flow addon parity + response framing fix）：
+  - 延续 Round 23 的 app-path 方向，开始直接修补 Rust VLESS 与上游 Go `sing-vmess/vless` 的协议差距。
+  - 这轮先确认到两个确定缺口：
+    - Rust outbound request 先前没有把 `flow = xtls-rprx-vision` 编进 VLESS addon 区
+    - Rust outbound response 先前把 VLESS response 错当成“1 字节 status”，而不是 `version + additional_len + optional additional bytes`
+  - 已完成修补：
+    - `crates/sb-adapters/src/outbound/vless.rs`
+      - 新增 `flow_addons()` / `push_uvarint()` / `uvarint_len()`
+      - `build_request_header()` 现在会按上游格式编码 `xtls-rprx-vision` addon
+      - `handshake()` 现在会读取并跳过完整 VLESS response header/addons
+    - 新增 VLESS 单测：
+      - `test_build_request_header_omits_addons_without_flow`
+      - `test_build_request_header_encodes_vision_flow_addon`
+      - `test_handshake_consumes_vless_response_addons`
+  - 本轮验证：
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport vless::tests -- --nocapture` → PASS
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport --test vless_integration -- --nocapture` → PASS (`17 passed, 1 ignored`)
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` → PASS (`117 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 这轮外部节点没有形成新的 live 验收，因为真实 HK 样本在验证窗口内明显漂移：
+    - `HK-A-BGP-0.3倍率`
+      - `vless_reality_phase_probe` 一度直接落成 `Authentication failed: reality verification failed`
+      - 低层 `sb-tls` remote trace 随后又出现 `Connection refused`
+    - 因而本轮不能再把当前外部节点结果当作稳定 oracle 去判断这次 VLESS 修补是否已翻转 live
+  - 但结构上的结论已经更清楚：
+    - Rust VLESS request/response 的基础 framing 差距已补齐
+    - 当前最值得继续推进的是 `xtls-rprx-vision` 的 `VisionConn` / padding-direct 子协议包装
+    - 而不是再回去改 REALITY ClientHello sampler
+- Round 25（Vision shared TLS state + direct split probe）：
+  - 继续沿 Round 24 的 Vision 路径推进，但仍避免回到 REALITY ClientHello sampler。
+  - 这轮先对齐上游 Go `sing-vmess/vless/vision.go` 的一个关键结构事实：
+    - Go `VisionConn` 的读写 TLS 判别状态是共享的
+    - 读侧解析到 inner TLS 1.3 server hello 后，会把写侧的首个 inner appdata 从 `commandPaddingEnd` 切到 `commandPaddingDirect`
+    - 且在 `DIRECT` 切换点，Go 还会把“首个带命令块”和“剩余裸流量”拆成两段写，中间插入约 `5ms` delay
+  - 已完成实现：
+    - `crates/sb-adapters/src/outbound/vless.rs`
+      - 新增 `VisionTlsState`
+      - `VisionEncoder` / `VisionDecoder` 改为共享 TLS 判别状态
+      - 写侧现在能吃到读侧 server-hello 解析结果，并在 TLS 1.3 场景下发出 `COMMAND_PADDING_DIRECT`
+      - 写侧新增 `VisionWritePlan`
+      - 在 `DIRECT` 切换点按 Go 语义拆成两段写，并插入 `5ms` split delay
+    - 新增 / 扩展单测：
+      - `test_vision_encoder_emits_direct_after_tls13_server_hello`
+      - `test_vision_encoder_splits_direct_write_plan`
+      - 既有 Vision roundtrip tests 同步改为覆盖 shared-state 路径
+  - 本轮验证：
+    - `cargo fmt --all` → PASS
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport vision_ -- --nocapture` → PASS (`6 passed`)
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport --test vless_integration -- --nocapture` → PASS (`17 passed, 1 ignored`)
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` → PASS (`117 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 真实节点 phase probe 结果：
+    - `HK-A-BGP-0.3倍率`
+      - `direct_reality = ok`
+      - `transport_reality = ok`
+      - `vless_dial = early eof` 仍约 `17.3s`
+    - `HK-A-BGP-1.0倍率`
+      - 第二轮复验回到稳定形态：
+        - `direct_reality = ok`
+        - `transport_reality = ok`
+        - `vless_dial = early eof` 仍约 `17.3s`
+      - 首轮中出现过一次 `direct_reality = tls handshake eof` 的漂移，可视为外部样本瞬时噪声
+  - 这轮最重要的结论不是“无变化”，而是新增了一条清晰证伪链：
+    - `shared TLS state`
+    - `DIRECT marker`
+    - `DIRECT split + 5ms delay`
+    - 这些动作都让 Rust Vision 更接近 Go `VisionConn` 的表层 framing / timing 语义
+    - 但仍不足以继续把真实节点 `vless_dial` 从 `~17s early eof` 再往前推
+  - 因而当前更强的结构判断变成：
+    - Round 24 已补齐 VLESS framing
+    - Round 25 已补齐一层关键 Vision state-sharing / direct-marker / split-write 语义
+    - 剩余 blocker 更像是 Go `VisionConn` 里真正的 `directWrite/directRead/rawInput/netConn` 深层旁路能力
+    - 这不是继续加静态 bias 或更弱写侧 timing 小补丁就能翻转的层级
+- Round 26（REALITY concrete stream + raw/tls dual-path Vision probe）：
+  - 继续顺着 Round 25 的判断，第一次把“深层旁路”真正落成代码，而不是只在 Vision framing 层做近似。
+  - 这轮核心动作：
+    - `crates/sb-tls/src/reality/client.rs`
+      - 新增 `RealityClientTlsStream<S>`
+      - 为 REALITY 暴露 concrete stream 返回口：
+        - `RealityConnector::connect_stream(...)`
+      - concrete stream 同时提供：
+        - `read_tls` / `write_tls_all` / `flush_tls`
+        - `read_raw` / `write_raw_all` / `flush_raw`
+    - `crates/sb-tls/src/reality/handshake.rs`
+      - 新增 `perform_stream(...)`
+      - `perform(...)` 改为对 concrete stream 再 boxed
+    - `crates/sb-tls/src/reality/mod.rs`
+      - re-export `RealityClientTlsStream`
+    - `crates/sb-adapters/src/outbound/vless.rs`
+      - 新增 `VisionRealityClientStream`
+      - 当满足：
+        - `flow == xtls-rprx-vision`
+        - `reality` 已启用
+        - 且当前没有启用 ECH 叠层
+      - 改走专门的 concrete REALITY path，而不是先擦成 `Box<dyn TlsStream>`
+      - read task：
+        - 先走 `read_tls`
+        - decoder 见到 `COMMAND_PADDING_DIRECT` 后切到 `read_raw`
+      - write task：
+        - 先走 `write_tls_all`
+        - 命中 `DIRECT split` 后，remainder 改走 `write_raw_all`
+      - 这轮也补了一个关键单测：
+        - `test_vision_decoder_enables_raw_reads_after_direct_frame`
+  - 本轮验证：
+    - `cargo fmt --all` → PASS
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport vision_ -- --nocapture` → PASS (`7 passed`)
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport --test vless_integration -- --nocapture` → PASS (`17 passed, 1 ignored`)
+    - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+    - `cargo test -p sb-tls` → PASS (`117 passed`)
+    - `cargo check --workspace` → PASS
+    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - 真实节点 phase probe：
+    - 第一轮：
+      - `HK-A-BGP-0.3倍率`
+        - `direct_reality = ok`
+        - `transport_reality = ok`
+        - `vless_dial = early eof`，约 `16.98s`
+      - `HK-A-BGP-1.0倍率`
+        - `direct_reality = ok`
+        - `transport_reality` 一度出现 `tls handshake eof`
+        - `vless_dial = early eof`，约 `17.55s`
+    - 第二轮复验：
+      - `HK-A-BGP-0.3倍率`
+        - `direct_reality = ok`
+        - `transport_reality = ok`
+        - `vless_dial = early eof`，约 `16.97s`
+      - `HK-A-BGP-1.0倍率`
+        - `direct_reality = ok`
+        - `transport_reality = ok`
+        - `vless_dial = early eof`，约 `17.13s`
+  - 本轮关键结论：
+    - 这次已经不是表层 Vision 近似，而是第一次真正把：
+      - REALITY concrete stream
+      - TLS path / raw path
+      - read-side direct switch
+      - write-side raw remainder
+      - 都接到了同一条运行链上
+    - 但真实节点仍稳定停在：
+      - `~17s early eof`
+      - 没有出现新的成功相位
+    - 而且相较 Round 25 的 `~17.25s+`：
+      - 这轮更像“略微更早失败”而非继续后移
+    - 因而这条更深的证伪链也已经比较完整：
+      - 仅仅补 `directWrite/directRead` 的 raw/tls 双通道近似，仍不足以翻转 live dataplane
+    - 当前剩余 blocker 更像：
+      - Go `VisionConn` 里依赖 `rawInput/input/netConn` 的更强内部缓冲/旁路语义
+      - 或 app-path 里还有更外层未识别差异
 - 当前报告：`agents-only/mt_real_02_baseline.md`
+
+## MT-REAL-02 Round 28
+
+- 这轮最重要的新事实：
+  - 已证明确实存在“最小 `sb-adapters` phase probe 构建面”和 “`app/run` 构建面”之间的 REALITY/VLESS 行为分叉
+  - 不是 selector、不是 SOCKS inbound、也不是旧二进制误测
+- 新增/补强的诊断入口：
+  - `crates/sb-adapters/src/register.rs`
+    - 新增 `test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+    - 目的：锁住 app-facing `AdapterIoBridge::connect_io` 在 Vision 路径上“先返回流、延后消费 VLESS response”的契约
+  - `app/src/bin/probe-outbound.rs`
+    - 新增 `connect_io()` fallback
+    - 启动时显式 `sb_tls::ensure_crypto_provider()`
+    - 新增 `direct_vless_dial=...` 对照输出：
+      - 在同一个 `app` 二进制里，直接用同一份 `OutboundIR` 手工构造 `VlessConnector`
+      - 与 bridge `connect_io()` 结果做同进程对照
+- 本轮关键观测链：
+  - 先重新构建：
+    - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+  - 然后用新二进制重跑 live：
+    - `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+    - `HK-A-BGP-0.3倍率 / HK-A-BGP-1.0倍率 / HK-A-BGP-2.0倍率`
+    - 结果仍是 `0/3`
+    - 日志仍是：
+      - `vless dial failed: Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: tls handshake eof`
+  - 同时纠正了 phase probe 的一个误操作：
+    - 正确环境变量是 `SB_VLESS_REALITY_PUBLIC_KEY`
+    - 之前手动复跑时误用了 `SB_VLESS_PUBLIC_KEY`
+    - 那条 `reality verification failed` 不能再当作结构结论
+  - 用正确变量、并把 target 改成与 live 对齐的 `example.com:443` 后：
+    - `sb-adapters` 最小 probe 构建面
+    - `HK-A-BGP-0.3倍率`
+      - `direct_reality = ok`
+      - `transport_reality = ok`
+      - `vless_dial = ok`
+      - `vless_probe_io ~= 16.9s early eof`
+    - `HK-A-BGP-1.0倍率`
+      - `direct_reality = ok`
+      - `transport_reality = ok`
+      - `vless_dial = ok`
+      - `vless_probe_io ~= 16.9s early eof`
+  - 再用新的 `app/src/bin/probe-outbound.rs` 直接走 app 构建面：
+    - `HK-A-BGP-0.3倍率`
+      - `direct_vless_dial=err`，约 `957ms`
+      - bridge `connect_io()` 同样落到 `tls handshake eof`
+    - `HK-A-BGP-1.0倍率`
+      - `direct_vless_dial=err`，约 `944ms`
+      - bridge `connect_io()` 同样落到 `tls handshake eof`
+- 因而当前结构判断已经更新为：
+  - 当前主分叉不在：
+    - selector group
+    - SOCKS inbound fast-path
+    - app 是否用了旧二进制
+  - 当前主分叉更像在：
+    - `app` 这套依赖/feature surface
+    - 与最小 `sb-adapters` probe 构建面之间
+    - 导致同一份 `OutboundIR` 在 app 面上仍停在 `dial-time tls handshake eof`
+    - 而最小 probe 面已经能稳定推进到：
+      - `vless_dial ok`
+      - `post-dial probe_io ~17s early eof`
+- 这轮 gate 状态：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - `cargo check --workspace` → PASS
+  - `cargo test -p sb-tls` → FAIL
+    - 当前失败点：
+      - `global::tests::test_none_mode_empty`
+    - 表现为 root-store/全局模式相关波动
+    - 与本轮 app/dataplane 诊断主线无直接耦合
 
 ## 仍然有效的历史结论
 
@@ -74,14 +715,9 @@
 
 ## 当前权威入口
 
-- 最高目标原文：
-  - `agents-only/archive/L12-L17/06-STRATEGIC-ROADMAP.md`
-  - `agents-only/archive/L01-L04/05-USER-ABSTRACT-REQUIREMENTS.md`
-- 当前实验报告：
-  - `agents-only/mt_real_02_baseline.md`
-- parity / divergence 账面口径：
-  - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
-  - `agents-only/reference/GO_PARITY_MATRIX.md`
+- 最高目标：`agents-only/archive/L12-L17/06-STRATEGIC-ROADMAP.md` + `agents-only/archive/L01-L04/05-USER-ABSTRACT-REQUIREMENTS.md`
+- 当前实验报告：`agents-only/mt_real_02_baseline.md`
+- parity / divergence 账面口径：`labs/interop-lab/docs/dual_kernel_golden_spec.md` + `agents-only/reference/GO_PARITY_MATRIX.md`
 
 ## 当前默认准则
 
@@ -89,9 +725,136 @@
 - 每轮只消减一组真实差异，然后立刻做：
   - baseline diff 复跑
   - live chrome 样本复测
-- 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
-  - 优先研究 `HelloChrome_Auto` 的动态 extension order / payload family
-  - `fe0d` / record-length 动态族、opaque middle-order 族、seeded shuffle 语义都已被覆盖，下一焦点转向更深层运行时行为：
+  - 现在已进入“静态字节几乎收敛但 live 仍失败”的阶段：
+    - 优先研究 `HelloChrome_Auto` 的 joint-distribution / payload family / 更深层发包行为
+  - `fe0d` / record-length 动态族、opaque middle-order 族、seeded shuffle、joint harness、shared-seed、first-flight trace、local TCP socket trace、socket timing trace、client-side socket event trace、`fe0d` 条件落点建模、bucket-conditioned extension stats、pairwise precedence harness、seed-gated pairwise bias、key-signature family、seed-selected signature modes、record_len/position joint harness、position-band joint harness、`186/250` weak band-level bias、以及 `record_len + bucket + band + key-signature` 四元 joint readout 都已就位；而 `band-scoped key-extension score bias` 已被证伪并撤回，Round 19 对 server-side 首读延迟的“首 write 更晚”解释也已被 Round 20 回退，下一焦点继续下探更细的运行时行为：
     - Go `HelloChrome_Auto` 的 joint-distribution / 相关性
-    - 更深层的 TLS / socket 发包 shaping
+    - client-side `write/flush/read_eof` 调用链
+    - 在独立进程 probe 下继续确认 `flush` 是否对应真实额外 network-relevant 行为
+    - 但在 Round 23 之后，主诊断焦点已从“低层 REALITY 能否建立”进一步上移到：
+      - VLESS / Vision / adapter 路径
+    - 而在 Round 24 之后：
+      - VLESS request/response 的基础 framing 已补齐
+      - 当前真正剩下的 app-path 重心是 `xtls-rprx-vision` 的 Vision 子协议包装
+    - 而在 Round 25 之后：
+      - Vision 的 shared-state / `DIRECT` marker / split-write 语义也已补进一层
+      - 但真实节点仍稳定停在 `~17s early eof`
+      - 因而下一跳不应再继续堆叠表层 Vision framing 小修，而应明确评估：
+        - Go `VisionConn` 的 `directWrite/directRead/rawInput/netConn` 深层旁路是否为真实主 blocker
+    - 而在 Round 26 之后：
+      - REALITY concrete stream 与 raw/tls dual-path 也已实际接线并做过真实节点复验
+      - 结果仍未翻转，且失败时延没有继续后移
+      - 因而后续如果继续推进，优先级应更偏向：
+        - 更精确模拟 Go `rawInput/input` 行为
+        - 或重新审视 app-path 更外层是否还有包装差异
+    - 而在 Round 27 之后：
+      - `DIRECT` 切换瞬间的 `rustls` 内部读侧残留也已显式排空：
+        - `pending plaintext`
+        - `buffered raw TLS`
+      - `HK-A-BGP-0.3倍率 / HK-A-BGP-1.0倍率` 真实 phase probe 仍稳定：
+        - `direct_reality = ok`
+        - `transport_reality = ok`
+        - `vless_dial ~= 17.0s early eof`
+      - 因而“仅缺 DIRECT 切换时 drain rustls 读缓冲”这条路径也已基本证伪
+      - 当前剩余高优先级更像：
+        - Go `VisionConn` 更深的 ownership / bypass 语义
+        - 或 app-path 更外层差异
   - 暂不回到盲补单个固定报文
+
+## Round 29（app surface SNI lowering 修复 + REALITY live dataplane 翻转）
+
+- 先完成用户指定的当前优先级：
+  - `crates/sb-adapters/src/register.rs` 中新增的 VLESS bridge regression test 原本被外层 `#[cfg(all(test, feature = "adapter-dns"))]` 误门控
+  - 已改为 `#[cfg(test)]`，并仅给 DNS test 单独加 `#[cfg(feature = "adapter-dns")]`
+  - 验证：
+    - `cargo test -p sb-adapters --features adapter-vless,tls_reality,sb-transport --lib -- --list`
+    - 现在能发现 `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+    - 该 test 单独执行 PASS
+- app vs minimal surface 二分结果：
+  - 最小 `sb-adapters` example 对 `HK-A-BGP-0.3倍率` 仍是：
+    - `direct_reality = ok`
+    - `transport_reality = ok`
+    - `vless_dial = ok`
+    - `vless_probe_io = early eof`
+  - app `probe-outbound` 在修复前用同一 config / outbound 输出脱敏诊断：
+    - `sni=87.83.106.217`
+    - 随后 `direct_reality = tls handshake eof`
+  - 最小 probe 成功基线实际使用的是配置中的：
+    - `tls.server_name = gamedownloads-rockstargames-com.akamaized.net`
+  - 因而 Round 28 的 app dial-time EOF 主因已定位为：
+    - `sb-config` v2 outbound lowering 没把 sing-box 风格 `tls.server_name` 映射到 `tls_sni`
+    - 且 `tls.reality.server_name` 缺省时没有 fallback 到 `tls.server_name`
+- 本轮代码修复：
+  - `crates/sb-config/src/validator/v2/outbound.rs`
+    - `tls.server_name` 现在作为 `tls_sni`
+    - `tls.reality.server_name` 缺省时 fallback 到 `tls.server_name`
+    - nested `tls.utls.fingerprint` 现在落到 `utls_fingerprint`
+    - 新增 `test_parse_reality_uses_tls_server_name_fallback`
+  - `app/src/bin/probe-outbound.rs`
+    - 支持 `connect()` unsupported 后 fallback 到 `connect_io()`
+    - 支持 minimal app feature surface：`sb-core,sb-transport,adapter-vless,tls_reality`
+    - 增加 pre/post bridge direct diagnostics：
+      - 脱敏 REALITY config
+      - `direct_reality`
+      - `direct_vless_dial`
+  - `app/src/util.rs`
+    - `register_adapters_once()` 改为只要 app 启用 `sb-adapters` 依赖就注册，而不是只认聚合 `adapters`
+  - `app/Cargo.toml`
+    - `probe-outbound` required-features 缩到实际需要的 `sb-core,sb-adapters,sb-transport`
+  - `app/src/inbound_starter.rs` / `app/src/router/mod.rs`
+    - 修复 minimal feature 编译时暴露的小 cfg 漏洞
+- 修复后 app probe 结果：
+  - `router,adapter-vless,tls_reality`
+    - `HK-A-BGP-0.3倍率`：pre/post bridge `direct_reality = ok`，`direct_vless_dial = ok`
+    - `HK-A-BGP-1.0倍率`：pre/post bridge `direct_reality = ok`，`direct_vless_dial = ok`
+  - `router,adapters`
+    - `HK-A-BGP-0.3倍率`：pre/post bridge `direct_reality = ok`，`direct_vless_dial = ok`
+  - 这确认：
+    - selector / SOCKS / bridge 不是 dial-time EOF 主因
+    - app feature/dependency surface 也不是独立主因
+    - 真实 blocker 是配置 lowering 的 SNI 丢失
+- 继续推进 live dataplane：
+  - 原 REALITY handshake EOF 已翻转
+  - 但 first live HTTPS default curl 进入 post-dial 后仍有 HTTP2 / timeout 残留
+  - 为避免 concrete REALITY stream 读任务持锁阻塞写任务，本轮把 REALITY+Vision live 路径先改成 TLS-only Vision framing：
+    - `VisionEncoder::new_with_direct(..., allow_direct = false)`
+    - REALITY+Vision 路径不再默认发 `COMMAND_PADDING_DIRECT` raw-bypass
+    - 保留 raw-bypass 代码用于后续更精确拆分
+    - 新增 `test_vision_encoder_can_disable_direct_after_tls13_server_hello`
+- live run 复测：
+  - 构建：
+    - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+  - 启动：
+    - `./target/debug/run -c /tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+  - preflight：
+    - `GET /version`（Bearer `test123`）→ `200`
+    - SOCKS5 greeting `127.0.0.1:11080` → `[5, 0]`
+  - `http://example.com/` via `--socks5-hostname`：
+    - `HK-A-BGP-0.3倍率` → `200` (`~1.51s`)
+    - `HK-A-BGP-1.0倍率` → `200` (`~0.44s`)
+    - `HK-A-BGP-2.0倍率` → `timeout 20s`
+  - `https://example.com/ --http1.1` via `--socks5-hostname`：
+    - `HK-A-BGP-0.3倍率` → repeat 3/3 `200` (`~1.77s`-`2.40s`)
+    - `HK-A-BGP-1.0倍率` → `200` (`~0.63s`-`0.74s`)
+    - `HK-A-BGP-2.0倍率` → repeat `timeout 30s`
+  - default HTTPS without forcing HTTP/1.1 still has HTTP2/framing or timeout residuals
+- 结构结论：
+  - MT-REAL-02 已从 `dial-time tls handshake eof` 推进到真实 live dataplane 成功分支
+  - `0.3倍率 / 1.0倍率` 已具备 HTTP and HTTPS/HTTP1.1 live success evidence
+  - `2.0倍率` 保持历史慢失败样本特征，不能计为全量完成
+  - 下一跳不应回到 ClientHello sampler；应继续处理：
+    - HTTPS default / HTTP2 framing
+    - Go `VisionConn` raw direct bypass 的正确读写 ownership
+    - `2.0倍率` 慢 timeout 是否为节点质量还是 Vision/raw-bypass 残差
+- 本轮 gate：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-config test_parse_reality_uses_tls_server_name_fallback -- --nocapture` → PASS
+  - `cargo test -p sb-adapters --features 'adapter-vless,tls_reality,sb-transport' test_vision_encoder_can_disable_direct_after_tls13_server_hello -- --nocapture` → PASS
+  - `cargo test -p sb-adapters --features 'adapter-vless,tls_reality,sb-transport' test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read -- --nocapture` → PASS
+  - `cargo test -p sb-tls` → PASS (`117 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` 仍是结构差异报告，不是 gate 失败)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - family summary snapshot saved to `/tmp/mt_real02_family_round29.json`:
+    - Go record/fe0d counts: `496/186=5`, `528/218=11`, `560/250=15`, `592/282=9`
+    - Rust record/fe0d counts: `496/186=5`, `528/218=14`, `560/250=9`, `592/282=12`

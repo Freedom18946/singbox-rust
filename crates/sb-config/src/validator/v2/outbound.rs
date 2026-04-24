@@ -816,11 +816,13 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
             }
         }
         if let Some(tls) = o.get("tls").and_then(|v| v.as_object()) {
+            let tls_server_name = tls
+                .get("server_name")
+                .or_else(|| tls.get("sni"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
             if ob.tls_sni.is_none() {
-                ob.tls_sni = tls
-                    .get("sni")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                ob.tls_sni = tls_server_name.map(|s| s.to_string());
             }
             if ob.tls_alpn.is_none() {
                 if let Some(val) = tls.get("alpn") {
@@ -856,6 +858,14 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
             if ob.alpn.is_none() {
                 ob.alpn = tls
                     .get("alpn")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+            }
+            if ob.utls_fingerprint.is_none() {
+                ob.utls_fingerprint = tls
+                    .get("utls")
+                    .and_then(|v| v.as_object())
+                    .and_then(|utls| utls.get("fingerprint"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
             }
@@ -943,6 +953,7 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
                 ob.reality_server_name = reality
                     .get("server_name")
                     .and_then(|v| v.as_str())
+                    .or(tls_server_name)
                     .map(|s| s.to_string());
             }
         }
@@ -1554,6 +1565,46 @@ mod tests {
             outbound.reality_server_name,
             Some("www.apple.com".to_string())
         );
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_parse_reality_uses_tls_server_name_fallback() {
+        let json = json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "tag": "reality-sing-box-style",
+                "server": "203.0.113.10",
+                "server_port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "flow": "xtls-rprx-vision",
+                "tls": {
+                    "enabled": true,
+                    "server_name": "cdn.example.com",
+                    "reality": {
+                        "enabled": true,
+                        "public_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "short_id": "01ab"
+                    },
+                    "utls": {
+                        "enabled": true,
+                        "fingerprint": "chrome"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        assert_eq!(outbound.name.as_deref(), Some("reality-sing-box-style"));
+        assert_eq!(outbound.tls_sni.as_deref(), Some("cdn.example.com"));
+        assert_eq!(
+            outbound.reality_server_name.as_deref(),
+            Some("cdn.example.com")
+        );
+        assert_eq!(outbound.utls_fingerprint.as_deref(), Some("chrome"));
         assert!(outbound.validate_reality().is_ok());
     }
 

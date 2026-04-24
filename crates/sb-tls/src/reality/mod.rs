@@ -59,8 +59,9 @@ pub mod server;
 pub mod tls_record;
 
 pub use auth::{RealityAuth, generate_keypair};
-pub use client::RealityConnector;
+pub use client::{RealityClientTlsStream, RealityConnector};
 pub use config::{RealityClientConfig, RealityServerConfig};
+pub use handshake::{ClientSocketTrace, LocalSocketTrace, SocketTraceChunk, SocketTraceEvent};
 pub use server::RealityAcceptor;
 use std::sync::Arc;
 
@@ -93,4 +94,35 @@ pub mod cloning;
 /// implementations such as Go sing-box + uTLS.
 pub fn debug_emit_client_hello_record(config: RealityClientConfig) -> RealityResult<Vec<u8>> {
     handshake::RealityHandshake::new(Arc::new(config))?.emit_client_hello_record()
+}
+
+/// Trace the first-flight write chunks emitted by the REALITY client handshake.
+pub fn debug_trace_client_hello_writes(config: RealityClientConfig) -> RealityResult<Vec<Vec<u8>>> {
+    handshake::RealityHandshake::new(Arc::new(config))?.trace_client_hello_writes()
+}
+
+/// Trace the first-flight bytes as observed on a real local TCP socket.
+pub fn debug_trace_local_socket_handshake(
+    config: RealityClientConfig,
+) -> RealityResult<LocalSocketTrace> {
+    handshake::RealityHandshake::new(Arc::new(config))?.trace_local_socket_handshake()
+}
+
+/// Trace the client-side REALITY socket handshake against a supplied remote address.
+pub fn debug_trace_remote_socket_handshake(
+    config: RealityClientConfig,
+    remote_addr: std::net::SocketAddr,
+) -> RealityResult<ClientSocketTrace> {
+    handshake::RealityHandshake::new(Arc::new(config))?.trace_remote_socket_handshake(remote_addr)
+}
+
+/// Trace the client-side REALITY socket handshake against a supplied remote address
+/// with a caller-provided handshake timeout.
+pub fn debug_trace_remote_socket_handshake_with_timeout(
+    config: RealityClientConfig,
+    remote_addr: std::net::SocketAddr,
+    handshake_timeout: std::time::Duration,
+) -> RealityResult<ClientSocketTrace> {
+    handshake::RealityHandshake::new(Arc::new(config))?
+        .trace_remote_socket_handshake_with_timeout(remote_addr, handshake_timeout)
 }

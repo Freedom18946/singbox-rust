@@ -434,6 +434,32 @@ impl<Data> ConnectionCommon<Data> {
             .process_new_packets(&mut self.deframer_buffer, &mut self.sendable_plaintext)
     }
 
+    /// Returns the number of already-decrypted plaintext bytes buffered for reads.
+    pub fn pending_plaintext_len(&self) -> usize {
+        self.core.common_state.received_plaintext.len()
+    }
+
+    /// Drains already-decrypted plaintext bytes buffered for reads.
+    pub fn take_pending_plaintext(&mut self) -> alloc::vec::Vec<u8> {
+        let mut pending = alloc::vec::Vec::with_capacity(self.pending_plaintext_len());
+        while let Some(chunk) = self.core.common_state.received_plaintext.pop() {
+            pending.extend_from_slice(&chunk);
+        }
+        pending
+    }
+
+    /// Returns the number of TLS bytes already read from the socket but not yet processed.
+    pub fn buffered_read_tls_len(&self) -> usize {
+        self.deframer_buffer.filled().len()
+    }
+
+    /// Drains TLS bytes already read from the socket but not yet processed.
+    pub fn take_buffered_read_tls(&mut self) -> alloc::vec::Vec<u8> {
+        let pending = self.deframer_buffer.filled().to_vec();
+        self.deframer_buffer.discard(pending.len());
+        pending
+    }
+
     /// Derives key material from the agreed connection secrets.
     ///
     /// This function fills in `output` with `output.len()` bytes of key

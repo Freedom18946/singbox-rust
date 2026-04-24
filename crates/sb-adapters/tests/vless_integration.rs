@@ -10,7 +10,7 @@
 
 use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
-use sb_adapters::transport_config::TransportConfig;
+use sb_adapters::transport_config::{TransportConfig, TransportType};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -147,6 +147,18 @@ fn test_vless_connector_implements_debug_clone() {
     let connector = VlessConnector::default();
     let _debug = format!("{:?}", connector);
     let _cloned = connector.clone();
+}
+
+#[test]
+fn test_vless_connector_reports_transport_metadata() {
+    let connector = VlessConnector::default();
+    assert_eq!(connector.transport_type(), TransportType::Tcp);
+
+    #[cfg(feature = "sb-transport")]
+    assert!(connector.uses_transport_dialer());
+
+    #[cfg(not(feature = "sb-transport"))]
+    assert!(!connector.uses_transport_dialer());
 }
 
 // ============================================================================

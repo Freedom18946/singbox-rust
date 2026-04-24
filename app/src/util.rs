@@ -22,12 +22,12 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, contents: &[u8]) -> Result<()> {
 }
 
 /// Register adapters (idempotent).
-/// When `adapters` feature is enabled, calls `sb_adapters::register_all()`.
+/// When any app feature enables `sb-adapters`, calls `sb_adapters::register_all()`.
 /// Otherwise, this is a no-op.
 #[allow(clippy::missing_const_for_fn)]
 #[inline]
 pub fn register_adapters_once() {
-    #[cfg(feature = "adapters")]
+    #[cfg(feature = "sb-adapters")]
     sb_adapters::register_all();
 }
 

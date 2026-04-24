@@ -20,7 +20,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 #[cfg(feature = "router")]
 use tracing::info;
-#[cfg(any(feature = "router", feature = "adapters"))]
 use tracing::warn;
 
 #[cfg(feature = "router")]

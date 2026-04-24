@@ -118,9 +118,15 @@ impl ClientHelloInput {
             None => SessionId::random(config.provider.secure_random)?,
         };
 
+        let extension_order_seed = config
+            .fingerprint
+            .as_ref()
+            .and_then(|fingerprint| fingerprint.randomization_seed)
+            .map(Ok)
+            .unwrap_or_else(|| crate::rand::random_u16(config.provider.secure_random))?;
         let hello = ClientHelloDetails::new(
             extra_exts.protocols.clone().unwrap_or_default(),
-            crate::rand::random_u16(config.provider.secure_random)?,
+            extension_order_seed,
         );
 
         Ok(Self {

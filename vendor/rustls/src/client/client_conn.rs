@@ -153,6 +153,10 @@ pub struct ClientHelloFingerprint {
     /// Raw extensions to inject into the encoded client hello.
     pub opaque_extensions: Vec<(u16, Vec<u8>)>,
 
+    /// Optional handshake-scoped randomization seed for extension ordering
+    /// and related fingerprint family choices.
+    pub randomization_seed: Option<u16>,
+
     /// Extension ordering to prefer when encoding the client hello.
     pub extension_order: Vec<u16>,
 
@@ -836,6 +840,26 @@ mod connection {
         /// Returns the number of TLS1.3 tickets that have been received.
         pub fn tls13_tickets_received(&self) -> u32 {
             self.inner.tls13_tickets_received
+        }
+
+        /// Returns the number of already-decrypted plaintext bytes buffered for reads.
+        pub fn pending_plaintext_len(&self) -> usize {
+            self.inner.pending_plaintext_len()
+        }
+
+        /// Drains already-decrypted plaintext bytes buffered for reads.
+        pub fn take_pending_plaintext(&mut self) -> Vec<u8> {
+            self.inner.take_pending_plaintext()
+        }
+
+        /// Returns the number of TLS bytes already read from the socket but not yet processed.
+        pub fn buffered_read_tls_len(&self) -> usize {
+            self.inner.buffered_read_tls_len()
+        }
+
+        /// Drains TLS bytes already read from the socket but not yet processed.
+        pub fn take_buffered_read_tls(&mut self) -> Vec<u8> {
+            self.inner.take_buffered_read_tls()
         }
 
         /// Return true if the connection was made with a `ClientConfig` that is FIPS compatible.

@@ -7,8 +7,121 @@ use crate::TlsConnector;
 use async_trait::async_trait;
 use std::io;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::debug;
+
+/// Concrete REALITY client stream that keeps access to both rustls and the
+/// underlying transport.
+pub struct RealityClientTlsStream<S> {
+    inner: tokio_rustls::client::TlsStream<S>,
+}
+
+impl<S> RealityClientTlsStream<S> {
+    pub(crate) fn new(inner: tokio_rustls::client::TlsStream<S>) -> Self {
+        Self { inner }
+    }
+
+    pub fn get_mut(&mut self) -> (&mut S, &mut rustls::client::ClientConnection) {
+        self.inner.get_mut()
+    }
+}
+
+impl<S> RealityClientTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    pub async fn read_tls(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf).await
+    }
+
+    pub async fn write_tls_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(buf).await
+    }
+
+    pub async fn flush_tls(&mut self) -> io::Result<()> {
+        self.inner.flush().await
+    }
+
+    pub async fn shutdown_tls(&mut self) -> io::Result<()> {
+        self.inner.shutdown().await
+    }
+
+    pub fn pending_tls_plaintext_len(&mut self) -> usize {
+        let (_, conn) = self.inner.get_mut();
+        conn.pending_plaintext_len()
+    }
+
+    pub fn take_pending_tls_plaintext(&mut self) -> Vec<u8> {
+        let (_, conn) = self.inner.get_mut();
+        conn.take_pending_plaintext()
+    }
+
+    pub fn buffered_raw_tls_len(&mut self) -> usize {
+        let (_, conn) = self.inner.get_mut();
+        conn.buffered_read_tls_len()
+    }
+
+    pub fn take_buffered_raw_tls(&mut self) -> Vec<u8> {
+        let (_, conn) = self.inner.get_mut();
+        conn.take_buffered_read_tls()
+    }
+
+    pub async fn read_raw(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.get_mut().0.read(buf).await
+    }
+
+    pub async fn write_raw_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.get_mut().0.write_all(buf).await
+    }
+
+    pub async fn flush_raw(&mut self) -> io::Result<()> {
+        self.inner.get_mut().0.flush().await
+    }
+
+    pub async fn shutdown_raw(&mut self) -> io::Result<()> {
+        self.inner.get_mut().0.shutdown().await
+    }
+}
+
+impl<S> tokio::io::AsyncRead for RealityClientTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S> tokio::io::AsyncWrite for RealityClientTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 /// REALITY client connector
 /// REALITY 客户端连接器
@@ -79,8 +192,36 @@ impl RealityConnector {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        Ok(Box::new(self.reality_handshake_stream(stream).await?))
+    }
+
+    pub async fn connect_stream<S>(
+        &self,
+        stream: S,
+        server_name: &str,
+    ) -> io::Result<RealityClientTlsStream<S>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        debug!(
+            "REALITY connect_stream: server_name={}, target={}",
+            server_name, self.config.target
+        );
+
+        self.reality_handshake_stream(stream)
+            .await
+            .map_err(io::Error::other)
+    }
+
+    async fn reality_handshake_stream<S>(
+        &self,
+        stream: S,
+    ) -> RealityResult<RealityClientTlsStream<S>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         RealityHandshake::new(self.config.clone())?
-            .perform(stream)
+            .perform_stream(stream)
             .await
     }
 }

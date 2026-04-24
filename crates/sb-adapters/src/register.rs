@@ -3213,12 +3213,13 @@ fn stub_outbound(kind: &str) {
     warn!(target: "crate::register", outbound=%kind, "adapter outbound not implemented yet; falling back to scaffold");
 }
 
-#[cfg(all(test, feature = "adapter-dns"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundIR, OutboundType};
+    use sb_config::ir::{OutboundIR, OutboundType};
 
     #[test]
+    #[cfg(feature = "adapter-dns")]
     fn build_dns_outbound_accepts_doh() {
         let ir = OutboundIR {
             ty: OutboundType::Dns,
@@ -3250,6 +3251,8 @@ mod tests {
     #[test]
     #[cfg(feature = "adapter-hysteria2")]
     fn test_hysteria2_inbound_fields() {
+        use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType};
+
         // Create a test InboundIR for Hysteria2
         let ir = InboundIR {
             ty: InboundType::Hysteria2,
@@ -3426,6 +3429,102 @@ mod tests {
         let mut buf = [0u8; 4];
         stream.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"ping");
+
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "adapter-vless")]
+    async fn test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+        use tokio::sync::oneshot;
+        use uuid::Uuid;
+
+        fn vision_frame(uuid: [u8; 16], content: &[u8]) -> Vec<u8> {
+            let mut frame = Vec::with_capacity(16 + 5 + content.len());
+            frame.extend_from_slice(&uuid);
+            frame.push(0);
+            frame.extend_from_slice(&(content.len() as u16).to_be_bytes());
+            frame.extend_from_slice(&0u16.to_be_bytes());
+            frame.extend_from_slice(content);
+            frame
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let (release_tx, release_rx) = oneshot::channel();
+
+        let server_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 256];
+            let read =
+                tokio::time::timeout(std::time::Duration::from_secs(1), stream.read(&mut request))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(
+                read > 0,
+                "server should observe a VLESS request before response"
+            );
+            assert_eq!(
+                request[0], 0x00,
+                "VLESS request should start with version 0"
+            );
+
+            release_rx.await.unwrap();
+
+            stream.write_all(&[0x00, 0x00]).await.unwrap();
+            stream
+                .write_all(&vision_frame(*uuid.as_bytes(), b"pong"))
+                .await
+                .unwrap();
+        });
+
+        let ir = OutboundIR {
+            ty: OutboundType::Vless,
+            server: Some("127.0.0.1".to_string()),
+            port: Some(server_addr.port()),
+            uuid: Some(uuid.to_string()),
+            flow: Some("xtls-rprx-vision".to_string()),
+            ..Default::default()
+        };
+        let param = OutboundParam {
+            kind: "vless".into(),
+            name: Some("vless_test".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let (connector, _) =
+            build_vless_outbound(&param, &ir, &ctx).expect("vless bridge should be constructed");
+
+        let mut stream = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            connector.connect_io("example.com", 443),
+        )
+        .await
+        .expect("connect_io should return before the server sends a VLESS response")
+        .expect("bridge should expose a layered stream");
+
+        release_tx.send(()).unwrap();
+
+        let mut payload = [0u8; 4];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            stream.read_exact(&mut payload),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(&payload, b"pong");
 
         server_task.await.unwrap();
     }

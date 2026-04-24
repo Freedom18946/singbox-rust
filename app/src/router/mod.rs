@@ -275,7 +275,7 @@ pub mod routing {
             pub matched_rule: String,
             pub chain: Vec<String>,
             pub outbound: String,
-            pub trace: Option<crate::router::trace::Trace>,
+            pub trace: Option<super::trace::Trace>,
         }
     }
 

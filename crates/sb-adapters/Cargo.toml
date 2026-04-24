@@ -253,3 +253,8 @@ required-features = ["adapter-http"]
 name = "socks_udp_probe"
 path = "examples/socks_udp_probe.rs"
 required-features = ["socks"]
+
+[[example]]
+name = "vless_reality_phase_probe"
+path = "examples/vless_reality_phase_probe.rs"
+required-features = ["adapter-vless", "tls_reality", "sb-transport"]
