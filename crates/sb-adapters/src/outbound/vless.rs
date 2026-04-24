@@ -17,6 +17,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::net::UdpSocket;
+#[cfg(feature = "tls_reality")]
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 #[cfg(feature = "tls_reality")]
@@ -1431,9 +1433,67 @@ impl VisionClientStream {
 }
 
 #[cfg(feature = "tls_reality")]
+struct VisionWriteBridge {
+    sender: Option<mpsc::UnboundedSender<Vec<u8>>>,
+}
+
+#[cfg(feature = "tls_reality")]
+impl VisionWriteBridge {
+    fn new(sender: mpsc::UnboundedSender<Vec<u8>>) -> Self {
+        Self {
+            sender: Some(sender),
+        }
+    }
+}
+
+#[cfg(feature = "tls_reality")]
+impl tokio::io::AsyncWrite for VisionWriteBridge {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        if buf.is_empty() {
+            return std::task::Poll::Ready(Ok(0));
+        }
+
+        let Some(sender) = self.sender.as_ref() else {
+            return std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "vision write bridge closed",
+            )));
+        };
+
+        match sender.send(buf.to_vec()) {
+            Ok(()) => std::task::Poll::Ready(Ok(buf.len())),
+            Err(_) => std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "vision write bridge receiver closed",
+            ))),
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let _ = self;
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        self.sender.take();
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "tls_reality")]
 struct VisionRealityClientStream {
     reader: DuplexStream,
-    writer: DuplexStream,
+    writer: VisionWriteBridge,
     io_task: tokio::task::JoinHandle<()>,
 }
 
@@ -1445,14 +1505,14 @@ impl VisionRealityClientStream {
         response_pending: bool,
     ) -> Self {
         let (reader, mut reader_bridge) = tokio::io::duplex(64 * 1024);
-        let (mut writer_bridge, writer) = tokio::io::duplex(64 * 1024);
+        let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let writer = VisionWriteBridge::new(write_tx);
         let tls_state = Arc::new(Mutex::new(VisionTlsState::new()));
         let io_task = tokio::spawn(async move {
             let mut stream = stream;
             let mut decoder = VisionDecoder::new(user_uuid, tls_state.clone());
             let mut encoder = VisionEncoder::new(user_uuid, tls_state);
             let mut read_buffer = vec![0u8; VISION_CHUNK_SIZE];
-            let mut write_buffer = vec![0u8; VISION_CHUNK_SIZE];
             let mut response_peeler = response_pending.then(VlessResponsePeeler::new);
             let mut use_raw_reads = false;
             let mut use_raw_writes = false;
@@ -1530,9 +1590,9 @@ impl VisionRealityClientStream {
                             return;
                         }
                     }
-                    write = writer_bridge.read(&mut write_buffer), if !writer_closed && !deferred_raw_writes.is_waiting() => {
-                        let read = match write {
-                            Ok(0) => {
+                    write = write_rx.recv(), if !writer_closed && !deferred_raw_writes.is_waiting() => {
+                        let mut input = match write {
+                            None => {
                                 writer_closed = true;
                                 let _ = if use_raw_writes {
                                     stream.shutdown_raw().await
@@ -1541,36 +1601,31 @@ impl VisionRealityClientStream {
                                 };
                                 continue;
                             }
-                            Ok(read) => read,
-                            Err(_) => break,
+                            Some(input) => input,
                         };
 
-                        let mut input = write_buffer[..read].to_vec();
                         let mut direct_raw_remainder = Vec::new();
                         if let Some(record_len) = encoder.direct_input_tls_record_len(&input) {
                             while input.len() < record_len {
-                                let mut extra = vec![0u8; VISION_CHUNK_SIZE];
                                 match tokio::time::timeout(
                                     VISION_DIRECT_COALESCE_DELAY,
-                                    writer_bridge.read(&mut extra),
+                                    write_rx.recv(),
                                 )
                                 .await
                                 {
-                                    Ok(Ok(0)) => {
+                                    Ok(None) => {
                                         writer_closed = true;
                                         break;
                                     }
-                                    Ok(Ok(extra_read)) => {
+                                    Ok(Some(extra)) => {
                                         let needed = record_len.saturating_sub(input.len());
-                                        let take = needed.min(extra_read);
+                                        let take = needed.min(extra.len());
                                         input.extend_from_slice(&extra[..take]);
-                                        if take < extra_read {
-                                            direct_raw_remainder
-                                                .extend_from_slice(&extra[take..extra_read]);
+                                        if take < extra.len() {
+                                            direct_raw_remainder.extend_from_slice(&extra[take..]);
                                             break;
                                         }
                                     }
-                                    Ok(Err(_)) => break,
                                     Err(_) => break,
                                 }
                             }
@@ -2173,6 +2228,21 @@ mod tests {
             vec![b"raw-a".to_vec(), b"raw-b".to_vec()]
         );
         assert!(!deferred.is_waiting());
+    }
+
+    #[cfg(feature = "tls_reality")]
+    #[tokio::test]
+    async fn test_vision_write_bridge_preserves_write_chunks() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let mut bridge = VisionWriteBridge::new(sender);
+
+        bridge.write_all(b"first").await.unwrap();
+        bridge.write_all(b"second").await.unwrap();
+        bridge.shutdown().await.unwrap();
+
+        assert_eq!(receiver.recv().await.unwrap(), b"first");
+        assert_eq!(receiver.recv().await.unwrap(), b"second");
+        assert!(receiver.recv().await.is_none());
     }
 
     #[test]

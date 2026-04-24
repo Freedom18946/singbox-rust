@@ -138,7 +138,52 @@
     - `cargo test -p sb-tls` → PASS (`114 passed`)
     - `cargo check --workspace` → PASS
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
-    - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 33（Vision REALITY write-boundary bridge）
+
+- 本轮继续 MT-REAL-02 live dataplane，没有回到 ClientHello sampler 或静态模板。
+- 关键假设：
+  - Round 32 已把 first DIRECT 校准回 Go-like `direct_content_len=86`，但 app live 仍随机 no-raw-read。
+  - app-facing `DuplexStream` 写桥会把本地 SOCKS/downstream write 合并成 reader-side byte stream；Go `VisionWriter.WriteMultiBuffer` 对每次 write/multibuffer 边界敏感。
+  - 因此本轮先保留 record-boundary 逻辑和 5ms raw guard，只让 REALITY+Vision write side 保留上游 write chunk 边界。
+- 实现：
+  - `VisionRealityClientStream` 的 writer 从 `DuplexStream` 改为 `VisionWriteBridge`。
+  - `VisionWriteBridge` 通过 `tokio::sync::mpsc::UnboundedSender<Vec<u8>>` 把每个 `poll_write` buffer 作为独立 chunk 送入 IO task。
+  - IO task 从 `write_rx.recv()` 取 chunk；TLS record coalesce 仍只补齐当前 TLS application-data record，overflow 仍进入 delayed raw remainder。
+  - DIRECT 后 `VISION_DIRECT_SPLIT_DELAY=5ms` 保持不变。
+- 新增测试：
+  - `test_vision_write_bridge_preserves_write_chunks`
+  - 验证连续两次 `write_all` 在 bridge receiver 端仍是两个独立 chunk，shutdown 后 receiver 关闭。
+- A/B 证伪：
+  - 把 DIRECT 后 raw split delay 从 `5ms` 改成 `0ms` 后 live 明显变差：
+    - `HK-A-BGP-0.3倍率` default HTTPS：`5/12`
+    - `HK-A-BGP-1.0倍率` default HTTPS：`4/12`
+    - 已恢复 `5ms`。
+  - bounded `futures::mpsc` / Sink bridge 虽然更有背压，但 live 更差：
+    - `HK-A-BGP-0.3倍率` default HTTPS：`6/12`
+    - `HK-A-BGP-1.0倍率` default HTTPS：`1/12`
+    - 已回退到低延迟 tokio unbounded bridge；后续若要收敛背压，需要单独做不改变调度时序的实现。
+- live 证据：
+  - 首次 unbounded bridge + 5ms info run：
+    - `HK-A-BGP-0.3倍率` default HTTPS：`10/12`
+    - `HK-A-BGP-1.0倍率` default HTTPS：`7/12`
+  - 最终代码复测：
+    - `HK-A-BGP-0.3倍率` default HTTPS：`6/12`
+    - `HK-A-BGP-1.0倍率` default HTTPS：`8/12`
+  - debug 小样本显示失败连接仍是 `DIRECT(content_len=86)` 和 `raw_write_len=59` 已发，但未进入 server raw-read；成功样本随后出现 `Vision REALITY enabling raw reads`。
+  - residual 仍主要是 `curl (16) Error in the HTTP2 framing layer`，偶见 REALITY handshake EOF / SOCKS 97。
+- 结构结论：
+  - write-boundary preservation 是实质增益点，尤其相对 Round 32 的 `0.3=6/12, 1.0=5/12`，本轮看到 `0.3=10/12` 与 `1.0=8/12` 档位。
+  - 但 live 仍有节点/时序方差，不能宣布最终收口。
+  - 下一步继续聚焦 DIRECT 后 raw-read 未进入的时序与 remote rawInput drain，而不是修改 ClientHello sampler。
+- 本轮 gate：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS (`14 passed`)
+  - `cargo test -p sb-tls` → 初次并发 run 触发 `global::tests::test_chrome_mode_non_empty` 全局 root-store 状态波动；单测 PASS，`-- --test-threads=1` PASS，普通复跑 PASS (`117 passed`, doctest `1 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
     - 额外诊断：`SB_REALITY_FAMILY_RUNS=80 ...` → PASS
   - 结构结果：
     - `40 runs` 对 `250` 仍有明显采样噪声，因此未只凭这一轮直接判定成功
