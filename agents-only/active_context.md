@@ -899,3 +899,47 @@
   - `cargo check --workspace` → PASS
   - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
   - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS，snapshot `/tmp/mt_real02_family_round30.json`
+
+## Round 31（first DIRECT coalesce + live family diagnostics）
+
+- 本轮继续沿 live dataplane 推进，没有回到静态 ClientHello 模板或固定 position/mode sampler。
+- 先完成用户指定的 test-discovery 检查：
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality -- --list` 已列出 `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+  - 该 test 单独执行 PASS，说明 app-facing VLESS bridge regression 不是被 cfg/module gate 隐藏
+- Rust 侧修复/诊断：
+  - `VisionRealityClientStream` 在首个 DIRECT appdata 前增加 `2ms` coalesce window
+  - 目标是复现 Go app 面常见的“首 DIRECT content_len=145”，避免 Rust 之前的 `content_len=86 + immediate raw_write_len=59` 形态
+  - 保留 DIRECT 后空 `5ms` raw-write guard；A/B 证伪：
+    - 去掉该 guard 后 default HTTPS 降到 `2/8`
+    - zero padding A/B 降到 `5/8`
+  - padding bytes 改为随机填充；比全零更接近 Go `buf.Extend()` 的非显式清零行为
+  - 新增 debug-only ClientHello family log：
+    - `randomization_seed`
+    - `fe0d_len`
+    - `fe0d_full_position`
+    - `fe0d_position_band`
+- 新增/增强测试：
+  - `test_deferred_raw_writes_hold_direct_remainder_until_deadline`
+  - `test_vision_padding_uses_random_padding_bytes`
+  - `test_vision_encoder_coalesces_only_first_direct_appdata`
+- live 证据：
+  - Go with `with_utls,with_clash_api` 对照：
+    - `HK-A-BGP-1.0倍率` default HTTPS `12/12` HTTP `200`
+  - Rust full app best shape：
+    - `HK-A-BGP-0.3倍率` default HTTPS：debug run `6/8`，info run `8/12`
+    - `HK-A-BGP-1.0倍率` default HTTPS：debug run `6/8`，info run `6/12`
+  - coalesce 后 HTTP2 首 DIRECT `direct_content_len` 稳定到 `145`，原先紧贴 DIRECT 后的 `raw_write_len=59` 消失
+  - 失败样本不再统一是 REALITY dial-time EOF；主要剩余为 `curl (16) Error in the HTTP2 framing layer`，少量 family-debug run 仍见 SOCKS `97` / timeout
+- family-debug 观察：
+  - 成功样本常见 `186 late` / `218 late`
+  - `282 early` 多次落在 post-DIRECT no raw-read failure
+  - `186/218 late` 也仍有失败，因此当前证据不足以引入新的 sampler bias
+  - 下一轮继续做 ClientHello family × Vision DIRECT raw-read 关联，不回到固定 bucket/position 规则
+- 本轮 gate：
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS (`11 passed`)
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read` → PASS
+  - `cargo test -p sb-tls` → PASS (`117 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected single-sample dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS

@@ -560,6 +560,15 @@ fn build_chrome_client_hello_fingerprint(
     }
 
     let randomization_seed = generate_chrome_randomization_seed();
+    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
+    let fe0d_full_position = select_fe0d_full_position(randomization_seed, payload_len);
+    debug!(
+        randomization_seed,
+        fe0d_len = payload_len + 1 + 2 + 2 + 1 + 2 + UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN + 2,
+        fe0d_full_position,
+        fe0d_position_band = ?chrome_classify_fe0d_position_band(payload_len, fe0d_full_position),
+        "REALITY chrome fingerprint selected"
+    );
     Some(build_chrome_client_hello_fingerprint_with_seed(
         randomization_seed,
     ))

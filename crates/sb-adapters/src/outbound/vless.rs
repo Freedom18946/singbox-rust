@@ -12,8 +12,8 @@ use crate::outbound::prelude::*;
 use crate::traits::OutboundDatagram;
 use crate::transport_config::{TransportConfig, TransportType};
 use parking_lot::Mutex;
-use rand::Rng;
-use std::collections::HashMap;
+use rand::{Rng, RngCore};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::net::UdpSocket;
@@ -822,6 +822,51 @@ const TLS_APPLICATION_DATA_START: [u8; 3] = [0x17, 0x03, 0x03];
 const TLS13_SUPPORTED_VERSIONS: [u8; 6] = [0x00, 0x2b, 0x00, 0x02, 0x03, 0x04];
 const TLS13_AES_128_CCM_8_SHA256: u16 = 0x1305;
 const VISION_DIRECT_SPLIT_DELAY: std::time::Duration = std::time::Duration::from_millis(5);
+const VISION_DIRECT_COALESCE_DELAY: std::time::Duration = std::time::Duration::from_millis(2);
+
+#[cfg(feature = "tls_reality")]
+#[derive(Debug, Default)]
+struct VisionDeferredRawWrites {
+    ready_at: Option<tokio::time::Instant>,
+    chunks: VecDeque<Vec<u8>>,
+}
+
+#[cfg(feature = "tls_reality")]
+impl VisionDeferredRawWrites {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn is_waiting(&self) -> bool {
+        self.ready_at.is_some()
+    }
+
+    fn ready_at(&self) -> Option<tokio::time::Instant> {
+        self.ready_at
+    }
+
+    fn schedule_after_direct<I>(&mut self, chunks: I, now: tokio::time::Instant)
+    where
+        I: IntoIterator<Item = Vec<u8>>,
+    {
+        self.ready_at = Some(now + VISION_DIRECT_SPLIT_DELAY);
+        self.chunks.extend(chunks);
+    }
+
+    fn take_ready_chunks(&mut self) -> Vec<Vec<u8>> {
+        self.ready_at = None;
+        self.chunks.drain(..).collect()
+    }
+}
+
+#[cfg(feature = "tls_reality")]
+async fn wait_for_deferred_raw_write(deadline: Option<tokio::time::Instant>) {
+    if let Some(deadline) = deadline {
+        tokio::time::sleep_until(deadline).await;
+    } else {
+        std::future::pending::<()>().await;
+    }
+}
 
 #[derive(Debug, Default)]
 struct VisionTlsState {
@@ -1001,6 +1046,19 @@ impl VisionEncoder {
         }
     }
 
+    fn should_coalesce_direct_input(&self, input: &[u8]) -> bool {
+        if !self.is_padding
+            || !self.allow_direct
+            || input.len() <= 6
+            || !input.starts_with(&TLS_APPLICATION_DATA_START)
+        {
+            return false;
+        }
+
+        let tls_state = self.tls_state.lock();
+        tls_state.is_tls && tls_state.enable_xtls
+    }
+
     fn padding(&mut self, content: &[u8], command: u8, is_tls: bool) -> Vec<u8> {
         let padding_len = if content.len() < 900 && is_tls {
             rand::thread_rng().gen_range(0..500) + 900 - content.len()
@@ -1022,7 +1080,9 @@ impl VisionEncoder {
         frame.extend_from_slice(&(content.len() as u16).to_be_bytes());
         frame.extend_from_slice(&(padding_len as u16).to_be_bytes());
         frame.extend_from_slice(content);
-        frame.resize(frame.len() + padding_len, 0);
+        let padding_start = frame.len();
+        frame.resize(padding_start + padding_len, 0);
+        rand::thread_rng().fill_bytes(&mut frame[padding_start..]);
         frame
     }
 }
@@ -1374,6 +1434,7 @@ impl VisionRealityClientStream {
             let mut use_raw_reads = false;
             let mut use_raw_writes = false;
             let mut writer_closed = false;
+            let mut deferred_raw_writes = VisionDeferredRawWrites::new();
 
             loop {
                 tokio::select! {
@@ -1414,6 +1475,11 @@ impl VisionRealityClientStream {
                         if !use_raw_reads && decoder.raw_reads_enabled() {
                             let pending_plaintext = stream.take_pending_tls_plaintext();
                             let buffered_raw_tls = stream.take_buffered_raw_tls();
+                            tracing::debug!(
+                                pending_plaintext_len = pending_plaintext.len(),
+                                buffered_raw_tls_len = buffered_raw_tls.len(),
+                                "Vision REALITY enabling raw reads"
+                            );
                             let drained = match drain_vision_direct_read_buffers(
                                 &mut decoder,
                                 &pending_plaintext,
@@ -1428,7 +1494,20 @@ impl VisionRealityClientStream {
                             use_raw_reads = true;
                         }
                     }
-                    write = writer_bridge.read(&mut write_buffer), if !writer_closed => {
+                    _ = wait_for_deferred_raw_write(deferred_raw_writes.ready_at()), if deferred_raw_writes.is_waiting() => {
+                        let chunks = deferred_raw_writes.take_ready_chunks();
+                        let mut wrote = false;
+                        for chunk in chunks {
+                            if stream.write_raw_all(&chunk).await.is_err() {
+                                return;
+                            }
+                            wrote = true;
+                        }
+                        if wrote && stream.flush_raw().await.is_err() {
+                            return;
+                        }
+                    }
+                    write = writer_bridge.read(&mut write_buffer), if !writer_closed && !deferred_raw_writes.is_waiting() => {
                         let read = match write {
                             Ok(0) => {
                                 writer_closed = true;
@@ -1443,14 +1522,50 @@ impl VisionRealityClientStream {
                             Err(_) => break,
                         };
 
-                        let plan = encoder.encode(&write_buffer[..read]);
+                        let mut input = write_buffer[..read].to_vec();
+                        if encoder.should_coalesce_direct_input(&input) {
+                            let mut extra = vec![0u8; VISION_CHUNK_SIZE];
+                            match tokio::time::timeout(
+                                VISION_DIRECT_COALESCE_DELAY,
+                                writer_bridge.read(&mut extra),
+                            )
+                            .await
+                            {
+                                Ok(Ok(0)) => {
+                                    writer_closed = true;
+                                }
+                                Ok(Ok(extra_read)) => {
+                                    input.extend_from_slice(&extra[..extra_read]);
+                                }
+                                Ok(Err(_)) => break,
+                                Err(_) => {}
+                            }
+                        }
+
+                        let plan = encoder.encode(&input);
                         if plan.chunks.is_empty() {
                             continue;
                         }
 
+                        let mut flush_after_plan = true;
                         for (index, chunk) in plan.chunks.iter().enumerate() {
-                            let write_raw = use_raw_writes
-                                || (plan.enter_direct_after_first_chunk && index > 0);
+                            if plan.enter_direct_after_first_chunk && index > 0 {
+                                deferred_raw_writes.schedule_after_direct(
+                                    plan.chunks.iter().skip(index).cloned(),
+                                    tokio::time::Instant::now(),
+                                );
+                                flush_after_plan = false;
+                                break;
+                            }
+
+                            let write_raw =
+                                use_raw_writes || (plan.enter_direct_after_first_chunk && index > 0);
+                            if write_raw {
+                                tracing::debug!(
+                                    raw_write_len = chunk.len(),
+                                    "Vision REALITY raw write"
+                                );
+                            }
                             let result = if write_raw {
                                 stream.write_raw_all(chunk).await
                             } else {
@@ -1460,21 +1575,50 @@ impl VisionRealityClientStream {
                                 return;
                             }
                             if index == 0 && plan.enter_direct_after_first_chunk {
+                                let header_offset = if chunk.len()
+                                    >= VISION_UUID_LEN + VISION_FRAME_HEADER_LEN
+                                    && chunk[..VISION_UUID_LEN] == encoder.user_uuid
+                                {
+                                    VISION_UUID_LEN
+                                } else {
+                                    0
+                                };
+                                let direct_content_len = chunk
+                                    .get(header_offset + 1..header_offset + 3)
+                                    .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+                                    .unwrap_or_default();
+                                let direct_padding_len = chunk
+                                    .get(header_offset + 3..header_offset + 5)
+                                    .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+                                    .unwrap_or_default();
+                                tracing::debug!(
+                                    direct_frame_len = chunk.len(),
+                                    direct_content_len,
+                                    direct_padding_len,
+                                    raw_remainder_chunks = plan.chunks.len().saturating_sub(1),
+                                    "Vision REALITY enabling raw writes"
+                                );
                                 if stream.flush_tls().await.is_err() {
                                     return;
                                 }
-                                tokio::time::sleep(VISION_DIRECT_SPLIT_DELAY).await;
+                                deferred_raw_writes.schedule_after_direct(
+                                    std::iter::empty::<Vec<u8>>(),
+                                    tokio::time::Instant::now(),
+                                );
                                 use_raw_writes = true;
+                                flush_after_plan = false;
                             }
                         }
 
-                        let flush_result = if use_raw_writes {
-                            stream.flush_raw().await
-                        } else {
-                            stream.flush_tls().await
-                        };
-                        if flush_result.is_err() {
-                            return;
+                        if flush_after_plan {
+                            let flush_result = if use_raw_writes {
+                                stream.flush_raw().await
+                            } else {
+                                stream.flush_tls().await
+                            };
+                            if flush_result.is_err() {
+                                return;
+                            }
                         }
                     }
                 }
@@ -1785,6 +1929,38 @@ mod tests {
     }
 
     #[test]
+    fn test_vision_padding_uses_random_padding_bytes() {
+        let uuid = [8u8; VISION_UUID_LEN];
+        let tls_state = vision_tls_state();
+        let mut encoder = VisionEncoder::new(uuid, tls_state);
+        let content = b"x";
+        let frame = encoder.padding(content, COMMAND_PADDING_CONTINUE, true);
+        let padding_start = VISION_UUID_LEN + VISION_FRAME_HEADER_LEN + content.len();
+
+        assert!(frame.len() > padding_start);
+        assert!(frame[padding_start..].iter().any(|byte| *byte != 0));
+    }
+
+    #[test]
+    fn test_vision_encoder_coalesces_only_first_direct_appdata() {
+        let uuid = [8u8; VISION_UUID_LEN];
+        let tls_state = vision_tls_state();
+        {
+            let mut state = tls_state.lock();
+            state.is_tls = true;
+            state.enable_xtls = true;
+        }
+        let mut encoder = VisionEncoder::new(uuid, tls_state);
+        let mut appdata = TLS_APPLICATION_DATA_START.to_vec();
+        appdata.extend_from_slice(b"\x00\x02xy");
+
+        assert!(encoder.should_coalesce_direct_input(&appdata));
+        assert!(!encoder.should_coalesce_direct_input(b"\x16\x03\x03\x00\x01x"));
+        let _ = encoder.encode(&appdata);
+        assert!(!encoder.should_coalesce_direct_input(&appdata));
+    }
+
+    #[test]
     fn test_vision_encoder_emits_end_when_padding_budget_is_exhausted() {
         let uuid = [9u8; VISION_UUID_LEN];
         let tls_state = vision_tls_state();
@@ -1878,6 +2054,24 @@ mod tests {
         assert!(!plan.pause_after_first_chunk);
         assert!(plan.enter_direct_after_first_chunk);
         assert_eq!(plan.chunks[0][VISION_UUID_LEN], COMMAND_PADDING_DIRECT);
+    }
+
+    #[cfg(feature = "tls_reality")]
+    #[test]
+    fn test_deferred_raw_writes_hold_direct_remainder_until_deadline() {
+        let now = tokio::time::Instant::now();
+        let mut deferred = VisionDeferredRawWrites::new();
+
+        assert!(!deferred.is_waiting());
+        deferred.schedule_after_direct(vec![b"raw-a".to_vec(), b"raw-b".to_vec()], now);
+
+        assert!(deferred.is_waiting());
+        assert_eq!(deferred.ready_at(), Some(now + VISION_DIRECT_SPLIT_DELAY));
+        assert_eq!(
+            deferred.take_ready_chunks(),
+            vec![b"raw-a".to_vec(), b"raw-b".to_vec()]
+        );
+        assert!(!deferred.is_waiting());
     }
 
     #[test]

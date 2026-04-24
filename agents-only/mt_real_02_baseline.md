@@ -3348,3 +3348,105 @@
     - `528/218=11`
     - `560/250=12`
     - `592/282=11`
+
+## 2026-04-24 进展更新：Round 31 first DIRECT coalescing 与 live family 诊断
+
+### 目标
+
+- 延续 Round 30 的 concrete REALITY raw/direct pump，不回到 ClientHello 静态模板或固定 position/mode sampler。
+- 处理 live 默认 HTTPS 仍随机落入 HTTP2 framing 的残差。
+- 先确认 app-facing bridge regression test 已被 cargo 发现并实际执行。
+
+### test discovery / bridge guard
+
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality -- --list`
+  - 已列出 `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+- 单独执行：
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+  - PASS
+- 结论：
+  - 该 regression test 当前没有被 cfg / module gate 隐藏。
+  - app-facing bridge 仍覆盖 `connect_io()` 不等待 VLESS response 的行为。
+
+### 实现
+
+- 文件：
+  - `crates/sb-adapters/src/outbound/vless.rs`
+  - `crates/sb-tls/src/reality/handshake.rs`
+- `VisionRealityClientStream` 写侧新增 `2ms` first-DIRECT coalesce：
+  - 当 encoder 已确认 `is_tls && enable_xtls` 且本次输入是 TLS appdata 时，短暂再读一次 downstream client bytes
+  - 目标是把 Rust 之前的 `direct_content_len=86` + 立即 `raw_write_len=59` 合并为首 DIRECT `direct_content_len=145`
+  - live 观测中 coalesce 后 HTTP2 首 DIRECT 已稳定出现 `direct_content_len=145`
+- 新增 `VisionDeferredRawWrites`：
+  - DIRECT 后的 raw remainder 或空 guard 通过 `tokio::time::Instant` 延后释放
+  - 保留 Round 30 的空 `5ms` guard；A/B 证伪显示移除该 guard 后 default HTTPS 从约 `6/8` 降为 `2/8`
+- padding bytes 改为随机填充：
+  - zero-padding A/B 降到 `5/8`
+  - 随机填充更接近 Go `buf.Extend()` 不显式清零的实际形态
+- `sb-tls` REALITY chrome path 新增 debug-only family log：
+  - `randomization_seed`
+  - `fe0d_len`
+  - `fe0d_full_position`
+  - `fe0d_position_band`
+  - 仅用于 live 成功/失败关联，不改变 sampler。
+
+### 新增/增强测试
+
+- `test_deferred_raw_writes_hold_direct_remainder_until_deadline`
+- `test_vision_padding_uses_random_padding_bytes`
+- `test_vision_encoder_coalesces_only_first_direct_appdata`
+
+### live 复测
+
+#### Go 对照
+
+- Go `sing-box` 使用 `with_utls,with_clash_api` 重新构建并运行在 `11180/19190`
+- `HK-A-BGP-1.0倍率` default HTTPS：
+  - `12/12` HTTP `200`
+- 结论：
+  - 当前 live 波动不是线路整体不可用。
+
+#### Rust full app
+
+- 构建：
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+- 配置：
+  - `/tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+- 结果：
+  - `HK-A-BGP-0.3倍率` default HTTPS：
+    - debug run: `6/8` HTTP `200`
+    - info run: `8/12` HTTP `200`
+  - `HK-A-BGP-1.0倍率` default HTTPS：
+    - debug run: `6/8` HTTP `200`
+    - info run: `6/12` HTTP `200`
+- 失败形态：
+  - 主要是 `curl (16) Error in the HTTP2 framing layer`
+  - family-debug run 中仍有少量 SOCKS `97` / timeout
+- 关键改善：
+  - 不再是 Round 28 的 app 面 `0/3` / `tls handshake eof` 统一失败
+  - 首 DIRECT 后的 immediate `raw_write_len=59` race 已被 coalesce 消除
+
+### live family 观察
+
+- family-debug sample 中：
+  - 成功样本常见 `186 late` / `218 late`
+  - `282 early` 多次对应 post-DIRECT no raw-read failure
+  - 但 `186/218 late` 也仍出现失败，样本不足以支持新的 deterministic sampler bias
+- 当前结论：
+  - 继续保留 Round 12 seed-selected signature modes 与 Round 15 弱 band bias
+  - 不引入固定 bucket、固定 position、或 position->mode 硬耦合
+  - 下一轮应继续扩大 ClientHello family × Vision DIRECT raw-read 关联样本，再决定是否需要 sampler 或 dataplane 进一步改动
+
+### 验证
+
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision` → PASS
+  - `11 passed`
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read` → PASS
+- `cargo test -p sb-tls` → PASS
+  - `117 passed`
+  - `global::tests::test_none_mode_empty` fluctuation did not reproduce
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
