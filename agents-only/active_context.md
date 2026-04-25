@@ -140,6 +140,36 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 37（app probe structured phase JSON）
+
+- 本轮继续 Round 35/36 的 live 诊断面，不修改 REALITY ClientHello sampler、Vision write-boundary 或 REALITY read-loop。
+- 目标是让 app `probe-outbound` 与 minimal `vless_reality_phase_probe` 能更直接做同节点、同目标、同超时的 class 对比。
+- 实现：
+  - `app/src/bin/probe-outbound.rs`
+    - 新增 `--json`，默认文本输出保持兼容；JSON 模式下 stdout 保持可解析 JSON，`OK/ERR` 人类行走 stderr。
+    - JSON 顶层包含 `tool` / `config` / `outbound` / `outbound_type` / `target` / `timeout_secs`。
+    - JSON phase 包含：
+      - `pre_bridge.direct_reality`
+      - `pre_bridge.direct_vless_dial`
+      - `post_bridge.direct_reality`
+      - `post_bridge.direct_vless_dial`
+      - `bridge_probe`
+    - phase result 统一包含 `ok` / `status` / `elapsed_micros` / `class` / `error` / `reason`。
+    - bridge `connect` / `connect_io` timeout 或 error 也会进入 `bridge_probe.class`，避免拨号阶段失败绕过分类。
+    - long error 仍先分类再折叠/截断，保持 Round 35/36 口径。
+- 新增测试：
+  - `probe_phase_result_classifies_before_truncating_details`
+  - `probe_phase_result_skip_keeps_failure_class_empty`
+  - `probe_json_output_serializes_phase_classes`
+- gate：
+  - `cargo fmt --all` → PASS
+  - `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS (`5 passed`)
+  - `cargo test -p app --bin probe-outbound --no-default-features --features 'sb-core,sb-adapters,sb-transport' -- --nocapture` → PASS (`5 passed`)
+  - `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS (`4 passed`)
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo check --workspace` → PASS
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ## Round 36（minimal VLESS REALITY phase probe failure classification）
 
 - 本轮继续 Round 35 的 live 诊断面，不修改 REALITY ClientHello sampler、Vision write-boundary 或 REALITY read-loop。

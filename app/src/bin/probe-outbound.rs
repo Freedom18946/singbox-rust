@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use serde::Serialize;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -30,6 +31,101 @@ struct Args {
     /// Print derived transport chain for the outbound
     #[arg(long, default_value_t = false)]
     print_transport: bool,
+    /// Emit structured probe diagnostics as JSON on stdout
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeJsonOutput {
+    tool: &'static str,
+    config: String,
+    outbound: String,
+    outbound_type: Option<String>,
+    target: String,
+    timeout_secs: u64,
+    pre_bridge: Option<VlessDirectPhaseReport>,
+    post_bridge: Option<VlessDirectPhaseReport>,
+    bridge_probe: Option<BridgeProbeReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct VlessDirectPhaseReport {
+    direct_reality: ProbePhaseResult,
+    direct_vless_dial: ProbePhaseResult,
+}
+
+#[derive(Debug, Serialize)]
+struct BridgeProbeReport {
+    ok: bool,
+    stream_mode: Option<&'static str>,
+    stage: Option<&'static str>,
+    class: Option<String>,
+    connect_time_ms: u64,
+    response_bytes: Option<usize>,
+    first_line: Option<String>,
+    raw_connect_error: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbePhaseResult {
+    ok: bool,
+    status: &'static str,
+    elapsed_micros: u64,
+    class: Option<String>,
+    error: Option<String>,
+    reason: Option<String>,
+}
+
+#[allow(dead_code)] // Some constructors are only used when adapter-vless/tls_reality probes compile in.
+impl ProbePhaseResult {
+    fn ok(elapsed_micros: u64) -> Self {
+        Self {
+            ok: true,
+            status: "ok",
+            elapsed_micros,
+            class: None,
+            error: None,
+            reason: None,
+        }
+    }
+
+    fn error(elapsed_micros: u64, error: impl ToString) -> Self {
+        let raw_error = error.to_string();
+        let class = classify_probe_error_text(&raw_error).to_string();
+        let error = sanitize_probe_detail(&raw_error);
+        Self {
+            ok: false,
+            status: "err",
+            elapsed_micros,
+            class: Some(class),
+            error: Some(error),
+            reason: None,
+        }
+    }
+
+    fn timeout(elapsed_micros: u64, timeout_secs: u64) -> Self {
+        Self {
+            ok: false,
+            status: "timeout",
+            elapsed_micros,
+            class: Some("timeout".to_string()),
+            error: Some(format!("timeout after {}s", timeout_secs)),
+            reason: None,
+        }
+    }
+
+    fn skip(reason: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            status: "skip",
+            elapsed_micros: 0,
+            class: None,
+            error: None,
+            reason: Some(reason.into()),
+        }
+    }
 }
 
 enum ProbeStream {
@@ -72,15 +168,27 @@ async fn main() -> Result<()> {
     let ir = sb_config::present::to_ir(&cfg).context("config -> IR")?;
     let (host, port) = parse_hostport(&args.target)?;
 
-    #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
     let selected_outbound = ir
         .outbounds
         .iter()
         .find(|o| o.name.as_deref() == Some(args.outbound.as_str()));
 
+    let mut probe_output = ProbeJsonOutput {
+        tool: "probe-outbound",
+        config: args.config.clone(),
+        outbound: args.outbound.clone(),
+        outbound_type: selected_outbound.map(|outbound| outbound.ty.ty_str().to_string()),
+        target: args.target.clone(),
+        timeout_secs: args.timeout,
+        pre_bridge: None,
+        post_bridge: None,
+        bridge_probe: None,
+    };
+
     #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
     if let Some(outbound) = selected_outbound {
-        maybe_probe_vless_direct("pre_bridge", outbound, &host, port, args.timeout).await;
+        probe_output.pre_bridge =
+            maybe_probe_vless_direct("pre_bridge", outbound, &host, port, args.timeout).await;
     }
 
     // Register adapters before bridge assembly.
@@ -121,30 +229,108 @@ async fn main() -> Result<()> {
 
     #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
     if let Some(outbound) = selected_outbound {
-        maybe_probe_vless_direct("post_bridge", outbound, &host, port, args.timeout).await;
+        probe_output.post_bridge =
+            maybe_probe_vless_direct("post_bridge", outbound, &host, port, args.timeout).await;
     }
 
     // Dial and send a basic HTTP GET to validate end-to-end
     let started = Instant::now();
+    let mut raw_connect_error = None;
     let mut stream = match tokio::time::timeout(
         Duration::from_secs(args.timeout),
         connector.connect(&host, port),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("connect timeout after {}s", args.timeout))?
     {
-        Ok(stream) => ProbeStream::Raw(stream),
-        Err(connect_err) => {
-            let stream = tokio::time::timeout(
+        Ok(Ok(stream)) => ProbeStream::Raw(stream),
+        Err(_) => {
+            let connected_ms = started.elapsed().as_millis() as u64;
+            probe_output.bridge_probe = Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some("connect"),
+                stage: Some("connect"),
+                class: Some("timeout".to_string()),
+                connect_time_ms: connected_ms,
+                response_bytes: None,
+                first_line: None,
+                raw_connect_error: None,
+                error: Some(format!("timeout after {}s", args.timeout)),
+            });
+            print_probe_error(
+                args.json,
+                "connect",
+                "connect",
+                "timeout",
+                connected_ms,
+                &format!("timeout after {}s", args.timeout),
+            );
+            maybe_print_probe_json(args.json, &probe_output);
+            anyhow::bail!("connect timeout after {}s", args.timeout);
+        }
+        Ok(Err(connect_err)) => {
+            let raw_error = sanitize_probe_detail(&connect_err.to_string());
+            raw_connect_error = Some(raw_error.clone());
+            match tokio::time::timeout(
                 Duration::from_secs(args.timeout),
                 connector.connect_io(&host, port),
             )
             .await
-            .map_err(|_| anyhow::anyhow!("connect_io timeout after {}s", args.timeout))?
-            .with_context(|| {
-                format!("dial outbound via connect_io after connect error: {connect_err}")
-            })?;
-            ProbeStream::Layered(stream)
+            {
+                Ok(Ok(stream)) => ProbeStream::Layered(stream),
+                Ok(Err(error)) => {
+                    let connected_ms = started.elapsed().as_millis() as u64;
+                    let detail = format!(
+                        "dial outbound via connect_io after connect error: {connect_err}: {error}"
+                    );
+                    probe_output.bridge_probe = Some(BridgeProbeReport {
+                        ok: false,
+                        stream_mode: Some("connect_io"),
+                        stage: Some("connect"),
+                        class: Some(classify_probe_error_text(&error.to_string()).to_string()),
+                        connect_time_ms: connected_ms,
+                        response_bytes: None,
+                        first_line: None,
+                        raw_connect_error,
+                        error: Some(sanitize_probe_detail(&detail)),
+                    });
+                    print_probe_error(
+                        args.json,
+                        "connect_io",
+                        "connect",
+                        classify_probe_error_text(&error.to_string()),
+                        connected_ms,
+                        &detail,
+                    );
+                    maybe_print_probe_json(args.json, &probe_output);
+                    return Err(error).with_context(|| {
+                        format!("dial outbound via connect_io after connect error: {connect_err}")
+                    });
+                }
+                Err(_) => {
+                    let connected_ms = started.elapsed().as_millis() as u64;
+                    probe_output.bridge_probe = Some(BridgeProbeReport {
+                        ok: false,
+                        stream_mode: Some("connect_io"),
+                        stage: Some("connect"),
+                        class: Some("timeout".to_string()),
+                        connect_time_ms: connected_ms,
+                        response_bytes: None,
+                        first_line: None,
+                        raw_connect_error,
+                        error: Some(format!("timeout after {}s", args.timeout)),
+                    });
+                    print_probe_error(
+                        args.json,
+                        "connect_io",
+                        "connect",
+                        "timeout",
+                        connected_ms,
+                        &format!("timeout after {}s", args.timeout),
+                    );
+                    maybe_print_probe_json(args.json, &probe_output);
+                    anyhow::bail!("connect_io timeout after {}s", args.timeout);
+                }
+            }
         }
     };
     let connected_ms = started.elapsed().as_millis() as u64;
@@ -162,23 +348,49 @@ async fn main() -> Result<()> {
     {
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
+            probe_output.bridge_probe = Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some(stream.mode()),
+                stage: Some("write"),
+                class: Some(classify_probe_error_text(&error.to_string()).to_string()),
+                connect_time_ms: connected_ms,
+                response_bytes: None,
+                first_line: None,
+                raw_connect_error,
+                error: Some(sanitize_probe_detail(&error.to_string())),
+            });
             print_probe_error(
+                args.json,
                 stream.mode(),
                 "write",
                 classify_probe_error_text(&error.to_string()),
                 connected_ms,
                 &error,
             );
+            maybe_print_probe_json(args.json, &probe_output);
             return Err(error).context("write request");
         }
         Err(_) => {
+            probe_output.bridge_probe = Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some(stream.mode()),
+                stage: Some("write"),
+                class: Some("timeout".to_string()),
+                connect_time_ms: connected_ms,
+                response_bytes: None,
+                first_line: None,
+                raw_connect_error,
+                error: Some(format!("timeout after {}s", args.timeout)),
+            });
             print_probe_error(
+                args.json,
                 stream.mode(),
                 "write",
                 "timeout",
                 connected_ms,
                 &format!("timeout after {}s", args.timeout),
             );
+            maybe_print_probe_json(args.json, &probe_output);
             anyhow::bail!("write request timeout after {}s", args.timeout);
         }
     }
@@ -190,44 +402,90 @@ async fn main() -> Result<()> {
     {
         Ok(Ok(read)) => read,
         Ok(Err(error)) => {
+            probe_output.bridge_probe = Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some(stream.mode()),
+                stage: Some("read"),
+                class: Some(classify_probe_error_text(&error.to_string()).to_string()),
+                connect_time_ms: connected_ms,
+                response_bytes: None,
+                first_line: None,
+                raw_connect_error,
+                error: Some(sanitize_probe_detail(&error.to_string())),
+            });
             print_probe_error(
+                args.json,
                 stream.mode(),
                 "read",
                 classify_probe_error_text(&error.to_string()),
                 connected_ms,
                 &error,
             );
+            maybe_print_probe_json(args.json, &probe_output);
             return Err(error).context("read response");
         }
         Err(_) => {
+            probe_output.bridge_probe = Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some(stream.mode()),
+                stage: Some("read"),
+                class: Some("timeout".to_string()),
+                connect_time_ms: connected_ms,
+                response_bytes: None,
+                first_line: None,
+                raw_connect_error,
+                error: Some(format!("timeout after {}s", args.timeout)),
+            });
             print_probe_error(
+                args.json,
                 stream.mode(),
                 "read",
                 "timeout",
                 connected_ms,
                 &format!("timeout after {}s", args.timeout),
             );
+            maybe_print_probe_json(args.json, &probe_output);
             anyhow::bail!("read response timeout after {}s", args.timeout);
         }
     };
     if n == 0 {
+        probe_output.bridge_probe = Some(BridgeProbeReport {
+            ok: false,
+            stream_mode: Some(stream.mode()),
+            stage: Some("read"),
+            class: Some("post_dial_eof".to_string()),
+            connect_time_ms: connected_ms,
+            response_bytes: Some(0),
+            first_line: None,
+            raw_connect_error,
+            error: Some("upstream returned eof before response bytes".to_string()),
+        });
         print_probe_error(
+            args.json,
             stream.mode(),
             "read",
             "post_dial_eof",
             connected_ms,
             "upstream returned eof before response bytes",
         );
+        maybe_print_probe_json(args.json, &probe_output);
         anyhow::bail!("early eof while reading response");
     }
 
-    println!(
-        "OK stream_mode={} connect_time_ms={} response_bytes={} first_line={}",
-        stream.mode(),
-        connected_ms,
-        n,
-        extract_first_line(&buf[..n])
-    );
+    let first_line = extract_first_line(&buf[..n]);
+    probe_output.bridge_probe = Some(BridgeProbeReport {
+        ok: true,
+        stream_mode: Some(stream.mode()),
+        stage: None,
+        class: None,
+        connect_time_ms: connected_ms,
+        response_bytes: Some(n),
+        first_line: Some(first_line.clone()),
+        raw_connect_error,
+        error: None,
+    });
+    print_probe_ok(args.json, stream.mode(), connected_ms, n, &first_line);
+    maybe_print_probe_json(args.json, &probe_output);
 
     Ok(())
 }
@@ -247,13 +505,14 @@ fn extract_first_line(bytes: &[u8]) -> String {
 }
 
 fn print_probe_error(
+    json_mode: bool,
     stream_mode: &str,
     stage: &str,
     class: &str,
     connected_ms: u64,
     detail: impl std::fmt::Display,
 ) {
-    println!(
+    let line = format!(
         "ERR stream_mode={} stage={} class={} connect_time_ms={} detail={}",
         stream_mode,
         stage,
@@ -261,6 +520,29 @@ fn print_probe_error(
         connected_ms,
         sanitize_probe_detail(&detail.to_string())
     );
+    if json_mode {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
+}
+
+fn print_probe_ok(
+    json_mode: bool,
+    stream_mode: &str,
+    connected_ms: u64,
+    response_bytes: usize,
+    first_line: &str,
+) {
+    let line = format!(
+        "OK stream_mode={} connect_time_ms={} response_bytes={} first_line={}",
+        stream_mode, connected_ms, response_bytes, first_line
+    );
+    if json_mode {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
 }
 
 fn classify_probe_error_text(error: &str) -> &'static str {
@@ -299,6 +581,15 @@ fn sanitize_probe_detail(detail: &str) -> String {
     }
 }
 
+fn maybe_print_probe_json(enabled: bool, output: &ProbeJsonOutput) {
+    if enabled {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(output).unwrap_or_else(|_| "{}".to_string())
+        );
+    }
+}
+
 #[inline]
 fn register_adapters_once() {
     #[cfg(feature = "sb-adapters")]
@@ -312,28 +603,30 @@ async fn maybe_probe_vless_direct(
     host: &str,
     port: u16,
     timeout_secs: u64,
-) {
+) -> Option<VlessDirectPhaseReport> {
     if outbound.ty != sb_config::ir::OutboundType::Vless {
-        return;
+        return None;
     }
 
     let Some(server) = outbound.server.clone() else {
         eprintln!("direct_vless_dial phase={phase} result=skip reason=missing_server");
-        return;
+        return Some(VlessDirectPhaseReport::skipped("missing_server"));
     };
     let Some(server_port) = outbound.port else {
         eprintln!("direct_vless_dial phase={phase} result=skip reason=missing_port");
-        return;
+        return Some(VlessDirectPhaseReport::skipped("missing_port"));
     };
     let Some(uuid_raw) = outbound.uuid.as_deref() else {
         eprintln!("direct_vless_dial phase={phase} result=skip reason=missing_uuid");
-        return;
+        return Some(VlessDirectPhaseReport::skipped("missing_uuid"));
     };
     let uuid = match uuid::Uuid::parse_str(uuid_raw) {
         Ok(uuid) => uuid,
         Err(error) => {
             eprintln!("direct_vless_dial phase={phase} result=skip reason=bad_uuid error={error}");
-            return;
+            return Some(VlessDirectPhaseReport::skipped(format!(
+                "bad_uuid: {error}"
+            )));
         }
     };
     if outbound
@@ -342,7 +635,7 @@ async fn maybe_probe_vless_direct(
         .is_some_and(|entries| !entries.is_empty())
     {
         eprintln!("direct_vless_dial phase={phase} result=skip reason=non_tcp_transport");
-        return;
+        return Some(VlessDirectPhaseReport::skipped("non_tcp_transport"));
     }
 
     let flow = match outbound.flow.as_deref() {
@@ -381,7 +674,7 @@ async fn maybe_probe_vless_direct(
     } else {
         None
     };
-    if let Some(reality_config) = reality.as_ref() {
+    let direct_reality = if let Some(reality_config) = reality.as_ref() {
         eprintln!(
             "direct_vless_config phase={phase} server={server} port={server_port} sni={} fp={} short_id_len={} alpn_len={}",
             reality_config.server_name,
@@ -400,24 +693,37 @@ async fn maybe_probe_vless_direct(
         })
         .await;
         match result {
-            Ok(Ok(())) => eprintln!(
-                "direct_reality phase={phase} result=ok elapsed_ms={}",
-                started.elapsed().as_millis()
-            ),
-            Ok(Err(error)) => eprintln!(
-                "direct_reality phase={phase} result=err class={} elapsed_ms={} error={}",
-                classify_probe_error_text(&error.to_string()),
-                started.elapsed().as_millis(),
-                error
-            ),
-            Err(_) => eprintln!(
-                "direct_reality phase={phase} result=timeout class=timeout elapsed_ms={}",
-                started.elapsed().as_millis()
-            ),
+            Ok(Ok(())) => {
+                let elapsed_micros = started.elapsed().as_micros() as u64;
+                eprintln!(
+                    "direct_reality phase={phase} result=ok elapsed_ms={}",
+                    elapsed_micros / 1000
+                );
+                ProbePhaseResult::ok(elapsed_micros)
+            }
+            Ok(Err(error)) => {
+                let elapsed_micros = started.elapsed().as_micros() as u64;
+                eprintln!(
+                    "direct_reality phase={phase} result=err class={} elapsed_ms={} error={}",
+                    classify_probe_error_text(&error.to_string()),
+                    elapsed_micros / 1000,
+                    error
+                );
+                ProbePhaseResult::error(elapsed_micros, error)
+            }
+            Err(_) => {
+                let elapsed_micros = started.elapsed().as_micros() as u64;
+                eprintln!(
+                    "direct_reality phase={phase} result=timeout class=timeout elapsed_ms={}",
+                    elapsed_micros / 1000
+                );
+                ProbePhaseResult::timeout(elapsed_micros, timeout_secs)
+            }
         }
     } else {
         eprintln!("direct_reality phase={phase} result=skip reason=no_reality_config");
-    }
+        ProbePhaseResult::skip("no_reality_config")
+    };
 
     let mut vless_config = VlessConfig {
         server,
@@ -443,26 +749,54 @@ async fn maybe_probe_vless_direct(
     };
 
     let started = Instant::now();
-    match tokio::time::timeout(
+    let direct_vless_dial = match tokio::time::timeout(
         Duration::from_secs(timeout_secs),
         connector.dial(target, DialOpts::new()),
     )
     .await
     {
-        Ok(Ok(_)) => eprintln!(
-            "direct_vless_dial phase={phase} result=ok elapsed_ms={}",
-            started.elapsed().as_millis()
-        ),
-        Ok(Err(error)) => eprintln!(
-            "direct_vless_dial phase={phase} result=err class={} elapsed_ms={} error={}",
-            classify_probe_error_text(&error.to_string()),
-            started.elapsed().as_millis(),
-            error
-        ),
-        Err(_) => eprintln!(
-            "direct_vless_dial phase={phase} result=timeout class=timeout elapsed_ms={}",
-            started.elapsed().as_millis()
-        ),
+        Ok(Ok(_)) => {
+            let elapsed_micros = started.elapsed().as_micros() as u64;
+            eprintln!(
+                "direct_vless_dial phase={phase} result=ok elapsed_ms={}",
+                elapsed_micros / 1000
+            );
+            ProbePhaseResult::ok(elapsed_micros)
+        }
+        Ok(Err(error)) => {
+            let elapsed_micros = started.elapsed().as_micros() as u64;
+            eprintln!(
+                "direct_vless_dial phase={phase} result=err class={} elapsed_ms={} error={}",
+                classify_probe_error_text(&error.to_string()),
+                elapsed_micros / 1000,
+                error
+            );
+            ProbePhaseResult::error(elapsed_micros, error)
+        }
+        Err(_) => {
+            let elapsed_micros = started.elapsed().as_micros() as u64;
+            eprintln!(
+                "direct_vless_dial phase={phase} result=timeout class=timeout elapsed_ms={}",
+                elapsed_micros / 1000
+            );
+            ProbePhaseResult::timeout(elapsed_micros, timeout_secs)
+        }
+    };
+
+    Some(VlessDirectPhaseReport {
+        direct_reality,
+        direct_vless_dial,
+    })
+}
+
+#[cfg(any(feature = "adapters", feature = "adapter-vless"))]
+impl VlessDirectPhaseReport {
+    fn skipped(reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        Self {
+            direct_reality: ProbePhaseResult::skip(reason.clone()),
+            direct_vless_dial: ProbePhaseResult::skip(reason),
+        }
     }
 }
 
@@ -503,5 +837,67 @@ mod tests {
         let sanitized = sanitize_probe_detail(&long);
         assert_eq!(sanitized.len(), 243);
         assert!(sanitized.ends_with("..."));
+    }
+
+    #[test]
+    fn probe_phase_result_classifies_before_truncating_details() {
+        let result = ProbePhaseResult::error(9, format!("{} tls handshake eof", "x".repeat(260)));
+        assert!(!result.ok);
+        assert_eq!(result.status, "err");
+        assert_eq!(result.class.as_deref(), Some("reality_dial_eof"));
+        assert_eq!(result.error.as_ref().unwrap().len(), 243);
+    }
+
+    #[test]
+    fn probe_phase_result_skip_keeps_failure_class_empty() {
+        let result = ProbePhaseResult::skip("non_tcp_transport");
+        assert!(!result.ok);
+        assert_eq!(result.status, "skip");
+        assert!(result.class.is_none());
+        assert_eq!(result.reason.as_deref(), Some("non_tcp_transport"));
+
+        let timeout = ProbePhaseResult::timeout(42, 10);
+        assert!(!timeout.ok);
+        assert_eq!(timeout.status, "timeout");
+        assert_eq!(timeout.class.as_deref(), Some("timeout"));
+        assert_eq!(timeout.error.as_deref(), Some("timeout after 10s"));
+    }
+
+    #[test]
+    fn probe_json_output_serializes_phase_classes() {
+        let output = ProbeJsonOutput {
+            tool: "probe-outbound",
+            config: "/tmp/config.json".to_string(),
+            outbound: "node".to_string(),
+            outbound_type: Some("vless".to_string()),
+            target: "example.com:80".to_string(),
+            timeout_secs: 10,
+            pre_bridge: Some(VlessDirectPhaseReport {
+                direct_reality: ProbePhaseResult::ok(1000),
+                direct_vless_dial: ProbePhaseResult::error(
+                    2000,
+                    "REALITY handshake failed: tls handshake eof",
+                ),
+            }),
+            post_bridge: None,
+            bridge_probe: Some(BridgeProbeReport {
+                ok: false,
+                stream_mode: Some("connect_io"),
+                stage: Some("read"),
+                class: Some("post_dial_eof".to_string()),
+                connect_time_ms: 12,
+                response_bytes: Some(0),
+                first_line: None,
+                raw_connect_error: Some("connect unsupported".to_string()),
+                error: Some("upstream returned eof before response bytes".to_string()),
+            }),
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        assert_eq!(json["pre_bridge"]["direct_reality"]["status"], "ok");
+        assert_eq!(
+            json["pre_bridge"]["direct_vless_dial"]["class"],
+            "reality_dial_eof"
+        );
+        assert_eq!(json["bridge_probe"]["class"], "post_dial_eof");
     }
 }

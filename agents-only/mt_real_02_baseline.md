@@ -1145,6 +1145,79 @@
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-25 进展更新：Round 37 app probe structured phase JSON
+
+### 目标
+
+- 继续 Round 35/36 的 live dataplane 诊断面。
+- 不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 把 app `probe-outbound` 的结果结构化，使它能和 minimal `vless_reality_phase_probe` 按同一 `class` 口径做同节点、同目标、同超时对比。
+
+### 实现
+
+- `app/src/bin/probe-outbound.rs`
+  - 新增 `--json`：
+    - 默认文本输出保持兼容；
+    - 启用后 stdout 输出可直接解析的 pretty JSON；
+    - `OK/ERR` 人类可读 bridge 行在 JSON 模式下改走 stderr。
+  - JSON 顶层包含：
+    - `tool`
+    - `config`
+    - `outbound`
+    - `outbound_type`
+    - `target`
+    - `timeout_secs`
+    - `pre_bridge`
+    - `post_bridge`
+    - `bridge_probe`
+  - `pre_bridge` / `post_bridge` 保留 app 直接 VLESS probe 的两个 phase：
+    - `direct_reality`
+    - `direct_vless_dial`
+  - 每个 phase result 包含：
+    - `ok`
+    - `status` (`ok` / `err` / `timeout` / `skip`)
+    - `elapsed_micros`
+    - `class`
+    - `error`
+    - `reason`
+  - `bridge_probe` 覆盖 app bridge 的 end-to-end probe：
+    - 成功时记录 `stream_mode` / `connect_time_ms` / `response_bytes` / `first_line`；
+    - `connect` / `connect_io` / `write` / `read` failure 均记录 `stage` / `class` / sanitized `error`；
+    - `connect_io` fallback 时保留 sanitized `raw_connect_error`，方便区分“raw connect 不支持”与真正 bridge failure。
+  - 长错误仍按 Round 35/36 规则：
+    - 先按原始错误分类；
+    - 再折叠空白并截断到 240 chars + `...`。
+
+### 新增测试
+
+- `probe_phase_result_classifies_before_truncating_details`
+  - 确认超长错误仍先分类为 `reality_dial_eof`，再截断 detail。
+- `probe_phase_result_skip_keeps_failure_class_empty`
+  - 确认跳过 phase 不伪造 failure class。
+- `probe_json_output_serializes_phase_classes`
+  - 确认 JSON 中 `pre_bridge` 与 `bridge_probe` 的 class 字段可直接读取。
+
+### 当前判定
+
+- Round 37 是诊断工具面的实质推进：
+  - 后续可把 app `probe-outbound --json` 与 minimal `vless_reality_phase_probe` JSON 直接放到同一个 sample 表里比较；
+  - app bridge 的拨号阶段失败现在也不会绕过 class 分桶；
+  - 仍不把易失节点 outage 当 sampler 回归。
+- 本轮没有改变 wire sampler 或 dataplane 行为。
+
+### 验证
+
+- `cargo fmt --all` → PASS
+- `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS
+  - `5 passed`
+- `cargo test -p app --bin probe-outbound --no-default-features --features 'sb-core,sb-adapters,sb-transport' -- --nocapture` → PASS
+  - `5 passed`
+- `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS
+  - `4 passed`
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo check --workspace` → PASS
+- `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：
