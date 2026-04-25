@@ -140,6 +140,36 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 36（minimal VLESS REALITY phase probe failure classification）
+
+- 本轮继续 Round 35 的 live 诊断面，不修改 REALITY ClientHello sampler、Vision write-boundary 或 REALITY read-loop。
+- 已实证确认 app-facing VLESS bridge regression 当前被 cargo 发现：
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality -- --list`
+  - list 中包含 `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+- 实现：
+  - `crates/sb-adapters/examples/vless_reality_phase_probe.rs`
+    - `PhaseResult` 新增 `class` 字段。
+    - JSON 顶层新增 `phase_timeout_ms` / `probe_io_timeout_ms`。
+    - `direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io` 均加 phase-level timeout。
+    - classifier 与 app `probe-outbound` 对齐：`reality_dial_eof` / `post_dial_eof` / `http2_framing` / `timeout` / `socks_connect` / `connection_refused` / `connection_reset` / `broken_pipe` / `other`。
+    - error detail 会折叠空白并截断到 240 chars + `...`；分类在截断前完成，避免长错误丢失关键字。
+    - `SB_VLESS_PHASE_TIMEOUT_MS` 可单独控制 phase timeout，默认沿用 `SB_VLESS_PROBE_IO_TIMEOUT_MS`。
+- 新增测试：
+  - `classify_probe_error_text_covers_reality_live_failures`
+  - `phase_result_error_classifies_and_sanitizes_details`
+  - `sanitize_probe_detail_truncates_long_errors`
+  - `phase_result_classifies_before_truncating_details`
+- gate：
+  - `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS (`4 passed`)
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read -- --nocapture` → PASS outside sandbox; sandbox run was blocked by local socket `PermissionDenied`
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS (`14 passed`)
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-tls` → PASS outside sandbox (`119 passed`, doctest `1 passed`); sandbox run was blocked by local socket trace tests
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ## Round 35（probe-outbound live failure classification）
 
 - 本轮继续 MT-REAL-02 live dataplane 工具面，不回到 ClientHello sampler。

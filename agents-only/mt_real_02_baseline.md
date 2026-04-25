@@ -1063,6 +1063,88 @@
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-25 进展更新：Round 36 minimal VLESS REALITY phase probe failure classification
+
+### 目标
+
+- 继续 Round 35 的 live 诊断面推进。
+- 不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 先确认 app-facing VLESS bridge regression 当前仍被 cargo 发现，再把最小 `sb-adapters` phase probe 升级到和 app `probe-outbound` 同一套 failure class 口径。
+
+### test discovery / bridge guard
+
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality -- --list`
+  - 已列出：
+    - `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read`
+- 结论：
+  - 该 regression test 当前没有被 cfg / module gate 隐藏。
+  - app-facing bridge 仍覆盖 `connect_io()` 不等待 VLESS response 的行为。
+
+### 实现
+
+- `crates/sb-adapters/examples/vless_reality_phase_probe.rs`
+  - `PhaseResult` 新增 `class: Option<String>`。
+  - JSON 顶层新增：
+    - `phase_timeout_ms`
+    - `probe_io_timeout_ms`
+  - `direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io` 均加整体 phase-level timeout。
+  - 新增 `SB_VLESS_PHASE_TIMEOUT_MS`：
+    - 用于控制前三个 phase 和整体 phase timeout；
+    - 默认沿用 `SB_VLESS_PROBE_IO_TIMEOUT_MS`，保持旧环境变量兼容。
+  - failure classifier 与 app `probe-outbound` 对齐：
+    - `reality_dial_eof`
+    - `post_dial_eof`
+    - `http2_framing`
+    - `timeout`
+    - `socks_connect`
+    - `connection_refused`
+    - `connection_reset`
+    - `broken_pipe`
+    - `other`
+  - error detail 会折叠空白并截断到 240 chars + `...`。
+  - 分类在 detail 截断前完成，避免长链路错误里的关键字被截断后误分到 `other`。
+
+### 新增测试
+
+- `classify_probe_error_text_covers_reality_live_failures`
+  - 覆盖 REALITY handshake EOF、HTTP2 framing、early/unexpected EOF、timeout、SOCKS5、reset、broken pipe。
+- `phase_result_error_classifies_and_sanitizes_details`
+  - 确认 `PhaseResult::error` 同时设置 `class` 并折叠多空白。
+- `sanitize_probe_detail_truncates_long_errors`
+  - 确认长错误被限制在 240 chars + `...`。
+- `phase_result_classifies_before_truncating_details`
+  - 确认超长错误仍先按原始字符串分类，再截断 detail。
+
+### 当前判定
+
+- Round 36 是 live phase 诊断工具面的实质推进。
+- 后续可把：
+  - app `probe-outbound`
+  - minimal `vless_reality_phase_probe`
+  的输出按同一 `class` 字段直接比较，减少把节点易失、post-dial EOF、dial-time REALITY EOF、HTTP2 framing 和 feature-surface 分叉混在一起的概率。
+- 本轮没有改变任何 wire sampler 或 dataplane 行为。
+
+### 验证
+
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality -- --list` → PASS
+  - confirmed `register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read` is listed
+- `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS
+  - `4 passed`
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality register::tests::test_vless_outbound_bridge_connect_io_defers_vision_response_until_first_read -- --nocapture` → PASS outside sandbox
+  - sandbox run was blocked by local TCP listener `PermissionDenied`
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS
+  - `14 passed`
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo test -p sb-tls` → PASS outside sandbox
+  - `119 passed`
+  - doctest `1 passed`
+  - sandbox run was blocked by local socket trace tests, not by assertions
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+- `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：

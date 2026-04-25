@@ -14,6 +14,7 @@ use uuid::Uuid;
 struct PhaseResult {
     ok: bool,
     elapsed_micros: u64,
+    class: Option<String>,
     error: Option<String>,
 }
 
@@ -25,6 +26,8 @@ struct ProbeOutput {
     transport_type: String,
     uses_transport_dialer: bool,
     target: String,
+    phase_timeout_ms: u64,
+    probe_io_timeout_ms: u64,
     direct_reality: PhaseResult,
     transport_reality: PhaseResult,
     vless_dial: PhaseResult,
@@ -47,76 +50,134 @@ fn env_uuid(name: &str, default: &str) -> Result<Uuid, Box<dyn std::error::Error
     Ok(Uuid::parse_str(&env_or(name, default))?)
 }
 
+impl PhaseResult {
+    fn ok(elapsed_micros: u64) -> Self {
+        Self {
+            ok: true,
+            elapsed_micros,
+            class: None,
+            error: None,
+        }
+    }
+
+    fn error(elapsed_micros: u64, error: impl ToString) -> Self {
+        let raw_error = error.to_string();
+        let class = classify_probe_error_text(&raw_error).to_string();
+        let error = sanitize_probe_detail(&raw_error);
+        Self {
+            ok: false,
+            elapsed_micros,
+            class: Some(class),
+            error: Some(error),
+        }
+    }
+
+    fn timeout(elapsed_micros: u64, timeout_ms: u64) -> Self {
+        Self {
+            ok: false,
+            elapsed_micros,
+            class: Some("timeout".to_string()),
+            error: Some(format!("timeout after {}ms", timeout_ms)),
+        }
+    }
+}
+
+fn classify_probe_error_text(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("http2 framing") || lower.contains("http/2 framing") {
+        "http2_framing"
+    } else if lower.contains("tls handshake eof") || lower.contains("handshake eof") {
+        "reality_dial_eof"
+    } else if lower.contains("early eof") || lower.contains("unexpected eof") || lower == "eof" {
+        "post_dial_eof"
+    } else if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("can't complete socks5") || lower.contains("socks5") {
+        "socks_connect"
+    } else if lower.contains("connection reset") {
+        "connection_reset"
+    } else if lower.contains("broken pipe") {
+        "broken_pipe"
+    } else if lower.contains("connection refused") {
+        "connection_refused"
+    } else {
+        "other"
+    }
+}
+
+fn sanitize_probe_detail(detail: &str) -> String {
+    let collapsed = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_DETAIL_LEN: usize = 240;
+    if collapsed.len() <= MAX_DETAIL_LEN {
+        collapsed
+    } else {
+        format!(
+            "{}...",
+            collapsed.chars().take(MAX_DETAIL_LEN).collect::<String>()
+        )
+    }
+}
+
 async fn probe_direct_reality(
     server: &str,
     port: u16,
     reality: &RealityClientConfig,
+    timeout_ms: u64,
 ) -> PhaseResult {
     let started_at = Instant::now();
-    let result = async {
+    let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
         let stream = TcpStream::connect((server, port)).await?;
         let connector = RealityConnector::new(reality.clone())?;
         let _tls = connector.connect(stream, &reality.server_name).await?;
         Result::<(), Box<dyn std::error::Error + Send + Sync>>::Ok(())
-    }
+    })
     .await;
 
     match result {
-        Ok(()) => PhaseResult {
-            ok: true,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: None,
-        },
-        Err(error) => PhaseResult {
-            ok: false,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: Some(error.to_string()),
-        },
+        Ok(Ok(())) => PhaseResult::ok(started_at.elapsed().as_micros() as u64),
+        Ok(Err(error)) => PhaseResult::error(started_at.elapsed().as_micros() as u64, error),
+        Err(_) => PhaseResult::timeout(started_at.elapsed().as_micros() as u64, timeout_ms),
     }
 }
 
 async fn probe_transport_reality(
     config: &VlessConfig,
     reality: &RealityClientConfig,
+    timeout_ms: u64,
 ) -> PhaseResult {
     let started_at = Instant::now();
-    let result = async {
+    let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
         let dialer = config.transport_layer.create_dialer_with_layers(None, None);
         let stream = dialer.connect(&config.server, config.port).await?;
         let stream = from_transport_stream(stream);
         let connector = RealityConnector::new(reality.clone())?;
         let _tls = connector.connect(stream, &reality.server_name).await?;
         Result::<(), Box<dyn std::error::Error + Send + Sync>>::Ok(())
-    }
+    })
     .await;
 
     match result {
-        Ok(()) => PhaseResult {
-            ok: true,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: None,
-        },
-        Err(error) => PhaseResult {
-            ok: false,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: Some(error.to_string()),
-        },
+        Ok(Ok(())) => PhaseResult::ok(started_at.elapsed().as_micros() as u64),
+        Ok(Err(error)) => PhaseResult::error(started_at.elapsed().as_micros() as u64, error),
+        Err(_) => PhaseResult::timeout(started_at.elapsed().as_micros() as u64, timeout_ms),
     }
 }
 
-async fn probe_vless_dial(connector: &VlessConnector, target: &Target) -> PhaseResult {
+async fn probe_vless_dial(
+    connector: &VlessConnector,
+    target: &Target,
+    timeout_ms: u64,
+) -> PhaseResult {
     let started_at = Instant::now();
-    match connector.dial(target.clone(), DialOpts::new()).await {
-        Ok(_stream) => PhaseResult {
-            ok: true,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: None,
-        },
-        Err(error) => PhaseResult {
-            ok: false,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: Some(error.to_string()),
-        },
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(timeout_ms),
+        connector.dial(target.clone(), DialOpts::new()),
+    )
+    .await
+    {
+        Ok(Ok(_stream)) => PhaseResult::ok(started_at.elapsed().as_micros() as u64),
+        Ok(Err(error)) => PhaseResult::error(started_at.elapsed().as_micros() as u64, error),
+        Err(_) => PhaseResult::timeout(started_at.elapsed().as_micros() as u64, timeout_ms),
     }
 }
 
@@ -126,7 +187,7 @@ async fn probe_vless_probe_io(
     timeout_ms: u64,
 ) -> PhaseResult {
     let started_at = Instant::now();
-    let result = async {
+    let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
         let mut stream = connector.dial(target.clone(), DialOpts::new()).await?;
         stream
             .write_all(b"HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
@@ -152,20 +213,13 @@ async fn probe_vless_probe_io(
         .map_err(sb_adapters::error::AdapterError::Io)?;
 
         Result::<(), sb_adapters::error::AdapterError>::Ok(())
-    }
+    })
     .await;
 
     match result {
-        Ok(()) => PhaseResult {
-            ok: true,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: None,
-        },
-        Err(error) => PhaseResult {
-            ok: false,
-            elapsed_micros: started_at.elapsed().as_micros() as u64,
-            error: Some(error.to_string()),
-        },
+        Ok(Ok(())) => PhaseResult::ok(started_at.elapsed().as_micros() as u64),
+        Ok(Err(error)) => PhaseResult::error(started_at.elapsed().as_micros() as u64, error),
+        Err(_) => PhaseResult::timeout(started_at.elapsed().as_micros() as u64, timeout_ms),
     }
 }
 
@@ -190,6 +244,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|value| value.parse::<u64>())
         .transpose()?
         .unwrap_or(20_000);
+    let phase_timeout_ms = env::var("SB_VLESS_PHASE_TIMEOUT_MS")
+        .ok()
+        .map(|value| value.parse::<u64>())
+        .transpose()?
+        .unwrap_or(probe_io_timeout_ms);
 
     let reality = RealityClientConfig {
         target: server_name.clone(),
@@ -227,12 +286,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         transport_type: format!("{:?}", connector.transport_type()),
         uses_transport_dialer: connector.uses_transport_dialer(),
         target: format!("{}:{}", target.host, target.port),
-        direct_reality: probe_direct_reality(&config.server, config.port, &reality).await,
-        transport_reality: probe_transport_reality(&config, &reality).await,
-        vless_dial: probe_vless_dial(&connector, &target).await,
+        phase_timeout_ms,
+        probe_io_timeout_ms,
+        direct_reality: probe_direct_reality(
+            &config.server,
+            config.port,
+            &reality,
+            phase_timeout_ms,
+        )
+        .await,
+        transport_reality: probe_transport_reality(&config, &reality, phase_timeout_ms).await,
+        vless_dial: probe_vless_dial(&connector, &target, phase_timeout_ms).await,
         vless_probe_io: probe_vless_probe_io(&connector, &target, probe_io_timeout_ms).await,
     };
 
     println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_probe_error_text_covers_reality_live_failures() {
+        assert_eq!(
+            classify_probe_error_text("REALITY handshake failed: tls handshake eof"),
+            "reality_dial_eof"
+        );
+        assert_eq!(
+            classify_probe_error_text("curl: (16) Error in the HTTP2 framing layer"),
+            "http2_framing"
+        );
+        assert_eq!(classify_probe_error_text("early eof"), "post_dial_eof");
+        assert_eq!(classify_probe_error_text("unexpected eof"), "post_dial_eof");
+        assert_eq!(
+            classify_probe_error_text("timed out waiting for first upstream byte"),
+            "timeout"
+        );
+        assert_eq!(
+            classify_probe_error_text("Can't complete SOCKS5 connection"),
+            "socks_connect"
+        );
+        assert_eq!(
+            classify_probe_error_text("connection reset by peer"),
+            "connection_reset"
+        );
+        assert_eq!(classify_probe_error_text("broken pipe"), "broken_pipe");
+    }
+
+    #[test]
+    fn phase_result_error_classifies_and_sanitizes_details() {
+        let result = PhaseResult::error(7, "REALITY\n handshake failed: tls handshake eof");
+        assert!(!result.ok);
+        assert_eq!(result.elapsed_micros, 7);
+        assert_eq!(result.class.as_deref(), Some("reality_dial_eof"));
+        assert_eq!(
+            result.error.as_deref(),
+            Some("REALITY handshake failed: tls handshake eof")
+        );
+    }
+
+    #[test]
+    fn sanitize_probe_detail_truncates_long_errors() {
+        let long = "x".repeat(300);
+        let sanitized = sanitize_probe_detail(&long);
+        assert_eq!(sanitized.len(), 243);
+        assert!(sanitized.ends_with("..."));
+    }
+
+    #[test]
+    fn phase_result_classifies_before_truncating_details() {
+        let result = PhaseResult::error(9, format!("{} tls handshake eof", "x".repeat(260)));
+        assert_eq!(result.class.as_deref(), Some("reality_dial_eof"));
+        assert_eq!(result.error.as_ref().unwrap().len(), 243);
+    }
 }
