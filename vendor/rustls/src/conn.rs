@@ -434,6 +434,22 @@ impl<Data> ConnectionCommon<Data> {
             .process_new_packets(&mut self.deframer_buffer, &mut self.sendable_plaintext)
     }
 
+    /// Processes new packets until decrypted plaintext is available.
+    ///
+    /// This is intended for callers that must hand bytes following the first
+    /// plaintext record to another protocol layer.
+    #[inline]
+    pub fn process_new_packets_until_plaintext(&mut self) -> Result<IoState, Error> {
+        if self.pending_plaintext_len() > 0 {
+            return Ok(self.core.common_state.current_io_state());
+        }
+
+        self.core.process_new_packets_until_plaintext(
+            &mut self.deframer_buffer,
+            &mut self.sendable_plaintext,
+        )
+    }
+
     /// Returns the number of already-decrypted plaintext bytes buffered for reads.
     pub fn pending_plaintext_len(&self) -> usize {
         self.core.common_state.received_plaintext.len()
@@ -903,6 +919,23 @@ impl<Data> ConnectionCore<Data> {
         deframer_buffer: &mut DeframerVecBuffer,
         sendable_plaintext: &mut ChunkVecBuffer,
     ) -> Result<IoState, Error> {
+        self.process_new_packets_inner(deframer_buffer, sendable_plaintext, false)
+    }
+
+    pub(crate) fn process_new_packets_until_plaintext(
+        &mut self,
+        deframer_buffer: &mut DeframerVecBuffer,
+        sendable_plaintext: &mut ChunkVecBuffer,
+    ) -> Result<IoState, Error> {
+        self.process_new_packets_inner(deframer_buffer, sendable_plaintext, true)
+    }
+
+    fn process_new_packets_inner(
+        &mut self,
+        deframer_buffer: &mut DeframerVecBuffer,
+        sendable_plaintext: &mut ChunkVecBuffer,
+        stop_after_plaintext: bool,
+    ) -> Result<IoState, Error> {
         let mut state = match mem::replace(&mut self.state, Err(Error::HandshakeNotComplete)) {
             Ok(state) => state,
             Err(e) => {
@@ -933,6 +966,7 @@ impl<Data> ConnectionCore<Data> {
                 break;
             };
 
+            let plaintext_before = self.common_state.received_plaintext.len();
             match self.process_msg(msg, state, Some(sendable_plaintext)) {
                 Ok(new) => state = new,
                 Err(e) => {
@@ -951,6 +985,12 @@ impl<Data> ConnectionCore<Data> {
             }
 
             deframer_buffer.discard(buffer_progress.take_discard());
+            if stop_after_plaintext
+                && plaintext_before == 0
+                && !self.common_state.received_plaintext.is_empty()
+            {
+                break;
+            }
         }
 
         deframer_buffer.discard(buffer_progress.take_discard());

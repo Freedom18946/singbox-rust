@@ -874,6 +874,102 @@
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 - `bash scripts/tools/reality_clienthello_trace.sh` → PASS
 
+## 2026-04-25 进展更新：Round 34 REALITY read-loop partial-record drain
+
+### 目标
+
+- 继续 Round 33 后的 live dataplane residual，不修改 REALITY ClientHello sampler。
+- 按用户提醒调整 live 口径：真实节点没有 usability guarantee，节点更新后仍断流可能是节点自身问题；本轮把 live 大样本降级为机会性 sanity，不再对易失节点过拟合。
+
+### 根因收缩
+
+- Round 33 的失败样本常见：
+  - client 已发 `DIRECT(content_len=86)`
+  - DIRECT 后 raw remainder 已写出
+  - 但没有进入 `Vision REALITY enabling raw reads`
+- 本轮检查 vendored rustls / tokio-rustls 后确认：
+  - 普通 `tokio_rustls::TlsStream::read()` 会调用 rustls `process_new_packets()`；
+  - rustls 会继续处理 deframer 中的后续完整消息；
+  - 如果一次 socket read 同时包含外层 DIRECT plaintext 与随后的 inner raw TLS bytes，外层 rustls 可能在 Vision 看到 DIRECT 前继续消费后续 bytes。
+- 第一版短路修复后又暴露 partial-record 问题：
+  - 如果 rustls 已缓冲 partial TLS record，但还没有足够 bytes 产出 plaintext；
+  - REALITY custom `read_tls` 会在 `buffered_raw_tls_len()>0` 时反复处理同一 partial buffer；
+  - 由于没有 await 底层 IO，Vision IO task 的写侧会被饿死。
+  - 中途 live 表现为 `HK-A-BGP-0.3倍率/1.0倍率` `0/12` timeout；debug 显示 REALITY/VLESS dial ok，但没有 raw write 日志。
+
+### 实现
+
+- `vendor/rustls/src/conn.rs`
+  - 新增 `ConnectionCommon::process_new_packets_until_plaintext()`。
+  - 内部拆出 `process_new_packets_inner(..., stop_after_plaintext)`。
+  - 当本轮处理从 `0` pending plaintext 变为有 pending plaintext 时停止，保留后续 deframer bytes 给 REALITY/Vision drain。
+- `vendor/rustls/src/client/client_conn.rs`
+  - 为 `ClientConnection` 暴露 `process_new_packets_until_plaintext()`。
+- `crates/sb-tls/src/reality/client.rs`
+  - `RealityClientTlsStream::read_tls` 改为 REALITY 专用读循环：
+    - 先 drain rustls plaintext reader；
+    - 再处理已缓冲 TLS bytes 到第一段 plaintext；
+    - 如果已有 buffered bytes 但仍无 plaintext，继续 await 底层 socket read；
+    - 底层 read 使用 4KiB chunk，避免一次读取过多 inner raw bytes。
+  - 这样同时覆盖：
+    - `DIRECT plaintext + raw bytes` coalesced；
+    - 大 TLS record 被分片成多个底层 read 的 partial-record 场景。
+
+### 新增测试
+
+- `reality::client::tests::test_read_tls_stops_before_coalesced_raw_bytes`
+  - 本地 TLS server 先写 outer TLS plaintext，再直接写底层 raw bytes。
+  - client `read_tls` 必须返回 outer plaintext，并让 `take_buffered_raw_tls()` 取到 raw bytes。
+- `reality::client::tests::test_read_tls_waits_for_fragmented_tls_record`
+  - 本地 TLS server 写大于 `REALITY_TLS_READ_CHUNK` 的 application-data record。
+  - client `read_tls` 必须在 timeout 内继续 await 后续网络 bytes，不得 partial-buffer 自旋。
+
+### live sanity
+
+- 构建：
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'`
+- 启动：
+  - `RUST_LOG=sb_adapters::outbound::vless=debug,sb_tls::reality=debug,sb_core::outbound=debug,app=info,sb_api=info,sb_core=info ./target/debug/run -c /tmp/phase3_ip_direct_mt_real02_round4_chrome.json`
+- preflight：
+  - `GET /version` → `200`
+  - SOCKS greeting → `[5, 0]`
+- 短 sanity（不作为节点稳定性 oracle）：
+  - `HK-A-BGP-1.0倍率` forced `--http1.1` HTTPS → HTTP `200`, time `~0.95s`
+  - `HK-A-BGP-1.0倍率` default HTTPS → HTTP `200`, time `~0.89s`
+- debug 观察：
+  - forced HTTP/1.1 样本：`Vision REALITY enabling raw reads pending_plaintext_len=0 buffered_raw_tls_len=0`
+  - default HTTPS 样本：`Vision REALITY enabling raw reads pending_plaintext_len=0 buffered_raw_tls_len=31`，随后继续 raw writes
+  - 这确认本轮 read-loop 能把 coalesced raw bytes 留给 Vision，而不是被外层 rustls 抢先吞掉。
+
+### 当前判定
+
+- Round 34 是 live dataplane 读侧 ownership 的实质修复，不是 sampler 改动。
+- 本轮不再追着易失节点做大样本定论：
+  - 中途的 `0/12` timeout 被用来定位实现 bug；
+  - 最终只保留短 sanity 作为“新 binary 没有把已知可用路径打坏”的证据。
+- 下一步如果继续 live，应优先选近期确认可用的节点/Go 对照样本，并把失败样本按：
+  - node outage
+  - dial-time REALITY EOF
+  - post-DIRECT no raw-read
+  - HTTP2 framing residual
+  分开归因。
+
+### 验证
+
+- `cargo test -p sb-tls reality::client::tests::test_read_tls -- --nocapture` → PASS
+  - `2 passed`
+- `cargo test -p sb-tls` → PASS
+  - `119 passed`
+  - doctest `1 passed`
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS
+  - `14 passed`
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+- `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：

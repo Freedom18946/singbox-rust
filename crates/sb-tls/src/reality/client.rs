@@ -5,10 +5,16 @@ use super::handshake::RealityHandshake;
 use super::{RealityError, RealityResult};
 use crate::TlsConnector;
 use async_trait::async_trait;
-use std::io;
+use std::io::{self, Read};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::debug;
+
+const REALITY_TLS_READ_CHUNK: usize = 4096;
+
+fn reality_tls_protocol_error(err: rustls::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, err)
+}
 
 /// Concrete REALITY client stream that keeps access to both rustls and the
 /// underlying transport.
@@ -31,7 +37,54 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     pub async fn read_tls(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buf).await
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        loop {
+            {
+                let (_, conn) = self.inner.get_mut();
+                match conn.reader().read(buf) {
+                    Ok(read) => return Ok(read),
+                    Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(err) => return Err(err),
+                }
+            }
+
+            if self.buffered_raw_tls_len() > 0 {
+                let (_, conn) = self.inner.get_mut();
+                conn.process_new_packets_until_plaintext()
+                    .map_err(reality_tls_protocol_error)?;
+                if self.pending_tls_plaintext_len() > 0 {
+                    continue;
+                }
+            }
+
+            let mut wire = [0u8; REALITY_TLS_READ_CHUNK];
+            let read = self.inner.get_mut().0.read(&mut wire).await?;
+            if read == 0 {
+                let (_, conn) = self.inner.get_mut();
+                let mut eof = io::empty();
+                let _ = conn.read_tls(&mut eof)?;
+                return Ok(0);
+            }
+
+            let mut input = &wire[..read];
+            let accepted = {
+                let (_, conn) = self.inner.get_mut();
+                conn.read_tls(&mut input)?
+            };
+            if accepted != read {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "REALITY TLS read accepted a partial in-memory network read",
+                ));
+            }
+
+            let (_, conn) = self.inner.get_mut();
+            conn.process_new_packets_until_plaintext()
+                .map_err(reality_tls_protocol_error)?;
+        }
     }
 
     pub async fn write_tls_all(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -278,5 +331,98 @@ mod tests {
 
         let connector = RealityConnector::new(config);
         assert!(connector.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_tls_stops_before_coalesced_raw_bytes() {
+        crate::ensure_crypto_provider();
+
+        const TLS_PAYLOAD: &[u8] = b"vision-direct-frame";
+        const RAW_PAYLOAD: &[u8] = b"raw-after-direct";
+
+        let (acceptor, connector) = test_tls_pair();
+        let (client_io, server_io) = tokio::io::duplex(8192);
+        let server = tokio::spawn(async move {
+            let mut server_tls = acceptor.accept(server_io).await.unwrap();
+            server_tls.write_all(TLS_PAYLOAD).await.unwrap();
+            server_tls.flush().await.unwrap();
+
+            let (raw_io, _) = server_tls.get_mut();
+            raw_io.write_all(RAW_PAYLOAD).await.unwrap();
+            raw_io.flush().await.unwrap();
+        });
+
+        let client_tls = connector
+            .connect(test_server_name(), client_io)
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        let mut stream = RealityClientTlsStream::new(client_tls);
+        let mut output = [0u8; 64];
+        let read = stream.read_tls(&mut output).await.unwrap();
+
+        assert_eq!(&output[..read], TLS_PAYLOAD);
+        assert_eq!(stream.buffered_raw_tls_len(), RAW_PAYLOAD.len());
+        assert_eq!(stream.take_buffered_raw_tls(), RAW_PAYLOAD);
+    }
+
+    #[tokio::test]
+    async fn test_read_tls_waits_for_fragmented_tls_record() {
+        crate::ensure_crypto_provider();
+
+        let (acceptor, connector) = test_tls_pair();
+        let payload = vec![0x5a; REALITY_TLS_READ_CHUNK * 2 + 37];
+        let server_payload = payload.clone();
+        let (client_io, server_io) = tokio::io::duplex(REALITY_TLS_READ_CHUNK * 8);
+
+        let server = tokio::spawn(async move {
+            let mut server_tls = acceptor.accept(server_io).await.unwrap();
+            server_tls.write_all(&server_payload).await.unwrap();
+            server_tls.flush().await.unwrap();
+        });
+
+        let client_tls = connector
+            .connect(test_server_name(), client_io)
+            .await
+            .unwrap();
+        let mut stream = RealityClientTlsStream::new(client_tls);
+        let mut output = vec![0u8; payload.len()];
+        let read = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.read_tls(&mut output),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(read > 0);
+        assert_eq!(&output[..read], &payload[..read]);
+        server.await.unwrap();
+    }
+
+    fn test_tls_pair() -> (tokio_rustls::TlsAcceptor, tokio_rustls::TlsConnector) {
+        let rcgen::CertifiedKey { cert, key_pair } =
+            rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cert_der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
+        let key_der = rustls::pki_types::PrivateKeyDer::try_from(key_pair.serialize_der()).unwrap();
+
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der], key_der)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+        let client_config = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(crate::danger::NoVerify::new()))
+            .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(client_config));
+
+        (acceptor, connector)
+    }
+
+    fn test_server_name() -> rustls::pki_types::ServerName<'static> {
+        rustls::pki_types::ServerName::try_from("localhost").unwrap()
     }
 }

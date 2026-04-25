@@ -140,6 +140,46 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 34（REALITY read-loop partial-record drain）
+
+- 本轮继续 MT-REAL-02 live dataplane，不回到 ClientHello sampler。
+- 用户提醒：真实节点可用性没有保证，更新后仍断流也可能正常；后续不再把易失节点大样本当唯一 oracle，live 只作为机会性 sanity/关联证据。
+- 关键发现：
+  - Round 27 的 `take_buffered_raw_tls` 只能处理“rustls 产出 DIRECT 明文后还留下 raw bytes”的场景。
+  - 但 tokio-rustls/rustls 默认会在一次 `process_new_packets()` 中继续处理后续 deframer bytes；如果 socket read 中粘着 `DIRECT plaintext + inner raw TLS`，外层 rustls 可能抢先消费 raw bytes。
+  - 本轮第一版修复后又暴露一个新 bug：当 rustls 已缓冲 partial TLS record 但还没有 plaintext 时，REALITY `read_tls` 会反复处理同一 partial buffer、没有 await 底层 IO，进而饿死 Vision 写侧，live 表现为 VLESS/REALITY dial ok 后全 timeout、且无 raw write 日志。
+- 实现：
+  - `vendor/rustls/src/conn.rs`
+    - 新增 `ConnectionCommon::process_new_packets_until_plaintext()`
+    - 内部复用原 packet loop，但在从 0 plaintext 变成有 plaintext 后停止，让后续 bytes 留给上层。
+  - `vendor/rustls/src/client/client_conn.rs`
+    - 暴露 client-facing `process_new_packets_until_plaintext()`。
+  - `crates/sb-tls/src/reality/client.rs`
+    - REALITY concrete `read_tls` 不再走 tokio-rustls 普通 `AsyncRead`。
+    - 改为 4KiB socket read + rustls `read_tls` + `process_new_packets_until_plaintext()`。
+    - 如果已有 buffered TLS bytes 但处理后仍没有 plaintext，会继续 await 底层 socket read，避免 partial-record 自旋。
+- 新增测试：
+  - `test_read_tls_stops_before_coalesced_raw_bytes`
+    - TLS plaintext 后紧跟底层 raw bytes；客户端必须读到 TLS 明文，并把 raw bytes 留在 `take_buffered_raw_tls()`。
+  - `test_read_tls_waits_for_fragmented_tls_record`
+    - 大 TLS application-data record 分片到多次 4KiB read；`read_tls` 必须继续 await 后续网络 bytes，不得自旋。
+- live sanity：
+  - 中途未修 partial-record 自旋时，`HK-A-BGP-0.3倍率/1.0倍率` 出现 `0/12` 全 timeout；debug 看到 dial ok 但没有进入 raw write，已作为实现 bug 处理，不作为最终 live 结论。
+  - 修复并重建 app 后，短 sanity：
+    - preflight `GET /version=200`，SOCKS greeting `[5,0]`
+    - `HK-A-BGP-1.0倍率` forced HTTP/1.1：HTTP `200` (`~0.95s`)
+    - `HK-A-BGP-1.0倍率` default HTTPS：HTTP `200` (`~0.89s`)
+    - debug 显示 default HTTPS 样本在 raw-read enable 时保留了 `buffered_raw_tls_len=31`，随后继续 raw writes。
+- gate：
+  - `cargo test -p sb-tls reality::client::tests::test_read_tls -- --nocapture` → PASS (`2 passed`)
+  - `cargo test -p sb-tls` → PASS (`119 passed`, doctest `1 passed`)
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS (`14 passed`)
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ## Round 33（Vision REALITY write-boundary bridge）
 
 - 本轮继续 MT-REAL-02 live dataplane，没有回到 ClientHello sampler 或静态模板。

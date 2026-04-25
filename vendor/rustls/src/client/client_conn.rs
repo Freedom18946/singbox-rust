@@ -862,6 +862,11 @@ mod connection {
             self.inner.take_buffered_read_tls()
         }
 
+        /// Processes new packets until decrypted plaintext is available.
+        pub fn process_new_packets_until_plaintext(&mut self) -> Result<crate::IoState, Error> {
+            self.inner.process_new_packets_until_plaintext()
+        }
+
         /// Return true if the connection was made with a `ClientConfig` that is FIPS compatible.
         ///
         /// This is different from [`crate::crypto::CryptoProvider::fips()`]:
