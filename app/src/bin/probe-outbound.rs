@@ -561,6 +561,8 @@ fn classify_probe_error_text(error: &str) -> &'static str {
         "connection_reset"
     } else if lower.contains("broken pipe") {
         "broken_pipe"
+    } else if lower.contains("operation not permitted") || lower.contains("permission denied") {
+        "permission_denied"
     } else if lower.contains("connection refused") {
         "connection_refused"
     } else {
@@ -828,6 +830,10 @@ mod tests {
             "connection_reset"
         );
         assert_eq!(classify_probe_error_text("broken pipe"), "broken_pipe");
+        assert_eq!(
+            classify_probe_error_text("Operation not permitted (os error 1)"),
+            "permission_denied"
+        );
     }
 
     #[test]

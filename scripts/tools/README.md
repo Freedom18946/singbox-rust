@@ -243,6 +243,32 @@ python3 scripts/tools/probe-socks.py 127.0.0.1:11080 1710000000
 ./scripts/tools/validation/audit-features.sh
 ```
 
+### REALITY Probe Matrix
+
+Build comparable app/minimal VLESS REALITY probe samples.
+
+```bash
+./scripts/tools/reality_vless_probe_matrix.sh \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --outbound 'HK-A-BGP-0.3倍率' \
+  --target example.com:80 \
+  --timeout 10
+```
+
+Supporting tools:
+
+```bash
+python3 scripts/tools/reality_vless_env_from_config.py \
+  --config config.json --outbound node --target example.com:80 --format env
+
+python3 scripts/tools/reality_probe_compare.py \
+  --app-json app.json --phase-json phase.json
+```
+
+The matrix wrapper writes `run.json`, `app.json`, `phase.json`, and `compare.json` so
+REALITY live failures can be compared by class before treating a node failure
+as a sampler or dataplane regression.
+
 ### Debugging Routing
 
 ```bash

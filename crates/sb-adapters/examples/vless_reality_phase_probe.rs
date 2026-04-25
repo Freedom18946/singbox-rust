@@ -23,6 +23,7 @@ struct ProbeOutput {
     server: String,
     port: u16,
     server_name: String,
+    alpn: Vec<String>,
     transport_type: String,
     uses_transport_dialer: bool,
     target: String,
@@ -48,6 +49,14 @@ fn env_port(name: &str, default: u16) -> Result<u16, Box<dyn std::error::Error>>
 
 fn env_uuid(name: &str, default: &str) -> Result<Uuid, Box<dyn std::error::Error>> {
     Ok(Uuid::parse_str(&env_or(name, default))?)
+}
+
+fn parse_alpn_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 impl PhaseResult {
@@ -98,6 +107,8 @@ fn classify_probe_error_text(error: &str) -> &'static str {
         "connection_reset"
     } else if lower.contains("broken pipe") {
         "broken_pipe"
+    } else if lower.contains("operation not permitted") || lower.contains("permission denied") {
+        "permission_denied"
     } else if lower.contains("connection refused") {
         "connection_refused"
     } else {
@@ -236,6 +247,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let short_id = env_or("SB_VLESS_REALITY_SHORT_ID", "01ab");
     let fingerprint = env_or("SB_VLESS_FINGERPRINT", "chrome");
+    let alpn = env::var("SB_VLESS_ALPN")
+        .ok()
+        .map(|raw| parse_alpn_list(&raw))
+        .unwrap_or_default();
     let uuid = env_uuid("SB_VLESS_UUID", "550e8400-e29b-41d4-a716-446655440000")?;
     let target_host = env_or("SB_VLESS_TARGET_HOST", "example.com");
     let target_port = env_port("SB_VLESS_TARGET_PORT", 80)?;
@@ -256,7 +271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public_key,
         short_id: Some(short_id),
         fingerprint,
-        alpn: Vec::new(),
+        alpn: alpn.clone(),
     };
 
     let config = VlessConfig {
@@ -283,6 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         server,
         port,
         server_name,
+        alpn,
         transport_type: format!("{:?}", connector.transport_type()),
         uses_transport_dialer: connector.uses_transport_dialer(),
         target: format!("{}:{}", target.host, target.port),
@@ -333,6 +349,10 @@ mod tests {
             "connection_reset"
         );
         assert_eq!(classify_probe_error_text("broken pipe"), "broken_pipe");
+        assert_eq!(
+            classify_probe_error_text("Operation not permitted (os error 1)"),
+            "permission_denied"
+        );
     }
 
     #[test]
@@ -360,5 +380,14 @@ mod tests {
         let result = PhaseResult::error(9, format!("{} tls handshake eof", "x".repeat(260)));
         assert_eq!(result.class.as_deref(), Some("reality_dial_eof"));
         assert_eq!(result.error.as_ref().unwrap().len(), 243);
+    }
+
+    #[test]
+    fn parse_alpn_list_trims_and_drops_empty_items() {
+        assert_eq!(
+            parse_alpn_list("h2, http/1.1, ,"),
+            vec!["h2".to_string(), "http/1.1".to_string()]
+        );
+        assert!(parse_alpn_list(" , ").is_empty());
     }
 }

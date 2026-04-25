@@ -1218,6 +1218,137 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-25 进展更新：Round 38 app/minimal REALITY probe matrix
+
+### 目标
+
+- 继续 Round 35-37 的 live dataplane 诊断面，并把“两个 probe 都能输出 class”推进成“能批量生成、归档、对比同节点样本”。
+- 不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 避免后续手工拼 minimal probe 环境变量、人工读两份日志，从而把节点易失、sandbox 权限、app feature surface 分叉混在一起。
+
+### 实现
+
+- `crates/sb-adapters/examples/vless_reality_phase_probe.rs`
+  - 新增 `SB_VLESS_ALPN`：
+    - 逗号分隔；
+    - 自动 trim；
+    - 空项丢弃；
+    - 写入 `RealityClientConfig.alpn`。
+  - JSON 顶层新增 `alpn`，让样本里能直接看到 minimal probe 的 ALPN surface。
+  - classifier 与 app `probe-outbound` 同步新增：
+    - `permission_denied`
+    - 覆盖 `Operation not permitted` / `permission denied`，用于 sandbox/local socket blocked 样本。
+
+- `scripts/tools/reality_vless_env_from_config.py`
+  - 从 raw sing-box/app config 中提取 minimal phase probe 所需环境变量。
+  - 支持：
+    - outbound name: `tag` / `name`
+    - port: `server_port` / `port`
+    - REALITY: `tls.reality.public_key` / `reality_public_key`
+    - SNI: `tls.reality.server_name` / `tls.server_name` / `reality_server_name` / `tls_sni` / fallback server
+    - uTLS: `tls.utls.fingerprint` / `utls_fingerprint`
+    - ALPN: `tls.alpn` / `tls_alpn`
+  - 输出格式：
+    - JSON
+    - shell `export ...`（用于 wrapper）
+  - 明确拒绝非 VLESS 或非 plain TCP transport，避免拿 transport 节点跑错 minimal probe。
+
+- `scripts/tools/reality_probe_compare.py`
+  - 输入：
+    - app `probe-outbound --json`
+    - minimal `vless_reality_phase_probe` JSON
+  - 输出：
+    - `classes`
+      - `app.pre.direct_reality`
+      - `app.pre.direct_vless_dial`
+      - `app.post.direct_reality`
+      - `app.post.direct_vless_dial`
+      - `app.bridge`
+      - `minimal.direct_reality`
+      - `minimal.transport_reality`
+      - `minimal.vless_dial`
+      - `minimal.vless_probe_io`
+    - 6 组 comparison：
+      - app pre/post REALITY
+      - app pre/post VLESS dial
+      - minimal direct/transport REALITY
+      - app post vs minimal direct REALITY
+      - app post vs minimal VLESS dial
+      - app bridge vs minimal probe I/O
+    - summary labels：
+      - `app_pre_post_diverged`
+      - `minimal_transport_diverged`
+      - `app_minimal_diverged`
+      - `bridge_io_diverged`
+      - `all_ok`
+      - `reality_all_<class>`
+
+- `scripts/tools/reality_vless_probe_matrix.sh`
+  - 一键串起：
+    - app `probe-outbound --json`
+    - env extraction
+    - minimal `vless_reality_phase_probe`
+    - compare report
+  - 输出目录包含：
+    - `run.json`
+    - `app.json`
+    - `app.stderr`
+    - `phase.json`
+    - `phase.stderr`
+    - `compare.json`
+  - app probe 非零退出不视为 wrapper 失败；只要能写出 JSON，就继续生成 compare report。
+
+- `scripts/tools/test_reality_probe_tools.py`
+  - 新增 6 个 Python 单测，覆盖：
+    - raw sing-box REALITY config 提取；
+    - IR-like REALITY config 提取；
+    - JSON config load；
+    - all-ok compare；
+    - app/minimal + bridge divergence label；
+    - all REALITY phases 同 failure class label。
+
+- `scripts/tools/README.md`
+  - 增加 REALITY Probe Matrix 用法和 supporting tools。
+
+### smoke
+
+- 命令：
+  - `bash scripts/tools/reality_vless_probe_matrix.sh --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --outbound '__phase3_invalid_vless' --target example.com:80 --timeout 1 --phase-timeout-ms 1000 --probe-io-timeout-ms 1000 --output-dir /tmp/reality-vless-probe-matrix-smoke`
+- 结果：
+  - wrapper exit `0`
+  - `app_status=1`（预期：probe 失败，但 JSON 已生成）
+  - `phase_status=0`
+  - `run.json` 生成成功
+  - `compare.json` 生成成功
+  - sandbox local socket blocked 环境下所有 phase class 均为 `permission_denied`
+  - summary labels：
+    - `reality_all_permission_denied`
+
+### 当前判定
+
+- Round 38 是 live 证据采集面的实质推进：
+  - 下一次真实节点复测可以直接生成三份可归档 JSON；
+  - 如果 app 与 minimal 在同节点同目标出现稳定 class 分叉，`compare.json` 会直接给出 divergence label；
+  - 如果所有 REALITY phase 同 class 失败，则优先按节点/环境 bucket 处理，而不是回退到 sampler patch。
+- 本轮没有改变 wire sampler 或 dataplane 行为。
+
+### 验证
+
+- `cargo fmt --all` → PASS
+- `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `9 tests`
+- `python3 scripts/tools/reality_vless_env_from_config.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --outbound 'HK-A-BGP-0.3倍率' --target example.com:80 --phase-timeout-ms 9000 --probe-io-timeout-ms 11000 --format json` → PASS
+- `python3 scripts/tools/reality_probe_compare.py --app-json <tmp>/app.json --phase-json <tmp>/phase.json` with an ad-hoc fixture → PASS
+- `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS
+  - `5 passed`
+- `cargo test -p app --bin probe-outbound --no-default-features --features 'sb-core,sb-adapters,sb-transport' -- --nocapture` → PASS
+  - `5 passed`
+- `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS
+  - `5 passed`
+- `cargo check --workspace` → PASS
+- `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：

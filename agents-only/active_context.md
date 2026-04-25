@@ -140,6 +140,35 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 38（app/minimal REALITY probe matrix）
+
+- 本轮继续 live 诊断面，大幅推进“同节点同目标对比”工具链，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
+- 实现：
+  - `crates/sb-adapters/examples/vless_reality_phase_probe.rs`
+    - 新增 `SB_VLESS_ALPN`（逗号分隔）并在 JSON 顶层输出 `alpn`，避免 minimal probe 与 app probe 的 ALPN surface 假分叉。
+    - classifier 与 app probe 同步新增 `permission_denied`，用于 sandbox/local socket blocked 样本。
+  - `scripts/tools/reality_vless_env_from_config.py`
+    - 从 raw sing-box/app config 提取 minimal phase probe 环境变量。
+    - 支持 `tag`/`name`、`server_port`/`port`、`tls.reality`、`tls.utls`、`tls.alpn` 与 IR-like `reality_public_key` / `tls_sni` / `tls_alpn`。
+  - `scripts/tools/reality_probe_compare.py`
+    - 对比 app `probe-outbound --json` 与 minimal `vless_reality_phase_probe` JSON。
+    - 输出 per-phase class、6 组关键 comparison、summary labels（如 `app_minimal_diverged` / `bridge_io_diverged` / `reality_all_*`）。
+  - `scripts/tools/reality_vless_probe_matrix.sh`
+    - 一键生成 `run.json` / `app.json` / `phase.json` / `compare.json`；probe 命令失败也保留样本用于分桶。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 6 个 Python 单测。
+  - `scripts/tools/README.md` 增加 REALITY Probe Matrix 用法。
+- smoke：
+  - 用 `__phase3_invalid_vless` + sandbox local socket blocked 环境跑 matrix，成功产出三份 JSON；compare labels 为 `reality_all_permission_denied`。
+- gate：
+  - `cargo fmt --all` → PASS
+  - `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`9 tests`)
+  - `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS (`5 passed`)
+  - `cargo test -p app --bin probe-outbound --no-default-features --features 'sb-core,sb-adapters,sb-transport' -- --nocapture` → PASS (`5 passed`)
+  - `cargo test -p sb-adapters --example vless_reality_phase_probe --features adapter-vless,tls_reality -- --nocapture` → PASS (`5 passed`)
+  - `cargo check --workspace` → PASS
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ## Round 37（app probe structured phase JSON）
 
 - 本轮继续 Round 35/36 的 live 诊断面，不修改 REALITY ClientHello sampler、Vision write-boundary 或 REALITY read-loop。
