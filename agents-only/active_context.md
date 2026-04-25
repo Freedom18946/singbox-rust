@@ -140,6 +140,50 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 35（probe-outbound live failure classification）
+
+- 本轮继续 MT-REAL-02 live dataplane 工具面，不回到 ClientHello sampler。
+- 用户再次提醒：真实节点 usability 没有保证，节点更新后仍断流可能正常；后续 live 证据要先分清 node outage / dial-time EOF / post-dial EOF / timeout / HTTP2 framing，不再执着易失节点。
+- 实现：
+  - `app/src/bin/probe-outbound.rs`
+    - post-dial `write_all` / `read` 增加 per-stage timeout，避免 probe 在断流节点上无限等待。
+    - `read == 0` 不再输出 `OK response_bytes=0`，改为 `ERR ... class=post_dial_eof` 并失败退出。
+    - 新增 `print_probe_error` / `classify_probe_error_text` / `sanitize_probe_detail`，把 live 失败分为：
+      - `reality_dial_eof`
+      - `post_dial_eof`
+      - `http2_framing`
+      - `timeout`
+      - `socks_connect`
+      - `connection_refused`
+      - `connection_reset`
+      - `broken_pipe`
+      - `other`
+    - `direct_reality` / `direct_vless_dial` 的 err/timeout 输出也带 `class=...`，方便对比 pre-bridge 与 post-bridge。
+    - app-facing direct `VlessConfig` 构造改为 `..VlessConfig::default()` 后再按 cfg 填 `reality`，避免 dev-feature unification 引入 `transport_ech` 字段时让 probe 编译面分叉。
+- 新增测试：
+  - `classify_probe_error_text_covers_reality_live_failures`
+  - `sanitize_probe_detail_collapses_and_truncates`
+- live sanity：
+  - 用 app `probe-outbound` 最小 feature 面跑 `HK-A-BGP-1.0倍率` / `example.com:80`：
+    - `direct_reality phase=pre_bridge result=ok`
+    - `direct_vless_dial phase=pre_bridge result=ok`
+    - `direct_reality phase=post_bridge result=ok`
+    - `direct_vless_dial phase=post_bridge result=ok`
+    - `OK stream_mode=connect_io ... response_bytes=838 first_line=HTTP/1.1 200 OK`
+  - 这只是短 sanity，不作为节点长期可用性 oracle。
+- gate：
+  - `cargo fmt --all` → PASS
+  - `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS (`2 passed`)
+  - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `cargo test -p sb-tls` → observed known global-state fluctuation in `global::tests::test_none_mode_empty`
+  - `cargo test -p sb-tls global::tests::test_none_mode_empty -- --nocapture` → PASS
+  - `cargo test -p sb-tls -- --test-threads=1` → PASS (`119 passed`, doctest `1 passed`)
+  - `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS (`14 passed`)
+  - `cargo check --workspace` → PASS
+  - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
+  - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+  - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ## Round 34（REALITY read-loop partial-record drain）
 
 - 本轮继续 MT-REAL-02 live dataplane，不回到 ClientHello sampler。

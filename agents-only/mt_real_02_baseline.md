@@ -970,6 +970,99 @@
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-25 进展更新：Round 35 probe-outbound live failure classification
+
+### 目标
+
+- 继续 Round 34 后的 live dataplane 工作，但本轮只推进诊断面，不修改 REALITY ClientHello sampler。
+- 按用户提醒调整 live 口径：
+  - 节点没有 usability guarantee；
+  - 节点拉取更新后仍断流可能是节点侧易失；
+  - probe 必须优先把失败按类型分桶，而不是把所有失败都当成 sampler 或 bridge 回归。
+
+### 实现
+
+- `app/src/bin/probe-outbound.rs`
+  - post-dial `write_all` / `read` 均包上 `tokio::time::timeout(Duration::from_secs(args.timeout), ...)`。
+  - `read == 0` 改为显式失败：
+    - `ERR stream_mode=... stage=read class=post_dial_eof ...`
+    - 避免把空响应误报为 `OK response_bytes=0`。
+  - 新增 probe 输出 helpers：
+    - `print_probe_error(...)`
+    - `classify_probe_error_text(...)`
+    - `sanitize_probe_detail(...)`
+  - 当前 failure classes：
+    - `reality_dial_eof`
+    - `post_dial_eof`
+    - `http2_framing`
+    - `timeout`
+    - `socks_connect`
+    - `connection_refused`
+    - `connection_reset`
+    - `broken_pipe`
+    - `other`
+  - post-dial read/write error 不再统一成 generic IO；会复用 classifier 保留 EOF/reset/broken-pipe 等归因。
+  - `direct_reality` / `direct_vless_dial` 的 err/timeout 输出带 `class=...`，方便 pre-bridge 与 post-bridge 对照。
+  - app-facing direct `VlessConfig` 构造改为：
+    - 先使用 `..VlessConfig::default()`；
+    - 再按 `#[cfg(feature = "tls_reality")]` 填 `reality`。
+    - 这样在 app dev-feature unification 带入 `transport_ech` 字段时，probe 仍能稳定编译。
+
+### 新增测试
+
+- `classify_probe_error_text_covers_reality_live_failures`
+  - 覆盖：
+    - `tls handshake eof`
+    - HTTP2 framing
+    - timeout
+    - early EOF
+    - SOCKS5 connect
+    - connection reset
+    - broken pipe
+- `sanitize_probe_detail_collapses_and_truncates`
+  - 确认多空白折叠；
+  - 长 detail 限制在 240 chars + `...`。
+
+### live sanity
+
+- 命令：
+  - `cargo run -q -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --config /tmp/phase3_ip_direct_mt_real02_round4_chrome.json --outbound 'HK-A-BGP-1.0倍率' --target example.com:80 --timeout 10`
+- 结果：
+  - `direct_reality phase=pre_bridge result=ok`
+  - `direct_vless_dial phase=pre_bridge result=ok`
+  - `direct_reality phase=post_bridge result=ok`
+  - `direct_vless_dial phase=post_bridge result=ok`
+  - `OK stream_mode=connect_io connect_time_ms=264 response_bytes=838 first_line=HTTP/1.1 200 OK`
+- 该样本仅作为“当前 probe/app feature 面没有被诊断补丁打坏”的短 sanity，不作为节点稳定性 oracle。
+
+### 当前判定
+
+- Round 35 是 live dataplane 诊断工具面的实质推进：
+  - 后续 app `probe-outbound` 可以直接把 failure class 打出来；
+  - 易失节点的断流不再把 MT-REAL-02 引回无基线 sampler patch；
+  - pre-bridge/post-bridge direct probes 能更快定位 app feature surface、registry/bridge surface 与节点侧问题的分界。
+- 本轮没有改变 wire sampler、Vision write-boundary 或 REALITY read-loop 行为。
+
+### 验证
+
+- `cargo fmt --all` → PASS
+- `cargo test -p app --bin probe-outbound --features 'sb-core,sb-adapters,sb-transport,adapter-vless,tls_reality' -- --nocapture` → PASS
+  - `2 passed`
+- `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
+- `cargo test -p sb-tls` → observed known global-state fluctuation
+  - first full parallel run failed only at `global::tests::test_none_mode_empty`
+  - `cargo test -p sb-tls global::tests::test_none_mode_empty -- --nocapture` → PASS
+  - `cargo test -p sb-tls -- --test-threads=1` → PASS
+    - `119 passed`
+    - doctest `1 passed`
+- `cargo test -p sb-adapters --features adapter-vless,tls_reality test_vision -- --nocapture` → PASS
+  - `14 passed`
+- `cargo check --workspace` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
+  - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
+- `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+- `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：

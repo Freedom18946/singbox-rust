@@ -154,14 +154,72 @@ async fn main() -> Result<()> {
         "GET / HTTP/1.1\r\nHost: {}\r\nUser-Agent: singbox-rust/cli\r\nConnection: close\r\n\r\n",
         host
     );
-    stream
-        .write_all(req.as_bytes())
-        .await
-        .context("write request")?;
+    match tokio::time::timeout(
+        Duration::from_secs(args.timeout),
+        stream.write_all(req.as_bytes()),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            print_probe_error(
+                stream.mode(),
+                "write",
+                classify_probe_error_text(&error.to_string()),
+                connected_ms,
+                &error,
+            );
+            return Err(error).context("write request");
+        }
+        Err(_) => {
+            print_probe_error(
+                stream.mode(),
+                "write",
+                "timeout",
+                connected_ms,
+                &format!("timeout after {}s", args.timeout),
+            );
+            anyhow::bail!("write request timeout after {}s", args.timeout);
+        }
+    }
 
     // Read some response bytes (up to 4 KB)
     let mut buf = vec![0u8; 4096];
-    let n = stream.read(&mut buf).await.context("read response")?;
+    let n = match tokio::time::timeout(Duration::from_secs(args.timeout), stream.read(&mut buf))
+        .await
+    {
+        Ok(Ok(read)) => read,
+        Ok(Err(error)) => {
+            print_probe_error(
+                stream.mode(),
+                "read",
+                classify_probe_error_text(&error.to_string()),
+                connected_ms,
+                &error,
+            );
+            return Err(error).context("read response");
+        }
+        Err(_) => {
+            print_probe_error(
+                stream.mode(),
+                "read",
+                "timeout",
+                connected_ms,
+                &format!("timeout after {}s", args.timeout),
+            );
+            anyhow::bail!("read response timeout after {}s", args.timeout);
+        }
+    };
+    if n == 0 {
+        print_probe_error(
+            stream.mode(),
+            "read",
+            "post_dial_eof",
+            connected_ms,
+            "upstream returned eof before response bytes",
+        );
+        anyhow::bail!("early eof while reading response");
+    }
 
     println!(
         "OK stream_mode={} connect_time_ms={} response_bytes={} first_line={}",
@@ -186,6 +244,59 @@ fn parse_hostport(s: &str) -> Result<(String, u16)> {
 fn extract_first_line(bytes: &[u8]) -> String {
     let s = String::from_utf8_lossy(bytes);
     s.lines().next().unwrap_or("").to_string()
+}
+
+fn print_probe_error(
+    stream_mode: &str,
+    stage: &str,
+    class: &str,
+    connected_ms: u64,
+    detail: impl std::fmt::Display,
+) {
+    println!(
+        "ERR stream_mode={} stage={} class={} connect_time_ms={} detail={}",
+        stream_mode,
+        stage,
+        class,
+        connected_ms,
+        sanitize_probe_detail(&detail.to_string())
+    );
+}
+
+fn classify_probe_error_text(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("http2 framing") || lower.contains("http/2 framing") {
+        "http2_framing"
+    } else if lower.contains("tls handshake eof") || lower.contains("handshake eof") {
+        "reality_dial_eof"
+    } else if lower.contains("early eof") || lower.contains("unexpected eof") || lower == "eof" {
+        "post_dial_eof"
+    } else if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("can't complete socks5") || lower.contains("socks5") {
+        "socks_connect"
+    } else if lower.contains("connection reset") {
+        "connection_reset"
+    } else if lower.contains("broken pipe") {
+        "broken_pipe"
+    } else if lower.contains("connection refused") {
+        "connection_refused"
+    } else {
+        "other"
+    }
+}
+
+fn sanitize_probe_detail(detail: &str) -> String {
+    let collapsed = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_DETAIL_LEN: usize = 240;
+    if collapsed.len() <= MAX_DETAIL_LEN {
+        collapsed
+    } else {
+        format!(
+            "{}...",
+            collapsed.chars().take(MAX_DETAIL_LEN).collect::<String>()
+        )
+    }
 }
 
 #[inline]
@@ -294,12 +405,13 @@ async fn maybe_probe_vless_direct(
                 started.elapsed().as_millis()
             ),
             Ok(Err(error)) => eprintln!(
-                "direct_reality phase={phase} result=err elapsed_ms={} error={}",
+                "direct_reality phase={phase} result=err class={} elapsed_ms={} error={}",
+                classify_probe_error_text(&error.to_string()),
                 started.elapsed().as_millis(),
                 error
             ),
             Err(_) => eprintln!(
-                "direct_reality phase={phase} result=timeout elapsed_ms={}",
+                "direct_reality phase={phase} result=timeout class=timeout elapsed_ms={}",
                 started.elapsed().as_millis()
             ),
         }
@@ -307,7 +419,7 @@ async fn maybe_probe_vless_direct(
         eprintln!("direct_reality phase={phase} result=skip reason=no_reality_config");
     }
 
-    let connector = VlessConnector::new(VlessConfig {
+    let mut vless_config = VlessConfig {
         server,
         port: server_port,
         uuid,
@@ -317,12 +429,13 @@ async fn maybe_probe_vless_direct(
         timeout: Some(30),
         tcp_fast_open: false,
         transport_layer: sb_adapters::transport_config::TransportConfig::Tcp,
-        multiplex: None,
-        #[cfg(feature = "tls_reality")]
-        reality,
-        #[cfg(feature = "transport_ech")]
-        ech: None,
-    });
+        ..VlessConfig::default()
+    };
+    #[cfg(feature = "tls_reality")]
+    {
+        vless_config.reality = reality;
+    }
+    let connector = VlessConnector::new(vless_config);
     let target = Target {
         host: host.to_string(),
         port,
@@ -341,13 +454,54 @@ async fn maybe_probe_vless_direct(
             started.elapsed().as_millis()
         ),
         Ok(Err(error)) => eprintln!(
-            "direct_vless_dial phase={phase} result=err elapsed_ms={} error={}",
+            "direct_vless_dial phase={phase} result=err class={} elapsed_ms={} error={}",
+            classify_probe_error_text(&error.to_string()),
             started.elapsed().as_millis(),
             error
         ),
         Err(_) => eprintln!(
-            "direct_vless_dial phase={phase} result=timeout elapsed_ms={}",
+            "direct_vless_dial phase={phase} result=timeout class=timeout elapsed_ms={}",
             started.elapsed().as_millis()
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_probe_error_text_covers_reality_live_failures() {
+        assert_eq!(
+            classify_probe_error_text("REALITY handshake failed: tls handshake eof"),
+            "reality_dial_eof"
+        );
+        assert_eq!(
+            classify_probe_error_text("curl: (16) Error in the HTTP2 framing layer"),
+            "http2_framing"
+        );
+        assert_eq!(
+            classify_probe_error_text("timed out waiting for first upstream byte"),
+            "timeout"
+        );
+        assert_eq!(classify_probe_error_text("early eof"), "post_dial_eof");
+        assert_eq!(
+            classify_probe_error_text("Can't complete SOCKS5 connection"),
+            "socks_connect"
+        );
+        assert_eq!(
+            classify_probe_error_text("connection reset by peer"),
+            "connection_reset"
+        );
+        assert_eq!(classify_probe_error_text("broken pipe"), "broken_pipe");
+    }
+
+    #[test]
+    fn sanitize_probe_detail_collapses_and_truncates() {
+        assert_eq!(sanitize_probe_detail("a\n  b\tc"), "a b c");
+        let long = "x".repeat(300);
+        let sanitized = sanitize_probe_detail(&long);
+        assert_eq!(sanitized.len(), 243);
+        assert!(sanitized.ends_with("..."));
     }
 }
