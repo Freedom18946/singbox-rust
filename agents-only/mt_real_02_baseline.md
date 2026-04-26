@@ -1349,6 +1349,72 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 42 cross-region live batch evidence
+
+### 目标
+
+- 在 Round 41 HK repeat all_ok 后，做一组小而有边界的跨区域 live sample。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 关注点：
+  - SG/JP/US 是否出现 app/minimal 分叉；
+  - timeout/eof 是否按 class 聚合，而不是被误判成 sampler 问题。
+
+### 执行
+
+- Command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'SG-A-BGP-1.0倍率' --outbound 'JP-A-BGP-1.0倍率' --outbound 'US-A-BGP-0.1倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r42`
+- Selection:
+  - config: `agents-only/mt_real_01_evidence/phase3_ip_direct.json`
+  - target: `example.com:80`
+  - outbounds: `SG-A-BGP-1.0`, `JP-A-BGP-1.0`, `US-A-BGP-0.1`
+  - runs: `1`
+
+### 结果
+
+- Batch stdout:
+  - `selected_count = 3`
+  - `runs = 1`
+  - `summary_json = /tmp/reality-vless-probe-batch-live-r42/summary.json`
+- Summary:
+  - `total = 3`
+  - `executed_runs = 3`
+  - `status_counts.completed = 3`
+  - `label_counts.all_ok = 2`
+  - `label_counts.reality_all_timeout = 1`
+  - `class_counts.ok = 18`
+  - `class_counts.timeout = 9`
+- Per outbound:
+  - `SG-A-BGP-1.0`
+    - app/minimal matrix all class `ok`
+    - label `all_ok`
+  - `JP-A-BGP-1.0`
+    - app pre/post direct REALITY, app pre/post VLESS dial, app bridge, and all minimal probes class `timeout`
+    - label `reality_all_timeout`
+  - `US-A-BGP-0.1`
+    - app/minimal matrix all class `ok`
+    - label `all_ok`
+
+### Evidence
+
+- Committed sanitized summary:
+  - `agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json`
+- Raw local output remains outside the repo:
+  - `/tmp/reality-vless-probe-batch-live-r42`
+
+### 验证
+
+- `python3 -m json.tool agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json` → PASS
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `15 tests`
+- `cargo check --workspace` → PASS
+
+### 当前判定
+
+- Cross-region live sample expanded positive evidence beyond HK:
+  - SG and US are all_ok through app and minimal paths.
+  - JP is a consistent timeout across every app/minimal phase, so it is node/path evidence, not a Rust app/minimal divergence.
+- This reinforces the current class-first rule: do not touch sampler based on a uniformly timed-out node.
+
 ## 2026-04-26 进展更新：Round 41 small repeat live batch evidence
 
 ### 目标

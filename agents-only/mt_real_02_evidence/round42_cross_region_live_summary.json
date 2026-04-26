@@ -1,0 +1,75 @@
+{
+  "round": "42",
+  "date": "2026-04-26",
+  "description": "Bounded cross-region live batch using the repeat-aware REALITY matrix runner.",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'SG-A-BGP-1.0\\u500d\\u7387' --outbound 'JP-A-BGP-1.0\\u500d\\u7387' --outbound 'US-A-BGP-0.1\\u500d\\u7387' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r42",
+  "local_output_dir": "/tmp/reality-vless-probe-batch-live-r42",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "outbounds": [
+      "SG-A-BGP-1.0",
+      "JP-A-BGP-1.0",
+      "US-A-BGP-0.1"
+    ],
+    "runs": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "all_ok": 2,
+      "reality_all_timeout": 1
+    },
+    "class_counts": {
+      "ok": 18,
+      "timeout": 9
+    }
+  },
+  "by_outbound": {
+    "SG-A-BGP-1.0": {
+      "runs": 1,
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "JP-A-BGP-1.0": {
+      "runs": 1,
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    "US-A-BGP-0.1": {
+      "runs": 1,
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  },
+  "interpretation": [
+    "SG and US samples completed all app/minimal matrix checks with class ok.",
+    "The JP sample timed out consistently across app pre/post, app bridge, and minimal phase probes.",
+    "The timeout sample is classified node/path evidence, not an app/minimal divergence and not a sampler regression signal."
+  ]
+}

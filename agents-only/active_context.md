@@ -140,6 +140,29 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 42（cross-region live batch evidence）
+
+- 本轮继续 live evidence，不修改代码 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'SG-A-BGP-1.0倍率' --outbound 'JP-A-BGP-1.0倍率' --outbound 'US-A-BGP-0.1倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r42`
+- 结果：
+  - selected ready outbounds: `3`
+  - executed runs: `3`
+  - status: `completed=3`
+  - labels: `all_ok=2`, `reality_all_timeout=1`
+  - classes: `ok=18`, `timeout=9`
+  - SG/US samples: app/minimal 全部 class `ok`
+  - JP sample: app pre/post、app bridge、minimal phase probes 全部 class `timeout`，没有 app/minimal 分叉。
+- evidence：
+  - `agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json`
+- gate：
+  - `python3 -m json.tool agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json` → PASS
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`15 tests`)
+  - `cargo check --workspace` → PASS
+- 判定：
+  - 跨区域小样本扩大了 live 正证：SG/US all_ok。
+  - JP 是一致 timeout 的 node/path 证据，不是 sampler regression signal。
+
 ## Round 41（small repeat live batch evidence）
 
 - 本轮使用 Round 40 repeat batch runner 做小规模 live evidence，不修改代码 sampler/dataplane。
