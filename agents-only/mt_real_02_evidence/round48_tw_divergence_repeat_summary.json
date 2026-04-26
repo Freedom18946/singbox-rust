@@ -1,0 +1,88 @@
+{
+  "round": "48",
+  "date": "2026-04-26",
+  "description": "targeted TW-A-BGP-1.0 repeat after Round 47 divergence",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r48-tw-repeat/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'TW-A-BGP-1.0\u500d\u7387' --runs 3 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r48-tw-repeat",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "all_ok": 3
+    },
+    "class_counts": {
+      "ok": 27
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 3,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "TW-A-BGP-1.0": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "TW-A-BGP-1.0",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "TW-A-BGP-1.0",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "TW-A-BGP-1.0",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "TW-A-BGP-1.0 completed three repeat matrix runs with class ok for every app/minimal phase.",
+    "The Round 47 minimal.direct_reality EOF divergence did not reproduce in targeted repeat.",
+    "This is not a sampler-change signal; keep class-first evidence collection."
+  ]
+}

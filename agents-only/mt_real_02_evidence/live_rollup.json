@@ -1,21 +1,25 @@
 {
-  "total_rounds": 3,
-  "total_executed_runs": 12,
-  "total_all_ok_runs": 10,
-  "total_non_all_ok_runs": 2,
-  "has_any_divergence": false,
+  "total_rounds": 5,
+  "total_executed_runs": 20,
+  "total_all_ok_runs": 15,
+  "total_non_all_ok_runs": 5,
+  "has_any_divergence": true,
   "status_counts": {
-    "completed": 12
+    "completed": 20
   },
   "label_counts": {
-    "all_ok": 10,
+    "all_ok": 15,
+    "app_minimal_diverged": 1,
+    "minimal_transport_diverged": 1,
     "reality_all_connection_reset": 1,
-    "reality_all_timeout": 1
+    "reality_all_reality_dial_eof": 1,
+    "reality_all_timeout": 2
   },
   "class_counts": {
     "connection_reset": 9,
-    "ok": 90,
-    "timeout": 9
+    "ok": 143,
+    "reality_dial_eof": 10,
+    "timeout": 18
   },
   "rounds": [
     {
@@ -85,6 +89,55 @@
         "connection_reset": 9,
         "ok": 36
       }
+    },
+    {
+      "round": "47",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+      "description": "planner-selected uncovered REALITY live batch evidence",
+      "total": 5,
+      "executed_runs": 5,
+      "all_ok_runs": 2,
+      "has_divergence": true,
+      "uniform_failure_labels": {
+        "reality_all_reality_dial_eof": 1,
+        "reality_all_timeout": 1
+      },
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 2,
+        "app_minimal_diverged": 1,
+        "minimal_transport_diverged": 1,
+        "reality_all_reality_dial_eof": 1,
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "ok": 26,
+        "reality_dial_eof": 10,
+        "timeout": 9
+      }
+    },
+    {
+      "round": "48",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
+      "description": "targeted TW-A-BGP-1.0 repeat after Round 47 divergence",
+      "total": 3,
+      "executed_runs": 3,
+      "all_ok_runs": 3,
+      "has_divergence": false,
+      "uniform_failure_labels": {},
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      }
     }
   ],
   "by_outbound": {
@@ -130,6 +183,34 @@
         "ok": 18
       }
     },
+    "HK-A-BGP-2.0": {
+      "rounds": [
+        "47"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    "HK-A-BGP-2.5": {
+      "rounds": [
+        "47"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
     "ID-A-BGP-1.2": {
       "rounds": [
         "44"
@@ -144,6 +225,20 @@
         "ok": 9
       }
     },
+    "JP-A-BGP-0.3": {
+      "rounds": [
+        "47"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_reality_dial_eof": 1
+      },
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
     "JP-A-BGP-1.0": {
       "rounds": [
         "42"
@@ -156,6 +251,20 @@
       },
       "class_counts": {
         "timeout": 9
+      }
+    },
+    "JP-A-BGP-1.1": {
+      "rounds": [
+        "47"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
       }
     },
     "SG-A-BGP-1.0": {
@@ -184,6 +293,24 @@
       },
       "class_counts": {
         "ok": 9
+      }
+    },
+    "TW-A-BGP-1.0": {
+      "rounds": [
+        "47",
+        "48"
+      ],
+      "status_counts": {
+        "completed": 4
+      },
+      "label_counts": {
+        "all_ok": 3,
+        "app_minimal_diverged": 1,
+        "minimal_transport_diverged": 1
+      },
+      "class_counts": {
+        "ok": 35,
+        "reality_dial_eof": 1
       }
     },
     "TW-A-Hinet-1.1": {

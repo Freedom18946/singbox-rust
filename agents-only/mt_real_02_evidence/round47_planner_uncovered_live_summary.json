@@ -1,0 +1,173 @@
+{
+  "round": "47",
+  "date": "2026-04-26",
+  "description": "planner-selected uncovered REALITY live batch evidence",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r47/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'HK-A-BGP-2.0\u500d\u7387' --outbound 'HK-A-BGP-2.5\u500d\u7387' --outbound 'TW-A-BGP-1.0\u500d\u7387' --outbound 'JP-A-BGP-0.3\u500d\u7387' --outbound 'JP-A-BGP-1.1\u500d\u7387' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r47",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 1,
+    "selected_count": 5
+  },
+  "summary": {
+    "total": 5,
+    "executed_runs": 5,
+    "status_counts": {
+      "completed": 5
+    },
+    "label_counts": {
+      "all_ok": 2,
+      "app_minimal_diverged": 1,
+      "minimal_transport_diverged": 1,
+      "reality_all_reality_dial_eof": 1,
+      "reality_all_timeout": 1
+    },
+    "class_counts": {
+      "ok": 26,
+      "reality_dial_eof": 10,
+      "timeout": 9
+    }
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_minimal_diverged": 1,
+      "minimal_transport_diverged": 1
+    },
+    "all_ok_runs": 2,
+    "uniform_failure_labels": {
+      "reality_all_reality_dial_eof": 1,
+      "reality_all_timeout": 1
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-2.0": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    "HK-A-BGP-2.5": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "JP-A-BGP-0.3": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_reality_dial_eof": 1
+      },
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    "JP-A-BGP-1.1": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "TW-A-BGP-1.0": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "app_minimal_diverged": 1,
+        "minimal_transport_diverged": 1
+      },
+      "class_counts": {
+        "ok": 8,
+        "reality_dial_eof": 1
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.5",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "TW-A-BGP-1.0",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "minimal_transport_diverged"
+      ],
+      "class_counts": {
+        "ok": 8,
+        "reality_dial_eof": 1
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-0.3",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "reality_all_reality_dial_eof"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-1.1",
+      "ordinal": 5,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "HK-2.5 and JP-1.1 completed all app/minimal matrix checks with class ok.",
+    "HK-2.0 timed out consistently across app pre/post, app bridge, and minimal phase probes.",
+    "JP-0.3 returned reality_dial_eof consistently across all REALITY phases.",
+    "TW-1.0 showed one app/minimal divergence: minimal.direct_reality was reality_dial_eof while app, bridge, and other minimal phases were ok; targeted repeat is required before treating this as stable."
+  ]
+}

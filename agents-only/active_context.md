@@ -140,6 +140,66 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 48（targeted TW divergence repeat）
+
+- 本轮针对 Round 47 的 `TW-A-BGP-1.0` single-run divergence 做 repeat 复测，不修改 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'TW-A-BGP-1.0倍率' --runs 3 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r48-tw-repeat`
+- 结果：
+  - selected ready outbounds: `1`
+  - executed runs: `3`
+  - labels: `all_ok=3`
+  - classes: `ok=27`
+  - `matrix_health.has_divergence=false`
+- evidence：
+  - `agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json`
+- 判定：
+  - Round 47 的 TW `minimal.direct_reality = reality_dial_eof` 分叉没有在 3 次 targeted repeat 中复现。
+  - 暂不作为 sampler 或 app dataplane regression signal。
+
+## Round 47（planner-selected uncovered live batch evidence）
+
+- 本轮使用 Round 46 planner 选择的 uncovered nodes 做 live batch，不修改 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'HK-A-BGP-2.0倍率' --outbound 'HK-A-BGP-2.5倍率' --outbound 'TW-A-BGP-1.0倍率' --outbound 'JP-A-BGP-0.3倍率' --outbound 'JP-A-BGP-1.1倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r47`
+- 结果：
+  - selected ready outbounds: `5`
+  - executed runs: `5`
+  - labels: `all_ok=2`, `reality_all_timeout=1`, `reality_all_reality_dial_eof=1`, `app_minimal_diverged=1`, `minimal_transport_diverged=1`
+  - classes: `ok=26`, `timeout=9`, `reality_dial_eof=10`
+  - HK-2.5 / JP-1.1: all_ok
+  - HK-2.0: all phases timeout
+  - JP-0.3: all REALITY phases `reality_dial_eof`
+  - TW-1.0: one divergence where `minimal.direct_reality = reality_dial_eof`, while app direct, app bridge, minimal transport REALITY, minimal VLESS dial, and minimal VLESS probe IO were `ok`。
+- evidence：
+  - `agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json`
+- 判定：
+  - Round 47 introduced the first committed divergence label, but it was isolated to minimal direct REALITY and required repeat validation before any sampler/dataplane change.
+
+## Rollup after Round 48
+
+- Updated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Current rollup:
+  - rounds: `5`
+  - executed runs: `20`
+  - all_ok runs: `15`
+  - non-all_ok runs: `5`
+  - has divergence: `true`
+  - aggregate labels: `all_ok=15`, `reality_all_timeout=2`, `reality_all_connection_reset=1`, `reality_all_reality_dial_eof=1`, `app_minimal_diverged=1`, `minimal_transport_diverged=1`
+  - aggregate classes: `ok=143`, `timeout=18`, `connection_reset=9`, `reality_dial_eof=10`
+- Planner after updated rollup:
+  - `uncovered=7`
+  - `prior_non_all_ok=5`
+  - `covered_all_ok=10`
+  - next default selected: `JP-A-BGP-5`, `JP-A-BGP-4.0`, `US-A-BGP-0`, `US-A-BGP-0.5`, `US-A-BGP-0.8`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`22 tests`)
+  - JSON validation for Round 47 / Round 48 evidence and live rollup → PASS
+  - evidence/rollup ASCII scan → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 46（coverage-aware live batch planner）
 
 - 本轮继续推进 MT-REAL-02 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
