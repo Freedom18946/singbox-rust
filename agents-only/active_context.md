@@ -140,6 +140,32 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 49（probe IO same-failure labeling）
+
+- 本轮从 planner 下一批 live run 中发现 compare label coverage 缺口，不修改 sampler/dataplane。
+- 触发样本：
+  - `US-A-BGP-0.8`
+  - app direct REALITY / VLESS dial: `ok`
+  - app bridge: `post_dial_eof`
+  - minimal direct/transport REALITY and VLESS dial: `ok`
+  - minimal VLESS probe IO: `post_dial_eof`
+  - compare mismatches: `0`
+  - 旧 labels: `[]`
+- 实现：
+  - `scripts/tools/reality_probe_compare.py`
+    - 当 `app.bridge` 与 `minimal.vless_probe_io` 同 class 且非 `ok`/`missing` 时，新增 label：
+      - `probe_io_all_<class>`
+    - 对 US-0.8 样本生成 `probe_io_all_post_dial_eof`。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 same probe IO failure 单测。
+- smoke：
+  - `python3 scripts/tools/reality_probe_compare.py --app-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/app.json --phase-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/phase.json`
+  - 输出 label `probe_io_all_post_dial_eof`，mismatches 仍为 `0`。
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`20 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`23 tests`)
+  - JSON validation for regenerated US-0.8 compare → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 48（targeted TW divergence repeat）
 
 - 本轮针对 Round 47 的 `TW-A-BGP-1.0` single-run divergence 做 repeat 复测，不修改 sampler/dataplane。

@@ -1349,6 +1349,58 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 49 probe IO same-failure labeling
+
+### 目标
+
+- 修补 compare label coverage。
+- Round 49 planner 下一批 live run 里出现一个重要边界：
+  - app bridge 与 minimal VLESS probe IO 同时 `post_dial_eof`；
+  - direct REALITY / VLESS dial phases 都是 `ok`；
+  - compare mismatches 为 `0`；
+  - 但旧 compare labels 为空。
+- 这个不是 divergence，但不能进入 rollup 后成为“无标签 non-all_ok”。
+
+### 实现
+
+- 更新 `scripts/tools/reality_probe_compare.py`
+  - 新增 probe IO same-failure label 规则：
+    - 如果 `app.bridge == minimal.vless_probe_io`
+    - 且 class 不是 `ok` / `missing`
+    - 则添加 `probe_io_all_<class>`
+  - 对触发样本输出：
+    - `probe_io_all_post_dial_eof`
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - 新增 `test_report_labels_same_probe_io_failure_without_divergence`
+  - 覆盖：
+    - mismatches 仍为 `0`
+    - labels 包含 `probe_io_all_post_dial_eof`
+
+### smoke
+
+- Command:
+  - `python3 scripts/tools/reality_probe_compare.py --app-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/app.json --phase-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/phase.json`
+- Result:
+  - `mismatches = 0`
+  - `labels = ["probe_io_all_post_dial_eof"]`
+
+### 当前判定
+
+- `probe_io_all_post_dial_eof` 是 class-first evidence label，不是 divergence。
+- 该修复避免 rollup 出现 no-label non-all_ok 样本。
+- 本轮没有修改 REALITY sampler/read-loop/adapter behavior。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `20 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `23 tests`
+- `python3 scripts/tools/reality_probe_compare.py --app-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/app.json --phase-json /tmp/reality-vless-probe-batch-live-r49/005-US-A-BGP-0.8/phase.json` → PASS
+- JSON validation for regenerated US-0.8 compare → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 47/48 planner-selected live batch and targeted repeat
 
 ### 目标

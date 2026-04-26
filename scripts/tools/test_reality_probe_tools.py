@@ -180,6 +180,28 @@ class RealityProbeCompareTests(unittest.TestCase):
         report = compare.build_report(app, phase)
         self.assertIn("reality_all_timeout", report["summary"]["labels"])
 
+    def test_report_labels_same_probe_io_failure_without_divergence(self):
+        app = {
+            "pre_bridge": {
+                "direct_reality": {"ok": True},
+                "direct_vless_dial": {"ok": True},
+            },
+            "post_bridge": {
+                "direct_reality": {"ok": True},
+                "direct_vless_dial": {"ok": True},
+            },
+            "bridge_probe": {"ok": False, "class": "post_dial_eof"},
+        }
+        phase = {
+            "direct_reality": {"ok": True},
+            "transport_reality": {"ok": True},
+            "vless_dial": {"ok": True},
+            "vless_probe_io": {"ok": False, "class": "post_dial_eof"},
+        }
+        report = compare.build_report(app, phase)
+        self.assertEqual(report["summary"]["mismatches"], 0)
+        self.assertIn("probe_io_all_post_dial_eof", report["summary"]["labels"])
+
 
 class RealityProbeBatchTests(unittest.TestCase):
     def test_safe_slug_keeps_paths_predictable(self):

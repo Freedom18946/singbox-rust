@@ -132,6 +132,12 @@ def build_report(app: dict[str, Any], phase: dict[str, Any]) -> dict[str, Any]:
     ]
     if len(set(reality_values)) == 1 and reality_values[0] not in {"ok", "missing"}:
         labels.append(f"reality_all_{reality_values[0]}")
+    probe_io_values = [
+        classes["app.bridge"],
+        classes["minimal.vless_probe_io"],
+    ]
+    if len(set(probe_io_values)) == 1 and probe_io_values[0] not in {"ok", "missing"}:
+        labels.append(f"probe_io_all_{probe_io_values[0]}")
 
     labels = sorted(set(labels))
     return {
