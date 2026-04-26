@@ -32,14 +32,20 @@ def select_outbounds(
     limit: int | None,
 ) -> list[dict[str, Any]]:
     selected = []
-    wanted = set(names)
+    by_name = {}
     for item in items:
+        name = item.get("name")
+        if isinstance(name, str) and name not in by_name:
+            by_name[name] = item
+    if names:
+        candidates = [by_name[name] for name in names if name in by_name]
+    else:
+        candidates = items
+    for item in candidates:
         if limit is not None and len(selected) >= limit:
             break
         name = item.get("name")
         if not isinstance(name, str):
-            continue
-        if wanted and name not in wanted:
             continue
         if include and include not in name:
             continue
@@ -58,6 +64,32 @@ def load_compare(path: pathlib.Path) -> dict[str, Any] | None:
     except (FileNotFoundError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def load_plan_names(path: pathlib.Path) -> list[str]:
+    with path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise SystemExit(f"plan root must be an object: {path}")
+    selected = value.get("selected")
+    if not isinstance(selected, list):
+        raise SystemExit(f"plan has no selected list: {path}")
+    names = []
+    for item in selected:
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            names.append(item["name"])
+    return names
+
+
+def ordered_unique(values: list[str]) -> list[str]:
+    seen = set()
+    output = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        output.append(value)
+    return output
 
 
 def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -176,6 +208,7 @@ def main() -> None:
     parser.add_argument("--target", default="example.com:80")
     parser.add_argument("--output-dir")
     parser.add_argument("--outbound", action="append", default=[])
+    parser.add_argument("--plan-json", action="append", default=[])
     parser.add_argument("--include")
     parser.add_argument("--exclude")
     parser.add_argument("--include-skipped", action="store_true")
@@ -199,9 +232,13 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     items = envtool.list_reality_vless_outbounds(envtool.load_config(config))
+    plan_names = []
+    for plan_path in args.plan_json:
+        plan_names.extend(load_plan_names(pathlib.Path(plan_path)))
+    names = ordered_unique(args.outbound + plan_names)
     selected = select_outbounds(
         items,
-        args.outbound,
+        names,
         args.include,
         args.exclude,
         args.include_skipped,
@@ -212,6 +249,7 @@ def main() -> None:
         "target": args.target,
         "dry_run": args.dry_run,
         "runs": args.runs,
+        "plan_json": args.plan_json,
         "selected_count": len(selected),
         "selected": selected,
     }
@@ -273,6 +311,7 @@ def main() -> None:
             "target": args.target,
             "dry_run": args.dry_run,
             "runs": args.runs,
+            "plan_json": args.plan_json,
             "selected_count": len(selected),
         },
         "summary": summarize_results(results),

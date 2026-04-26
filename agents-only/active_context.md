@@ -6,9 +6,9 @@
 ## 战略状态
 **当前阶段**: 最高目标实验态 — 用户显式要求继续追求“可直接替换 Go sing-box 的 Rust 二进制”；`MT-REAL-02` 已重开
 **Parity**: 52/56 BHV (92.9%)；`ARCH-LIMIT-REALITY` 仍保留为当前 parity 账面口径，直到出现 live 成功样本
-**当前焦点**: 用 Go `uTLS` ↔ Rust REALITY `ClientHello` 基线 harness 驱动后续突破，不再盲补指纹
+**当前焦点**: MT-REAL-02 live evidence 工具链与 app/minimal same-class 分桶；ClientHello sampler 暂不改动
 
-## 最新闭环（2026-04-17）
+## 最新闭环（2026-04-26）
 
 ### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-10
 
@@ -139,6 +139,41 @@
     - `cargo check --workspace` → PASS
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 55（plan-json batch consumption + latest health rollup）
+
+- 本轮继续推进 live evidence 工具链，不修改 REALITY ClientHello sampler、Vision raw/direct、REALITY read-loop。
+- 实现：
+  - `scripts/tools/reality_vless_probe_batch.py`
+    - 新增 `--plan-json`，直接消费 planner 输出的 `selected[].name`。
+    - `--outbound` 与 `--plan-json` 名单按输入顺序合并去重。
+    - batch `plan.json` / `summary.json` 记录 `plan_json` provenance。
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 新增 per-outbound `latest_health`：
+      - `latest_all_ok`
+      - `latest_same_failure`
+      - `latest_divergence`
+      - `latest_unknown`
+    - 顶层新增 `latest_health_counts`、`latest_divergence_outbounds`、`latest_same_failure_outbounds`、`recovered_outbounds`。
+  - `scripts/tools/README.md` 记录 planner JSON 直喂 batch 的流程。
+  - `scripts/tools/test_reality_probe_tools.py` 覆盖 plan JSON 加载、顺序去重、latest divergence、recovered/latest health。
+- 重新生成 `agents-only/mt_real_02_evidence/live_rollup.{json,md}`：
+  - rounds: `8`
+  - executed runs: `38`
+  - all_ok runs: `19`
+  - latest non-all-ok outbounds: `6`
+  - latest health: `latest_all_ok=15`, `latest_same_failure=5`, `latest_divergence=1`
+  - latest divergence: `HK-A-BGP-2.0`
+  - latest same-failure: `JP-A-BGP-0.3`, `JP-A-BGP-1.0`, `UK-A-BGP-0.5`, `US-A-BGP-0.5`, `US-A-BGP-0.8`
+  - recovered: `TW-A-BGP-1.0`
+- Planner to batch smoke:
+  - `reality_vless_probe_plan.py --include-failure-rechecks --limit 20` selected `6`
+  - `reality_vless_probe_batch.py --plan-json /tmp/reality-vless-latest-non-all-ok-plan-r55.json --runs 2 --dry-run` selected `6`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`27 tests`)
+  - JSON validation for regenerated live rollup and plan-json dry-run outputs → PASS
+  - ASCII scan for regenerated live rollup JSON/MD → PASS
+  - `cargo check --workspace` → PASS
 
 ## Round 54（latest non-all-ok repeat recheck）
 

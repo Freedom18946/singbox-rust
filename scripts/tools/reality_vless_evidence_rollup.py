@@ -13,6 +13,13 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import reality_vless_probe_evidence as evidence_tool  # noqa: E402
 
+DIVERGENCE_LABELS = {
+    "app_minimal_diverged",
+    "app_pre_post_diverged",
+    "bridge_io_diverged",
+    "minimal_transport_diverged",
+}
+
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
@@ -40,6 +47,20 @@ def round_sort_key(value: Any) -> tuple[int, int | str]:
 
 def has_non_all_ok_labels(labels: dict[str, int]) -> bool:
     return any(key != "all_ok" and value > 0 for key, value in labels.items())
+
+
+def has_divergence_labels(labels: dict[str, int]) -> bool:
+    return any(key in DIVERGENCE_LABELS and value > 0 for key, value in labels.items())
+
+
+def latest_health(labels: dict[str, int]) -> str:
+    if not labels:
+        return "latest_unknown"
+    if not has_non_all_ok_labels(labels):
+        return "latest_all_ok"
+    if has_divergence_labels(labels):
+        return "latest_divergence"
+    return "latest_same_failure"
 
 
 def round_summary(path: pathlib.Path, payload: dict[str, Any]) -> dict[str, Any]:
@@ -127,6 +148,10 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     all_ok_runs = sum(item.get("all_ok_runs") or 0 for item in rounds)
     by_outbound_json = {}
     latest_non_all_ok = []
+    latest_divergence = []
+    latest_same_failure = []
+    recovered = []
+    latest_health_counts: collections.Counter[str] = collections.Counter()
     for name, values in sorted(by_outbound.items()):
         history = sorted(values["history"], key=lambda item: round_sort_key(item["round"]))
         latest = history[-1] if history else {}
@@ -134,8 +159,17 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         latest_classes = evidence_tool.counter_value(latest, "class_counts")
         latest_statuses = evidence_tool.counter_value(latest, "status_counts")
         latest_has_non_all_ok = has_non_all_ok_labels(latest_labels)
+        latest_state = latest_health(latest_labels)
+        historical_has_non_all_ok = has_non_all_ok_labels(dict(sorted(values["label_counts"].items())))
+        latest_health_counts[latest_state] += 1
         if latest_has_non_all_ok:
             latest_non_all_ok.append(name)
+        if latest_state == "latest_divergence":
+            latest_divergence.append(name)
+        elif latest_state == "latest_same_failure":
+            latest_same_failure.append(name)
+        elif latest_state == "latest_all_ok" and historical_has_non_all_ok:
+            recovered.append(name)
         by_outbound_json[name] = {
             "rounds": sorted(values["rounds"], key=round_sort_key),
             "status_counts": dict(sorted(values["status_counts"].items())),
@@ -147,9 +181,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             "latest_label_counts": latest_labels,
             "latest_class_counts": latest_classes,
             "latest_has_non_all_ok": latest_has_non_all_ok,
-            "historical_has_non_all_ok": has_non_all_ok_labels(
-                dict(sorted(values["label_counts"].items()))
-            ),
+            "latest_health": latest_state,
+            "historical_has_non_all_ok": historical_has_non_all_ok,
         }
     return {
         "total_rounds": len(rounds),
@@ -159,6 +192,13 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         "has_any_divergence": any(item["has_divergence"] for item in rounds),
         "latest_non_all_ok_outbounds": latest_non_all_ok,
         "latest_non_all_ok_outbound_count": len(latest_non_all_ok),
+        "latest_divergence_outbounds": latest_divergence,
+        "latest_divergence_outbound_count": len(latest_divergence),
+        "latest_same_failure_outbounds": latest_same_failure,
+        "latest_same_failure_outbound_count": len(latest_same_failure),
+        "recovered_outbounds": recovered,
+        "recovered_outbound_count": len(recovered),
+        "latest_health_counts": dict(sorted(latest_health_counts.items())),
         "status_counts": dict(sorted(statuses.items())),
         "label_counts": dict(sorted(labels.items())),
         "class_counts": dict(sorted(classes.items())),
@@ -177,6 +217,8 @@ def markdown_table(rollup: dict[str, Any]) -> str:
         f"- non-all_ok runs: {rollup['total_non_all_ok_runs']}",
         f"- has divergence: {str(rollup['has_any_divergence']).lower()}",
         f"- latest non-all_ok outbounds: {rollup.get('latest_non_all_ok_outbound_count', 0)}",
+        f"- latest divergence outbounds: {rollup.get('latest_divergence_outbound_count', 0)}",
+        f"- recovered outbounds: {rollup.get('recovered_outbound_count', 0)}",
         "",
         "## Rounds",
         "",
@@ -203,6 +245,7 @@ def markdown_table(rollup: dict[str, Any]) -> str:
             "",
             f"- labels: {json.dumps(rollup['label_counts'], sort_keys=True)}",
             f"- classes: {json.dumps(rollup['class_counts'], sort_keys=True)}",
+            f"- latest health: {json.dumps(rollup.get('latest_health_counts', {}), sort_keys=True)}",
             "",
         ]
     )

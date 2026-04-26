@@ -13,6 +13,27 @@
     "US-A-BGP-0.8"
   ],
   "latest_non_all_ok_outbound_count": 6,
+  "latest_divergence_outbounds": [
+    "HK-A-BGP-2.0"
+  ],
+  "latest_divergence_outbound_count": 1,
+  "latest_same_failure_outbounds": [
+    "JP-A-BGP-0.3",
+    "JP-A-BGP-1.0",
+    "UK-A-BGP-0.5",
+    "US-A-BGP-0.5",
+    "US-A-BGP-0.8"
+  ],
+  "latest_same_failure_outbound_count": 5,
+  "recovered_outbounds": [
+    "TW-A-BGP-1.0"
+  ],
+  "recovered_outbound_count": 1,
+  "latest_health_counts": {
+    "latest_all_ok": 15,
+    "latest_divergence": 1,
+    "latest_same_failure": 5
+  },
   "status_counts": {
     "completed": 38
   },
@@ -277,6 +298,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "HK-A-BGP-0.3": {
@@ -318,6 +340,7 @@
         "ok": 18
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "HK-A-BGP-1.0": {
@@ -359,6 +382,7 @@
         "ok": 18
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "HK-A-BGP-2.0": {
@@ -423,6 +447,7 @@
         "timeout": 17
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_divergence",
       "historical_has_non_all_ok": true
     },
     "HK-A-BGP-2.5": {
@@ -464,6 +489,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "ID-A-BGP-1.2": {
@@ -505,6 +531,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "JP-A-BGP-0.3": {
@@ -563,6 +590,7 @@
         "reality_dial_eof": 18
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "JP-A-BGP-1.0": {
@@ -621,6 +649,7 @@
         "timeout": 18
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "JP-A-BGP-1.1": {
@@ -662,6 +691,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "JP-A-BGP-4.0": {
@@ -703,6 +733,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "JP-A-BGP-5": {
@@ -744,6 +775,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "SG-A-BGP-1.0": {
@@ -785,6 +817,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "SG-A-BGP-1.2": {
@@ -826,6 +859,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "TW-A-BGP-1.0": {
@@ -886,6 +920,7 @@
         "ok": 27
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": true
     },
     "TW-A-Hinet-1.1": {
@@ -927,6 +962,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "UK-A-BGP-0.5": {
@@ -985,6 +1021,7 @@
         "connection_reset": 18
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "US-A-BGP-0": {
@@ -1026,6 +1063,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "US-A-BGP-0.1": {
@@ -1067,6 +1105,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     },
     "US-A-BGP-0.5": {
@@ -1126,6 +1165,7 @@
         "connection_reset": 18
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "US-A-BGP-0.8": {
@@ -1185,6 +1225,7 @@
         "post_dial_eof": 4
       },
       "latest_has_non_all_ok": true,
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "US-A-BGP-1.5": {
@@ -1226,6 +1267,7 @@
         "ok": 9
       },
       "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
     }
   }

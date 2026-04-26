@@ -292,6 +292,17 @@ with per-label, per-class, and per-outbound counts. With `--runs N`, each
 selected ready outbound gets repeated sample directories under
 `NNN-outbound/run-NNN`.
 
+Planner JSON can be passed directly into the batch runner; `selected[].name`
+entries are merged with any explicit `--outbound` values while preserving order.
+
+```bash
+python3 scripts/tools/reality_vless_probe_batch.py \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --plan-json /tmp/reality-vless-next-plan.json \
+  --target example.com:80 \
+  --runs 2
+```
+
 To turn a batch `summary.json` into a sanitized evidence file suitable for
 `agents-only/mt_real_02_evidence`:
 
@@ -315,7 +326,9 @@ python3 scripts/tools/reality_vless_evidence_rollup.py \
 
 The rollup keeps both historical aggregate counts and each outbound's latest
 round state. The planner uses latest labels when deciding `prior_non_all_ok`, so
-nodes that recovered in a later targeted repeat are not queued forever.
+nodes that recovered in a later targeted repeat are not queued forever. Rollup
+JSON also classifies each outbound's latest state as `latest_all_ok`,
+`latest_same_failure`, `latest_divergence`, or `latest_unknown`.
 
 To plan the next bounded live batch from the current config and rollup:
 

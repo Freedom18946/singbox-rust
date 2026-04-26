@@ -6,6 +6,8 @@
 - non-all_ok runs: 19
 - has divergence: true
 - latest non-all_ok outbounds: 6
+- latest divergence outbounds: 1
+- recovered outbounds: 1
 
 ## Rounds
 
@@ -24,3 +26,4 @@
 
 - labels: {"all_ok": 19, "app_minimal_diverged": 1, "app_pre_post_diverged": 1, "minimal_transport_diverged": 1, "probe_io_all_connection_reset": 5, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 2, "probe_io_all_timeout": 4, "reality_all_connection_reset": 6, "reality_all_reality_dial_eof": 3, "reality_all_timeout": 5}
 - classes: {"connection_reset": 54, "ok": 201, "post_dial_eof": 6, "reality_dial_eof": 28, "timeout": 53}
+- latest health: {"latest_all_ok": 15, "latest_divergence": 1, "latest_same_failure": 5}

@@ -1349,6 +1349,110 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 55 plan-json batch consumption and latest health rollup
+
+### 目标
+
+- 把 Round 53 planner 与 Round 54 batch runner 接成可重复流水线，避免手工复制 latest non-all-ok outbound names。
+- 让 live rollup 不只记录“latest non-all-ok”，还直接区分：
+  - latest 已恢复；
+  - latest 仍是 app/minimal divergence；
+  - latest 是 same-class node/path failure。
+- 本轮不修改 REALITY ClientHello sampler、Vision raw/direct dataplane、REALITY concrete read-loop。
+
+### 实现
+
+- `scripts/tools/reality_vless_probe_batch.py`
+  - 新增 `--plan-json`，读取 planner JSON 的 `selected[].name`。
+  - 支持多个 `--plan-json`，并与显式 `--outbound` 按输入顺序合并去重。
+  - batch `plan.json` 与 `summary.json` 记录 `plan_json` provenance。
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - 新增 `latest_health(labels)`：
+    - `latest_all_ok`
+    - `latest_same_failure`
+    - `latest_divergence`
+    - `latest_unknown`
+  - 顶层新增：
+    - `latest_health_counts`
+    - `latest_divergence_outbounds`
+    - `latest_same_failure_outbounds`
+    - `recovered_outbounds`
+  - 每个 outbound 新增 `latest_health` 字段。
+- `scripts/tools/test_reality_probe_tools.py`
+  - 覆盖 planner JSON name extraction。
+  - 覆盖顺序去重。
+  - 覆盖 latest divergence outbounds。
+  - 覆盖 recovered outbound latest health。
+- `scripts/tools/README.md`
+  - 记录 `--plan-json` 使用方式。
+  - 记录 rollup latest health 语义。
+
+### 重新生成的 live rollup
+
+- Updated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Summary:
+  - `total_rounds = 8`
+  - `total_executed_runs = 38`
+  - `total_all_ok_runs = 19`
+  - `total_non_all_ok_runs = 19`
+  - `latest_non_all_ok_outbound_count = 6`
+  - `latest_health_counts.latest_all_ok = 15`
+  - `latest_health_counts.latest_same_failure = 5`
+  - `latest_health_counts.latest_divergence = 1`
+- Latest divergence:
+  - `HK-A-BGP-2.0`
+- Latest same-failure:
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `UK-A-BGP-0.5`
+  - `US-A-BGP-0.5`
+  - `US-A-BGP-0.8`
+- Recovered:
+  - `TW-A-BGP-1.0`
+
+### Planner-to-batch smoke
+
+- Planner command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --include-failure-rechecks --limit 20 --output-json /tmp/reality-vless-latest-non-all-ok-plan-r55.json`
+- Planner selected:
+  - `6`
+- Batch dry-run command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-latest-non-all-ok-plan-r55.json --target example.com:80 --runs 2 --dry-run --output-dir /tmp/reality-vless-plan-json-dry-r55`
+- Batch dry-run selected:
+  - `6`
+- Selected names:
+  - `HK-A-BGP-2.0`
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `US-A-BGP-0.5`
+  - `US-A-BGP-0.8`
+  - `UK-A-BGP-0.5`
+
+### 当前判定
+
+- Round 55 turns the latest non-all-ok loop into a reproducible planner JSON -> batch input path.
+- The current live state is sharper than Round 54:
+  - one latest divergence bucket (`HK-A-BGP-2.0`);
+  - five latest same-class failure buckets;
+  - one recovered historical failure bucket (`TW-A-BGP-1.0`).
+- No sampler/dataplane change is justified by this tooling-only round.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `27 tests`
+- JSON validation:
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `/tmp/reality-vless-latest-non-all-ok-plan-r55.json` → PASS
+  - `/tmp/reality-vless-plan-json-dry-r55/plan.json` → PASS
+  - `/tmp/reality-vless-plan-json-dry-r55/summary.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 54 latest non-all-ok repeat recheck
 
 ### 目标

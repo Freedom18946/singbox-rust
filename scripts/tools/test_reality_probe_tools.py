@@ -220,6 +220,8 @@ class RealityProbeBatchTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in selected], ["b-live", "c-live"])
         selected = batch.select_outbounds(items, ["a"], None, None, False, None)
         self.assertEqual([item["name"] for item in selected], ["a"])
+        selected = batch.select_outbounds(items, ["b-live", "a"], None, None, False, None)
+        self.assertEqual([item["name"] for item in selected], ["b-live", "a"])
         selected = batch.select_outbounds(items, [], None, None, True, 0)
         self.assertEqual(selected, [])
 
@@ -253,6 +255,24 @@ class RealityProbeBatchTests(unittest.TestCase):
         self.assertEqual(summary["class_counts"]["ok"], 2)
         self.assertEqual(summary["by_outbound"]["a"]["status_counts"]["completed"], 2)
         self.assertEqual(summary["by_outbound"]["b"]["status_counts"]["skipped"], 1)
+
+    def test_load_plan_names_and_ordered_unique(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "plan.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "selected": [
+                            {"name": "node-a"},
+                            {"name": "node-b"},
+                            {"key": "missing-name"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(batch.load_plan_names(path), ["node-a", "node-b"])
+        self.assertEqual(batch.ordered_unique(["a", "b", "a", "c", "b"]), ["a", "b", "c"])
 
     def test_sample_dir_for_repeat_runs(self):
         output_dir = pathlib.Path("/tmp/reality-batch")
@@ -431,7 +451,10 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(built["by_outbound"]["JP-A"]["class_counts"]["timeout"], 9)
         self.assertEqual(built["by_outbound"]["JP-A"]["latest_round"], "2")
         self.assertTrue(built["by_outbound"]["JP-A"]["latest_has_non_all_ok"])
+        self.assertEqual(built["by_outbound"]["JP-A"]["latest_health"], "latest_same_failure")
         self.assertEqual(built["latest_non_all_ok_outbounds"], ["JP-A"])
+        self.assertEqual(built["latest_health_counts"]["latest_all_ok"], 1)
+        self.assertEqual(built["latest_health_counts"]["latest_same_failure"], 1)
 
     def test_build_rollup_tracks_latest_recovered_outbound_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -471,7 +494,34 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(outbound["latest_round"], "8")
         self.assertFalse(outbound["latest_has_non_all_ok"])
         self.assertTrue(outbound["historical_has_non_all_ok"])
+        self.assertEqual(outbound["latest_health"], "latest_all_ok")
         self.assertEqual(built["latest_non_all_ok_outbound_count"], 0)
+        self.assertEqual(built["recovered_outbounds"], ["TW-A"])
+        self.assertEqual(built["recovered_outbound_count"], 1)
+
+    def test_build_rollup_tracks_latest_divergence_outbounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round9.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "9",
+                        {"app_pre_post_diverged": 1},
+                        {"ok": 1, "timeout": 8},
+                        {
+                            "HK-A": {
+                                "label_counts": {"app_pre_post_diverged": 1},
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            }
+                        },
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        self.assertEqual(built["latest_divergence_outbounds"], ["HK-A"])
+        self.assertEqual(built["latest_divergence_outbound_count"], 1)
+        self.assertEqual(built["by_outbound"]["HK-A"]["latest_health"], "latest_divergence")
 
     def test_markdown_table_contains_round_rows(self):
         built = {
