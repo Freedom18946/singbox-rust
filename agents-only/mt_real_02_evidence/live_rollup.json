@@ -1,14 +1,14 @@
 {
-  "total_rounds": 6,
-  "total_executed_runs": 25,
-  "total_all_ok_runs": 18,
+  "total_rounds": 7,
+  "total_executed_runs": 26,
+  "total_all_ok_runs": 19,
   "total_non_all_ok_runs": 7,
   "has_any_divergence": true,
   "status_counts": {
-    "completed": 25
+    "completed": 26
   },
   "label_counts": {
-    "all_ok": 18,
+    "all_ok": 19,
     "app_minimal_diverged": 1,
     "minimal_transport_diverged": 1,
     "probe_io_all_connection_reset": 1,
@@ -19,7 +19,7 @@
   },
   "class_counts": {
     "connection_reset": 18,
-    "ok": 177,
+    "ok": 186,
     "post_dial_eof": 2,
     "reality_dial_eof": 10,
     "timeout": 18
@@ -167,6 +167,26 @@
         "connection_reset": 9,
         "ok": 34,
         "post_dial_eof": 2
+      }
+    },
+    {
+      "round": "52",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
+      "description": "final non-internal uncovered REALITY live batch evidence",
+      "total": 1,
+      "executed_runs": 1,
+      "all_ok_runs": 1,
+      "has_divergence": false,
+      "uniform_failure_labels": {},
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
       }
     }
   ],
@@ -455,6 +475,20 @@
       "class_counts": {
         "ok": 7,
         "post_dial_eof": 2
+      }
+    },
+    "US-A-BGP-1.5": {
+      "rounds": [
+        "52"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
       }
     }
   }

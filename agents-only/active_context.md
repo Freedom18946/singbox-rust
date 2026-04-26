@@ -140,6 +140,40 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 52（final non-internal uncovered live evidence）
+
+- 本轮用 Round 51 planner 修复后的默认计划跑最后一个 non-internal uncovered ready node，不修改 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'US-A-BGP-1.5倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r52`
+- 结果：
+  - selected ready outbounds: `1`
+  - executed runs: `1`
+  - labels: `all_ok=1`
+  - classes: `ok=9`
+  - `matrix_health.has_divergence=false`
+- evidence：
+  - `agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json`
+- Updated rollup:
+  - rounds: `7`
+  - executed runs: `26`
+  - all_ok runs: `19`
+  - non-all_ok runs: `7`
+  - has divergence: `true` (only Round 47 one-shot; Round 48 targeted repeat all_ok)
+  - aggregate classes: `ok=186`, `timeout=18`, `connection_reset=18`, `reality_dial_eof=10`, `post_dial_eof=2`
+- Planner after Round 52:
+  - `uncovered=0`
+  - `prior_non_all_ok=7`
+  - `covered_all_ok=14`
+  - selected: `[]`
+- 判定：
+  - Default non-internal ready-node live coverage is now complete for the current config/rollup.
+  - Remaining work is targeted recheck of prior non-all_ok buckets, not sampler change.
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`24 tests`)
+  - JSON validation for Round 52 evidence and live rollup → PASS
+  - evidence/rollup ASCII scan → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 51（planner internal sentinel exclusion）
 
 - 本轮修复 coverage planner 默认会把 `__phase3_invalid_vless` 当作 uncovered live candidate 的问题，不修改 sampler/dataplane。

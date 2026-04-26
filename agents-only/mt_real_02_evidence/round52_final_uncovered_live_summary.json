@@ -1,0 +1,64 @@
+{
+  "round": "52",
+  "date": "2026-04-26",
+  "description": "final non-internal uncovered REALITY live batch evidence",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r52/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'US-A-BGP-1.5\u500d\u7387' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r52",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 1,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 1,
+    "executed_runs": 1,
+    "status_counts": {
+      "completed": 1
+    },
+    "label_counts": {
+      "all_ok": 1
+    },
+    "class_counts": {
+      "ok": 9
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 1,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "US-A-BGP-1.5": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "US-A-BGP-1.5",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "US-A-BGP-1.5 completed all app/minimal matrix checks with class ok.",
+    "After planner internal-sentinel exclusion, this was the only remaining non-internal uncovered ready node.",
+    "No app/minimal divergence appeared in this sample."
+  ]
+}
