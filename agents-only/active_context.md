@@ -140,6 +140,33 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 43（sanitized live evidence builder）
+
+- 本轮继续推进 MT-REAL-02 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
+- 实现：
+  - `scripts/tools/reality_vless_probe_evidence.py`
+    - 从 batch `summary.json` 生成可提交的 sanitized evidence JSON。
+    - 非 ASCII 节点名压成稳定 ASCII key，避免 evidence 文件混入 raw provider tag。
+    - 自动提取 `summary` / `by_outbound` / compact per-run class counts。
+    - 自动生成 `matrix_health`：
+      - `has_divergence`
+      - `divergence_labels`
+      - `all_ok_runs`
+      - `uniform_failure_labels`
+  - `scripts/tools/test_reality_probe_tools.py` 新增 evidence builder 单测，工具测试扩到 14。
+  - `scripts/tools/README.md` 增加 evidence builder 用法。
+- smoke：
+  - 使用 Round 42 raw summary：
+    - `python3 scripts/tools/reality_vless_probe_evidence.py --summary-json /tmp/reality-vless-probe-batch-live-r42/summary.json --output-json /tmp/reality-vless-probe-evidence-r42.generated.json --round 42 --date 2026-04-26 --description 'generated cross-region live evidence' --command 'round42 smoke' --interpretation 'classification-first generated evidence smoke'`
+  - 输出 `executed_runs=3`，`has_divergence=false`。
+  - `python3 -m json.tool /tmp/reality-vless-probe-evidence-r42.generated.json` → PASS
+  - ASCII scan → PASS
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`14 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`17 tests`)
+  - `python3 scripts/tools/reality_vless_probe_evidence.py --help` → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 42（cross-region live batch evidence）
 
 - 本轮继续 live evidence，不修改代码 sampler/dataplane。

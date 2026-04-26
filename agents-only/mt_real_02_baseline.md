@@ -1349,6 +1349,77 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 43 sanitized live evidence builder
+
+### 目标
+
+- 将 Round 41/42 这种 live batch summary 的 evidence 归档步骤工具化。
+- 避免每次手工摘录 `summary.json`，也避免把 provider raw tag / 大量 raw dump 直接塞进仓库。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+
+### 实现
+
+- 新增 `scripts/tools/reality_vless_probe_evidence.py`
+  - 输入 batch runner 的 `summary.json`。
+  - 输出可提交的 sanitized evidence JSON。
+  - 非 ASCII outbound name 会压成稳定 ASCII key。
+  - 输出 compact `runs`，只保留：
+    - `outbound`
+    - `ordinal`
+    - `run_index`
+    - `status`
+    - labels
+    - compact class counts
+  - 输出 `matrix_health`：
+    - `has_divergence`
+    - `divergence_labels`
+    - `all_ok_runs`
+    - `uniform_failure_labels`
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - 新增 `RealityProbeEvidenceTests`。
+  - 覆盖：
+    - sanitized outbound key；
+    - `matrix_health`；
+    - compact per-run class counts；
+    - evidence JSON ASCII 输出。
+  - 工具单测扩到 `14`。
+
+- 更新 `scripts/tools/README.md`
+  - 增加 evidence builder 用法。
+
+### smoke
+
+- 使用 Round 42 raw summary 生成 evidence：
+  - `python3 scripts/tools/reality_vless_probe_evidence.py --summary-json /tmp/reality-vless-probe-batch-live-r42/summary.json --output-json /tmp/reality-vless-probe-evidence-r42.generated.json --round 42 --date 2026-04-26 --description 'generated cross-region live evidence' --command 'round42 smoke' --interpretation 'classification-first generated evidence smoke'`
+- stdout:
+  - `executed_runs = 3`
+  - `has_divergence = false`
+- JSON validation:
+  - `python3 -m json.tool /tmp/reality-vless-probe-evidence-r42.generated.json` → PASS
+- ASCII scan:
+  - PASS
+
+### 当前判定
+
+- Round 43 把 live evidence 归档变成可重复工具链步骤。
+- 下一轮 live 扩样可以直接：
+  - batch runner 生成 raw `/tmp/.../summary.json`
+  - evidence builder 生成 `agents-only/mt_real_02_evidence/roundNN_*.json`
+  - docs 记录 class-first 结论
+- 本轮仍没有任何 wire/dataplane 行为改动。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `14 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `17 tests`
+- `python3 scripts/tools/reality_vless_probe_evidence.py --summary-json /tmp/reality-vless-probe-batch-live-r42/summary.json --output-json /tmp/reality-vless-probe-evidence-r42.generated.json --round 42 --date 2026-04-26 --description 'generated cross-region live evidence' --command 'round42 smoke' --interpretation 'classification-first generated evidence smoke'` → PASS
+- `python3 -m json.tool /tmp/reality-vless-probe-evidence-r42.generated.json` → PASS
+- `python3 scripts/tools/reality_vless_probe_evidence.py --help` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 42 cross-region live batch evidence
 
 ### 目标

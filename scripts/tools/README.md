@@ -292,6 +292,18 @@ with per-label, per-class, and per-outbound counts. With `--runs N`, each
 selected ready outbound gets repeated sample directories under
 `NNN-outbound/run-NNN`.
 
+To turn a batch `summary.json` into a sanitized evidence file suitable for
+`agents-only/mt_real_02_evidence`:
+
+```bash
+python3 scripts/tools/reality_vless_probe_evidence.py \
+  --summary-json /tmp/reality-vless-probe-batch-live/summary.json \
+  --output-json agents-only/mt_real_02_evidence/roundNN_summary.json \
+  --round NN \
+  --date 2026-04-26 \
+  --description 'bounded live REALITY batch'
+```
+
 ### Debugging Routing
 
 ```bash

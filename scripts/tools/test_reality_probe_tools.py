@@ -10,6 +10,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import reality_probe_compare as compare
 import reality_vless_probe_batch as batch
+import reality_vless_probe_evidence as evidence
 import reality_vless_env_from_config as envtool
 
 
@@ -247,6 +248,105 @@ class RealityProbeBatchTests(unittest.TestCase):
             batch.non_negative_int("-1")
         with self.assertRaises(argparse.ArgumentTypeError):
             batch.positive_int("0")
+
+
+class RealityProbeEvidenceTests(unittest.TestCase):
+    def sample_payload(self):
+        return {
+            "plan": {
+                "config": "config.json",
+                "target": "example.com:80",
+                "runs": 2,
+                "selected_count": 2,
+            },
+            "summary": {
+                "total": 3,
+                "executed_runs": 3,
+                "status_counts": {"completed": 3},
+                "label_counts": {"all_ok": 2, "reality_all_timeout": 1},
+                "class_counts": {"ok": 18, "timeout": 9},
+                "by_outbound": {
+                    "HK-A-BGP-0.3倍率": {
+                        "status_counts": {"completed": 2},
+                        "label_counts": {"all_ok": 2},
+                        "class_counts": {"ok": 18},
+                    },
+                    "JP-A-BGP-1.0倍率": {
+                        "status_counts": {"completed": 1},
+                        "label_counts": {"reality_all_timeout": 1},
+                        "class_counts": {"timeout": 9},
+                    },
+                },
+            },
+            "results": [
+                {
+                    "ordinal": 1,
+                    "name": "HK-A-BGP-0.3倍率",
+                    "run_index": 1,
+                    "status": "completed",
+                    "compare": {
+                        "summary": {"labels": ["all_ok"]},
+                        "classes": {"app.bridge": "ok", "minimal.vless_probe_io": "ok"},
+                    },
+                },
+                {
+                    "ordinal": 2,
+                    "name": "JP-A-BGP-1.0倍率",
+                    "run_index": 1,
+                    "status": "completed",
+                    "compare": {
+                        "summary": {"labels": ["reality_all_timeout"]},
+                        "classes": {"app.bridge": "timeout"},
+                    },
+                },
+            ],
+        }
+
+    def test_build_evidence_sanitizes_outbound_names_and_counts_health(self):
+        built = evidence.build_evidence(
+            self.sample_payload(),
+            "43",
+            "2026-04-26",
+            "sample",
+            "cmd",
+            "/tmp/summary.json",
+            ["classification first"],
+        )
+        self.assertEqual(built["selection"]["selected_count"], 2)
+        self.assertEqual(built["summary"]["executed_runs"], 3)
+        self.assertFalse(built["matrix_health"]["has_divergence"])
+        self.assertEqual(built["matrix_health"]["all_ok_runs"], 2)
+        self.assertEqual(
+            built["matrix_health"]["uniform_failure_labels"],
+            {"reality_all_timeout": 1},
+        )
+        self.assertIn("HK-A-BGP-0.3", built["by_outbound"])
+        self.assertIn("JP-A-BGP-1.0", built["by_outbound"])
+        self.assertEqual(built["runs"][0]["outbound"], "HK-A-BGP-0.3")
+        self.assertEqual(built["runs"][0]["class_counts"], {"ok": 2})
+
+    def test_evidence_cli_writes_ascii_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            summary = tmp_path / "summary.json"
+            output = tmp_path / "evidence.json"
+            summary.write_text(json.dumps(self.sample_payload()), encoding="utf-8")
+            evidence.write_json(
+                output,
+                evidence.build_evidence(
+                    evidence.load_json(summary),
+                    "43",
+                    "2026-04-26",
+                    "sample",
+                    None,
+                    str(summary),
+                    [],
+                ),
+            )
+            text = output.read_text(encoding="utf-8")
+            self.assertNotRegex(text, r"[^\x00-\x7f]")
+            loaded = json.loads(text)
+            self.assertEqual(loaded["round"], "43")
 
 
 if __name__ == "__main__":
