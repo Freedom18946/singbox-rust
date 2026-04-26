@@ -283,11 +283,14 @@ python3 scripts/tools/reality_vless_probe_batch.py \
   --target example.com:80 \
   --include 'HK-A-BGP' \
   --limit 2 \
+  --runs 2 \
   --timeout 10
 ```
 
 Batch output includes `plan.json`, optional `results.jsonl`, and `summary.json`
-with per-label and per-class counts.
+with per-label, per-class, and per-outbound counts. With `--runs N`, each
+selected ready outbound gets repeated sample directories under
+`NNN-outbound/run-NNN`.
 
 ### Debugging Routing
 

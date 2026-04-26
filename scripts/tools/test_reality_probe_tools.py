@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import pathlib
 import sys
@@ -200,6 +201,8 @@ class RealityProbeBatchTests(unittest.TestCase):
     def test_summarize_results_counts_labels_and_classes(self):
         results = [
             {
+                "name": "a",
+                "run_index": 1,
                 "status": "completed",
                 "compare": {
                     "summary": {"labels": ["all_ok"]},
@@ -207,19 +210,43 @@ class RealityProbeBatchTests(unittest.TestCase):
                 },
             },
             {
+                "name": "a",
+                "run_index": 2,
                 "status": "completed",
                 "compare": {
                     "summary": {"labels": ["bridge_io_diverged"]},
                     "classes": {"app.bridge": "post_dial_eof"},
                 },
             },
-            {"status": "skipped", "compare": None},
+            {"name": "b", "run_index": None, "status": "skipped", "compare": None},
         ]
         summary = batch.summarize_results(results)
         self.assertEqual(summary["total"], 3)
+        self.assertEqual(summary["executed_runs"], 2)
         self.assertEqual(summary["status_counts"]["completed"], 2)
         self.assertEqual(summary["label_counts"]["all_ok"], 1)
         self.assertEqual(summary["class_counts"]["ok"], 2)
+        self.assertEqual(summary["by_outbound"]["a"]["status_counts"]["completed"], 2)
+        self.assertEqual(summary["by_outbound"]["b"]["status_counts"]["skipped"], 1)
+
+    def test_sample_dir_for_repeat_runs(self):
+        output_dir = pathlib.Path("/tmp/reality-batch")
+        self.assertEqual(
+            batch.sample_dir_for(output_dir, 1, "node/a", 1, 1),
+            pathlib.Path("/tmp/reality-batch/001-node_a"),
+        )
+        self.assertEqual(
+            batch.sample_dir_for(output_dir, 1, "node/a", 2, 2),
+            pathlib.Path("/tmp/reality-batch/001-node_a/run-002"),
+        )
+
+    def test_integer_arg_parsers_reject_invalid_values(self):
+        self.assertEqual(batch.non_negative_int("0"), 0)
+        self.assertEqual(batch.positive_int("1"), 1)
+        with self.assertRaises(argparse.ArgumentTypeError):
+            batch.non_negative_int("-1")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            batch.positive_int("0")
 
 
 if __name__ == "__main__":

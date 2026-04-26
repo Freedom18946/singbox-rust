@@ -1349,6 +1349,84 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 40 repeat-aware REALITY batch sampling
+
+### 目标
+
+- 在 Round 39 批量 runner 基础上继续推进重复采样能力。
+- live dataplane 证据下一阶段需要确认：
+  - 同节点同目标是否稳定同 class；
+  - app/minimal/bridge 是否稳定分叉；
+  - 失败是否只是节点易失，而不是 sampler/dataplane 回归。
+- 因此本轮给 batch runner 增加 repeat samples，而不是改 ClientHello sampler。
+
+### 实现
+
+- `scripts/tools/reality_vless_probe_batch.py`
+  - 新增 `--runs N`。
+  - `runs == 1` 维持 Round 39 的 sample dir 形态：
+    - `NNN-outbound/`
+  - `runs > 1` 时输出：
+    - `NNN-outbound/run-001/`
+    - `NNN-outbound/run-002/`
+    - ...
+  - result 记录新增：
+    - `ordinal`
+    - `run_index`
+  - `summary.json` 新增：
+    - `executed_runs`
+    - `by_outbound`
+  - 非 dry-run 会先清理本轮 `results.jsonl`，避免复用同一个 output dir 时把旧结果混入新证据。
+  - `--limit` 改为非负整数校验。
+  - `--runs` 改为正整数校验。
+
+- `scripts/tools/test_reality_probe_tools.py`
+  - 新增/扩展覆盖：
+    - repeat sample dir layout；
+    - `--limit` / `--runs` 参数校验；
+    - `summary.by_outbound`；
+    - `summary.executed_runs`。
+  - 本文件单测数扩到 `12`。
+
+- `scripts/tools/README.md`
+  - batch live 示例加入 `--runs 2`。
+  - 记录 repeat sample dir 形态和 per-outbound summary。
+
+### smoke
+
+- Dry-run repeat:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --limit 1 --runs 2 --dry-run --output-dir /tmp/reality-vless-probe-batch-repeat-dry`
+  - PASS，stdout 显示 `selected_count=1` / `runs=2`。
+- Executed repeat smoke:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound '__phase3_invalid_vless' --runs 2 --timeout 1 --phase-timeout-ms 1000 --probe-io-timeout-ms 1000 --output-dir /tmp/reality-vless-probe-batch-repeat-smoke`
+  - PASS，生成：
+    - `001-phase3_invalid_vless/run-001`
+    - `001-phase3_invalid_vless/run-002`
+  - summary:
+    - `total = 2`
+    - `executed_runs = 2`
+    - `status_counts.completed = 2`
+    - `label_counts.reality_all_connection_refused = 2`
+    - `class_counts.connection_refused = 18`
+    - `by_outbound.__phase3_invalid_vless.status_counts.completed = 2`
+
+### 当前判定
+
+- Round 40 把 Round 39 的“可控批量矩阵”推进到“可控重复采样矩阵”。
+- 这让下一次真实节点复测可以小样本但有稳定性维度：例如 `--include 'HK-A-BGP' --limit 2 --runs 2`。
+- 本轮仍没有修改 wire sampler 或 dataplane 行为。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `12 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `15 tests`
+- `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --limit 1 --runs 2 --dry-run --output-dir /tmp/reality-vless-probe-batch-repeat-dry` → PASS
+- `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound '__phase3_invalid_vless' --runs 2 --timeout 1 --phase-timeout-ms 1000 --probe-io-timeout-ms 1000 --output-dir /tmp/reality-vless-probe-batch-repeat-smoke` → PASS
+- `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 39 batch REALITY probe matrix
 
 ### 目标

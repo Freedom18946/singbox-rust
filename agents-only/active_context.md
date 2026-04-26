@@ -137,8 +137,32 @@
     - `python3 -m unittest scripts/tools/test_reality_clienthello_family.py` → PASS
     - `cargo test -p sb-tls` → PASS (`114 passed`)
     - `cargo check --workspace` → PASS
-    - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
+- `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 40（repeat-aware REALITY batch sampling）
+
+- 本轮继续推进 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
+- 实现：
+  - `scripts/tools/reality_vless_probe_batch.py`
+    - 新增 `--runs N`，对每个 ready outbound 做重复 matrix samples。
+    - `runs == 1` 保持原 sample dir 形态；`runs > 1` 输出 `NNN-outbound/run-NNN`。
+    - `summary.json` 新增 `executed_runs` 和 `by_outbound` 聚合。
+    - 非 dry-run 会先清理本轮 `results.jsonl`，避免复用 output dir 时混入旧证据。
+    - `--limit` 改为非负校验，`--runs` 改为正整数校验。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 repeat dir、arg parser、by-outbound summary 覆盖，单测扩到 12。
+  - `scripts/tools/README.md` 补充 repeat sampling 用法。
+- smoke：
+  - dry-run `--limit 1 --runs 2` 成功，输出 `runs=2`。
+  - executed smoke 用 `__phase3_invalid_vless --runs 2` 生成两个 sample dir：
+    - `001-phase3_invalid_vless/run-001`
+    - `001-phase3_invalid_vless/run-002`
+  - summary 显示 `executed_runs=2`，`label_counts.reality_all_connection_refused=2`，`class_counts.connection_refused=18`。
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`12 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`15 tests`)
+  - `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+  - `cargo check --workspace` → PASS
 
 ## Round 39（batch REALITY probe matrix）
 
