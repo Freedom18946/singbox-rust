@@ -304,6 +304,15 @@ python3 scripts/tools/reality_vless_probe_evidence.py \
   --description 'bounded live REALITY batch'
 ```
 
+To roll multiple committed evidence files into a compact dashboard:
+
+```bash
+python3 scripts/tools/reality_vless_evidence_rollup.py \
+  --evidence agents-only/mt_real_02_evidence/round*_summary.json \
+  --output-json agents-only/mt_real_02_evidence/live_rollup.json \
+  --output-md agents-only/mt_real_02_evidence/live_rollup.md
+```
+
 ### Debugging Routing
 
 ```bash

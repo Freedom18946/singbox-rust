@@ -1349,6 +1349,84 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 45 live evidence rollup
+
+### 目标
+
+- 将已经 committed 的 live evidence 汇总成机器可读 JSON 和人工可读 Markdown。
+- 避免后续判断散落在多个 round 文档中。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+
+### 实现
+
+- 新增 `scripts/tools/reality_vless_evidence_rollup.py`
+  - 输入多个 evidence JSON。
+  - 输出 rollup JSON / Markdown。
+  - 聚合：
+    - total rounds
+    - total executed runs
+    - all_ok / non-all_ok runs
+    - divergence flag
+    - status counts
+    - label counts
+    - class counts
+    - per-outbound counts
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - 新增 `RealityEvidenceRollupTests`。
+  - 覆盖：
+    - multi-evidence aggregation；
+    - per-outbound aggregation；
+    - markdown table row generation。
+
+- 更新 `scripts/tools/README.md`
+  - 增加 rollup 用法。
+
+### 生成
+
+- Command:
+  - `python3 scripts/tools/reality_vless_evidence_rollup.py --evidence agents-only/mt_real_02_evidence/round41_live_batch_summary.json agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json --output-json agents-only/mt_real_02_evidence/live_rollup.json --output-md agents-only/mt_real_02_evidence/live_rollup.md`
+- Generated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+
+### 当前 rollup
+
+- Covered rounds:
+  - Round 41
+  - Round 42
+  - Round 44
+- Summary:
+  - `total_rounds = 3`
+  - `total_executed_runs = 12`
+  - `total_all_ok_runs = 10`
+  - `total_non_all_ok_runs = 2`
+  - `has_any_divergence = false`
+- Labels:
+  - `all_ok = 10`
+  - `reality_all_timeout = 1`
+  - `reality_all_connection_reset = 1`
+- Classes:
+  - `ok = 90`
+  - `timeout = 9`
+  - `connection_reset = 9`
+
+### 当前判定
+
+- Committed live evidence currently shows no app/minimal divergence.
+- Non-all_ok samples are uniform node/path classes:
+  - JP timeout in Round 42
+  - UK connection_reset in Round 44
+- No sampler change is justified by the committed live evidence rollup.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `19 tests`
+- `python3 -m json.tool agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- ASCII scan for `agents-only/mt_real_02_evidence/live_rollup.json` and `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 44 wide-region live batch evidence
 
 ### 目标

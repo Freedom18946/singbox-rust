@@ -140,6 +140,38 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 45（live evidence rollup）
+
+- 本轮把 committed live evidence 汇总成 dashboard，不修改 sampler/dataplane。
+- 实现：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 输入多个 evidence JSON。
+    - 聚合 total rounds / executed runs / all_ok / non-all_ok / divergence。
+    - 聚合 status/label/class counts。
+    - 聚合 per-outbound label/class/status counts。
+    - 输出 JSON + Markdown。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 rollup 单测。
+  - `scripts/tools/README.md` 增加 rollup 用法。
+- 生成：
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- 当前 rollup 覆盖 Round 41/42/44：
+  - rounds: `3`
+  - executed runs: `12`
+  - all_ok runs: `10`
+  - non-all_ok runs: `2`
+  - has divergence: `false`
+  - labels: `all_ok=10`, `reality_all_timeout=1`, `reality_all_connection_reset=1`
+  - classes: `ok=90`, `timeout=9`, `connection_reset=9`
+- 判定：
+  - 当前 committed live evidence 没有 app/minimal divergence。
+  - 非 all_ok 样本都是全链路一致 node/path class，不推动 sampler 改动。
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`19 tests`)
+  - `python3 -m json.tool agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - rollup JSON/Markdown ASCII scan → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 44（wide-region live batch evidence）
 
 - 本轮使用 Round 43 evidence builder 归档更宽的 live sample，不修改代码 sampler/dataplane。

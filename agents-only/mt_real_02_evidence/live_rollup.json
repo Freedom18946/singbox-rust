@@ -1,0 +1,232 @@
+{
+  "total_rounds": 3,
+  "total_executed_runs": 12,
+  "total_all_ok_runs": 10,
+  "total_non_all_ok_runs": 2,
+  "has_any_divergence": false,
+  "status_counts": {
+    "completed": 12
+  },
+  "label_counts": {
+    "all_ok": 10,
+    "reality_all_connection_reset": 1,
+    "reality_all_timeout": 1
+  },
+  "class_counts": {
+    "connection_reset": 9,
+    "ok": 90,
+    "timeout": 9
+  },
+  "rounds": [
+    {
+      "round": "41",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+      "description": "Small repeat live batch using Round 40 REALITY batch matrix tooling.",
+      "total": 4,
+      "executed_runs": 4,
+      "all_ok_runs": 4,
+      "has_divergence": false,
+      "uniform_failure_labels": {},
+      "status_counts": {
+        "completed": 4
+      },
+      "label_counts": {
+        "all_ok": 4
+      },
+      "class_counts": {
+        "ok": 36
+      }
+    },
+    {
+      "round": "42",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+      "description": "Bounded cross-region live batch using the repeat-aware REALITY matrix runner.",
+      "total": 3,
+      "executed_runs": 3,
+      "all_ok_runs": 2,
+      "has_divergence": false,
+      "uniform_failure_labels": {
+        "reality_all_timeout": 1
+      },
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 2,
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "ok": 18,
+        "timeout": 9
+      }
+    },
+    {
+      "round": "44",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+      "description": "wide-region REALITY live batch evidence",
+      "total": 5,
+      "executed_runs": 5,
+      "all_ok_runs": 4,
+      "has_divergence": false,
+      "uniform_failure_labels": {
+        "reality_all_connection_reset": 1
+      },
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 4,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9,
+        "ok": 36
+      }
+    }
+  ],
+  "by_outbound": {
+    "DE-A-BGP-1.0": {
+      "rounds": [
+        "44"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "HK-A-BGP-0.3": {
+      "rounds": [
+        "41"
+      ],
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "all_ok": 2
+      },
+      "class_counts": {
+        "ok": 18
+      }
+    },
+    "HK-A-BGP-1.0": {
+      "rounds": [
+        "41"
+      ],
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "all_ok": 2
+      },
+      "class_counts": {
+        "ok": 18
+      }
+    },
+    "ID-A-BGP-1.2": {
+      "rounds": [
+        "44"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "JP-A-BGP-1.0": {
+      "rounds": [
+        "42"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    "SG-A-BGP-1.0": {
+      "rounds": [
+        "42"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "SG-A-BGP-1.2": {
+      "rounds": [
+        "44"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "TW-A-Hinet-1.1": {
+      "rounds": [
+        "44"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "UK-A-BGP-0.5": {
+      "rounds": [
+        "44"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    "US-A-BGP-0.1": {
+      "rounds": [
+        "42"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  }
+}

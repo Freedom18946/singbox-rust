@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import reality_probe_compare as compare
+import reality_vless_evidence_rollup as rollup
 import reality_vless_probe_batch as batch
 import reality_vless_probe_evidence as evidence
 import reality_vless_env_from_config as envtool
@@ -347,6 +348,87 @@ class RealityProbeEvidenceTests(unittest.TestCase):
             self.assertNotRegex(text, r"[^\x00-\x7f]")
             loaded = json.loads(text)
             self.assertEqual(loaded["round"], "43")
+
+
+class RealityEvidenceRollupTests(unittest.TestCase):
+    def sample_evidence(self, round_name, labels, classes, by_outbound):
+        total = sum(labels.values())
+        return {
+            "round": round_name,
+            "date": "2026-04-26",
+            "description": f"round {round_name}",
+            "summary": {
+                "total": total,
+                "executed_runs": total,
+                "status_counts": {"completed": total},
+                "label_counts": labels,
+                "class_counts": classes,
+            },
+            "by_outbound": by_outbound,
+        }
+
+    def test_build_rollup_counts_rounds_labels_classes_and_outbounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            first = tmp_path / "round1.json"
+            second = tmp_path / "round2.json"
+            first.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "1",
+                        {"all_ok": 2},
+                        {"ok": 18},
+                        {"HK-A": {"label_counts": {"all_ok": 2}, "class_counts": {"ok": 18}}},
+                    )
+                ),
+                encoding="utf-8",
+            )
+            second.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "2",
+                        {"reality_all_timeout": 1},
+                        {"timeout": 9},
+                        {
+                            "JP-A": {
+                                "label_counts": {"reality_all_timeout": 1},
+                                "class_counts": {"timeout": 9},
+                            }
+                        },
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([first, second])
+        self.assertEqual(built["total_rounds"], 2)
+        self.assertEqual(built["total_executed_runs"], 3)
+        self.assertEqual(built["total_all_ok_runs"], 2)
+        self.assertFalse(built["has_any_divergence"])
+        self.assertEqual(built["label_counts"]["reality_all_timeout"], 1)
+        self.assertEqual(built["by_outbound"]["JP-A"]["class_counts"]["timeout"], 9)
+
+    def test_markdown_table_contains_round_rows(self):
+        built = {
+            "total_rounds": 1,
+            "total_executed_runs": 1,
+            "total_all_ok_runs": 1,
+            "total_non_all_ok_runs": 0,
+            "has_any_divergence": False,
+            "label_counts": {"all_ok": 1},
+            "class_counts": {"ok": 9},
+            "rounds": [
+                {
+                    "round": "1",
+                    "executed_runs": 1,
+                    "all_ok_runs": 1,
+                    "label_counts": {"all_ok": 1},
+                    "class_counts": {"ok": 9},
+                    "has_divergence": False,
+                }
+            ],
+        }
+        text = rollup.markdown_table(built)
+        self.assertIn("| 1 | 1 | 1 | all_ok=1 | ok=9 | false |", text)
 
 
 if __name__ == "__main__":
