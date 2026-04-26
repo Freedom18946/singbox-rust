@@ -8,6 +8,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import reality_probe_compare as compare
+import reality_vless_probe_batch as batch
 import reality_vless_env_from_config as envtool
 
 
@@ -89,6 +90,25 @@ class RealityVlessEnvFromConfigTests(unittest.TestCase):
             loaded = envtool.load_config(path)
         self.assertEqual(loaded["outbounds"][1]["tag"], "node-a")
 
+    def test_lists_ready_and_skipped_vless_reality_outbounds(self):
+        config = self.sample_config()
+        config["outbounds"].append(
+            {
+                "type": "vless",
+                "tag": "ws-node",
+                "server": "203.0.113.8",
+                "server_port": 443,
+                "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                "transport": {"type": "ws"},
+                "tls": {"reality": {"public_key": "PUB"}},
+            }
+        )
+        items = envtool.list_reality_vless_outbounds(config)
+        by_name = {item["name"]: item for item in items}
+        self.assertTrue(by_name["node-a"]["ready"])
+        self.assertFalse(by_name["ws-node"]["ready"])
+        self.assertEqual(by_name["ws-node"]["skip_reason"], "non_tcp_transport")
+
 
 class RealityProbeCompareTests(unittest.TestCase):
     def test_report_marks_stable_ok_matrix(self):
@@ -155,6 +175,51 @@ class RealityProbeCompareTests(unittest.TestCase):
         }
         report = compare.build_report(app, phase)
         self.assertIn("reality_all_timeout", report["summary"]["labels"])
+
+
+class RealityProbeBatchTests(unittest.TestCase):
+    def test_safe_slug_keeps_paths_predictable(self):
+        self.assertEqual(batch.safe_slug("HK A/B:1.0倍率"), "HK_A_B_1.0")
+        self.assertEqual(batch.safe_slug("///"), "outbound")
+
+    def test_select_outbounds_filters_ready_names_and_limit(self):
+        items = [
+            {"name": "a", "ready": True},
+            {"name": "b-live", "ready": True},
+            {"name": "c-live", "ready": False},
+        ]
+        selected = batch.select_outbounds(items, [], "live", None, False, None)
+        self.assertEqual([item["name"] for item in selected], ["b-live"])
+        selected = batch.select_outbounds(items, [], "live", None, True, 2)
+        self.assertEqual([item["name"] for item in selected], ["b-live", "c-live"])
+        selected = batch.select_outbounds(items, ["a"], None, None, False, None)
+        self.assertEqual([item["name"] for item in selected], ["a"])
+        selected = batch.select_outbounds(items, [], None, None, True, 0)
+        self.assertEqual(selected, [])
+
+    def test_summarize_results_counts_labels_and_classes(self):
+        results = [
+            {
+                "status": "completed",
+                "compare": {
+                    "summary": {"labels": ["all_ok"]},
+                    "classes": {"app.bridge": "ok", "minimal.vless_probe_io": "ok"},
+                },
+            },
+            {
+                "status": "completed",
+                "compare": {
+                    "summary": {"labels": ["bridge_io_diverged"]},
+                    "classes": {"app.bridge": "post_dial_eof"},
+                },
+            },
+            {"status": "skipped", "compare": None},
+        ]
+        summary = batch.summarize_results(results)
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(summary["status_counts"]["completed"], 2)
+        self.assertEqual(summary["label_counts"]["all_ok"], 1)
+        self.assertEqual(summary["class_counts"]["ok"], 2)
 
 
 if __name__ == "__main__":

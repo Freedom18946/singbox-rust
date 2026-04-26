@@ -269,6 +269,26 @@ The matrix wrapper writes `run.json`, `app.json`, `phase.json`, and `compare.jso
 REALITY live failures can be compared by class before treating a node failure
 as a sampler or dataplane regression.
 
+For multi-node collection:
+
+```bash
+python3 scripts/tools/reality_vless_probe_batch.py \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --target example.com:80 \
+  --limit 3 \
+  --dry-run
+
+python3 scripts/tools/reality_vless_probe_batch.py \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --target example.com:80 \
+  --include 'HK-A-BGP' \
+  --limit 2 \
+  --timeout 10
+```
+
+Batch output includes `plan.json`, optional `results.jsonl`, and `summary.json`
+with per-label and per-class counts.
+
 ### Debugging Routing
 
 ```bash

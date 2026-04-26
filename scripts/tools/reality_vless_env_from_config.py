@@ -71,6 +71,11 @@ def port_value(outbound: dict[str, Any]) -> int:
     return value
 
 
+def optional_port(outbound: dict[str, Any]) -> int | None:
+    value = outbound.get("server_port", outbound.get("port"))
+    return value if isinstance(value, int) and 0 < value <= 65535 else None
+
+
 def tls_object(outbound: dict[str, Any]) -> dict[str, Any]:
     tls = outbound.get("tls")
     return tls if isinstance(tls, dict) else {}
@@ -86,6 +91,17 @@ def reality_object(outbound: dict[str, Any], tls: dict[str, Any]) -> dict[str, A
 def utls_object(tls: dict[str, Any]) -> dict[str, Any]:
     utls = tls.get("utls")
     return utls if isinstance(utls, dict) else {}
+
+
+def is_plain_tcp_transport(outbound: dict[str, Any]) -> bool:
+    transport = outbound.get("transport")
+    if transport is None:
+        return True
+    if isinstance(transport, list):
+        return len(transport) == 0
+    if isinstance(transport, dict):
+        return transport.get("type") in (None, "tcp")
+    return False
 
 
 def normalize_alpn(value: Any) -> list[str]:
@@ -173,6 +189,87 @@ def extract_env(
     return env
 
 
+def reality_public_key(outbound: dict[str, Any]) -> str | None:
+    tls = tls_object(outbound)
+    reality = reality_object(outbound, tls)
+    return (
+        optional_string(reality.get("public_key"))
+        or optional_string(outbound.get("reality_public_key"))
+    )
+
+
+def outbound_summary(outbound: dict[str, Any]) -> dict[str, Any]:
+    tls = tls_object(outbound)
+    reality = reality_object(outbound, tls)
+    utls = utls_object(tls)
+    server = optional_string(outbound.get("server"))
+    server_name = (
+        optional_string(reality.get("server_name"))
+        or optional_string(tls.get("server_name"))
+        or optional_string(outbound.get("reality_server_name"))
+        or optional_string(outbound.get("tls_sni"))
+        or server
+    )
+    return {
+        "name": outbound_name(outbound),
+        "type": outbound.get("type"),
+        "server": server,
+        "port": optional_port(outbound),
+        "server_name": server_name,
+        "fingerprint": (
+            optional_string(utls.get("fingerprint"))
+            or optional_string(outbound.get("utls_fingerprint"))
+            or "chrome"
+        ),
+        "flow": outbound.get("flow"),
+        "plain_tcp": is_plain_tcp_transport(outbound),
+        "has_uuid": bool(optional_string(outbound.get("uuid"))),
+        "has_reality_public_key": bool(reality_public_key(outbound)),
+    }
+
+
+def reality_vless_ready_reason(outbound: dict[str, Any]) -> str | None:
+    summary = outbound_summary(outbound)
+    if summary["type"] != "vless":
+        return "not_vless"
+    if not summary["name"]:
+        return "missing_name"
+    if not summary["server"]:
+        return "missing_server"
+    if not summary["port"]:
+        return "missing_port"
+    if not summary["has_uuid"]:
+        return "missing_uuid"
+    if not summary["has_reality_public_key"]:
+        return "missing_reality_public_key"
+    if not summary["plain_tcp"]:
+        return "non_tcp_transport"
+    return None
+
+
+def list_reality_vless_outbounds(config: dict[str, Any]) -> list[dict[str, Any]]:
+    outbounds = config.get("outbounds")
+    if not isinstance(outbounds, list):
+        raise SystemExit("config has no outbounds list")
+    items = []
+    for index, outbound in enumerate(outbounds):
+        if not isinstance(outbound, dict):
+            continue
+        summary = outbound_summary(outbound)
+        reason = reality_vless_ready_reason(outbound)
+        if summary["type"] != "vless":
+            continue
+        items.append(
+            {
+                "index": index,
+                **summary,
+                "ready": reason is None,
+                "skip_reason": reason,
+            }
+        )
+    return items
+
+
 def print_env(env: dict[str, str]) -> None:
     for key in sorted(env):
         print(f"export {key}={shlex.quote(env[key])}")
@@ -181,15 +278,24 @@ def print_env(env: dict[str, str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
-    parser.add_argument("--outbound", required=True)
+    parser.add_argument("--outbound")
     parser.add_argument("--target", default="example.com:80")
     parser.add_argument("--phase-timeout-ms", type=int)
     parser.add_argument("--probe-io-timeout-ms", type=int)
     parser.add_argument("--format", choices=("json", "env"), default="json")
+    parser.add_argument("--list", action="store_true")
     args = parser.parse_args()
 
+    config = load_config(pathlib.Path(args.config))
+    if args.list:
+        json.dump(list_reality_vless_outbounds(config), sys.stdout, indent=2, ensure_ascii=True)
+        sys.stdout.write("\n")
+        return
+
+    if not args.outbound:
+        raise SystemExit("--outbound is required unless --list is used")
     env = extract_env(
-        load_config(pathlib.Path(args.config)),
+        config,
         args.outbound,
         args.target,
         args.phase_timeout_ms,

@@ -140,6 +140,31 @@
     - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 39（batch REALITY probe matrix）
+
+- 本轮在 Round 38 矩阵基础上继续推进到批量采样层，仍不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
+- 实现：
+  - `scripts/tools/reality_vless_env_from_config.py`
+    - 新增 `--list`，可枚举 config 中 VLESS REALITY 节点。
+    - 输出 ready/skip reason、server、port、server_name、fingerprint、flow、plain_tcp 等元数据。
+  - `scripts/tools/reality_vless_probe_batch.py`
+    - 新增批量 runner：按 `--outbound` / `--include` / `--exclude` / `--limit` 筛选节点。
+    - 支持 `--dry-run` 生成 `plan.json`，不打 live。
+    - 非 dry-run 时逐节点调用 matrix wrapper，输出每节点目录、`results.jsonl`、`summary.json`。
+    - summary 聚合 `status_counts` / `label_counts` / `class_counts`。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 batch/discovery 单测，总数扩到 10。
+  - `scripts/tools/README.md` 增加 batch 用法。
+- smoke：
+  - `--list` 能枚举 `phase3_ip_direct.json` 的 REALITY VLESS 节点。
+  - dry-run `--limit 3` 成功生成 plan。
+  - batch 用 `__phase3_invalid_vless` 成功生成 summary，label 为 `reality_all_connection_refused`。
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`10 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`13 tests`)
+  - `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+  - `cargo check --workspace` → PASS
+  - 继承 Round 38 app/minimal probe tests；本轮仅改 Python probe tooling / docs。
+
 ## Round 38（app/minimal REALITY probe matrix）
 
 - 本轮继续 live 诊断面，大幅推进“同节点同目标对比”工具链，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。

@@ -1349,6 +1349,121 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 39 batch REALITY probe matrix
+
+### 目标
+
+- 在 Round 38 单节点 app/minimal matrix 之上继续推进到批量采样层。
+- 仍不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 让下一次真实节点复测能够：
+  - 先 dry-run 枚举候选节点；
+  - 按 tag/include/limit 选择少量节点；
+  - 每个节点生成完整 matrix 目录；
+  - 统一汇总 labels/classes，减少人工读日志。
+
+### 实现
+
+- `scripts/tools/reality_vless_env_from_config.py`
+  - 新增 `--list`。
+  - 输出 config 中所有 VLESS outbound 的 metadata：
+    - `name`
+    - `server`
+    - `port`
+    - `server_name`
+    - `fingerprint`
+    - `flow`
+    - `plain_tcp`
+    - `has_uuid`
+    - `has_reality_public_key`
+    - `ready`
+    - `skip_reason`
+  - 新增 helpers：
+    - `optional_port`
+    - `is_plain_tcp_transport`
+    - `reality_public_key`
+    - `outbound_summary`
+    - `reality_vless_ready_reason`
+    - `list_reality_vless_outbounds`
+
+- `scripts/tools/reality_vless_probe_batch.py`
+  - 新增批量 runner。
+  - 支持筛选：
+    - `--outbound`（可重复）
+    - `--include`
+    - `--exclude`
+    - `--include-skipped`
+    - `--limit`
+  - 支持执行控制：
+    - `--dry-run`
+    - `--timeout`
+    - `--phase-timeout-ms`
+    - `--probe-io-timeout-ms`
+    - `--matrix-script`
+  - 输出：
+    - `plan.json`
+    - `results.jsonl`（非 dry-run）
+    - `summary.json`
+    - 每个节点独立 sample dir，内含 Round 38 matrix 产物。
+  - `summary.json` 聚合：
+    - `status_counts`
+    - `label_counts`
+    - `class_counts`
+
+- `scripts/tools/test_reality_probe_tools.py`
+  - 新增 batch/discovery 单测：
+    - `test_lists_ready_and_skipped_vless_reality_outbounds`
+    - `test_safe_slug_keeps_paths_predictable`
+    - `test_select_outbounds_filters_ready_names_and_limit`
+    - `test_summarize_results_counts_labels_and_classes`
+  - 本文件单测数扩到 `10`。
+
+- `scripts/tools/README.md`
+  - 增加 batch dry-run / live collection 示例。
+
+### smoke
+
+- Discovery:
+  - `python3 scripts/tools/reality_vless_env_from_config.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --list`
+  - 成功枚举 REALITY VLESS 节点；`HK-A-BGP-*` 样本显示 `ready=true`。
+- Dry-run:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --limit 3 --dry-run --output-dir /tmp/reality-vless-probe-batch-dry`
+  - 生成 `plan.json` / `summary.json`，`selected_count=3`。
+- Executed smoke:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound '__phase3_invalid_vless' --timeout 1 --phase-timeout-ms 1000 --probe-io-timeout-ms 1000 --output-dir /tmp/reality-vless-probe-batch-smoke`
+  - 生成：
+    - `plan.json`
+    - `results.jsonl`
+    - `summary.json`
+    - `001-phase3_invalid_vless/run.json`
+    - `001-phase3_invalid_vless/app.json`
+    - `001-phase3_invalid_vless/phase.json`
+    - `001-phase3_invalid_vless/compare.json`
+  - summary:
+    - `status_counts.completed = 1`
+    - `label_counts.reality_all_connection_refused = 1`
+    - `class_counts.connection_refused = 9`
+
+### 当前判定
+
+- Round 39 把 live 证据采集从“单节点手工矩阵”推进到“可控批量矩阵”：
+  - 可以先 dry-run 选节点；
+  - 可以限制少量样本，避免把节点易失变成大样本噪声；
+  - 可以按 class/label 汇总，直接看 app/minimal/bridge 分叉是否稳定。
+- 本轮没有改变 wire sampler 或 dataplane 行为。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `10 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `13 tests`
+- `python3 scripts/tools/reality_vless_env_from_config.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --list` → PASS
+- `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --limit 3 --dry-run --output-dir /tmp/reality-vless-probe-batch-dry` → PASS
+- `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --limit 0 --dry-run --output-dir /tmp/reality-vless-probe-batch-limit0` → PASS
+- `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound '__phase3_invalid_vless' --timeout 1 --phase-timeout-ms 1000 --probe-io-timeout-ms 1000 --output-dir /tmp/reality-vless-probe-batch-smoke` → PASS
+- `bash -n scripts/tools/reality_vless_probe_matrix.sh` → PASS
+- `cargo check --workspace` → PASS
+
 ### 结构观测
 
 - 当前 round 的 single diff 仍然没有形成稳定收敛：
