@@ -12,6 +12,7 @@ import reality_probe_compare as compare
 import reality_vless_evidence_rollup as rollup
 import reality_vless_probe_batch as batch
 import reality_vless_probe_evidence as evidence
+import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 
 
@@ -429,6 +430,72 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         }
         text = rollup.markdown_table(built)
         self.assertIn("| 1 | 1 | 1 | all_ok=1 | ok=9 | false |", text)
+
+
+class RealityProbePlanTests(unittest.TestCase):
+    def sample_config(self):
+        return {
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "HK-A-BGP-0.3倍率",
+                    "server": "203.0.113.1",
+                    "server_port": 443,
+                    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "tls": {"reality": {"public_key": "PUB"}},
+                },
+                {
+                    "type": "vless",
+                    "tag": "JP-A-BGP-1.0倍率",
+                    "server": "203.0.113.2",
+                    "server_port": 443,
+                    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "tls": {"reality": {"public_key": "PUB"}},
+                },
+                {
+                    "type": "vless",
+                    "tag": "NEW-A-BGP-1.0倍率",
+                    "server": "203.0.113.3",
+                    "server_port": 443,
+                    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "tls": {"reality": {"public_key": "PUB"}},
+                },
+            ]
+        }
+
+    def sample_rollup(self):
+        return {
+            "total_rounds": 2,
+            "total_executed_runs": 3,
+            "by_outbound": {
+                "HK-A-BGP-0.3": {"label_counts": {"all_ok": 2}, "class_counts": {"ok": 18}},
+                "JP-A-BGP-1.0": {
+                    "label_counts": {"reality_all_timeout": 1},
+                    "class_counts": {"timeout": 9},
+                },
+            },
+        }
+
+    def test_build_plan_prefers_uncovered_by_default(self):
+        built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False)
+        self.assertEqual(built["counts"]["uncovered"], 1)
+        self.assertEqual(built["counts"]["prior_non_all_ok"], 1)
+        self.assertEqual(built["counts"]["covered_all_ok"], 1)
+        self.assertEqual([item["key"] for item in built["selected"]], ["NEW-A-BGP-1.0"])
+
+    def test_build_plan_can_include_failure_rechecks_and_covered_nodes(self):
+        built = plan.build_plan(self.sample_config(), self.sample_rollup(), 2, True, True)
+        self.assertEqual([item["key"] for item in built["selected"]], ["NEW-A-BGP-1.0", "JP-A-BGP-1.0"])
+        self.assertEqual(built["selected"][1]["reason"], "prior_non_all_ok")
+
+    def test_classify_item_marks_covered_all_ok(self):
+        prior = {"label_counts": {"all_ok": 1}, "class_counts": {"ok": 9}}
+        self.assertEqual(plan.classify_item("HK-A-BGP-0.3", prior), "covered_all_ok")
+        self.assertEqual(
+            plan.classify_item("JP-A-BGP-1.0", {"label_counts": {"reality_all_timeout": 1}}),
+            "prior_non_all_ok",
+        )
+        self.assertEqual(plan.classify_item("NEW", None), "uncovered")
 
 
 if __name__ == "__main__":

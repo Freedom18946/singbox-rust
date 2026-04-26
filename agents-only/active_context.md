@@ -140,6 +140,34 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 46（coverage-aware live batch planner）
+
+- 本轮继续推进 MT-REAL-02 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
+- 实现：
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 输入 config + committed live rollup。
+    - 用 `safe_slug` 对齐 config node 和 rollup `by_outbound` key。
+    - 将 ready VLESS REALITY outbounds 分桶：
+      - `uncovered`
+      - `prior_non_all_ok`
+      - `covered_all_ok`
+    - 默认选择 uncovered ready nodes；可用 `--include-failure-rechecks` / `--include-covered` 扩展。
+    - 输出可作为下一轮 batch 输入的 plan JSON。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 planner 单测。
+  - `scripts/tools/README.md` 增加 planner 用法。
+- smoke：
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5 --output-json /tmp/reality-vless-next-plan-r46.json`
+  - 输出：
+    - `uncovered=12`
+    - `prior_non_all_ok=2`
+    - `covered_all_ok=8`
+    - selected: `HK-A-BGP-2.0`, `HK-A-BGP-2.5`, `TW-A-BGP-1.0`, `JP-A-BGP-0.3`, `JP-A-BGP-1.1`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`19 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`22 tests`)
+  - `python3 scripts/tools/reality_vless_probe_plan.py --help` → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 45（live evidence rollup）
 
 - 本轮把 committed live evidence 汇总成 dashboard，不修改 sampler/dataplane。

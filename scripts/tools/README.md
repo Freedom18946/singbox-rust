@@ -313,6 +313,16 @@ python3 scripts/tools/reality_vless_evidence_rollup.py \
   --output-md agents-only/mt_real_02_evidence/live_rollup.md
 ```
 
+To plan the next bounded live batch from the current config and rollup:
+
+```bash
+python3 scripts/tools/reality_vless_probe_plan.py \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --rollup-json agents-only/mt_real_02_evidence/live_rollup.json \
+  --limit 5 \
+  --output-json /tmp/reality-vless-next-plan.json
+```
+
 ### Debugging Routing
 
 ```bash

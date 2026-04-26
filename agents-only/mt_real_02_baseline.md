@@ -1349,6 +1349,73 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 46 coverage-aware live batch planner
+
+### 目标
+
+- 将“下一批 live 节点该跑谁”工具化。
+- 输入当前 config 和 committed live rollup，优先找还没有 evidence 覆盖的 ready REALITY VLESS 节点。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+
+### 实现
+
+- 新增 `scripts/tools/reality_vless_probe_plan.py`
+  - 输入：
+    - `--config`
+    - `--rollup-json`
+    - `--limit`
+  - 可选：
+    - `--include-failure-rechecks`
+    - `--include-covered`
+    - `--output-json`
+  - 使用 `safe_slug` 对齐 config outbound name 和 rollup `by_outbound` key。
+  - 分桶：
+    - `uncovered`
+    - `prior_non_all_ok`
+    - `covered_all_ok`
+  - 默认只选择 uncovered ready nodes。
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - 新增 `RealityProbePlanTests`。
+  - 覆盖：
+    - 默认优先 uncovered；
+    - 可加入 prior non-all_ok / covered nodes；
+    - node classification。
+
+- 更新 `scripts/tools/README.md`
+  - 增加 planner 用法。
+
+### smoke
+
+- Command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5 --output-json /tmp/reality-vless-next-plan-r46.json`
+- Output:
+  - `uncovered = 12`
+  - `prior_non_all_ok = 2`
+  - `covered_all_ok = 8`
+  - selected:
+    - `HK-A-BGP-2.0`
+    - `HK-A-BGP-2.5`
+    - `TW-A-BGP-1.0`
+    - `JP-A-BGP-0.3`
+    - `JP-A-BGP-1.1`
+
+### 当前判定
+
+- Live sampling now has a repeatable coverage planner.
+- Next live round can use the planner-selected uncovered nodes instead of manually choosing candidates.
+- This reinforces class-first evidence expansion and keeps sampler changes gated on actual app/minimal divergence.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `19 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `22 tests`
+- `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5 --output-json /tmp/reality-vless-next-plan-r46.json` → PASS
+- `python3 scripts/tools/reality_vless_probe_plan.py --help` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 45 live evidence rollup
 
 ### 目标
