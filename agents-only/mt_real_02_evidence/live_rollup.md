@@ -1,9 +1,9 @@
 # MT-REAL-02 REALITY Live Evidence Rollup
 
-- rounds: 5
-- executed runs: 20
-- all_ok runs: 15
-- non-all_ok runs: 5
+- rounds: 6
+- executed runs: 25
+- all_ok runs: 18
+- non-all_ok runs: 7
 - has divergence: true
 
 ## Rounds
@@ -15,8 +15,9 @@
 | 44 | 5 | 4 | all_ok=4, reality_all_connection_reset=1 | connection_reset=9, ok=36 | false |
 | 47 | 5 | 2 | all_ok=2, app_minimal_diverged=1, minimal_transport_diverged=1, reality_all_reality_dial_eof=1, reality_all_timeout=1 | ok=26, reality_dial_eof=10, timeout=9 | true |
 | 48 | 3 | 3 | all_ok=3 | ok=27 | false |
+| 50 | 5 | 3 | all_ok=3, probe_io_all_connection_reset=1, probe_io_all_post_dial_eof=1, reality_all_connection_reset=1 | connection_reset=9, ok=34, post_dial_eof=2 | false |
 
 ## Aggregates
 
-- labels: {"all_ok": 15, "app_minimal_diverged": 1, "minimal_transport_diverged": 1, "reality_all_connection_reset": 1, "reality_all_reality_dial_eof": 1, "reality_all_timeout": 2}
-- classes: {"connection_reset": 9, "ok": 143, "reality_dial_eof": 10, "timeout": 18}
+- labels: {"all_ok": 18, "app_minimal_diverged": 1, "minimal_transport_diverged": 1, "probe_io_all_connection_reset": 1, "probe_io_all_post_dial_eof": 1, "reality_all_connection_reset": 2, "reality_all_reality_dial_eof": 1, "reality_all_timeout": 2}
+- classes: {"connection_reset": 18, "ok": 177, "post_dial_eof": 2, "reality_dial_eof": 10, "timeout": 18}

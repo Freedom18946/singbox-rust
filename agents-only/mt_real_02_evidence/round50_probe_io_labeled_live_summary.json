@@ -1,0 +1,168 @@
+{
+  "round": "50",
+  "date": "2026-04-26",
+  "description": "planner-selected REALITY live batch after probe IO label fix",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r50/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'JP-A-BGP-5\u500d\u7387' --outbound 'JP-A-BGP-4.0\u500d\u7387' --outbound 'US-A-BGP-0\u500d\u7387' --outbound 'US-A-BGP-0.5\u500d\u7387' --outbound 'US-A-BGP-0.8\u500d\u7387' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r50",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 1,
+    "selected_count": 5
+  },
+  "summary": {
+    "total": 5,
+    "executed_runs": 5,
+    "status_counts": {
+      "completed": 5
+    },
+    "label_counts": {
+      "all_ok": 3,
+      "probe_io_all_connection_reset": 1,
+      "probe_io_all_post_dial_eof": 1,
+      "reality_all_connection_reset": 1
+    },
+    "class_counts": {
+      "connection_reset": 9,
+      "ok": 34,
+      "post_dial_eof": 2
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 3,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 1
+    }
+  },
+  "by_outbound": {
+    "JP-A-BGP-4.0": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "JP-A-BGP-5": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "US-A-BGP-0.5": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    "US-A-BGP-0.8": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_post_dial_eof": 1
+      },
+      "class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
+      }
+    },
+    "US-A-BGP-0": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "JP-A-BGP-5",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-4.0",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.5",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.8",
+      "ordinal": 5,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_post_dial_eof"
+      ],
+      "class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
+      }
+    }
+  ],
+  "interpretation": [
+    "JP-5, JP-4.0, and US-0 completed all app/minimal matrix checks with class ok.",
+    "US-0.5 reset consistently across app/minimal phases and now carries reality/probe-IO same-failure labels.",
+    "US-0.8 had app bridge and minimal VLESS probe IO post_dial_eof with direct phases ok, now labeled probe_io_all_post_dial_eof without divergence.",
+    "No app/minimal divergence appeared in this batch."
+  ]
+}

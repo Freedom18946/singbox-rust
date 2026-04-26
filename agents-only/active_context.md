@@ -140,6 +140,40 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 50（probe IO labeled live evidence）
+
+- 本轮用 Round 49 label fix 后的 compare 重新跑 planner-selected JP/US batch，不修改 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'JP-A-BGP-5倍率' --outbound 'JP-A-BGP-4.0倍率' --outbound 'US-A-BGP-0倍率' --outbound 'US-A-BGP-0.5倍率' --outbound 'US-A-BGP-0.8倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r50`
+- 结果：
+  - selected ready outbounds: `5`
+  - executed runs: `5`
+  - labels: `all_ok=3`, `reality_all_connection_reset=1`, `probe_io_all_connection_reset=1`, `probe_io_all_post_dial_eof=1`
+  - classes: `ok=34`, `connection_reset=9`, `post_dial_eof=2`
+  - JP-5 / JP-4.0 / US-0: all_ok
+  - US-0.5: all REALITY phases `connection_reset`; probe IO also `connection_reset`
+  - US-0.8: app bridge and minimal VLESS probe IO both `post_dial_eof`, direct phases `ok`, no divergence。
+- evidence：
+  - `agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json`
+- Updated rollup:
+  - rounds: `6`
+  - executed runs: `25`
+  - all_ok runs: `18`
+  - non-all_ok runs: `7`
+  - has divergence: `true` (still only Round 47 one-shot; Round 48 repeat all_ok)
+  - aggregate labels include `probe_io_all_connection_reset=1`, `probe_io_all_post_dial_eof=1`
+- Planner after Round 50:
+  - `uncovered=2`
+  - `prior_non_all_ok=7`
+  - `covered_all_ok=13`
+  - default selected: `US-A-BGP-1.5`, `__phase3_invalid_vless`
+  - note: next tool fix should default-exclude internal `__*` sentinels from live planner output.
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`23 tests`)
+  - JSON validation for Round 50 evidence and live rollup → PASS
+  - evidence/rollup ASCII scan → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 49（probe IO same-failure labeling）
 
 - 本轮从 planner 下一批 live run 中发现 compare label coverage 缺口，不修改 sampler/dataplane。

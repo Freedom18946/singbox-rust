@@ -1,23 +1,26 @@
 {
-  "total_rounds": 5,
-  "total_executed_runs": 20,
-  "total_all_ok_runs": 15,
-  "total_non_all_ok_runs": 5,
+  "total_rounds": 6,
+  "total_executed_runs": 25,
+  "total_all_ok_runs": 18,
+  "total_non_all_ok_runs": 7,
   "has_any_divergence": true,
   "status_counts": {
-    "completed": 20
+    "completed": 25
   },
   "label_counts": {
-    "all_ok": 15,
+    "all_ok": 18,
     "app_minimal_diverged": 1,
     "minimal_transport_diverged": 1,
-    "reality_all_connection_reset": 1,
+    "probe_io_all_connection_reset": 1,
+    "probe_io_all_post_dial_eof": 1,
+    "reality_all_connection_reset": 2,
     "reality_all_reality_dial_eof": 1,
     "reality_all_timeout": 2
   },
   "class_counts": {
-    "connection_reset": 9,
-    "ok": 143,
+    "connection_reset": 18,
+    "ok": 177,
+    "post_dial_eof": 2,
     "reality_dial_eof": 10,
     "timeout": 18
   },
@@ -137,6 +140,33 @@
       },
       "class_counts": {
         "ok": 27
+      }
+    },
+    {
+      "round": "50",
+      "date": "2026-04-26",
+      "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+      "description": "planner-selected REALITY live batch after probe IO label fix",
+      "total": 5,
+      "executed_runs": 5,
+      "all_ok_runs": 3,
+      "has_divergence": false,
+      "uniform_failure_labels": {
+        "reality_all_connection_reset": 1
+      },
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 3,
+        "probe_io_all_connection_reset": 1,
+        "probe_io_all_post_dial_eof": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9,
+        "ok": 34,
+        "post_dial_eof": 2
       }
     }
   ],
@@ -267,6 +297,34 @@
         "ok": 9
       }
     },
+    "JP-A-BGP-4.0": {
+      "rounds": [
+        "50"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "JP-A-BGP-5": {
+      "rounds": [
+        "50"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
     "SG-A-BGP-1.0": {
       "rounds": [
         "42"
@@ -341,6 +399,20 @@
         "connection_reset": 9
       }
     },
+    "US-A-BGP-0": {
+      "rounds": [
+        "50"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
     "US-A-BGP-0.1": {
       "rounds": [
         "42"
@@ -353,6 +425,36 @@
       },
       "class_counts": {
         "ok": 9
+      }
+    },
+    "US-A-BGP-0.5": {
+      "rounds": [
+        "50"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    "US-A-BGP-0.8": {
+      "rounds": [
+        "50"
+      ],
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_post_dial_eof": 1
+      },
+      "class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
       }
     }
   }
