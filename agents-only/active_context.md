@@ -140,6 +140,28 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 41（small repeat live batch evidence）
+
+- 本轮使用 Round 40 repeat batch runner 做小规模 live evidence，不修改代码 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --include HK-A-BGP --limit 2 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r41`
+- 结果：
+  - selected ready outbounds: `2`
+  - executed runs: `4`
+  - status: `completed=4`
+  - labels: `all_ok=4`
+  - classes: `ok=36`
+  - app pre/post direct REALITY、app pre/post direct VLESS dial、app bridge、minimal direct/transport REALITY、minimal VLESS dial/probe IO 全部同 class `ok`。
+- evidence：
+  - `agents-only/mt_real_02_evidence/round41_live_batch_summary.json`
+- gate：
+  - `python3 -m json.tool agents-only/mt_real_02_evidence/round41_live_batch_summary.json` → PASS
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`15 tests`)
+  - `cargo check --workspace` → PASS
+- 判定：
+  - 当前 sampler/read-loop/adapter surface 在这组 live HK samples 上没有 app/minimal 分叉。
+  - 这不是“节点永远可用”的保证，但它是 Round 34-40 后第一组 repeat live all_ok dataplane 证据。
+
 ## Round 40（repeat-aware REALITY batch sampling）
 
 - 本轮继续推进 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。

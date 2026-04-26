@@ -1349,6 +1349,81 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 41 small repeat live batch evidence
+
+### 目标
+
+- 使用 Round 40 repeat-aware batch runner 做小规模 live dataplane 复测。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+- 重点看同节点同目标 repeat samples 是否稳定同 class，以及 app/minimal 是否分叉。
+
+### 执行
+
+- Command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --include HK-A-BGP --limit 2 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r41`
+- Selection:
+  - config: `agents-only/mt_real_01_evidence/phase3_ip_direct.json`
+  - target: `example.com:80`
+  - include: `HK-A-BGP`
+  - limit: `2`
+  - runs: `2`
+
+### 结果
+
+- Batch stdout:
+  - `selected_count = 2`
+  - `runs = 2`
+  - `summary_json = /tmp/reality-vless-probe-batch-live-r41/summary.json`
+- Summary:
+  - `total = 4`
+  - `executed_runs = 4`
+  - `status_counts.completed = 4`
+  - `label_counts.all_ok = 4`
+  - `class_counts.ok = 36`
+- Per outbound:
+  - `HK-A-BGP-0.3`
+    - `completed = 2`
+    - `all_ok = 2`
+    - `ok = 18`
+  - `HK-A-BGP-1.0`
+    - `completed = 2`
+    - `all_ok = 2`
+    - `ok = 18`
+- A representative app probe (`run-001`) showed:
+  - pre-bridge direct REALITY: `ok`
+  - pre-bridge direct VLESS dial: `ok`
+  - post-bridge direct REALITY: `ok`
+  - post-bridge direct VLESS dial: `ok`
+  - bridge probe: `ok`, `HTTP/1.1 200 OK`, `response_bytes=837`
+- A representative minimal phase probe (`run-001`) showed:
+  - direct REALITY: `ok`
+  - transport REALITY: `ok`
+  - VLESS dial: `ok`
+  - VLESS probe IO: `ok`
+
+### Evidence
+
+- Committed sanitized summary:
+  - `agents-only/mt_real_02_evidence/round41_live_batch_summary.json`
+- Raw local output remains outside the repo:
+  - `/tmp/reality-vless-probe-batch-live-r41`
+
+### 验证
+
+- `python3 -m json.tool agents-only/mt_real_02_evidence/round41_live_batch_summary.json` → PASS
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `15 tests`
+- `cargo check --workspace` → PASS
+
+### 当前判定
+
+- Round 41 is positive repeat live dataplane evidence:
+  - current sampler/read-loop/adapter surface works for 2 ready HK REALITY VLESS nodes;
+  - app pre/post, app bridge, and minimal phase probe all agree on class `ok`;
+  - no stable app/minimal class fork appeared in these samples.
+- This does not prove all nodes are healthy; it does reduce pressure to change sampler based on stale node failures.
+- Next useful step is broader but still bounded sampling: e.g. one HK + one SG/JP/US sample set, still class-first.
+
 ## 2026-04-26 进展更新：Round 40 repeat-aware REALITY batch sampling
 
 ### 目标

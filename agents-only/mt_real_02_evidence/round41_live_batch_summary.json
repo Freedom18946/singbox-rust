@@ -1,0 +1,58 @@
+{
+  "round": "41",
+  "date": "2026-04-26",
+  "description": "Small repeat live batch using Round 40 REALITY batch matrix tooling.",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --include HK-A-BGP --limit 2 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r41",
+  "local_output_dir": "/tmp/reality-vless-probe-batch-live-r41",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "include": "HK-A-BGP",
+    "limit": 2,
+    "runs": 2
+  },
+  "summary": {
+    "total": 4,
+    "executed_runs": 4,
+    "status_counts": {
+      "completed": 4
+    },
+    "label_counts": {
+      "all_ok": 4
+    },
+    "class_counts": {
+      "ok": 36
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-0.3": {
+      "runs": 2,
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "all_ok": 2
+      },
+      "class_counts": {
+        "ok": 18
+      }
+    },
+    "HK-A-BGP-1.0": {
+      "runs": 2,
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "all_ok": 2
+      },
+      "class_counts": {
+        "ok": 18
+      }
+    }
+  },
+  "interpretation": [
+    "Both selected ready REALITY VLESS outbounds completed two repeated matrix runs.",
+    "All app pre/post direct checks, app bridge probe, and minimal phase probes reported class ok.",
+    "This is positive live dataplane evidence for the current sampler/read-loop/adapter surface, not a reason to change the sampler."
+  ]
+}
