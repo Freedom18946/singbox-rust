@@ -140,6 +140,31 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 44（wide-region live batch evidence）
+
+- 本轮使用 Round 43 evidence builder 归档更宽的 live sample，不修改代码 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'SG-A-BGP-1.2倍率' --outbound 'ID-A-BGP-1.2倍率' --outbound 'TW-A-Hinet-1.1倍率' --outbound 'DE-A-BGP-1.0倍率' --outbound 'UK-A-BGP-0.5倍率' --runs 1 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r44`
+- 结果：
+  - selected ready outbounds: `5`
+  - executed runs: `5`
+  - status: `completed=5`
+  - labels: `all_ok=4`, `reality_all_connection_reset=1`
+  - classes: `ok=36`, `connection_reset=9`
+  - `matrix_health.has_divergence=false`
+  - SG/ID/TW/DE samples: app/minimal 全部 class `ok`
+  - UK sample: app pre/post、app bridge、minimal phase probes 全部 class `connection_reset`，没有 app/minimal 分叉。
+- evidence：
+  - `agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json`
+- gate：
+  - `python3 -m json.tool agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json` → PASS
+  - ASCII scan → PASS
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`17 tests`)
+  - `cargo check --workspace` → PASS
+- 判定：
+  - Round 44 把 live 正证扩展到 SG/ID/TW/DE。
+  - UK 是一致 `connection_reset` 的 node/path 证据，不是 sampler regression signal。
+
 ## Round 43（sanitized live evidence builder）
 
 - 本轮继续推进 MT-REAL-02 live evidence harness，不修改 ClientHello sampler / Vision write-boundary / REALITY read-loop。
