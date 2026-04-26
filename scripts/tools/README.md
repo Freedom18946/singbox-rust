@@ -323,6 +323,9 @@ python3 scripts/tools/reality_vless_probe_plan.py \
   --output-json /tmp/reality-vless-next-plan.json
 ```
 
+Planner output excludes internal `__*` sentinel outbounds by default; pass
+`--include-internal` only when intentionally planning smoke/negative samples.
+
 ### Debugging Routing
 
 ```bash

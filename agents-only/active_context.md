@@ -140,6 +140,28 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 51（planner internal sentinel exclusion）
+
+- 本轮修复 coverage planner 默认会把 `__phase3_invalid_vless` 当作 uncovered live candidate 的问题，不修改 sampler/dataplane。
+- 实现：
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 默认跳过 name 以 `__` 开头的 internal/sentinel outbounds。
+    - 新增 `--include-internal`，仅在显式需要 smoke/negative samples 时启用。
+  - `scripts/tools/test_reality_probe_tools.py` 增加 internal sentinel 覆盖。
+  - `scripts/tools/README.md` 记录默认排除行为。
+- smoke：
+  - 默认：
+    - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5`
+    - `uncovered=1`，selected: `US-A-BGP-1.5`
+  - 显式 internal：
+    - 加 `--include-internal`
+    - `uncovered=2`，selected: `US-A-BGP-1.5`, `__phase3_invalid_vless`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS (`21 tests`)
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`24 tests`)
+  - `python3 scripts/tools/reality_vless_probe_plan.py --help` → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 50（probe IO labeled live evidence）
 
 - 本轮用 Round 49 label fix 后的 compare 重新跑 planner-selected JP/US batch，不修改 sampler/dataplane。

@@ -482,6 +482,14 @@ class RealityProbePlanTests(unittest.TestCase):
                     "uuid": "550e8400-e29b-41d4-a716-446655440000",
                     "tls": {"reality": {"public_key": "PUB"}},
                 },
+                {
+                    "type": "vless",
+                    "tag": "__phase3_invalid_vless",
+                    "server": "127.0.0.1",
+                    "server_port": 9,
+                    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "tls": {"reality": {"public_key": "PUB"}},
+                },
             ]
         }
 
@@ -499,16 +507,23 @@ class RealityProbePlanTests(unittest.TestCase):
         }
 
     def test_build_plan_prefers_uncovered_by_default(self):
-        built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False)
+        built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, False)
         self.assertEqual(built["counts"]["uncovered"], 1)
         self.assertEqual(built["counts"]["prior_non_all_ok"], 1)
         self.assertEqual(built["counts"]["covered_all_ok"], 1)
         self.assertEqual([item["key"] for item in built["selected"]], ["NEW-A-BGP-1.0"])
 
     def test_build_plan_can_include_failure_rechecks_and_covered_nodes(self):
-        built = plan.build_plan(self.sample_config(), self.sample_rollup(), 2, True, True)
+        built = plan.build_plan(self.sample_config(), self.sample_rollup(), 2, True, True, False)
         self.assertEqual([item["key"] for item in built["selected"]], ["NEW-A-BGP-1.0", "JP-A-BGP-1.0"])
         self.assertEqual(built["selected"][1]["reason"], "prior_non_all_ok")
+
+    def test_build_plan_can_include_internal_sentinels_explicitly(self):
+        built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, True)
+        self.assertEqual(
+            [item["key"] for item in built["selected"]],
+            ["NEW-A-BGP-1.0", "phase3_invalid_vless"],
+        )
 
     def test_classify_item_marks_covered_all_ok(self):
         prior = {"label_counts": {"all_ok": 1}, "class_counts": {"ok": 9}}

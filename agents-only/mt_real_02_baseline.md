@@ -1349,6 +1349,56 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 51 planner internal sentinel exclusion
+
+### 目标
+
+- 修复 coverage planner 在接近覆盖完成时默认选择 `__phase3_invalid_vless` 的问题。
+- 该 outbound 是 internal/sentinel negative sample，不应作为普通 live coverage candidate。
+- 仍然不修改 REALITY ClientHello sampler、Vision write-boundary、REALITY read-loop。
+
+### 实现
+
+- 更新 `scripts/tools/reality_vless_probe_plan.py`
+  - 默认跳过 name 以 `__` 开头的 ready outbounds。
+  - 新增 `--include-internal`。
+  - 只有显式传入 `--include-internal` 时，才把 sentinel/internal outbounds 纳入 plan。
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - sample config 增加 `__phase3_invalid_vless`。
+  - 默认 plan 验证不会选 internal sentinel。
+  - 显式 `include_internal=True` 时验证会选 sentinel。
+
+- 更新 `scripts/tools/README.md`
+  - 记录 planner 默认排除 `__*`。
+
+### smoke
+
+- Default:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5 --output-json /tmp/reality-vless-next-plan-after-r50-no-internal.json`
+  - Result:
+    - `uncovered = 1`
+    - selected: `US-A-BGP-1.5`
+- With internal:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --limit 5 --include-internal --output-json /tmp/reality-vless-next-plan-after-r50-with-internal.json`
+  - Result:
+    - `uncovered = 2`
+    - selected: `US-A-BGP-1.5`, `__phase3_invalid_vless`
+
+### 当前判定
+
+- Planner now points the next real live sample at the only remaining non-internal uncovered node: `US-A-BGP-1.5`.
+- Internal negative samples remain available for explicit smoke runs.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py` → PASS
+  - `21 tests`
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `24 tests`
+- `python3 scripts/tools/reality_vless_probe_plan.py --help` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 50 probe IO labeled live evidence
 
 ### 目标

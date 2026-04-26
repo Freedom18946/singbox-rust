@@ -57,6 +57,7 @@ def build_plan(
     limit: int | None,
     include_failure_rechecks: bool,
     include_covered: bool,
+    include_internal: bool,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
     buckets: dict[str, list[dict[str, Any]]] = {
@@ -69,6 +70,8 @@ def build_plan(
             continue
         name = item.get("name")
         if not isinstance(name, str):
+            continue
+        if not include_internal and name.startswith("__"):
             continue
         key = batch.safe_slug(name)
         prior = covered.get(key)
@@ -115,6 +118,7 @@ def main() -> None:
     parser.add_argument("--limit", type=batch.non_negative_int)
     parser.add_argument("--include-failure-rechecks", action="store_true")
     parser.add_argument("--include-covered", action="store_true")
+    parser.add_argument("--include-internal", action="store_true")
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -126,6 +130,7 @@ def main() -> None:
         args.limit,
         args.include_failure_rechecks,
         args.include_covered,
+        args.include_internal,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)
