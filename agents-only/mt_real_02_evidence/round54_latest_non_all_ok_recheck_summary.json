@@ -1,0 +1,289 @@
+{
+  "round": "54",
+  "date": "2026-04-26",
+  "description": "latest non-all-ok REALITY live repeat recheck",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r54-recheck/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'HK-A-BGP-2.0\u500d\u7387' --outbound 'JP-A-BGP-0.3\u500d\u7387' --outbound 'JP-A-BGP-1.0\u500d\u7387' --outbound 'US-A-BGP-0.5\u500d\u7387' --outbound 'US-A-BGP-0.8\u500d\u7387' --outbound 'UK-A-BGP-0.5\u500d\u7387' --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r54-recheck",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 2,
+    "selected_count": 6
+  },
+  "summary": {
+    "total": 12,
+    "executed_runs": 12,
+    "status_counts": {
+      "completed": 12
+    },
+    "label_counts": {
+      "app_pre_post_diverged": 1,
+      "probe_io_all_connection_reset": 4,
+      "probe_io_all_post_dial_eof": 2,
+      "probe_io_all_reality_dial_eof": 2,
+      "probe_io_all_timeout": 4,
+      "reality_all_connection_reset": 4,
+      "reality_all_reality_dial_eof": 2,
+      "reality_all_timeout": 3
+    },
+    "class_counts": {
+      "connection_reset": 36,
+      "ok": 15,
+      "post_dial_eof": 4,
+      "reality_dial_eof": 18,
+      "timeout": 35
+    }
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_pre_post_diverged": 1
+    },
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 4,
+      "reality_all_reality_dial_eof": 2,
+      "reality_all_timeout": 3
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-2.0": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "app_pre_post_diverged": 1,
+        "probe_io_all_timeout": 2,
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "ok": 1,
+        "timeout": 17
+      }
+    },
+    "JP-A-BGP-0.3": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_reality_dial_eof": 2,
+        "reality_all_reality_dial_eof": 2
+      },
+      "class_counts": {
+        "reality_dial_eof": 18
+      }
+    },
+    "JP-A-BGP-1.0": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 2,
+        "reality_all_timeout": 2
+      },
+      "class_counts": {
+        "timeout": 18
+      }
+    },
+    "UK-A-BGP-0.5": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 2,
+        "reality_all_connection_reset": 2
+      },
+      "class_counts": {
+        "connection_reset": 18
+      }
+    },
+    "US-A-BGP-0.5": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 2,
+        "reality_all_connection_reset": 2
+      },
+      "class_counts": {
+        "connection_reset": 18
+      }
+    },
+    "US-A-BGP-0.8": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_post_dial_eof": 2
+      },
+      "class_counts": {
+        "ok": 14,
+        "post_dial_eof": 4
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "app_pre_post_diverged",
+        "probe_io_all_timeout"
+      ],
+      "class_counts": {
+        "ok": 1,
+        "timeout": 8
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-0.3",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_reality_dial_eof",
+        "reality_all_reality_dial_eof"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-0.3",
+      "ordinal": 2,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_reality_dial_eof",
+        "reality_all_reality_dial_eof"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-1.0",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-1.0",
+      "ordinal": 3,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.5",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.5",
+      "ordinal": 4,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.8",
+      "ordinal": 5,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_post_dial_eof"
+      ],
+      "class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.8",
+      "ordinal": 5,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_post_dial_eof"
+      ],
+      "class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
+      }
+    },
+    {
+      "outbound": "UK-A-BGP-0.5",
+      "ordinal": 6,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "UK-A-BGP-0.5",
+      "ordinal": 6,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "All six latest non-all-ok buckets were repeated twice.",
+    "JP-0.3 stayed reality_dial_eof, JP-1.0 stayed timeout, US-0.5 and UK-0.5 stayed connection_reset, and US-0.8 stayed probe_io post_dial_eof.",
+    "HK-2.0 had one app pre/post direct REALITY mismatch and one uniform timeout run; this remains a node/path bucket requiring class-first recheck, not a sampler-change signal."
+  ]
+}

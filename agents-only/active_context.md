@@ -140,6 +140,55 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 54（latest non-all-ok repeat recheck）
+
+- 本轮使用 Round 53 latest-aware planner 选择 6 个 latest non-all-ok outbounds，每个 repeat 2 次，不修改 sampler/dataplane。
+- 命令：
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --target example.com:80 --outbound 'HK-A-BGP-2.0倍率' --outbound 'JP-A-BGP-0.3倍率' --outbound 'JP-A-BGP-1.0倍率' --outbound 'US-A-BGP-0.5倍率' --outbound 'US-A-BGP-0.8倍率' --outbound 'UK-A-BGP-0.5倍率' --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r54-recheck`
+- 结果：
+  - selected ready outbounds: `6`
+  - executed runs: `12`
+  - status: `completed=12`
+  - labels:
+    - `app_pre_post_diverged=1`
+    - `reality_all_timeout=3`
+    - `reality_all_reality_dial_eof=2`
+    - `reality_all_connection_reset=4`
+    - `probe_io_all_timeout=4`
+    - `probe_io_all_reality_dial_eof=2`
+    - `probe_io_all_connection_reset=4`
+    - `probe_io_all_post_dial_eof=2`
+  - classes:
+    - `ok=15`
+    - `timeout=35`
+    - `reality_dial_eof=18`
+    - `connection_reset=36`
+    - `post_dial_eof=4`
+- by outbound:
+  - `HK-A-BGP-2.0`: one run `app_pre_post_diverged` plus probe IO timeout; one run uniform timeout.
+  - `JP-A-BGP-0.3`: both runs `reality_dial_eof` / probe IO same failure.
+  - `JP-A-BGP-1.0`: both runs timeout / probe IO same timeout.
+  - `US-A-BGP-0.5`: both runs connection_reset.
+  - `US-A-BGP-0.8`: both runs direct phases ok, probe IO post_dial_eof.
+  - `UK-A-BGP-0.5`: both runs connection_reset.
+- evidence：
+  - `agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json`
+- Updated rollup:
+  - rounds: `8`
+  - executed runs: `38`
+  - all_ok runs: `19`
+  - latest non-all-ok outbounds: `6`
+  - latest non-all-ok list unchanged: `HK-A-BGP-2.0`, `JP-A-BGP-0.3`, `JP-A-BGP-1.0`, `US-A-BGP-0.5`, `US-A-BGP-0.8`, `UK-A-BGP-0.5`
+- 判定：
+  - These six are stable node/path failure buckets under current live conditions.
+  - `US-A-BGP-0.8` remains a matched probe-IO failure, not divergence.
+  - `HK-A-BGP-2.0` has an app pre/post direct REALITY mismatch in one run, but its paired repeat is uniform timeout; still not a sampler-change signal.
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`25 tests`)
+  - JSON validation for Round 54 evidence and live rollup → PASS
+  - evidence/rollup ASCII scan → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 53（latest-aware live rollup and recheck planner）
 
 - 本轮改进 rollup/planner 语义，不修改 sampler/dataplane。
