@@ -5,6 +5,7 @@
 - all_ok runs: 19
 - non-all_ok runs: 7
 - has divergence: true
+- latest non-all_ok outbounds: 6
 
 ## Rounds
 

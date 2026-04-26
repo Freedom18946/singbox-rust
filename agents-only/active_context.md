@@ -140,6 +140,43 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 53（latest-aware live rollup and recheck planner）
+
+- 本轮改进 rollup/planner 语义，不修改 sampler/dataplane。
+- 问题：
+  - 旧 planner 使用 historical aggregate label counts 判断 `prior_non_all_ok`。
+  - `TW-A-BGP-1.0` 在 Round 47 有 one-shot divergence，但 Round 48 targeted repeat 是 `all_ok=3`；旧 planner 仍会永远把它排进 recheck。
+- 实现：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 为每个 outbound 增加 `history`。
+    - 增加 `latest_round` / `latest_label_counts` / `latest_class_counts` / `latest_status_counts`。
+    - 增加 `latest_has_non_all_ok` 与 `historical_has_non_all_ok`。
+    - 顶层增加 `latest_non_all_ok_outbounds` / `latest_non_all_ok_outbound_count`。
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 判断 recheck 时优先使用 `latest_label_counts`，回退到旧 `label_counts`。
+  - `scripts/tools/test_reality_probe_tools.py`
+    - 新增 latest recovered outbound rollup 单测。
+    - 新增 planner 使用 latest all_ok 覆盖 historical failure 的单测。
+  - `scripts/tools/README.md` 记录 latest-aware 语义。
+- 结果：
+  - 更新 `agents-only/mt_real_02_evidence/live_rollup.json`
+  - 更新 `agents-only/mt_real_02_evidence/live_rollup.md`
+  - latest non-all-ok outbounds: `6`
+  - latest recheck plan:
+    - `HK-A-BGP-2.0`
+    - `JP-A-BGP-0.3`
+    - `JP-A-BGP-1.0`
+    - `US-A-BGP-0.5`
+    - `US-A-BGP-0.8`
+    - `UK-A-BGP-0.5`
+  - `TW-A-BGP-1.0` latest labels are `all_ok=3` and no longer appears in latest recheck queue.
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`25 tests`)
+  - `python3 -m json.tool agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - rollup ASCII scan → PASS
+  - planner latest-aware smoke → PASS (`prior_non_all_ok=6`)
+  - `cargo check --workspace` → PASS
+
 ## Round 52（final non-internal uncovered live evidence）
 
 - 本轮用 Round 51 planner 修复后的默认计划跑最后一个 non-internal uncovered ready node，不修改 sampler/dataplane。

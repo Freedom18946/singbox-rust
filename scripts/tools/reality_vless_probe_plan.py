@@ -34,7 +34,9 @@ def covered_outbounds(rollup: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def has_non_all_ok(prior: dict[str, Any]) -> bool:
-    labels = prior.get("label_counts")
+    labels = prior.get("latest_label_counts")
+    if not isinstance(labels, dict):
+        labels = prior.get("label_counts")
     if not isinstance(labels, dict):
         return False
     for key, value in labels.items():

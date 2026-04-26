@@ -429,6 +429,49 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertFalse(built["has_any_divergence"])
         self.assertEqual(built["label_counts"]["reality_all_timeout"], 1)
         self.assertEqual(built["by_outbound"]["JP-A"]["class_counts"]["timeout"], 9)
+        self.assertEqual(built["by_outbound"]["JP-A"]["latest_round"], "2")
+        self.assertTrue(built["by_outbound"]["JP-A"]["latest_has_non_all_ok"])
+        self.assertEqual(built["latest_non_all_ok_outbounds"], ["JP-A"])
+
+    def test_build_rollup_tracks_latest_recovered_outbound_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            first = tmp_path / "round7.json"
+            second = tmp_path / "round8.json"
+            first.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "7",
+                        {"reality_all_timeout": 1},
+                        {"timeout": 9},
+                        {
+                            "TW-A": {
+                                "label_counts": {"reality_all_timeout": 1},
+                                "class_counts": {"timeout": 9},
+                            }
+                        },
+                    )
+                ),
+                encoding="utf-8",
+            )
+            second.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "8",
+                        {"all_ok": 3},
+                        {"ok": 27},
+                        {"TW-A": {"label_counts": {"all_ok": 3}, "class_counts": {"ok": 27}}},
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([second, first])
+        outbound = built["by_outbound"]["TW-A"]
+        self.assertEqual(outbound["rounds"], ["7", "8"])
+        self.assertEqual(outbound["latest_round"], "8")
+        self.assertFalse(outbound["latest_has_non_all_ok"])
+        self.assertTrue(outbound["historical_has_non_all_ok"])
+        self.assertEqual(built["latest_non_all_ok_outbound_count"], 0)
 
     def test_markdown_table_contains_round_rows(self):
         built = {
@@ -498,8 +541,13 @@ class RealityProbePlanTests(unittest.TestCase):
             "total_rounds": 2,
             "total_executed_runs": 3,
             "by_outbound": {
-                "HK-A-BGP-0.3": {"label_counts": {"all_ok": 2}, "class_counts": {"ok": 18}},
+                "HK-A-BGP-0.3": {
+                    "latest_label_counts": {"all_ok": 2},
+                    "label_counts": {"all_ok": 2},
+                    "class_counts": {"ok": 18},
+                },
                 "JP-A-BGP-1.0": {
+                    "latest_label_counts": {"reality_all_timeout": 1},
                     "label_counts": {"reality_all_timeout": 1},
                     "class_counts": {"timeout": 9},
                 },
@@ -531,6 +579,16 @@ class RealityProbePlanTests(unittest.TestCase):
         self.assertEqual(
             plan.classify_item("JP-A-BGP-1.0", {"label_counts": {"reality_all_timeout": 1}}),
             "prior_non_all_ok",
+        )
+        self.assertEqual(
+            plan.classify_item(
+                "TW-A-BGP-1.0",
+                {
+                    "latest_label_counts": {"all_ok": 3},
+                    "label_counts": {"all_ok": 3, "reality_all_timeout": 1},
+                },
+            ),
+            "covered_all_ok",
         )
         self.assertEqual(plan.classify_item("NEW", None), "uncovered")
 

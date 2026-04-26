@@ -30,6 +30,18 @@ def merge_counts(target: collections.Counter[str], value: Any) -> None:
             target[key] += count
 
 
+def round_sort_key(value: Any) -> tuple[int, int | str]:
+    text = str(value)
+    try:
+        return (0, int(text))
+    except ValueError:
+        return (1, text)
+
+
+def has_non_all_ok_labels(labels: dict[str, int]) -> bool:
+    return any(key != "all_ok" and value > 0 for key, value in labels.items())
+
+
 def round_summary(path: pathlib.Path, payload: dict[str, Any]) -> dict[str, Any]:
     summary = payload.get("summary")
     if not isinstance(summary, dict):
@@ -91,6 +103,7 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                 outbound,
                 {
                     "rounds": [],
+                    "history": [],
                     "status_counts": collections.Counter(),
                     "label_counts": collections.Counter(),
                     "class_counts": collections.Counter(),
@@ -100,28 +113,56 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             merge_counts(entry["status_counts"], summary.get("status_counts"))
             merge_counts(entry["label_counts"], summary.get("label_counts"))
             merge_counts(entry["class_counts"], summary.get("class_counts"))
+            entry["history"].append(
+                {
+                    "round": item["round"],
+                    "path": item["path"],
+                    "status_counts": summary.get("status_counts", {}),
+                    "label_counts": summary.get("label_counts", {}),
+                    "class_counts": summary.get("class_counts", {}),
+                }
+            )
 
     total_runs = sum(item.get("executed_runs") or 0 for item in rounds)
     all_ok_runs = sum(item.get("all_ok_runs") or 0 for item in rounds)
-    by_outbound_json = {
-        name: {
-            "rounds": values["rounds"],
+    by_outbound_json = {}
+    latest_non_all_ok = []
+    for name, values in sorted(by_outbound.items()):
+        history = sorted(values["history"], key=lambda item: round_sort_key(item["round"]))
+        latest = history[-1] if history else {}
+        latest_labels = evidence_tool.counter_value(latest, "label_counts")
+        latest_classes = evidence_tool.counter_value(latest, "class_counts")
+        latest_statuses = evidence_tool.counter_value(latest, "status_counts")
+        latest_has_non_all_ok = has_non_all_ok_labels(latest_labels)
+        if latest_has_non_all_ok:
+            latest_non_all_ok.append(name)
+        by_outbound_json[name] = {
+            "rounds": sorted(values["rounds"], key=round_sort_key),
             "status_counts": dict(sorted(values["status_counts"].items())),
             "label_counts": dict(sorted(values["label_counts"].items())),
             "class_counts": dict(sorted(values["class_counts"].items())),
+            "history": history,
+            "latest_round": latest.get("round"),
+            "latest_status_counts": latest_statuses,
+            "latest_label_counts": latest_labels,
+            "latest_class_counts": latest_classes,
+            "latest_has_non_all_ok": latest_has_non_all_ok,
+            "historical_has_non_all_ok": has_non_all_ok_labels(
+                dict(sorted(values["label_counts"].items()))
+            ),
         }
-        for name, values in sorted(by_outbound.items())
-    }
     return {
         "total_rounds": len(rounds),
         "total_executed_runs": total_runs,
         "total_all_ok_runs": all_ok_runs,
         "total_non_all_ok_runs": total_runs - all_ok_runs,
         "has_any_divergence": any(item["has_divergence"] for item in rounds),
+        "latest_non_all_ok_outbounds": latest_non_all_ok,
+        "latest_non_all_ok_outbound_count": len(latest_non_all_ok),
         "status_counts": dict(sorted(statuses.items())),
         "label_counts": dict(sorted(labels.items())),
         "class_counts": dict(sorted(classes.items())),
-        "rounds": sorted(rounds, key=lambda item: item["round"]),
+        "rounds": sorted(rounds, key=lambda item: round_sort_key(item["round"])),
         "by_outbound": by_outbound_json,
     }
 
@@ -135,6 +176,7 @@ def markdown_table(rollup: dict[str, Any]) -> str:
         f"- all_ok runs: {rollup['total_all_ok_runs']}",
         f"- non-all_ok runs: {rollup['total_non_all_ok_runs']}",
         f"- has divergence: {str(rollup['has_any_divergence']).lower()}",
+        f"- latest non-all_ok outbounds: {rollup.get('latest_non_all_ok_outbound_count', 0)}",
         "",
         "## Rounds",
         "",

@@ -4,6 +4,15 @@
   "total_all_ok_runs": 19,
   "total_non_all_ok_runs": 7,
   "has_any_divergence": true,
+  "latest_non_all_ok_outbounds": [
+    "HK-A-BGP-2.0",
+    "JP-A-BGP-0.3",
+    "JP-A-BGP-1.0",
+    "UK-A-BGP-0.5",
+    "US-A-BGP-0.5",
+    "US-A-BGP-0.8"
+  ],
+  "latest_non_all_ok_outbound_count": 6,
   "status_counts": {
     "completed": 26
   },
@@ -203,7 +212,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "44",
+          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "44",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "HK-A-BGP-0.3": {
       "rounds": [
@@ -217,7 +253,34 @@
       },
       "class_counts": {
         "ok": 18
-      }
+      },
+      "history": [
+        {
+          "round": "41",
+          "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "all_ok": 2
+          },
+          "class_counts": {
+            "ok": 18
+          }
+        }
+      ],
+      "latest_round": "41",
+      "latest_status_counts": {
+        "completed": 2
+      },
+      "latest_label_counts": {
+        "all_ok": 2
+      },
+      "latest_class_counts": {
+        "ok": 18
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "HK-A-BGP-1.0": {
       "rounds": [
@@ -231,7 +294,34 @@
       },
       "class_counts": {
         "ok": 18
-      }
+      },
+      "history": [
+        {
+          "round": "41",
+          "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "all_ok": 2
+          },
+          "class_counts": {
+            "ok": 18
+          }
+        }
+      ],
+      "latest_round": "41",
+      "latest_status_counts": {
+        "completed": 2
+      },
+      "latest_label_counts": {
+        "all_ok": 2
+      },
+      "latest_class_counts": {
+        "ok": 18
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "HK-A-BGP-2.0": {
       "rounds": [
@@ -245,7 +335,34 @@
       },
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "history": [
+        {
+          "round": "47",
+          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "reality_all_timeout": 1
+          },
+          "class_counts": {
+            "timeout": 9
+          }
+        }
+      ],
+      "latest_round": "47",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "reality_all_timeout": 1
+      },
+      "latest_class_counts": {
+        "timeout": 9
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "HK-A-BGP-2.5": {
       "rounds": [
@@ -259,7 +376,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "47",
+          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "47",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "ID-A-BGP-1.2": {
       "rounds": [
@@ -273,7 +417,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "44",
+          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "44",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "JP-A-BGP-0.3": {
       "rounds": [
@@ -287,7 +458,34 @@
       },
       "class_counts": {
         "reality_dial_eof": 9
-      }
+      },
+      "history": [
+        {
+          "round": "47",
+          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "reality_all_reality_dial_eof": 1
+          },
+          "class_counts": {
+            "reality_dial_eof": 9
+          }
+        }
+      ],
+      "latest_round": "47",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "reality_all_reality_dial_eof": 1
+      },
+      "latest_class_counts": {
+        "reality_dial_eof": 9
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "JP-A-BGP-1.0": {
       "rounds": [
@@ -301,7 +499,34 @@
       },
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "history": [
+        {
+          "round": "42",
+          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "reality_all_timeout": 1
+          },
+          "class_counts": {
+            "timeout": 9
+          }
+        }
+      ],
+      "latest_round": "42",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "reality_all_timeout": 1
+      },
+      "latest_class_counts": {
+        "timeout": 9
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "JP-A-BGP-1.1": {
       "rounds": [
@@ -315,7 +540,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "47",
+          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "47",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "JP-A-BGP-4.0": {
       "rounds": [
@@ -329,7 +581,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "50",
+          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "50",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "JP-A-BGP-5": {
       "rounds": [
@@ -343,7 +622,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "50",
+          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "50",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "SG-A-BGP-1.0": {
       "rounds": [
@@ -357,7 +663,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "42",
+          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "42",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "SG-A-BGP-1.2": {
       "rounds": [
@@ -371,7 +704,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "44",
+          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "44",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "TW-A-BGP-1.0": {
       "rounds": [
@@ -389,7 +749,49 @@
       "class_counts": {
         "ok": 35,
         "reality_dial_eof": 1
-      }
+      },
+      "history": [
+        {
+          "round": "47",
+          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "app_minimal_diverged": 1,
+            "minimal_transport_diverged": 1
+          },
+          "class_counts": {
+            "ok": 8,
+            "reality_dial_eof": 1
+          }
+        },
+        {
+          "round": "48",
+          "path": "agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
+          "status_counts": {
+            "completed": 3
+          },
+          "label_counts": {
+            "all_ok": 3
+          },
+          "class_counts": {
+            "ok": 27
+          }
+        }
+      ],
+      "latest_round": "48",
+      "latest_status_counts": {
+        "completed": 3
+      },
+      "latest_label_counts": {
+        "all_ok": 3
+      },
+      "latest_class_counts": {
+        "ok": 27
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": true
     },
     "TW-A-Hinet-1.1": {
       "rounds": [
@@ -403,7 +805,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "44",
+          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "44",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "UK-A-BGP-0.5": {
       "rounds": [
@@ -417,7 +846,34 @@
       },
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "history": [
+        {
+          "round": "44",
+          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "reality_all_connection_reset": 1
+          },
+          "class_counts": {
+            "connection_reset": 9
+          }
+        }
+      ],
+      "latest_round": "44",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "reality_all_connection_reset": 1
+      },
+      "latest_class_counts": {
+        "connection_reset": 9
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "US-A-BGP-0": {
       "rounds": [
@@ -431,7 +887,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "50",
+          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "50",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "US-A-BGP-0.1": {
       "rounds": [
@@ -445,7 +928,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "42",
+          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "42",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     },
     "US-A-BGP-0.5": {
       "rounds": [
@@ -460,7 +970,36 @@
       },
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "history": [
+        {
+          "round": "50",
+          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 1,
+            "reality_all_connection_reset": 1
+          },
+          "class_counts": {
+            "connection_reset": 9
+          }
+        }
+      ],
+      "latest_round": "50",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "latest_class_counts": {
+        "connection_reset": 9
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "US-A-BGP-0.8": {
       "rounds": [
@@ -475,7 +1014,36 @@
       "class_counts": {
         "ok": 7,
         "post_dial_eof": 2
-      }
+      },
+      "history": [
+        {
+          "round": "50",
+          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "probe_io_all_post_dial_eof": 1
+          },
+          "class_counts": {
+            "ok": 7,
+            "post_dial_eof": 2
+          }
+        }
+      ],
+      "latest_round": "50",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "probe_io_all_post_dial_eof": 1
+      },
+      "latest_class_counts": {
+        "ok": 7,
+        "post_dial_eof": 2
+      },
+      "latest_has_non_all_ok": true,
+      "historical_has_non_all_ok": true
     },
     "US-A-BGP-1.5": {
       "rounds": [
@@ -489,7 +1057,34 @@
       },
       "class_counts": {
         "ok": 9
-      }
+      },
+      "history": [
+        {
+          "round": "52",
+          "path": "agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
+          "status_counts": {
+            "completed": 1
+          },
+          "label_counts": {
+            "all_ok": 1
+          },
+          "class_counts": {
+            "ok": 9
+          }
+        }
+      ],
+      "latest_round": "52",
+      "latest_status_counts": {
+        "completed": 1
+      },
+      "latest_label_counts": {
+        "all_ok": 1
+      },
+      "latest_class_counts": {
+        "ok": 9
+      },
+      "latest_has_non_all_ok": false,
+      "historical_has_non_all_ok": false
     }
   }
 }

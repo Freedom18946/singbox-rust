@@ -1349,6 +1349,88 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-26 进展更新：Round 53 latest-aware live rollup and recheck planner
+
+### 目标
+
+- 改进 rollup/planner 的 recheck 语义。
+- 旧逻辑按 historical aggregate label counts 判断 `prior_non_all_ok`，导致已经被后续 repeat 恢复的节点仍会永远进入 recheck queue。
+- 典型样本：
+  - `TW-A-BGP-1.0` Round 47 有 one-shot divergence；
+  - Round 48 targeted repeat 是 `all_ok=3`；
+  - 旧 planner 仍把它计入 `prior_non_all_ok`。
+
+### 实现
+
+- 更新 `scripts/tools/reality_vless_evidence_rollup.py`
+  - 为每个 outbound 记录 `history`。
+  - 记录 latest state：
+    - `latest_round`
+    - `latest_status_counts`
+    - `latest_label_counts`
+    - `latest_class_counts`
+    - `latest_has_non_all_ok`
+  - 保留 historical state：
+    - aggregate `status_counts`
+    - aggregate `label_counts`
+    - aggregate `class_counts`
+    - `historical_has_non_all_ok`
+  - 顶层新增：
+    - `latest_non_all_ok_outbounds`
+    - `latest_non_all_ok_outbound_count`
+
+- 更新 `scripts/tools/reality_vless_probe_plan.py`
+  - `has_non_all_ok` 现在优先看 `latest_label_counts`。
+  - 如果旧 rollup 没有 latest 字段，则回退到 aggregate `label_counts`。
+
+- 扩展 `scripts/tools/test_reality_probe_tools.py`
+  - 新增 latest recovered outbound rollup 覆盖：
+    - round 7 failure
+    - round 8 all_ok
+    - latest state 应是 recovered
+  - 新增 planner 使用 latest all_ok 覆盖 historical failure 的覆盖。
+
+- 更新 `scripts/tools/README.md`
+  - 记录 rollup latest state 与 planner latest-aware behavior。
+
+### 结果
+
+- Regenerated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Current rollup:
+  - `total_rounds = 7`
+  - `total_executed_runs = 26`
+  - `total_all_ok_runs = 19`
+  - `latest_non_all_ok_outbound_count = 6`
+- Latest non-all-ok outbounds:
+  - `HK-A-BGP-2.0`
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `UK-A-BGP-0.5`
+  - `US-A-BGP-0.5`
+  - `US-A-BGP-0.8`
+- `TW-A-BGP-1.0`:
+  - latest labels: `all_ok = 3`
+  - removed from latest recheck queue
+  - historical one-shot divergence remains in rollup
+
+### 当前判定
+
+- Recheck planning now reflects latest observed state while preserving historical evidence.
+- Next live work should repeat the six latest non-all-ok outbounds, not TW.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `25 tests`
+- `python3 -m json.tool agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- ASCII scan for `agents-only/mt_real_02_evidence/live_rollup.json` and `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- Latest-aware planner smoke:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --include-failure-rechecks --limit 20 --output-json /tmp/reality-vless-latest-non-all-ok-plan-r53.json` → PASS
+  - `prior_non_all_ok = 6`
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 52 final non-internal uncovered live evidence
 
 ### 目标

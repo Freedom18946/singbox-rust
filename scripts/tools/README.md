@@ -313,6 +313,10 @@ python3 scripts/tools/reality_vless_evidence_rollup.py \
   --output-md agents-only/mt_real_02_evidence/live_rollup.md
 ```
 
+The rollup keeps both historical aggregate counts and each outbound's latest
+round state. The planner uses latest labels when deciding `prior_non_all_ok`, so
+nodes that recovered in a later targeted repeat are not queued forever.
+
 To plan the next bounded live batch from the current config and rollup:
 
 ```bash
