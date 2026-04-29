@@ -1349,6 +1349,158 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-29 进展更新：Round 56 health-aware live recheck and batch hard timeout
+
+### 目标
+
+- 把 Round 55 的 `latest_health` rollup 直接接入 planner 选择逻辑。
+- 用 planner JSON 驱动一次真实 live recheck，而不是手工复制 outbounds。
+- 修掉 live batch 暴露出的工具可靠性问题：minimal phase probe 偶尔超过内部 timeout，可能卡住整个 batch。
+- 本轮不修改 REALITY ClientHello sampler、Vision raw/direct dataplane、REALITY concrete read-loop。
+
+### 工具实现
+
+- `scripts/tools/reality_vless_probe_plan.py`
+  - 新增 `--latest-health`，可重复传入。
+  - 支持直接选择：
+    - `latest_divergence`
+    - `latest_same_failure`
+    - `latest_all_ok`
+    - `latest_unknown`
+  - 输出每个 selected item 的 `latest_health`。
+  - 顶层输出：
+    - `latest_health_filter`
+    - `latest_health_counts`
+- `scripts/tools/reality_vless_probe_batch.py`
+  - 新增 matrix-level process-group hard timeout。
+  - 默认 hard timeout 由 app/phase/probe IO timeouts 推导，且不低于 `180s`。
+  - 超时时杀掉整个 matrix process group，返回 status `124`，batch result 标记 `matrix_timeout`。
+  - `plan.json` / `summary.json` / stdout 均记录 `matrix_timeout_secs`。
+- `scripts/tools/README.md`
+  - 记录 `--latest-health` planner 用法。
+  - 记录 `--matrix-timeout` 用法。
+- `scripts/tools/test_reality_probe_tools.py`
+  - 增加 latest-health planner 单测。
+  - 增加 matrix default timeout 单测。
+  - 增加 wedged shell script 触发 `MATRIX_TIMEOUT_STATUS` 的 subprocess 单测。
+
+### live 执行
+
+- Planner command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_divergence --latest-health latest_same_failure --output-json /tmp/reality-vless-latest-health-plan-r56.json`
+- Planner selected:
+  - `6`
+  - `HK-A-BGP-2.0` as `latest_divergence`
+  - `JP-A-BGP-0.3`, `JP-A-BGP-1.0`, `US-A-BGP-0.5`, `US-A-BGP-0.8`, `UK-A-BGP-0.5` as `latest_same_failure`
+- Batch command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-latest-health-plan-r56.json --target example.com:80 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r56-health-recheck`
+- Batch result:
+  - `selected_count = 6`
+  - `executed_runs = 12`
+  - `status_counts.completed = 12`
+
+### Round 56 evidence
+
+- Committed evidence:
+  - `agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json`
+- Summary:
+  - `total = 12`
+  - `executed_runs = 12`
+  - `all_ok = 2`
+  - `app_minimal_diverged = 1`
+  - `app_pre_post_diverged = 1`
+  - `bridge_io_diverged = 1`
+  - `probe_io_all_connection_reset = 4`
+  - `probe_io_all_reality_dial_eof = 2`
+  - `probe_io_all_timeout = 3`
+  - `reality_all_connection_reset = 4`
+  - `reality_all_reality_dial_eof = 2`
+  - `reality_all_timeout = 3`
+
+### Per-outbound observations
+
+- `HK-A-BGP-2.0`
+  - two completed runs.
+  - one run had app/minimal + bridge IO divergence:
+    - labels `app_minimal_diverged`, `app_pre_post_diverged`, `bridge_io_diverged`.
+  - paired run was uniform timeout.
+  - Judgment: still the only latest divergence bucket; timeout/connection-reset dominated, not a ClientHello sampler signal.
+- `JP-A-BGP-0.3`
+  - two runs same-class `reality_dial_eof`.
+- `JP-A-BGP-1.0`
+  - two runs same-class timeout.
+- `US-A-BGP-0.5`
+  - two runs same-class connection_reset.
+- `UK-A-BGP-0.5`
+  - two runs same-class connection_reset.
+- `US-A-BGP-0.8`
+  - two runs `all_ok`.
+  - This node moves from latest same-failure to recovered.
+
+### Rollup after Round 56
+
+- Updated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Summary:
+  - `total_rounds = 9`
+  - `total_executed_runs = 50`
+  - `total_all_ok_runs = 21`
+  - `total_non_all_ok_runs = 29`
+  - `latest_non_all_ok_outbound_count = 5`
+  - `latest_health_counts.latest_all_ok = 16`
+  - `latest_health_counts.latest_same_failure = 4`
+  - `latest_health_counts.latest_divergence = 1`
+- Latest divergence:
+  - `HK-A-BGP-2.0`
+- Latest same-failure:
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `UK-A-BGP-0.5`
+  - `US-A-BGP-0.5`
+- Recovered:
+  - `TW-A-BGP-1.0`
+  - `US-A-BGP-0.8`
+
+### Next plan smoke
+
+- Command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_divergence --latest-health latest_same_failure --output-json /tmp/reality-vless-latest-health-plan-after-r56.json`
+- Selected:
+  - `5`
+  - `HK-A-BGP-2.0`
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `US-A-BGP-0.5`
+  - `UK-A-BGP-0.5`
+- Batch dry-run from that plan:
+  - selected `5`
+  - `matrix_timeout_secs = 180`
+
+### 当前判定
+
+- Round 56 materially shrinks the latest non-all-ok live set from `6` to `5`.
+- `US-A-BGP-0.8` should no longer be treated as current failure evidence; it is now a recovered historical bucket.
+- `HK-A-BGP-2.0` is the only latest divergence bucket and should be isolated from the four same-class node/path failures in future analysis.
+- No sampler/dataplane patch is justified by Round 56. The evidence still says classify first, then only touch sampler/dataplane if a stable structural divergence appears.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `30 tests`
+- JSON validation:
+  - `agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `/tmp/reality-vless-latest-health-plan-r56.json` → PASS
+  - `/tmp/reality-vless-latest-health-plan-after-r56.json` → PASS
+  - `/tmp/reality-vless-plan-json-dry-after-r56/plan.json` → PASS
+  - `/tmp/reality-vless-plan-json-dry-after-r56/summary.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-26 进展更新：Round 55 plan-json batch consumption and latest health rollup
 
 ### 目标

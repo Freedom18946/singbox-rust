@@ -290,7 +290,9 @@ python3 scripts/tools/reality_vless_probe_batch.py \
 Batch output includes `plan.json`, optional `results.jsonl`, and `summary.json`
 with per-label, per-class, and per-outbound counts. With `--runs N`, each
 selected ready outbound gets repeated sample directories under
-`NNN-outbound/run-NNN`.
+`NNN-outbound/run-NNN`. The batch runner also applies a matrix-level hard
+timeout so a wedged app/minimal probe pair cannot stall the whole batch; override
+it with `--matrix-timeout SECONDS` when collecting intentionally slow samples.
 
 Planner JSON can be passed directly into the batch runner; `selected[].name`
 entries are merged with any explicit `--outbound` values while preserving order.
@@ -338,6 +340,17 @@ python3 scripts/tools/reality_vless_probe_plan.py \
   --rollup-json agents-only/mt_real_02_evidence/live_rollup.json \
   --limit 5 \
   --output-json /tmp/reality-vless-next-plan.json
+```
+
+To target the latest health buckets directly:
+
+```bash
+python3 scripts/tools/reality_vless_probe_plan.py \
+  --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --rollup-json agents-only/mt_real_02_evidence/live_rollup.json \
+  --latest-health latest_divergence \
+  --latest-health latest_same_failure \
+  --output-json /tmp/reality-vless-latest-health-plan.json
 ```
 
 Planner output excludes internal `__*` sentinel outbounds by default; pass

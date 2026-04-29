@@ -4,14 +4,18 @@
 import argparse
 import collections
 import json
+import math
+import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 from typing import Any
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent.parent
+MATRIX_TIMEOUT_STATUS = 124
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import reality_vless_env_from_config as envtool  # noqa: E402
@@ -148,6 +152,7 @@ def run_matrix(
     timeout: int,
     phase_timeout_ms: int,
     probe_io_timeout_ms: int,
+    matrix_timeout_secs: int,
 ) -> int:
     cmd = [
         "bash",
@@ -167,8 +172,29 @@ def run_matrix(
         "--output-dir",
         str(output_dir),
     ]
-    completed = subprocess.run(cmd, cwd=ROOT, check=False)
-    return completed.returncode
+    proc = subprocess.Popen(cmd, cwd=ROOT, start_new_session=True)
+    try:
+        return proc.wait(timeout=matrix_timeout_secs)
+    except subprocess.TimeoutExpired:
+        terminate_process_group(proc)
+        return MATRIX_TIMEOUT_STATUS
+
+
+def terminate_process_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    proc.wait()
 
 
 def write_json(path: pathlib.Path, payload: Any) -> None:
@@ -180,6 +206,12 @@ def sample_dir_for(output_dir: pathlib.Path, ordinal: int, name: str, runs: int,
     if runs == 1:
         return base
     return base / f"run-{run_index:03d}"
+
+
+def default_matrix_timeout_secs(timeout: int, phase_timeout_ms: int, probe_io_timeout_ms: int) -> int:
+    phase_secs = max(1, math.ceil(phase_timeout_ms / 1000))
+    probe_secs = max(1, math.ceil(probe_io_timeout_ms / 1000))
+    return max(180, timeout * 8 + phase_secs * 6 + probe_secs * 3)
 
 
 def positive_int(value: str) -> int:
@@ -217,6 +249,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=10)
     parser.add_argument("--phase-timeout-ms", type=int, default=10_000)
     parser.add_argument("--probe-io-timeout-ms", type=int, default=10_000)
+    parser.add_argument("--matrix-timeout", type=positive_int)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--matrix-script",
@@ -230,6 +263,11 @@ def main() -> None:
         or pathlib.Path("/tmp") / f"reality-vless-probe-batch.{safe_slug(config.stem)}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    matrix_timeout_secs = args.matrix_timeout or default_matrix_timeout_secs(
+        args.timeout,
+        args.phase_timeout_ms,
+        args.probe_io_timeout_ms,
+    )
 
     items = envtool.list_reality_vless_outbounds(envtool.load_config(config))
     plan_names = []
@@ -249,6 +287,7 @@ def main() -> None:
         "target": args.target,
         "dry_run": args.dry_run,
         "runs": args.runs,
+        "matrix_timeout_secs": matrix_timeout_secs,
         "plan_json": args.plan_json,
         "selected_count": len(selected),
         "selected": selected,
@@ -290,13 +329,20 @@ def main() -> None:
                     args.timeout,
                     args.phase_timeout_ms,
                     args.probe_io_timeout_ms,
+                    matrix_timeout_secs,
                 )
                 compare = load_compare(sample_dir / "compare.json")
                 result = {
                     "ordinal": ordinal,
                     "name": name,
                     "run_index": run_index,
-                    "status": "completed" if status == 0 else "matrix_error",
+                    "status": (
+                        "completed"
+                        if status == 0
+                        else "matrix_timeout"
+                        if status == MATRIX_TIMEOUT_STATUS
+                        else "matrix_error"
+                    ),
                     "matrix_status": status,
                     "sample_dir": str(sample_dir),
                     "compare": compare,
@@ -311,6 +357,7 @@ def main() -> None:
             "target": args.target,
             "dry_run": args.dry_run,
             "runs": args.runs,
+            "matrix_timeout_secs": matrix_timeout_secs,
             "plan_json": args.plan_json,
             "selected_count": len(selected),
         },
@@ -326,6 +373,7 @@ def main() -> None:
             "results_jsonl": None if args.dry_run else str(output_dir / "results.jsonl"),
             "selected_count": len(selected),
             "runs": args.runs,
+            "matrix_timeout_secs": matrix_timeout_secs,
         },
         sys.stdout,
         indent=2,

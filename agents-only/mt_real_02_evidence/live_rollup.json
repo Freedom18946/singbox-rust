@@ -1,18 +1,17 @@
 {
-  "total_rounds": 8,
-  "total_executed_runs": 38,
-  "total_all_ok_runs": 19,
-  "total_non_all_ok_runs": 19,
+  "total_rounds": 9,
+  "total_executed_runs": 50,
+  "total_all_ok_runs": 21,
+  "total_non_all_ok_runs": 29,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
     "HK-A-BGP-2.0",
     "JP-A-BGP-0.3",
     "JP-A-BGP-1.0",
     "UK-A-BGP-0.5",
-    "US-A-BGP-0.5",
-    "US-A-BGP-0.8"
+    "US-A-BGP-0.5"
   ],
-  "latest_non_all_ok_outbound_count": 6,
+  "latest_non_all_ok_outbound_count": 5,
   "latest_divergence_outbounds": [
     "HK-A-BGP-2.0"
   ],
@@ -21,41 +20,42 @@
     "JP-A-BGP-0.3",
     "JP-A-BGP-1.0",
     "UK-A-BGP-0.5",
-    "US-A-BGP-0.5",
+    "US-A-BGP-0.5"
+  ],
+  "latest_same_failure_outbound_count": 4,
+  "recovered_outbounds": [
+    "TW-A-BGP-1.0",
     "US-A-BGP-0.8"
   ],
-  "latest_same_failure_outbound_count": 5,
-  "recovered_outbounds": [
-    "TW-A-BGP-1.0"
-  ],
-  "recovered_outbound_count": 1,
+  "recovered_outbound_count": 2,
   "latest_health_counts": {
-    "latest_all_ok": 15,
+    "latest_all_ok": 16,
     "latest_divergence": 1,
-    "latest_same_failure": 5
+    "latest_same_failure": 4
   },
   "status_counts": {
-    "completed": 38
+    "completed": 50
   },
   "label_counts": {
-    "all_ok": 19,
-    "app_minimal_diverged": 1,
-    "app_pre_post_diverged": 1,
+    "all_ok": 21,
+    "app_minimal_diverged": 2,
+    "app_pre_post_diverged": 2,
+    "bridge_io_diverged": 1,
     "minimal_transport_diverged": 1,
-    "probe_io_all_connection_reset": 5,
+    "probe_io_all_connection_reset": 9,
     "probe_io_all_post_dial_eof": 3,
-    "probe_io_all_reality_dial_eof": 2,
-    "probe_io_all_timeout": 4,
-    "reality_all_connection_reset": 6,
-    "reality_all_reality_dial_eof": 3,
-    "reality_all_timeout": 5
+    "probe_io_all_reality_dial_eof": 4,
+    "probe_io_all_timeout": 7,
+    "reality_all_connection_reset": 10,
+    "reality_all_reality_dial_eof": 5,
+    "reality_all_timeout": 8
   },
   "class_counts": {
-    "connection_reset": 54,
-    "ok": 201,
+    "connection_reset": 92,
+    "ok": 219,
     "post_dial_eof": 6,
-    "reality_dial_eof": 28,
-    "timeout": 53
+    "reality_dial_eof": 46,
+    "timeout": 87
   },
   "rounds": [
     {
@@ -256,6 +256,42 @@
         "reality_dial_eof": 18,
         "timeout": 35
       }
+    },
+    {
+      "round": "56",
+      "date": "2026-04-29",
+      "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+      "description": "plan-json latest health live recheck",
+      "total": 12,
+      "executed_runs": 12,
+      "all_ok_runs": 2,
+      "has_divergence": true,
+      "uniform_failure_labels": {
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2,
+        "reality_all_timeout": 3
+      },
+      "status_counts": {
+        "completed": 12
+      },
+      "label_counts": {
+        "all_ok": 2,
+        "app_minimal_diverged": 1,
+        "app_pre_post_diverged": 1,
+        "bridge_io_diverged": 1,
+        "probe_io_all_connection_reset": 4,
+        "probe_io_all_reality_dial_eof": 2,
+        "probe_io_all_timeout": 3,
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2,
+        "reality_all_timeout": 3
+      },
+      "class_counts": {
+        "connection_reset": 38,
+        "ok": 18,
+        "reality_dial_eof": 18,
+        "timeout": 34
+      }
     }
   ],
   "by_outbound": {
@@ -388,19 +424,23 @@
     "HK-A-BGP-2.0": {
       "rounds": [
         "47",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
-        "app_pre_post_diverged": 1,
-        "probe_io_all_timeout": 2,
-        "reality_all_timeout": 2
+        "app_minimal_diverged": 1,
+        "app_pre_post_diverged": 2,
+        "bridge_io_diverged": 1,
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
       },
       "class_counts": {
+        "connection_reset": 2,
         "ok": 1,
-        "timeout": 26
+        "timeout": 42
       },
       "history": [
         {
@@ -431,20 +471,40 @@
             "ok": 1,
             "timeout": 17
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "app_minimal_diverged": 1,
+            "app_pre_post_diverged": 1,
+            "bridge_io_diverged": 1,
+            "probe_io_all_timeout": 1,
+            "reality_all_timeout": 1
+          },
+          "class_counts": {
+            "connection_reset": 2,
+            "timeout": 16
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
       "latest_label_counts": {
+        "app_minimal_diverged": 1,
         "app_pre_post_diverged": 1,
-        "probe_io_all_timeout": 2,
+        "bridge_io_diverged": 1,
+        "probe_io_all_timeout": 1,
         "reality_all_timeout": 1
       },
       "latest_class_counts": {
-        "ok": 1,
-        "timeout": 17
+        "connection_reset": 2,
+        "timeout": 16
       },
       "latest_has_non_all_ok": true,
       "latest_health": "latest_divergence",
@@ -537,17 +597,18 @@
     "JP-A-BGP-0.3": {
       "rounds": [
         "47",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
-        "probe_io_all_reality_dial_eof": 2,
-        "reality_all_reality_dial_eof": 3
+        "probe_io_all_reality_dial_eof": 4,
+        "reality_all_reality_dial_eof": 5
       },
       "class_counts": {
-        "reality_dial_eof": 27
+        "reality_dial_eof": 45
       },
       "history": [
         {
@@ -576,9 +637,23 @@
           "class_counts": {
             "reality_dial_eof": 18
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_reality_dial_eof": 2,
+            "reality_all_reality_dial_eof": 2
+          },
+          "class_counts": {
+            "reality_dial_eof": 18
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
@@ -596,17 +671,18 @@
     "JP-A-BGP-1.0": {
       "rounds": [
         "42",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
-        "probe_io_all_timeout": 2,
-        "reality_all_timeout": 3
+        "probe_io_all_timeout": 4,
+        "reality_all_timeout": 5
       },
       "class_counts": {
-        "timeout": 27
+        "timeout": 45
       },
       "history": [
         {
@@ -635,9 +711,23 @@
           "class_counts": {
             "timeout": 18
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_timeout": 2,
+            "reality_all_timeout": 2
+          },
+          "class_counts": {
+            "timeout": 18
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
@@ -968,17 +1058,18 @@
     "UK-A-BGP-0.5": {
       "rounds": [
         "44",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
-        "probe_io_all_connection_reset": 2,
-        "reality_all_connection_reset": 3
+        "probe_io_all_connection_reset": 4,
+        "reality_all_connection_reset": 5
       },
       "class_counts": {
-        "connection_reset": 27
+        "connection_reset": 45
       },
       "history": [
         {
@@ -1007,9 +1098,23 @@
           "class_counts": {
             "connection_reset": 18
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 2,
+            "reality_all_connection_reset": 2
+          },
+          "class_counts": {
+            "connection_reset": 18
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
@@ -1111,17 +1216,18 @@
     "US-A-BGP-0.5": {
       "rounds": [
         "50",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
-        "probe_io_all_connection_reset": 3,
-        "reality_all_connection_reset": 3
+        "probe_io_all_connection_reset": 5,
+        "reality_all_connection_reset": 5
       },
       "class_counts": {
-        "connection_reset": 27
+        "connection_reset": 45
       },
       "history": [
         {
@@ -1151,9 +1257,23 @@
           "class_counts": {
             "connection_reset": 18
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 2,
+            "reality_all_connection_reset": 2
+          },
+          "class_counts": {
+            "connection_reset": 18
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
@@ -1171,16 +1291,18 @@
     "US-A-BGP-0.8": {
       "rounds": [
         "50",
-        "54"
+        "54",
+        "56"
       ],
       "status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "label_counts": {
+        "all_ok": 2,
         "probe_io_all_post_dial_eof": 3
       },
       "class_counts": {
-        "ok": 21,
+        "ok": 39,
         "post_dial_eof": 6
       },
       "history": [
@@ -1211,21 +1333,33 @@
             "ok": 14,
             "post_dial_eof": 4
           }
+        },
+        {
+          "round": "56",
+          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "all_ok": 2
+          },
+          "class_counts": {
+            "ok": 18
+          }
         }
       ],
-      "latest_round": "54",
+      "latest_round": "56",
       "latest_status_counts": {
         "completed": 2
       },
       "latest_label_counts": {
-        "probe_io_all_post_dial_eof": 2
+        "all_ok": 2
       },
       "latest_class_counts": {
-        "ok": 14,
-        "post_dial_eof": 4
+        "ok": 18
       },
-      "latest_has_non_all_ok": true,
-      "latest_health": "latest_same_failure",
+      "latest_has_non_all_ok": false,
+      "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": true
     },
     "US-A-BGP-1.5": {

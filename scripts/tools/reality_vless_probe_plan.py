@@ -2,6 +2,7 @@
 """Plan the next VLESS REALITY live probe batch from config + evidence rollup."""
 
 import argparse
+import collections
 import json
 import pathlib
 import sys
@@ -12,6 +13,13 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import reality_vless_env_from_config as envtool  # noqa: E402
 import reality_vless_probe_batch as batch  # noqa: E402
+
+LATEST_HEALTH_VALUES = {
+    "latest_all_ok",
+    "latest_same_failure",
+    "latest_divergence",
+    "latest_unknown",
+}
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -53,6 +61,13 @@ def classify_item(key: str, prior: dict[str, Any] | None) -> str:
     return "covered_all_ok"
 
 
+def latest_health(prior: dict[str, Any] | None) -> str | None:
+    if prior is None:
+        return None
+    value = prior.get("latest_health")
+    return value if isinstance(value, str) else None
+
+
 def build_plan(
     config: dict[str, Any],
     rollup: dict[str, Any],
@@ -60,13 +75,17 @@ def build_plan(
     include_failure_rechecks: bool,
     include_covered: bool,
     include_internal: bool,
+    latest_health_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
+    health_filter = set(latest_health_filter or [])
     buckets: dict[str, list[dict[str, Any]]] = {
         "uncovered": [],
         "prior_non_all_ok": [],
         "covered_all_ok": [],
     }
+    health_counts: collections.Counter[str] = collections.Counter()
+    candidates = []
     for item in envtool.list_reality_vless_outbounds(config):
         if not item.get("ready"):
             continue
@@ -78,31 +97,40 @@ def build_plan(
         key = batch.safe_slug(name)
         prior = covered.get(key)
         reason = classify_item(key, prior)
-        buckets[reason].append(
-            {
-                "name": name,
-                "key": key,
-                "server": item.get("server"),
-                "port": item.get("port"),
-                "server_name": item.get("server_name"),
-                "fingerprint": item.get("fingerprint"),
-                "flow": item.get("flow"),
-                "reason": reason,
-                "prior": prior,
-            }
-        )
+        health = latest_health(prior)
+        if health:
+            health_counts[health] += 1
+        planned = {
+            "name": name,
+            "key": key,
+            "server": item.get("server"),
+            "port": item.get("port"),
+            "server_name": item.get("server_name"),
+            "fingerprint": item.get("fingerprint"),
+            "flow": item.get("flow"),
+            "reason": reason,
+            "latest_health": health,
+            "prior": prior,
+        }
+        buckets[reason].append(planned)
+        candidates.append(planned)
 
-    selected = list(buckets["uncovered"])
-    if include_failure_rechecks:
-        selected.extend(buckets["prior_non_all_ok"])
-    if include_covered:
-        selected.extend(buckets["covered_all_ok"])
+    if health_filter:
+        selected = [item for item in candidates if item.get("latest_health") in health_filter]
+    else:
+        selected = list(buckets["uncovered"])
+        if include_failure_rechecks:
+            selected.extend(buckets["prior_non_all_ok"])
+        if include_covered:
+            selected.extend(buckets["covered_all_ok"])
     if limit is not None:
         selected = selected[:limit]
     return {
         "rollup_rounds": rollup.get("total_rounds"),
         "rollup_executed_runs": rollup.get("total_executed_runs"),
         "counts": {key: len(value) for key, value in buckets.items()},
+        "latest_health_filter": sorted(health_filter),
+        "latest_health_counts": dict(sorted(health_counts.items())),
         "selected_count": len(selected),
         "selected": selected,
     }
@@ -121,6 +149,13 @@ def main() -> None:
     parser.add_argument("--include-failure-rechecks", action="store_true")
     parser.add_argument("--include-covered", action="store_true")
     parser.add_argument("--include-internal", action="store_true")
+    parser.add_argument(
+        "--latest-health",
+        action="append",
+        choices=sorted(LATEST_HEALTH_VALUES),
+        default=[],
+        help="Select ready outbounds whose latest rollup health matches this value.",
+    )
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -133,6 +168,7 @@ def main() -> None:
         args.include_failure_rechecks,
         args.include_covered,
         args.include_internal,
+        args.latest_health,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)
@@ -143,7 +179,12 @@ def main() -> None:
             "selected_count": plan["selected_count"],
             "counts": plan["counts"],
             "selected": [
-                {"name": item["name"], "key": item["key"], "reason": item["reason"]}
+                {
+                    "name": item["name"],
+                    "key": item["key"],
+                    "reason": item["reason"],
+                    "latest_health": item["latest_health"],
+                }
                 for item in plan["selected"]
             ],
         },

@@ -6,9 +6,9 @@
 ## 战略状态
 **当前阶段**: 最高目标实验态 — 用户显式要求继续追求“可直接替换 Go sing-box 的 Rust 二进制”；`MT-REAL-02` 已重开
 **Parity**: 52/56 BHV (92.9%)；`ARCH-LIMIT-REALITY` 仍保留为当前 parity 账面口径，直到出现 live 成功样本
-**当前焦点**: MT-REAL-02 live evidence 工具链与 app/minimal same-class 分桶；ClientHello sampler 暂不改动
+**当前焦点**: MT-REAL-02 health-aware live evidence loop；ClientHello sampler 暂不改动
 
-## 最新闭环（2026-04-26）
+## 最新闭环（2026-04-29）
 
 ### MT-REAL-02: baseline-driven REALITY ClientHello rounds 1-10
 
@@ -139,6 +139,60 @@
     - `cargo check --workspace` → PASS
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 56（health-aware live recheck + batch hard timeout）
+
+- 本轮继续 live evidence loop，不修改 REALITY ClientHello sampler、Vision raw/direct、REALITY read-loop。
+- 工具推进：
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 新增 `--latest-health`，可直接选择 `latest_divergence` / `latest_same_failure` / `latest_all_ok` / `latest_unknown`。
+    - plan item 输出 `latest_health`；顶层输出 `latest_health_filter` / `latest_health_counts`。
+  - `scripts/tools/reality_vless_probe_batch.py`
+    - 新增 process-group hard timeout，默认 `matrix_timeout_secs >= 180`。
+    - 超时返回 `matrix_timeout` / status `124`，避免坏节点卡死整批。
+  - tests 增至 `30` 个，覆盖 latest-health planner 和 wedged matrix timeout。
+- live run：
+  - health plan selected `6`：`HK-A-BGP-2.0` (`latest_divergence`) + `JP-A-BGP-0.3`, `JP-A-BGP-1.0`, `US-A-BGP-0.5`, `US-A-BGP-0.8`, `UK-A-BGP-0.5` (`latest_same_failure`)。
+  - `reality_vless_probe_batch.py --plan-json /tmp/reality-vless-latest-health-plan-r56.json --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000`
+  - executed runs: `12`
+  - labels:
+    - `all_ok=2`
+    - `app_minimal_diverged=1`
+    - `app_pre_post_diverged=1`
+    - `bridge_io_diverged=1`
+    - `probe_io_all_connection_reset=4`
+    - `probe_io_all_reality_dial_eof=2`
+    - `probe_io_all_timeout=3`
+    - `reality_all_connection_reset=4`
+    - `reality_all_reality_dial_eof=2`
+    - `reality_all_timeout=3`
+- by outbound：
+  - `HK-A-BGP-2.0`: still divergence bucket; one run had app/minimal + bridge IO divergence, paired run uniform timeout.
+  - `JP-A-BGP-0.3`: two same-class `reality_dial_eof`.
+  - `JP-A-BGP-1.0`: two same-class timeout.
+  - `US-A-BGP-0.5`: two same-class connection_reset.
+  - `UK-A-BGP-0.5`: two same-class connection_reset.
+  - `US-A-BGP-0.8`: two `all_ok` samples; now recovered.
+- evidence：
+  - `agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.{json,md}`
+- Updated rollup：
+  - rounds: `9`
+  - executed runs: `50`
+  - all_ok runs: `21`
+  - latest non-all-ok outbounds: `5`
+  - latest health: `latest_all_ok=16`, `latest_same_failure=4`, `latest_divergence=1`
+  - latest divergence: `HK-A-BGP-2.0`
+  - latest same-failure: `JP-A-BGP-0.3`, `JP-A-BGP-1.0`, `UK-A-BGP-0.5`, `US-A-BGP-0.5`
+  - recovered: `TW-A-BGP-1.0`, `US-A-BGP-0.8`
+- next plan smoke after Round 56:
+  - `--latest-health latest_divergence --latest-health latest_same_failure` selected `5`
+  - `reality_vless_probe_batch.py --plan-json ... --dry-run` selected `5`, `matrix_timeout_secs=180`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`30 tests`)
+  - JSON validation for Round 56 evidence, live rollup, plans, dry-run outputs → PASS
+  - ASCII scan for Round 56 evidence and live rollup → PASS
+  - `cargo check --workspace` → PASS
 
 ## Round 55（plan-json batch consumption + latest health rollup）
 

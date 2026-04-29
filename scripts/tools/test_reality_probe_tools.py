@@ -285,6 +285,29 @@ class RealityProbeBatchTests(unittest.TestCase):
             pathlib.Path("/tmp/reality-batch/001-node_a/run-002"),
         )
 
+    def test_default_matrix_timeout_has_hard_floor_and_scales(self):
+        self.assertEqual(batch.default_matrix_timeout_secs(1, 1000, 1000), 180)
+        self.assertEqual(batch.default_matrix_timeout_secs(30, 30_000, 30_000), 510)
+
+    def test_run_matrix_returns_timeout_status_for_wedged_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            script = tmp_path / "wedged-matrix.sh"
+            script.write_text("#!/usr/bin/env bash\nsleep 10\n", encoding="utf-8")
+            script.chmod(0o755)
+            status = batch.run_matrix(
+                script,
+                tmp_path / "config.json",
+                "node-a",
+                "example.com:80",
+                tmp_path / "out",
+                1,
+                1000,
+                1000,
+                1,
+            )
+        self.assertEqual(status, batch.MATRIX_TIMEOUT_STATUS)
+
     def test_integer_arg_parsers_reject_invalid_values(self):
         self.assertEqual(batch.non_negative_int("0"), 0)
         self.assertEqual(batch.positive_int("1"), 1)
@@ -595,11 +618,13 @@ class RealityProbePlanTests(unittest.TestCase):
                     "latest_label_counts": {"all_ok": 2},
                     "label_counts": {"all_ok": 2},
                     "class_counts": {"ok": 18},
+                    "latest_health": "latest_all_ok",
                 },
                 "JP-A-BGP-1.0": {
                     "latest_label_counts": {"reality_all_timeout": 1},
                     "label_counts": {"reality_all_timeout": 1},
                     "class_counts": {"timeout": 9},
+                    "latest_health": "latest_same_failure",
                 },
             },
         }
@@ -615,6 +640,22 @@ class RealityProbePlanTests(unittest.TestCase):
         built = plan.build_plan(self.sample_config(), self.sample_rollup(), 2, True, True, False)
         self.assertEqual([item["key"] for item in built["selected"]], ["NEW-A-BGP-1.0", "JP-A-BGP-1.0"])
         self.assertEqual(built["selected"][1]["reason"], "prior_non_all_ok")
+        self.assertEqual(built["selected"][1]["latest_health"], "latest_same_failure")
+
+    def test_build_plan_can_filter_by_latest_health(self):
+        built = plan.build_plan(
+            self.sample_config(),
+            self.sample_rollup(),
+            None,
+            False,
+            False,
+            False,
+            ["latest_same_failure"],
+        )
+        self.assertEqual(built["latest_health_filter"], ["latest_same_failure"])
+        self.assertEqual(built["latest_health_counts"]["latest_all_ok"], 1)
+        self.assertEqual(built["latest_health_counts"]["latest_same_failure"], 1)
+        self.assertEqual([item["key"] for item in built["selected"]], ["JP-A-BGP-1.0"])
 
     def test_build_plan_can_include_internal_sentinels_explicitly(self):
         built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, True)
