@@ -140,6 +140,62 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
 
+## Round 57（per-run health rollup + HK targeted repeat）
+
+- 本轮继续 live evidence loop，不修改 REALITY ClientHello sampler、Vision raw/direct、REALITY read-loop。
+- 工具推进：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 从 evidence `runs[]` 提取 per-run health：
+      - `run_all_ok`
+      - `run_same_failure`
+      - `run_divergence`
+      - `run_unknown`
+    - 每个 outbound 增加 `latest_run_health_counts` / `run_health_counts`。
+    - 顶层增加：
+      - `latest_run_health_counts`
+      - `latest_stable_divergence_outbounds`
+      - `latest_mixed_run_health_outbounds`
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 新增 `--latest-run-health`，可与 `--latest-health` 组合。
+  - tests 增至 `34` 个，覆盖 mixed run-health、stable divergence、latest-run-health planner filter。
+- Round 57 live run：
+  - plan: `--latest-health latest_divergence --latest-run-health run_divergence`
+  - selected: `HK-A-BGP-2.0` only
+  - batch: `--runs 4 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000`
+  - executed runs: `4`
+  - labels:
+    - `app_minimal_diverged=2`
+    - `app_pre_post_diverged=1`
+    - `minimal_transport_diverged=2`
+    - `probe_io_all_timeout=4`
+    - `reality_all_timeout=1`
+- Round 57 HK run-health:
+  - `run_divergence=3`
+  - `run_same_failure=1`
+  - divergence phase is not stable:
+    - run 1: app pre/post direct REALITY and app/minimal direct REALITY split
+    - run 2: minimal direct vs transport split
+    - run 3: uniform timeout
+    - run 4: minimal direct vs transport split with different class
+  - app bridge vs minimal probe IO stayed same timeout in all 4 runs.
+- evidence：
+  - `agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.{json,md}`
+- Updated rollup:
+  - rounds: `10`
+  - executed runs: `54`
+  - all_ok runs: `21`
+  - latest non-all-ok outbounds: `5`
+  - latest health: `latest_all_ok=16`, `latest_same_failure=4`, `latest_divergence=1`
+  - latest run health: `run_all_ok=15`, `run_same_failure=9`, `run_divergence=3`
+  - latest stable divergence outbounds: `0`
+  - latest mixed run-health outbounds: `HK-A-BGP-2.0`
+- gate：
+  - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`34 tests`)
+  - JSON validation for Round 57 evidence, live rollup, and post-R57 plans → PASS
+  - ASCII scan for Round 57 evidence and live rollup → PASS
+  - `cargo check --workspace` → PASS
+
 ## Round 56（health-aware live recheck + batch hard timeout）
 
 - 本轮继续 live evidence loop，不修改 REALITY ClientHello sampler、Vision raw/direct、REALITY read-loop。

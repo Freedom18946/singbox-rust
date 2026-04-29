@@ -1,0 +1,128 @@
+{
+  "round": "57",
+  "date": "2026-04-29",
+  "description": "HK latest mixed divergence targeted repeat",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r57-hk-repeat/summary.json",
+  "command": "python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-hk-divergence-plan-r57.json --target example.com:80 --runs 4 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r57-hk-repeat",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 4,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 4,
+    "executed_runs": 4,
+    "status_counts": {
+      "completed": 4
+    },
+    "label_counts": {
+      "app_minimal_diverged": 2,
+      "app_pre_post_diverged": 1,
+      "minimal_transport_diverged": 2,
+      "probe_io_all_timeout": 4,
+      "reality_all_timeout": 1
+    },
+    "class_counts": {
+      "connection_reset": 2,
+      "reality_dial_eof": 1,
+      "timeout": 33
+    }
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_minimal_diverged": 2,
+      "app_pre_post_diverged": 1,
+      "minimal_transport_diverged": 2
+    },
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "reality_all_timeout": 1
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-2.0": {
+      "status_counts": {
+        "completed": 4
+      },
+      "label_counts": {
+        "app_minimal_diverged": 2,
+        "app_pre_post_diverged": 1,
+        "minimal_transport_diverged": 2,
+        "probe_io_all_timeout": 4,
+        "reality_all_timeout": 1
+      },
+      "class_counts": {
+        "connection_reset": 2,
+        "reality_dial_eof": 1,
+        "timeout": 33
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "app_pre_post_diverged",
+        "probe_io_all_timeout"
+      ],
+      "class_counts": {
+        "connection_reset": 1,
+        "timeout": 8
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "minimal_transport_diverged",
+        "probe_io_all_timeout"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 1,
+        "timeout": 8
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "minimal_transport_diverged",
+        "probe_io_all_timeout"
+      ],
+      "class_counts": {
+        "connection_reset": 1,
+        "timeout": 8
+      }
+    }
+  ],
+  "interpretation": [
+    "run-health planner selected HK-A-BGP-2.0 as the only latest divergence with a run_divergence sample",
+    "targeted repeat produced three divergent diagnostic runs and one same-failure timeout run",
+    "divergent runs disagree on the phase that splits, while bridge/probe IO remains timeout in all four samples",
+    "HK-A-BGP-2.0 remains a mixed unstable node/path bucket, not a sampler-change signal"
+  ]
+}

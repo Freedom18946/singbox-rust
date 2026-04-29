@@ -417,9 +417,9 @@ class RealityProbeEvidenceTests(unittest.TestCase):
 
 
 class RealityEvidenceRollupTests(unittest.TestCase):
-    def sample_evidence(self, round_name, labels, classes, by_outbound):
+    def sample_evidence(self, round_name, labels, classes, by_outbound, runs=None):
         total = sum(labels.values())
-        return {
+        payload = {
             "round": round_name,
             "date": "2026-04-26",
             "description": f"round {round_name}",
@@ -432,6 +432,9 @@ class RealityEvidenceRollupTests(unittest.TestCase):
             },
             "by_outbound": by_outbound,
         }
+        if runs is not None:
+            payload["runs"] = runs
+        return payload
 
     def test_build_rollup_counts_rounds_labels_classes_and_outbounds(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -546,6 +549,96 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(built["latest_divergence_outbound_count"], 1)
         self.assertEqual(built["by_outbound"]["HK-A"]["latest_health"], "latest_divergence")
 
+    def test_build_rollup_tracks_latest_run_health_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round10.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "10",
+                        {"app_pre_post_diverged": 1, "reality_all_timeout": 1},
+                        {"ok": 1, "timeout": 17},
+                        {
+                            "HK-A": {
+                                "label_counts": {
+                                    "app_pre_post_diverged": 1,
+                                    "reality_all_timeout": 1,
+                                },
+                                "class_counts": {"ok": 1, "timeout": 17},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["app_pre_post_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        outbound = built["by_outbound"]["HK-A"]
+        self.assertEqual(
+            outbound["latest_run_health_counts"],
+            {"run_divergence": 1, "run_same_failure": 1},
+        )
+        self.assertEqual(outbound["history"][0]["runs"][0]["run_health"], "run_divergence")
+        self.assertEqual(built["latest_run_health_counts"]["run_divergence"], 1)
+        self.assertEqual(built["latest_run_health_counts"]["run_same_failure"], 1)
+        self.assertEqual(built["latest_mixed_run_health_outbounds"], ["HK-A"])
+        self.assertEqual(built["latest_stable_divergence_outbound_count"], 0)
+
+    def test_build_rollup_tracks_stable_latest_divergence_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round11.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "11",
+                        {"bridge_io_diverged": 2},
+                        {"ok": 4, "timeout": 14},
+                        {
+                            "HK-A": {
+                                "label_counts": {"bridge_io_diverged": 2},
+                                "class_counts": {"ok": 4, "timeout": 14},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["bridge_io_diverged"],
+                                "class_counts": {"ok": 2, "timeout": 7},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["bridge_io_diverged"],
+                                "class_counts": {"ok": 2, "timeout": 7},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        self.assertEqual(built["latest_stable_divergence_outbounds"], ["HK-A"])
+        self.assertEqual(built["latest_stable_divergence_outbound_count"], 1)
+        self.assertEqual(built["latest_mixed_run_health_outbound_count"], 0)
+
     def test_markdown_table_contains_round_rows(self):
         built = {
             "total_rounds": 1,
@@ -555,6 +648,7 @@ class RealityEvidenceRollupTests(unittest.TestCase):
             "has_any_divergence": False,
             "label_counts": {"all_ok": 1},
             "class_counts": {"ok": 9},
+            "latest_run_health_counts": {"run_all_ok": 1},
             "rounds": [
                 {
                     "round": "1",
@@ -619,12 +713,14 @@ class RealityProbePlanTests(unittest.TestCase):
                     "label_counts": {"all_ok": 2},
                     "class_counts": {"ok": 18},
                     "latest_health": "latest_all_ok",
+                    "latest_run_health_counts": {"run_all_ok": 2},
                 },
                 "JP-A-BGP-1.0": {
                     "latest_label_counts": {"reality_all_timeout": 1},
                     "label_counts": {"reality_all_timeout": 1},
                     "class_counts": {"timeout": 9},
                     "latest_health": "latest_same_failure",
+                    "latest_run_health_counts": {"run_same_failure": 1},
                 },
             },
         }
@@ -656,6 +752,37 @@ class RealityProbePlanTests(unittest.TestCase):
         self.assertEqual(built["latest_health_counts"]["latest_all_ok"], 1)
         self.assertEqual(built["latest_health_counts"]["latest_same_failure"], 1)
         self.assertEqual([item["key"] for item in built["selected"]], ["JP-A-BGP-1.0"])
+
+    def test_build_plan_can_filter_by_latest_run_health(self):
+        built = plan.build_plan(
+            self.sample_config(),
+            self.sample_rollup(),
+            None,
+            False,
+            False,
+            False,
+            None,
+            ["run_same_failure"],
+        )
+        self.assertEqual(built["latest_run_health_filter"], ["run_same_failure"])
+        self.assertEqual([item["key"] for item in built["selected"]], ["JP-A-BGP-1.0"])
+        self.assertEqual(
+            built["selected"][0]["latest_run_health_counts"],
+            {"run_same_failure": 1},
+        )
+
+    def test_build_plan_combines_latest_and_run_health_filters(self):
+        built = plan.build_plan(
+            self.sample_config(),
+            self.sample_rollup(),
+            None,
+            False,
+            False,
+            False,
+            ["latest_same_failure"],
+            ["run_all_ok"],
+        )
+        self.assertEqual(built["selected"], [])
 
     def test_build_plan_can_include_internal_sentinels_explicitly(self):
         built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, True)

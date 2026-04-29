@@ -19,6 +19,12 @@ DIVERGENCE_LABELS = {
     "bridge_io_diverged",
     "minimal_transport_diverged",
 }
+RUN_HEALTH_VALUES = [
+    "run_all_ok",
+    "run_same_failure",
+    "run_divergence",
+    "run_unknown",
+]
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -63,6 +69,44 @@ def latest_health(labels: dict[str, int]) -> str:
     return "latest_same_failure"
 
 
+def run_health(labels: list[str]) -> str:
+    counts = {label: 1 for label in labels}
+    if not labels:
+        return "run_unknown"
+    if not has_non_all_ok_labels(counts):
+        return "run_all_ok"
+    if has_divergence_labels(counts):
+        return "run_divergence"
+    return "run_same_failure"
+
+
+def compact_runs_by_outbound(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    source = payload.get("runs")
+    if not isinstance(source, list):
+        return {}
+    output: dict[str, list[dict[str, Any]]] = {}
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        outbound = item.get("outbound")
+        if not isinstance(outbound, str):
+            continue
+        labels = item.get("labels")
+        if not isinstance(labels, list):
+            labels = []
+        label_list = [label for label in labels if isinstance(label, str)]
+        run = {
+            "ordinal": item.get("ordinal"),
+            "run_index": item.get("run_index"),
+            "status": item.get("status"),
+            "labels": label_list,
+            "run_health": run_health(label_list),
+            "class_counts": evidence_tool.counter_value(item, "class_counts"),
+        }
+        output.setdefault(outbound, []).append(run)
+    return output
+
+
 def round_summary(path: pathlib.Path, payload: dict[str, Any]) -> dict[str, Any]:
     summary = payload.get("summary")
     if not isinstance(summary, dict):
@@ -94,6 +138,7 @@ def outbound_summaries(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if not isinstance(source, dict):
         return {}
     output = {}
+    runs_by_outbound = compact_runs_by_outbound(payload)
     for name, value in source.items():
         if not isinstance(name, str) or not isinstance(value, dict):
             continue
@@ -101,6 +146,7 @@ def outbound_summaries(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "status_counts": evidence_tool.counter_value(value, "status_counts"),
             "label_counts": evidence_tool.counter_value(value, "label_counts"),
             "class_counts": evidence_tool.counter_value(value, "class_counts"),
+            "runs": runs_by_outbound.get(name, []),
         }
     return output
 
@@ -128,12 +174,19 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                     "status_counts": collections.Counter(),
                     "label_counts": collections.Counter(),
                     "class_counts": collections.Counter(),
+                    "run_health_counts": collections.Counter(),
                 },
             )
             entry["rounds"].append(item["round"])
             merge_counts(entry["status_counts"], summary.get("status_counts"))
             merge_counts(entry["label_counts"], summary.get("label_counts"))
             merge_counts(entry["class_counts"], summary.get("class_counts"))
+            run_health_counts = collections.Counter(
+            run.get("run_health")
+            for run in summary.get("runs", [])
+            if isinstance(run, dict) and isinstance(run.get("run_health"), str)
+            )
+            merge_counts(entry["run_health_counts"], run_health_counts)
             entry["history"].append(
                 {
                     "round": item["round"],
@@ -141,6 +194,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                     "status_counts": summary.get("status_counts", {}),
                     "label_counts": summary.get("label_counts", {}),
                     "class_counts": summary.get("class_counts", {}),
+                    "run_health_counts": dict(sorted(run_health_counts.items())),
+                    "runs": summary.get("runs", []),
                 }
             )
 
@@ -150,22 +205,36 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     latest_non_all_ok = []
     latest_divergence = []
     latest_same_failure = []
+    latest_stable_divergence = []
+    latest_mixed_run_health = []
     recovered = []
     latest_health_counts: collections.Counter[str] = collections.Counter()
+    latest_run_health_counts: collections.Counter[str] = collections.Counter()
     for name, values in sorted(by_outbound.items()):
         history = sorted(values["history"], key=lambda item: round_sort_key(item["round"]))
         latest = history[-1] if history else {}
         latest_labels = evidence_tool.counter_value(latest, "label_counts")
         latest_classes = evidence_tool.counter_value(latest, "class_counts")
         latest_statuses = evidence_tool.counter_value(latest, "status_counts")
+        latest_run_counts = evidence_tool.counter_value(latest, "run_health_counts")
         latest_has_non_all_ok = has_non_all_ok_labels(latest_labels)
         latest_state = latest_health(latest_labels)
         historical_has_non_all_ok = has_non_all_ok_labels(dict(sorted(values["label_counts"].items())))
         latest_health_counts[latest_state] += 1
+        merge_counts(latest_run_health_counts, latest_run_counts)
+        latest_run_health_kinds = [
+            key
+            for key in RUN_HEALTH_VALUES
+            if latest_run_counts.get(key, 0) > 0
+        ]
         if latest_has_non_all_ok:
             latest_non_all_ok.append(name)
         if latest_state == "latest_divergence":
             latest_divergence.append(name)
+            if latest_run_counts.get("run_divergence", 0) > 0 and len(latest_run_health_kinds) == 1:
+                latest_stable_divergence.append(name)
+            elif len(latest_run_health_kinds) > 1:
+                latest_mixed_run_health.append(name)
         elif latest_state == "latest_same_failure":
             latest_same_failure.append(name)
         elif latest_state == "latest_all_ok" and historical_has_non_all_ok:
@@ -175,11 +244,13 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             "status_counts": dict(sorted(values["status_counts"].items())),
             "label_counts": dict(sorted(values["label_counts"].items())),
             "class_counts": dict(sorted(values["class_counts"].items())),
+            "run_health_counts": dict(sorted(values["run_health_counts"].items())),
             "history": history,
             "latest_round": latest.get("round"),
             "latest_status_counts": latest_statuses,
             "latest_label_counts": latest_labels,
             "latest_class_counts": latest_classes,
+            "latest_run_health_counts": latest_run_counts,
             "latest_has_non_all_ok": latest_has_non_all_ok,
             "latest_health": latest_state,
             "historical_has_non_all_ok": historical_has_non_all_ok,
@@ -194,11 +265,16 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         "latest_non_all_ok_outbound_count": len(latest_non_all_ok),
         "latest_divergence_outbounds": latest_divergence,
         "latest_divergence_outbound_count": len(latest_divergence),
+        "latest_stable_divergence_outbounds": latest_stable_divergence,
+        "latest_stable_divergence_outbound_count": len(latest_stable_divergence),
+        "latest_mixed_run_health_outbounds": latest_mixed_run_health,
+        "latest_mixed_run_health_outbound_count": len(latest_mixed_run_health),
         "latest_same_failure_outbounds": latest_same_failure,
         "latest_same_failure_outbound_count": len(latest_same_failure),
         "recovered_outbounds": recovered,
         "recovered_outbound_count": len(recovered),
         "latest_health_counts": dict(sorted(latest_health_counts.items())),
+        "latest_run_health_counts": dict(sorted(latest_run_health_counts.items())),
         "status_counts": dict(sorted(statuses.items())),
         "label_counts": dict(sorted(labels.items())),
         "class_counts": dict(sorted(classes.items())),
@@ -218,6 +294,8 @@ def markdown_table(rollup: dict[str, Any]) -> str:
         f"- has divergence: {str(rollup['has_any_divergence']).lower()}",
         f"- latest non-all_ok outbounds: {rollup.get('latest_non_all_ok_outbound_count', 0)}",
         f"- latest divergence outbounds: {rollup.get('latest_divergence_outbound_count', 0)}",
+        f"- latest stable divergence outbounds: {rollup.get('latest_stable_divergence_outbound_count', 0)}",
+        f"- latest mixed run-health outbounds: {rollup.get('latest_mixed_run_health_outbound_count', 0)}",
         f"- recovered outbounds: {rollup.get('recovered_outbound_count', 0)}",
         "",
         "## Rounds",
@@ -246,6 +324,7 @@ def markdown_table(rollup: dict[str, Any]) -> str:
             f"- labels: {json.dumps(rollup['label_counts'], sort_keys=True)}",
             f"- classes: {json.dumps(rollup['class_counts'], sort_keys=True)}",
             f"- latest health: {json.dumps(rollup.get('latest_health_counts', {}), sort_keys=True)}",
+            f"- latest run health: {json.dumps(rollup.get('latest_run_health_counts', {}), sort_keys=True)}",
             "",
         ]
     )

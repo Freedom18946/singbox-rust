@@ -1349,6 +1349,153 @@
 - `cargo check --workspace` → PASS
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
+## 2026-04-29 进展更新：Round 57 per-run health rollup and HK targeted repeat
+
+### 目标
+
+- Round 56 showed `HK-A-BGP-2.0` as the only latest divergence bucket, but the latest aggregate labels mixed one divergent sample and one same-failure sample.
+- Add per-run health to the rollup so we can distinguish:
+  - stable divergence across runs;
+  - mixed node/path instability;
+  - pure same-class failures.
+- Use the new run-health filter to target only HK and repeat it.
+- 本轮不修改 REALITY ClientHello sampler、Vision raw/direct dataplane、REALITY concrete read-loop。
+
+### 工具实现
+
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - Parses sanitized evidence `runs[]`.
+  - Adds per-run health:
+    - `run_all_ok`
+    - `run_same_failure`
+    - `run_divergence`
+    - `run_unknown`
+  - Per outbound:
+    - `run_health_counts`
+    - `latest_run_health_counts`
+    - latest history entries now keep compact `runs`.
+  - Top-level:
+    - `latest_run_health_counts`
+    - `latest_stable_divergence_outbounds`
+    - `latest_stable_divergence_outbound_count`
+    - `latest_mixed_run_health_outbounds`
+    - `latest_mixed_run_health_outbound_count`
+- `scripts/tools/reality_vless_probe_plan.py`
+  - Adds `--latest-run-health`.
+  - Can combine `--latest-health latest_divergence` with `--latest-run-health run_divergence` or `run_same_failure`.
+  - Plan output now includes `latest_run_health_counts`.
+- `scripts/tools/README.md`
+  - Documents latest run-health filtering and mixed run-health interpretation.
+- `scripts/tools/test_reality_probe_tools.py`
+  - Adds tests for:
+    - mixed latest run-health counts;
+    - stable latest divergence run-health;
+    - planner latest-run-health filtering;
+    - combined outbound/latest-run filters.
+
+### Round 57 live execution
+
+- Planner command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_divergence --latest-run-health run_divergence --output-json /tmp/reality-vless-hk-divergence-plan-r57.json`
+- Selected:
+  - `HK-A-BGP-2.0`
+  - `latest_health = latest_divergence`
+  - prior `latest_run_health_counts = {"run_divergence": 1, "run_same_failure": 1}`
+- Batch command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-hk-divergence-plan-r57.json --target example.com:80 --runs 4 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r57-hk-repeat`
+- Batch result:
+  - `selected_count = 1`
+  - `executed_runs = 4`
+  - `status_counts.completed = 4`
+
+### Round 57 evidence
+
+- Committed evidence:
+  - `agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json`
+- Summary:
+  - `total = 4`
+  - `executed_runs = 4`
+  - `app_minimal_diverged = 2`
+  - `app_pre_post_diverged = 1`
+  - `minimal_transport_diverged = 2`
+  - `probe_io_all_timeout = 4`
+  - `reality_all_timeout = 1`
+  - `class_counts.connection_reset = 2`
+  - `class_counts.reality_dial_eof = 1`
+  - `class_counts.timeout = 33`
+
+### Per-run observations
+
+- Run 1:
+  - app pre/post direct REALITY split: timeout vs connection_reset.
+  - app post direct REALITY vs minimal direct REALITY split: connection_reset vs timeout.
+  - bridge/probe IO: same timeout.
+- Run 2:
+  - minimal direct REALITY vs transport REALITY split: reality_dial_eof vs timeout.
+  - app post direct REALITY vs minimal direct REALITY split: timeout vs reality_dial_eof.
+  - bridge/probe IO: same timeout.
+- Run 3:
+  - uniform timeout across app/minimal phases.
+- Run 4:
+  - minimal direct REALITY vs transport REALITY split: timeout vs connection_reset.
+  - bridge/probe IO: same timeout.
+
+### Rollup after Round 57
+
+- Updated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Summary:
+  - `total_rounds = 10`
+  - `total_executed_runs = 54`
+  - `total_all_ok_runs = 21`
+  - `total_non_all_ok_runs = 33`
+  - `latest_non_all_ok_outbound_count = 5`
+  - `latest_health_counts.latest_all_ok = 16`
+  - `latest_health_counts.latest_same_failure = 4`
+  - `latest_health_counts.latest_divergence = 1`
+  - `latest_run_health_counts.run_all_ok = 15`
+  - `latest_run_health_counts.run_same_failure = 9`
+  - `latest_run_health_counts.run_divergence = 3`
+- Latest stable divergence:
+  - none (`0`)
+- Latest mixed run-health:
+  - `HK-A-BGP-2.0`
+- Latest same-failure remains:
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `UK-A-BGP-0.5`
+  - `US-A-BGP-0.5`
+
+### 当前判定
+
+- HK is confirmed as an unstable mixed diagnostic-phase divergence bucket, not a stable dataplane/sampler structural split.
+- Across 4 targeted samples, bridge/probe IO remained same-class timeout every time.
+- Divergence did not repeat at a single stable phase boundary:
+  - app pre/post direct REALITY once;
+  - minimal direct/transport twice with different failure classes;
+  - one uniform timeout.
+- No ClientHello sampler or Vision dataplane patch is justified by Round 57.
+- Next useful work should either:
+  - keep HK isolated as node/path instability and focus same-failure buckets separately;
+  - or add a dedicated “stable divergence only” planner mode before any sampler/dataplane attempt.
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `34 tests`
+- JSON validation:
+  - `agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `/tmp/reality-vless-hk-divergence-plan-after-r57.json` → PASS
+  - `/tmp/reality-vless-hk-mixed-plan-after-r57.json` → PASS
+  - `/tmp/reality-vless-same-failure-plan-after-r57.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `cargo check --workspace` → PASS
+
 ## 2026-04-29 进展更新：Round 56 health-aware live recheck and batch hard timeout
 
 ### 目标

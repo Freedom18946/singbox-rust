@@ -349,9 +349,14 @@ python3 scripts/tools/reality_vless_probe_plan.py \
   --config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
   --rollup-json agents-only/mt_real_02_evidence/live_rollup.json \
   --latest-health latest_divergence \
+  --latest-run-health run_divergence \
   --latest-health latest_same_failure \
   --output-json /tmp/reality-vless-latest-health-plan.json
 ```
+
+Rollup JSON keeps both outbound-level latest health and per-run latest health,
+so mixed cases such as one divergent run plus one same-failure run can be
+isolated before changing sampler/dataplane code.
 
 Planner output excludes internal `__*` sentinel outbounds by default; pass
 `--include-internal` only when intentionally planning smoke/negative samples.

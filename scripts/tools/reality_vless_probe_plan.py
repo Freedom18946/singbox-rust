@@ -20,6 +20,12 @@ LATEST_HEALTH_VALUES = {
     "latest_divergence",
     "latest_unknown",
 }
+LATEST_RUN_HEALTH_VALUES = {
+    "run_all_ok",
+    "run_same_failure",
+    "run_divergence",
+    "run_unknown",
+}
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -68,6 +74,25 @@ def latest_health(prior: dict[str, Any] | None) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def latest_run_health_counts(prior: dict[str, Any] | None) -> dict[str, int]:
+    if prior is None:
+        return {}
+    value = prior.get("latest_run_health_counts")
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: count
+        for key, count in value.items()
+        if isinstance(key, str) and isinstance(count, int)
+    }
+
+
+def matches_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
+    if not filters:
+        return True
+    return any(counts.get(value, 0) > 0 for value in filters)
+
+
 def build_plan(
     config: dict[str, Any],
     rollup: dict[str, Any],
@@ -76,9 +101,11 @@ def build_plan(
     include_covered: bool,
     include_internal: bool,
     latest_health_filter: list[str] | None = None,
+    latest_run_health_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
     health_filter = set(latest_health_filter or [])
+    run_health_filter = set(latest_run_health_filter or [])
     buckets: dict[str, list[dict[str, Any]]] = {
         "uncovered": [],
         "prior_non_all_ok": [],
@@ -98,6 +125,7 @@ def build_plan(
         prior = covered.get(key)
         reason = classify_item(key, prior)
         health = latest_health(prior)
+        run_counts = latest_run_health_counts(prior)
         if health:
             health_counts[health] += 1
         planned = {
@@ -110,13 +138,19 @@ def build_plan(
             "flow": item.get("flow"),
             "reason": reason,
             "latest_health": health,
+            "latest_run_health_counts": run_counts,
             "prior": prior,
         }
         buckets[reason].append(planned)
         candidates.append(planned)
 
-    if health_filter:
-        selected = [item for item in candidates if item.get("latest_health") in health_filter]
+    if health_filter or run_health_filter:
+        selected = [
+            item
+            for item in candidates
+            if (not health_filter or item.get("latest_health") in health_filter)
+            and matches_run_health_filter(item.get("latest_run_health_counts", {}), run_health_filter)
+        ]
     else:
         selected = list(buckets["uncovered"])
         if include_failure_rechecks:
@@ -130,6 +164,7 @@ def build_plan(
         "rollup_executed_runs": rollup.get("total_executed_runs"),
         "counts": {key: len(value) for key, value in buckets.items()},
         "latest_health_filter": sorted(health_filter),
+        "latest_run_health_filter": sorted(run_health_filter),
         "latest_health_counts": dict(sorted(health_counts.items())),
         "selected_count": len(selected),
         "selected": selected,
@@ -156,6 +191,13 @@ def main() -> None:
         default=[],
         help="Select ready outbounds whose latest rollup health matches this value.",
     )
+    parser.add_argument(
+        "--latest-run-health",
+        action="append",
+        choices=sorted(LATEST_RUN_HEALTH_VALUES),
+        default=[],
+        help="Select ready outbounds whose latest round has at least one run with this health.",
+    )
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -169,6 +211,7 @@ def main() -> None:
         args.include_covered,
         args.include_internal,
         args.latest_health,
+        args.latest_run_health,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)
@@ -184,6 +227,7 @@ def main() -> None:
                     "key": item["key"],
                     "reason": item["reason"],
                     "latest_health": item["latest_health"],
+                    "latest_run_health_counts": item["latest_run_health_counts"],
                 }
                 for item in plan["selected"]
             ],
