@@ -62,12 +62,12 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R62 Path B: closed via R62-A generic health/phase metrics and R62-B
-  planner predicates plus fake-protocol smoke tests.
-- R63 Path C: reconnaissance landed; planner/user should pick R64 from
-  agents-only/archive/mt_real_02/r63_next_gap_proposal.md.
-- Do not restart sampler/dataplane patch work unless Stage-3 Path A
-  captures a stable structural signal in a new sample regime.
+- R64 LC-003 implementation breakdown landed at
+  agents-only/archive/mt_real_02/r64_lc003_implementation_plan.md.
+- R65 will start the first Sub-WP per that plan; planner picks from
+  its DAG.
+- CLAUDE.md 52/60 vs spec 52/56 fix is deferred to the post-LC-003
+  cleanup round.
 
 ## Still-Valid Constraints
 
