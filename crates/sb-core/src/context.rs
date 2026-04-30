@@ -73,7 +73,6 @@ impl Startable for crate::service::ServiceManager {
 }
 
 /// Global runtime context containing registries and managers.
-/// 全局运行时上下文，包含注册表和管理器。
 #[derive(Clone, Debug)]
 pub struct Context {
     pub network: Arc<NetworkManager>,
@@ -209,7 +208,6 @@ impl Default for Context {
 }
 
 /// Network interface information.
-/// 网络接口信息。
 #[derive(Debug, Clone)]
 pub struct NetworkInterface {
     pub name: String,
@@ -240,7 +238,6 @@ pub struct RouteOptions {
 }
 
 /// Manages network interfaces and routing.
-/// 管理网络接口和路由。
 #[derive(Debug)]
 pub struct NetworkManager {
     interfaces: Arc<RwLock<HashMap<String, NetworkInterface>>>,
@@ -452,7 +449,6 @@ impl Startable for NetworkManager {
 }
 
 /// Connection tracking information.
-/// 连接跟踪信息。
 #[derive(Debug, Clone)]
 pub struct ConnectionInfo {
     pub id: u64,
@@ -463,7 +459,6 @@ pub struct ConnectionInfo {
 }
 
 /// Tracks active connections.
-/// 跟踪活动连接。
 #[derive(Debug)]
 pub struct ConnectionManager {
     connections: Arc<DashMap<u64, ConnectionInfo>>,
@@ -547,7 +542,6 @@ impl Startable for ConnectionManager {
 }
 
 /// Background task information.
-/// 后台任务信息。
 #[derive(Debug, Clone)]
 pub struct TaskInfo {
     pub name: String,
@@ -556,7 +550,6 @@ pub struct TaskInfo {
 }
 
 /// Manages background tasks.
-/// 管理后台任务。
 #[derive(Debug)]
 pub struct TaskMonitor {
     tasks: Arc<DashMap<String, TaskInfo>>,
@@ -644,7 +637,6 @@ impl Startable for TaskMonitor {
 }
 
 /// Platform capabilities and information.
-/// 平台能力和信息。
 #[derive(Debug, Clone)]
 pub struct PlatformInfo {
     pub os: String,
@@ -654,7 +646,6 @@ pub struct PlatformInfo {
 }
 
 /// Provides platform-specific functionality.
-/// 提供平台特定功能。
 #[derive(Debug)]
 pub struct PlatformInterface {
     info: PlatformInfo,
@@ -741,14 +732,14 @@ impl Startable for PlatformInterface {
 
 // Service traits
 
-/// URL test history entry — mirrors Go adapter.URLTestHistory
+/// URL test history entry -- mirrors Go adapter.URLTestHistory
 #[derive(Debug, Clone)]
 pub struct URLTestHistory {
     pub time: std::time::SystemTime,
     pub delay: u16,
 }
 
-/// Shared URL test history storage — mirrors Go adapter.URLTestHistoryStorage.
+/// Shared URL test history storage -- mirrors Go adapter.URLTestHistoryStorage.
 /// Each tag stores only the latest entry (Go parity).
 pub trait URLTestHistoryStorage: Send + Sync + std::fmt::Debug {
     fn load(&self, tag: &str) -> Option<URLTestHistory>;

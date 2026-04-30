@@ -1,21 +1,15 @@
 //! Runtime supervisor for hot reload and graceful shutdown.
-//! 用于热重载和优雅关闭的运行时监督者。
 //!
-//! # Global Strategic Logic / 全局战略逻辑
+//! # Global Strategic Logic
 //! This module implements the **Supervisor Pattern** to manage the application lifecycle.
-//! 本模块实现了 **监督者模式** 来管理应用程序生命周期。
 //!
-//! ## Strategic Workflow / 战略工作流
+//! ## Strategic Workflow
 //! `Start` -> `Event Loop` -> `Reload (Diff & Apply)` -> `Shutdown (Drain & Stop)`
-//! `启动` -> `事件循环` -> `重载 (差异 & 应用)` -> `关闭 (排空 & 停止)`
 //!
-//! ## Strategic Features / 战略特性
-//! - **Hot Reload / 热重载**: Applies new configurations without dropping existing connections (where possible).
-//!   在可能的情况下，应用新配置而不丢弃现有连接。
-//! - **Graceful Shutdown / 优雅关闭**: Waits for active connections to drain before terminating, ensuring zero data loss.
-//!   在终止前等待活动连接排空，确保零数据丢失。
-//! - **Diffing / 差异计算**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
-//!   计算旧配置和新配置之间的差异，以尽量减少变动（例如，仅重启更改的入站）。
+//! ## Strategic Features
+//! - **Hot Reload**: Applies new configurations without dropping existing connections (where possible).
+//! - **Graceful Shutdown**: Waits for active connections to drain before terminating, ensuring zero data loss.
+//! - **Diffing**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
 
 use crate::adapter::Bridge;
 use crate::context::{Context, Startable, V2RayServer};
@@ -306,7 +300,6 @@ impl Supervisor {
                         }
                     }
                     ReloadMsg::Shutdown { deadline } => {
-                        // 广播取消信号
                         cancel_ev.cancel();
                         Self::handle_shutdown(&state_clone, deadline).await;
                         break;
@@ -533,7 +526,6 @@ impl Supervisor {
             .await
             .context("failed to send shutdown message")?;
 
-        // 广播取消信号（幂等）
         self.cancel.cancel();
 
         // Wait for event loop to finish
@@ -791,7 +783,6 @@ impl Supervisor {
     }
 
     /// Merge provider-supplied outbounds and rules into the current ConfigIR.
-    /// 将提供者提供的出站和规则合并到当前 ConfigIR 中。
     ///
     /// Strategy:
     /// - Provider outbounds are **appended** to the current outbound list (duplicates by name
@@ -848,7 +839,7 @@ impl Supervisor {
         }
 
         // Merge rules: parse simple rule strings and append as RuleIR entries.
-        // Format: "TYPE,VALUE" → creates a RuleIR with the appropriate field set.
+        // Format: "TYPE,VALUE" -> creates a RuleIR with the appropriate field set.
         // Unrecognized formats are logged and skipped.
         let mut injected_rules = Vec::new();
         for rule_str in &rules {
@@ -927,7 +918,7 @@ impl Supervisor {
             // Sleep a bit and re-check
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            // Safety valve: don't wait extremely short — allow minimal drain window
+            // Safety valve: don't wait extremely short -- allow minimal drain window
             if now.duration_since(wait_start) > Duration::from_millis(500) && active_total == 0 {
                 break;
             }
@@ -1033,15 +1024,14 @@ impl SupervisorHandle {
 // Helper functions for supervisor
 
 /// Parse a simple rule string (e.g. "DOMAIN,example.com") into a RuleIR.
-/// 将简单规则字符串（如 "DOMAIN,example.com"）解析为 RuleIR。
 ///
 /// Supported formats:
-/// - `DOMAIN,value` → domain exact match
-/// - `DOMAIN-SUFFIX,value` → domain suffix match
-/// - `DOMAIN-KEYWORD,value` → domain keyword match
-/// - `IP-CIDR,value` → source IP CIDR match
-/// - `GEOIP,value` → GeoIP match
-/// - `GEOSITE,value` → treated as domain keyword (best-effort)
+/// - `DOMAIN,value` -> domain exact match
+/// - `DOMAIN-SUFFIX,value` -> domain suffix match
+/// - `DOMAIN-KEYWORD,value` -> domain keyword match
+/// - `IP-CIDR,value` -> source IP CIDR match
+/// - `GEOIP,value` -> GeoIP match
+/// - `GEOSITE,value` -> treated as domain keyword (best-effort)
 ///
 /// All parsed rules get `outbound: "direct"` as default (providers
 /// typically supply the outbound context separately).
@@ -1416,7 +1406,7 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> 
         return Err(anyhow::anyhow!("outbound {}", cycle_err));
     }
 
-    // Resolve default outbound (route.final/default → first registered → explicit error)
+    // Resolve default outbound (route.final/default -> first registered -> explicit error)
     let route_opts = ctx.network.route_options();
     let default_tag = route_opts
         .final_outbound
