@@ -680,6 +680,164 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(built["latest_stable_same_failure_outbounds"], ["JP-A"])
         self.assertEqual(built["latest_stable_same_failure_outbound_count"], 1)
 
+    def test_rollup_collects_divergence_phase_counts_per_outbound(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round13.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "13",
+                        {
+                            "app_pre_post_diverged": 2,
+                            "minimal_transport_diverged": 1,
+                        },
+                        {"ok": 3, "timeout": 15},
+                        {
+                            "HK-A": {
+                                "label_counts": {
+                                    "app_pre_post_diverged": 2,
+                                    "minimal_transport_diverged": 1,
+                                },
+                                "class_counts": {"ok": 3, "timeout": 15},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": [
+                                    "app_pre_post_diverged",
+                                    "minimal_transport_diverged",
+                                ],
+                                "class_counts": {"ok": 2, "timeout": 7},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["app_pre_post_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        outbound = built["by_outbound"]["HK-A"]
+        expected = {"app_pre_post_diverged": 2, "minimal_transport_diverged": 1}
+        self.assertEqual(outbound["latest_divergence_phase_counts"], expected)
+        self.assertEqual(outbound["divergence_phase_counts"], expected)
+
+    def test_rollup_top_level_phase_summary_only_includes_latest_divergence_outbounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round14.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "14",
+                        {
+                            "app_minimal_diverged": 1,
+                            "app_pre_post_diverged": 1,
+                            "reality_all_timeout": 1,
+                        },
+                        {"ok": 2, "timeout": 16},
+                        {
+                            "A": {
+                                "label_counts": {
+                                    "app_minimal_diverged": 1,
+                                    "app_pre_post_diverged": 1,
+                                },
+                                "class_counts": {"ok": 2, "timeout": 7},
+                            },
+                            "B": {
+                                "label_counts": {"reality_all_timeout": 1},
+                                "class_counts": {"timeout": 9},
+                            },
+                        },
+                        runs=[
+                            {
+                                "outbound": "A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": [
+                                    "app_minimal_diverged",
+                                    "app_pre_post_diverged",
+                                ],
+                                "class_counts": {"ok": 2, "timeout": 7},
+                            },
+                            {
+                                "outbound": "B",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        self.assertEqual(
+            built["latest_divergence_phase_summary"],
+            {
+                "app_pre_post_diverged": ["A"],
+                "app_minimal_diverged": ["A"],
+            },
+        )
+        self.assertEqual(
+            built["latest_divergence_phase_total_counts"],
+            {
+                "app_pre_post_diverged": 1,
+                "app_minimal_diverged": 1,
+            },
+        )
+        for outbounds in built["latest_divergence_phase_summary"].values():
+            self.assertNotIn("B", outbounds)
+
+    def test_rollup_handles_outbound_without_any_divergence_label(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round15.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "15",
+                        {"reality_all_timeout": 2},
+                        {"timeout": 18},
+                        {
+                            "JP-A": {
+                                "label_counts": {"reality_all_timeout": 2},
+                                "class_counts": {"timeout": 18},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "JP-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                            {
+                                "outbound": "JP-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        outbound = built["by_outbound"]["JP-A"]
+        self.assertEqual(outbound["latest_divergence_phase_counts"], {})
+        self.assertEqual(outbound["divergence_phase_counts"], {})
+        self.assertEqual(built["latest_divergence_phase_summary"], {})
+
     def test_markdown_table_contains_round_rows(self):
         built = {
             "total_rounds": 1,

@@ -36,6 +36,22 @@
     "US-A-BGP-0.5"
   ],
   "latest_stable_same_failure_outbound_count": 4,
+  "latest_divergence_phase_summary": {
+    "app_pre_post_diverged": [
+      "HK-A-BGP-2.0"
+    ],
+    "app_minimal_diverged": [
+      "HK-A-BGP-2.0"
+    ],
+    "minimal_transport_diverged": [
+      "HK-A-BGP-2.0"
+    ]
+  },
+  "latest_divergence_phase_total_counts": {
+    "app_pre_post_diverged": 1,
+    "app_minimal_diverged": 2,
+    "minimal_transport_diverged": 2
+  },
   "recovered_outbounds": [
     "TW-A-BGP-1.0",
     "US-A-BGP-0.8"
@@ -388,6 +404,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "44",
@@ -404,6 +421,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -433,6 +451,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -451,6 +470,7 @@
         "ok": 18
       },
       "run_health_counts": {},
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "41",
@@ -465,6 +485,7 @@
             "ok": 18
           },
           "run_health_counts": {},
+          "divergence_phase_counts": {},
           "runs": []
         }
       ],
@@ -479,6 +500,7 @@
         "ok": 18
       },
       "latest_run_health_counts": {},
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -497,6 +519,7 @@
         "ok": 18
       },
       "run_health_counts": {},
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "41",
@@ -511,6 +534,7 @@
             "ok": 18
           },
           "run_health_counts": {},
+          "divergence_phase_counts": {},
           "runs": []
         }
       ],
@@ -525,6 +549,7 @@
         "ok": 18
       },
       "latest_run_health_counts": {},
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -557,6 +582,12 @@
         "run_divergence": 5,
         "run_same_failure": 4
       },
+      "divergence_phase_counts": {
+        "app_minimal_diverged": 3,
+        "app_pre_post_diverged": 3,
+        "bridge_io_diverged": 1,
+        "minimal_transport_diverged": 2
+      },
       "history": [
         {
           "round": "47",
@@ -573,6 +604,7 @@
           "run_health_counts": {
             "run_same_failure": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -606,6 +638,9 @@
           "run_health_counts": {
             "run_divergence": 1,
             "run_same_failure": 1
+          },
+          "divergence_phase_counts": {
+            "app_pre_post_diverged": 1
           },
           "runs": [
             {
@@ -657,6 +692,11 @@
           "run_health_counts": {
             "run_divergence": 1,
             "run_same_failure": 1
+          },
+          "divergence_phase_counts": {
+            "app_minimal_diverged": 1,
+            "app_pre_post_diverged": 1,
+            "bridge_io_diverged": 1
           },
           "runs": [
             {
@@ -710,6 +750,11 @@
           "run_health_counts": {
             "run_divergence": 3,
             "run_same_failure": 1
+          },
+          "divergence_phase_counts": {
+            "app_minimal_diverged": 2,
+            "app_pre_post_diverged": 1,
+            "minimal_transport_diverged": 2
           },
           "runs": [
             {
@@ -792,6 +837,11 @@
         "run_divergence": 3,
         "run_same_failure": 1
       },
+      "latest_divergence_phase_counts": {
+        "app_minimal_diverged": 2,
+        "app_pre_post_diverged": 1,
+        "minimal_transport_diverged": 2
+      },
       "latest_has_non_all_ok": true,
       "latest_health": "latest_divergence",
       "historical_has_non_all_ok": true
@@ -812,6 +862,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "47",
@@ -828,6 +879,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -857,6 +909,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -877,6 +930,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "44",
@@ -893,6 +947,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -922,6 +977,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -946,6 +1002,7 @@
       "run_health_counts": {
         "run_same_failure": 7
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "47",
@@ -962,6 +1019,7 @@
           "run_health_counts": {
             "run_same_failure": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -993,6 +1051,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -1038,6 +1097,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -1083,6 +1143,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -1127,6 +1188,7 @@
       "latest_run_health_counts": {
         "run_same_failure": 2
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": true,
       "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
@@ -1151,6 +1213,7 @@
       "run_health_counts": {
         "run_same_failure": 6
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "42",
@@ -1165,6 +1228,7 @@
             "timeout": 9
           },
           "run_health_counts": {},
+          "divergence_phase_counts": {},
           "runs": []
         },
         {
@@ -1183,6 +1247,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 3,
@@ -1228,6 +1293,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 3,
@@ -1273,6 +1339,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -1317,6 +1384,7 @@
       "latest_run_health_counts": {
         "run_same_failure": 2
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": true,
       "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
@@ -1337,6 +1405,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "47",
@@ -1353,6 +1422,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 5,
@@ -1382,6 +1452,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1402,6 +1473,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "50",
@@ -1418,6 +1490,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 2,
@@ -1447,6 +1520,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1467,6 +1541,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "50",
@@ -1483,6 +1558,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -1512,6 +1588,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1530,6 +1607,7 @@
         "ok": 9
       },
       "run_health_counts": {},
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "42",
@@ -1544,6 +1622,7 @@
             "ok": 9
           },
           "run_health_counts": {},
+          "divergence_phase_counts": {},
           "runs": []
         }
       ],
@@ -1558,6 +1637,7 @@
         "ok": 9
       },
       "latest_run_health_counts": {},
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1578,6 +1658,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "44",
@@ -1594,6 +1675,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -1623,6 +1705,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1648,6 +1731,10 @@
         "run_all_ok": 3,
         "run_divergence": 1
       },
+      "divergence_phase_counts": {
+        "app_minimal_diverged": 1,
+        "minimal_transport_diverged": 1
+      },
       "history": [
         {
           "round": "47",
@@ -1665,6 +1752,10 @@
           },
           "run_health_counts": {
             "run_divergence": 1
+          },
+          "divergence_phase_counts": {
+            "app_minimal_diverged": 1,
+            "minimal_transport_diverged": 1
           },
           "runs": [
             {
@@ -1698,6 +1789,7 @@
           "run_health_counts": {
             "run_all_ok": 3
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -1751,6 +1843,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 3
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": true
@@ -1771,6 +1864,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "44",
@@ -1787,6 +1881,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 3,
@@ -1816,6 +1911,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -1840,6 +1936,7 @@
       "run_health_counts": {
         "run_same_failure": 7
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "44",
@@ -1856,6 +1953,7 @@
           "run_health_counts": {
             "run_same_failure": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 5,
@@ -1887,6 +1985,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 6,
@@ -1932,6 +2031,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 6,
@@ -1977,6 +2077,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -2021,6 +2122,7 @@
       "latest_run_health_counts": {
         "run_same_failure": 2
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": true,
       "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
@@ -2041,6 +2143,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "50",
@@ -2057,6 +2160,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 3,
@@ -2086,6 +2190,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -2104,6 +2209,7 @@
         "ok": 9
       },
       "run_health_counts": {},
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "42",
@@ -2118,6 +2224,7 @@
             "ok": 9
           },
           "run_health_counts": {},
+          "divergence_phase_counts": {},
           "runs": []
         }
       ],
@@ -2132,6 +2239,7 @@
         "ok": 9
       },
       "latest_run_health_counts": {},
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false
@@ -2156,6 +2264,7 @@
       "run_health_counts": {
         "run_same_failure": 7
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "50",
@@ -2173,6 +2282,7 @@
           "run_health_counts": {
             "run_same_failure": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -2205,6 +2315,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -2250,6 +2361,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 4,
@@ -2295,6 +2407,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 3,
@@ -2339,6 +2452,7 @@
       "latest_run_health_counts": {
         "run_same_failure": 2
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": true,
       "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
@@ -2364,6 +2478,7 @@
         "run_all_ok": 2,
         "run_same_failure": 3
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "50",
@@ -2381,6 +2496,7 @@
           "run_health_counts": {
             "run_same_failure": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 5,
@@ -2413,6 +2529,7 @@
           "run_health_counts": {
             "run_same_failure": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 5,
@@ -2457,6 +2574,7 @@
           "run_health_counts": {
             "run_all_ok": 2
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 5,
@@ -2498,6 +2616,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 2
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": true
@@ -2518,6 +2637,7 @@
       "run_health_counts": {
         "run_all_ok": 1
       },
+      "divergence_phase_counts": {},
       "history": [
         {
           "round": "52",
@@ -2534,6 +2654,7 @@
           "run_health_counts": {
             "run_all_ok": 1
           },
+          "divergence_phase_counts": {},
           "runs": [
             {
               "ordinal": 1,
@@ -2563,6 +2684,7 @@
       "latest_run_health_counts": {
         "run_all_ok": 1
       },
+      "latest_divergence_phase_counts": {},
       "latest_has_non_all_ok": false,
       "latest_health": "latest_all_ok",
       "historical_has_non_all_ok": false

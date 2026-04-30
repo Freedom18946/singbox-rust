@@ -360,6 +360,12 @@ the latest round must contain at least one matching run, and
 `--only-latest-run-health` when every latest run must stay inside the selected
 run-health family.
 
+For mixed divergence buckets, rollup JSON also keeps phase composition:
+`divergence_phase_counts` and `latest_divergence_phase_counts` are per-outbound
+run counts keyed by divergence label, while `latest_divergence_phase_summary`
+and `latest_divergence_phase_total_counts` summarize only outbounds whose
+latest health is `latest_divergence`.
+
 Planner output excludes internal `__*` sentinel outbounds by default; pass
 `--include-internal` only when intentionally planning smoke/negative samples.
 

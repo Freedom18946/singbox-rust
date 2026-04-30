@@ -1857,3 +1857,30 @@
   - `jq empty` for Round 58 evidence and live rollup → PASS
   - ASCII scan for Round 58 evidence and live rollup → PASS
   - `cargo check --workspace` → PASS
+
+## Round 59-A（divergence phase composition rollup）
+
+- 本轮只改 REALITY live evidence Python tooling / tests / rollup / docs，不跑 live，不修改 planner，不修改 sampler/dataplane/Rust workspace。
+- 工具推进：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 新增 `DIVERGENCE_PHASE_LABELS` / fixed phase order。
+    - 每个 outbound 新增 aggregate `divergence_phase_counts` 与 latest-round `latest_divergence_phase_counts`。
+    - 顶层新增 `latest_divergence_phase_summary` 与 `latest_divergence_phase_total_counts`，只汇总 latest health 为 `latest_divergence` 的 outbounds。
+  - `scripts/tools/reality_vless_probe_plan.py` 未改。
+  - `scripts/tools/README.md` 微更新 phase composition 字段说明。
+  - `scripts/tools/test_reality_probe_tools.py` 新增 3 个 rollup phase tests；Python tests 增至 `40` 个。
+- 重新生成 `agents-only/mt_real_02_evidence/live_rollup.{json,md}`：
+  - totals 保持：`11 rounds / 62 runs / 21 all_ok`
+  - latest divergence outbounds 仍为 `HK-A-BGP-2.0`
+  - HK latest phase counts（来自 HK 自己的 latest round R57；R58 未跑 HK）：
+    - `app_pre_post_diverged=1`
+    - `app_minimal_diverged=2`
+    - `minimal_transport_diverged=2`
+    - `bridge_io_diverged=0`
+- gate：
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`40 tests`)
+  - `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - ASCII scan for live rollup JSON/MD → PASS
+  - `git diff --check` → PASS
+  - `cargo check --workspace` → PASS
+- 下一步预告：Round 59-B 用新 rollup 视角对 `HK-A-BGP-2.0` 跑 longer repeat live batch，决定 `--runs 4` 或 `--runs 6` 以及 timeout 是否微调。

@@ -34,3 +34,10 @@
 - classes: {"connection_reset": 130, "ok": 219, "post_dial_eof": 6, "reality_dial_eof": 65, "timeout": 138}
 - latest health: {"latest_all_ok": 16, "latest_divergence": 1, "latest_same_failure": 4}
 - latest run health: {"run_all_ok": 15, "run_divergence": 3, "run_same_failure": 9}
+
+## Latest divergence phase composition
+
+- app_pre_post_diverged: 1 (HK-A-BGP-2.0)
+- app_minimal_diverged: 2 (HK-A-BGP-2.0)
+- minimal_transport_diverged: 2 (HK-A-BGP-2.0)
+- bridge_io_diverged: 0 (-)

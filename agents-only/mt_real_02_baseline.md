@@ -5874,3 +5874,78 @@
   - `latest_divergence + latest-run-health run_divergence` selected `HK-A-BGP-2.0`
 - `git diff --check` → PASS
 - `cargo check --workspace` → PASS
+
+## 2026-04-30 进展更新：Round 59-A divergence phase composition rollup
+
+### 目标
+
+- Keep the MT-REAL-02 evidence loop in classify-first mode.
+- Add a rollup view that answers which divergence phases appear inside each mixed bucket's latest runs.
+- This is tools-only: no live batch, no planner behavior change, no ClientHello sampler change, no Vision/REALITY dataplane change.
+
+### 实现
+
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - Adds `DIVERGENCE_PHASE_LABELS` with fixed output order:
+    - `app_pre_post_diverged`
+    - `app_minimal_diverged`
+    - `minimal_transport_diverged`
+    - `bridge_io_diverged`
+  - Counts phase labels from sanitized evidence `runs[].labels`.
+  - One run can increment multiple phase counters if it carries multiple divergence labels.
+  - Per outbound:
+    - `divergence_phase_counts`
+    - `latest_divergence_phase_counts`
+  - Top-level:
+    - `latest_divergence_phase_summary`
+    - `latest_divergence_phase_total_counts`
+  - Top-level phase summary only includes outbounds whose latest health is `latest_divergence`.
+- `scripts/tools/reality_vless_probe_plan.py`
+  - Unchanged.
+- `scripts/tools/test_reality_probe_tools.py`
+  - Adds tests for:
+    - per-outbound divergence phase counts;
+    - top-level latest divergence phase summary excluding same-failure outbounds;
+    - outbounds without divergence labels staying empty in phase counts.
+- `scripts/tools/README.md`
+  - Documents the new phase composition fields.
+
+### rollup regeneration
+
+- Regenerated:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+- Existing totals preserved:
+  - `total_rounds = 11`
+  - `total_executed_runs = 62`
+  - `total_all_ok_runs = 21`
+  - `latest_divergence_outbounds = ["HK-A-BGP-2.0"]`
+- Latest divergence phase composition:
+  - `app_pre_post_diverged = 1` (`HK-A-BGP-2.0`)
+  - `app_minimal_diverged = 2` (`HK-A-BGP-2.0`)
+  - `minimal_transport_diverged = 2` (`HK-A-BGP-2.0`)
+  - `bridge_io_diverged = 0`
+- Important interpretation:
+  - Round 58 did not run `HK-A-BGP-2.0`.
+  - `HK-A-BGP-2.0` therefore uses its own latest evidence round, Round 57, for latest divergence phase counts.
+
+### 判定
+
+- HK remains a mixed run-health bucket, not a stable sampler/dataplane signal.
+- The phase view now makes the mixed shape explicit:
+  - app/minimal divergence appears in `2` latest HK runs;
+  - minimal direct vs transport divergence appears in `2` latest HK runs;
+  - app pre/post divergence appears in `1` latest HK run;
+  - bridge IO divergence does not appear in HK's latest round.
+- This supports a Round 59-B longer repeat live batch focused on HK before considering any sampler/dataplane work.
+
+### 验证
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `40 tests`
+- `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `git diff --check` → PASS
+- `cargo check --workspace` → PASS
