@@ -62,8 +62,8 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R62 Path B: abstract the evidence framework into generic
-  dual-kernel verification tooling.
+- R62 Path B: R62-A generic health/phase metric package done; R62-B
+  planner predicate extraction and fake-protocol smoke test pending.
 - R63 Path C: use dual_kernel_golden_spec.md S5 to select the next
   high-priority BHV gap.
 - Do not restart sampler/dataplane patch work unless Stage-3 Path A
